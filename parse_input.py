@@ -9,10 +9,10 @@
 # https://nagios-plugins.org/doc/guidelines.html
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2019112801'
+__version__ = '2020010601'
 
 
-from lib3.globals import *
+from .globals import *
 
 def evaluate_greater(value, warn, crit):
     # make sure to use float comparison
