@@ -11,7 +11,7 @@
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2019122101'
 
-from lib2.globals import *
+from .globals import *
 
 def unpack_perfdata(label, value, uom, warn, crit, min, max):
     msg = label + '=' + str(value)
