@@ -9,35 +9,41 @@
 # https://nagios-plugins.org/doc/guidelines.html
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020010801'
+__version__ = '2020010802'
 
 
-def execute_command(command, env=None, shell=False):
+def execute_command(command, env=None, shell=False, input=False):
     import subprocess
     if shell:
         sp = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
         stdout, stderr = sp.communicate()
         retc = sp.returncode
         return stdout, stderr, retc
-    else:
-        import shlex
-        command_list = command.split('|')
 
-        p_last = None
-        first = True
-        for command in command_list:
-            if first:
-                first = False
-                args = shlex.split(command.strip())
-                p_last = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=False)
-                continue
-
-            args = shlex.split(command.strip())
-            p_last = subprocess.Popen(args, stdin=p_last.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=False)
-
-        stdout, stderr = p_last.communicate()
-        retc = p_last.returncode
+    if input:
+        sp = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, input=input)
+        stdout, stderr = sp.communicate()
+        retc = sp.returncode
         return stdout, stderr, retc
+
+    import shlex
+    command_list = command.split('|')
+
+    p_last = None
+    first = True
+    for command in command_list:
+        if first:
+            first = False
+            args = shlex.split(command.strip())
+            p_last = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=False)
+            continue
+
+        args = shlex.split(command.strip())
+        p_last = subprocess.Popen(args, stdin=p_last.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=False)
+
+    stdout, stderr = p_last.communicate()
+    retc = p_last.returncode
+    return stdout, stderr, retc
 
 
 def disk_partitions(ignore=[]):
