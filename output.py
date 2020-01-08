@@ -147,13 +147,16 @@ def format_as_table(data,
     return table
 
 
-def state_to_string(state):
+def state_to_string(state, return_ok=False):
     if state == STATE_CRIT:
         return 'CRIT'
     if state == STATE_WARN:
         return 'WARN'
     if state == STATE_OK:
-        return 'OK'
+        if return_ok:
+            return 'OK'
+        else:
+            return ''
     if state == STATE_UNKNOWN:
         return 'UNKNOWN'
 
