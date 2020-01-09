@@ -99,7 +99,7 @@ def evaluate_smaller_date_to_today(date_in, warn, crit):
     return STATE_OK
 
 
-def evaluate_greater_date_now(date_in, warn, crit):
+def evaluate_greater_datetime_to_now(date_in, warn, crit):
     import datetime
     # thresholds in hours
     # eg: date_in = datetime.datetime.strptime(date_str, '%b %d %H:%M:%S %Y %Z') # Oct 29 08:41:00 2028 GMT
