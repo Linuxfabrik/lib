@@ -70,11 +70,11 @@ def evaluate_greater_date_to_today(date_in, warn, crit):
     time_delta = (date_in.date() - datetime.datetime.now().date()).total_seconds() / 3600 / 24
 
     if crit or crit == 0:
-        if diff > crit:
+        if time_delta > crit:
             return STATE_CRIT
 
     if warn or warn == 0:
-        if diff > warn:
+        if time_delta > warn:
             return STATE_WARN 
 
     return STATE_OK
@@ -89,11 +89,11 @@ def evaluate_smaller_date_to_today(date_in, warn, crit):
     time_delta = (date_in.date() - datetime.datetime.now().date()).total_seconds() / 3600 / 24
 
     if crit or crit == 0:
-        if diff < crit:
+        if time_delta < crit:
             return STATE_CRIT
 
     if warn or warn == 0:
-        if diff < warn:
+        if time_delta < warn:
             return STATE_WARN 
 
     return STATE_OK
@@ -107,11 +107,11 @@ def evaluate_greater_datetime_to_now(date_in, warn, crit):
     time_delta = (date_in - datetime.datetime.now()).total_seconds() / 3600
 
     if crit or crit == 0:
-        if diff > crit:
+        if time_delta > crit:
             return STATE_CRIT
 
     if warn or warn == 0:
-        if diff > warn:
+        if time_delta > warn:
             return STATE_WARN 
 
     return STATE_OK
