@@ -107,9 +107,10 @@ def format_as_table(data,
             True sort order will change to descending. (Type: Boolean)
     """
     from operator import itemgetter
+    from collections import OrderedDict
 
     if not data:
-        return None
+        return ''
 
     # Sort the data if a sort key is specified (default sort order
     # is ascending)
@@ -134,7 +135,7 @@ def format_as_table(data,
         header = dict(zip(keys, header))
         data.insert(0, header)
 
-    column_widths = {}
+    column_widths = OrderedDict()
     for key in keys:
         column_widths[key] = max(len(str(column[key])) for column in data)
 
@@ -147,13 +148,16 @@ def format_as_table(data,
     return table
 
 
-def state_to_string(state):
+def state_to_string(state, return_ok=False):
     if state == STATE_CRIT:
         return 'CRIT'
     if state == STATE_WARN:
         return 'WARN'
     if state == STATE_OK:
-        return 'OK'
+        if return_ok:
+            return 'OK'
+        else:
+            return ''
     if state == STATE_UNKNOWN:
         return 'UNKNOWN'
 

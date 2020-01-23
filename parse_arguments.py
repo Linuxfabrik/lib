@@ -12,5 +12,5 @@ __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2020010801'
 
 
-def csv_arg(string):
-    return [x for x in string.split(',')]
+def csv(string):
+    return [x.strip() for x in string.split(',')]
