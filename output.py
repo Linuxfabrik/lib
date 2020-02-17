@@ -47,7 +47,7 @@ def bytes2human(n):
         if n >= prefix[s]:
             value = float(n) / prefix[s]
             return '%.1f%s' % (value, s)
-    return "%sB" % n
+    return '%sB' % n
 
 
 def unix_time_to_iso(timestamp):
