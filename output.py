@@ -9,7 +9,7 @@
 # https://nagios-plugins.org/doc/guidelines.html
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020010801'
+__version__ = '2020021701'
 
 from .globals import *
 
@@ -47,7 +47,7 @@ def bytes2human(n):
         if n >= prefix[s]:
             value = float(n) / prefix[s]
             return '%.1f%s' % (value, s)
-    return "%.1f" % n
+    return "%sB" % n
 
 
 def unix_time_to_iso(timestamp):
