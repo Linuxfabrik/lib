@@ -9,22 +9,21 @@
 # https://nagios-plugins.org/doc/guidelines.html
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020010601'
+__version__ = '2020022101'
 
 
 from .globals import *
 
 def evaluate_greater(value, warn, crit):
     # make sure to use float comparison
-    # todo check logic
 
-    if crit or crit == 0:
+    if crit is not None:
         crit = float(crit)
         value = float(value)
         if value >= crit:
             return STATE_CRIT
 
-    if warn or warn == 0:
+    if warn is not None:
         warn = float(warn)
         value = float(value)
         if value >= warn:
@@ -35,15 +34,14 @@ def evaluate_greater(value, warn, crit):
 
 def evaluate_smaller(value, warn, crit):
     # make sure to use float comparison
-    # todo check logic
 
-    if crit or crit == 0:
+    if crit is not None:
         crit = float(crit)
         value = float(value)
         if value <= crit:
             return STATE_CRIT
 
-    if warn or warn == 0:
+    if warn is not None:
         warn = float(warn)
         value = float(value)
         if value <= warn:
