@@ -9,7 +9,7 @@
 # https://nagios-plugins.org/doc/guidelines.html
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020010802'
+__version__ = '2020022101'
 
 
 def execute_command(command, env=None, shell=False, stdin_input=False):
