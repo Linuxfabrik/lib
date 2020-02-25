@@ -9,7 +9,7 @@
 # https://nagios-plugins.org/doc/guidelines.html
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020021701'
+__version__ = '2020022501'
 
 from .globals import *
 
@@ -58,21 +58,23 @@ def unix_time_to_iso(timestamp):
 
 
 def seconds2human(seconds, full_name=False):
+
+    seconds = int(seconds)
     if full_name:
         intervals = (
-    ('weeks', 604800),  # 60 * 60 * 24 * 7
-    ('days', 86400),    # 60 * 60 * 24
-    ('hours', 3600),    # 60 * 60
-    ('minutes', 60),
-    ('seconds', 1),
+            ('weeks', 604800),  # 60 * 60 * 24 * 7
+            ('days', 86400),    # 60 * 60 * 24
+            ('hours', 3600),    # 60 * 60
+            ('minutes', 60),
+            ('seconds', 1),
     )
     else:
         intervals = (
-    ('w', 604800),  # 60 * 60 * 24 * 7
-    ('d', 86400),    # 60 * 60 * 24
-    ('h', 3600),    # 60 * 60
-    ('m', 60),
-    ('s', 1),
+            ('w', 604800),      # 60 * 60 * 24 * 7
+            ('d', 86400),       # 60 * 60 * 24
+            ('h', 3600),        # 60 * 60
+            ('m', 60),
+            ('s', 1),
     )
 
     result = []
@@ -82,7 +84,7 @@ def seconds2human(seconds, full_name=False):
         if value:
             seconds -= value * count
             if full_name and value == 1:
-                name = name.rstrip('s') # days -> day
+                name = name.rstrip('s') # "days" becomes "day"
             result.append('{:.0f}{}'.format(value, name))
     return ' '.join(result)
 
