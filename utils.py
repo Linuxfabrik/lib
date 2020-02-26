@@ -9,10 +9,10 @@
 # https://nagios-plugins.org/doc/guidelines.html
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020010802'
+__version__ = '2020022101'
 
 
-def execute_command(command, env=None, shell=False, input=False):
+def execute_command(command, env=None, shell=False, stdin_input=False):
     import subprocess
     if shell:
         sp = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
@@ -20,9 +20,9 @@ def execute_command(command, env=None, shell=False, input=False):
         retc = sp.returncode
         return stdout, stderr, retc
 
-    if input:
-        sp = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, input=input)
-        stdout, stderr = sp.communicate()
+    if stdin_input:
+        sp = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
+        stdout, stderr = sp.communicate(input=stdin_input)
         retc = sp.returncode
         return stdout, stderr, retc
 
