@@ -11,7 +11,7 @@
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2020031801'
 
-import lib.utils_base
+import lib.base
 import sqlite3
 
 # No error handling here. If cache does not work for any reason, we (currently) don't care and don't report it.
@@ -20,7 +20,7 @@ import sqlite3
 # Set key to hold the string value. If key already holds a value, it is overwritten, including the expire timestamp in seconds.
 # expire: Set the specified expire unix timestamp, in seconds. If 0, key never expires.
 def set_cache(key, value, expire=0):
-    db = lib.utils_base.get_tmpdir() + '/linuxfabrik-plugin-cache.db'
+    db = lib.base.get_tmpdir() + '/linuxfabrik-plugin-cache.db'
 
     conn = sqlite3.connect(db, timeout=1)
     c = conn.cursor()
@@ -57,14 +57,14 @@ def set_cache(key, value, expire=0):
 # Get the value of key. If the key does not exist False is returned.
 def get_cache(key):
     try:
-        db = lib.utils_base.get_tmpdir() + '/linuxfabrik-plugin-cache.db'
+        db = lib.base.get_tmpdir() + '/linuxfabrik-plugin-cache.db'
 
         conn = sqlite3.connect(db, timeout=1)
         c = conn.cursor()
         # The c.execute() method expects a sequence as second parameter, so use "[varname]":
         c.execute('SELECT key, value, ts FROM cache WHERE key = ?', [key])
         result = c.fetchone()
-        if result == None or (result[2] != 0 and int(result[2]) - lib.utils_base.now() < 0):
+        if result == None or (result[2] != 0 and int(result[2]) - lib.base.now() < 0):
             return False
         else:
             # return the value
