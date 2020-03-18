@@ -9,15 +9,19 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020031801'
+__version__ = '2020031803'
 
+import re
 import ssl
 import urllib2
 
 
-def fetch_url(url, insecure=False, no_proxy=False, timeout=5):
+def fetch_url(url, insecure=False, no_proxy=False, timeout=5, header={}):
     try:
         request = urllib2.Request(url)
+
+        for key, value in header.items():
+            request.add_header(key, value)
 
         # SSL/TLS certificate validation (see: https://stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2)
         ctx = ssl.create_default_context()
@@ -44,3 +48,6 @@ def fetch_url(url, insecure=False, no_proxy=False, timeout=5):
         return (True, result)
 
 
+def strip_tags(html):
+    # tries to return a string with all HTML tags stripped from a given string
+    return re.sub(r'<[^<]+?>', '', html)
