@@ -9,16 +9,22 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020031803'
+__version__ = '2020031901'
 
+import json
 import re
 import ssl
+import urllib
 import urllib2
 
 
-def fetch_url(url, insecure=False, no_proxy=False, timeout=5, header={}):
+def fetch_url(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}):
     try:
-        request = urllib2.Request(url)
+        if data:
+            data = urllib.urlencode(data)
+            request = urllib2.Request(url, data=data)
+        else:
+            request = urllib2.Request(url)
 
         for key, value in header.items():
             request.add_header(key, value)
@@ -46,6 +52,23 @@ def fetch_url(url, insecure=False, no_proxy=False, timeout=5, header={}):
     else:
         result = response.read()
         return (True, result)
+
+
+def get_latest_version_from_github(user, repo, key='tag_name'):
+    github_url = 'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
+    success, result = fetch_url(github_url)
+    if not success:
+        return (success, result)
+    if not result:
+        return (True, False)
+    try:
+        result = json.loads(result)
+    except:
+        return (True, False)
+    #print(json.dumps(result, indent=4, sort_keys=True))
+
+    # on GitHub, here is the version (format of the version string depends on the maintainer)
+    return (True, result[key])
 
 
 def strip_tags(html):
