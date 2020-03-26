@@ -9,9 +9,10 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020031801'
+__version__ = '2020032601'
 
 import lib.base
+
 import sqlite3
 
 # No error handling here. If cache does not work for any reason, we (currently) don't care and don't report it.
@@ -19,7 +20,7 @@ import sqlite3
 
 # Set key to hold the string value. If key already holds a value, it is overwritten, including the expire timestamp in seconds.
 # expire: Set the specified expire unix timestamp, in seconds. If 0, key never expires.
-def set_cache(key, value, expire=0):
+def set_key(key, value, expire=0):
     db = lib.base.get_tmpdir() + '/linuxfabrik-plugin-cache.db'
 
     conn = sqlite3.connect(db, timeout=1)
@@ -44,18 +45,20 @@ def set_cache(key, value, expire=0):
 
         c.execute('''
             REPLACE INTO cache (key, value, ts) 
-            VALUES (?, ?, ?)
-            ''', (key, value, expire));
+            VALUES (?, ?, ?);
+            ''', (key, value, expire))
         conn.commit()
-        conn.close()
     except:
         return False
+    finally:
+        # will always be executed, no matter if the try block raises an error or not
+        conn.close()
 
     return True
 
 
 # Get the value of key. If the key does not exist False is returned.
-def get_cache(key):
+def get_key(key):
     try:
         db = lib.base.get_tmpdir() + '/linuxfabrik-plugin-cache.db'
 
@@ -71,5 +74,8 @@ def get_cache(key):
             return result[1]
     except:
         return False
-    
+    finally:
+        # will always be executed, no matter if the try block raises an error or not
+        conn.close()
+
     return False
