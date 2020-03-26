@@ -9,19 +9,19 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020031901'
+__version__ = '2020032101'
 
 import json
 
 from lib.url import fetch_url
 
 
-def rc_get_stats(rc_url, authToken, userId):
+def get_stats(rc_url, authToken, userId):
     # https://rocket.chat/docs/developer-guides/rest-api/miscellaneous/statistics/
     # curl -H "X-Auth-Token: 8h2mKAwxB3AQrFSjLVKMooJyjdCFaA7W45sWlHP8IzO" \
     #      -H "X-User-Id: ew28DpvKw3R" \
     #      http://localhost:3000/api/v1/statistics
-    if not rc_url.endswith('/statistics'):
+    if not url.endswith('/statistics'):
     	rc_url += '/statistics'
     header = {
         'X-Auth-Token': authToken,
@@ -38,11 +38,11 @@ def rc_get_stats(rc_url, authToken, userId):
 
 
 # get token from Rocket.Chat after login
-def rc_get_token(rc_url, user, password):
+def get_token(rc_url, user, password):
     # curl -X "POST" \
     #      -d "user=admin&password=mypassword" \
     #      http://localhost:3000/api/v1/login
-    if not rc_url.endswith('/login'):
+    if not url.endswith('/login'):
     	rc_url += '/login'
     data = {
         'user': user,
