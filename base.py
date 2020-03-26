@@ -9,16 +9,15 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020031801'
+__version__ = '2020032601'
 
-import re
-import tempfile
+import hashlib
 import time
 
 
 def continue_or_exit(result, state=3):
     if (result[0]):
-        # if return code of a function's result is true
+        # if return code of a function's result is true (= no exception)
         # return its result set/data, and you can continue your code
         return result[1]
     else:
@@ -27,31 +26,20 @@ def continue_or_exit(result, state=3):
         exit(state)
 
 
-def get_tmpdir():
-    try:
-        return tempfile.gettempdir()   
-    except:
-        return '/tmp'
-
-
-def grep_file(filename, pattern):
-    try:
-        with open(filename, 'r') as f:
-            data = f.read()
-    except IOError as e:
-        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
-    except:
-        return (False, 'Unknown error opening or reading {}'.format(filename))
-    else:
-        match = re.search(pattern, data).group(1)
-        if match:
-            return (True, match)
-        else:
-            # function was successful in opening and reading the file, but no match found
-            return (True, False)
+def md5sum(data):
+    return hashlib.md5(data).hexdigest()
 
 
 def now():
     return int(time.time())
 
 
+def smartcast(value):
+    # returns value converted to float if possible, else string, else the uncasted value
+    for test in [float, str]:
+        try:
+            return test(value)
+        except ValueError:
+            continue
+            # No match
+    return value
