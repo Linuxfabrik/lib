@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020032501'
+__version__ = '2020032801'
 
 import lib.fs
 
@@ -104,7 +104,7 @@ def cut(conn, table='perfdata', max=5):
     return (True, True)
 
 
-def select(conn, sql, data={}, table='perfdata'):
+def select(conn, sql, data={}, table='perfdata', fetchone=False):
     c = conn.cursor()
 
     try:
@@ -113,7 +113,10 @@ def select(conn, sql, data={}, table='perfdata'):
         else:
             c.execute(sql)
         # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
-        return (True, [dict(row) for row in c.fetchall()])
+        if fetchone:
+            return (True, [dict(row) for row in c.fetchall()][0])
+        else:
+            return (True, [dict(row) for row in c.fetchall()])
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 

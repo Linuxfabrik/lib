@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020032801'
+__version__ = '2020032802'
 
 import json
 import re
@@ -56,7 +56,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}):
 
 def get_latest_version_from_github(user, repo, key='tag_name'):
     github_url = 'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
-    success, result = fetch_url(github_url)
+    success, result = fetch(github_url)
     if not success:
         return (success, result)
     if not result:

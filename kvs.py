@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020032602'
+__version__ = '2020032802'
 
 import lib.base
 import lib.db
@@ -64,18 +64,18 @@ def get(key):
     if not success:
         return False
 
-    success, result = lib.db.select(conn, 
-        'SELECT key, value, timestamp FROM kvs WHERE key = :key',
-        {'key': key}
+    success, result = lib.db.select(conn,
+        sql='SELECT key, value, timestamp FROM kvs WHERE key = :key',
+        data={'key': key}, fetchone=True
     )
     lib.db.close(conn)
     if not success:
         return False
 
-    if not result or result == None or (result[2] != 0 and int(result[2]) - lib.base.now() < 0):
+    if not result or result == None or (result['timestamp'] != 0 and result['timestamp'] - lib.base.now() < 0):
         return False
     else:
         # return the value
-        return result[1]
+        return result['value']
 
     return False
