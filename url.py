@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020031901'
+__version__ = '2020032801'
 
 import json
 import re
@@ -18,7 +18,7 @@ import urllib
 import urllib2
 
 
-def fetch_url(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}):
+def fetch(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}):
     try:
         if data:
             data = urllib.urlencode(data)
