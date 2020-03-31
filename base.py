@@ -9,8 +9,9 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020032801'
+__version__ = '2020033101'
 
+import datetime
 import hashlib
 import time
 
@@ -34,12 +35,14 @@ def now():
     return int(time.time())
 
 
-def oao(msg, state, perfdata=''):
+def oao(msg, state, perfdata='', always_ok=False):
     '''Over and Out'''
     if perfdata:
         print(msg.strip() + '|' + perfdata.strip())
     else:
         print(msg.strip())
+    if always_ok:
+        exit(0)
     exit(state)
 
 
@@ -52,3 +55,7 @@ def smartcast(value):
             continue
             # No match
     return value
+
+
+def today():
+    return datetime.datetime.today()
