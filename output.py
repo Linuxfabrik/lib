@@ -9,9 +9,12 @@
 # https://nagios-plugins.org/doc/guidelines.html
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020022501'
+__version__ = '2020040101'
 
 from .globals import *
+
+import math
+
 
 def unpack_perfdata(label, value, uom, warn, crit, min, max):
     msg = label + '=' + str(value)
@@ -54,6 +57,20 @@ def bytes2human(n, format="%(value).1f%(symbol)s"):
     return format % dict(symbol=symbols[0], value=n)
 
 
+def number2human(n):
+    """
+    >>> number2human(123456.8)
+    '123K'
+    >>> number2human(123456789.0)
+    '123 Mill.'
+    """
+    millnames = ['', 'K', ' Mill.', ' Bill.', ' Trill.']
+    n = float(n)
+    millidx = max(0, min(len(millnames) - 1,
+                        int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))))
+    return '{:.1f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
+
+
 def unix_time_to_iso(timestamp):
     import datetime
 
@@ -62,7 +79,6 @@ def unix_time_to_iso(timestamp):
 
 
 def seconds2human(seconds, full_name=False):
-
     seconds = int(seconds)
     if full_name:
         intervals = (
