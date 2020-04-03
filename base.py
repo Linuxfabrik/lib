@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020033101'
+__version__ = '2020040301'
 
 import datetime
 import hashlib
@@ -31,8 +31,11 @@ def md5sum(data):
     return hashlib.md5(data).hexdigest()
 
 
-def now():
-    return int(time.time())
+def now(as_datetime=False):
+    if as_datetime:
+        return datetime.datetime.now()
+    else:
+        return int(time.time())
 
 
 def oao(msg, state, perfdata='', always_ok=False):
@@ -44,6 +47,36 @@ def oao(msg, state, perfdata='', always_ok=False):
     if always_ok:
         exit(0)
     exit(state)
+
+
+def pluralize(noun, value, suffix='s'):
+    """Returns a plural suffix if the value is not 1. By default, 's' is used as the suffix.
+    If value is 0, pluralize('vote', value) displays "0 votes".
+    If value is 1, pluralize('vote', value) displays "1 vote".
+    If value is 2, pluralize('vote', value) displays "2 votes".
+
+    If an argument is provided, that string is used instead:
+
+    If value is 0, pluralize('class', value, 'es') displays "0 classes".
+    If value is 1, pluralize('class', value, 'es') displays "1 class".
+    If value is 2, pluralize('class', value, 'es') displays "2 classes".
+
+    If the provided argument contains a comma, the text before the comma is used for the singular case and the text after the comma is used for the plural case:
+
+    If value is 0, pluralize('cand', value, 'y,ies) displays "0 candies".
+    If value is 1, pluralize('cand', value, 'y,ies) displays "1 candy".
+    If value is 2, pluralize('cand', value, 'y,ies) displays "2 candies".
+
+    From https://kite.com/python/docs/django.template.defaultfilters.pluralize
+    """
+    if ',' in suffix:
+        singular, plural = suffix.split(',')
+    else:
+        singular, plural = '', suffix
+    if int(value) == 1:
+        return noun + singular
+    else:
+        return noun + plural
 
 
 def smartcast(value):
