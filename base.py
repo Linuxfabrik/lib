@@ -92,3 +92,11 @@ def smartcast(value):
 
 def today():
     return datetime.datetime.today()
+
+
+def version(v):
+    """Use this to compare numerical version numbers.
+    True: version('3.0.7') < version('3.0.11')
+    False: '3.0.7' < '3.0.11'
+    """
+    return tuple(map(int, (v.split("."))))
