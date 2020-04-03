@@ -13,6 +13,9 @@ __version__ = '2020022101'
 
 
 def execute_command(command, env=None, shell=False, stdin_input=False):
+    # https://docs.python.org/2/library/subprocess.html
+    # TODO - Warning: Using shell=True can be a security hazard.
+    # TODO - Note: Do not use stdout=PIPE or stderr=PIPE with this function as that can deadlock based on the child process output volume. Use Popen with the communicate() method when you need pipes. 
     import subprocess
     if shell:
         sp = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
