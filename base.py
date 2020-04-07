@@ -9,12 +9,13 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040601'
+__version__ = '2020040701'
 
 from globals import *
 
 import datetime
 import hashlib
+import math
 import shlex
 import subprocess
 import time
@@ -65,6 +66,9 @@ def filter_mltext(input, ignore):
 
 
 def get_perfdata(label, value, uom, warn, crit, mini, maxi):
+    """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
+    """
+    
     msg = label + '=' + str(value)
     if uom is not None:
         msg += uom
@@ -82,6 +86,90 @@ def get_perfdata(label, value, uom, warn, crit, mini, maxi):
         msg += str(maxi)
     msg += '; '
     return msg
+
+
+def get_state(value, warn, crit, operator='ge'):
+    """Returns the STATE by comparing `value` to the given thresholds using
+    a comparison `operator`.
+
+    >>> base.get_state(15, 10, 20, 'ge')
+    1 (STATE_WARN)
+    >>> base.get_state(10, 10, 20, 'gt')
+    0 (STATE_OK)
+
+    Parameters
+    ----------
+    value : float
+        Numeric value
+    warn : float
+        Numeric warning threshold
+    crit : float
+        Numeric critical threshold
+    operator : string
+        `ge` = greater or equal
+        `gt` = greater than
+        `le` = less or equal
+        `lt` = less than
+        `eq` = equal to
+        `ne` = not equal to
+
+    Returns
+    -------
+    int
+        `STATE_OK`, `STATE_WARN` or `STATE_CRIT`
+    """
+
+    # make sure to use float comparison
+    value = float(value)
+    if operator == 'ge':
+        if crit is not None:
+            if value >= float(crit):
+                return STATE_CRIT
+        if warn is not None:
+            if value >= float(warn):
+                return STATE_WARN 
+        return STATE_OK
+    if operator == 'gt':
+        if crit is not None:
+            if value > float(crit):
+                return STATE_CRIT
+        if warn is not None:
+            if value > float(warn):
+                return STATE_WARN 
+        return STATE_OK
+    if operator == 'le':
+        if crit is not None:
+            if value <= float(crit):
+                return STATE_CRIT
+        if warn is not None:
+            if value <= float(warn):
+                return STATE_WARN 
+        return STATE_OK
+    if operator == 'lt':
+        if crit is not None:
+            if value < float(crit):
+                return STATE_CRIT
+        if warn is not None:
+            if value < float(warn):
+                return STATE_WARN 
+        return STATE_OK
+    if operator == 'eq':
+        if crit is not None:
+            if value == float(crit):
+                return STATE_CRIT
+        if warn is not None:
+            if value == float(warn):
+                return STATE_WARN 
+        return STATE_OK
+    if operator == 'ne':
+        if crit is not None:
+            if value != float(crit):
+                return STATE_CRIT
+        if warn is not None:
+            if value != float(warn):
+                return STATE_WARN 
+        return STATE_OK
+    return STATE_UNKNOWN
 
 
 def get_table(data,
@@ -171,7 +259,7 @@ def match(spec, value):
     spec : str
         Nagios range specification
     value : int
-        Numeric threshold
+        Numeric value
 
     Returns
     -------
@@ -230,7 +318,7 @@ def number2human(n):
     return '{:.1f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
 
 
-def oao(msg, state, perfdata='', always_ok=False):
+def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     """Over and Out (OaO)
 
     Print the stripped plugin message. If perfdata is given, attach it
@@ -329,7 +417,19 @@ def pluralize(noun, value, suffix='s'):
         return noun + plural
 
 
-def seconds2human(seconds, full_name=False):
+def seconds2human(seconds, keep_short=True, full_name=False):
+    """Returns a human readable time range string for a number of seconds.
+
+    >>> lib.base.seconds2human(1387775)
+    '2w 2d'
+    >>> lib.base.seconds2human('1387775')
+    '2w 2d'
+    >>> lib.base.seconds2human('1387775', full_name=True)
+    '2weeks 2days'
+    >>> lib.base.seconds2human(1387775, keep_short=False)
+    '2weeks 2days 1hour 29minutes 35seconds'
+    """
+
     seconds = int(seconds)
     if full_name:
         intervals = (
@@ -349,7 +449,6 @@ def seconds2human(seconds, full_name=False):
     )
 
     result = []
-
     for name, count in intervals:
         value = seconds // count
         if value:
@@ -357,7 +456,11 @@ def seconds2human(seconds, full_name=False):
             if full_name and value == 1:
                 name = name.rstrip('s') # "days" becomes "day"
             result.append('{:.0f}{}'.format(value, name))
-    return ' '.join(result)
+
+    if len(result) > 2 and keep_short:
+        return ' '.join(result[:2])
+    else:
+        return ' '.join(result)
 
 
 def shell_exec(command, env=None, shell=False, stdin_input=False):
@@ -409,6 +512,14 @@ def smartcast(value):
     return value
 
 
+def sort(array, reverse=True):
+    """Sort of a simple 1-dimensional dictionary
+    """
+
+    if type(array) is dict:
+        return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
+
+
 def state2string(state, return_ok=False):
     if state == STATE_CRIT:
         return 'CRIT'
@@ -441,6 +552,8 @@ def version(v):
     True
     >>> '3.0.7' < '3.0.11'
     False
+    >>> lib.base.version(psutil.__version__) >= lib.base.version('5.3.0')
+    True
 
     Parameters
     ----------

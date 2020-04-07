@@ -8,7 +8,7 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
-"""Simple Cache in form of a Key-Value Store (KVS) like Redis, based on
+"""Simple Cache in the form of a Key-Value Store (KVS) like Redis, based on
 SQLite, optionally supporting expiration of keys. No detailed error handling
 here. If the cache does not work, we (currently) don't report the reason and
 simply return `False`.
@@ -25,7 +25,7 @@ False
 """
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040601'
+__version__ = '2020040701'
 
 import base
 import db_sqlite
