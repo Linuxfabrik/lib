@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040701'
+__version__ = '2020040901'
 
 import disk
 
@@ -33,10 +33,34 @@ def commit(conn):
         conn.commit()
     except Exception as e:
         return(False, 'Committing to DB failed, Error: '.format(e))
-    return (True, True)
+    return (True, None)
 
 
 def connect(path='', filename=''):
+
+    def get_filename(path='', filename=''):
+        """Returns a path including filename to a sqlite database file.
+
+        Parameters
+        ----------
+        path : str, optional
+            Path to the db file. Default: the tmpdir, `/tmp` for example
+        filename : str, optional
+            Filename of the db file. Default: linuxfabrik-plugins.db
+
+        Returns
+        -------
+        str
+            The absolute path to the db file, for example
+            '/tmp/linuxfabrik-plugins.db'
+        """
+
+        if not path:
+            path = disk.get_tmpdir()
+        if not filename:
+            filename = 'linuxfabrik-plugins.db'
+        return os.path.join(path, filename)
+
     db = get_filename(path, filename)
     try:
         conn = sqlite3.connect(db, timeout=1)
@@ -106,14 +130,6 @@ def drop_table(conn, table='perfdata'):
         return(False, 'Query failed: {}, Error: {}'.format(sql, e))
 
     return (True, True)
-
-
-def get_filename(path='', filename=''):
-    if not path:
-        path = disk.get_tmpdir()
-    if not filename:
-        filename = 'linuxfabrik-plugins.db' 
-    return os.path.join(path, filename)
 
 
 def insert(conn, data, table='perfdata'):

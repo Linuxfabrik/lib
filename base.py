@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040901'
+__version__ = '2020040902'
 
 from globals import *
 
@@ -22,15 +22,16 @@ import time
 
 
 def bytes2human(n, format="%(value).1f%(symbol)s"):
-    """Used by various scripts. See:
-    https://github.com/giampaolo/psutil/blob/master/psutil/_common.py
-    http://goo.gl/zeJZl
+    """Converts n bytes to a human readable format.
 
     >>> bytes2human(10000)
     '9.8K'
     >>> bytes2human(100001221)
     '95.4M'
+
+    https://github.com/giampaolo/psutil/blob/master/psutil/_common.py
     """
+
     symbols = ('B', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
     prefix = {}
     for i, s in enumerate(symbols[1:]):
@@ -44,14 +45,44 @@ def bytes2human(n, format="%(value).1f%(symbol)s"):
 
 def coe(result, state=3):
     """Continue or Exit (CoE)
+
+    This is useful if calling complex library functions in your checks 
+    `main()` function.
+    If a more complex library function, for example `lib.url.fetch()` fails, it
+    returns `(False, 'the reason why I failed')`, otherwise `(True,
+    'this is my result'). This forces you to do some error handling. 
+    To keep thins simple, you use `result = lib.base.coe(lib.base.fetch(...))`. 
+    If `fetch()` fails, your plugin will exit with STATE_UNKNOWN (default) and 
+    print the original error message. Otherwise your script just goes on.
+
+    The use case in `main()`:
+
+    >>> success, html = lib.url.fetch(URL)
+    >>> if not success:
+    >>>     print(html)             # contains the error message here
+    >>>>    exit(STATE_UNKNOWN)
+
+    Or simply:
+
+    >>> html = lib.base.coe(lib.url.fetch(URL))
+
+    Parameters
+    ----------
+    result : tuple
+        result[0] = the functions return code (True for success, or False)
+        result[1] = the functions result (could be of any type)
+    state : int, optional
+        If return code is False, exit with this state. Default: STATE_UNKNOWN
+
+    Returns
+    -------
+    any type
+        The result of the inner function call (result[1]).
     """
 
     if (result[0]):
-        # if return code of a more complex function's result is true (= no exception)
-        # return its result set/data, and you can continue your code
         return result[1]
     else:
-        # print the error message instead and exit with STATE_UNKOWN (3)
         print(result[1])
         exit(state)
 
@@ -73,7 +104,7 @@ def filter_mltext(input, ignore):
     return filtered_input
 
 
-def get_perfdata(label, value, uom, warn, crit, mini, maxi):
+def get_perfdata(label, value, uom, warn, crit, min, max):
     """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
     """
     
@@ -87,18 +118,18 @@ def get_perfdata(label, value, uom, warn, crit, mini, maxi):
     if crit is not None:
         msg += str(crit)
     msg += ';'
-    if mini is not None:
-        msg += str(mini)
+    if min is not None:
+        msg += str(min)
     msg += ';'
-    if maxi is not None:
-        msg += str(maxi)
+    if max is not None:
+        msg += str(max)
     msg += '; '
     return msg
 
 
 def get_state(value, warn, crit, operator='ge'):
     """Returns the STATE by comparing `value` to the given thresholds using
-    a comparison `operator`.
+    a comparison `operator`. `warn` and `crit` threshold may also be `None`.
 
     >>> base.get_state(15, 10, 20, 'ge')
     1 (STATE_WARN)
@@ -250,16 +281,16 @@ def get_worst(state1, state2):
         # UNKNOWN (3)
         # OK      (0)
     """
-    if state1 == STATE_CRIT or state2 == STATE_CRIT:
+    if STATE_CRIT in [state1, state2]:
         return STATE_CRIT
-    if state1 == STATE_WARN or state2 == STATE_WARN:
+    if STATE_WARN in [state1, state2]:
         return STATE_WARN
-    if state1 == STATE_UNKNOWN or state2 == STATE_UNKNOWN:
+    if STATE_UNKNOWN in [state1, state2]:
         return STATE_UNKNOWN
     return STATE_OK
 
 
-def match(spec, value):
+def match_range(value, spec):
     """Decides if `value` is inside/outside the threshold spec.
 
     Parameters
@@ -278,14 +309,56 @@ def match(spec, value):
     Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
     """
 
+    def parse_range(spec):
+        """
+        Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
+        """
+
+        def parse_atom(atom, default):
+            if atom == '':
+                return default
+            if '.' in atom:
+                return float(atom)
+            return int(atom)
+
+
+        if spec is None or spec.lower() == 'none':
+            return (True, None)
+        if type(spec) is not str:
+            spec = str(spec)
+        invert = False
+        if spec.startswith('@'):
+            invert = True
+            spec = spec[1:]
+        if ':' in spec:
+            try:
+                start, end = spec.split(':')
+            except:
+                return (False, 'Not using range definition correctly')
+        else:
+            start, end = '', spec
+        if start == '~':
+            start = float('-inf')
+        else:
+            start = parse_atom(start, 0)
+        end = parse_atom(end, float('inf'))
+        if start > end:
+            raise (False, 'Start %s must not be greater than end %s' % (
+                             start, end))
+        return (True, (start, end, invert))
+
+
     if spec is None or spec.lower() == 'none':
-        return True
-    start, end, invert = parse(spec)
+        return (True, True)
+    success, result = parse_range(spec)
+    if not success:
+        return (success, result)
+    start, end, invert = result    
     if value < start:
-        return False ^ invert
+        return (True, False ^ invert)
     if value > end:
-        return False ^ invert
-    return True ^ invert
+        return (True, False ^ invert)
+    return (True, True ^ invert)
 
 
 def md5sum(string):
@@ -357,45 +430,6 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     if always_ok:
         exit(0)
     exit(state)
-
-
-def parse(spec):
-    """
-    Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
-    """
-
-    if spec is None or spec.lower() == 'none':
-        return None
-    if type(spec) is not str:
-        spec = str(spec)
-    invert = False
-    if spec.startswith('@'):
-        invert = True
-        spec = spec[1:]
-    if ':' in spec:
-        try:
-            start, end = spec.split(':')
-        except:
-            raise ValueError('not using range definition correctly')
-    else:
-        start, end = '', spec
-    if start == '~':
-        start = float('-inf')
-    else:
-        start = parse_atom(start, 0)
-    end = parse_atom(end, float('inf'))
-    if start > end:
-        raise ValueError('start %s must not be greater than end %s' % (
-                         start, end))
-    return start, end, invert
-
-
-def parse_atom(atom, default):
-    if atom == '':
-        return default
-    if '.' in atom:
-        return float(atom)
-    return int(atom)
 
 
 def pluralize(noun, value, suffix='s'):
@@ -576,10 +610,6 @@ def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%
     timestr2 = timestr2datetime(timestr2, pattern2)
     timedelta = abs(timestr1 - timestr2)
     return timedelta.total_seconds()
-
-
-def today():
-    return datetime.datetime.today()
 
 
 def version(v):
