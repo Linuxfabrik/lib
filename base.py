@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040701'
+__version__ = '2020040901'
 
 from globals import *
 
@@ -54,6 +54,14 @@ def coe(result, state=3):
         # print the error message instead and exit with STATE_UNKOWN (3)
         print(result[1])
         exit(state)
+
+
+def epoch2iso(epoch):
+    """Returns the ISO representaton of a UNIX epoch.
+    """
+
+    epoch = float(epoch)
+    return datetime.datetime.fromepoch(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def filter_mltext(input, ignore):
@@ -297,11 +305,28 @@ def mltext2array(input, skip_header=False, sort_key=-1):
     return lines
 
 
-def now(as_datetime=False):
-    if as_datetime:
+def now(as_type=''):
+    """Returns the current date and time as UNIX time in seconds (default), or
+    as a datetime object.
+
+    base.now()
+    >>> 1586422786
+
+    base.now(as_type='epoch')
+    >>> 1586422786
+
+    base.now(as_type='datetime')
+    >>> datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)
+
+    base.now(as_type='iso')
+    >>> '2020-04-09 11:31:24'
+    """
+
+    if as_type == 'datetime':
         return datetime.datetime.now()
-    else:
-        return int(time.time())
+    if as_type == 'iso':
+        return time.strftime("%Y-%m-%d %H:%M:%S")
+    return int(time.time())
 
 
 def number2human(n):
@@ -520,25 +545,37 @@ def sort(array, reverse=True):
         return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
 
 
-def state2string(state, return_ok=False):
-    if state == STATE_CRIT:
-        return 'CRIT'
+def state2str(state):
+    state = int(state)
+    if state == STATE_OK:
+        return 'OK'
     if state == STATE_WARN:
         return 'WARN'
-    if state == STATE_OK:
-        if return_ok:
-            return 'OK'
-        else:
-            return ''
+    if state == STATE_CRIT:
+        return 'CRIT'
     if state == STATE_UNKNOWN:
         return 'UNKNOWN'
 
     return state
 
 
-def time2iso(timestamp):
-    timestamp = float(timestamp)
-    return datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
+    """Takes a string (default: ISO format) and returns a
+    datetime object.
+    """
+
+    return datetime.datetime.strptime(timestr, pattern)
+
+
+def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%m-%d %H:%M:%S'):
+    """Returns the difference between two datetime strings in seconds. This 
+    function expects two ISO timestamps, per default each in ISO format.
+    """
+
+    timestr1 = timestr2datetime(timestr1, pattern1)
+    timestr2 = timestr2datetime(timestr2, pattern2)
+    timedelta = abs(timestr1 - timestr2)
+    return timedelta.total_seconds()
 
 
 def today():
