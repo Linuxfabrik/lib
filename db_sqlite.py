@@ -8,8 +8,25 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
+"""This is one typical use case of this library (from `disk-io`):
+
+    >>> conn = lib.base.coe(lib.db_sqlite.connect(filename='disk-io.db'))
+    >>> lib.base.coe(lib.db_sqlite.create_table(conn, definition, drop_table_first=False))
+    >>> lib.base.coe(lib.db_sqlite.create_index(conn, 'name'))   # optional
+
+    >>> lib.base.coe(lib.db_sqlite.insert(conn, data))
+    >>> lib.base.coe(lib.db_sqlite.cut(conn, max=args.COUNT*len(disks)))
+    >>> lib.base.coe(lib.db_sqlite.commit(conn))
+
+    >>> result = lib.base.coe(lib.db_sqlite.select(conn, 
+            'SELECT * FROM perfdata WHERE name = :name ORDER BY timestamp DESC LIMIT 2',
+            {'name': disk}
+    
+    >>> lib.db_sqlite.close(conn)
+"""
+
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040901'
+__version__ = '2020041002'
 
 import disk
 
