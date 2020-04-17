@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040701'
+__version__ = '2020041701'
 
 import json
 import re
@@ -47,6 +47,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}):
         return (False, 'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url))
     except urllib2.URLError as e:
         return (False, 'URL error "{}" for {}'.format(e.reason, url))
+    except TypeError as e:
+        return (False, 'Type error "{}", data="{}"'.format(e, data))
     except:
         return (False, 'Unknown error while fetching {}, maybe timeout or error on webserver'.format(url))
     else:
