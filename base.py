@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020041701'
+__version__ = '2020042101'
 
 from globals import *
 
@@ -628,9 +628,21 @@ def sort(array, reverse=True):
         return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
 
 
-def state2str(state):
+def state2str(state, empty_ok=True):
+    """Return the state's string representation.
+
+    >> lib.base.state2str(2)
+    'CRIT'
+    >>> lib.base.state2str(0)
+    ''
+    >>> lib.base.state2str(0, empty_ok=False)
+    'OK'
+    """
+
     state = int(state)
-    if state == STATE_OK:
+    if state == STATE_OK and empty_ok:
+        return ''
+    if state == STATE_OK and not empty_ok:
         return 'OK'
     if state == STATE_WARN:
         return 'WARN'
