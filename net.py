@@ -9,9 +9,98 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040701'
+__version__ = '2020041901'
 
 import re
+import socket
+
+
+# address family
+AF_INET    = socket.AF_INET                             # 2
+AF_INET6   = getattr(socket, 'AF_INET6', object())      # 10
+AF_UNSPEC  = socket.AF_UNSPEC                           # any kind of connection
+AF_UNIX    = socket.AF_UNIX
+
+# socket type
+SOCK_TCP   = socket.SOCK_STREAM                         # 1
+SOCK_UDP   = socket.SOCK_DGRAM                          # 2
+SOCK_RAW   = socket.SOCK_RAW
+
+# protocol type
+PROTO_TCP  = socket.IPPROTO_TCP                         # 6
+PROTO_UDP  = socket.IPPROTO_UDP                         # 17
+PROTO_IP   = socket.IPPROTO_IP                          # 0
+
+proto_map = {
+    # address family, socket type:        proto
+    (AF_INET,  socket.SOCK_STREAM): 'tcp',
+    (AF_INET6, socket.SOCK_STREAM): 'tcp6',
+    (AF_INET,  socket.SOCK_DGRAM):  'udp',
+    (AF_INET6, socket.SOCK_DGRAM):  'udp6',
+}
+
+familystr = {
+    # as defined in Python's socketmodule.c
+    0: 'unspec',
+    1: 'unix',
+    2: '4',              # inet
+    3: 'ax25',
+    4: 'ipx',
+    5: 'appletalk',
+    6: 'netrom',
+    7: 'bridge',
+    8: 'atmpvc',
+    9: 'x25',
+    10: '6',             # inet6
+    11: 'rose',
+    12: 'decnet',
+    13: 'netbeui',
+    14: 'security',
+    15: 'key',
+    16: 'route',
+    17: 'packet',
+    18: 'ash',
+    19: 'econet',
+    20: 'atmsvc',
+    22: 'sna',
+    23: 'irda',
+    24: 'pppox',
+    25: 'wanpipe',
+    26: 'llc',
+    30: 'tipc',
+    31: 'bluetooth',
+}
+
+protostr = {
+    # as defined in Python's socketmodule.c
+    0: 'ip',
+    1: 'icmp',
+    2: 'igmp',
+    6: 'tcp',
+    8: 'egp',
+    12: 'pup',
+    17: 'udp',
+    22: 'idp',
+    41: 'ipv6',
+    43: 'routing',
+    44: 'fragment',
+    50: 'esp',
+    51: 'ah',
+    58: 'icmpv6',
+    59: 'none',
+    60: 'dstopts',
+    103: 'pim',
+    255: 'raw',
+}
+
+socketstr = {
+    # as defined in Python's socketmodule.c
+    1: 'tcp',        # stream
+    2: 'udp',        # dgram
+    3: 'raw',
+    4: 'rdm',
+    5: 'seqpacket',    
+}
 
 FQDN_REGEX = re.compile(
         r"^((?!-)[-A-Z\d]{1,63}(?<!-)\.)+(?!-)[-A-Z\d]{1,63}(?<!-)\.?$", re.IGNORECASE

@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040902'
+__version__ = '2020041701'
 
 from globals import *
 
@@ -47,15 +47,16 @@ def coe(result, state=3):
     """Continue or Exit (CoE)
 
     This is useful if calling complex library functions in your checks 
-    `main()` function.
+    `main()` function. Don't use this in functions.
+    
     If a more complex library function, for example `lib.url.fetch()` fails, it
     returns `(False, 'the reason why I failed')`, otherwise `(True,
     'this is my result'). This forces you to do some error handling. 
-    To keep thins simple, you use `result = lib.base.coe(lib.base.fetch(...))`. 
+    To keep things simple, use `result = lib.base.coe(lib.url.fetch(...))`. 
     If `fetch()` fails, your plugin will exit with STATE_UNKNOWN (default) and 
     print the original error message. Otherwise your script just goes on.
 
-    The use case in `main()`:
+    The use case in `main()` - without `coe`:
 
     >>> success, html = lib.url.fetch(URL)
     >>> if not success:
@@ -69,10 +70,12 @@ def coe(result, state=3):
     Parameters
     ----------
     result : tuple
-        result[0] = the functions return code (True for success, or False)
-        result[1] = the functions result (could be of any type)
-    state : int, optional
-        If return code is False, exit with this state. Default: STATE_UNKNOWN
+        The result from a function call.
+        result[0] = expects the function return code (True on success)
+        result[1] = expects the function result (could be of any type)
+    state : int
+        If result[0] is False, exit with this state. 
+        Default: 3 (which is STATE_UNKNOWN)
 
     Returns
     -------
@@ -522,39 +525,85 @@ def seconds2human(seconds, keep_short=True, full_name=False):
         return ' '.join(result)
 
 
-def shell_exec(command, env=None, shell=False, stdin_input=False):
-    # https://docs.python.org/2/library/subprocess.html
-    # TODO - Warning: Using shell=True can be a security hazard.
-    # TODO - Note: Do not use stdout=PIPE or stderr=PIPE with this function as that can deadlock based on the child process output volume. Use Popen with the communicate() method when you need pipes. 
+def shell_exec(cmd, env=None, shell=False, stdin=''):
+    """Executes external command and returns the complete output as a 
+    string (stdout, stderr) and the program exit code (retc).
+
+    Parameters
+    ----------
+    cmd : str
+        Command to spawn the child process.
+    env : None or dict
+        Environment variables. Example: env={'PATH': '/usr/bin'}.
+    shell : bool
+        If True, the new process has a new console, instead of 
+        inheriting its parent’s console (the default). It is very seldom
+        needed to set this to True. Warning: Using shell=True can be a 
+        security hazard.
+    stdin : str
+        If set, use this as input into `cmd`.
+
+    Returns
+    -------
+    result : tuple
+        result[0] = the functions return code (bool)
+            False: result[1] contains the error message (str)
+            True:  result[1] contains the result of the called `cmd` 
+                   as a tuple (stdout, stdin, retc)
+
+    https://docs.python.org/2/library/subprocess.html
+    """
+
+    # subprocess.PIPE: Special value that can be used as the stdin, stdout or stderr argument to Popen and indicates that a pipe to the standard stream should be opened.
     if shell:
-        sp = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
+        # Pipes '|' are handled by Shell directly
+        try:
+            sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
+        except OSError as e:
+            return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
+        except ValueError as e:
+            return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
+        except e:
+            return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
         stdout, stderr = sp.communicate()
         retc = sp.returncode
-        return stdout, stderr, retc
+        return (True, (stdout, stderr, retc))
 
-    if stdin_input:
-        sp = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
-        stdout, stderr = sp.communicate(input=stdin_input)
+    if stdin:
+        # We have some input for our cmd. 
+        # Pipes '|' are handled by Shell directly.
+        try:
+            sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
+        except OSError as e:
+            return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
+        except ValueError as e:
+            return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
+        except e:
+            return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
+        # provide text as input for ...
+        stdout, stderr = sp.communicate(input=stdin)
         retc = sp.returncode
-        return stdout, stderr, retc
+        return (True, (stdout, stderr, retc))
 
-    command_list = command.split('|')
+    # Example: `cat /var/log/messages | grep DENY | grep Rule` - we manage the art of piping here
+    cmd_list = cmd.split('|')
+    sp = None
+    for cmd in cmd_list:
+        args = shlex.split(cmd.strip())
+        # is set, use output from last cmd call as input for second cmd in pipe chain
+        stdin = sp.stdout if sp else subprocess.PIPE
+        try:
+            sp = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=False)
+        except OSError as e:
+            return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
+        except ValueError as e:
+            return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
+        except e:
+            return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
 
-    p_last = None
-    first = True
-    for command in command_list:
-        if first:
-            first = False
-            args = shlex.split(command.strip())
-            p_last = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=False)
-            continue
-
-        args = shlex.split(command.strip())
-        p_last = subprocess.Popen(args, stdin=p_last.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=False)
-
-    stdout, stderr = p_last.communicate()
-    retc = p_last.returncode
-    return stdout, stderr, retc
+    stdout, stderr = sp.communicate()
+    retc = sp.returncode
+    return (True, (stdout, stderr, retc))
 
 
 def smartcast(value):
