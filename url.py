@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020041701'
+__version__ = '2020042201'
 
 import json
 import re
@@ -54,6 +54,22 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}):
     else:
         result = response.read()
         return (True, result)
+
+
+def fetch_json(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}):
+    """Fetch JSON from an URL.
+
+    >>> lib.url.fetch_json('https://1.2.3.4/api/v2/monitor/system/resource/usage?resource=cpu&interval=1-min&access_token=abc123')
+    """
+
+    success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout, header=header, data=data)
+    if not success:
+        return (False, jsonst)
+    try:
+        result = json.loads(jsonst)
+    except:
+        return (False, 'ValueError: No JSON object could be decoded')
+    return (True, result)
 
 
 def get_latest_version_from_github(user, repo, key='tag_name'):
