@@ -466,6 +466,11 @@ def pluralize(noun, value, suffix='s'):
     >>> pluralize('cand', 2, 'y,ies)
     'candies'
 
+    >>> pluralize('', 1, 'is,are')
+    'is'
+    >>> pluralize('', 2, 'is,are')
+    'are'
+
     From https://kite.com/python/docs/django.template.defaultfilters.pluralize
     """
 
