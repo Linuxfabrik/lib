@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020042101'
+__version__ = '2020042501'
 
 from globals import *
 
@@ -284,6 +284,7 @@ def get_worst(state1, state2):
         # UNKNOWN (3)
         # OK      (0)
     """
+
     if STATE_CRIT in [state1, state2]:
         return STATE_CRIT
     if STATE_WARN in [state1, state2]:
@@ -300,7 +301,7 @@ def match_range(value, spec):
     ----------
     spec : str
         Nagios range specification
-    value : int
+    value : int or float
         Numeric value
 
     Returns
@@ -356,7 +357,9 @@ def match_range(value, spec):
     success, result = parse_range(spec)
     if not success:
         return (success, result)
-    start, end, invert = result    
+    start, end, invert = result
+    if type(value) == unicode or type(value) == str:
+        value = float(value.replace('%', ''))
     if value < start:
         return (True, False ^ invert)
     if value > end:
@@ -413,7 +416,10 @@ def number2human(n):
     '123 Mill.'
     """
     millnames = ['', 'K', ' Mill.', ' Bill.', ' Trill.']
-    n = float(n)
+    try:
+        n = float(n)
+    except:
+        return n
     millidx = max(0, min(len(millnames) - 1,
                         int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))))
     return '{:.1f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
@@ -625,15 +631,19 @@ def smartcast(value):
     return value
 
 
-def sort(array, reverse=True):
+def sort(array, reverse=True, sort_by_key=False):
     """Sort of a simple 1-dimensional dictionary
     """
 
     if type(array) is dict:
-        return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
+        if not sort_by_key:
+            return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
+        else:
+            return sorted(array.items(), key=lambda x: x[0].lower(), reverse=reverse)
+    return array
 
 
-def state2str(state, empty_ok=True):
+def state2str(state, empty_ok=True, prefix='', suffix=''):
     """Return the state's string representation.
 
     >> lib.base.state2str(2)
@@ -642,19 +652,23 @@ def state2str(state, empty_ok=True):
     ''
     >>> lib.base.state2str(0, empty_ok=False)
     'OK'
+    >>> lib.base.state2str(0, empty_ok=False, suffix=' ')
+    'OK '
+    >>> lib.base.state2str(0, empty_ok=False, prefix=' (', suffix=')')
+    ' (OK)'
     """
 
     state = int(state)
     if state == STATE_OK and empty_ok:
         return ''
     if state == STATE_OK and not empty_ok:
-        return 'OK'
+        return '{}OK{}'.format(prefix, suffix)
     if state == STATE_WARN:
-        return 'WARN'
+        return '{}WARN{}'.format(prefix, suffix)
     if state == STATE_CRIT:
-        return 'CRIT'
+        return '{}CRIT{}'.format(prefix, suffix)
     if state == STATE_UNKNOWN:
-        return 'UNKNOWN'
+        return '{}UNKNOWN{}'.format(prefix, suffix)
 
     return state
 
