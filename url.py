@@ -9,7 +9,7 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020042301'
+__version__ = '2020042601'
 
 import json
 import re
@@ -18,10 +18,21 @@ import urllib
 import urllib2
 
 
-def fetch(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}):
+def fetch(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}, encoding='urlencode'):
+    """Fetch any URL.
+
+    Basic authentication:
+    >>> header'Authorization'] = "Basic %s" % base64.b64encode(username + ':' + password)
+    >>> jsonst = lib.base.coe(lib.url.fetch(URL, header=header))
+    """
+
     try:
         if data:
-            data = urllib.urlencode(data)
+            # serializing dictionary
+            if encoding == 'urlencode':
+                data = urllib.urlencode(data)
+            if encoding == 'serialized-json':
+                data = json.dumps(data)
             request = urllib2.Request(url, data=data)
         else:
             request = urllib2.Request(url)
@@ -62,13 +73,13 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}):
         return (True, result)
 
 
-def fetch_json(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}):
+def fetch_json(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}, encoding='urlencode'):
     """Fetch JSON from an URL.
 
     >>> lib.url.fetch_json('https://1.2.3.4/api/v2/monitor/system/resource/usage?resource=cpu&interval=1-min&access_token=abc123')
     """
 
-    success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout, header=header, data=data)
+    success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout, header=header, data=data, encoding=encoding)
     if not success:
         return (False, jsonst)
     try:
