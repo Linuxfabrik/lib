@@ -26,7 +26,7 @@
 """
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020041002'
+__version__ = '2020042901'
 
 import disk
 
@@ -190,7 +190,7 @@ def replace(conn, data, table='perfdata'):
     return (True, True)
 
 
-def select(conn, sql, data={}, table='perfdata', fetchone=False):
+def select(conn, sql, data={}, fetchone=False):
     c = conn.cursor()
 
     try:
@@ -205,3 +205,69 @@ def select(conn, sql, data={}, table='perfdata', fetchone=False):
             return (True, [dict(row) for row in c.fetchall()])
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
+
+
+def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
+    """Calculates Load1 and Loadn (n = count). Load is caclulated as a "per second" number.
+
+    The Perfdata table must have a "timestamp" column.
+
+    >>> compute_load(conn, sensorcol='interface', datacols=['tx_bytes', 'rx_bytes'], count=5, table='perfdata')
+
+    Returns
+    -------
+    list
+        [{'interface': u'mgmt1', 'tx_bytes1': 6906, 'rx_bytes1': 10418, 'rx_bytesn': 10871, 'tx_bytesn': 7442},
+         {...},
+        ]
+    """
+
+    # count the number of different sensors in the perfdata table
+    sql = 'SELECT DISTINCT {} FROM {} ORDER BY {} ASC'.format(sensorcol, table, sensorcol)
+    success, sensors = select(conn, sql)
+    if not success:
+        return (False, sensors)
+    if len(sensors) == 0:
+        return (True, False)
+    sensor_count = len(sensors)
+
+    load = []
+
+    # calculate
+    for sensor in sensors:
+        # get all historical data, ordered by sensor, and within that newest data first
+        sensor_name = sensor[sensorcol]
+        success, perfdata = select(conn,
+            'SELECT * FROM {} WHERE {} = :{} ORDER BY {} ASC, timestamp DESC'.format(table, sensorcol, sensorcol, sensorcol),
+            data={sensorcol: sensor_name})
+        if not success:
+            return (False, perfdata)
+
+        # not enough data to compute load
+        if len(perfdata) < count:
+            return (True, False)
+
+        # Perfdata:
+        # [{'interface': u'mgmt1', 'tx_bytes': 102893695, 'rx_bytes': 161048380, 'timestamp': 1588162358}, {'interface': u'mgmt1', 'tx_bytes': 102584221, 'rx_bytes': 160618067, 'timestamp': 1588162316}, {'interface': u'mgmt1', 'tx_bytes': 102468643, 'rx_bytes': 160488612, 'timestamp': 1588162308}, {'interface': u'mgmt1', 'tx_bytes': 102083130, 'rx_bytes': 159909476, 'timestamp': 1588162252}, {'interface': u'mgmt1', 'tx_bytes': 102028610, 'rx_bytes': 159864155, 'timestamp': 1588162250}]
+
+        # perfdata[0]:       newest/current entry
+        # perfdata[1]:       one entry before, load1 = ([0] - [1])/seconds
+        # perfdata[count-1]: oldest entry, loadn = ([0] - [n])/seconds
+
+        load1_delta = perfdata[0]['timestamp'] - perfdata[1]['timestamp']
+        loadn_delta = perfdata[0]['timestamp'] - perfdata[count-1]['timestamp']
+        tmp = {}
+        tmp[sensorcol] = sensor_name
+        for key in datacols:
+            if key in perfdata[0]:
+                if load1_delta != 0:
+                    tmp[key + '1'] = (perfdata[0][key] - perfdata[1][key]) / load1_delta
+                else:
+                    tmp[key + '1'] = 0
+                if loadn_delta != 0:
+                    tmp[key + 'n'] = (perfdata[0][key] - perfdata[count-1][key]) / loadn_delta
+                else:
+                    tmp[key + 'n'] = 0
+        load.append(tmp)
+
+    return (True, load)
