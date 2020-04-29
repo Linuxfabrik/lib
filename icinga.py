@@ -77,6 +77,8 @@ def set_ack(url, username, password, objectname, type='service', author='Linuxfa
 def set_downtime(url, username, password, objectname, type='service', starttime=int(time.time()), endtime=int(time.time())+60*60, author='Linuxfabrik lib.icinga'):
     """POST a high level request to the Icinga `actions/schedule-downtime` API (with less possibilities). The host or service name should be unique and has to be taken from the `__name` attribute.
 
+    You will get a downtime name, which you have to use if you want to use `remove_ack()` later on.
+
     >>> url = 'https://icinga-server:5665'
     >>> result = lib.base.coe(lib.icinga.set_downtime(url, args.ICINGA_USERNAME, args.ICINGA_PASSWORD, objectname='hostname!special-service', author='feed plugin'))
     'hostname!special-service!3ad20784-52f9-4acc-b2df-90788667d587'
@@ -99,9 +101,7 @@ def set_downtime(url, username, password, objectname, type='service', starttime=
 
 
 def remove_ack(url, username, password, objectname, type='service'):
-    """Removes the acknowledgements for services or hosts. Once the acknowledgement has been removed the next notification will be sent again.
-
-    Removing a non-existent ack is always ok.".
+    """Removes the acknowledgements for services or hosts. Once the acknowledgement has been removed the next notification will be sent again. Always returns ok.".
     """
 
     url = url + '/v1/actions/remove-acknowledgement'
@@ -113,6 +113,9 @@ def remove_ack(url, username, password, objectname, type='service'):
 
 
 def remove_downtime(url, username, password, downtime):
+    """Remove the downtime using its name you got from `set_downtime()`. Always returns ok.
+    """
+
     url = url + '/v1/actions/remove-downtime'
     data = {
         'downtime': downtime,
