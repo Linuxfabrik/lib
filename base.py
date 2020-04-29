@@ -9,16 +9,38 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 __author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020042501'
+__version__ = '2020042901'
 
-from globals import *
-
+import collections
 import datetime
 import hashlib
 import math
+import operator
 import shlex
 import subprocess
 import time
+
+from globals import *
+
+
+def bits2human(n, format="%(value).1f%(symbol)s"):
+    """Converts n bits to a human readable format.
+
+    >>> bits2human(10000)
+    '10K'
+    >>> bits2human(100001221)
+    '100.0M'
+    """
+
+    symbols = ('B', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+    prefix = {}
+    for i, s in enumerate(symbols[1:]):
+        prefix[s] = 1000**(i + 1)
+    for symbol in reversed(symbols[1:]):
+        if n >= prefix[symbol]:
+            value = float(n) / prefix[symbol]
+            return format % locals()
+    return format % dict(symbol=symbols[0], value=n)
 
 
 def bytes2human(n, format="%(value).1f%(symbol)s"):
@@ -35,6 +57,9 @@ def bytes2human(n, format="%(value).1f%(symbol)s"):
     symbols = ('B', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
     prefix = {}
     for i, s in enumerate(symbols[1:]):
+        # Returns 1 with the bits shifted to the left by (i + 1)*10 places
+        # (and new bits on the right-hand-side are zeros). This is the same
+        # as multiplying x by 2**y.
         prefix[s] = 1 << (i + 1) * 10
     for symbol in reversed(symbols[1:]):
         if n >= prefix[symbol]:
@@ -46,14 +71,14 @@ def bytes2human(n, format="%(value).1f%(symbol)s"):
 def coe(result, state=3):
     """Continue or Exit (CoE)
 
-    This is useful if calling complex library functions in your checks 
+    This is useful if calling complex library functions in your checks
     `main()` function. Don't use this in functions.
-    
+
     If a more complex library function, for example `lib.url.fetch()` fails, it
     returns `(False, 'the reason why I failed')`, otherwise `(True,
-    'this is my result'). This forces you to do some error handling. 
-    To keep things simple, use `result = lib.base.coe(lib.url.fetch(...))`. 
-    If `fetch()` fails, your plugin will exit with STATE_UNKNOWN (default) and 
+    'this is my result'). This forces you to do some error handling.
+    To keep things simple, use `result = lib.base.coe(lib.url.fetch(...))`.
+    If `fetch()` fails, your plugin will exit with STATE_UNKNOWN (default) and
     print the original error message. Otherwise your script just goes on.
 
     The use case in `main()` - without `coe`:
@@ -74,7 +99,7 @@ def coe(result, state=3):
         result[0] = expects the function return code (True on success)
         result[1] = expects the function result (could be of any type)
     state : int
-        If result[0] is False, exit with this state. 
+        If result[0] is False, exit with this state.
         Default: 3 (which is STATE_UNKNOWN)
 
     Returns
@@ -83,18 +108,18 @@ def coe(result, state=3):
         The result of the inner function call (result[1]).
     """
 
-    if (result[0]):
+    if result[0]:
         return result[1]
     else:
         print(result[1])
         exit(state)
 
 
-def epoch2iso(epoch):
-    """Returns the ISO representaton of a UNIX epoch.
+def epoch2iso(timestamp):
+    """Returns the ISO representaton of a UNIX timestamp (epoch).
     """
 
-    epoch = float(epoch)
+    timestamp = float(timestamp)
     return datetime.datetime.fromepoch(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
 
@@ -110,7 +135,7 @@ def filter_mltext(input, ignore):
 def get_perfdata(label, value, uom, warn, crit, min, max):
     """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
     """
-    
+
     msg = label + '=' + str(value)
     if uom is not None:
         msg += uom
@@ -169,7 +194,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value >= float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     if operator == 'gt':
         if crit is not None:
@@ -177,7 +202,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value > float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     if operator == 'le':
         if crit is not None:
@@ -185,7 +210,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value <= float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     if operator == 'lt':
         if crit is not None:
@@ -193,7 +218,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value < float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     if operator == 'eq':
         if crit is not None:
@@ -201,7 +226,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value == float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     if operator == 'ne':
         if crit is not None:
@@ -209,16 +234,12 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value != float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     return STATE_UNKNOWN
 
 
-def get_table(data,
-                    keys,
-                    header=None,
-                    sort_by_key=None,
-                    sort_order_reverse=False):
+def get_table(data, keys, header=None, sort_by_key=None, sort_order_reverse=False):
     """Takes a list of dictionaries, formats the data, and returns
     the formatted data as a text table.
 
@@ -232,11 +253,9 @@ def get_table(data,
         sort_order_reverse - Default sort order is ascending, if
             True sort order will change to descending. (Type: bool)
 
-    Inspired by https://www.calazan.com/python-function-for-displaying-a-list-of-dictionaries-in-table-format/
+    Inspired by
+    https://www.calazan.com/python-function-for-displaying-a-list-of-dictionaries-in-table-format/
     """
-
-    from operator import itemgetter
-    from collections import OrderedDict
 
     if not data:
         return ''
@@ -245,7 +264,7 @@ def get_table(data,
     # is ascending)
     if sort_by_key:
         data = sorted(data,
-                      key=itemgetter(sort_by_key),
+                      key=operator.itemgetter(sort_by_key),
                       reverse=sort_order_reverse)
 
     # If header is not empty, add header to data
@@ -264,7 +283,7 @@ def get_table(data,
         header = dict(zip(keys, header))
         data.insert(0, header)
 
-    column_widths = OrderedDict()
+    column_widths = collections.OrderedDict()
     for key in keys:
         column_widths[key] = max(len(str(column[key])) for column in data)
 
@@ -347,8 +366,7 @@ def match_range(value, spec):
             start = parse_atom(start, 0)
         end = parse_atom(end, float('inf'))
         if start > end:
-            raise (False, 'Start %s must not be greater than end %s' % (
-                             start, end))
+            return (False, 'Start %s must not be greater than end %s' % (start, end))
         return (True, (start, end, invert))
 
 
@@ -372,7 +390,6 @@ def md5sum(string):
 
 
 def mltext2array(input, skip_header=False, sort_key=-1):
-    from operator import itemgetter
     input = input.strip(' \t\n\r').split('\n')
     lines = []
     if skip_header:
@@ -380,7 +397,7 @@ def mltext2array(input, skip_header=False, sort_key=-1):
     for row in input:
         lines.append(row.split())
     if sort_key != -1:
-        lines = sorted(lines, key=itemgetter(sort_key))        
+        lines = sorted(lines, key=operator.itemgetter(sort_key))
     return lines
 
 
@@ -421,7 +438,7 @@ def number2human(n):
     except:
         return n
     millidx = max(0, min(len(millnames) - 1,
-                        int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))))
+                         int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))))
     return '{:.1f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
 
 
@@ -444,7 +461,7 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
 def pluralize(noun, value, suffix='s'):
     """Returns a plural suffix if the value is not 1. By default, 's' is used as
     the suffix.
-    
+
     >>> pluralize('vote', 0)
     'votes'
     >>> pluralize('vote', 1)
@@ -511,7 +528,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
             ('hours', 3600),    # 60 * 60
             ('minutes', 60),
             ('seconds', 1),
-    )
+        )
     else:
         intervals = (
             ('w', 604800),      # 60 * 60 * 24 * 7
@@ -519,7 +536,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
             ('h', 3600),        # 60 * 60
             ('m', 60),
             ('s', 1),
-    )
+        )
 
     result = []
     for name, count in intervals:
@@ -537,7 +554,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
 
 
 def shell_exec(cmd, env=None, shell=False, stdin=''):
-    """Executes external command and returns the complete output as a 
+    """Executes external command and returns the complete output as a
     string (stdout, stderr) and the program exit code (retc).
 
     Parameters
@@ -547,9 +564,9 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
     env : None or dict
         Environment variables. Example: env={'PATH': '/usr/bin'}.
     shell : bool
-        If True, the new process has a new console, instead of 
+        If True, the new process has a new console, instead of
         inheriting its parent’s console (the default). It is very seldom
-        needed to set this to True. Warning: Using shell=True can be a 
+        needed to set this to True. Warning: Using shell=True can be a
         security hazard.
     stdin : str
         If set, use this as input into `cmd`.
@@ -559,13 +576,15 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
     result : tuple
         result[0] = the functions return code (bool)
             False: result[1] contains the error message (str)
-            True:  result[1] contains the result of the called `cmd` 
+            True:  result[1] contains the result of the called `cmd`
                    as a tuple (stdout, stdin, retc)
 
     https://docs.python.org/2/library/subprocess.html
     """
 
-    # subprocess.PIPE: Special value that can be used as the stdin, stdout or stderr argument to Popen and indicates that a pipe to the standard stream should be opened.
+    # subprocess.PIPE: Special value that can be used as the stdin,
+    # stdout or stderr argument to Popen and indicates that a pipe to
+    # the standard stream should be opened.
     if shell:
         # Pipes '|' are handled by Shell directly
         try:
@@ -581,7 +600,7 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
         return (True, (stdout, stderr, retc))
 
     if stdin:
-        # We have some input for our cmd. 
+        # We have some input for our cmd.
         # Pipes '|' are handled by Shell directly.
         try:
             sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
@@ -682,7 +701,7 @@ def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
 
 
 def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%m-%d %H:%M:%S'):
-    """Returns the difference between two datetime strings in seconds. This 
+    """Returns the difference between two datetime strings in seconds. This
     function expects two ISO timestamps, per default each in ISO format.
     """
 
@@ -694,7 +713,7 @@ def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%
 
 def version(v):
     """Use this function to compare numerical but string-based version numbers.
-    
+
     >>> base.version('3.0.7') < base.version('3.0.11')
     True
     >>> '3.0.7' < '3.0.11'
