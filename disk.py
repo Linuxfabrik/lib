@@ -8,15 +8,15 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
-__author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040901'
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2020043001'
 
 from lib.globals import *
 
 import os
 try:
     import psutil
-except ImportError, e:
+except ImportError as e:
     print('Python module "psutil" is not installed.')
     exit(STATE_UNKNOWN)
 import re
