@@ -52,7 +52,7 @@ def get_service(url, username, password, servicename, attrs='state'):
     url = url + '/v1/objects/services'
     data = {
         'filter': 'match("{}", service.__name)'.format(servicename),
-        'attrs': [ 'name' ] + attrs.split(','),
+        'attrs': ['name'] + attrs.split(','),
     }
     return api_post(url=url, username=username, password=password, data=data, method_override='GET', insecure=True)
 
