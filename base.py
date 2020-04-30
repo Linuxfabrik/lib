@@ -8,16 +8,18 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
-__author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020042901'
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2020043002'
 
 import collections
 import datetime
 import hashlib
 import math
+import numbers
 import operator
 import shlex
 import subprocess
+import sys
 import time
 
 from globals import *
@@ -112,7 +114,7 @@ def coe(result, state=3):
         return result[1]
     else:
         print(result[1])
-        exit(state)
+        sys.exit(state)
 
 
 def epoch2iso(timestamp):
@@ -297,11 +299,11 @@ def get_table(data, keys, header=None, sort_by_key=None, sort_order_reverse=Fals
 
 
 def get_worst(state1, state2):
-    """Get the more worst of two states, in this particular order:
-        # CRIT    (2)
-        # WARN    (1)
-        # UNKNOWN (3)
-        # OK      (0)
+    """Compares state1 to state2 and returns result based on the following
+    STATE_OK < STATE_UNKNOWN < STATE_WARNING < STATE_CRITICAL
+    It will prioritize any non-OK state.
+
+    Note that numerically the above does not hold.
     """
 
     if STATE_CRIT in [state1, state2]:
@@ -311,6 +313,18 @@ def get_worst(state1, state2):
     if STATE_UNKNOWN in [state1, state2]:
         return STATE_UNKNOWN
     return STATE_OK
+
+
+def is_numeric(value):
+    """Return True if value is really numeric (int, float, whatever).
+
+    >>> is_numeric(+53.4)
+    True
+    >>> is_numeric('53.4')
+    False
+    """
+
+    return isinstance(value, numbers.Number)
 
 
 def match_range(value, spec):
@@ -454,8 +468,8 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     else:
         print(msg.strip())
     if always_ok:
-        exit(0)
-    exit(state)
+        sys.exit(0)
+    sys.exit(state)
 
 
 def pluralize(noun, value, suffix='s'):
@@ -651,7 +665,7 @@ def smartcast(value):
 
 
 def sort(array, reverse=True, sort_by_key=False):
-    """Sort of a simple 1-dimensional dictionary
+    """Sort a simple 1-dimensional dictionary
     """
 
     if type(array) is dict:
@@ -660,6 +674,50 @@ def sort(array, reverse=True, sort_by_key=False):
         else:
             return sorted(array.items(), key=lambda x: x[0].lower(), reverse=reverse)
     return array
+
+
+def sum_dict(dict1, dict2):
+    """Sum up two dictionaries, maybe with different keys.
+
+    >>> sum_dict({'in': 100, 'out': 10}, {'in': 50, 'error': 5, 'uuid': '1234-xyz'})
+    {'in': 150, 'error': 5, 'out': 10}
+    """
+
+    total = {}
+    for key, value in dict1.items():
+        if not is_numeric(value):
+            continue
+        if key in total:
+            total[key] += value
+        else:
+            total[key] = value
+    for key, value in dict2.items():
+        if not is_numeric(value):
+            continue
+        if key in total:
+            total[key] += value
+        else:
+            total[key] = value
+    return total
+
+
+def sum_lod(mylist):
+    """Sum up a list of (simple 1-dimensional) dictionary items.
+
+    sum_lod([{'in': 100, 'out': 10}, {'in': 50, 'out': 20}, {'error': 5, 'uuid': '1234-xyz'}])
+    >>> {'in': 150, 'out': 30, 'error': 5}
+    """
+
+    total = {}
+    for mydict in mylist:
+        for key, value in mydict.items():
+            if not is_numeric(value):
+                continue
+            if key in total:
+                total[key] += value
+            else:
+                total[key] = value
+    return total
 
 
 def state2str(state, empty_ok=True, prefix='', suffix=''):
