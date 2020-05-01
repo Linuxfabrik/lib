@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020043001'
+__version__ = '2020050101'
 
 import os
 import sqlite3
@@ -93,7 +93,7 @@ def connect(path='', filename=''):
         # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
         conn.row_factory = sqlite3.Row
     except Exception as e:
-        return(False, 'Connecting to DB {} failed, Error: '.format(db, e))
+        return(False, 'Connecting to DB {} failed, Error: {}'.format(db, e))
     return (True, conn)
 
 

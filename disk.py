@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020043002'
+__version__ = '2020050101'
 
 import os
 import re
@@ -80,7 +80,7 @@ def grep_file(filename, pattern):
     """Like `grep` searches for `pattern` in `filename`. Returns the
     match, otherwise `False`.
 
-    >>> success, nc_version = lib.disk.grep_file('version.php', r'\\$OC_Version = array\\((.*)\\)')
+    >>> success, nc_version=lib.disk.grep_file('version.php', r'\\$OC_version=array\\((.*)\\)')
 
     Parameters
     ----------

@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050101'
+__version__ = '2020050102'
 
 import collections
 import datetime
@@ -73,7 +73,7 @@ def bytes2human(n, format="%(value).1f%(symbol)s"):
     return format % dict(symbol=symbols[0], value=n)
 
 
-def coe(result, state=3):
+def coe(result, state=STATE_UNKNOWN):
     """Continue or Exit (CoE)
 
     This is useful if calling complex library functions in your checks
