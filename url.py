@@ -8,8 +8,11 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
-__author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020042601'
+"""Get for example HTML or JSON from an URL.
+"""
+
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2020043001'
 
 import json
 import re
@@ -18,7 +21,8 @@ import urllib
 import urllib2
 
 
-def fetch(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}, encoding='urlencode'):
+def fetch(url, insecure=False, no_proxy=False, timeout=5,
+          header={}, data={}, encoding='urlencode'):
     """Fetch any URL.
 
     Basic authentication:
@@ -40,14 +44,15 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}, en
         for key, value in header.items():
             request.add_header(key, value)
 
-        # SSL/TLS certificate validation (see: https://stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2)
+        # SSL/TLS certificate validation
+        # see: stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
         ctx = ssl.create_default_context()
-        if (insecure):
+        if insecure:
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
 
         # Proxy handler
-        if (no_proxy):
+        if no_proxy:
             proxy_handler = urllib2.ProxyHandler({})
             ctx_handler = urllib2.HTTPSHandler(context=ctx)
             opener = urllib2.build_opener(proxy_handler, ctx_handler)
@@ -67,19 +72,22 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}, en
     except:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'Unknown error while fetching {}, maybe timeout or error on webserver'.format(url))
+        return (False, 'Unknown error while fetching {}, maybe timeout or '
+                       'error on webserver'.format(url))
     else:
         result = response.read()
         return (True, result)
 
 
-def fetch_json(url, insecure=False, no_proxy=False, timeout=5, header={}, data={}, encoding='urlencode'):
+def fetch_json(url, insecure=False, no_proxy=False, timeout=5,
+               header={}, data={}, encoding='urlencode'):
     """Fetch JSON from an URL.
 
-    >>> lib.url.fetch_json('https://1.2.3.4/api/v2/monitor/system/resource/usage?resource=cpu&interval=1-min&access_token=abc123')
+    >>> fetch_json('https://1.2.3.4/api/v2/?resource=cpu')
     """
 
-    success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout, header=header, data=data, encoding=encoding)
+    success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
+                            header=header, data=data, encoding=encoding)
     if not success:
         return (False, jsonst)
     try:
@@ -90,6 +98,11 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=5, header={}, data={
 
 
 def get_latest_version_from_github(user, repo, key='tag_name'):
+    """Get the newest release tag from a GitHub repo.
+
+    >>> get_latest_version_from_github('matomo-org', 'matomo')
+    """
+
     github_url = 'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
     success, result = fetch(github_url)
     if not success:
@@ -107,5 +120,7 @@ def get_latest_version_from_github(user, repo, key='tag_name'):
 
 
 def strip_tags(html):
-    # tries to return a string with all HTML tags stripped from a given string
+    """Tries to return a string with all HTML tags stripped from a given string.
+    """
+
     return re.sub(r'<[^<]+?>', '', html)

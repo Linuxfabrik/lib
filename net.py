@@ -8,38 +8,42 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
-__author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020041901'
+
+"""Provides network related functions and variables.
+"""
+
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2020043001'
 
 import re
 import socket
 
 
 # address family
-AF_INET    = socket.AF_INET                             # 2
-AF_INET6   = getattr(socket, 'AF_INET6', object())      # 10
-AF_UNSPEC  = socket.AF_UNSPEC                           # any kind of connection
-AF_UNIX    = socket.AF_UNIX
+AF_INET = socket.AF_INET                             # 2
+AF_INET6 = getattr(socket, 'AF_INET6', object())     # 10
+AF_UNSPEC = socket.AF_UNSPEC                         # any kind of connection
+AF_UNIX = socket.AF_UNIX
 
 # socket type
-SOCK_TCP   = socket.SOCK_STREAM                         # 1
-SOCK_UDP   = socket.SOCK_DGRAM                          # 2
-SOCK_RAW   = socket.SOCK_RAW
+SOCK_TCP = socket.SOCK_STREAM                        # 1
+SOCK_UDP = socket.SOCK_DGRAM                         # 2
+SOCK_RAW = socket.SOCK_RAW
 
 # protocol type
-PROTO_TCP  = socket.IPPROTO_TCP                         # 6
-PROTO_UDP  = socket.IPPROTO_UDP                         # 17
-PROTO_IP   = socket.IPPROTO_IP                          # 0
+PROTO_TCP = socket.IPPROTO_TCP                        # 6
+PROTO_UDP = socket.IPPROTO_UDP                        # 17
+PROTO_IP = socket.IPPROTO_IP                          # 0
 
-proto_map = {
-    # address family, socket type:        proto
-    (AF_INET,  socket.SOCK_STREAM): 'tcp',
-    (AF_INET6, socket.SOCK_STREAM): 'tcp6',
-    (AF_INET,  socket.SOCK_DGRAM):  'udp',
+PROTO_MAP = {
+    # address family, socket type: proto
+    (AF_INET, socket.SOCK_STREAM): 'tcp',
+    (AF_INET, socket.SOCK_DGRAM):  'udp',
     (AF_INET6, socket.SOCK_DGRAM):  'udp6',
+    (AF_INET6, socket.SOCK_STREAM): 'tcp6',
 }
 
-familystr = {
+FAMILIYSTR = {
     # as defined in Python's socketmodule.c
     0: 'unspec',
     1: 'unix',
@@ -71,7 +75,7 @@ familystr = {
     31: 'bluetooth',
 }
 
-protostr = {
+PROTOSTR = {
     # as defined in Python's socketmodule.c
     0: 'ip',
     1: 'icmp',
@@ -93,13 +97,13 @@ protostr = {
     255: 'raw',
 }
 
-socketstr = {
+SOCKETSTR = {
     # as defined in Python's socketmodule.c
     1: 'tcp',        # stream
     2: 'udp',        # dgram
     3: 'raw',
     4: 'rdm',
-    5: 'seqpacket',    
+    5: 'seqpacket',
 }
 
 FQDN_REGEX = re.compile(
@@ -150,4 +154,3 @@ def is_valid_absolute_hostname(hostname):
     """
 
     return not hostname.endswith(".") and is_valid_hostname(hostname)
-

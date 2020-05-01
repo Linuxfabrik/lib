@@ -24,8 +24,8 @@ u'123abc'
 False
 """
 
-__author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040701'
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2020043001'
 
 import base
 import db_sqlite
@@ -50,7 +50,8 @@ def get(key):
     if not success:
         return False
 
-    success, result = db_sqlite.select(conn,
+    success, result = db_sqlite.select(
+        conn,
         sql='SELECT key, value, timestamp FROM cache WHERE key = :key',
         data={'key': key}, fetchone=True
     )
@@ -58,13 +59,14 @@ def get(key):
     if not success:
         return False
 
-    if not result or result == None or (result['timestamp'] != 0 and result['timestamp'] - base.now() < 0):
+    if not result or \
+        result is None or \
+        (result['timestamp'] != 0 and result['timestamp'] - base.now() < 0):
+        # nothing found, or result has expired
         return False
-    else:
-        # return the value
-        return result['value']
 
-    return False
+    # return the value
+    return result['value']
 
 
 def set(key, value, expire=0):
@@ -72,7 +74,7 @@ def set(key, value, expire=0):
 
     Keys have to be unique. If the key already holds a value, it is
     overwritten, including the expire timestamp in seconds.
-   
+
     Parameters
     ----------
     key : str
@@ -117,7 +119,7 @@ def set(key, value, expire=0):
     if not success:
         db_sqlite.close(conn)
         return False
-    
+
     success, result = db_sqlite.commit(conn)
     db_sqlite.close(conn)
     if not success:

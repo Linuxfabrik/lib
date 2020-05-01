@@ -8,8 +8,11 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
+"""Provides very common every-day functions.
+"""
+
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020043002'
+__version__ = '2020050101'
 
 import collections
 import datetime
@@ -22,7 +25,7 @@ import subprocess
 import sys
 import time
 
-from globals import *
+from globals import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
 
 
 def bits2human(n, format="%(value).1f%(symbol)s"):
@@ -111,10 +114,10 @@ def coe(result, state=3):
     """
 
     if result[0]:
+        # success
         return result[1]
-    else:
-        print(result[1])
-        sys.exit(state)
+    print(result[1])
+    sys.exit(state)
 
 
 def epoch2iso(timestamp):
@@ -361,7 +364,7 @@ def match_range(value, spec):
 
         if spec is None or spec.lower() == 'none':
             return (True, None)
-        if type(spec) is not str:
+        if not isinstance(spec, str):
             spec = str(spec)
         invert = False
         if spec.startswith('@'):
@@ -390,7 +393,7 @@ def match_range(value, spec):
     if not success:
         return (success, result)
     start, end, invert = result
-    if type(value) == unicode or type(value) == str:
+    if isinstance(value, str) or isinstance(value, unicode):
         value = float(value.replace('%', ''))
     if value < start:
         return (True, False ^ invert)
@@ -517,8 +520,7 @@ def pluralize(noun, value, suffix='s'):
         singular, plural = '', suffix
     if int(value) == 1:
         return noun + singular
-    else:
-        return noun + plural
+    return noun + plural
 
 
 def seconds2human(seconds, keep_short=True, full_name=False):
@@ -563,8 +565,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
 
     if len(result) > 2 and keep_short:
         return ' '.join(result[:2])
-    else:
-        return ' '.join(result)
+    return ' '.join(result)
 
 
 def shell_exec(cmd, env=None, shell=False, stdin=''):
@@ -602,7 +603,8 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
     if shell:
         # Pipes '|' are handled by Shell directly
         try:
-            sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
+            sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, env=env, shell=True)
         except OSError as e:
             return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
@@ -617,7 +619,8 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
         # We have some input for our cmd.
         # Pipes '|' are handled by Shell directly.
         try:
-            sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
+            sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, env=env, shell=True)
         except OSError as e:
             return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
@@ -637,7 +640,8 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
         # is set, use output from last cmd call as input for second cmd in pipe chain
         stdin = sp.stdout if sp else subprocess.PIPE
         try:
-            sp = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=False)
+            sp = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, env=env, shell=False)
         except OSError as e:
             return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
@@ -668,11 +672,10 @@ def sort(array, reverse=True, sort_by_key=False):
     """Sort a simple 1-dimensional dictionary
     """
 
-    if type(array) is dict:
+    if isinstance(array, dict):
         if not sort_by_key:
             return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
-        else:
-            return sorted(array.items(), key=lambda x: x[0].lower(), reverse=reverse)
+        return sorted(array.items(), key=lambda x: x[0].lower(), reverse=reverse)
     return array
 
 
@@ -760,7 +763,7 @@ def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
 
 def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%m-%d %H:%M:%S'):
     """Returns the difference between two datetime strings in seconds. This
-    function expects two ISO timestamps, per default each in ISO format.
+    function expects two ISO timestamps, by default each in ISO format.
     """
 
     timestr1 = timestr2datetime(timestr1, pattern1)
