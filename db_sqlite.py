@@ -26,11 +26,12 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050101'
+__version__ = '2020050501'
 
 import os
 import sqlite3
 
+import base
 import disk
 
 
@@ -101,7 +102,9 @@ def create_index(conn, column_list, table='perfdata', unique=False):
     """Creates one index on a list of/one database column/s.
     """
 
-    index_name = 'idx_{}_{}'.format(table, column_list.replace(',', '_').replace(' ', ''))
+    table = base.strip_non_alnum(table)
+
+    index_name = 'idx_{}'.format(base.md5sum(table + column_list))
     c = conn.cursor()
     if unique:
         sql = 'CREATE UNIQUE INDEX IF NOT EXISTS {} ON "{}" ({});'.format(
@@ -126,6 +129,8 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
     results in 'CREATE TABLE "test" (a TEXT, b TEXT, c INTEGER NOT NULL)'
     """
 
+    table = base.strip_non_alnum(table)
+
     # create table if it does not exist
     if drop_table_first:
         success, result = drop_table(conn, table)
@@ -145,6 +150,8 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
 def cut(conn, table='perfdata', max=5):
     """Keep only the latest "max" records, using the sqlite built-in "rowid".
     """
+
+    table = base.strip_non_alnum(table)
 
     c = conn.cursor()
     sql = '''DELETE FROM {table} WHERE rowid IN (
@@ -166,6 +173,8 @@ def drop_table(conn, table='perfdata'):
     table are also deleted.
     """
 
+    table = base.strip_non_alnum(table)
+
     c = conn.cursor()
     sql = 'DROP TABLE IF EXISTS "{}";'.format(table)
 
@@ -180,6 +189,8 @@ def drop_table(conn, table='perfdata'):
 def insert(conn, data, table='perfdata'):
     """Insert a dictionary of values.
     """
+
+    table = base.strip_non_alnum(table)
 
     c = conn.cursor()
     sql = 'INSERT INTO "{}" (COLS) VALUES (VALS);'.format(table)
@@ -212,6 +223,8 @@ def replace(conn, data, table='perfdata'):
     constraint occurs, the REPLACE statement will abort the action and roll
     back the transaction.
     """
+
+    table = base.strip_non_alnum(table)
 
     c = conn.cursor()
     sql = 'REPLACE INTO "{}" (COLS) VALUES (VALS);'.format(table)
@@ -272,6 +285,8 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
         ]
     """
 
+    table = base.strip_non_alnum(table)
+
     # count the number of different sensors in the perfdata table
     sql = 'SELECT DISTINCT {sensorcol} FROM {table} ORDER BY {sensorcol} ASC'.format(
         sensorcol=sensorcol, table=table
@@ -291,7 +306,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
         success, perfdata = select(
             conn,
             'SELECT * FROM {table} WHERE {sensorcol} = :{sensorcol} '
-            'ORDER BY {sensorcol} ASC, timestamp DESC'.format(
+            'ORDER BY timestamp DESC'.format(
                 table=table, sensorcol=sensorcol
             ),
             data={sensorcol: sensor_name})
