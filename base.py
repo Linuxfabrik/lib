@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050102'
+__version__ = '2020050501'
 
 import collections
 import datetime
@@ -677,6 +677,15 @@ def sort(array, reverse=True, sort_by_key=False):
             return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
         return sorted(array.items(), key=lambda x: x[0].lower(), reverse=reverse)
     return array
+
+
+def strip_non_alnum(s):
+    """Stripping everything but alphanumeric chars from a string.
+    """
+
+    if s.isalnum():
+        return s
+    return ''.join([i for i in s if i.isalnum()])
 
 
 def sum_dict(dict1, dict2):
