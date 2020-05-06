@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050501'
+__version__ = '2020050502'
 
 import collections
 import datetime
@@ -779,6 +779,16 @@ def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%
     timestr2 = timestr2datetime(timestr2, pattern2)
     timedelta = abs(timestr1 - timestr2)
     return timedelta.total_seconds()
+
+
+def uniq(string):
+    """Removes duplicate words from a string (only the second duplicates).
+    The sequence of the words will not be changed.
+
+    """
+
+    words = string.split()
+    return ' '.join(sorted(set(words), key=words.index))
 
 
 def version(v):
