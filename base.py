@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050502'
+__version__ = '2020050701'
 
 import collections
 import datetime
@@ -20,12 +20,14 @@ import hashlib
 import math
 import numbers
 import operator
+import os
 import shlex
 import subprocess
 import sys
 import time
 
 from globals import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
+import disk
 
 
 def bits2human(n, format="%(value).1f%(symbol)s"):
@@ -760,6 +762,24 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
         return '{}UNKNOWN{}'.format(prefix, suffix)
 
     return state
+
+
+def test(args):
+    """Enables unit testing of a check plugin.
+
+    """
+
+    if args[0] and os.path.isfile(args[0]):
+        success, stdout = disk.read_file(args[0])
+    else:
+        stdout = args[0]
+    if args[1] and os.path.isfile(args[1]):
+        stderr = lib.base.coe(lib.disk.read_file(args[1]))
+    else:
+        stderr = args[1]
+    retc = int(args[2])
+
+    return stdout, stderr, retc
 
 
 def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):

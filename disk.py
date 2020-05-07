@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050101'
+__version__ = '2020050601'
 
 import os
 import re
@@ -106,6 +106,22 @@ def grep_file(filename, pattern):
     else:
         match = re.search(pattern, data).group(1)
         return (True, match)
+
+
+def read_file(filename):
+    """Reads a file.
+
+    """
+
+    try:
+        f = open(filename, 'r')
+        data = f.read()
+        f.close()
+    except IOError as e:
+        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
+    except:
+        return (False, 'Unknown error opening or reading {}'.format(filename))
+    return (True, data)
 
 
 def walk_directory(path, exclude_pattern='', include_pattern='', relative=True):
