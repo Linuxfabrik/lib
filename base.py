@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050701'
+__version__ = '2020050801'
 
 import collections
 import datetime
@@ -774,7 +774,7 @@ def test(args):
     else:
         stdout = args[0]
     if args[1] and os.path.isfile(args[1]):
-        stderr = lib.base.coe(lib.disk.read_file(args[1]))
+        success, stderr = disk.read_file(args[1])
     else:
         stderr = args[1]
     retc = int(args[2])
