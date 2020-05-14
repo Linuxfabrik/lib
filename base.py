@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050801'
+__version__ = '2020051201'
 
 import collections
 import datetime
@@ -21,6 +21,7 @@ import math
 import numbers
 import operator
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -137,6 +138,15 @@ def filter_mltext(input, ignore):
             filtered_input += line + '\n'
 
     return filtered_input
+
+
+def filter_str(s, charclass='a-zA-Z0-9_'):
+    """Stripping everything except alphanumeric chars and '_' from a string -
+    chars that are allowed everywhere in variables, database table or index names, etc.
+    """
+
+    regex = '[^{}]'.format(charclass)
+    return re.sub(regex, "", s)
 
 
 def get_perfdata(label, value, uom, warn, crit, min, max):
@@ -534,24 +544,28 @@ def seconds2human(seconds, keep_short=True, full_name=False):
     '2w 2d'
     >>> lib.base.seconds2human('1387775', full_name=True)
     '2weeks 2days'
-    >>> lib.base.seconds2human(1387775, keep_short=False)
+    >>> lib.base.seconds2human(1387775, keep_short=False, full_name=True)
     '2weeks 2days 1hour 29minutes 35seconds'
     """
 
     seconds = int(seconds)
     if full_name:
         intervals = (
-            ('weeks', 604800),  # 60 * 60 * 24 * 7
-            ('days', 86400),    # 60 * 60 * 24
-            ('hours', 3600),    # 60 * 60
+            ('years', 60*60*24*365),
+            ('months', 60*60*24*30),
+            ('weeks', 60*60*24*7),
+            ('days', 60*60*24),
+            ('hours', 60*60),
             ('minutes', 60),
             ('seconds', 1),
         )
     else:
         intervals = (
-            ('w', 604800),      # 60 * 60 * 24 * 7
-            ('d', 86400),       # 60 * 60 * 24
-            ('h', 3600),        # 60 * 60
+            ('y', 60*60*24*365),
+            ('m', 60*60*24*30),
+            ('w', 60*60*24*7),
+            ('d', 60*60*24),
+            ('h', 60*60),
             ('m', 60),
             ('s', 1),
         )
@@ -679,15 +693,6 @@ def sort(array, reverse=True, sort_by_key=False):
             return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
         return sorted(array.items(), key=lambda x: x[0].lower(), reverse=reverse)
     return array
-
-
-def strip_non_alnum(s):
-    """Stripping everything but alphanumeric chars from a string.
-    """
-
-    if s.isalnum():
-        return s
-    return ''.join([i for i in s if i.isalnum()])
 
 
 def sum_dict(dict1, dict2):
