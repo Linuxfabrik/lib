@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050601'
+__version__ = '2020051001'
 
 import os
 import re
@@ -124,11 +124,11 @@ def read_file(filename):
     return (True, data)
 
 
-def walk_directory(path, exclude_pattern='', include_pattern='', relative=True):
+def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True):
     """Walks recursively through a directory and creates a list of files.
     If an exclude_pattern (regex) is specified, files matching this pattern
     are ignored. If an include_pattern (regex) is specified, only files matching
-    this pattern are put on the list (in that order).
+    this pattern are put on the list (in this particular order).
 
     >>> lib.disk.walk_directory('/tmp')
     ['cpu-usage.db', 'segv_output.MCiVt9']
