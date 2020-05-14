@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020043001'
+__version__ = '2020051201'
 
 import json
 import re
@@ -104,16 +104,11 @@ def get_latest_version_from_github(user, repo, key='tag_name'):
     """
 
     github_url = 'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
-    success, result = fetch(github_url)
+    success, result = fetch_json(github_url)
     if not success:
         return (success, result)
     if not result:
         return (True, False)
-    try:
-        result = json.loads(result)
-    except:
-        return (True, False)
-    #print(json.dumps(result, indent=4, sort_keys=True))
 
     # on GitHub, here is the version (format of the version string depends on the maintainer)
     return (True, result[key])
