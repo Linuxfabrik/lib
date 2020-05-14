@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020043001'
+__version__ = '2020051401'
 
 import base64
 import time
@@ -57,11 +57,18 @@ def get_service(url, username, password, servicename, attrs='state'):
     (with less possibilities). The service name should be unique and has
     to be taken from the `__name` attribute.
 
+    Example: Does a check show a warning and/or was acknowledged?
+
     >>> url = 'https://icinga-server:5665'
-    >>> result = lib.base.coe(lib.icinga.get_service(url, args.USERNAME,
-    >>>                       args.PASSWORD,
-    >>>                       servicename='hostname!special-service',
-    >>>                       attrs='state,acknowledgement'))
+    >>> result = lib.base.coe(
+    >>>     lib.icinga.get_service(
+    >>>         url,
+    >>>         args.USERNAME,
+    >>>         args.PASSWORD,
+    >>>         servicename='hostname!special-service',
+    >>>         attrs='state,acknowledgement'
+    >>>         ))
+    >>> print(result['result'][0]['attrs'])
     """
 
     url = url + '/v1/objects/services'
@@ -81,7 +88,7 @@ def set_ack(url, username, password, objectname, type='service',
     host or service name should be unique and has to be taken from the
     `__name` attribute.
 
-    Acknowledging an already acknowledged problem is ok, while
+    Acknowledging an already acknowledged problem is ok until 2.11, while
     acknowleding a host or service in OK state leads to a *500 internal
     server error".
     """
@@ -110,11 +117,13 @@ def set_downtime(url, username, password, objectname, type='service',
     use `remove_ack()` later on.
 
     >>> url = 'https://icinga-server:5665'
-    >>> result = lib.base.coe(lib.icinga.set_downtime(url,
-    >>>                       args.ICINGA_USERNAME,
-    >>>                       args.ICINGA_PASSWORD,
-    >>>                       objectname='hostname!special-service',
-    >>>                          author='feed plugin'))
+    >>> result = lib.base.coe(lib.icinga.set_downtime(
+    >>>              url,
+    >>>              args.ICINGA_USERNAME,
+    >>>              args.ICINGA_PASSWORD,
+    >>>              objectname='hostname!special-service',
+    >>>              author='feed plugin'
+    >>>              ))
     'hostname!special-service!3ad20784-52f9-4acc-b2df-90788667d587'
     """
 
@@ -138,6 +147,14 @@ def remove_ack(url, username, password, objectname, type='service'):
     """Removes the acknowledgements for services or hosts. Once the
     acknowledgement has been removed the next notification will be sent
     again. Always returns ok.
+
+    >>> url = 'https://icinga-server:5665'
+    >>> icinga.remove_ack(
+    >>>     url,
+    >>>     args.ICINGA_USERNAME,
+    >>>     args.ICINGA_PASSWORD,
+    >>>     objectname='hostname!special-service'
+    >>>     )
     """
 
     url = url + '/v1/actions/remove-acknowledgement'
