@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050501'
+__version__ = '2020051301'
 
 import os
 import sqlite3
@@ -102,7 +102,7 @@ def create_index(conn, column_list, table='perfdata', unique=False):
     """Creates one index on a list of/one database column/s.
     """
 
-    table = base.strip_non_alnum(table)
+    table = base.filter_str(table)
 
     index_name = 'idx_{}'.format(base.md5sum(table + column_list))
     c = conn.cursor()
@@ -129,7 +129,7 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
     results in 'CREATE TABLE "test" (a TEXT, b TEXT, c INTEGER NOT NULL)'
     """
 
-    table = base.strip_non_alnum(table)
+    table = base.filter_str(table)
 
     # create table if it does not exist
     if drop_table_first:
@@ -151,18 +151,37 @@ def cut(conn, table='perfdata', max=5):
     """Keep only the latest "max" records, using the sqlite built-in "rowid".
     """
 
-    table = base.strip_non_alnum(table)
+    table = base.filter_str(table)
 
     c = conn.cursor()
     sql = '''DELETE FROM {table} WHERE rowid IN (
                 SELECT rowid FROM {table} ORDER BY rowid DESC LIMIT -1 OFFSET :max
-            )'''.format(table=table)
+            );'''.format(table=table)
     try:
         c.execute(sql, (max, ))
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}'.format(sql, e))
 
     return (True, True)
+
+
+def delete(conn, sql, data={}, fetchone=False):
+    """The DELETE command removes records from a table. If the WHERE
+    clause is not present, all records in the table are deleted. If a
+    WHERE clause is supplied, then only those rows for which the WHERE
+    clause boolean expression is true are deleted. Rows for which the
+    expression is false or NULL are retained.
+    """
+
+    c = conn.cursor()
+
+    try:
+        if data:
+            return (True, c.execute(sql, data).rowcount)
+        else:
+            return (True, c.execute(sql).rowcount)
+    except Exception as e:
+        return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 
 
 def drop_table(conn, table='perfdata'):
@@ -173,7 +192,7 @@ def drop_table(conn, table='perfdata'):
     table are also deleted.
     """
 
-    table = base.strip_non_alnum(table)
+    table = base.filter_str(table)
 
     c = conn.cursor()
     sql = 'DROP TABLE IF EXISTS "{}";'.format(table)
@@ -187,10 +206,10 @@ def drop_table(conn, table='perfdata'):
 
 
 def insert(conn, data, table='perfdata'):
-    """Insert a dictionary of values.
+    """Insert a row of values (= dict).
     """
 
-    table = base.strip_non_alnum(table)
+    table = base.filter_str(table)
 
     c = conn.cursor()
     sql = 'INSERT INTO "{}" (COLS) VALUES (VALS);'.format(table)
@@ -224,7 +243,7 @@ def replace(conn, data, table='perfdata'):
     back the transaction.
     """
 
-    table = base.strip_non_alnum(table)
+    table = base.filter_str(table)
 
     c = conn.cursor()
     sql = 'REPLACE INTO "{}" (COLS) VALUES (VALS);'.format(table)
@@ -285,10 +304,10 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
         ]
     """
 
-    table = base.strip_non_alnum(table)
+    table = base.filter_str(table)
 
     # count the number of different sensors in the perfdata table
-    sql = 'SELECT DISTINCT {sensorcol} FROM {table} ORDER BY {sensorcol} ASC'.format(
+    sql = 'SELECT DISTINCT {sensorcol} FROM {table} ORDER BY {sensorcol} ASC;'.format(
         sensorcol=sensorcol, table=table
         )
     success, sensors = select(conn, sql)
@@ -306,7 +325,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
         success, perfdata = select(
             conn,
             'SELECT * FROM {table} WHERE {sensorcol} = :{sensorcol} '
-            'ORDER BY timestamp DESC'.format(
+            'ORDER BY timestamp DESC;'.format(
                 table=table, sensorcol=sensorcol
             ),
             data={sensorcol: sensor_name})
