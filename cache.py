@@ -15,7 +15,7 @@ simply return `False`.
 
 >>> cache.get('session-key')
 False
->>> cache.set('session-key', '123abc', expire=int(time.time()) + 5)
+>>> cache.set('session-key', '123abc', expire=base.now() + 5)
 True
 >>> cache.get('session-key')
 u'123abc'
@@ -25,13 +25,13 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020043001'
+__version__ = '2020051301'
 
 import base
 import db_sqlite
 
 
-def get(key):
+def get(key, as_dict=False):
     """Get the value of key. If the key does not exist, `False` is returned.
 
     Parameters
@@ -52,21 +52,39 @@ def get(key):
 
     success, result = db_sqlite.select(
         conn,
-        sql='SELECT key, value, timestamp FROM cache WHERE key = :key',
+        sql='SELECT key, value, timestamp FROM cache WHERE key = :key;',
         data={'key': key}, fetchone=True
     )
-    db_sqlite.close(conn)
     if not success:
+        # error accessing or querying the cache
+        db_sqlite.close(conn)
         return False
 
-    if not result or \
-        result is None or \
-        (result['timestamp'] != 0 and result['timestamp'] - base.now() < 0):
-        # nothing found, or result has expired
+    if not result or result is None:
+        # key not found
+        db_sqlite.close(conn)
+        return False
+
+    if result['timestamp'] != 0 and result['timestamp'] <= base.now():
+        # key was found, but timstamp was set and has expired:
+        # delete all expired keys and return false
+        data = {'key' : result['key']}
+        success, result = db_sqlite.delete(
+            conn,
+            sql='DELETE FROM cache WHERE timestamp <= {};'.format(base.now())
+        )
+        success, result = db_sqlite.commit(conn)
+        db_sqlite.close(conn)
         return False
 
     # return the value
-    return result['value']
+    db_sqlite.close(conn)
+
+    if not as_dict:
+        # just return the value (as used to when for example using Redis)
+        return result['value']
+    # return all columns
+    return result
 
 
 def set(key, value, expire=0):
@@ -115,6 +133,7 @@ def set(key, value, expire=0):
         'value': value,
         'timestamp': expire,
     }
+
     success, result = db_sqlite.replace(conn, data, table='cache')
     if not success:
         db_sqlite.close(conn)
