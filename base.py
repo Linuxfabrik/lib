@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051201'
+__version__ = '2020051701'
 
 import collections
 import datetime
@@ -595,10 +595,13 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
     env : None or dict
         Environment variables. Example: env={'PATH': '/usr/bin'}.
     shell : bool
-        If True, the new process has a new console, instead of
-        inheriting its parent’s console (the default). It is very seldom
-        needed to set this to True. Warning: Using shell=True can be a
-        security hazard.
+        If True, the new process is called via what is set in the SHELL
+        environment variable - means using shell=True invokes a program of the
+        user's choice and is platform-dependent. It allows you to expand
+        environment variables and file globs according to the shell's usual
+        mechanism, which can be a security hazard. Generally speaking, avoid
+        invocations via the shell. It is very seldom needed to set this
+        to True.
     stdin : str
         If set, use this as input into `cmd`.
 
@@ -613,11 +616,17 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
     https://docs.python.org/2/library/subprocess.html
     """
 
+    if not env:
+        env = {}
+    env['LC_ALL'] = 'C'     # set cmd output to English, no matter what the user has choosen
+
     # subprocess.PIPE: Special value that can be used as the stdin,
     # stdout or stderr argument to Popen and indicates that a pipe to
     # the standard stream should be opened.
-    if shell:
-        # Pipes '|' are handled by Shell directly
+    if shell or stdin:
+        # New console wanted, or we have some input for our cmd - then we
+        # need a new console, too.
+        # Pipes '|' are handled by the shell itself.
         try:
             sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, env=env, shell=True)
@@ -627,33 +636,23 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
             return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
         except e:
             return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
-        stdout, stderr = sp.communicate()
+
+        if stdin:
+            # provide stdin as input for the cmd
+            stdout, stderr = sp.communicate(input=stdin)
+        else:
+            stdout, stderr = sp.communicate()
         retc = sp.returncode
         return (True, (stdout, stderr, retc))
 
-    if stdin:
-        # We have some input for our cmd.
-        # Pipes '|' are handled by Shell directly.
-        try:
-            sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE, env=env, shell=True)
-        except OSError as e:
-            return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
-        except ValueError as e:
-            return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
-        except e:
-            return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
-        # provide text as input for ...
-        stdout, stderr = sp.communicate(input=stdin)
-        retc = sp.returncode
-        return (True, (stdout, stderr, retc))
-
+    # No new console wanted, but then we have to do pipe handling on our own.
     # Example: `cat /var/log/messages | grep DENY | grep Rule` - we manage the art of piping here
     cmd_list = cmd.split('|')
     sp = None
     for cmd in cmd_list:
         args = shlex.split(cmd.strip())
-        # is set, use output from last cmd call as input for second cmd in pipe chain
+        # use the previous output from last cmd call as input for next cmd in pipe chain,
+        # if there is any
         stdin = sp.stdout if sp else subprocess.PIPE
         try:
             sp = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE,
