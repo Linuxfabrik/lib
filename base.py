@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051701'
+__version__ = '2020051901'
 
 import collections
 import datetime
@@ -617,8 +617,9 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
     """
 
     if not env:
-        env = {}
-    env['LC_ALL'] = 'C'     # set cmd output to English, no matter what the user has choosen
+        env = os.environ.copy()
+    # set cmd output to English, no matter what the user has choosen
+    env['LC_ALL'] = 'C'
 
     # subprocess.PIPE: Special value that can be used as the stdin,
     # stdout or stderr argument to Popen and indicates that a pipe to
