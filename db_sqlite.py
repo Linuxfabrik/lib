@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051301'
+__version__ = '2020051701'
 
 import os
 import sqlite3
@@ -264,7 +264,7 @@ def replace(conn, data, table='perfdata'):
     return (True, True)
 
 
-def select(conn, sql, data={}, fetchone=False):
+def select(conn, sql, data={}, fetchone=False, as_dict=True):
     """The SELECT statement is used to query the database. The result of a
     SELECT is zero or more rows of data where each row has a fixed number
     of columns. A SELECT statement does not make any changes to the
@@ -279,11 +279,23 @@ def select(conn, sql, data={}, fetchone=False):
         else:
             c.execute(sql)
         # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
+        if as_dict:
+            if fetchone:
+                return (True, [dict(row) for row in c.fetchall()][0])
+            return (True, [dict(row) for row in c.fetchall()])
         if fetchone:
-            return (True, [dict(row) for row in c.fetchall()][0])
-        return (True, [dict(row) for row in c.fetchall()])
+            return (True,  c.fetchone())
+        return (True, c.fetchall())
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
+
+
+def get_tables(conn):
+    """List all tables in a database.
+    """
+
+    sql = "SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';"
+    return select(conn, sql)
 
 
 def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
