@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051201'
+__version__ = '2020052601'
 
 import json
 import re
@@ -26,7 +26,11 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5,
     """Fetch any URL.
 
     Basic authentication:
-    >>> header'Authorization'] = "Basic %s" % base64.b64encode(username + ':' + password)
+    >>> header = {
+            'Authorization': "Basic {}".format(
+                base64.b64encode(username + ':' + password)
+                )
+        }
     >>> jsonst = lib.base.coe(lib.url.fetch(URL, header=header))
     """
 
