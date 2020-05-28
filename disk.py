@@ -8,29 +8,48 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
-__author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020040901'
+"""Offers file and disk related functions, like getting a list of
+partitions, grepping a file, etc.
+"""
 
-from lib.globals import *
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2020051001'
 
 import os
+import re
+import sys
+import tempfile
+
+from lib.globals import STATE_UNKNOWN
 try:
     import psutil
-except ImportError, e:
+except ImportError as e:
     print('Python module "psutil" is not installed.')
-    exit(STATE_UNKNOWN)
-import re
-import tempfile
+    sys.exit(STATE_UNKNOWN)
 
 
 def get_cwd():
+    """Gets the current working directory.
+    """
+
     return os.getcwd()
 
 
 def get_partitions(ignore=[]):
+    """Return all mounted disk partitions as a list of named tuples
+    including device, mount point and filesystem type, similarly to
+    `df` command on UNIX.
+    """
+
     # remove all empty items from the ignore list, because `'' in 'any_string' == true`
     ignore = list(filter(None, ignore))
-    return list(filter(lambda part: not any(ignore_item in part.mountpoint for ignore_item in ignore), psutil.disk_partitions(all=False)))
+    return list(
+        filter(
+            lambda part: not any(
+                ignore_item in part.mountpoint for ignore_item in ignore),
+            psutil.disk_partitions(all=False)
+            )
+        )
 
 
 def get_tmpdir():
@@ -52,7 +71,7 @@ def get_tmpdir():
     """
 
     try:
-        return tempfile.gettempdir()   
+        return tempfile.gettempdir()
     except:
         return '/tmp'
 
@@ -61,7 +80,7 @@ def grep_file(filename, pattern):
     """Like `grep` searches for `pattern` in `filename`. Returns the
     match, otherwise `False`.
 
-    >>> success, nc_version = lib.disk.grep_file('version.php', r'\\$OC_Version = array\\((.*)\\)')
+    >>> success, nc_version=lib.disk.grep_file('version.php', r'\\$OC_version=array\\((.*)\\)')
 
     Parameters
     ----------
@@ -78,8 +97,8 @@ def grep_file(filename, pattern):
     """
 
     try:
-        with open(filename, 'r') as f:
-            data = f.read()
+        with open(filename, 'r') as file:
+            data = file.read()
     except IOError as e:
         return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
     except:
@@ -89,11 +108,27 @@ def grep_file(filename, pattern):
         return (True, match)
 
 
-def walk_directory(path, exclude_pattern='', include_pattern='', relative=True):
+def read_file(filename):
+    """Reads a file.
+
+    """
+
+    try:
+        f = open(filename, 'r')
+        data = f.read()
+        f.close()
+    except IOError as e:
+        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
+    except:
+        return (False, 'Unknown error opening or reading {}'.format(filename))
+    return (True, data)
+
+
+def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True):
     """Walks recursively through a directory and creates a list of files.
     If an exclude_pattern (regex) is specified, files matching this pattern
     are ignored. If an include_pattern (regex) is specified, only files matching
-    this pattern are put on the list (in that order).
+    this pattern are put on the list (in this particular order).
 
     >>> lib.disk.walk_directory('/tmp')
     ['cpu-usage.db', 'segv_output.MCiVt9']

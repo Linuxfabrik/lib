@@ -8,17 +8,47 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
-__author__  = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020041701'
+"""Provides very common every-day functions.
+"""
 
-from globals import *
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2020051901'
 
+import collections
 import datetime
 import hashlib
 import math
+import numbers
+import operator
+import os
+import re
 import shlex
 import subprocess
+import sys
 import time
+
+from globals import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
+import disk
+
+
+def bits2human(n, format="%(value).1f%(symbol)s"):
+    """Converts n bits to a human readable format.
+
+    >>> bits2human(10000)
+    '10K'
+    >>> bits2human(100001221)
+    '100.0M'
+    """
+
+    symbols = ('B', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+    prefix = {}
+    for i, s in enumerate(symbols[1:]):
+        prefix[s] = 1000**(i + 1)
+    for symbol in reversed(symbols[1:]):
+        if n >= prefix[symbol]:
+            value = float(n) / prefix[symbol]
+            return format % locals()
+    return format % dict(symbol=symbols[0], value=n)
 
 
 def bytes2human(n, format="%(value).1f%(symbol)s"):
@@ -35,6 +65,9 @@ def bytes2human(n, format="%(value).1f%(symbol)s"):
     symbols = ('B', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
     prefix = {}
     for i, s in enumerate(symbols[1:]):
+        # Returns 1 with the bits shifted to the left by (i + 1)*10 places
+        # (and new bits on the right-hand-side are zeros). This is the same
+        # as multiplying x by 2**y.
         prefix[s] = 1 << (i + 1) * 10
     for symbol in reversed(symbols[1:]):
         if n >= prefix[symbol]:
@@ -43,17 +76,17 @@ def bytes2human(n, format="%(value).1f%(symbol)s"):
     return format % dict(symbol=symbols[0], value=n)
 
 
-def coe(result, state=3):
+def coe(result, state=STATE_UNKNOWN):
     """Continue or Exit (CoE)
 
-    This is useful if calling complex library functions in your checks 
+    This is useful if calling complex library functions in your checks
     `main()` function. Don't use this in functions.
-    
+
     If a more complex library function, for example `lib.url.fetch()` fails, it
     returns `(False, 'the reason why I failed')`, otherwise `(True,
-    'this is my result'). This forces you to do some error handling. 
-    To keep things simple, use `result = lib.base.coe(lib.url.fetch(...))`. 
-    If `fetch()` fails, your plugin will exit with STATE_UNKNOWN (default) and 
+    'this is my result'). This forces you to do some error handling.
+    To keep things simple, use `result = lib.base.coe(lib.url.fetch(...))`.
+    If `fetch()` fails, your plugin will exit with STATE_UNKNOWN (default) and
     print the original error message. Otherwise your script just goes on.
 
     The use case in `main()` - without `coe`:
@@ -74,7 +107,7 @@ def coe(result, state=3):
         result[0] = expects the function return code (True on success)
         result[1] = expects the function result (could be of any type)
     state : int
-        If result[0] is False, exit with this state. 
+        If result[0] is False, exit with this state.
         Default: 3 (which is STATE_UNKNOWN)
 
     Returns
@@ -83,18 +116,18 @@ def coe(result, state=3):
         The result of the inner function call (result[1]).
     """
 
-    if (result[0]):
+    if result[0]:
+        # success
         return result[1]
-    else:
-        print(result[1])
-        exit(state)
+    print(result[1])
+    sys.exit(state)
 
 
-def epoch2iso(epoch):
-    """Returns the ISO representaton of a UNIX epoch.
+def epoch2iso(timestamp):
+    """Returns the ISO representaton of a UNIX timestamp (epoch).
     """
 
-    epoch = float(epoch)
+    timestamp = float(timestamp)
     return datetime.datetime.fromepoch(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
 
@@ -107,10 +140,19 @@ def filter_mltext(input, ignore):
     return filtered_input
 
 
+def filter_str(s, charclass='a-zA-Z0-9_'):
+    """Stripping everything except alphanumeric chars and '_' from a string -
+    chars that are allowed everywhere in variables, database table or index names, etc.
+    """
+
+    regex = '[^{}]'.format(charclass)
+    return re.sub(regex, "", s)
+
+
 def get_perfdata(label, value, uom, warn, crit, min, max):
     """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
     """
-    
+
     msg = label + '=' + str(value)
     if uom is not None:
         msg += uom
@@ -169,7 +211,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value >= float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     if operator == 'gt':
         if crit is not None:
@@ -177,7 +219,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value > float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     if operator == 'le':
         if crit is not None:
@@ -185,7 +227,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value <= float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     if operator == 'lt':
         if crit is not None:
@@ -193,7 +235,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value < float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     if operator == 'eq':
         if crit is not None:
@@ -201,7 +243,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value == float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     if operator == 'ne':
         if crit is not None:
@@ -209,16 +251,12 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value != float(warn):
-                return STATE_WARN 
+                return STATE_WARN
         return STATE_OK
     return STATE_UNKNOWN
 
 
-def get_table(data,
-                    keys,
-                    header=None,
-                    sort_by_key=None,
-                    sort_order_reverse=False):
+def get_table(data, keys, header=None, sort_by_key=None, sort_order_reverse=False):
     """Takes a list of dictionaries, formats the data, and returns
     the formatted data as a text table.
 
@@ -232,11 +270,9 @@ def get_table(data,
         sort_order_reverse - Default sort order is ascending, if
             True sort order will change to descending. (Type: bool)
 
-    Inspired by https://www.calazan.com/python-function-for-displaying-a-list-of-dictionaries-in-table-format/
+    Inspired by
+    https://www.calazan.com/python-function-for-displaying-a-list-of-dictionaries-in-table-format/
     """
-
-    from operator import itemgetter
-    from collections import OrderedDict
 
     if not data:
         return ''
@@ -245,7 +281,7 @@ def get_table(data,
     # is ascending)
     if sort_by_key:
         data = sorted(data,
-                      key=itemgetter(sort_by_key),
+                      key=operator.itemgetter(sort_by_key),
                       reverse=sort_order_reverse)
 
     # If header is not empty, add header to data
@@ -264,7 +300,7 @@ def get_table(data,
         header = dict(zip(keys, header))
         data.insert(0, header)
 
-    column_widths = OrderedDict()
+    column_widths = collections.OrderedDict()
     for key in keys:
         column_widths[key] = max(len(str(column[key])) for column in data)
 
@@ -278,12 +314,13 @@ def get_table(data,
 
 
 def get_worst(state1, state2):
-    """Get the more worst of two states, in this particular order:
-        # CRIT    (2)
-        # WARN    (1)
-        # UNKNOWN (3)
-        # OK      (0)
+    """Compares state1 to state2 and returns result based on the following
+    STATE_OK < STATE_UNKNOWN < STATE_WARNING < STATE_CRITICAL
+    It will prioritize any non-OK state.
+
+    Note that numerically the above does not hold.
     """
+
     if STATE_CRIT in [state1, state2]:
         return STATE_CRIT
     if STATE_WARN in [state1, state2]:
@@ -293,6 +330,18 @@ def get_worst(state1, state2):
     return STATE_OK
 
 
+def is_numeric(value):
+    """Return True if value is really numeric (int, float, whatever).
+
+    >>> is_numeric(+53.4)
+    True
+    >>> is_numeric('53.4')
+    False
+    """
+
+    return isinstance(value, numbers.Number)
+
+
 def match_range(value, spec):
     """Decides if `value` is inside/outside the threshold spec.
 
@@ -300,7 +349,7 @@ def match_range(value, spec):
     ----------
     spec : str
         Nagios range specification
-    value : int
+    value : int or float
         Numeric value
 
     Returns
@@ -327,7 +376,7 @@ def match_range(value, spec):
 
         if spec is None or spec.lower() == 'none':
             return (True, None)
-        if type(spec) is not str:
+        if not isinstance(spec, str):
             spec = str(spec)
         invert = False
         if spec.startswith('@'):
@@ -346,8 +395,7 @@ def match_range(value, spec):
             start = parse_atom(start, 0)
         end = parse_atom(end, float('inf'))
         if start > end:
-            raise (False, 'Start %s must not be greater than end %s' % (
-                             start, end))
+            return (False, 'Start %s must not be greater than end %s' % (start, end))
         return (True, (start, end, invert))
 
 
@@ -356,7 +404,9 @@ def match_range(value, spec):
     success, result = parse_range(spec)
     if not success:
         return (success, result)
-    start, end, invert = result    
+    start, end, invert = result
+    if isinstance(value, str) or isinstance(value, unicode):
+        value = float(value.replace('%', ''))
     if value < start:
         return (True, False ^ invert)
     if value > end:
@@ -369,7 +419,6 @@ def md5sum(string):
 
 
 def mltext2array(input, skip_header=False, sort_key=-1):
-    from operator import itemgetter
     input = input.strip(' \t\n\r').split('\n')
     lines = []
     if skip_header:
@@ -377,7 +426,7 @@ def mltext2array(input, skip_header=False, sort_key=-1):
     for row in input:
         lines.append(row.split())
     if sort_key != -1:
-        lines = sorted(lines, key=itemgetter(sort_key))        
+        lines = sorted(lines, key=operator.itemgetter(sort_key))
     return lines
 
 
@@ -413,9 +462,12 @@ def number2human(n):
     '123 Mill.'
     """
     millnames = ['', 'K', ' Mill.', ' Bill.', ' Trill.']
-    n = float(n)
+    try:
+        n = float(n)
+    except:
+        return n
     millidx = max(0, min(len(millnames) - 1,
-                        int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))))
+                         int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))))
     return '{:.1f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
 
 
@@ -431,14 +483,14 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     else:
         print(msg.strip())
     if always_ok:
-        exit(0)
-    exit(state)
+        sys.exit(0)
+    sys.exit(state)
 
 
 def pluralize(noun, value, suffix='s'):
     """Returns a plural suffix if the value is not 1. By default, 's' is used as
     the suffix.
-    
+
     >>> pluralize('vote', 0)
     'votes'
     >>> pluralize('vote', 1)
@@ -466,6 +518,11 @@ def pluralize(noun, value, suffix='s'):
     >>> pluralize('cand', 2, 'y,ies)
     'candies'
 
+    >>> pluralize('', 1, 'is,are')
+    'is'
+    >>> pluralize('', 2, 'is,are')
+    'are'
+
     From https://kite.com/python/docs/django.template.defaultfilters.pluralize
     """
 
@@ -475,8 +532,7 @@ def pluralize(noun, value, suffix='s'):
         singular, plural = '', suffix
     if int(value) == 1:
         return noun + singular
-    else:
-        return noun + plural
+    return noun + plural
 
 
 def seconds2human(seconds, keep_short=True, full_name=False):
@@ -488,27 +544,31 @@ def seconds2human(seconds, keep_short=True, full_name=False):
     '2w 2d'
     >>> lib.base.seconds2human('1387775', full_name=True)
     '2weeks 2days'
-    >>> lib.base.seconds2human(1387775, keep_short=False)
+    >>> lib.base.seconds2human(1387775, keep_short=False, full_name=True)
     '2weeks 2days 1hour 29minutes 35seconds'
     """
 
     seconds = int(seconds)
     if full_name:
         intervals = (
-            ('weeks', 604800),  # 60 * 60 * 24 * 7
-            ('days', 86400),    # 60 * 60 * 24
-            ('hours', 3600),    # 60 * 60
+            ('years', 60*60*24*365),
+            ('months', 60*60*24*30),
+            ('weeks', 60*60*24*7),
+            ('days', 60*60*24),
+            ('hours', 60*60),
             ('minutes', 60),
             ('seconds', 1),
-    )
+        )
     else:
         intervals = (
-            ('w', 604800),      # 60 * 60 * 24 * 7
-            ('d', 86400),       # 60 * 60 * 24
-            ('h', 3600),        # 60 * 60
+            ('y', 60*60*24*365),
+            ('m', 60*60*24*30),
+            ('w', 60*60*24*7),
+            ('d', 60*60*24),
+            ('h', 60*60),
             ('m', 60),
             ('s', 1),
-    )
+        )
 
     result = []
     for name, count in intervals:
@@ -521,12 +581,11 @@ def seconds2human(seconds, keep_short=True, full_name=False):
 
     if len(result) > 2 and keep_short:
         return ' '.join(result[:2])
-    else:
-        return ' '.join(result)
+    return ' '.join(result)
 
 
 def shell_exec(cmd, env=None, shell=False, stdin=''):
-    """Executes external command and returns the complete output as a 
+    """Executes external command and returns the complete output as a
     string (stdout, stderr) and the program exit code (retc).
 
     Parameters
@@ -536,10 +595,13 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
     env : None or dict
         Environment variables. Example: env={'PATH': '/usr/bin'}.
     shell : bool
-        If True, the new process has a new console, instead of 
-        inheriting its parent’s console (the default). It is very seldom
-        needed to set this to True. Warning: Using shell=True can be a 
-        security hazard.
+        If True, the new process is called via what is set in the SHELL
+        environment variable - means using shell=True invokes a program of the
+        user's choice and is platform-dependent. It allows you to expand
+        environment variables and file globs according to the shell's usual
+        mechanism, which can be a security hazard. Generally speaking, avoid
+        invocations via the shell. It is very seldom needed to set this
+        to True.
     stdin : str
         If set, use this as input into `cmd`.
 
@@ -548,52 +610,54 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
     result : tuple
         result[0] = the functions return code (bool)
             False: result[1] contains the error message (str)
-            True:  result[1] contains the result of the called `cmd` 
+            True:  result[1] contains the result of the called `cmd`
                    as a tuple (stdout, stdin, retc)
 
     https://docs.python.org/2/library/subprocess.html
     """
 
-    # subprocess.PIPE: Special value that can be used as the stdin, stdout or stderr argument to Popen and indicates that a pipe to the standard stream should be opened.
-    if shell:
-        # Pipes '|' are handled by Shell directly
+    if not env:
+        env = os.environ.copy()
+    # set cmd output to English, no matter what the user has choosen
+    env['LC_ALL'] = 'C'
+
+    # subprocess.PIPE: Special value that can be used as the stdin,
+    # stdout or stderr argument to Popen and indicates that a pipe to
+    # the standard stream should be opened.
+    if shell or stdin:
+        # New console wanted, or we have some input for our cmd - then we
+        # need a new console, too.
+        # Pipes '|' are handled by the shell itself.
         try:
-            sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
+            sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, env=env, shell=True)
         except OSError as e:
             return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
             return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
         except e:
             return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
-        stdout, stderr = sp.communicate()
+
+        if stdin:
+            # provide stdin as input for the cmd
+            stdout, stderr = sp.communicate(input=stdin)
+        else:
+            stdout, stderr = sp.communicate()
         retc = sp.returncode
         return (True, (stdout, stderr, retc))
 
-    if stdin:
-        # We have some input for our cmd. 
-        # Pipes '|' are handled by Shell directly.
-        try:
-            sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=True)
-        except OSError as e:
-            return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
-        except ValueError as e:
-            return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
-        except e:
-            return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
-        # provide text as input for ...
-        stdout, stderr = sp.communicate(input=stdin)
-        retc = sp.returncode
-        return (True, (stdout, stderr, retc))
-
+    # No new console wanted, but then we have to do pipe handling on our own.
     # Example: `cat /var/log/messages | grep DENY | grep Rule` - we manage the art of piping here
     cmd_list = cmd.split('|')
     sp = None
     for cmd in cmd_list:
         args = shlex.split(cmd.strip())
-        # is set, use output from last cmd call as input for second cmd in pipe chain
+        # use the previous output from last cmd call as input for next cmd in pipe chain,
+        # if there is any
         stdin = sp.stdout if sp else subprocess.PIPE
         try:
-            sp = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, shell=False)
+            sp = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, env=env, shell=False)
         except OSError as e:
             return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
@@ -620,26 +684,107 @@ def smartcast(value):
     return value
 
 
-def sort(array, reverse=True):
-    """Sort of a simple 1-dimensional dictionary
+def sort(array, reverse=True, sort_by_key=False):
+    """Sort a simple 1-dimensional dictionary
     """
 
-    if type(array) is dict:
-        return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
+    if isinstance(array, dict):
+        if not sort_by_key:
+            return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
+        return sorted(array.items(), key=lambda x: x[0].lower(), reverse=reverse)
+    return array
 
 
-def state2str(state):
+def sum_dict(dict1, dict2):
+    """Sum up two dictionaries, maybe with different keys.
+
+    >>> sum_dict({'in': 100, 'out': 10}, {'in': 50, 'error': 5, 'uuid': '1234-xyz'})
+    {'in': 150, 'error': 5, 'out': 10}
+    """
+
+    total = {}
+    for key, value in dict1.items():
+        if not is_numeric(value):
+            continue
+        if key in total:
+            total[key] += value
+        else:
+            total[key] = value
+    for key, value in dict2.items():
+        if not is_numeric(value):
+            continue
+        if key in total:
+            total[key] += value
+        else:
+            total[key] = value
+    return total
+
+
+def sum_lod(mylist):
+    """Sum up a list of (simple 1-dimensional) dictionary items.
+
+    sum_lod([{'in': 100, 'out': 10}, {'in': 50, 'out': 20}, {'error': 5, 'uuid': '1234-xyz'}])
+    >>> {'in': 150, 'out': 30, 'error': 5}
+    """
+
+    total = {}
+    for mydict in mylist:
+        for key, value in mydict.items():
+            if not is_numeric(value):
+                continue
+            if key in total:
+                total[key] += value
+            else:
+                total[key] = value
+    return total
+
+
+def state2str(state, empty_ok=True, prefix='', suffix=''):
+    """Return the state's string representation.
+
+    >> lib.base.state2str(2)
+    'CRIT'
+    >>> lib.base.state2str(0)
+    ''
+    >>> lib.base.state2str(0, empty_ok=False)
+    'OK'
+    >>> lib.base.state2str(0, empty_ok=False, suffix=' ')
+    'OK '
+    >>> lib.base.state2str(0, empty_ok=False, prefix=' (', suffix=')')
+    ' (OK)'
+    """
+
     state = int(state)
-    if state == STATE_OK:
-        return 'OK'
+    if state == STATE_OK and empty_ok:
+        return ''
+    if state == STATE_OK and not empty_ok:
+        return '{}OK{}'.format(prefix, suffix)
     if state == STATE_WARN:
-        return 'WARN'
+        return '{}WARN{}'.format(prefix, suffix)
     if state == STATE_CRIT:
-        return 'CRIT'
+        return '{}CRIT{}'.format(prefix, suffix)
     if state == STATE_UNKNOWN:
-        return 'UNKNOWN'
+        return '{}UNKNOWN{}'.format(prefix, suffix)
 
     return state
+
+
+def test(args):
+    """Enables unit testing of a check plugin.
+
+    """
+
+    if args[0] and os.path.isfile(args[0]):
+        success, stdout = disk.read_file(args[0])
+    else:
+        stdout = args[0]
+    if args[1] and os.path.isfile(args[1]):
+        success, stderr = disk.read_file(args[1])
+    else:
+        stderr = args[1]
+    retc = int(args[2])
+
+    return stdout, stderr, retc
 
 
 def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
@@ -651,8 +796,8 @@ def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
 
 
 def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%m-%d %H:%M:%S'):
-    """Returns the difference between two datetime strings in seconds. This 
-    function expects two ISO timestamps, per default each in ISO format.
+    """Returns the difference between two datetime strings in seconds. This
+    function expects two ISO timestamps, by default each in ISO format.
     """
 
     timestr1 = timestr2datetime(timestr1, pattern1)
@@ -661,9 +806,19 @@ def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%
     return timedelta.total_seconds()
 
 
+def uniq(string):
+    """Removes duplicate words from a string (only the second duplicates).
+    The sequence of the words will not be changed.
+
+    """
+
+    words = string.split()
+    return ' '.join(sorted(set(words), key=words.index))
+
+
 def version(v):
     """Use this function to compare numerical but string-based version numbers.
-    
+
     >>> base.version('3.0.7') < base.version('3.0.11')
     True
     >>> '3.0.7' < '3.0.11'
