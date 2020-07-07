@@ -741,30 +741,31 @@ def sum_lod(mylist):
 
 def state2str(state, empty_ok=True, prefix='', suffix=''):
     """Return the state's string representation.
+    The square brackets around the state cause icingaweb2 to color the state.
 
     >> lib.base.state2str(2)
-    'CRIT'
+    '[CRIT]'
     >>> lib.base.state2str(0)
     ''
     >>> lib.base.state2str(0, empty_ok=False)
-    'OK'
+    '[OK]'
     >>> lib.base.state2str(0, empty_ok=False, suffix=' ')
-    'OK '
+    '[OK] '
     >>> lib.base.state2str(0, empty_ok=False, prefix=' (', suffix=')')
-    ' (OK)'
+    ' ([OK])'
     """
 
     state = int(state)
     if state == STATE_OK and empty_ok:
         return ''
     if state == STATE_OK and not empty_ok:
-        return '{}OK{}'.format(prefix, suffix)
+        return '{}[OK]{}'.format(prefix, suffix)
     if state == STATE_WARN:
-        return '{}WARN{}'.format(prefix, suffix)
+        return '{}[WARN]{}'.format(prefix, suffix)
     if state == STATE_CRIT:
-        return '{}CRIT{}'.format(prefix, suffix)
+        return '{}[CRIT]{}'.format(prefix, suffix)
     if state == STATE_UNKNOWN:
-        return '{}UNKNOWN{}'.format(prefix, suffix)
+        return '{}[UNKNOWN]{}'.format(prefix, suffix)
 
     return state
 
