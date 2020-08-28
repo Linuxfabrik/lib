@@ -761,9 +761,9 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
     if state == STATE_OK and not empty_ok:
         return '{}[OK]{}'.format(prefix, suffix)
     if state == STATE_WARN:
-        return '{}[WARN]{}'.format(prefix, suffix)
+        return '{}[WARNING]{}'.format(prefix, suffix)
     if state == STATE_CRIT:
-        return '{}[CRIT]{}'.format(prefix, suffix)
+        return '{}[CRITICAL]{}'.format(prefix, suffix)
     if state == STATE_UNKNOWN:
         return '{}[UNKNOWN]{}'.format(prefix, suffix)
 
