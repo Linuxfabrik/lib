@@ -10,19 +10,19 @@
 
 """This is one typical use case of this library (taken from `disk-io`):
 
->>> conn = lib.base.coe(lib.db_sqlite.connect(filename='disk-io.db'))
->>> lib.base.coe(lib.db_sqlite.create_table(conn, definition, drop_table_first=False))
->>> lib.base.coe(lib.db_sqlite.create_index(conn, 'name'))   # optional
+>>> conn = lib.base2.coe(lib.db_sqlite2.connect(filename='disk-io.db'))
+>>> lib.base2.coe(lib.db_sqlite2.create_table(conn, definition, drop_table_first=False))
+>>> lib.base2.coe(lib.db_sqlite2.create_index(conn, 'name'))   # optional
 
->>> lib.base.coe(lib.db_sqlite.insert(conn, data))
->>> lib.base.coe(lib.db_sqlite.cut(conn, max=args.COUNT*len(disks)))
->>> lib.base.coe(lib.db_sqlite.commit(conn))
+>>> lib.base2.coe(lib.db_sqlite2.insert(conn, data))
+>>> lib.base2.coe(lib.db_sqlite2.cut(conn, max=args2.COUNT*len(disks)))
+>>> lib.base2.coe(lib.db_sqlite2.commit(conn))
 
->>> result = lib.base.coe(lib.db_sqlite.select(conn,
+>>> result = lib.base2.coe(lib.db_sqlite2.select(conn,
         'SELECT * FROM perfdata WHERE name = :name ORDER BY timestamp DESC LIMIT 2',
         {'name': disk}
 
->>> lib.db_sqlite.close(conn)
+>>> lib.db_sqlite2.close(conn)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
@@ -31,8 +31,8 @@ __version__ = '2020051701'
 import os
 import sqlite3
 
-import base
-import disk
+import base2
+import disk2
 
 
 def close(conn):
@@ -83,7 +83,7 @@ def connect(path='', filename=''):
         """
 
         if not path:
-            path = disk.get_tmpdir()
+            path = disk2.get_tmpdir()
         if not filename:
             filename = 'linuxfabrik-plugins.db'
         return os.path.join(path, filename)
@@ -102,9 +102,9 @@ def create_index(conn, column_list, table='perfdata', unique=False):
     """Creates one index on a list of/one database column/s.
     """
 
-    table = base.filter_str(table)
+    table = base2.filter_str(table)
 
-    index_name = 'idx_{}'.format(base.md5sum(table + column_list))
+    index_name = 'idx_{}'.format(base2.md5sum(table + column_list))
     c = conn.cursor()
     if unique:
         sql = 'CREATE UNIQUE INDEX IF NOT EXISTS {} ON "{}" ({});'.format(
@@ -129,7 +129,7 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
     results in 'CREATE TABLE "test" (a TEXT, b TEXT, c INTEGER NOT NULL)'
     """
 
-    table = base.filter_str(table)
+    table = base2.filter_str(table)
 
     # create table if it does not exist
     if drop_table_first:
@@ -151,7 +151,7 @@ def cut(conn, table='perfdata', max=5):
     """Keep only the latest "max" records, using the sqlite built-in "rowid".
     """
 
-    table = base.filter_str(table)
+    table = base2.filter_str(table)
 
     c = conn.cursor()
     sql = '''DELETE FROM {table} WHERE rowid IN (
@@ -192,7 +192,7 @@ def drop_table(conn, table='perfdata'):
     table are also deleted.
     """
 
-    table = base.filter_str(table)
+    table = base2.filter_str(table)
 
     c = conn.cursor()
     sql = 'DROP TABLE IF EXISTS "{}";'.format(table)
@@ -209,7 +209,7 @@ def insert(conn, data, table='perfdata'):
     """Insert a row of values (= dict).
     """
 
-    table = base.filter_str(table)
+    table = base2.filter_str(table)
 
     c = conn.cursor()
     sql = 'INSERT INTO "{}" (COLS) VALUES (VALS);'.format(table)
@@ -243,7 +243,7 @@ def replace(conn, data, table='perfdata'):
     back the transaction.
     """
 
-    table = base.filter_str(table)
+    table = base2.filter_str(table)
 
     c = conn.cursor()
     sql = 'REPLACE INTO "{}" (COLS) VALUES (VALS);'.format(table)
@@ -316,7 +316,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
         ]
     """
 
-    table = base.filter_str(table)
+    table = base2.filter_str(table)
 
     # count the number of different sensors in the perfdata table
     sql = 'SELECT DISTINCT {sensorcol} FROM {table} ORDER BY {sensorcol} ASC;'.format(

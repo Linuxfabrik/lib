@@ -13,22 +13,22 @@ SQLite, optionally supporting expiration of keys. No detailed error handling
 here. If the cache does not work, we (currently) don't report the reason and
 simply return `False`.
 
->>> cache.get('session-key')
+>>> cache2.get('session-key')
 False
->>> cache.set('session-key', '123abc', expire=base.now() + 5)
+>>> cache2.set('session-key', '123abc', expire=base2.now() + 5)
 True
->>> cache.get('session-key')
+>>> cache2.get('session-key')
 u'123abc'
 >>> time.sleep(6)
->>> cache.get('session-key')
+>>> cache2.get('session-key')
 False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2020051301'
 
-import base
-import db_sqlite
+import base2
+import db_sqlite2
 
 
 def get(key, as_dict=False):
@@ -46,39 +46,39 @@ def get(key, as_dict=False):
         failure.
     """
 
-    success, conn = db_sqlite.connect(filename='linuxfabrik-plugin-cache.db')
+    success, conn = db_sqlite2.connect(filename='linuxfabrik-plugin-cache.db')
     if not success:
         return False
 
-    success, result = db_sqlite.select(
+    success, result = db_sqlite2.select(
         conn,
         sql='SELECT key, value, timestamp FROM cache WHERE key = :key;',
         data={'key': key}, fetchone=True
     )
     if not success:
         # error accessing or querying the cache
-        db_sqlite.close(conn)
+        db_sqlite2.close(conn)
         return False
 
     if not result or result is None:
         # key not found
-        db_sqlite.close(conn)
+        db_sqlite2.close(conn)
         return False
 
-    if result['timestamp'] != 0 and result['timestamp'] <= base.now():
+    if result['timestamp'] != 0 and result['timestamp'] <= base2.now():
         # key was found, but timstamp was set and has expired:
         # delete all expired keys and return false
         data = {'key' : result['key']}
-        success, result = db_sqlite.delete(
+        success, result = db_sqlite2.delete(
             conn,
-            sql='DELETE FROM cache WHERE timestamp <= {};'.format(base.now())
+            sql='DELETE FROM cache WHERE timestamp <= {};'.format(base2.now())
         )
-        success, result = db_sqlite.commit(conn)
-        db_sqlite.close(conn)
+        success, result = db_sqlite2.commit(conn)
+        db_sqlite2.close(conn)
         return False
 
     # return the value
-    db_sqlite.close(conn)
+    db_sqlite2.close(conn)
 
     if not as_dict:
         # just return the value (as used to when for example using Redis)
@@ -109,7 +109,7 @@ def set(key, value, expire=0):
         `True` on success, `False` on failure.
     """
 
-    success, conn = db_sqlite.connect(filename='linuxfabrik-plugin-cache.db')
+    success, conn = db_sqlite2.connect(filename='linuxfabrik-plugin-cache.db')
     if not success:
         return False
 
@@ -118,14 +118,14 @@ def set(key, value, expire=0):
             value       TEXT NOT NULL,
             timestamp   INT NOT NULL
         '''
-    success, result = db_sqlite.create_table(conn, definition, table='cache')
+    success, result = db_sqlite2.create_table(conn, definition, table='cache')
     if not success:
-        db_sqlite.close(conn)
+        db_sqlite2.close(conn)
         return False
 
-    success, result = db_sqlite.create_index(conn, column_list='key', table='cache', unique=True)
+    success, result = db_sqlite2.create_index(conn, column_list='key', table='cache', unique=True)
     if not success:
-        db_sqlite.close(conn)
+        db_sqlite2.close(conn)
         return False
 
     data = {
@@ -134,13 +134,13 @@ def set(key, value, expire=0):
         'timestamp': expire,
     }
 
-    success, result = db_sqlite.replace(conn, data, table='cache')
+    success, result = db_sqlite2.replace(conn, data, table='cache')
     if not success:
-        db_sqlite.close(conn)
+        db_sqlite2.close(conn)
         return False
 
-    success, result = db_sqlite.commit(conn)
-    db_sqlite.close(conn)
+    success, result = db_sqlite2.commit(conn)
+    db_sqlite2.close(conn)
     if not success:
         return False
 

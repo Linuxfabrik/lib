@@ -27,8 +27,8 @@ import subprocess
 import sys
 import time
 
-from . import disk
-from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
+from . import disk3
+from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 
 def bits2human(n, format="%(value).1f%(symbol)s"):
@@ -175,9 +175,9 @@ def get_state(value, warn, crit, operator='ge'):
     """Returns the STATE by comparing `value` to the given thresholds using
     a comparison `operator`. `warn` and `crit` threshold may also be `None`.
 
-    >>> base.get_state(15, 10, 20, 'ge')
+    >>> base3.get_state(15, 10, 20, 'ge')
     1 (STATE_WARN)
-    >>> base.get_state(10, 10, 20, 'gt')
+    >>> base3.get_state(10, 10, 20, 'gt')
     0 (STATE_OK)
 
     Parameters
@@ -433,16 +433,16 @@ def now(as_type=''):
     """Returns the current date and time as UNIX time in seconds (default), or
     as a datetime object.
 
-    base.now()
+    base3.now()
     >>> 1586422786
 
-    base.now(as_type='epoch')
+    base3.now(as_type='epoch')
     >>> 1586422786
 
-    base.now(as_type='datetime')
+    base3.now(as_type='datetime')
     >>> datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)
 
-    base.now(as_type='iso')
+    base3.now(as_type='iso')
     >>> '2020-04-09 11:31:24'
     """
 
@@ -775,11 +775,11 @@ def test(args):
     """
 
     if args[0] and os.path.isfile(args[0]):
-        success, stdout = disk.read_file(args[0])
+        success, stdout = disk3.read_file(args[0])
     else:
         stdout = args[0]
     if args[1] and os.path.isfile(args[1]):
-        success, stderr = disk.read_file(args[1])
+        success, stderr = disk3.read_file(args[1])
     else:
         stderr = args[1]
     retc = int(args[2])
@@ -819,7 +819,7 @@ def uniq(string):
 def version(v):
     """Use this function to compare numerical but string-based version numbers.
 
-    >>> base.version('3.0.7') < base.version('3.0.11')
+    >>> base3.version('3.0.7') < base3.version('3.0.11')
     True
     >>> '3.0.7' < '3.0.11'
     False

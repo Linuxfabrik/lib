@@ -31,7 +31,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5,
                 base64.b64encode(username + ':' + password)
                 )
         }
-    >>> jsonst = lib.base.coe(lib.url.fetch(URL, header=header))
+    >>> jsonst = lib.base2.coe(lib.url2.fetch(URL, header=header))
     """
 
     try:

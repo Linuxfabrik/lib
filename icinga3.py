@@ -17,7 +17,7 @@ __version__ = '2020051401'
 import base64
 import time
 
-import lib.url
+import lib.url3
 
 # Take care of Icinga and throttle the amount of requests, don't overload it
 # with too fast subsequent api-calls.
@@ -34,12 +34,12 @@ def api_post(url, username, password, data={}, method_override='',
     >>>    'filter': 'match("special-service", service.name)',
     >>>    'attrs': [ 'name', 'state', 'acknowledgement' ],
     >>> }
-    >>> result = lib.base.coe(lib.icinga.api_post(url, args.USERNAME,
-    >>>                       args.PASSWORD, data=data,
+    >>> result = lib.base.coe(lib.icinga.api_post(url, args3.USERNAME,
+    >>>                       args3.PASSWORD, data=data,
     >>>                       method_override='GET', timeout=3))
     """
 
-    url = url.replace('//v1', '/v1').replace('//v2', '/v2')
+    url = url3.replace('//v1', '/v1').replace('//v2', '/v2')
     header = {}
     header['Accept'] = 'application/json'
     header['Authorization'] = "Basic %s" % base64.b64encode(username + ':' + password)
@@ -63,8 +63,8 @@ def get_service(url, username, password, servicename, attrs='state'):
     >>> result = lib.base.coe(
     >>>     lib.icinga.get_service(
     >>>         url,
-    >>>         args.USERNAME,
-    >>>         args.PASSWORD,
+    >>>         args3.USERNAME,
+    >>>         args3.PASSWORD,
     >>>         servicename='hostname!special-service',
     >>>         attrs='state,acknowledgement'
     >>>         ))
@@ -119,8 +119,8 @@ def set_downtime(url, username, password, objectname, type='service',
     >>> url = 'https://icinga-server:5665'
     >>> result = lib.base.coe(lib.icinga.set_downtime(
     >>>              url,
-    >>>              args.ICINGA_USERNAME,
-    >>>              args.ICINGA_PASSWORD,
+    >>>              args3.ICINGA_USERNAME,
+    >>>              args3.ICINGA_PASSWORD,
     >>>              objectname='hostname!special-service',
     >>>              author='feed plugin'
     >>>              ))
@@ -149,10 +149,10 @@ def remove_ack(url, username, password, objectname, type='service'):
     again. Always returns ok.
 
     >>> url = 'https://icinga-server:5665'
-    >>> icinga.remove_ack(
+    >>> icinga3.remove_ack(
     >>>     url,
-    >>>     args.ICINGA_USERNAME,
-    >>>     args.ICINGA_PASSWORD,
+    >>>     args3.ICINGA_USERNAME,
+    >>>     args3.ICINGA_PASSWORD,
     >>>     objectname='hostname!special-service'
     >>>     )
     """

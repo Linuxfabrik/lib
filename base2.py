@@ -27,8 +27,8 @@ import subprocess
 import sys
 import time
 
-from globals import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
-import disk
+from globals2 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
+import disk2
 
 
 def bits2human(n, format="%(value).1f%(symbol)s"):
@@ -82,23 +82,23 @@ def coe(result, state=STATE_UNKNOWN):
     This is useful if calling complex library functions in your checks
     `main()` function. Don't use this in functions.
 
-    If a more complex library function, for example `lib.url.fetch()` fails, it
+    If a more complex library function, for example `lib.url2.fetch()` fails, it
     returns `(False, 'the reason why I failed')`, otherwise `(True,
     'this is my result'). This forces you to do some error handling.
-    To keep things simple, use `result = lib.base.coe(lib.url.fetch(...))`.
+    To keep things simple, use `result = lib.base2.coe(lib.url2.fetch(...))`.
     If `fetch()` fails, your plugin will exit with STATE_UNKNOWN (default) and
     print the original error message. Otherwise your script just goes on.
 
     The use case in `main()` - without `coe`:
 
-    >>> success, html = lib.url.fetch(URL)
+    >>> success, html = lib.url2.fetch(URL)
     >>> if not success:
     >>>     print(html)             # contains the error message here
     >>>>    exit(STATE_UNKNOWN)
 
     Or simply:
 
-    >>> html = lib.base.coe(lib.url.fetch(URL))
+    >>> html = lib.base2.coe(lib.url2.fetch(URL))
 
     Parameters
     ----------
@@ -776,11 +776,11 @@ def test(args):
     """
 
     if args[0] and os.path.isfile(args[0]):
-        success, stdout = disk.read_file(args[0])
+        success, stdout = disk2.read_file(args[0])
     else:
         stdout = args[0]
     if args[1] and os.path.isfile(args[1]):
-        success, stderr = disk.read_file(args[1])
+        success, stderr = disk2.read_file(args[1])
     else:
         stderr = args[1]
     retc = int(args[2])
@@ -824,7 +824,7 @@ def version(v):
     True
     >>> '3.0.7' < '3.0.11'
     False
-    >>> lib.base.version(psutil.__version__) >= lib.base.version('5.3.0')
+    >>> lib.base2.version(psutil.__version__) >= lib.base2.version('5.3.0')
     True
 
     Parameters

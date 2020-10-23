@@ -14,7 +14,7 @@ needed by more than one Rocket.Chat plugin."""
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2020043001'
 
-import url
+import url3
 
 
 def get_token(rc_url, user, password):
@@ -33,7 +33,7 @@ def get_token(rc_url, user, password):
         'password': password,
         }
 
-    success, result = url.fetch_json(rc_url, data=data)
+    success, result = url3.fetch_json(rc_url, data=data)
     if not success:
         return (success, result)
     if not result:
@@ -61,7 +61,7 @@ def get_stats(rc_url, auth_token, user_id):
         'X-User-Id': user_id,
         }
 
-    success, result = url.fetch_json(rc_url, header=header)
+    success, result = url3.fetch_json(rc_url, header=header)
     if not success:
         return (success, result)
     if not result:

@@ -19,8 +19,8 @@ except ImportError as e:
     print('Python module "BeautifulSoup4" is not installed.')
     exit(3)
 
-import base
-import url
+import base3
+import url3
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2020051401'
@@ -31,7 +31,7 @@ def parse_atom(soup):
     result['title'] = soup.title.string
     result['updated'] = soup.updated.string
     # cut the timezone part
-    result['updated_parsed'] = base.timestr2datetime(result['updated'][0:19], pattern='%Y-%m-%dT%H:%M:%S')
+    result['updated_parsed'] = base3.timestr2datetime(result['updated'][0:19], pattern='%Y-%m-%dT%H:%M:%S')
 
     result['entries'] = []
     for entry in soup.find_all('entry'):
@@ -40,7 +40,7 @@ def parse_atom(soup):
         tmp['id'] = entry.id.string
         tmp['updated'] = entry.updated.string
         # cut the timezone part
-        tmp['updated_parsed'] = base.timestr2datetime(tmp['updated'][0:19], pattern='%Y-%m-%dT%H:%M:%S')
+        tmp['updated_parsed'] = base3.timestr2datetime(tmp['updated'][0:19], pattern='%Y-%m-%dT%H:%M:%S')
         try:
             tmp['summary'] = entry.summary.string
         except:
@@ -54,7 +54,7 @@ def parse_rss(soup):
     result['title'] = soup.rss.channel.title.string
     result['updated'] = soup.rss.channel.pubDate.string
     # cut the timezone part
-    result['updated_parsed'] = base.timestr2datetime(result['updated'][0:25], pattern='%a, %d %b %Y %H:%M:%S')
+    result['updated_parsed'] = base3.timestr2datetime(result['updated'][0:25], pattern='%a, %d %b %Y %H:%M:%S')
 
     result['entries'] = []
     for entry in soup.find_all('item'):
@@ -63,7 +63,7 @@ def parse_rss(soup):
         tmp['id'] = entry.guid.string
         tmp['updated'] = entry.pubDate.string
         # cut the timezone part
-        tmp['updated_parsed'] = base.timestr2datetime(tmp['updated'][0:25], pattern='%a, %d %b %Y %H:%M:%S')
+        tmp['updated_parsed'] = base3.timestr2datetime(tmp['updated'][0:25], pattern='%a, %d %b %Y %H:%M:%S')
         try:
             tmp['summary'] = entry.description.string
         except:
@@ -76,7 +76,7 @@ def parse(feed_url, insecure=False, no_proxy=False, timeout=5, encoding='urlenco
     """Parse a feed from a URL, file, stream, or string.
     """
 
-    success, xml = url.fetch(feed_url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
+    success, xml = url3.fetch(feed_url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
         encoding='urlencode')
     if not success:
         return (False, xml)

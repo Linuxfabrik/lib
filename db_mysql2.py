@@ -23,10 +23,10 @@ except ImportError as e:
     print('Python module "mysql.connector" is not installed.')
     exit(3)
 
-import base
-import disk
+import base2
+import disk2
 
-if base.version(mysql.connector.__version__) < base.version('2.0.0'):
+if base2.version(mysql.connector.__version__) < base2.version('2.0.0'):
     try:
         import MySQLdb.cursors
     except ImportError as e:
@@ -60,10 +60,10 @@ def connect(mysql_connection):
     """Connect to a MySQL/MariaDB. `mysql_connection` has to be a dict.
 
     >>> mysql_connection = {
-    ...     'user':               args.USERNAME,
-    ...     'password':           args.PASSWORD,
-    ...     'host':               args.HOSTNAME,
-    ...     'database':           args.DATABASE,
+    ...     'user':               args2.USERNAME,
+    ...     'password':           args2.PASSWORD,
+    ...     'host':               args2.HOSTNAME,
+    ...     'database':           args2.DATABASE,
     ...     'raise_on_warnings':  True
     ... }
     >>> conn = connect(mysql_connection)
@@ -83,7 +83,7 @@ def select(conn, sql, data={}, fetchone=False):
     database.
     """
 
-    if base.version(mysql.connector.__version__) >= base.version('2.0.0'):
+    if base2.version(mysql.connector.__version__) >= base2.version('2.0.0'):
         cursor = conn.cursor(dictionary=True)
     else:
         cursor = conn.cursor(MySQLdb.cursors.DictCursor)
