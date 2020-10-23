@@ -1,4 +1,4 @@
-#! /usr/bin/env python2
+#! /usr/bin/env python3
 # -*- encoding: utf-8; py-indent-offset: 4 -*-
 #
 # Author:  Linuxfabrik GmbH, Zurich, Switzerland
@@ -12,13 +12,12 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020052601'
+__version__ = '2020092401'
 
 import json
 import re
 import ssl
 import urllib
-import urllib2
 
 
 def fetch(url, insecure=False, no_proxy=False, timeout=5,
@@ -41,15 +40,15 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5,
                 data = urllib.urlencode(data)
             if encoding == 'serialized-json':
                 data = json.dumps(data)
-            request = urllib2.Request(url, data=data)
+            request = urllib.request.Request(url, data=data)
         else:
-            request = urllib2.Request(url)
+            request = urllib.request.Request(url)
 
         for key, value in header.items():
             request.add_header(key, value)
 
         # SSL/TLS certificate validation
-        # see: stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
+        # see: https://stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
         ctx = ssl.create_default_context()
         if insecure:
             ctx.check_hostname = False
@@ -57,17 +56,17 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5,
 
         # Proxy handler
         if no_proxy:
-            proxy_handler = urllib2.ProxyHandler({})
-            ctx_handler = urllib2.HTTPSHandler(context=ctx)
-            opener = urllib2.build_opener(proxy_handler, ctx_handler)
+            proxy_handler = urllib.request.ProxyHandler({})
+            ctx_handler = urllib.request.HTTPSHandler(context=ctx)
+            opener = urllib.request.build_opener(proxy_handler, ctx_handler)
             response = opener.open(request)
         else:
-            response = urllib2.urlopen(request, context=ctx, timeout=timeout)
-    except urllib2.HTTPError as e:
+            response = urllib.request.urlopen(request, context=ctx, timeout=timeout)
+    except urllib.request.HTTPError as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
         return (False, 'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url))
-    except urllib2.URLError as e:
+    except urllib.request.URLError as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
         return (False, 'URL error "{}" for {}'.format(e.reason, url))

@@ -1,4 +1,4 @@
-#! /usr/bin/env python2
+#! /usr/bin/env python3
 # -*- encoding: utf-8; py-indent-offset: 4 -*-
 #
 # Author:  Linuxfabrik GmbH, Zurich, Switzerland
@@ -20,7 +20,8 @@ import re
 import sys
 import tempfile
 
-from lib.globals import STATE_UNKNOWN
+from lib.globals3 import STATE_UNKNOWN
+
 try:
     import psutil
 except ImportError as e:
@@ -80,7 +81,7 @@ def grep_file(filename, pattern):
     """Like `grep` searches for `pattern` in `filename`. Returns the
     match, otherwise `False`.
 
-    >>> success, nc_version=lib.disk.grep_file('version.php', r'\\$OC_version=array\\((.*)\\)')
+    >>> success, nc_version=lib.disk3.grep_file('version.php', r'\\$OC_version=array\\((.*)\\)')
 
     Parameters
     ----------
@@ -130,9 +131,9 @@ def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True
     are ignored. If an include_pattern (regex) is specified, only files matching
     this pattern are put on the list (in this particular order).
 
-    >>> lib.disk.walk_directory('/tmp')
+    >>> lib.disk3.walk_directory('/tmp')
     ['cpu-usage.db', 'segv_output.MCiVt9']
-    >>> lib.disk.walk_directory('/tmp', exclude_pattern='.*Temp-.*', relative=False)
+    >>> lib.disk3.walk_directory('/tmp', exclude_pattern='.*Temp-.*', relative=False)
     ['/tmp/cpu-usage.db', '/tmp/segv_output.MCiVt9']
     """
 
