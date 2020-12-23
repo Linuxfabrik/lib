@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051901'
+__version__ = '2020122301'
 
 import collections
 import datetime
@@ -736,6 +736,28 @@ def sum_lod(mylist):
             else:
                 total[key] = value
     return total
+
+
+def str2state(string):
+    """Return the state based on a string.
+
+    >> lib.base.str2state('ok')
+    0
+    >>> lib.base.str2state('warn')
+    1
+    >>> lib.base.str2state('warning')
+    1
+    """
+
+    string = str(string).lower()
+    if string == 'ok':
+        return STATE_OK
+    if string.startswith('warn'):
+        return STATE_WARN
+    if string.startswith('crit'):
+        return STATE_CRIT
+    if string.startswith('unk'):
+        return STATE_UNKNOWN
 
 
 def state2str(state, empty_ok=True, prefix='', suffix=''):
