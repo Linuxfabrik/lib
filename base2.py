@@ -550,7 +550,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
 
     seconds = float(seconds)
     if seconds < 1:
-        return f'{seconds:.2f}s'
+        return '{:.2f}s'.format(seconds)
 
     if full_name:
         intervals = (
