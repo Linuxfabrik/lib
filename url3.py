@@ -18,6 +18,7 @@ import json
 import re
 import ssl
 import urllib
+import urllib.request
 
 
 def fetch(url, insecure=False, no_proxy=False, timeout=5,
