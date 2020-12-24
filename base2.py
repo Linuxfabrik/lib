@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051901'
+__version__ = '2020122301'
 
 import collections
 import datetime
@@ -374,7 +374,7 @@ def match_range(value, spec):
             return int(atom)
 
 
-        if spec is None or spec.lower() == 'none':
+        if spec is None or str(spec).lower() == 'none':
             return (True, None)
         if not isinstance(spec, str):
             spec = str(spec)
@@ -399,7 +399,7 @@ def match_range(value, spec):
         return (True, (start, end, invert))
 
 
-    if spec is None or spec.lower() == 'none':
+    if spec is None or str(spec).lower() == 'none':
         return (True, True)
     success, result = parse_range(spec)
     if not success:
@@ -548,7 +548,10 @@ def seconds2human(seconds, keep_short=True, full_name=False):
     '2weeks 2days 1hour 29minutes 35seconds'
     """
 
-    seconds = int(seconds)
+    seconds = float(seconds)
+    if seconds < 1:
+        return '{:.2f}s'.format(seconds)
+
     if full_name:
         intervals = (
             ('years', 60*60*24*365),
@@ -691,7 +694,7 @@ def sort(array, reverse=True, sort_by_key=False):
     if isinstance(array, dict):
         if not sort_by_key:
             return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
-        return sorted(array.items(), key=lambda x: x[0].lower(), reverse=reverse)
+        return sorted(array.items(), key=lambda x: str(x[0]).lower(), reverse=reverse)
     return array
 
 
@@ -737,6 +740,28 @@ def sum_lod(mylist):
             else:
                 total[key] = value
     return total
+
+
+def str2state(string):
+    """Return the state based on a string.
+
+    >> lib.base.str2state('ok')
+    0
+    >>> lib.base.str2state('warn')
+    1
+    >>> lib.base.str2state('warning')
+    1
+    """
+
+    string = str(string).lower()
+    if string == 'ok':
+        return STATE_OK
+    if string.startswith('warn'):
+        return STATE_WARN
+    if string.startswith('crit'):
+        return STATE_CRIT
+    if string.startswith('unk'):
+        return STATE_UNKNOWN
 
 
 def state2str(state, empty_ok=True, prefix='', suffix=''):
