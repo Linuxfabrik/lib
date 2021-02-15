@@ -18,6 +18,7 @@ import json
 import re
 import ssl
 import urllib
+import urllib.parse
 import urllib.request
 
 
@@ -38,7 +39,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5,
         if data:
             # serializing dictionary
             if encoding == 'urlencode':
-                data = urllib.urlencode(data)
+                data = urllib.parse.urlencode(data)
             if encoding == 'serialized-json':
                 data = json.dumps(data)
             request = urllib.request.Request(url, data=data)
