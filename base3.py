@@ -119,6 +119,7 @@ def coe(result, state=STATE_UNKNOWN):
     if result[0]:
         # success
         return result[1]
+    print(result[1])
     sys.exit(state)
 
 
