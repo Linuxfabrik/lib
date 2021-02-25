@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020092401'
+__version__ = '2021022501'
 
 import json
 import re
@@ -42,6 +42,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5,
                 data = urllib.parse.urlencode(data)
             if encoding == 'serialized-json':
                 data = json.dumps(data)
+            data = data.encode('utf-8')
             request = urllib.request.Request(url, data=data)
         else:
             request = urllib.request.Request(url)
