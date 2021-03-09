@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051701'
+__version__ = '2021022401'
 
 import os
 import sqlite3
@@ -281,7 +281,10 @@ def select(conn, sql, data={}, fetchone=False, as_dict=True):
         # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
         if as_dict:
             if fetchone:
-                return (True, [dict(row) for row in c.fetchall()][0])
+                try:
+                    return (True, [dict(row) for row in c.fetchall()][0])
+                except IndexError:
+                    return (True, [])
             return (True, [dict(row) for row in c.fetchall()])
         if fetchone:
             return (True,  c.fetchone())
