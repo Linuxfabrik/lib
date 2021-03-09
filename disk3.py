@@ -13,8 +13,9 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051001'
+__version__ = '2021030901'
 
+import csv
 import os
 import re
 import sys
@@ -107,6 +108,30 @@ def grep_file(filename, pattern):
     else:
         match = re.search(pattern, data).group(1)
         return (True, match)
+
+
+def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False):
+    """Reads a CSV file, and returns a list or a dict.
+
+    """
+
+    try:
+        with open(filename, newline=newline) as csvfile:
+            if not as_dict:
+                reader = csv.reader(csvfile, delimiter=',', quotechar='"')
+            else:
+                reader = csv.DictReader(csvfile, delimiter=',', quotechar='"')
+            data = []
+            is_header_row = True
+            for row in reader:
+                data.append(row)
+    except csv.Error as e:
+        return (False, 'CSV error in file {}, line {}: {}'.format(filename, reader.line_num, e))
+    except IOError as e:
+        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
+    except:
+        return (False, 'Unknown error opening or reading {}'.format(filename))
+    return (True, data)
 
 
 def read_file(filename):
