@@ -421,7 +421,7 @@ def match_range(value, spec):
 
 
 def md5sum(string):
-    return hashlib.md5(string).hexdigest()
+    return hashlib.md5(string.encode('utf-8')).hexdigest()
 
 
 def mltext2array(input, skip_header=False, sort_key=-1):

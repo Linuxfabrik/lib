@@ -19,11 +19,11 @@ except ImportError as e:
     print('Python module "BeautifulSoup4" is not installed.')
     exit(3)
 
-import base3
-import url3
+from . import base3
+from . import url3
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051401'
+__version__ = '2021031001'
 
 
 def parse_atom(soup):

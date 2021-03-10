@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021030901'
+__version__ = '2021031001'
 
 import csv
 import os
@@ -21,8 +21,7 @@ import re
 import sys
 import tempfile
 
-from lib.globals3 import STATE_UNKNOWN
-
+from .globals3 import STATE_UNKNOWN
 try:
     import psutil
 except ImportError as e:

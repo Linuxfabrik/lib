@@ -103,7 +103,7 @@ def create_index(conn, column_list, table='perfdata', unique=False):
 
     table = base3.filter_str(table)
 
-    index_name = 'idx_{}'.format(base.md5sum(table + column_list))
+    index_name = 'idx_{}'.format(base3.md5sum(table + column_list))
     c = conn.cursor()
     if unique:
         sql = 'CREATE UNIQUE INDEX IF NOT EXISTS {} ON "{}" ({});'.format(

@@ -15,7 +15,7 @@ https://dev.mysql.com/doc/connector-python/en/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050101'
+__version__ = '2021031001'
 
 try:
     import mysql.connector
@@ -23,8 +23,8 @@ except ImportError as e:
     print('Python module "mysql.connector" is not installed.')
     exit(3)
 
-import base3
-import disk3
+from . import base3
+from . import disk3
 
 if base3.version(mysql.connector.__version__) < base3.version('2.0.0'):
     try:
