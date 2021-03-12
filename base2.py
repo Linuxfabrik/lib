@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020122301'
+__version__ = '2021031101'
 
 import collections
 import datetime
@@ -328,6 +328,55 @@ def get_worst(state1, state2):
     if STATE_UNKNOWN in [state1, state2]:
         return STATE_UNKNOWN
     return STATE_OK
+
+
+def guess_type(v, consumer='python'):
+    """Guess the type of a value (None, int, float or string) for different types of consumers (Python, SQLite etc.).
+    For Python, use isinstance() to check for example if a number is an integer.
+
+    >>> guess_type('1')
+    1
+    >>> guess_type('1', 'sqlite')
+    'integer'
+    >>> guess_type('1.0')
+    1.0
+    >>> guess_type('1.0', 'sqlite')
+    'real'
+    >>> guess_type('abc')
+    'abc'
+    >>> guess_type('abc', 'sqlite')
+    'text'
+    >>>
+    >>> value_type = lib.base2.guess_type(value)
+    >>> if isinstance(value_type, int) or isinstance(value_type, float):
+    >>>     ...
+    """
+
+    if consumer == 'python':
+        if v is None:
+            return None
+        else:
+            try:
+                return int(v)
+            except ValueError:
+                try:
+                    return float(v)
+                except ValueError:
+                    return str(v)
+
+    if consumer == 'sqlite':
+        if v is None:
+            return 'string'
+        else:
+            try:
+                int(v)
+                return 'integer'
+            except ValueError:
+                try:
+                    float(v)
+                    return 'real'
+                except ValueError:
+                    return 'text'
 
 
 def is_numeric(value):
