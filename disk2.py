@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021030901'
+__version__ = '2021031701'
 
 import csv
 import os
@@ -22,6 +22,7 @@ import sys
 import tempfile
 
 from lib.globals2 import STATE_UNKNOWN
+import base2
 try:
     import psutil
 except ImportError as e:
@@ -109,7 +110,7 @@ def grep_file(filename, pattern):
         return (True, match)
 
 
-def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False):
+def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, skip_empty_rows=False):
     """Reads a CSV file, and returns a list or a dict.
 
     """
@@ -123,6 +124,9 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False):
             data = []
             is_header_row = True
             for row in reader:
+                # check if the list contains empty strings only
+                if skip_empty_rows and base3.is_empty_list(row):
+                    continue
                 data.append(row)
     except csv.Error as e:
         return (False, 'CSV error in file {}, line {}: {}'.format(filename, reader.line_num, e))
