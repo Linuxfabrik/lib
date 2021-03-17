@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021031101'
+__version__ = '2021031701'
 
 import collections
 import datetime
@@ -34,13 +34,32 @@ import disk2
 def bits2human(n, format="%(value).1f%(symbol)s"):
     """Converts n bits to a human readable format.
 
-    >>> bits2human(10000)
-    '10K'
-    >>> bits2human(100001221)
-    '100.0M'
+    >>> bits2human(8)
+    '1.0B'
+    >>> bits2human(12000)
+    '1.5KB'
     """
 
-    symbols = ('B', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+    symbols = ('B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB')
+    prefix = {}
+    prefix['B'] = 8
+    for i, s in enumerate(symbols[1:]):
+        prefix[s] = 1000**(i + 1) * 8
+    for symbol in reversed(symbols):
+        if n >= prefix[symbol]:
+            value = float(n) / prefix[symbol]
+            return format % locals()
+    return format % dict(symbol=symbols[0], value=n)
+
+
+def bps2human(n, format="%(value).1f%(symbol)s"):
+    """Converts n bits per scond to a human readable format.
+
+    >>> bps2human(72000000)
+    '72Mbps'
+    """
+
+    symbols = ('bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps', 'Pbps', 'Ebps', 'Zbps', 'Ybps')
     prefix = {}
     for i, s in enumerate(symbols[1:]):
         prefix[s] = 1000**(i + 1)
@@ -54,15 +73,15 @@ def bits2human(n, format="%(value).1f%(symbol)s"):
 def bytes2human(n, format="%(value).1f%(symbol)s"):
     """Converts n bytes to a human readable format.
 
-    >>> bytes2human(10000)
-    '9.8K'
-    >>> bytes2human(100001221)
-    '95.4M'
+    >>> bytes2human(1000)
+    '1000.0B'
+    >>> bytes2human(1024)
+    '1.0KB'
 
     https://github.com/giampaolo/psutil/blob/master/psutil/_common.py
     """
 
-    symbols = ('B', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+    symbols = ('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB')
     prefix = {}
     for i, s in enumerate(symbols[1:]):
         # Returns 1 with the bits shifted to the left by (i + 1)*10 places
@@ -377,6 +396,13 @@ def guess_type(v, consumer='python'):
                     return 'real'
                 except ValueError:
                     return 'text'
+
+
+def is_empty_list(l):
+    """Check if a list only contains either empty elements or whitespace
+    """
+
+    return all('' == s or s.isspace() for s in l)
 
 
 def is_numeric(value):
