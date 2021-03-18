@@ -187,7 +187,7 @@ def get_perfdata(label, value, uom, warn, crit, min, max):
     msg += ';'
     if max is not None:
         msg += str(max)
-    msg += '; '
+    msg += ' '
     return msg
 
 
