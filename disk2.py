@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021031701'
+__version__ = '2021031901'
 
 import csv
 import os
@@ -116,7 +116,7 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
     """
 
     try:
-        with open(filename, newline=newline) as csvfile:
+        with open(filename) as csvfile:
             if not as_dict:
                 reader = csv.reader(csvfile, delimiter=',', quotechar='"')
             else:
@@ -125,7 +125,7 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
             is_header_row = True
             for row in reader:
                 # check if the list contains empty strings only
-                if skip_empty_rows and base3.is_empty_list(row):
+                if skip_empty_rows and base2.is_empty_list(row):
                     continue
                 data.append(row)
     except csv.Error as e:
