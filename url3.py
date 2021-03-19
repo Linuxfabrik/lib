@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021022501'
+__version__ = '2021031901'
 
 import json
 import re
@@ -22,7 +22,7 @@ import urllib.parse
 import urllib.request
 
 
-def fetch(url, insecure=False, no_proxy=False, timeout=5,
+def fetch(url, insecure=False, no_proxy=False, timeout=8,
           header={}, data={}, encoding='urlencode'):
     """Fetch any URL.
 
@@ -85,7 +85,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=5,
         return (True, result)
 
 
-def fetch_json(url, insecure=False, no_proxy=False, timeout=5,
+def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
                header={}, data={}, encoding='urlencode'):
     """Fetch JSON from an URL.
 
