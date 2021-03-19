@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021031701'
+__version__ = '2021031901'
 
 import collections
 import datetime
@@ -172,7 +172,7 @@ def get_perfdata(label, value, uom, warn, crit, min, max):
     """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
     """
 
-    msg = label + '=' + str(value)
+    msg = "'{}'={}".format(label, value)
     if uom is not None:
         msg += uom
     msg += ';'
