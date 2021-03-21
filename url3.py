@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021031901'
+__version__ = '2021032101'
 
 import json
 import re
@@ -49,6 +49,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
 
         for key, value in header.items():
             request.add_header(key, value)
+        # close http connections by myself
+        request.add_header('Connection', 'close')
 
         # SSL/TLS certificate validation
         # see: https://stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
