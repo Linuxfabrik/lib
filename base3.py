@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021031901'
+__version__ = '2021041101'
 
 import collections
 import datetime
@@ -402,6 +402,58 @@ def guess_type(v, consumer='python'):
                     return 'real'
                 except ValueError:
                     return 'text'
+
+
+def human2bytes(string, binary=True):
+    """Converts a string such as '3.072GiB' to 3298534883 bytes. If "binary" is set to True
+    (default due to Microsoft), it will use powers of 1024, otherwise powers of 1000 (decimal).
+    Returns 0 on failure.
+    """
+
+    string = string.lower()
+
+    try:
+        if 'kib' in string:
+            return int(float(string.replace('kib', '').strip()) * 1024)
+        if 'kb' in string:
+            if binary:
+                return int(float(string.replace('kb', '').strip()) * 1024)
+            else:
+                return int(float(string.replace('kb', '').strip()) * 1000)
+
+        if 'mib' in string:
+            return int(float(string.replace('mib', '').strip()) * 1024 * 1024)
+        if 'mb' in string:
+            if binary:
+                return int(float(string.replace('mb', '').strip()) * 1024 * 1024)
+            else:
+                return int(float(string.replace('mb', '').strip()) * 1000 * 1000)
+
+        if 'gib' in string:
+            return int(float(string.replace('gib', '').strip()) * 1024 * 1024 * 1024)
+        if 'gb' in string:
+            if binary:
+                return int(float(string.replace('gb', '').strip()) * 1024 * 1024 * 1024)
+            else:
+                return int(float(string.replace('gb', '').strip()) * 1000 * 1000 * 1000)
+
+        if 'tib' in string:
+            return int(float(string.replace('tib', '').strip()) * 1024 * 1024 * 1024 * 1024)
+        if 'tb' in string:
+            if binary:
+                return int(float(string.replace('tb', '').strip()) * 1024 * 1024 * 1024 * 1024)
+            else:
+                return int(float(string.replace('tb', '').strip()) * 1000 * 1000 * 1000 * 1000)
+
+        if 'pib' in string:
+            return int(float(string.replace('pib', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
+        if 'pb' in string:
+            if binary:
+                return int(float(string.replace('pb', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
+            else:
+                return int(float(string.replace('pb', '').strip()) * 1000 * 1000 * 1000 * 1000 * 1000)
+    except:
+        return 0
 
 
 def is_empty_list(l):
