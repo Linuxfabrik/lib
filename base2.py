@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021041101'
+__version__ = '2021041201'
 
 import collections
 import datetime
@@ -446,6 +446,13 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('pb', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
             else:
                 return int(float(string.replace('pb', '').strip()) * 1000 * 1000 * 1000 * 1000 * 1000)
+
+        if 'b' in string:
+            if binary:
+                return int(float(string.replace('b', '').strip()) * 1024)
+            else:
+                return int(float(string.replace('b', '').strip()) * 1000)
+
     except:
         return 0
 
