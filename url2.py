@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021032101'
+__version__ = '2021041601'
 
 import json
 import re
@@ -22,7 +22,8 @@ import urllib2
 
 
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
-          header={}, data={}, encoding='urlencode'):
+          header={}, data={}, encoding='urlencode',
+          digest_auth_user=None, digest_auth_password=None):
     """Fetch any URL.
 
     Basic authentication:
@@ -35,6 +36,13 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     """
 
     try:
+        if digest_auth_user is not None and digest_auth_password is not None:
+            # HTTP Digest Authentication
+            passmgr = urllib2.HTTPPasswordMgrWithDefaultRealm()
+            passmgr.add_password(None, url, digest_auth_user, digest_auth_password)
+            auth_handler = urllib2.HTTPDigestAuthHandler(passmgr)
+            opener = urllib2.build_opener(auth_handler)
+            urllib2.install_opener(opener)
         if data:
             # serializing dictionary
             if encoding == 'urlencode':
@@ -63,6 +71,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
             ctx_handler = urllib2.HTTPSHandler(context=ctx)
             opener = urllib2.build_opener(proxy_handler, ctx_handler)
             response = opener.open(request)
+        elif digest_auth_user is not None:
+            response = urllib2.urlopen(request, timeout=timeout)
         else:
             response = urllib2.urlopen(request, context=ctx, timeout=timeout)
     except urllib2.HTTPError as e:
@@ -86,14 +96,16 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
 
 
 def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
-               header={}, data={}, encoding='urlencode'):
+               header={}, data={}, encoding='urlencode',
+               digest_auth_user=None, digest_auth_password=None):
     """Fetch JSON from an URL.
 
     >>> fetch_json('https://1.2.3.4/api/v2/?resource=cpu')
     """
 
     success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
-                            header=header, data=data, encoding=encoding)
+                            header=header, data=data, encoding=encoding,
+                            digest_auth_user=digest_auth_user, digest_auth_password=digest_auth_password)
     if not success:
         return (False, jsonst)
     try:
