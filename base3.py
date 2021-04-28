@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021041201'
+__version__ = '2021042801'
 
 import collections
 import datetime
@@ -703,10 +703,10 @@ def seconds2human(seconds, keep_short=True, full_name=False):
         )
     else:
         intervals = (
-            ('y', 60*60*24*365),
-            ('m', 60*60*24*30),
-            ('w', 60*60*24*7),
-            ('d', 60*60*24),
+            ('Y', 60*60*24*365),
+            ('M', 60*60*24*30),
+            ('W', 60*60*24*7),
+            ('D', 60*60*24),
             ('h', 60*60),
             ('m', 60),
             ('s', 1),
