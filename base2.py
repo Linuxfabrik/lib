@@ -998,3 +998,17 @@ def version(v):
     """
 
     return tuple(map(int, (v.split("."))))
+
+
+def version2float(v):
+    """Just get the version number as a float.
+
+    >>> version2float('Version v17.3.2.0')
+    17.320
+    """
+    v = re.sub(r'[a-z\s]', '', v.lower())
+    v = v.split('.')
+    if len(v) > 1:
+        return float('{}.{}'.format(v[0], ''.join(v[1:])))
+    else:
+        return float(''.join(v))

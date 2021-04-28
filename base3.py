@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021042801'
+__version__ = '2021042802'
 
 import collections
 import datetime
@@ -678,9 +678,9 @@ def seconds2human(seconds, keep_short=True, full_name=False):
     """Returns a human readable time range string for a number of seconds.
 
     >>> lib.base.seconds2human(1387775)
-    '2w 2d'
+    '2W 2D'
     >>> lib.base.seconds2human('1387775')
-    '2w 2d'
+    '2W 2D'
     >>> lib.base.seconds2human('1387775', full_name=True)
     '2weeks 2days'
     >>> lib.base.seconds2human(1387775, keep_short=False, full_name=True)
@@ -1003,3 +1003,17 @@ def version(v):
     """
 
     return tuple(map(int, (v.split("."))))
+
+
+def version2float(v):
+    """Just get the version number as a float.
+
+    >>> version2float('Version v17.3.2.0')
+    17.320
+    """
+    v = re.sub(r'[a-z\s]', '', v.lower())
+    v = v.split('.')
+    if len(v) > 1:
+        return float('{}.{}'.format(v[0], ''.join(v[1:])))
+    else:
+        return float(''.join(v))
