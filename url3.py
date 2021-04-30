@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021032101'
+__version__ = '2021043001'
 
 import json
 import re
@@ -23,7 +23,8 @@ import urllib.request
 
 
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
-          header={}, data={}, encoding='urlencode'):
+          header={}, data={}, encoding='urlencode',
+          digest_auth_user=None, digest_auth_password=None):
     """Fetch any URL.
 
     Basic authentication:
@@ -32,10 +33,17 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                 base64.b64encode(username + ':' + password)
                 )
         }
-    >>> jsonst = lib.base.coe(lib.url.fetch(URL, header=header))
+    >>> jsonst = lib.base3.coe(lib.url3.fetch(URL, header=header))
     """
 
     try:
+        if digest_auth_user is not None and digest_auth_password is not None:
+            # HTTP Digest Authentication
+            passmgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+            passmgr.add_password(None, url, digest_auth_user, digest_auth_password)
+            auth_handler = urllib.request.HTTPDigestAuthHandler(passmgr)
+            opener = urllib.request.build_opener(auth_handler)
+            urllib.request.install_opener(opener)
         if data:
             # serializing dictionary
             if encoding == 'urlencode':
@@ -65,6 +73,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
             ctx_handler = urllib.request.HTTPSHandler(context=ctx)
             opener = urllib.request.build_opener(proxy_handler, ctx_handler)
             response = opener.open(request)
+        elif digest_auth_user is not None:
+            response = urllib.request.urlopen(request, timeout=timeout)
         else:
             response = urllib.request.urlopen(request, context=ctx, timeout=timeout)
     except urllib.request.HTTPError as e:
@@ -88,14 +98,16 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
 
 
 def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
-               header={}, data={}, encoding='urlencode'):
+               header={}, data={}, encoding='urlencode',
+               digest_auth_user=None, digest_auth_password=None):
     """Fetch JSON from an URL.
 
     >>> fetch_json('https://1.2.3.4/api/v2/?resource=cpu')
     """
 
     success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
-                            header=header, data=data, encoding=encoding)
+                            header=header, data=data, encoding=encoding,
+                            digest_auth_user=digest_auth_user, digest_auth_password=digest_auth_password)
     if not success:
         return (False, jsonst)
     try:

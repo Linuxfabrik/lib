@@ -12,13 +12,14 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021041601'
+__version__ = '2021043001'
 
 import json
 import re
 import ssl
 import urllib
 import urllib2
+
 
 
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
@@ -49,6 +50,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                 data = urllib.urlencode(data)
             if encoding == 'serialized-json':
                 data = json.dumps(data)
+
             request = urllib2.Request(url, data=data)
         else:
             request = urllib2.Request(url)
@@ -59,7 +61,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
         request.add_header('Connection', 'close')
 
         # SSL/TLS certificate validation
-        # see: stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
+        # see: https://stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
         ctx = ssl.create_default_context()
         if insecure:
             ctx.check_hostname = False

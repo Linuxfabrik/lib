@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021042801'
+__version__ = '2021043001'
 
 import collections
 import datetime
@@ -195,9 +195,9 @@ def get_state(value, warn, crit, operator='ge'):
     """Returns the STATE by comparing `value` to the given thresholds using
     a comparison `operator`. `warn` and `crit` threshold may also be `None`.
 
-    >>> base.get_state(15, 10, 20, 'ge')
+    >>> lib.base2.get_state(15, 10, 20, 'ge')
     1 (STATE_WARN)
-    >>> base.get_state(10, 10, 20, 'gt')
+    >>> lib.base2.get_state(10, 10, 20, 'gt')
     0 (STATE_OK)
 
     Parameters
@@ -232,6 +232,7 @@ def get_state(value, warn, crit, operator='ge'):
             if value >= float(warn):
                 return STATE_WARN
         return STATE_OK
+
     if operator == 'gt':
         if crit is not None:
             if value > float(crit):
@@ -240,6 +241,7 @@ def get_state(value, warn, crit, operator='ge'):
             if value > float(warn):
                 return STATE_WARN
         return STATE_OK
+
     if operator == 'le':
         if crit is not None:
             if value <= float(crit):
@@ -248,6 +250,7 @@ def get_state(value, warn, crit, operator='ge'):
             if value <= float(warn):
                 return STATE_WARN
         return STATE_OK
+
     if operator == 'lt':
         if crit is not None:
             if value < float(crit):
@@ -256,6 +259,7 @@ def get_state(value, warn, crit, operator='ge'):
             if value < float(warn):
                 return STATE_WARN
         return STATE_OK
+
     if operator == 'eq':
         if crit is not None:
             if value == float(crit):
@@ -264,6 +268,7 @@ def get_state(value, warn, crit, operator='ge'):
             if value == float(warn):
                 return STATE_WARN
         return STATE_OK
+
     if operator == 'ne':
         if crit is not None:
             if value != float(crit):
@@ -272,6 +277,7 @@ def get_state(value, warn, crit, operator='ge'):
             if value != float(warn):
                 return STATE_WARN
         return STATE_OK
+
     return STATE_UNKNOWN
 
 
@@ -404,9 +410,8 @@ def human2bytes(string, binary=True):
     Returns 0 on failure.
     """
 
-    string = string.lower()
-
     try:
+        string = string.lower()
         if 'kib' in string:
             return int(float(string.replace('kib', '').strip()) * 1024)
         if 'kb' in string:
@@ -414,7 +419,6 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('kb', '').strip()) * 1024)
             else:
                 return int(float(string.replace('kb', '').strip()) * 1000)
-
         if 'mib' in string:
             return int(float(string.replace('mib', '').strip()) * 1024 * 1024)
         if 'mb' in string:
@@ -422,7 +426,6 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('mb', '').strip()) * 1024 * 1024)
             else:
                 return int(float(string.replace('mb', '').strip()) * 1000 * 1000)
-
         if 'gib' in string:
             return int(float(string.replace('gib', '').strip()) * 1024 * 1024 * 1024)
         if 'gb' in string:
@@ -430,7 +433,6 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('gb', '').strip()) * 1024 * 1024 * 1024)
             else:
                 return int(float(string.replace('gb', '').strip()) * 1000 * 1000 * 1000)
-
         if 'tib' in string:
             return int(float(string.replace('tib', '').strip()) * 1024 * 1024 * 1024 * 1024)
         if 'tb' in string:
@@ -438,7 +440,6 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('tb', '').strip()) * 1024 * 1024 * 1024 * 1024)
             else:
                 return int(float(string.replace('tb', '').strip()) * 1000 * 1000 * 1000 * 1000)
-
         if 'pib' in string:
             return int(float(string.replace('pib', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
         if 'pb' in string:
@@ -446,13 +447,9 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('pb', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
             else:
                 return int(float(string.replace('pb', '').strip()) * 1000 * 1000 * 1000 * 1000 * 1000)
-
         if 'b' in string:
-            if binary:
-                return int(float(string.replace('b', '').strip()) * 1024)
-            else:
-                return int(float(string.replace('b', '').strip()) * 1000)
-
+            return int(float(string.replace('b', '').strip()))
+        return 0
     except:
         return 0
 
@@ -568,16 +565,16 @@ def now(as_type=''):
     """Returns the current date and time as UNIX time in seconds (default), or
     as a datetime object.
 
-    base.now()
+    lib.base2.now()
     >>> 1586422786
 
-    base.now(as_type='epoch')
+    lib.base2.now(as_type='epoch')
     >>> 1586422786
 
-    base.now(as_type='datetime')
+    lib.base2.now(as_type='datetime')
     >>> datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)
 
-    base.now(as_type='iso')
+    lib.base2.now(as_type='iso')
     >>> '2020-04-09 11:31:24'
     """
 
@@ -672,13 +669,13 @@ def pluralize(noun, value, suffix='s'):
 def seconds2human(seconds, keep_short=True, full_name=False):
     """Returns a human readable time range string for a number of seconds.
 
-    >>> lib.base.seconds2human(1387775)
-    '2w 2d'
-    >>> lib.base.seconds2human('1387775')
-    '2w 2d'
-    >>> lib.base.seconds2human('1387775', full_name=True)
+    >>> lib.base2.seconds2human(1387775)
+    '2W 2D'
+    >>> lib.base2.seconds2human('1387775')
+    '2W 2D'
+    >>> lib.base2.seconds2human('1387775', full_name=True)
     '2weeks 2days'
-    >>> lib.base.seconds2human(1387775, keep_short=False, full_name=True)
+    >>> lib.base2.seconds2human(1387775, keep_short=False, full_name=True)
     '2weeks 2days 1hour 29minutes 35seconds'
     """
 
@@ -979,7 +976,7 @@ def uniq(string):
 def version(v):
     """Use this function to compare numerical but string-based version numbers.
 
-    >>> base.version('3.0.7') < base.version('3.0.11')
+    >>> lib.base2.version('3.0.7') < lib.base2.version('3.0.11')
     True
     >>> '3.0.7' < '3.0.11'
     False

@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021042802'
+__version__ = '2021043001'
 
 import collections
 import datetime
@@ -101,23 +101,23 @@ def coe(result, state=STATE_UNKNOWN):
     This is useful if calling complex library functions in your checks
     `main()` function. Don't use this in functions.
 
-    If a more complex library function, for example `lib.url.fetch()` fails, it
+    If a more complex library function, for example `lib.url3.fetch()` fails, it
     returns `(False, 'the reason why I failed')`, otherwise `(True,
     'this is my result'). This forces you to do some error handling.
-    To keep things simple, use `result = lib.base.coe(lib.url.fetch(...))`.
+    To keep things simple, use `result = lib.base3.coe(lib.url.fetch(...))`.
     If `fetch()` fails, your plugin will exit with STATE_UNKNOWN (default) and
     print the original error message. Otherwise your script just goes on.
 
     The use case in `main()` - without `coe`:
 
-    >>> success, html = lib.url.fetch(URL)
+    >>> success, html = lib.url3.fetch(URL)
     >>> if not success:
     >>>     print(html)             # contains the error message here
     >>>>    exit(STATE_UNKNOWN)
 
     Or simply:
 
-    >>> html = lib.base.coe(lib.url.fetch(URL))
+    >>> html = lib.base3.coe(lib.url.fetch(URL))
 
     Parameters
     ----------
@@ -195,9 +195,9 @@ def get_state(value, warn, crit, operator='ge'):
     """Returns the STATE by comparing `value` to the given thresholds using
     a comparison `operator`. `warn` and `crit` threshold may also be `None`.
 
-    >>> base3.get_state(15, 10, 20, 'ge')
+    >>> lib.base3.get_state(15, 10, 20, 'ge')
     1 (STATE_WARN)
-    >>> base3.get_state(10, 10, 20, 'gt')
+    >>> lib.base3.get_state(10, 10, 20, 'gt')
     0 (STATE_OK)
 
     Parameters
@@ -410,9 +410,8 @@ def human2bytes(string, binary=True):
     Returns 0 on failure.
     """
 
-    string = string.lower()
-
     try:
+        string = string.lower()
         if 'kib' in string:
             return int(float(string.replace('kib', '').strip()) * 1024)
         if 'kb' in string:
@@ -420,7 +419,6 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('kb', '').strip()) * 1024)
             else:
                 return int(float(string.replace('kb', '').strip()) * 1000)
-
         if 'mib' in string:
             return int(float(string.replace('mib', '').strip()) * 1024 * 1024)
         if 'mb' in string:
@@ -428,7 +426,6 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('mb', '').strip()) * 1024 * 1024)
             else:
                 return int(float(string.replace('mb', '').strip()) * 1000 * 1000)
-
         if 'gib' in string:
             return int(float(string.replace('gib', '').strip()) * 1024 * 1024 * 1024)
         if 'gb' in string:
@@ -436,7 +433,6 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('gb', '').strip()) * 1024 * 1024 * 1024)
             else:
                 return int(float(string.replace('gb', '').strip()) * 1000 * 1000 * 1000)
-
         if 'tib' in string:
             return int(float(string.replace('tib', '').strip()) * 1024 * 1024 * 1024 * 1024)
         if 'tb' in string:
@@ -444,7 +440,6 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('tb', '').strip()) * 1024 * 1024 * 1024 * 1024)
             else:
                 return int(float(string.replace('tb', '').strip()) * 1000 * 1000 * 1000 * 1000)
-
         if 'pib' in string:
             return int(float(string.replace('pib', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
         if 'pb' in string:
@@ -452,12 +447,9 @@ def human2bytes(string, binary=True):
                 return int(float(string.replace('pb', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
             else:
                 return int(float(string.replace('pb', '').strip()) * 1000 * 1000 * 1000 * 1000 * 1000)
-
         if 'b' in string:
-            if binary:
-                return int(float(string.replace('b', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
-            else:
-                return int(float(string.replace('b', '').strip()) * 1000 * 1000 * 1000 * 1000 * 1000)
+            return int(float(string.replace('b', '').strip()))
+        return 0
     except:
         return 0
 
@@ -573,16 +565,16 @@ def now(as_type=''):
     """Returns the current date and time as UNIX time in seconds (default), or
     as a datetime object.
 
-    base3.now()
+    lib.base3.now()
     >>> 1586422786
 
-    base3.now(as_type='epoch')
+    lib.base3.now(as_type='epoch')
     >>> 1586422786
 
-    base3.now(as_type='datetime')
+    lib.base3.now(as_type='datetime')
     >>> datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)
 
-    base3.now(as_type='iso')
+    lib.base3.now(as_type='iso')
     >>> '2020-04-09 11:31:24'
     """
 
@@ -677,13 +669,13 @@ def pluralize(noun, value, suffix='s'):
 def seconds2human(seconds, keep_short=True, full_name=False):
     """Returns a human readable time range string for a number of seconds.
 
-    >>> lib.base.seconds2human(1387775)
+    >>> lib.base3.seconds2human(1387775)
     '2W 2D'
-    >>> lib.base.seconds2human('1387775')
+    >>> lib.base3.seconds2human('1387775')
     '2W 2D'
-    >>> lib.base.seconds2human('1387775', full_name=True)
+    >>> lib.base3.seconds2human('1387775', full_name=True)
     '2weeks 2days'
-    >>> lib.base.seconds2human(1387775, keep_short=False, full_name=True)
+    >>> lib.base3.seconds2human(1387775, keep_short=False, full_name=True)
     '2weeks 2days 1hour 29minutes 35seconds'
     """
 
@@ -984,11 +976,11 @@ def uniq(string):
 def version(v):
     """Use this function to compare numerical but string-based version numbers.
 
-    >>> base3.version('3.0.7') < base3.version('3.0.11')
+    >>> lib.base3.version('3.0.7') < lib.base3.version('3.0.11')
     True
     >>> '3.0.7' < '3.0.11'
     False
-    >>> lib.base.version(psutil.__version__) >= lib.base.version('5.3.0')
+    >>> lib.base3.version(psutil.__version__) >= lib.base3.version('5.3.0')
     True
 
     Parameters
