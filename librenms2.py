@@ -14,6 +14,8 @@ needed by LibreNMS check plugins."""
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2021042801'
 
+from globals2 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
+
 import base2
 import url2
 
@@ -31,4 +33,26 @@ def get_data(args, url=''):
     return result
 
 
+def get_prop(obj, prop, mytype='str'):
+    """Get a property of a dict, for example device['uptime'], and handle None-values."""
+    if mytype == 'str':
+        if prop in obj:
+            if obj[prop] is not None:
+                return obj[prop].encode('utf-8')
+        return ''
+    else:
+        if prop in obj:
+            if obj[prop] is not None:
+                return obj[prop]
+        return None
+
+
+def get_state(librestate):
+    if librestate == 'ok':
+        return STATE_OK
+    if librestate == 'warning':
+        return STATE_WARN
+    if librestate == 'critical':
+        return STATE_CRIT
+    return STATE_UNKNOWN
 
