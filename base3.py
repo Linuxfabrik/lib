@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021043001'
+__version__ = '2021050401'
 
 import collections
 import datetime
@@ -27,8 +27,12 @@ import subprocess
 import sys
 import time
 
-from . import disk3
 from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
+from . import disk3
+
+
+WINDOWS = os.name == "nt"
+LINUX = sys.platform.startswith("linux")
 
 
 def bits2human(n, format="%(value).1f%(symbol)s"):
