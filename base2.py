@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050401'
+__version__ = '2021050402'
 
 import collections
 import datetime
@@ -170,6 +170,39 @@ def filter_str(s, charclass='a-zA-Z0-9_'):
 
     regex = '[^{}]'.format(charclass)
     return re.sub(regex, "", s)
+
+
+def get_command_output(cmd, regex=None):
+    """Runs a shell command and returns its output. Optionally, applies a regex and just
+    returns the first matching group. If the command is not found, an empty string is returned.
+
+    >>> get_command_output('nano --version')
+    GNU nano, version 5.3
+     (C) 1999-2011, 2013-2020 Free Software Foundation, Inc.
+     (C) 2014-2020 the contributors to nano
+     Compiled options: --enable-utf8
+    >>> get_command_output('nano --version', regex=r'version (.*)\n')
+    5.3
+    """
+
+    success, result = shell_exec(cmd)
+    if not success:
+        return ''
+    stdout, stderr, retc = result
+    if stdout == '' and stderr != '':
+        # https://stackoverflow.com/questions/26028416/why-does-python-print-version-info-to-stderr
+        # https://stackoverflow.com/questions/13483443/why-does-java-version-go-to-stderr]
+        stdout = stderr
+    stdout = stdout.strip()
+    if regex:
+        # extract something special from output
+        try:
+            stdout = re.search(regex, stdout)
+            return stdout.group(1).strip()
+        except:
+            return ''
+    else:
+        return stdout.strip()
 
 
 def get_perfdata(label, value, uom, warn, crit, min, max):
