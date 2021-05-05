@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050301'
+__version__ = '2021050501'
 
 import csv
 import os
@@ -130,6 +130,22 @@ def read_file(filename):
     return (True, data)
 
 
+def rm_file(filename):
+    """Deletes/Removes a file.
+
+    >>> rm_file('test.txt')
+    (True, None)
+    """
+
+    try:
+        os.remove(filename)
+    except OSError as e:
+        return (False, 'OS error "{}" while deleting {}'.format(e.strerror, filename))
+    except:
+        return (False, 'Unknown error deleting {}'.format(filename))
+    return (True, None)
+
+
 def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True):
     """Walks recursively through a directory and creates a list of files.
     If an exclude_pattern (regex) is specified, files matching this pattern
@@ -163,3 +179,21 @@ def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True
                 result.append(file)
 
     return result
+
+
+def write_file(filename, content, append=False):
+    """Writes a string to a file.
+
+    >>> write_file('test.txt', 'First line\nSecond line')
+    (True, None)
+    """
+
+    try:
+        with open(filename, 'w' if not append else 'a') as f:
+            f.write(content)
+        f.close()
+    except IOError as e:
+        return (False, 'I/O error "{}" while writing {}'.format(e.strerror, filename))
+    except:
+        return (False, 'Unknown error writing {}, or content is not a string'.format(filename))
+    return (True, None)
