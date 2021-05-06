@@ -23,7 +23,7 @@ from . import base3
 from . import url3
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021031001'
+__version__ = '2021050601'
 
 
 def parse_atom(soup):
@@ -42,9 +42,14 @@ def parse_atom(soup):
         # cut the timezone part
         tmp['updated_parsed'] = base3.timestr2datetime(tmp['updated'][0:19], pattern='%Y-%m-%dT%H:%M:%S')
         try:
-            tmp['summary'] = entry.summary.string
+            soup = BeautifulSoup(entry.summary.string, 'lxml')
+            tmp['summary'] = soup.get_text()
         except:
-            pass
+            try:
+                soup = BeautifulSoup(entry.content.string, 'lxml')
+                tmp['summary'] = soup.get_text()
+            except:
+                pass
         result['entries'].append(tmp)
     return result
 
@@ -65,7 +70,8 @@ def parse_rss(soup):
         # cut the timezone part
         tmp['updated_parsed'] = base3.timestr2datetime(tmp['updated'][0:25], pattern='%a, %d %b %Y %H:%M:%S')
         try:
-            tmp['summary'] = entry.description.string
+            soup = BeautifulSoup(entry.description.string, 'lxml')
+            tmp['summary'] = soup.get_text()
         except:
             pass
         result['entries'].append(tmp)
