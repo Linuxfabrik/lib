@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021043001'
+__version__ = '2021050601'
 
 import json
 import re
@@ -93,7 +93,13 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
         return (False, 'Unknown error while fetching {}, maybe timeout or '
                        'error on webserver'.format(url))
     else:
-        result = response.read()
+        try:
+            result = response.read()
+        except SSLError as e:
+            return (False, 'SSL error "{}" while fetching {}'.format(e, url))
+        except:
+            return (False, 'Unknown error while fetching {}, maybe timeout or '
+                       'error on webserver'.format(url))
         return (True, result)
 
 
