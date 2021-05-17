@@ -148,10 +148,13 @@ def coe(result, state=STATE_UNKNOWN):
 
 def epoch2iso(timestamp):
     """Returns the ISO representaton of a UNIX timestamp (epoch).
+
+    >>> epoch2iso(1620459129)
+    '2021-05-08 09:32:09'
     """
 
     timestamp = float(timestamp)
-    return datetime.datetime.fromepoch(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
 
 
 def filter_mltext(input, ignore):
