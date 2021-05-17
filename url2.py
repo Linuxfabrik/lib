@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050601'
+__version__ = '2021050602'
 
 import json
 import re
@@ -33,7 +33,10 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                 base64.b64encode(username + ':' + password)
                 )
         }
-    >>> jsonst = lib.base2.coe(lib.url2.fetch(URL, header=header))
+    >>> result = fetch(URL)
+
+    POST: the HTTP request will be a POST instead of a GET when the data parameter is provided
+    >>> result = fetch(URL, header=header, data={...})
     """
 
     try:
@@ -50,9 +53,10 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                 data = urllib.urlencode(data)
             if encoding == 'serialized-json':
                 data = json.dumps(data)
-
+            # the HTTP request will be a POST instead of a GET when the data parameter is provided
             request = urllib2.Request(url, data=data)
         else:
+            # the HTTP request will be a POST instead of a GET when the data parameter is provided
             request = urllib2.Request(url)
 
         for key, value in header.items():
