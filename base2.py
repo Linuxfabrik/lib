@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050801'
+__version__ = '2021052801'
 
 import collections
 import datetime
@@ -206,6 +206,16 @@ def get_command_output(cmd, regex=None):
             return ''
     else:
         return stdout.strip()
+
+
+def get_owner(file):
+    """Returns the user ID of the owner of a file (for example "0" for "root").
+    Returns -1 on failure.
+    """
+    try:
+        return os.stat(file).st_uid
+    except:
+        return -1
 
 
 def get_perfdata(label, value, uom, warn, crit, min, max):
