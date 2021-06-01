@@ -640,9 +640,11 @@ def number2human(n):
     >>> number2human(123456.8)
     '123K'
     >>> number2human(123456789.0)
-    '123 Mill.'
+    '123 Mio.''
+    >>> number2human(9223372036854775808)
+    '9.2 Trill.'
     """
-    millnames = ['', 'K', ' Mill.', ' Bill.', ' Trill.']
+    millnames = ['', 'K', ' Mio.', ' Mrd.', ' Bill.', 'Brd.', 'Trill.', 'Trd.']
     try:
         n = float(n)
     except:
