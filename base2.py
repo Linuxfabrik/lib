@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021060201'
+__version__ = '2021061401'
 
 import collections
 import datetime
@@ -704,6 +704,16 @@ def pluralize(noun, value, suffix='s'):
 def seconds2human(seconds, keep_short=True, full_name=False):
     """Returns a human readable time range string for a number of seconds.
 
+    >>> lib.base2.seconds2human(0.125)
+    '0.12s'
+    >>> lib.base2.seconds2human(1)
+    '1s'
+    >>> lib.base2.seconds2human(59)
+    '59s'
+    >>> lib.base2.seconds2human(60)
+    '1m'
+    >>> lib.base2.seconds2human(61)
+    '1m 1s'
     >>> lib.base2.seconds2human(1387775)
     '2W 2D'
     >>> lib.base2.seconds2human('1387775')
