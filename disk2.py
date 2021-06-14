@@ -13,15 +13,13 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050501'
+__version__ = '2021061401'
 
 import csv
 import os
 import re
 import sys
 import tempfile
-
-import base2
 
 
 def get_cwd():
@@ -102,7 +100,7 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
             is_header_row = True
             for row in reader:
                 # check if the list contains empty strings only
-                if skip_empty_rows and base2.is_empty_list(row):
+                if skip_empty_rows and all('' == row or row.isspace() for row in l):
                     continue
                 data.append(row)
     except csv.Error as e:
