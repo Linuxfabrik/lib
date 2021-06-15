@@ -29,7 +29,11 @@ from . import url2 # pylint: disable=C0413
 AF_INET = socket.AF_INET                             # 2
 AF_INET6 = getattr(socket, 'AF_INET6', object())     # 10
 AF_UNSPEC = socket.AF_UNSPEC                         # any kind of connection
-AF_UNIX = socket.AF_UNIX
+try:
+    AF_UNIX = socket.AF_UNIX
+except AttributeError:
+    # If the AF_UNIX constant is not defined then this protocol is unsupported.
+    AF_UNIX = None
 
 # socket type
 SOCK_TCP = socket.SOCK_STREAM                        # 1
