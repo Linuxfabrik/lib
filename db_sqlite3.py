@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051701'
+__version__ = '2021022401'
 
 import os
 import sqlite3
@@ -103,7 +103,7 @@ def create_index(conn, column_list, table='perfdata', unique=False):
 
     table = base3.filter_str(table)
 
-    index_name = 'idx_{}'.format(base.md5sum(table + column_list))
+    index_name = 'idx_{}'.format(base3.md5sum(table + column_list))
     c = conn.cursor()
     if unique:
         sql = 'CREATE UNIQUE INDEX IF NOT EXISTS {} ON "{}" ({});'.format(
@@ -280,7 +280,10 @@ def select(conn, sql, data={}, fetchone=False, as_dict=True):
         # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
         if as_dict:
             if fetchone:
-                return (True, [dict(row) for row in c.fetchall()][0])
+                try:
+                    return (True, [dict(row) for row in c.fetchall()][0])
+                except IndexError:
+                    return (True, [])
             return (True, [dict(row) for row in c.fetchall()])
         if fetchone:
             return (True,  c.fetchone())

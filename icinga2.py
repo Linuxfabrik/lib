@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051401'
+__version__ = '2021022501'
 
 import base64
 import time
@@ -39,7 +39,7 @@ def api_post(url, username, password, data={}, method_override='',
     >>>                       method_override='GET', timeout=3))
     """
 
-    url = url2.replace('//v1', '/v1').replace('//v2', '/v2')
+    url = url.replace('//v1', '/v1').replace('//v2', '/v2')
     header = {}
     header['Accept'] = 'application/json'
     header['Authorization'] = "Basic %s" % base64.b64encode(username + ':' + password)

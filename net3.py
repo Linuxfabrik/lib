@@ -13,16 +13,27 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020043001'
+__version__ = '2021061501'
 
 import re
 import socket
+try:
+    import netifaces
+    lib_netifaces = True
+except ImportError as e:
+    lib_netifaces = False
+
+from . import url3 # pylint: disable=C0413
 
 # address family
 AF_INET = socket.AF_INET                             # 2
 AF_INET6 = getattr(socket, 'AF_INET6', object())     # 10
 AF_UNSPEC = socket.AF_UNSPEC                         # any kind of connection
-AF_UNIX = socket.AF_UNIX
+try:
+    AF_UNIX = socket.AF_UNIX
+except AttributeError:
+    # If the AF_UNIX constant is not defined then this protocol is unsupported.
+    AF_UNIX = None
 
 # socket type
 SOCK_TCP = socket.SOCK_STREAM                        # 1
@@ -108,6 +119,74 @@ SOCKETSTR = {
 FQDN_REGEX = re.compile(
         r"^((?!-)[-A-Z\d]{1,63}(?<!-)\.)+(?!-)[-A-Z\d]{1,63}(?<!-)\.?$", re.IGNORECASE
 )
+
+
+def get_ip_public():
+    """Retrieve the public IP address from a list of online services.
+    """
+    # List of tuple (url, json, key), from fastest to slowest.
+    # - url: URL of the Web site
+    # - json: service return a JSON (True) or string (False)
+    # - key: key of the IP addresse in the JSON structure
+    urls = [
+        ('https://ip.42.pl/raw', False, None),
+        ('https://api.ipify.org/?format=json', True, 'ip'),
+        ('https://httpbin.org/ip', True, 'origin'),
+        ('https://jsonip.com', True, 'ip'),
+    ]
+
+    ip = None
+    for url, json, key in urls:
+        # Request the url service and put the result in the queue_target.
+        if json:
+            success, result = url3.fetch_json(url)
+            ip = result.getattr(key, None)
+        else:
+            success, ip = url3.fetch(url)
+        if ip:
+            break
+
+    try:
+        return ip.decode()
+    except:
+        return ip
+
+
+def get_netinfo():
+    if lib_netifaces:
+        # Update stats using the netifaces lib
+        try:
+            default_gw = netifaces.gateways()['default'][netifaces.AF_INET]
+        except (KeyError, AttributeError) as e:
+            return []
+
+        stats = {}
+        try:
+            stats['address'] = netifaces.ifaddresses(default_gw[1])[netifaces.AF_INET][0]['addr']
+            stats['mask'] = netifaces.ifaddresses(default_gw[1])[netifaces.AF_INET][0]['netmask']
+            stats['mask_cidr'] = ip_to_cidr(stats['mask'])
+            stats['gateway'] = netifaces.gateways()['default'][netifaces.AF_INET][0]
+        except (KeyError, AttributeError) as e:
+            return []
+
+        stats['public_address'] = None
+        try:
+            stats['public_address'] = get_ip_public()
+        except:
+            return []
+        return stats
+
+
+def ip_to_cidr(ip):
+    """Convert IP address to CIDR.
+
+    Example: '255.255.255.0' will return 24
+    """
+    # Thanks to @Atticfire
+    # See https://github.com/nicolargo/glances/issues/1417#issuecomment-469894399
+    if ip is None:
+        return 0
+    return sum(bin(int(x)).count('1') for x in ip.split('.'))
 
 
 def is_valid_hostname(hostname):
