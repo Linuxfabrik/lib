@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020043001'
+__version__ = '2021050401'
 
 
 def csv(arg):
@@ -26,7 +26,7 @@ def float_or_none(arg):
     """Returns None or float from a `float_or_none` input argument.
     """
 
-    if arg is None or str(arg.lower()) == 'none':
+    if arg is None or str(arg).lower() == 'none':
         return None
     return float(arg)
 
@@ -35,7 +35,7 @@ def int_or_none(arg):
     """Returns None or int from a `int_or_none` input argument.
     """
 
-    if arg is None or str(arg.lower()) == 'none':
+    if arg is None or str(arg).lower() == 'none':
         return None
     return int(arg)
 
@@ -51,6 +51,6 @@ def str_or_none(arg):
     """Returns None or str from a `str_or_none` input argument.
     """
 
-    if arg is None or str(arg.lower()) == 'none':
+    if arg is None or str(arg).lower() == 'none':
         return None
     return str(arg)

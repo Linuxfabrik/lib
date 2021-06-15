@@ -13,20 +13,13 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051001'
+__version__ = '2021061401'
 
+import csv
 import os
 import re
 import sys
 import tempfile
-
-from lib.globals3 import STATE_UNKNOWN
-
-try:
-    import psutil
-except ImportError as e:
-    print('Python module "psutil" is not installed.')
-    sys.exit(STATE_UNKNOWN)
 
 
 def get_cwd():
@@ -34,23 +27,6 @@ def get_cwd():
     """
 
     return os.getcwd()
-
-
-def get_partitions(ignore=[]):
-    """Return all mounted disk partitions as a list of named tuples
-    including device, mount point and filesystem type, similarly to
-    `df` command on UNIX.
-    """
-
-    # remove all empty items from the ignore list, because `'' in 'any_string' == true`
-    ignore = list(filter(None, ignore))
-    return list(
-        filter(
-            lambda part: not any(
-                ignore_item in part.mountpoint for ignore_item in ignore),
-            psutil.disk_partitions(all=False)
-            )
-        )
 
 
 def get_tmpdir():
@@ -109,6 +85,33 @@ def grep_file(filename, pattern):
         return (True, match)
 
 
+def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, skip_empty_rows=False):
+    """Reads a CSV file, and returns a list or a dict.
+
+    """
+
+    try:
+        with open(filename, newline=newline) as csvfile:
+            if not as_dict:
+                reader = csv.reader(csvfile, delimiter=',', quotechar='"')
+            else:
+                reader = csv.DictReader(csvfile, delimiter=',', quotechar='"')
+            data = []
+            is_header_row = True
+            for row in reader:
+                # check if the list contains empty strings only
+                if skip_empty_rows and all('' == row or row.isspace() for row in l):
+                    continue
+                data.append(row)
+    except csv.Error as e:
+        return (False, 'CSV error in file {}, line {}: {}'.format(filename, reader.line_num, e))
+    except IOError as e:
+        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
+    except:
+        return (False, 'Unknown error opening or reading {}'.format(filename))
+    return (True, data)
+
+
 def read_file(filename):
     """Reads a file.
 
@@ -123,6 +126,22 @@ def read_file(filename):
     except:
         return (False, 'Unknown error opening or reading {}'.format(filename))
     return (True, data)
+
+
+def rm_file(filename):
+    """Deletes/Removes a file.
+
+    >>> rm_file('test.txt')
+    (True, None)
+    """
+
+    try:
+        os.remove(filename)
+    except OSError as e:
+        return (False, 'OS error "{}" while deleting {}'.format(e.strerror, filename))
+    except:
+        return (False, 'Unknown error deleting {}'.format(filename))
+    return (True, None)
 
 
 def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True):
@@ -158,3 +177,21 @@ def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True
                 result.append(file)
 
     return result
+
+
+def write_file(filename, content, append=False):
+    """Writes a string to a file.
+
+    >>> write_file('test.txt', 'First line\nSecond line')
+    (True, None)
+    """
+
+    try:
+        with open(filename, 'w' if not append else 'a') as f:
+            f.write(content)
+        f.close()
+    except IOError as e:
+        return (False, 'I/O error "{}" while writing {}'.format(e.strerror, filename))
+    except:
+        return (False, 'Unknown error writing {}, or content is not a string'.format(filename))
+    return (True, None)

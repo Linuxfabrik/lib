@@ -12,9 +12,9 @@
 needed by more than one Rocket.Chat plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020043001'
+__version__ = '2021031001'
 
-import url3
+from . import url3
 
 
 def get_token(rc_url, user, password):

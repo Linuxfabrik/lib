@@ -25,10 +25,10 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051301'
+__version__ = '2021031001'
 
-import base3
-import db_sqlite3
+from . import base3
+from . import db_sqlite3
 
 
 def get(key, as_dict=False):

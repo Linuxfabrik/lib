@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020122301'
+__version__ = '2021061401'
 
 import collections
 import datetime
@@ -27,20 +27,41 @@ import subprocess
 import sys
 import time
 
-from . import disk3
 from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
+from . import disk3
+
+
+WINDOWS = os.name == "nt"
+LINUX = sys.platform.startswith("linux")
 
 
 def bits2human(n, format="%(value).1f%(symbol)s"):
     """Converts n bits to a human readable format.
 
-    >>> bits2human(10000)
-    '10K'
-    >>> bits2human(100001221)
-    '100.0M'
+    >>> bits2human(8191)
+    '1023.9B'
+    >>> bits2human(8192)
+    '1.0KiB'
     """
+    symbols = ('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB')
+    prefix = {}
+    prefix['B'] = 8
+    for i, s in enumerate(symbols[1:]):
+        prefix[s] = 1024**(i + 1) * 8
+    for symbol in reversed(symbols):
+        if n >= prefix[symbol]:
+            value = float(n) / prefix[symbol]
+            return format % locals()
+    return format % dict(symbol=symbols[0], value=n)
 
-    symbols = ('B', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+
+def bps2human(n, format="%(value).1f%(symbol)s"):
+    """Converts n bits per scond to a human readable format.
+
+    >>> bps2human(72000000)
+    '72Mbps'
+    """
+    symbols = ('bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps', 'Pbps', 'Ebps', 'Zbps', 'Ybps')
     prefix = {}
     for i, s in enumerate(symbols[1:]):
         prefix[s] = 1000**(i + 1)
@@ -54,15 +75,14 @@ def bits2human(n, format="%(value).1f%(symbol)s"):
 def bytes2human(n, format="%(value).1f%(symbol)s"):
     """Converts n bytes to a human readable format.
 
-    >>> bytes2human(10000)
-    '9.8K'
-    >>> bytes2human(100001221)
-    '95.4M'
+    >>> bytes2human(1023)
+    '1023.0B'
+    >>> bytes2human(1024)
+    '1.0KiB'
 
     https://github.com/giampaolo/psutil/blob/master/psutil/_common.py
     """
-
-    symbols = ('B', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+    symbols = ('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB')
     prefix = {}
     for i, s in enumerate(symbols[1:]):
         # Returns 1 with the bits shifted to the left by (i + 1)*10 places
@@ -82,23 +102,23 @@ def coe(result, state=STATE_UNKNOWN):
     This is useful if calling complex library functions in your checks
     `main()` function. Don't use this in functions.
 
-    If a more complex library function, for example `lib.url.fetch()` fails, it
+    If a more complex library function, for example `lib.url3.fetch()` fails, it
     returns `(False, 'the reason why I failed')`, otherwise `(True,
     'this is my result'). This forces you to do some error handling.
-    To keep things simple, use `result = lib.base.coe(lib.url.fetch(...))`.
+    To keep things simple, use `result = lib.base3.coe(lib.url.fetch(...))`.
     If `fetch()` fails, your plugin will exit with STATE_UNKNOWN (default) and
     print the original error message. Otherwise your script just goes on.
 
     The use case in `main()` - without `coe`:
 
-    >>> success, html = lib.url.fetch(URL)
+    >>> success, html = lib.url3.fetch(URL)
     >>> if not success:
     >>>     print(html)             # contains the error message here
     >>>>    exit(STATE_UNKNOWN)
 
     Or simply:
 
-    >>> html = lib.base.coe(lib.url.fetch(URL))
+    >>> html = lib.base3.coe(lib.url.fetch(URL))
 
     Parameters
     ----------
@@ -115,7 +135,6 @@ def coe(result, state=STATE_UNKNOWN):
     any type
         The result of the inner function call (result[1]).
     """
-
     if result[0]:
         # success
         return result[1]
@@ -125,10 +144,12 @@ def coe(result, state=STATE_UNKNOWN):
 
 def epoch2iso(timestamp):
     """Returns the ISO representaton of a UNIX timestamp (epoch).
-    """
 
+    >>> epoch2iso(1620459129)
+    '2021-05-08 09:32:09'
+    """
     timestamp = float(timestamp)
-    return datetime.datetime.fromepoch(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
 
 
 def filter_mltext(input, ignore):
@@ -144,16 +165,56 @@ def filter_str(s, charclass='a-zA-Z0-9_'):
     """Stripping everything except alphanumeric chars and '_' from a string -
     chars that are allowed everywhere in variables, database table or index names, etc.
     """
-
     regex = '[^{}]'.format(charclass)
     return re.sub(regex, "", s)
+
+
+def get_command_output(cmd, regex=None):
+    """Runs a shell command and returns its output. Optionally, applies a regex and just
+    returns the first matching group. If the command is not found, an empty string is returned.
+
+    >>> get_command_output('nano --version')
+    GNU nano, version 5.3
+     (C) 1999-2011, 2013-2020 Free Software Foundation, Inc.
+     (C) 2014-2020 the contributors to nano
+     Compiled options: --enable-utf8
+    >>> get_command_output('nano --version', regex=r'version (.*)\n')
+    5.3
+    """
+    success, result = shell_exec(cmd)
+    if not success:
+        return ''
+    stdout, stderr, retc = result
+    if stdout == '' and stderr != '':
+        # https://stackoverflow.com/questions/26028416/why-does-python-print-version-info-to-stderr
+        # https://stackoverflow.com/questions/13483443/why-does-java-version-go-to-stderr]
+        stdout = stderr
+    stdout = stdout.strip()
+    if regex:
+        # extract something special from output
+        try:
+            stdout = re.search(regex, stdout)
+            return stdout.group(1).strip()
+        except:
+            return ''
+    else:
+        return stdout.strip()
+
+
+def get_owner(file):
+    """Returns the user ID of the owner of a file (for example "0" for "root").
+    Returns -1 on failure.
+    """
+    try:
+        return os.stat(file).st_uid
+    except:
+        return -1
 
 
 def get_perfdata(label, value, uom, warn, crit, min, max):
     """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
     """
-
-    msg = label + '=' + str(value)
+    msg = "'{}'={}".format(label, value)
     if uom is not None:
         msg += uom
     msg += ';'
@@ -168,7 +229,7 @@ def get_perfdata(label, value, uom, warn, crit, min, max):
     msg += ';'
     if max is not None:
         msg += str(max)
-    msg += '; '
+    msg += ' '
     return msg
 
 
@@ -176,9 +237,9 @@ def get_state(value, warn, crit, operator='ge'):
     """Returns the STATE by comparing `value` to the given thresholds using
     a comparison `operator`. `warn` and `crit` threshold may also be `None`.
 
-    >>> base3.get_state(15, 10, 20, 'ge')
+    >>> lib.base3.get_state(15, 10, 20, 'ge')
     1 (STATE_WARN)
-    >>> base3.get_state(10, 10, 20, 'gt')
+    >>> lib.base3.get_state(10, 10, 20, 'gt')
     0 (STATE_OK)
 
     Parameters
@@ -202,7 +263,6 @@ def get_state(value, warn, crit, operator='ge'):
     int
         `STATE_OK`, `STATE_WARN` or `STATE_CRIT`
     """
-
     # make sure to use float comparison
     value = float(value)
     if operator == 'ge':
@@ -279,7 +339,6 @@ def get_table(data, keys, header=None, sort_by_key=None, sort_order_reverse=Fals
     Inspired by
     https://www.calazan.com/python-function-for-displaying-a-list-of-dictionaries-in-table-format/
     """
-
     if not data:
         return ''
 
@@ -326,7 +385,6 @@ def get_worst(state1, state2):
 
     Note that numerically the above does not hold.
     """
-
     if STATE_CRIT in [state1, state2]:
         return STATE_CRIT
     if STATE_WARN in [state1, state2]:
@@ -334,6 +392,109 @@ def get_worst(state1, state2):
     if STATE_UNKNOWN in [state1, state2]:
         return STATE_UNKNOWN
     return STATE_OK
+
+
+def guess_type(v, consumer='python'):
+    """Guess the type of a value (None, int, float or string) for different types of consumers (Python, SQLite etc.).
+    For Python, use isinstance() to check for example if a number is an integer.
+
+    >>> guess_type('1')
+    1
+    >>> guess_type('1', 'sqlite')
+    'integer'
+    >>> guess_type('1.0')
+    1.0
+    >>> guess_type('1.0', 'sqlite')
+    'real'
+    >>> guess_type('abc')
+    'abc'
+    >>> guess_type('abc', 'sqlite')
+    'text'
+    >>>
+    >>> value_type = lib.base3.guess_type(value)
+    >>> if isinstance(value_type, int) or isinstance(value_type, float):
+    >>>     ...
+    """
+    if consumer == 'python':
+        if v is None:
+            return None
+        else:
+            try:
+                return int(v)
+            except ValueError:
+                try:
+                    return float(v)
+                except ValueError:
+                    return str(v)
+
+    if consumer == 'sqlite':
+        if v is None:
+            return 'string'
+        else:
+            try:
+                int(v)
+                return 'integer'
+            except ValueError:
+                try:
+                    float(v)
+                    return 'real'
+                except ValueError:
+                    return 'text'
+
+
+def human2bytes(string, binary=True):
+    """Converts a string such as '3.072GiB' to 3298534883 bytes. If "binary" is set to True
+    (default due to Microsoft), it will use powers of 1024, otherwise powers of 1000 (decimal).
+    Returns 0 on failure.
+    """
+    try:
+        string = string.lower()
+        if 'kib' in string:
+            return int(float(string.replace('kib', '').strip()) * 1024)
+        if 'kb' in string:
+            if binary:
+                return int(float(string.replace('kb', '').strip()) * 1024)
+            else:
+                return int(float(string.replace('kb', '').strip()) * 1000)
+        if 'mib' in string:
+            return int(float(string.replace('mib', '').strip()) * 1024 * 1024)
+        if 'mb' in string:
+            if binary:
+                return int(float(string.replace('mb', '').strip()) * 1024 * 1024)
+            else:
+                return int(float(string.replace('mb', '').strip()) * 1000 * 1000)
+        if 'gib' in string:
+            return int(float(string.replace('gib', '').strip()) * 1024 * 1024 * 1024)
+        if 'gb' in string:
+            if binary:
+                return int(float(string.replace('gb', '').strip()) * 1024 * 1024 * 1024)
+            else:
+                return int(float(string.replace('gb', '').strip()) * 1000 * 1000 * 1000)
+        if 'tib' in string:
+            return int(float(string.replace('tib', '').strip()) * 1024 * 1024 * 1024 * 1024)
+        if 'tb' in string:
+            if binary:
+                return int(float(string.replace('tb', '').strip()) * 1024 * 1024 * 1024 * 1024)
+            else:
+                return int(float(string.replace('tb', '').strip()) * 1000 * 1000 * 1000 * 1000)
+        if 'pib' in string:
+            return int(float(string.replace('pib', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
+        if 'pb' in string:
+            if binary:
+                return int(float(string.replace('pb', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
+            else:
+                return int(float(string.replace('pb', '').strip()) * 1000 * 1000 * 1000 * 1000 * 1000)
+        if 'b' in string:
+            return int(float(string.replace('b', '').strip()))
+        return 0
+    except:
+        return 0
+
+
+def is_empty_list(l):
+    """Check if a list only contains either empty elements or whitespace
+    """
+    return all('' == s or s.isspace() for s in l)
 
 
 def is_numeric(value):
@@ -344,7 +505,6 @@ def is_numeric(value):
     >>> is_numeric('53.4')
     False
     """
-
     return isinstance(value, numbers.Number)
 
 
@@ -366,12 +526,10 @@ def match_range(value, spec):
 
     Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
     """
-
     def parse_range(spec):
         """
         Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
         """
-
         def parse_atom(atom, default):
             if atom == '':
                 return default
@@ -421,7 +579,7 @@ def match_range(value, spec):
 
 
 def md5sum(string):
-    return hashlib.md5(string).hexdigest()
+    return hashlib.md5(string.encode('utf-8')).hexdigest()
 
 
 def mltext2array(input, skip_header=False, sort_key=-1):
@@ -440,19 +598,18 @@ def now(as_type=''):
     """Returns the current date and time as UNIX time in seconds (default), or
     as a datetime object.
 
-    base3.now()
+    lib.base3.now()
     >>> 1586422786
 
-    base3.now(as_type='epoch')
+    lib.base3.now(as_type='epoch')
     >>> 1586422786
 
-    base3.now(as_type='datetime')
+    lib.base3.now(as_type='datetime')
     >>> datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)
 
-    base3.now(as_type='iso')
+    lib.base3.now(as_type='iso')
     >>> '2020-04-09 11:31:24'
     """
-
     if as_type == 'datetime':
         return datetime.datetime.now()
     if as_type == 'iso':
@@ -465,9 +622,13 @@ def number2human(n):
     >>> number2human(123456.8)
     '123K'
     >>> number2human(123456789.0)
-    '123 Mill.'
+    '123M'
+    >>> number2human(9223372036854775808)
+    '9.2E'
     """
-    millnames = ['', 'K', ' Mill.', ' Bill.', ' Trill.']
+    # according to the SI Symbols at
+    # https://en.wikipedia.org/w/index.php?title=Names_of_large_numbers&section=5#Extensions_of_the_standard_dictionary_numbers
+    millnames = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y']
     try:
         n = float(n)
     except:
@@ -531,7 +692,6 @@ def pluralize(noun, value, suffix='s'):
 
     From https://kite.com/python/docs/django.template.defaultfilters.pluralize
     """
-
     if ',' in suffix:
         singular, plural = suffix.split(',')
     else:
@@ -544,19 +704,28 @@ def pluralize(noun, value, suffix='s'):
 def seconds2human(seconds, keep_short=True, full_name=False):
     """Returns a human readable time range string for a number of seconds.
 
-    >>> lib.base.seconds2human(1387775)
-    '2w 2d'
-    >>> lib.base.seconds2human('1387775')
-    '2w 2d'
-    >>> lib.base.seconds2human('1387775', full_name=True)
+    >>> lib.base3.seconds2human(0.125)
+    '0.12s'
+    >>> lib.base3.seconds2human(1)
+    '1s'
+    >>> lib.base3.seconds2human(59)
+    '59s'
+    >>> lib.base3.seconds2human(60)
+    '1m'
+    >>> lib.base3.seconds2human(61)
+    '1m 1s'
+    >>> lib.base3.seconds2human(1387775)
+    '2W 2D'
+    >>> lib.base3.seconds2human('1387775')
+    '2W 2D'
+    >>> lib.base3.seconds2human('1387775', full_name=True)
     '2weeks 2days'
-    >>> lib.base.seconds2human(1387775, keep_short=False, full_name=True)
+    >>> lib.base3.seconds2human(1387775, keep_short=False, full_name=True)
     '2weeks 2days 1hour 29minutes 35seconds'
     """
-
     seconds = float(seconds)
     if seconds < 1:
-        return f'{seconds:.2f}s'
+        return '{:.2f}s'.format(seconds)
 
     if full_name:
         intervals = (
@@ -570,10 +739,10 @@ def seconds2human(seconds, keep_short=True, full_name=False):
         )
     else:
         intervals = (
-            ('y', 60*60*24*365),
-            ('m', 60*60*24*30),
-            ('w', 60*60*24*7),
-            ('d', 60*60*24),
+            ('Y', 60*60*24*365),
+            ('M', 60*60*24*30),
+            ('W', 60*60*24*7),
+            ('D', 60*60*24),
             ('h', 60*60),
             ('m', 60),
             ('s', 1),
@@ -624,7 +793,6 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
 
     https://docs.python.org/2/library/subprocess.html
     """
-
     if not env:
         env = os.environ.copy()
     # set cmd output to English, no matter what the user has choosen
@@ -683,7 +851,6 @@ def smartcast(value):
     """Returns the value converted to float if possible, else string, else the
     uncasted value.
     """
-
     for test in [float, str]:
         try:
             return test(value)
@@ -696,7 +863,6 @@ def smartcast(value):
 def sort(array, reverse=True, sort_by_key=False):
     """Sort a simple 1-dimensional dictionary
     """
-
     if isinstance(array, dict):
         if not sort_by_key:
             return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
@@ -710,7 +876,6 @@ def sum_dict(dict1, dict2):
     >>> sum_dict({'in': 100, 'out': 10}, {'in': 50, 'error': 5, 'uuid': '1234-xyz'})
     {'in': 150, 'error': 5, 'out': 10}
     """
-
     total = {}
     for key, value in dict1.items():
         if not is_numeric(value):
@@ -735,7 +900,6 @@ def sum_lod(mylist):
     sum_lod([{'in': 100, 'out': 10}, {'in': 50, 'out': 20}, {'error': 5, 'uuid': '1234-xyz'}])
     >>> {'in': 150, 'out': 30, 'error': 5}
     """
-
     total = {}
     for mydict in mylist:
         for key, value in mydict.items():
@@ -758,7 +922,6 @@ def str2state(string):
     >>> lib.base.str2state('warning')
     1
     """
-
     string = str(string).lower()
     if string == 'ok':
         return STATE_OK
@@ -785,7 +948,6 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
     >>> lib.base.state2str(0, empty_ok=False, prefix=' (', suffix=')')
     ' ([OK])'
     """
-
     state = int(state)
     if state == STATE_OK and empty_ok:
         return ''
@@ -805,7 +967,6 @@ def test(args):
     """Enables unit testing of a check plugin.
 
     """
-
     if args[0] and os.path.isfile(args[0]):
         success, stdout = disk3.read_file(args[0])
     else:
@@ -823,7 +984,6 @@ def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
     """Takes a string (default: ISO format) and returns a
     datetime object.
     """
-
     return datetime.datetime.strptime(timestr, pattern)
 
 
@@ -831,7 +991,6 @@ def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%
     """Returns the difference between two datetime strings in seconds. This
     function expects two ISO timestamps, by default each in ISO format.
     """
-
     timestr1 = timestr2datetime(timestr1, pattern1)
     timestr2 = timestr2datetime(timestr2, pattern2)
     timedelta = abs(timestr1 - timestr2)
@@ -843,7 +1002,6 @@ def uniq(string):
     The sequence of the words will not be changed.
 
     """
-
     words = string.split()
     return ' '.join(sorted(set(words), key=words.index))
 
@@ -851,11 +1009,11 @@ def uniq(string):
 def version(v):
     """Use this function to compare numerical but string-based version numbers.
 
-    >>> base3.version('3.0.7') < base3.version('3.0.11')
+    >>> lib.base3.version('3.0.7') < lib.base3.version('3.0.11')
     True
     >>> '3.0.7' < '3.0.11'
     False
-    >>> lib.base.version(psutil.__version__) >= lib.base.version('5.3.0')
+    >>> lib.base3.version(psutil.__version__) >= lib.base3.version('5.3.0')
     True
 
     Parameters
@@ -868,5 +1026,18 @@ def version(v):
     tuple
         A tuple of version numbers.
     """
-
     return tuple(map(int, (v.split("."))))
+
+
+def version2float(v):
+    """Just get the version number as a float.
+
+    >>> version2float('Version v17.3.2.0')
+    17.320
+    """
+    v = re.sub(r'[a-z\s]', '', v.lower())
+    v = v.split('.')
+    if len(v) > 1:
+        return float('{}.{}'.format(v[0], ''.join(v[1:])))
+    else:
+        return float(''.join(v))

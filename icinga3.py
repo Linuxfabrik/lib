@@ -12,12 +12,12 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051401'
+__version__ = '2021022501'
 
 import base64
 import time
 
-import lib.url3
+from . import url3
 
 # Take care of Icinga and throttle the amount of requests, don't overload it
 # with too fast subsequent api-calls.
@@ -39,13 +39,13 @@ def api_post(url, username, password, data={}, method_override='',
     >>>                       method_override='GET', timeout=3))
     """
 
-    url = url3.replace('//v1', '/v1').replace('//v2', '/v2')
+    url = url.replace('//v1', '/v1').replace('//v2', '/v2')
     header = {}
     header['Accept'] = 'application/json'
-    header['Authorization'] = "Basic %s" % base64.b64encode(username + ':' + password)
+    header['Authorization'] = (b'Basic ' + base64.b64encode(f'{username}:{password}'.encode('utf-8'))).decode('utf-8')
     if method_override:
         header['X-HTTP-Method-Override'] = method_override
-    result = lib.url.fetch_json(url, insecure=insecure, no_proxy=no_proxy,
+    result = url3.fetch_json(url, insecure=insecure, no_proxy=no_proxy,
                                 timeout=timeout, header=header, data=data,
                                 encoding='serialized-json')
     time.sleep(DEFAULT_SLEEP)
