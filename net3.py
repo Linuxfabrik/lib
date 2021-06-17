@@ -121,6 +121,42 @@ FQDN_REGEX = re.compile(
 )
 
 
+def fetch(host, port, msg=None, timeout=3, ipv6=False):
+    """Fetch data via a TCP/IP socket connection. You may optionally send a msg first.
+    Supports both IPv4 and IPv6.
+    Taken from https://docs.python.org/3/library/socket.html, enhanced.
+    """
+    try:
+        if ipv6:
+            s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        else:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect((host, port))
+    except:
+        return (False, 'Could not open socket.')
+
+    if msg is not None:
+        try:
+            s.sendall(msg)
+        except:
+            return (False, 'Could not send payload "{}".'.format(msg))
+
+    fragments = []
+    while True:
+        chunk = s.recv(1024)
+        if not chunk:
+            break
+        fragments.append(chunk)
+
+    try:
+        s.close()
+    except:
+        s = None
+
+    return (True,  ''.join(fragments))
+
+
 def get_ip_public():
     """Retrieve the public IP address from a list of online services.
     """
