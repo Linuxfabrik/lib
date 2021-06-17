@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021022401'
+__version__ = '2021061701'
 
 import os
 import sqlite3
@@ -92,6 +92,8 @@ def connect(path='', filename=''):
         conn = sqlite3.connect(db, timeout=1)
         # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
         conn.row_factory = sqlite3.Row
+        # https://stackoverflow.com/questions/3425320/sqlite3-programmingerror-you-must-not-use-8-bit-bytestrings-unless-you-use-a-te
+        conn.text_factory = str
     except Exception as e:
         return(False, 'Connecting to DB {} failed, Error: {}'.format(db, e))
     return (True, conn)
