@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061501'
+__version__ = '2021061701'
 
 import re
 import socket
@@ -131,8 +131,8 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
             s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
         else:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(timeout)
-        s.connect((host, port))
+        s.settimeout(int(timeout))
+        s.connect((host, int(port)))
     except:
         return (False, 'Could not open socket.')
 
