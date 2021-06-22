@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061401'
+__version__ = '2021062001'
 
 import collections
 import datetime
@@ -152,6 +152,45 @@ def epoch2iso(timestamp):
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
 
 
+def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
+    """Extracts text between `from_txt` to `to_txt`.
+    If `include_fromto` is set to False (default), text is returned without both search terms,
+    otherwise `from_txt` and `to_txt` are included.
+    If `from_txt` is not found, always an empty string is returned.
+    If `to_txt` is not found and `be_tolerant` is set to True (default), text is returned from
+    `from_txt` til the end of input text. Otherwise an empty text is returned.
+
+    >>> extract_text('abcde', 'x', 'y')
+    ''
+    >>> extract_text('abcde', 'b', 'x')
+    'cde'
+    >>> extract_text('abcde', 'b', 'x', include_fromto=True)
+    'bcde'
+    >>> extract_text('abcde', 'b', 'x', include_fromto=True, be_tolerant=False)
+    ''
+    >>> extract_text('abcde', 'b', 'd')
+    'c'
+    >>> extract_text('abcde', 'b', 'd', include_fromto=True)
+    'bcd'
+    """
+    pos1 = s.find(from_txt)
+    if pos1 == -1:
+        # nothing found
+        return ''
+    pos2 = s.find(to_txt, pos1+len(from_txt))
+    # to_txt not found:
+    if pos2 == -1 and be_tolerant and not include_fromto:
+        return s[pos1+len(from_txt):]
+    if pos2 == -1 and be_tolerant and include_fromto:
+        return s[pos1:]
+    if pos2 == -1 and not be_tolerant:
+        return ''
+    # from_txt and to_txt found:
+    if not include_fromto:
+        return s[pos1+len(from_txt):pos2-len(to_txt)+ 1]
+    return s[pos1:pos2+len(to_txt)]
+
+
 def filter_mltext(input, ignore):
     filtered_input = ''
     for line in input.splitlines():
@@ -164,6 +203,9 @@ def filter_mltext(input, ignore):
 def filter_str(s, charclass='a-zA-Z0-9_'):
     """Stripping everything except alphanumeric chars and '_' from a string -
     chars that are allowed everywhere in variables, database table or index names, etc.
+
+    >>> filter_str('user@example.ch')
+    'userexamplech'
     """
     regex = '[^{}]'.format(charclass)
     return re.sub(regex, "", s)
