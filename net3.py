@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061701'
+__version__ = '2021062301'
 
 import re
 import socket
@@ -144,10 +144,23 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
 
     fragments = []
     while True:
-        chunk = s.recv(1024)
-        if not chunk:
-            break
-        fragments.append(chunk)
+        try:
+            chunk = s.recv(1024)
+            if not chunk:
+                break
+            fragments.append(chunk)
+        except socket.timeout as e:
+            # non-blocking behavior via a time out with socket.settimeout(n)
+            err = e.args[0]
+            # this next if/else is a bit redundant, but illustrates how the
+            # timeout exception is setup
+            if err == 'timed out':
+                return (False, 'Socket timed out.')
+            else:
+                return (False, 'Can\'t fetch data: {}'.format(e))
+        except socket.error as e:
+            # Something else happened, handle error, exit, etc.
+            return (False, 'Can\'t fetch data: {}'.format(e))
 
     try:
         s.close()
