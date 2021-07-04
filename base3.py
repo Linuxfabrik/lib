@@ -361,16 +361,17 @@ def get_state(value, warn, crit, operator='ge'):
     return STATE_UNKNOWN
 
 
-def get_table(data, keys, header=None, sort_by_key=None, sort_order_reverse=False):
+def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_reverse=False):
     """Takes a list of dictionaries, formats the data, and returns
     the formatted data as a text table.
 
     Required Parameters:
         data - Data to process (list of dictionaries). (Type: List)
-        keys - List of keys in the dictionary. (Type: List)
+        cols - List of cols in the dictionary. (Type: List)
 
     Optional Parameters:
         header - The table header. (Type: List)
+        strip - Strip/Trim values or not. (Type: Boolean)
         sort_by_key - The key to sort by. (Type: String)
         sort_order_reverse - Default sort order is ascending, if
             True sort order will change to descending. (Type: bool)
@@ -381,38 +382,53 @@ def get_table(data, keys, header=None, sort_by_key=None, sort_order_reverse=Fals
     if not data:
         return ''
 
-    # Sort the data if a sort key is specified (default sort order
-    # is ascending)
+    # Sort the data if a sort key is specified (default sort order is ascending)
     if sort_by_key:
         data = sorted(data,
                       key=operator.itemgetter(sort_by_key),
                       reverse=sort_order_reverse)
 
-    # If header is not empty, add header to data
+    # If header is not empty, create a list of dictionary from the cols and the header and
+    # insert it before first row of data
     if header:
-        # Get the length of each header and create a divider based
-        # on that length
-        header_divider = []
-        for name in header:
-            header_divider.append('-' * len(name))
-
-        # Create a list of dictionary from the keys and the header and
-        # insert it at the beginning of the list. Do the same for the
-        # divider and insert below the header.
-        header_divider = dict(zip(keys, header_divider))
-        data.insert(0, header_divider)
-        header = dict(zip(keys, header))
+        header = dict(zip(cols, header))
         data.insert(0, header)
 
+    # prepare data: decode from (mostly) UTF-8 to Unicode, optionally strip values and get
+    # the maximum length per column
     column_widths = collections.OrderedDict()
-    for key in keys:
-        column_widths[key] = max(len(str(column[key])) for column in data)
+    for idx, row in enumerate(data):
+        for col in cols:
+            try:
+                if strip:
+                    data[idx][col] = str(row[col]).strip()
+                else:
+                    data[idx][col] = str(row[col])
+            except:
+                return 'Unknown column "{}"'.format(col)
+            # get the maximum length
+            try:
+                column_widths[col] = max(column_widths[col], len(data[idx][col]))
+            except:
+                column_widths[col] = len(data[idx][col])
 
+    if header:
+        # Get the length of each column and create a '---' divider based on that length
+        header_divider = []
+        for col, width in column_widths.items():
+            header_divider.append('-' * width)
+
+        # Insert the header divider below the header row
+        header_divider = dict(zip(cols, header_divider))
+        data.insert(1, header_divider)
+
+    # create the output
     table = ''
-    for element in data:
-        for key, width in column_widths.items():
-            table += '{:<{}} '.format(element[key], width)
-        table += '\n'
+    for row in data:
+        tmp = ''
+        for col, width in column_widths.items():
+            tmp += '{:<{}} ! '.format(row[col], width)
+        table += tmp[:-2] + '\n'
 
     return table
 
