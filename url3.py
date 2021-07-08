@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050602'
+__version__ = '2021070801'
 
 import json
 import re
@@ -62,6 +62,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
             request.add_header(key, value)
         # close http connections by myself
         request.add_header('Connection', 'close')
+        # identify as Linuxfabrik Monitoring-Plugin
+        request.add_header('User-Agent', 'Linuxfabrik Monitoring Plugin')
 
         # SSL/TLS certificate validation
         # see: https://stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
