@@ -97,7 +97,6 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
             else:
                 reader = csv.DictReader(csvfile, delimiter=',', quotechar='"')
             data = []
-            is_header_row = True
             for row in reader:
                 # check if the list contains empty strings only
                 if skip_empty_rows and all('' == s or s.isspace() for s in row):
