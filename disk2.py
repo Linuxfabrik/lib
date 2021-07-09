@@ -100,7 +100,7 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
             is_header_row = True
             for row in reader:
                 # check if the list contains empty strings only
-                if skip_empty_rows and all('' == row or row.isspace() for row in l):
+                if skip_empty_rows and all('' == s or s.isspace() for s in row):
                     continue
                 data.append(row)
     except csv.Error as e:
