@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021062001'
+__version__ = '2021071501'
 
 import collections
 import datetime
@@ -1093,8 +1093,10 @@ def version2float(v):
 
     >>> version2float('Version v17.3.2.0')
     17.320
+    >>> version2float('21.60-53-93285')
+    21.605393285
     """
-    v = re.sub(r'[a-z\s]', '', v.lower())
+    v = re.sub(r'[^0-9\.]', '', v)
     v = v.split('.')
     if len(v) > 1:
         return float('{}.{}'.format(v[0], ''.join(v[1:])))
