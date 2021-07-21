@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021071501'
+__version__ = '2021072101'
 
 import collections
 import datetime
@@ -1066,12 +1066,14 @@ def uniq(string):
 
 
 def version(v):
-    """Use this function to compare numerical but string-based version numbers.
+    """Use this function to compare string-based version numbers.
 
-    >>> lib.base2.version('3.0.7') < lib.base2.version('3.0.11')
-    True
     >>> '3.0.7' < '3.0.11'
     False
+    >>> lib.base2.version('3.0.7') < lib.base2.version('3.0.11')
+    True
+    >>> lib.base2.version('v3.0.7-2') < lib.base2.version('3.0.11')
+    True
     >>> lib.base2.version(psutil.__version__) >= lib.base2.version('5.3.0')
     True
 
@@ -1085,6 +1087,10 @@ def version(v):
     tuple
         A tuple of version numbers.
     """
+    # if we get something like "v0.10.7-2", remove everything except "." and "-",
+    # and convert "-" to "."
+    v = re.sub(r'[^0-9\.-]', '', v)
+    v = v.replace('-', '.')
     return tuple(map(int, (v.split("."))))
 
 
@@ -1102,3 +1108,42 @@ def version2float(v):
         return float('{}.{}'.format(v[0], ''.join(v[1:])))
     else:
         return float(''.join(v))
+
+
+def yesterday(as_type='', tz_utc=False):
+    """Returns yesterday's date and time as UNIX time in seconds (default), or
+    as a datetime object.
+
+    >>> lib.base2.yesterday()
+    1626706723
+    >>> lib.base2.yesterday(as_type='', tz_utc=False)
+    1626706723
+    >>> lib.base2.yesterday(as_type='', tz_utc=True)
+    1626706723
+
+    >>> lib.base2.yesterday(as_type='datetime', tz_utc=False)
+    datetime.datetime(2021, 7, 19, 16, 58, 43, 11292)
+    >>> lib.base2.yesterday(as_type='datetime', tz_utc=True)
+    datetime.datetime(2021, 7, 19, 14, 58, 43, 11446, tzinfo=datetime.timezone.utc)
+
+    >>> lib.base2.yesterday(as_type='iso', tz_utc=False)
+    '2021-07-19 16:58:43'
+    >>> lib.base2.yesterday(as_type='iso', tz_utc=True)
+    '2021-07-19T14:58:43Z'
+    """
+    if tz_utc:
+        if as_type == 'datetime':
+            today = datetime.datetime.now(tz=datetime.timezone.utc)
+            return today - datetime.timedelta(days=1)
+        if as_type == 'iso':
+            today = datetime.datetime.now(tz=datetime.timezone.utc)
+            yesterday = today - datetime.timedelta(days=1)
+            return yesterday.isoformat(timespec='seconds').replace('+00:00', 'Z')
+    if as_type == 'datetime':
+        today = datetime.datetime.now()
+        return today - datetime.timedelta(days=1)
+    if as_type == 'iso':
+        today = datetime.datetime.now()
+        yesterday = today - datetime.timedelta(days=1)
+        return yesterday.strftime("%Y-%m-%d %H:%M:%S")
+    return int(time.time()-86400)
