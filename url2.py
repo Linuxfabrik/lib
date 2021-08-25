@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021072701'
+__version__ = '2021082501'
 
 import json
 import re
@@ -81,23 +81,23 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     except urllib2.HTTPError as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url))
+        return (False, u'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url))
     except urllib2.URLError as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'URL error "{}" for {}'.format(e.reason, url))
+        return (False, u'URL error "{}" for {}'.format(e.reason, url))
     except TypeError as e:
-        return (False, 'Type error "{}", data="{}"'.format(e, data))
+        return (False, u'Type error "{}", data="{}"'.format(e, data))
     except:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'Unknown error while fetching {}, maybe timeout or '
+        return (False, u'Unknown error while fetching {}, maybe timeout or '
                        'error on webserver'.format(url))
     else:
         try:
             result = response.read()
         except:
-            return (False, 'Unknown error while fetching {}, maybe timeout or '
+            return (False, u'Unknown error while fetching {}, maybe timeout or '
                        'error on webserver'.format(url))
         return (True, result)
 
@@ -154,23 +154,23 @@ def fetch_ext(url, insecure=False, no_proxy=False, timeout=8,
     except urllib2.HTTPError as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url), False)
+        return (False, u'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url), False)
     except urllib2.URLError as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'URL error "{}" for {}'.format(e.reason, url), False)
+        return (False, u'URL error "{}" for {}'.format(e.reason, url), False)
     except TypeError as e:
-        return (False, 'Type error "{}", data="{}"'.format(e, data), False)
+        return (False, u'Type error "{}", data="{}"'.format(e, data), False)
     except:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'Unknown error while fetching {}, maybe timeout or '
+        return (False, u'Unknown error while fetching {}, maybe timeout or '
                        'error on webserver'.format(url), False)
     try:
         result = response.read()
         response_header = response.info()
     except:
-        return (False, 'Unknown error while fetching {}, maybe timeout or '
+        return (False, u'Unknown error while fetching {}, maybe timeout or '
                    'error on webserver'.format(url), False)
     return (True, result, response_header)
 
@@ -223,7 +223,7 @@ def get_latest_version_from_github(user, repo, key='tag_name'):
 
     >>> get_latest_version_from_github('matomo-org', 'matomo')
     """
-    github_url = 'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
+    github_url = u'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
     success, result = fetch_json(github_url)
     if not success:
         return (success, result)

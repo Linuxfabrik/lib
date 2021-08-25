@@ -15,12 +15,12 @@ https://dev.mysql.com/doc/connector-python/en/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020050101'
+__version__ = '2021082501'
 
 try:
     import mysql.connector
 except ImportError as e:
-    print('Python module "mysql.connector" is not installed.')
+    print('Python module "mysql.connector" is not installed.'.encode('utf-8', 'replace'))
     exit(3)
 
 import base2
@@ -30,7 +30,7 @@ if base2.version(mysql.connector.__version__) < base2.version('2.0.0'):
     try:
         import MySQLdb.cursors
     except ImportError as e:
-        print('Python module "MySQLdb.cursors" is not installed.')
+        print('Python module "MySQLdb.cursors" is not installed.'.encode('utf-8', 'replace'))
         exit(3)
 
 
@@ -52,7 +52,7 @@ def commit(conn):
     try:
         conn.commit()
     except Exception as e:
-        return(False, 'Error: {}'.format(e))
+        return(False, u'Error: {}'.format(e))
     return (True, None)
 
 
@@ -72,7 +72,7 @@ def connect(mysql_connection):
     try:
         conn = mysql.connector.connect(**mysql_connection)
     except Exception as e:
-        return(False, 'Connecting to DB failed, Error: {}'.format(e))
+        return(False, u'Connecting to DB failed, Error: {}'.format(e))
     return (True, conn)
 
 
@@ -97,4 +97,4 @@ def select(conn, sql, data={}, fetchone=False):
             return (True, [cursor.fetchone()])
         return (True, cursor.fetchall())
     except Exception as e:
-        return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
+        return(False, u'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))

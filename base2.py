@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021072101'
+__version__ = '2021082501'
 
 import collections
 import datetime
@@ -26,6 +26,8 @@ import shlex
 import subprocess
 import sys
 import time
+
+from traceback import format_exc # pylint: disable=C0413
 
 from globals2 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
 import disk2
@@ -138,8 +140,18 @@ def coe(result, state=STATE_UNKNOWN):
     if result[0]:
         # success
         return result[1]
-    print(result[1])
+    print(result[1].encode('utf-8', 'replace'))
     sys.exit(state)
+
+
+def cu():
+    """See you (cu)
+
+    Prints a Stacktrace (replacing "<" and ">" to be printable in Web-GUIs), and exits with
+    STATE_UNKNOWN.
+    """
+    print((format_exc().replace("<", "'").replace(">", "'")).encode('utf-8', 'replace'))
+    sys.exit(STATE_UNKNOWN)
 
 
 def epoch2iso(timestamp):
@@ -207,7 +219,7 @@ def filter_str(s, charclass='a-zA-Z0-9_'):
     >>> filter_str('user@example.ch')
     'userexamplech'
     """
-    regex = '[^{}]'.format(charclass)
+    regex = u'[^{}]'.format(charclass)
     return re.sub(regex, "", s)
 
 
@@ -256,21 +268,21 @@ def get_owner(file):
 def get_perfdata(label, value, uom, warn, crit, min, max):
     """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
     """
-    msg = "'{}'={}".format(label, value)
+    msg = u"'{}'={}".format(label, value)
     if uom is not None:
         msg += uom
     msg += ';'
     if warn is not None:
-        msg += str(warn)
+        msg += unicode(warn)
     msg += ';'
     if crit is not None:
-        msg += str(crit)
+        msg += unicode(crit)
     msg += ';'
     if min is not None:
-        msg += str(min)
+        msg += unicode(min)
     msg += ';'
     if max is not None:
-        msg += str(max)
+        msg += unicode(max)
     msg += ' '
     return msg
 
@@ -397,19 +409,18 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
         header = dict(zip(cols, header))
         data.insert(0, header)
 
-    # prepare data: decode from (mostly) UTF-8 to Unicode, optionally strip values and get
-    # the maximum length per column
+    # prepare data: Return the Unicode string version using UTF-8 Encoding,
+    # optionally strip values and get the maximum length per column
     column_widths = collections.OrderedDict()
-    stdout_encoding = sys.stdout.encoding or sys.getfilesystemencoding()
     for idx, row in enumerate(data):
         for col in cols:
             try:
                 if strip:
-                    data[idx][col] = str(row[col]).decode(stdout_encoding).strip()
+                    data[idx][col] = unicode(row[col]).strip()
                 else:
-                    data[idx][col] = str(row[col]).decode(stdout_encoding)
+                    data[idx][col] = unicode(row[col])
             except:
-                return 'Unknown column "{}"'.format(col)
+                return u'Unknown column "{}"'.format(col)
             # get the maximum length
             try:
                 column_widths[col] = max(column_widths[col], len(data[idx][col]))
@@ -431,7 +442,7 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
     for row in data:
         tmp = ''
         for col, width in column_widths.items():
-            tmp += '{:<{}} ! '.format(row[col].encode(stdout_encoding), width)
+            tmp += u'{:<{}} ! '.format(row[col], width)
         table += tmp[:-2] + '\n'
 
     return table
@@ -484,7 +495,7 @@ def guess_type(v, consumer='python'):
                 try:
                     return float(v)
                 except ValueError:
-                    return str(v)
+                    return unicode(v)
 
     if consumer == 'sqlite':
         if v is None:
@@ -597,10 +608,10 @@ def match_range(value, spec):
             return int(atom)
 
 
-        if spec is None or str(spec).lower() == 'none':
+        if spec is None or unicode(spec).lower() == 'none':
             return (True, None)
         if not isinstance(spec, str):
-            spec = str(spec)
+            spec = unicode(spec)
         invert = False
         if spec.startswith('@'):
             invert = True
@@ -622,7 +633,7 @@ def match_range(value, spec):
         return (True, (start, end, invert))
 
 
-    if spec is None or str(spec).lower() == 'none':
+    if spec is None or unicode(spec).lower() == 'none':
         return (True, True)
     success, result = parse_range(spec)
     if not success:
@@ -694,7 +705,7 @@ def number2human(n):
         return n
     millidx = max(0, min(len(millnames) - 1,
                          int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))))
-    return '{:.1f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
+    return u'{:.1f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
 
 
 def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
@@ -705,9 +716,9 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     `always_ok` is set to `True`.
     """
     if perfdata:
-        print(msg.strip() + '|' + perfdata.strip())
+        print((msg.strip() + '|' + perfdata.strip()).encode('utf-8', 'replace'))
     else:
-        print(msg.strip())
+        print(msg.strip().encode('utf-8', 'replace'))
     if always_ok:
         sys.exit(0)
     sys.exit(state)
@@ -784,7 +795,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
     """
     seconds = float(seconds)
     if seconds < 1:
-        return '{:.2f}s'.format(seconds)
+        return u'{:.2f}s'.format(seconds)
 
     if full_name:
         intervals = (
@@ -814,7 +825,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
             seconds -= value * count
             if full_name and value == 1:
                 name = name.rstrip('s') # "days" becomes "day"
-            result.append('{:.0f}{}'.format(value, name))
+            result.append(u'{:.0f}{}'.format(value, name))
 
     if len(result) > 2 and keep_short:
         return ' '.join(result[:2])
@@ -868,11 +879,11 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
             sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, env=env, shell=True)
         except OSError as e:
-            return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
+            return (False, u'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
-            return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
+            return (False, u'Value Error "{}" calling command "{}"'.format(e, cmd))
         except e:
-            return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
+            return (False, u'Unknown error "{}" while calling command "{}"'.format(e, cmd))
 
         if stdin:
             # provide stdin as input for the cmd
@@ -895,11 +906,11 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
             sp = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, env=env, shell=False)
         except OSError as e:
-            return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
+            return (False, u'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
-            return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
+            return (False, u'Value Error "{}" calling command "{}"'.format(e, cmd))
         except e:
-            return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
+            return (False, u'Unknown error "{}" while calling command "{}"'.format(e, cmd))
 
     stdout, stderr = sp.communicate()
     retc = sp.returncode
@@ -925,7 +936,7 @@ def sort(array, reverse=True, sort_by_key=False):
     if isinstance(array, dict):
         if not sort_by_key:
             return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
-        return sorted(array.items(), key=lambda x: str(x[0]).lower(), reverse=reverse)
+        return sorted(array.items(), key=lambda x: unicode(x[0]).lower(), reverse=reverse)
     return array
 
 
@@ -981,7 +992,7 @@ def str2state(string):
     >>> lib.base.str2state('warning')
     1
     """
-    string = str(string).lower()
+    string = unicode(string).lower()
     if string == 'ok':
         return STATE_OK
     if string.startswith('warn'):
@@ -1011,13 +1022,13 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
     if state == STATE_OK and empty_ok:
         return ''
     if state == STATE_OK and not empty_ok:
-        return '{}[OK]{}'.format(prefix, suffix)
+        return u'{}[OK]{}'.format(prefix, suffix)
     if state == STATE_WARN:
-        return '{}[WARNING]{}'.format(prefix, suffix)
+        return u'{}[WARNING]{}'.format(prefix, suffix)
     if state == STATE_CRIT:
-        return '{}[CRITICAL]{}'.format(prefix, suffix)
+        return u'{}[CRITICAL]{}'.format(prefix, suffix)
     if state == STATE_UNKNOWN:
-        return '{}[UNKNOWN]{}'.format(prefix, suffix)
+        return u'{}[UNKNOWN]{}'.format(prefix, suffix)
 
     return state
 
@@ -1105,7 +1116,7 @@ def version2float(v):
     v = re.sub(r'[^0-9\.]', '', v)
     v = v.split('.')
     if len(v) > 1:
-        return float('{}.{}'.format(v[0], ''.join(v[1:])))
+        return float(u'{}.{}'.format(v[0], ''.join(v[1:])))
     else:
         return float(''.join(v))
 

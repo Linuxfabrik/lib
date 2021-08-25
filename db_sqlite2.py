@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061701'
+__version__ = '2021082501'
 
 import os
 import sqlite3
@@ -55,7 +55,7 @@ def commit(conn):
     try:
         conn.commit()
     except Exception as e:
-        return(False, 'Error: {}'.format(e))
+        return(False, u'Error: {}'.format(e))
     return (True, None)
 
 
@@ -96,7 +96,7 @@ def connect(path='', filename=''):
         # https://stackoverflow.com/questions/3425320/sqlite3-programmingerror-you-must-not-use-8-bit-bytestrings-unless-you-use-a-te
         conn.text_factory = str
     except Exception as e:
-        return(False, 'Connecting to DB {} failed, Error: {}'.format(db, e))
+        return(False, u'Connecting to DB {} failed, Error: {}'.format(db, e))
     return (True, conn)
 
 
@@ -106,20 +106,20 @@ def create_index(conn, column_list, table='perfdata', unique=False):
 
     table = base2.filter_str(table)
 
-    index_name = 'idx_{}'.format(base2.md5sum(table + column_list))
+    index_name = u'idx_{}'.format(base2.md5sum(table + column_list))
     c = conn.cursor()
     if unique:
-        sql = 'CREATE UNIQUE INDEX IF NOT EXISTS {} ON "{}" ({});'.format(
+        sql = u'CREATE UNIQUE INDEX IF NOT EXISTS {} ON "{}" ({});'.format(
             index_name, table, column_list
             )
     else:
-        sql = 'CREATE INDEX IF NOT EXISTS {} ON "{}" ({});'.format(
+        sql = u'CREATE INDEX IF NOT EXISTS {} ON "{}" ({});'.format(
             index_name, table, column_list
             )
     try:
         c.execute(sql)
     except Exception as e:
-        return(False, 'Query failed: {}, Error: {}'.format(sql, e))
+        return(False, u'Query failed: {}, Error: {}'.format(sql, e))
 
     return (True, True)
 
@@ -140,11 +140,11 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
             return (success, result)
 
     c = conn.cursor()
-    sql = 'CREATE TABLE IF NOT EXISTS "{}" ({});'.format(table, definition)
+    sql = u'CREATE TABLE IF NOT EXISTS "{}" ({});'.format(table, definition)
     try:
         c.execute(sql)
     except Exception as e:
-        return(False, 'Query failed: {}, Error: {}'.format(sql, e))
+        return(False, u'Query failed: {}, Error: {}'.format(sql, e))
 
     return (True, True)
 
@@ -156,13 +156,13 @@ def cut(conn, table='perfdata', max=5):
     table = base2.filter_str(table)
 
     c = conn.cursor()
-    sql = '''DELETE FROM {table} WHERE rowid IN (
+    sql = u'''DELETE FROM {table} WHERE rowid IN (
                 SELECT rowid FROM {table} ORDER BY rowid DESC LIMIT -1 OFFSET :max
             );'''.format(table=table)
     try:
         c.execute(sql, (max, ))
     except Exception as e:
-        return(False, 'Query failed: {}, Error: {}'.format(sql, e))
+        return(False, u'Query failed: {}, Error: {}'.format(sql, e))
 
     return (True, True)
 
@@ -183,7 +183,7 @@ def delete(conn, sql, data={}, fetchone=False):
         else:
             return (True, c.execute(sql).rowcount)
     except Exception as e:
-        return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
+        return(False, u'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 
 
 def drop_table(conn, table='perfdata'):
@@ -197,12 +197,12 @@ def drop_table(conn, table='perfdata'):
     table = base2.filter_str(table)
 
     c = conn.cursor()
-    sql = 'DROP TABLE IF EXISTS "{}";'.format(table)
+    sql = u'DROP TABLE IF EXISTS "{}";'.format(table)
 
     try:
         c.execute(sql)
     except Exception as e:
-        return(False, 'Query failed: {}, Error: {}'.format(sql, e))
+        return(False, u'Query failed: {}, Error: {}'.format(sql, e))
 
     return (True, True)
 
@@ -214,12 +214,12 @@ def insert(conn, data, table='perfdata'):
     table = base2.filter_str(table)
 
     c = conn.cursor()
-    sql = 'INSERT INTO "{}" (COLS) VALUES (VALS);'.format(table)
+    sql = u'INSERT INTO "{}" (COLS) VALUES (VALS);'.format(table)
 
     keys, binds = '', ''
     for key in data.keys():
-        keys += '{},'.format(key)
-        binds += ':{},'.format(key)
+        keys += u'{},'.format(key)
+        binds += u':{},'.format(key)
     keys = keys[:-1]
     binds = binds[:-1]
     sql = sql.replace('COLS', keys).replace('VALS', binds)
@@ -227,7 +227,7 @@ def insert(conn, data, table='perfdata'):
     try:
         c.execute(sql, data)
     except Exception as e:
-        return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
+        return(False, u'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 
     return (True, True)
 
@@ -248,12 +248,12 @@ def replace(conn, data, table='perfdata'):
     table = base2.filter_str(table)
 
     c = conn.cursor()
-    sql = 'REPLACE INTO "{}" (COLS) VALUES (VALS);'.format(table)
+    sql = u'REPLACE INTO "{}" (COLS) VALUES (VALS);'.format(table)
 
     keys, binds = '', ''
     for key in data.keys():
-        keys += '{},'.format(key)
-        binds += ':{},'.format(key)
+        keys += u'{},'.format(key)
+        binds += u':{},'.format(key)
     keys = keys[:-1]
     binds = binds[:-1]
     sql = sql.replace('COLS', keys).replace('VALS', binds)
@@ -261,7 +261,7 @@ def replace(conn, data, table='perfdata'):
     try:
         c.execute(sql, data)
     except Exception as e:
-        return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
+        return(False, u'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 
     return (True, True)
 
@@ -292,7 +292,7 @@ def select(conn, sql, data={}, fetchone=False, as_dict=True):
             return (True,  c.fetchone())
         return (True, c.fetchall())
     except Exception as e:
-        return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
+        return(False, u'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 
 
 def get_tables(conn):
@@ -324,7 +324,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     table = base2.filter_str(table)
 
     # count the number of different sensors in the perfdata table
-    sql = 'SELECT DISTINCT {sensorcol} FROM {table} ORDER BY {sensorcol} ASC;'.format(
+    sql = u'SELECT DISTINCT {sensorcol} FROM {table} ORDER BY {sensorcol} ASC;'.format(
         sensorcol=sensorcol, table=table
         )
     success, sensors = select(conn, sql)
@@ -341,7 +341,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
         sensor_name = sensor[sensorcol]
         success, perfdata = select(
             conn,
-            'SELECT * FROM {table} WHERE {sensorcol} = :{sensorcol} '
+            u'SELECT * FROM {table} WHERE {sensorcol} = :{sensorcol} '
             'ORDER BY timestamp DESC;'.format(
                 table=table, sensorcol=sensorcol
             ),

@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050301'
+__version__ = '2021082501'
 
 import sys
 
@@ -20,7 +20,7 @@ from lib.globals2 import STATE_UNKNOWN
 try:
     import psutil
 except ImportError as e:
-    print('Python module "psutil" is not installed.')
+    print('Python module "psutil" is not installed.'.encode('utf-8', 'replace'))
     sys.exit(STATE_UNKNOWN)
 
 

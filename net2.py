@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021062301'
+__version__ = '2021082501'
 
 import re
 import socket
@@ -140,7 +140,7 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
         try:
             s.sendall(msg)
         except:
-            return (False, 'Could not send payload "{}".'.format(msg))
+            return (False, u'Could not send payload "{}".'.format(msg))
 
     fragments = []
     while True:
@@ -157,10 +157,10 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
             if err == 'timed out':
                 return (False, 'Socket timed out.')
             else:
-                return (False, 'Can\'t fetch data: {}'.format(e))
+                return (False, u'Can\'t fetch data: {}'.format(e))
         except socket.error as e:
             # Something else happened, handle error, exit, etc.
-            return (False, 'Can\'t fetch data: {}'.format(e))
+            return (False, u'Can\'t fetch data: {}'.format(e))
 
     try:
         s.close()
@@ -196,7 +196,7 @@ def get_ip_public():
             break
 
     try:
-        return ip.decode()
+        return ip.decode('utf-8')
     except:
         return ip
 

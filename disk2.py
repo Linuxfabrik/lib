@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061401'
+__version__ = '2021082501'
 
 import csv
 import os
@@ -77,9 +77,9 @@ def grep_file(filename, pattern):
         with open(filename, 'r') as file:
             data = file.read()
     except IOError as e:
-        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
+        return (False, u'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
     except:
-        return (False, 'Unknown error opening or reading {}'.format(filename))
+        return (False, u'Unknown error opening or reading {}'.format(filename))
     else:
         match = re.search(pattern, data).group(1)
         return (True, match)
@@ -103,11 +103,11 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
                     continue
                 data.append(row)
     except csv.Error as e:
-        return (False, 'CSV error in file {}, line {}: {}'.format(filename, reader.line_num, e))
+        return (False, u'CSV error in file {}, line {}: {}'.format(filename, reader.line_num, e))
     except IOError as e:
-        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
+        return (False, u'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
     except:
-        return (False, 'Unknown error opening or reading {}'.format(filename))
+        return (False, u'Unknown error opening or reading {}'.format(filename))
     return (True, data)
 
 
@@ -121,9 +121,9 @@ def read_file(filename):
         data = f.read()
         f.close()
     except IOError as e:
-        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
+        return (False, u'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
     except:
-        return (False, 'Unknown error opening or reading {}'.format(filename))
+        return (False, u'Unknown error opening or reading {}'.format(filename))
     return (True, data)
 
 
@@ -137,9 +137,9 @@ def rm_file(filename):
     try:
         os.remove(filename)
     except OSError as e:
-        return (False, 'OS error "{}" while deleting {}'.format(e.strerror, filename))
+        return (False, u'OS error "{}" while deleting {}'.format(e.strerror, filename))
     except:
-        return (False, 'Unknown error deleting {}'.format(filename))
+        return (False, u'Unknown error deleting {}'.format(filename))
     return (True, None)
 
 
@@ -190,7 +190,7 @@ def write_file(filename, content, append=False):
             f.write(content)
         f.close()
     except IOError as e:
-        return (False, 'I/O error "{}" while writing {}'.format(e.strerror, filename))
+        return (False, u'I/O error "{}" while writing {}'.format(e.strerror, filename))
     except:
-        return (False, 'Unknown error writing {}, or content is not a string'.format(filename))
+        return (False, u'Unknown error writing {}, or content is not a string'.format(filename))
     return (True, None)

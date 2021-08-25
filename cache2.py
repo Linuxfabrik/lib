@@ -25,7 +25,7 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061701'
+__version__ = '2021082501'
 
 import base2
 import db_sqlite2
@@ -71,7 +71,7 @@ def get(key, as_dict=False, filename='linuxfabrik-plugin-cache.db'):
         data = {'key' : result['key']}
         success, result = db_sqlite2.delete(
             conn,
-            sql='DELETE FROM cache WHERE timestamp <= {};'.format(base2.now())
+            sql=u'DELETE FROM cache WHERE timestamp <= {};'.format(base2.now())
         )
         success, result = db_sqlite2.commit(conn)
         db_sqlite2.close(conn)

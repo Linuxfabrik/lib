@@ -12,7 +12,7 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021072801'
+__version__ = '2021082501'
 
 import base64
 
@@ -32,7 +32,7 @@ def get_token(args):
     url = args.URL + '/api/sessionMngr/?v=latest'
     header = {}
     # Basic authentication
-    header['Authorization'] = "Basic {}".format(
+    header['Authorization'] = u"Basic {}".format(
         base64.b64encode(args.USERNAME + ':' + args.PASSWORD))
     header['Accept'] = 'application/json'
     header['Content-Length'] = 0
@@ -44,7 +44,7 @@ def get_token(args):
     if not success:
         return (success, result, False)
     if not result:
-        return (False, 'There was no result from {}.'.format(url), False)
+        return (False, u'There was no result from {}.'.format(url), False)
     if not 'X-RestSvcSessionId' in response_header:
         return (False, 'Something went wrong, maybe user is unauthorized.', False)
     return (True, result, response_header['X-RestSvcSessionId'])

@@ -16,14 +16,14 @@ Time zone handling is not implemented.
 try:
     from bs4 import BeautifulSoup
 except ImportError as e:
-    print('Python module "BeautifulSoup4" is not installed.')
+    print('Python module "BeautifulSoup4" is not installed.'.encode('utf-8', 'replace'))
     exit(3)
 
 import base2
 import url2
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050601'
+__version__ = '2021082501'
 
 
 def parse_atom(soup):
@@ -100,5 +100,5 @@ def parse(feed_url, insecure=False, no_proxy=False, timeout=5, encoding='urlenco
     if is_rss is not None:
         return (True, parse_rss(soup))
 
-    return (False, '{} does not seem to be an Atom or RSS feed I understand.'.format(feed_url))
+    return (False, u'{} does not seem to be an Atom or RSS feed I understand.'.format(feed_url))
 
