@@ -16,7 +16,7 @@ Time zone handling is not implemented.
 try:
     from bs4 import BeautifulSoup
 except ImportError as e:
-    print('Python module "BeautifulSoup4" is not installed.'.encode('utf-8', 'replace'))
+    print('Python module "BeautifulSoup4" is not installed.')
     exit(3)
 
 import base2

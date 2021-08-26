@@ -20,7 +20,7 @@ from lib.globals2 import STATE_UNKNOWN
 try:
     import psutil
 except ImportError as e:
-    print('Python module "psutil" is not installed.'.encode('utf-8', 'replace'))
+    print('Python module "psutil" is not installed.')
     sys.exit(STATE_UNKNOWN)
 
 

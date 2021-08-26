@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021082501'
+__version__ = '2021082503'
 
 import collections
 import datetime
@@ -30,7 +30,6 @@ import time
 from traceback import format_exc # pylint: disable=C0413
 
 from globals2 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
-import disk2
 
 
 WINDOWS = os.name == "nt"
@@ -431,7 +430,7 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
         # Get the length of each column and create a '---' divider based on that length
         header_divider = []
         for col, width in column_widths.items():
-            header_divider.append('-' * width)
+            header_divider.append(u'─' * width)
 
         # Insert the header divider below the header row
         header_divider = dict(zip(cols, header_divider))
@@ -439,10 +438,16 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
 
     # create the output
     table = ''
+    cnt = 0
     for row in data:
         tmp = ''
         for col, width in column_widths.items():
-            tmp += u'{:<{}} ! '.format(row[col], width)
+            if cnt != 1:
+                tmp += u'{:<{}} │ '.format(row[col], width)
+            else:
+                # header row
+                tmp += u'{:<{}}─┼─'.format(row[col], width)
+        cnt += 1
         table += tmp[:-2] + '\n'
 
     return table
@@ -1031,23 +1036,6 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
         return u'{}[UNKNOWN]{}'.format(prefix, suffix)
 
     return state
-
-
-def test(args):
-    """Enables unit testing of a check plugin.
-
-    """
-    if args[0] and os.path.isfile(args[0]):
-        success, stdout = disk2.read_file(args[0])
-    else:
-        stdout = args[0]
-    if args[1] and os.path.isfile(args[1]):
-        success, stderr = disk2.read_file(args[1])
-    else:
-        stderr = args[1]
-    retc = int(args[2])
-
-    return stdout, stderr, retc
 
 
 def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):

@@ -20,7 +20,7 @@ __version__ = '2021082501'
 try:
     import mysql.connector
 except ImportError as e:
-    print('Python module "mysql.connector" is not installed.'.encode('utf-8', 'replace'))
+    print('Python module "mysql.connector" is not installed.')
     exit(3)
 
 import base2
@@ -30,7 +30,7 @@ if base2.version(mysql.connector.__version__) < base2.version('2.0.0'):
     try:
         import MySQLdb.cursors
     except ImportError as e:
-        print('Python module "MySQLdb.cursors" is not installed.'.encode('utf-8', 'replace'))
+        print('Python module "MySQLdb.cursors" is not installed.')
         exit(3)
 
 
