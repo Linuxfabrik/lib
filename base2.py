@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021082503'
+__version__ = '2021082701'
 
 import collections
 import datetime
@@ -430,7 +430,7 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
         # Get the length of each column and create a '---' divider based on that length
         header_divider = []
         for col, width in column_widths.items():
-            header_divider.append(u'─' * width)
+            header_divider.append(u'-' * width)
 
         # Insert the header divider below the header row
         header_divider = dict(zip(cols, header_divider))
@@ -443,10 +443,10 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
         tmp = ''
         for col, width in column_widths.items():
             if cnt != 1:
-                tmp += u'{:<{}} │ '.format(row[col], width)
+                tmp += u'{:<{}} ! '.format(row[col], width)
             else:
                 # header row
-                tmp += u'{:<{}}─┼─'.format(row[col], width)
+                tmp += u'{:<{}}-+-'.format(row[col], width)
         cnt += 1
         table += tmp[:-2] + '\n'
 
