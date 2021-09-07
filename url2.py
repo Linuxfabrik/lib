@@ -28,12 +28,17 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
           extended=False):
     """Fetch any URL.
 
-    Basic authentication:
-    >>> header = {'Authorization': "Basic {}".format(base64.b64encode(username + ':' + password))}
-    >>> result = fetch(url, header=header)
+    If using `extended=True`, the result is returned as a dict, also including the response header
+    and the HTTP status code.
 
-    POST: the HTTP request will be a POST instead of a GET when the data parameter is provided.
-    >>> result = fetch(url, header=header, data={...})
+    Basic authentication:
+    >>> auth = args.USERNAME + ':' + args.PASSWORD
+    >>> encoded_auth = base64.b64encode(auth.encode()).decode()
+    >>> result = lib.base3.coe(lib.url3.fetch(url, timeout=args.TIMEOUT,
+            header={'Authorization': 'Basic {}'.format(encoded_auth)}))
+
+    POST: the HTTP request will be a POST instead of a GET when the data parameter is provided
+    >>> result = fetch(URL, header=header, data={...})
     """
     try:
         if digest_auth_user is not None and digest_auth_password is not None:
