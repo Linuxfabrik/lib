@@ -15,23 +15,28 @@ https://dev.mysql.com/doc/connector-python/en/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021082501'
+__version__ = '2021090701'
+
+from globals2 import *
 
 try:
     import mysql.connector
 except ImportError as e:
-    print('Python module "mysql.connector" is not installed.')
-    exit(3)
+    mysql_connector_found = False
+else:
+    mysql_connector_found = True
 
 import base2
-import disk2
 
-if base2.version(mysql.connector.__version__) < base2.version('2.0.0'):
+if mysql_connector_found and base2.version(mysql.connector.__version__) < base2.version('2.0.0'):
     try:
         import MySQLdb.cursors
     except ImportError as e:
-        print('Python module "MySQLdb.cursors" is not installed.')
-        exit(3)
+        mysql_cursors_found = False
+    else:
+        mysql_cursors_found = True
+else:
+    mysql_cursors_found = None
 
 
 def close(conn):
@@ -69,6 +74,11 @@ def connect(mysql_connection):
     >>> conn = connect(mysql_connection)
     """
 
+    if mysql_connector_found is False:
+        base2.oao('Python module "mysql.connector" is not installed.', STATE_UNKNOWN)
+    if mysql_connector_found is False:
+        base2.oao('Python module "MySQLdb.cursors" is not installed.', STATE_UNKNOWN)
+
     try:
         conn = mysql.connector.connect(**mysql_connection)
     except Exception as e:
@@ -82,6 +92,11 @@ def select(conn, sql, data={}, fetchone=False):
     of columns. A SELECT statement does not make any changes to the
     database.
     """
+
+    if mysql_connector_found is False:
+        base2.oao('Python module "mysql.connector" is not installed.', STATE_UNKNOWN)
+    if mysql_connector_found is False:
+        base2.oao('Python module "MySQLdb.cursors" is not installed.', STATE_UNKNOWN)
 
     if base2.version(mysql.connector.__version__) >= base2.version('2.0.0'):
         cursor = conn.cursor(dictionary=True)
