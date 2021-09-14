@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021082701'
+__version__ = '2021091401'
 
 import collections
 import datetime
@@ -290,9 +290,9 @@ def get_state(value, warn, crit, operator='ge'):
     """Returns the STATE by comparing `value` to the given thresholds using
     a comparison `operator`. `warn` and `crit` threshold may also be `None`.
 
-    >>> lib.base2.get_state(15, 10, 20, 'ge')
+    >>> get_state(15, 10, 20, 'ge')
     1 (STATE_WARN)
-    >>> lib.base2.get_state(10, 10, 20, 'gt')
+    >>> get_state(10, 10, 20, 'gt')
     0 (STATE_OK)
 
     Parameters
@@ -304,12 +304,13 @@ def get_state(value, warn, crit, operator='ge'):
     crit : float
         Numeric critical threshold
     operator : string
+        `eq` = equal to
         `ge` = greater or equal
         `gt` = greater than
         `le` = less or equal
         `lt` = less than
-        `eq` = equal to
         `ne` = not equal to
+        `range` = match range
 
     Returns
     -------
@@ -369,6 +370,15 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_CRIT
         if warn is not None:
             if value != float(warn):
+                return STATE_WARN
+        return STATE_OK
+
+    if operator == 'range':
+        if crit is not None:
+            if not coe(match_range(value, crit)):
+                return STATE_CRIT
+        if warn is not None:
+            if not coe(match_range(value, warn)):
                 return STATE_WARN
         return STATE_OK
 
@@ -604,6 +614,28 @@ def match_range(value, spec):
     def parse_range(spec):
         """
         Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
+
+        +--------+-------------------+-------------------+--------------------------------+
+        | -w, -c | OK if result is   | WARN/CRIT if      | lib.base.parse_range() returns |
+        +--------+-------------------+-------------------+--------------------------------+
+        | 10     | in (0..10)        | not in (0..10)    | (0, 10, False)                 |
+        +--------+-------------------+-------------------+--------------------------------+
+        | -10    | in (-10..0)       | not in (-10..0)   | (0, -10, False)                |
+        +--------+-------------------+-------------------+--------------------------------+
+        | 10:    | in (10..inf)      | not in (10..inf)  | (10, inf, False)               |
+        +--------+-------------------+-------------------+--------------------------------+
+        | :      | in (0..inf)       | not in (0..inf)   | (0, inf, False)                |
+        +--------+-------------------+-------------------+--------------------------------+
+        | ~:10   | in (-inf..10)     | not in (-inf..10) | (-inf, 10, False)              |
+        +--------+-------------------+-------------------+--------------------------------+
+        | 10:20  | in (10..20)       | not in (10..20)   | (10, 20, False)                |
+        +--------+-------------------+-------------------+--------------------------------+
+        | @10:20 | not in (10..20)   | in 10..20         | (10, 20, True)                 |
+        +--------+-------------------+-------------------+--------------------------------+
+        | @~:20  | not in (-inf..20) | in (-inf..20)     | (-inf, 20, True)               |
+        +--------+-------------------+-------------------+--------------------------------+
+        | @      | not in (0..inf)   | in (0..inf)       | (0, inf, True)                 |
+        +--------+-------------------+-------------------+--------------------------------+
         """
         def parse_atom(atom, default):
             if atom == '':
