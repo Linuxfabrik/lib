@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021091401'
+__version__ = '2021091701'
 
 import collections
 import datetime
@@ -1094,6 +1094,15 @@ def uniq(string):
     """
     words = string.split()
     return ' '.join(sorted(set(words), key=words.index))
+
+
+def utc_offset():
+    """Returns the current local UTC offset, for example '+0200'.
+
+    utc_offset()
+    >>> '+0200'
+    """
+    return time.strftime("%z")
 
 
 def version(v):
