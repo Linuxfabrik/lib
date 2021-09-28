@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021082501'
+__version__ = '2021092801'
 
 import re
 import socket
@@ -189,10 +189,11 @@ def get_ip_public():
         # Request the url service and put the result in the queue_target.
         if json:
             success, result = url2.fetch_json(url)
-            ip = result.getattr(key, None)
+            if success:
+                ip = result.get(key, None)
         else:
             success, ip = url2.fetch(url)
-        if ip:
+        if success and ip:
             break
 
     try:
