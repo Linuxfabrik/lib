@@ -26,9 +26,10 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021082501'
+__version__ = '2021092901'
 
 import os
+import re
 import sqlite3
 
 import base2
@@ -95,6 +96,7 @@ def connect(path='', filename=''):
         conn.row_factory = sqlite3.Row
         # https://stackoverflow.com/questions/3425320/sqlite3-programmingerror-you-must-not-use-8-bit-bytestrings-unless-you-use-a-te
         conn.text_factory = str
+        conn.create_function("REGEXP", 2, regexp)
     except Exception as e:
         return(False, u'Connecting to DB {} failed, Error: {}'.format(db, e))
     return (True, conn)
@@ -230,6 +232,16 @@ def insert(conn, data, table='perfdata'):
         return(False, u'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 
     return (True, True)
+
+
+def regexp(expr, item):
+    """The SQLite engine does not support a REGEXP implementation by default. This has to be
+    done by the client.
+    For Python, you have to implement REGEXP using a Python function at runtime.
+    https://stackoverflow.com/questions/5365451/problem-with-regexp-python-and-sqlite/5365533#5365533
+    """
+    reg = re.compile(expr)
+    return reg.search(item) is not None
 
 
 def replace(conn, data, table='perfdata'):
