@@ -15,6 +15,7 @@
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2021092801'
 
+import random
 import re
 import socket
 try:
@@ -173,33 +174,23 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
 def get_ip_public():
     """Retrieve the public IP address from a list of online services.
     """
-    # List of tuple (url, json, key), from fastest to slowest.
-    # - url: URL of the Web site
-    # - json: service return a JSON (True) or string (False)
-    # - key: key of the IP addresse in the JSON structure
     urls = [
-        ('https://ip.42.pl/raw', False, None),
-        ('https://api.ipify.org/?format=json', True, 'ip'),
-        ('https://httpbin.org/ip', True, 'origin'),
-        ('https://jsonip.com', True, 'ip'),
+        'http://ipv4.icanhazip.com',
+        'http://ipecho.net/plain',
+        'http://ipinfo.io/ip'
     ]
+    random.shuffle(urls)
 
     ip = None
-    for url, json, key in urls:
-        # Request the url service and put the result in the queue_target.
-        if json:
-            success, result = url3.fetch_json(url)
-            if success:
-                ip = result.get(key, None)
-        else:
-            success, ip = url3.fetch(url)
+    for url in urls:
+        success, ip = url3.fetch(url, timeout=2)
         if success and ip:
-            break
-
-    try:
-        return ip.decode()
-    except:
-        return ip
+            ip = ip.strip()
+            try:
+                return (True, ip.decode())
+            except:
+                return (True, ip)
+    return (False, ip)
 
 
 def get_netinfo():
