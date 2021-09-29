@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061401'
+__version__ = '2021092901'
 
 import csv
 import os
@@ -117,9 +117,8 @@ def read_file(filename):
     """
 
     try:
-        f = open(filename, 'r')
-        data = f.read()
-        f.close()
+        with open(filename, 'r') as f:
+            data = f.read()
     except IOError as e:
         return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
     except:
