@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021091701'
+__version__ = '2021101101'
 
 import collections
 import datetime
@@ -139,7 +139,10 @@ def coe(result, state=STATE_UNKNOWN):
     if result[0]:
         # success
         return result[1]
-    print(result[1].encode('utf-8', 'replace'))
+    try:
+        print(result[1].encode('utf-8', 'replace'))
+    except:
+        print(result[1])
     sys.exit(state)
 
 
