@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021101101'
+__version__ = '2021101201'
 
 import collections
 import datetime
@@ -139,10 +139,7 @@ def coe(result, state=STATE_UNKNOWN):
     if result[0]:
         # success
         return result[1]
-    try:
-        print(result[1].encode('utf-8', 'replace'))
-    except:
-        print(result[1])
+    print(result[1].decode('utf-8', 'replace'))
     sys.exit(state)
 
 
@@ -152,7 +149,7 @@ def cu():
     Prints a Stacktrace (replacing "<" and ">" to be printable in Web-GUIs), and exits with
     STATE_UNKNOWN.
     """
-    print((format_exc().replace("<", "'").replace(">", "'")).encode('utf-8', 'replace'))
+    print((format_exc().replace("<", "'").replace(">", "'")).decode('utf-8', 'replace'))
     sys.exit(STATE_UNKNOWN)
 
 
@@ -755,10 +752,12 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     by `|` and print it stripped. Exit with `state`, or with STATE_OK (0) if
     `always_ok` is set to `True`.
     """
+    msg = msg.decode("utf-8", "replace").strip()
     if perfdata:
-        print((msg.strip() + '|' + perfdata.strip()).encode('utf-8', 'replace'))
+        perfdata = perfdata.decode("utf-8", "replace").strip()
+        print(msg + '|' + perfdata)
     else:
-        print(msg.strip().encode('utf-8', 'replace'))
+       print(msg)
     if always_ok:
         sys.exit(0)
     sys.exit(state)

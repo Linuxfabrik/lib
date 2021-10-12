@@ -25,13 +25,13 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021072801'
+__version__ = '2021100801'
 
 from . import base3
 from . import db_sqlite3
 
 
-def get(key, as_dict=False, filename='linuxfabrik-plugin-cache.db'):
+def get(key, as_dict=False, path='', filename='linuxfabrik-plugin-cache.db'):
     """Get the value of key. If the key does not exist, `False` is returned.
 
     Parameters
@@ -46,7 +46,7 @@ def get(key, as_dict=False, filename='linuxfabrik-plugin-cache.db'):
         failure.
     """
 
-    success, conn = db_sqlite3.connect(filename=filename)
+    success, conn = db_sqlite3.connect(path=path, filename=filename)
     if not success:
         return False
 
@@ -87,7 +87,7 @@ def get(key, as_dict=False, filename='linuxfabrik-plugin-cache.db'):
     return result
 
 
-def set(key, value, expire=0, filename='linuxfabrik-plugin-cache.db'):
+def set(key, value, expire=0, path='', filename='linuxfabrik-plugin-cache.db'):
     """Set key to hold the string value.
 
     Keys have to be unique. If the key already holds a value, it is
@@ -109,7 +109,7 @@ def set(key, value, expire=0, filename='linuxfabrik-plugin-cache.db'):
         `True` on success, `False` on failure.
     """
 
-    success, conn = db_sqlite3.connect(filename=filename)
+    success, conn = db_sqlite3.connect(path=path, filename=filename)
     if not success:
         return False
 
