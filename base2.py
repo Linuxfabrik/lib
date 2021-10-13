@@ -12,11 +12,12 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021101201'
+__version__ = '2021101301'
 
 import collections
 import datetime
 import hashlib
+import locale
 import math
 import numbers
 import operator
@@ -139,7 +140,10 @@ def coe(result, state=STATE_UNKNOWN):
     if result[0]:
         # success
         return result[1]
-    print(result[1].decode('utf-8', 'replace'))
+    codec = locale.getpreferredencoding()
+    if isinstance(result[1], str):
+        result[1] = result[1].decode(codec)
+    print(result[1].encode(codec, 'replace'))
     sys.exit(state)
 
 
@@ -149,7 +153,8 @@ def cu():
     Prints a Stacktrace (replacing "<" and ">" to be printable in Web-GUIs), and exits with
     STATE_UNKNOWN.
     """
-    print((format_exc().replace("<", "'").replace(">", "'")).decode('utf-8', 'replace'))
+    codec = locale.getpreferredencoding()
+    print((format_exc().replace("<", "'").replace(">", "'")).encode(codec, 'replace'))
     sys.exit(STATE_UNKNOWN)
 
 
@@ -751,13 +756,39 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     Print the stripped plugin message. If perfdata is given, attach it
     by `|` and print it stripped. Exit with `state`, or with STATE_OK (0) if
     `always_ok` is set to `True`.
+
+    Always use Unicode internally. Decode what you receive to unicode, and encode what you send.
+    str is text representation in bytes, unicode is text representation in characters.
+    You decode text from bytes to unicode and encode a unicode into bytes with some encoding.
+    (in Python 3, str was renamed to bytes, and unicode was renamed to str)
+
+    On a Gnome-Terminal, we get
+    >>> sys.stdout.encoding
+    'UTF-8'
+    >>> sys.getdefaultencoding()
+    'ascii'
+    >>> import locale
+    >>> locale.getpreferredencoding()
+    'UTF-8'
+
+    In IcingaWeb, we get
+    >>> sys.stdout.encoding
+    'None'
+    >>> sys.getdefaultencoding()
+    'ascii'
+    >>> import locale
+    >>> locale.getpreferredencoding()
+    'UTF-8'
     """
-    msg = msg.decode("utf-8", "replace").strip()
+    codec = locale.getpreferredencoding()
+    if isinstance(msg, str):
+        msg = msg.decode(codec)
     if perfdata:
-        perfdata = perfdata.decode("utf-8", "replace").strip()
-        print(msg + '|' + perfdata)
+        if isinstance(perfdata, str):
+            perfdata = perfdata.decode(codec)
+        print((msg.strip() + '|' + perfdata.strip()).encode(codec, 'replace'))
     else:
-       print(msg)
+        print((msg.strip()).encode(codec, 'replace'))
     if always_ok:
         sys.exit(0)
     sys.exit(state)
