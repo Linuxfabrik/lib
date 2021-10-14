@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021022501'
+__version__ = '2021082501'
 
 import base64
 import time
@@ -73,7 +73,7 @@ def get_service(url, username, password, servicename, attrs='state'):
 
     url = url + '/v1/objects/services'
     data = {
-        'filter': 'match("{}", service.__name)'.format(servicename),
+        u'filter': 'match("{}", service.__name)'.format(servicename),
         'attrs': ['name'] + attrs.split(','),
     }
     return api_post(url=url, username=username, password=password,
@@ -96,7 +96,7 @@ def set_ack(url, username, password, objectname, type='service',
     url = url + '/v1/actions/acknowledge-problem'
     data = {
         'type': type.capitalize(),
-        'filter': 'match("{}", {}.__name)'.format(objectname, type.lower()),
+        'filter': u'match("{}", {}.__name)'.format(objectname, type.lower()),
         'author': author,
         'comment': 'automatically acknowledged',
         'notify': False,
@@ -130,7 +130,7 @@ def set_downtime(url, username, password, objectname, type='service',
     url = url + '/v1/actions/schedule-downtime'
     data = {
         'type': type.capitalize(),
-        'filter': 'match("{}", {}.__name)'.format(objectname, type.lower()),
+        'filter': u'match("{}", {}.__name)'.format(objectname, type.lower()),
         'author': author,
         'comment': 'automatic downtime',
         'start_time': starttime,
@@ -160,7 +160,7 @@ def remove_ack(url, username, password, objectname, type='service'):
     url = url + '/v1/actions/remove-acknowledgement'
     data = {
         'type': type.capitalize(),
-        'filter': 'match("{}", {}.__name)'.format(objectname, type.lower()),
+        'filter': u'match("{}", {}.__name)'.format(objectname, type.lower()),
     }
     return api_post(url=url, username=username, password=password,
                     data=data, insecure=True)

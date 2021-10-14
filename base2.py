@@ -12,11 +12,12 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061401'
+__version__ = '2021101301'
 
 import collections
 import datetime
 import hashlib
+import locale
 import math
 import numbers
 import operator
@@ -27,8 +28,9 @@ import subprocess
 import sys
 import time
 
+from traceback import format_exc # pylint: disable=C0413
+
 from globals2 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
-import disk2
 
 
 WINDOWS = os.name == "nt"
@@ -138,8 +140,22 @@ def coe(result, state=STATE_UNKNOWN):
     if result[0]:
         # success
         return result[1]
-    print(result[1])
+    codec = locale.getpreferredencoding()
+    if isinstance(result[1], str):
+        result[1] = result[1].decode(codec)
+    print(result[1].encode(codec, 'replace'))
     sys.exit(state)
+
+
+def cu():
+    """See you (cu)
+
+    Prints a Stacktrace (replacing "<" and ">" to be printable in Web-GUIs), and exits with
+    STATE_UNKNOWN.
+    """
+    codec = locale.getpreferredencoding()
+    print((format_exc().replace("<", "'").replace(">", "'")).encode(codec, 'replace'))
+    sys.exit(STATE_UNKNOWN)
 
 
 def epoch2iso(timestamp):
@@ -150,6 +166,45 @@ def epoch2iso(timestamp):
     """
     timestamp = float(timestamp)
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
+
+
+def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
+    """Extracts text between `from_txt` to `to_txt`.
+    If `include_fromto` is set to False (default), text is returned without both search terms,
+    otherwise `from_txt` and `to_txt` are included.
+    If `from_txt` is not found, always an empty string is returned.
+    If `to_txt` is not found and `be_tolerant` is set to True (default), text is returned from
+    `from_txt` til the end of input text. Otherwise an empty text is returned.
+
+    >>> extract_text('abcde', 'x', 'y')
+    ''
+    >>> extract_text('abcde', 'b', 'x')
+    'cde'
+    >>> extract_text('abcde', 'b', 'x', include_fromto=True)
+    'bcde'
+    >>> extract_text('abcde', 'b', 'x', include_fromto=True, be_tolerant=False)
+    ''
+    >>> extract_text('abcde', 'b', 'd')
+    'c'
+    >>> extract_text('abcde', 'b', 'd', include_fromto=True)
+    'bcd'
+    """
+    pos1 = s.find(from_txt)
+    if pos1 == -1:
+        # nothing found
+        return ''
+    pos2 = s.find(to_txt, pos1+len(from_txt))
+    # to_txt not found:
+    if pos2 == -1 and be_tolerant and not include_fromto:
+        return s[pos1+len(from_txt):]
+    if pos2 == -1 and be_tolerant and include_fromto:
+        return s[pos1:]
+    if pos2 == -1 and not be_tolerant:
+        return ''
+    # from_txt and to_txt found:
+    if not include_fromto:
+        return s[pos1+len(from_txt):pos2-len(to_txt)+ 1]
+    return s[pos1:pos2+len(to_txt)]
 
 
 def filter_mltext(input, ignore):
@@ -164,8 +219,11 @@ def filter_mltext(input, ignore):
 def filter_str(s, charclass='a-zA-Z0-9_'):
     """Stripping everything except alphanumeric chars and '_' from a string -
     chars that are allowed everywhere in variables, database table or index names, etc.
+
+    >>> filter_str('user@example.ch')
+    'userexamplech'
     """
-    regex = '[^{}]'.format(charclass)
+    regex = u'[^{}]'.format(charclass)
     return re.sub(regex, "", s)
 
 
@@ -214,21 +272,21 @@ def get_owner(file):
 def get_perfdata(label, value, uom, warn, crit, min, max):
     """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
     """
-    msg = "'{}'={}".format(label, value)
+    msg = u"'{}'={}".format(label, value)
     if uom is not None:
         msg += uom
     msg += ';'
     if warn is not None:
-        msg += str(warn)
+        msg += unicode(warn)
     msg += ';'
     if crit is not None:
-        msg += str(crit)
+        msg += unicode(crit)
     msg += ';'
     if min is not None:
-        msg += str(min)
+        msg += unicode(min)
     msg += ';'
     if max is not None:
-        msg += str(max)
+        msg += unicode(max)
     msg += ' '
     return msg
 
@@ -237,9 +295,9 @@ def get_state(value, warn, crit, operator='ge'):
     """Returns the STATE by comparing `value` to the given thresholds using
     a comparison `operator`. `warn` and `crit` threshold may also be `None`.
 
-    >>> lib.base2.get_state(15, 10, 20, 'ge')
+    >>> get_state(15, 10, 20, 'ge')
     1 (STATE_WARN)
-    >>> lib.base2.get_state(10, 10, 20, 'gt')
+    >>> get_state(10, 10, 20, 'gt')
     0 (STATE_OK)
 
     Parameters
@@ -251,12 +309,13 @@ def get_state(value, warn, crit, operator='ge'):
     crit : float
         Numeric critical threshold
     operator : string
+        `eq` = equal to
         `ge` = greater or equal
         `gt` = greater than
         `le` = less or equal
         `lt` = less than
-        `eq` = equal to
         `ne` = not equal to
+        `range` = match range
 
     Returns
     -------
@@ -319,19 +378,29 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_WARN
         return STATE_OK
 
+    if operator == 'range':
+        if crit is not None:
+            if not coe(match_range(value, crit)):
+                return STATE_CRIT
+        if warn is not None:
+            if not coe(match_range(value, warn)):
+                return STATE_WARN
+        return STATE_OK
+
     return STATE_UNKNOWN
 
 
-def get_table(data, keys, header=None, sort_by_key=None, sort_order_reverse=False):
+def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_reverse=False):
     """Takes a list of dictionaries, formats the data, and returns
     the formatted data as a text table.
 
     Required Parameters:
         data - Data to process (list of dictionaries). (Type: List)
-        keys - List of keys in the dictionary. (Type: List)
+        cols - List of cols in the dictionary. (Type: List)
 
     Optional Parameters:
         header - The table header. (Type: List)
+        strip - Strip/Trim values or not. (Type: Boolean)
         sort_by_key - The key to sort by. (Type: String)
         sort_order_reverse - Default sort order is ascending, if
             True sort order will change to descending. (Type: bool)
@@ -342,38 +411,59 @@ def get_table(data, keys, header=None, sort_by_key=None, sort_order_reverse=Fals
     if not data:
         return ''
 
-    # Sort the data if a sort key is specified (default sort order
-    # is ascending)
+    # Sort the data if a sort key is specified (default sort order is ascending)
     if sort_by_key:
         data = sorted(data,
                       key=operator.itemgetter(sort_by_key),
                       reverse=sort_order_reverse)
 
-    # If header is not empty, add header to data
+    # If header is not empty, create a list of dictionary from the cols and the header and
+    # insert it before first row of data
     if header:
-        # Get the length of each header and create a divider based
-        # on that length
-        header_divider = []
-        for name in header:
-            header_divider.append('-' * len(name))
-
-        # Create a list of dictionary from the keys and the header and
-        # insert it at the beginning of the list. Do the same for the
-        # divider and insert below the header.
-        header_divider = dict(zip(keys, header_divider))
-        data.insert(0, header_divider)
-        header = dict(zip(keys, header))
+        header = dict(zip(cols, header))
         data.insert(0, header)
 
+    # prepare data: Return the Unicode string version using UTF-8 Encoding,
+    # optionally strip values and get the maximum length per column
     column_widths = collections.OrderedDict()
-    for key in keys:
-        column_widths[key] = max(len(str(column[key])) for column in data)
+    for idx, row in enumerate(data):
+        for col in cols:
+            try:
+                if strip:
+                    data[idx][col] = unicode(row[col]).strip()
+                else:
+                    data[idx][col] = unicode(row[col])
+            except:
+                return u'Unknown column "{}"'.format(col)
+            # get the maximum length
+            try:
+                column_widths[col] = max(column_widths[col], len(data[idx][col]))
+            except:
+                column_widths[col] = len(data[idx][col])
 
+    if header:
+        # Get the length of each column and create a '---' divider based on that length
+        header_divider = []
+        for col, width in column_widths.items():
+            header_divider.append(u'-' * width)
+
+        # Insert the header divider below the header row
+        header_divider = dict(zip(cols, header_divider))
+        data.insert(1, header_divider)
+
+    # create the output
     table = ''
-    for element in data:
-        for key, width in column_widths.items():
-            table += '{:<{}} '.format(element[key], width)
-        table += '\n'
+    cnt = 0
+    for row in data:
+        tmp = ''
+        for col, width in column_widths.items():
+            if cnt != 1:
+                tmp += u'{:<{}} ! '.format(row[col], width)
+            else:
+                # header row
+                tmp += u'{:<{}}-+-'.format(row[col], width)
+        cnt += 1
+        table += tmp[:-2] + '\n'
 
     return table
 
@@ -425,7 +515,7 @@ def guess_type(v, consumer='python'):
                 try:
                     return float(v)
                 except ValueError:
-                    return str(v)
+                    return unicode(v)
 
     if consumer == 'sqlite':
         if v is None:
@@ -529,6 +619,28 @@ def match_range(value, spec):
     def parse_range(spec):
         """
         Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
+
+        +--------+-------------------+-------------------+--------------------------------+
+        | -w, -c | OK if result is   | WARN/CRIT if      | lib.base.parse_range() returns |
+        +--------+-------------------+-------------------+--------------------------------+
+        | 10     | in (0..10)        | not in (0..10)    | (0, 10, False)                 |
+        +--------+-------------------+-------------------+--------------------------------+
+        | -10    | in (-10..0)       | not in (-10..0)   | (0, -10, False)                |
+        +--------+-------------------+-------------------+--------------------------------+
+        | 10:    | in (10..inf)      | not in (10..inf)  | (10, inf, False)               |
+        +--------+-------------------+-------------------+--------------------------------+
+        | :      | in (0..inf)       | not in (0..inf)   | (0, inf, False)                |
+        +--------+-------------------+-------------------+--------------------------------+
+        | ~:10   | in (-inf..10)     | not in (-inf..10) | (-inf, 10, False)              |
+        +--------+-------------------+-------------------+--------------------------------+
+        | 10:20  | in (10..20)       | not in (10..20)   | (10, 20, False)                |
+        +--------+-------------------+-------------------+--------------------------------+
+        | @10:20 | not in (10..20)   | in 10..20         | (10, 20, True)                 |
+        +--------+-------------------+-------------------+--------------------------------+
+        | @~:20  | not in (-inf..20) | in (-inf..20)     | (-inf, 20, True)               |
+        +--------+-------------------+-------------------+--------------------------------+
+        | @      | not in (0..inf)   | in (0..inf)       | (0, inf, True)                 |
+        +--------+-------------------+-------------------+--------------------------------+
         """
         def parse_atom(atom, default):
             if atom == '':
@@ -538,10 +650,10 @@ def match_range(value, spec):
             return int(atom)
 
 
-        if spec is None or str(spec).lower() == 'none':
+        if spec is None or unicode(spec).lower() == 'none':
             return (True, None)
         if not isinstance(spec, str):
-            spec = str(spec)
+            spec = unicode(spec)
         invert = False
         if spec.startswith('@'):
             invert = True
@@ -563,7 +675,7 @@ def match_range(value, spec):
         return (True, (start, end, invert))
 
 
-    if spec is None or str(spec).lower() == 'none':
+    if spec is None or unicode(spec).lower() == 'none':
         return (True, True)
     success, result = parse_range(spec)
     if not success:
@@ -635,7 +747,7 @@ def number2human(n):
         return n
     millidx = max(0, min(len(millnames) - 1,
                          int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))))
-    return '{:.1f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
+    return u'{:.1f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
 
 
 def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
@@ -644,11 +756,39 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     Print the stripped plugin message. If perfdata is given, attach it
     by `|` and print it stripped. Exit with `state`, or with STATE_OK (0) if
     `always_ok` is set to `True`.
+
+    Always use Unicode internally. Decode what you receive to unicode, and encode what you send.
+    str is text representation in bytes, unicode is text representation in characters.
+    You decode text from bytes to unicode and encode a unicode into bytes with some encoding.
+    (in Python 3, str was renamed to bytes, and unicode was renamed to str)
+
+    On a Gnome-Terminal, we get
+    >>> sys.stdout.encoding
+    'UTF-8'
+    >>> sys.getdefaultencoding()
+    'ascii'
+    >>> import locale
+    >>> locale.getpreferredencoding()
+    'UTF-8'
+
+    In IcingaWeb, we get
+    >>> sys.stdout.encoding
+    'None'
+    >>> sys.getdefaultencoding()
+    'ascii'
+    >>> import locale
+    >>> locale.getpreferredencoding()
+    'UTF-8'
     """
+    codec = locale.getpreferredencoding()
+    if isinstance(msg, str):
+        msg = msg.decode(codec)
     if perfdata:
-        print(msg.strip() + '|' + perfdata.strip())
+        if isinstance(perfdata, str):
+            perfdata = perfdata.decode(codec)
+        print((msg.strip() + '|' + perfdata.strip()).encode(codec, 'replace'))
     else:
-        print(msg.strip())
+        print((msg.strip()).encode(codec, 'replace'))
     if always_ok:
         sys.exit(0)
     sys.exit(state)
@@ -725,7 +865,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
     """
     seconds = float(seconds)
     if seconds < 1:
-        return '{:.2f}s'.format(seconds)
+        return u'{:.2f}s'.format(seconds)
 
     if full_name:
         intervals = (
@@ -755,7 +895,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
             seconds -= value * count
             if full_name and value == 1:
                 name = name.rstrip('s') # "days" becomes "day"
-            result.append('{:.0f}{}'.format(value, name))
+            result.append(u'{:.0f}{}'.format(value, name))
 
     if len(result) > 2 and keep_short:
         return ' '.join(result[:2])
@@ -809,11 +949,11 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
             sp = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, env=env, shell=True)
         except OSError as e:
-            return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
+            return (False, u'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
-            return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
+            return (False, u'Value Error "{}" calling command "{}"'.format(e, cmd))
         except e:
-            return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
+            return (False, u'Unknown error "{}" while calling command "{}"'.format(e, cmd))
 
         if stdin:
             # provide stdin as input for the cmd
@@ -836,11 +976,11 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
             sp = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, env=env, shell=False)
         except OSError as e:
-            return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
+            return (False, u'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
-            return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
+            return (False, u'Value Error "{}" calling command "{}"'.format(e, cmd))
         except e:
-            return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
+            return (False, u'Unknown error "{}" while calling command "{}"'.format(e, cmd))
 
     stdout, stderr = sp.communicate()
     retc = sp.returncode
@@ -866,7 +1006,7 @@ def sort(array, reverse=True, sort_by_key=False):
     if isinstance(array, dict):
         if not sort_by_key:
             return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
-        return sorted(array.items(), key=lambda x: str(x[0]).lower(), reverse=reverse)
+        return sorted(array.items(), key=lambda x: unicode(x[0]).lower(), reverse=reverse)
     return array
 
 
@@ -922,7 +1062,7 @@ def str2state(string):
     >>> lib.base.str2state('warning')
     1
     """
-    string = str(string).lower()
+    string = unicode(string).lower()
     if string == 'ok':
         return STATE_OK
     if string.startswith('warn'):
@@ -952,32 +1092,15 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
     if state == STATE_OK and empty_ok:
         return ''
     if state == STATE_OK and not empty_ok:
-        return '{}[OK]{}'.format(prefix, suffix)
+        return u'{}[OK]{}'.format(prefix, suffix)
     if state == STATE_WARN:
-        return '{}[WARNING]{}'.format(prefix, suffix)
+        return u'{}[WARNING]{}'.format(prefix, suffix)
     if state == STATE_CRIT:
-        return '{}[CRITICAL]{}'.format(prefix, suffix)
+        return u'{}[CRITICAL]{}'.format(prefix, suffix)
     if state == STATE_UNKNOWN:
-        return '{}[UNKNOWN]{}'.format(prefix, suffix)
+        return u'{}[UNKNOWN]{}'.format(prefix, suffix)
 
     return state
-
-
-def test(args):
-    """Enables unit testing of a check plugin.
-
-    """
-    if args[0] and os.path.isfile(args[0]):
-        success, stdout = disk2.read_file(args[0])
-    else:
-        stdout = args[0]
-    if args[1] and os.path.isfile(args[1]):
-        success, stderr = disk2.read_file(args[1])
-    else:
-        stderr = args[1]
-    retc = int(args[2])
-
-    return stdout, stderr, retc
 
 
 def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
@@ -1006,13 +1129,24 @@ def uniq(string):
     return ' '.join(sorted(set(words), key=words.index))
 
 
-def version(v):
-    """Use this function to compare numerical but string-based version numbers.
+def utc_offset():
+    """Returns the current local UTC offset, for example '+0200'.
 
-    >>> lib.base2.version('3.0.7') < lib.base2.version('3.0.11')
-    True
+    utc_offset()
+    >>> '+0200'
+    """
+    return time.strftime("%z")
+
+
+def version(v):
+    """Use this function to compare string-based version numbers.
+
     >>> '3.0.7' < '3.0.11'
     False
+    >>> lib.base2.version('3.0.7') < lib.base2.version('3.0.11')
+    True
+    >>> lib.base2.version('v3.0.7-2') < lib.base2.version('3.0.11')
+    True
     >>> lib.base2.version(psutil.__version__) >= lib.base2.version('5.3.0')
     True
 
@@ -1026,6 +1160,10 @@ def version(v):
     tuple
         A tuple of version numbers.
     """
+    # if we get something like "v0.10.7-2", remove everything except "." and "-",
+    # and convert "-" to "."
+    v = re.sub(r'[^0-9\.-]', '', v)
+    v = v.replace('-', '.')
     return tuple(map(int, (v.split("."))))
 
 
@@ -1034,10 +1172,51 @@ def version2float(v):
 
     >>> version2float('Version v17.3.2.0')
     17.320
+    >>> version2float('21.60-53-93285')
+    21.605393285
     """
-    v = re.sub(r'[a-z\s]', '', v.lower())
+    v = re.sub(r'[^0-9\.]', '', v)
     v = v.split('.')
     if len(v) > 1:
-        return float('{}.{}'.format(v[0], ''.join(v[1:])))
+        return float(u'{}.{}'.format(v[0], ''.join(v[1:])))
     else:
         return float(''.join(v))
+
+
+def yesterday(as_type='', tz_utc=False):
+    """Returns yesterday's date and time as UNIX time in seconds (default), or
+    as a datetime object.
+
+    >>> lib.base2.yesterday()
+    1626706723
+    >>> lib.base2.yesterday(as_type='', tz_utc=False)
+    1626706723
+    >>> lib.base2.yesterday(as_type='', tz_utc=True)
+    1626706723
+
+    >>> lib.base2.yesterday(as_type='datetime', tz_utc=False)
+    datetime.datetime(2021, 7, 19, 16, 58, 43, 11292)
+    >>> lib.base2.yesterday(as_type='datetime', tz_utc=True)
+    datetime.datetime(2021, 7, 19, 14, 58, 43, 11446, tzinfo=datetime.timezone.utc)
+
+    >>> lib.base2.yesterday(as_type='iso', tz_utc=False)
+    '2021-07-19 16:58:43'
+    >>> lib.base2.yesterday(as_type='iso', tz_utc=True)
+    '2021-07-19T14:58:43Z'
+    """
+    if tz_utc:
+        if as_type == 'datetime':
+            today = datetime.datetime.now(tz=datetime.timezone.utc)
+            return today - datetime.timedelta(days=1)
+        if as_type == 'iso':
+            today = datetime.datetime.now(tz=datetime.timezone.utc)
+            yesterday = today - datetime.timedelta(days=1)
+            return yesterday.isoformat(timespec='seconds').replace('+00:00', 'Z')
+    if as_type == 'datetime':
+        today = datetime.datetime.now()
+        return today - datetime.timedelta(days=1)
+    if as_type == 'iso':
+        today = datetime.datetime.now()
+        yesterday = today - datetime.timedelta(days=1)
+        return yesterday.strftime("%Y-%m-%d %H:%M:%S")
+    return int(time.time()-86400)

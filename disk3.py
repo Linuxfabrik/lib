@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061401'
+__version__ = '2021092901'
 
 import csv
 import os
@@ -97,10 +97,9 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
             else:
                 reader = csv.DictReader(csvfile, delimiter=',', quotechar='"')
             data = []
-            is_header_row = True
             for row in reader:
                 # check if the list contains empty strings only
-                if skip_empty_rows and all('' == row or row.isspace() for row in l):
+                if skip_empty_rows and all('' == s or s.isspace() for s in row):
                     continue
                 data.append(row)
     except csv.Error as e:
@@ -118,9 +117,8 @@ def read_file(filename):
     """
 
     try:
-        f = open(filename, 'r')
-        data = f.read()
-        f.close()
+        with open(filename, 'r') as f:
+            data = f.read()
     except IOError as e:
         return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
     except:

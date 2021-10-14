@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061401'
+__version__ = '2021091701'
 
 import collections
 import datetime
@@ -27,8 +27,9 @@ import subprocess
 import sys
 import time
 
+from traceback import format_exc # pylint: disable=C0413
+
 from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
-from . import disk3
 
 
 WINDOWS = os.name == "nt"
@@ -142,6 +143,16 @@ def coe(result, state=STATE_UNKNOWN):
     sys.exit(state)
 
 
+def cu():
+    """See you (cu)
+
+    Prints a Stacktrace (replacing "<" and ">" to be printable in Web-GUIs), and exits with
+    STATE_UNKNOWN.
+    """
+    print(format_exc().replace("<", "'").replace(">", "'"))
+    sys.exit(STATE_UNKNOWN)
+
+
 def epoch2iso(timestamp):
     """Returns the ISO representaton of a UNIX timestamp (epoch).
 
@@ -150,6 +161,45 @@ def epoch2iso(timestamp):
     """
     timestamp = float(timestamp)
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
+
+
+def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
+    """Extracts text between `from_txt` to `to_txt`.
+    If `include_fromto` is set to False (default), text is returned without both search terms,
+    otherwise `from_txt` and `to_txt` are included.
+    If `from_txt` is not found, always an empty string is returned.
+    If `to_txt` is not found and `be_tolerant` is set to True (default), text is returned from
+    `from_txt` til the end of input text. Otherwise an empty text is returned.
+
+    >>> extract_text('abcde', 'x', 'y')
+    ''
+    >>> extract_text('abcde', 'b', 'x')
+    'cde'
+    >>> extract_text('abcde', 'b', 'x', include_fromto=True)
+    'bcde'
+    >>> extract_text('abcde', 'b', 'x', include_fromto=True, be_tolerant=False)
+    ''
+    >>> extract_text('abcde', 'b', 'd')
+    'c'
+    >>> extract_text('abcde', 'b', 'd', include_fromto=True)
+    'bcd'
+    """
+    pos1 = s.find(from_txt)
+    if pos1 == -1:
+        # nothing found
+        return ''
+    pos2 = s.find(to_txt, pos1+len(from_txt))
+    # to_txt not found:
+    if pos2 == -1 and be_tolerant and not include_fromto:
+        return s[pos1+len(from_txt):]
+    if pos2 == -1 and be_tolerant and include_fromto:
+        return s[pos1:]
+    if pos2 == -1 and not be_tolerant:
+        return ''
+    # from_txt and to_txt found:
+    if not include_fromto:
+        return s[pos1+len(from_txt):pos2-len(to_txt)+ 1]
+    return s[pos1:pos2+len(to_txt)]
 
 
 def filter_mltext(input, ignore):
@@ -164,6 +214,9 @@ def filter_mltext(input, ignore):
 def filter_str(s, charclass='a-zA-Z0-9_'):
     """Stripping everything except alphanumeric chars and '_' from a string -
     chars that are allowed everywhere in variables, database table or index names, etc.
+
+    >>> filter_str('user@example.ch')
+    'userexamplech'
     """
     regex = '[^{}]'.format(charclass)
     return re.sub(regex, "", s)
@@ -237,9 +290,9 @@ def get_state(value, warn, crit, operator='ge'):
     """Returns the STATE by comparing `value` to the given thresholds using
     a comparison `operator`. `warn` and `crit` threshold may also be `None`.
 
-    >>> lib.base3.get_state(15, 10, 20, 'ge')
+    >>> get_state(15, 10, 20, 'ge')
     1 (STATE_WARN)
-    >>> lib.base3.get_state(10, 10, 20, 'gt')
+    >>> get_state(10, 10, 20, 'gt')
     0 (STATE_OK)
 
     Parameters
@@ -251,12 +304,13 @@ def get_state(value, warn, crit, operator='ge'):
     crit : float
         Numeric critical threshold
     operator : string
+        `eq` = equal to
         `ge` = greater or equal
         `gt` = greater than
         `le` = less or equal
         `lt` = less than
-        `eq` = equal to
         `ne` = not equal to
+        `range` = match range
 
     Returns
     -------
@@ -319,19 +373,29 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_WARN
         return STATE_OK
 
+    if operator == 'range':
+        if crit is not None:
+            if not coe(match_range(value, crit)):
+                return STATE_CRIT
+        if warn is not None:
+            if not coe(match_range(value, warn)):
+                return STATE_WARN
+        return STATE_OK
+
     return STATE_UNKNOWN
 
 
-def get_table(data, keys, header=None, sort_by_key=None, sort_order_reverse=False):
+def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_reverse=False):
     """Takes a list of dictionaries, formats the data, and returns
     the formatted data as a text table.
 
     Required Parameters:
         data - Data to process (list of dictionaries). (Type: List)
-        keys - List of keys in the dictionary. (Type: List)
+        cols - List of cols in the dictionary. (Type: List)
 
     Optional Parameters:
         header - The table header. (Type: List)
+        strip - Strip/Trim values or not. (Type: Boolean)
         sort_by_key - The key to sort by. (Type: String)
         sort_order_reverse - Default sort order is ascending, if
             True sort order will change to descending. (Type: bool)
@@ -342,38 +406,59 @@ def get_table(data, keys, header=None, sort_by_key=None, sort_order_reverse=Fals
     if not data:
         return ''
 
-    # Sort the data if a sort key is specified (default sort order
-    # is ascending)
+    # Sort the data if a sort key is specified (default sort order is ascending)
     if sort_by_key:
         data = sorted(data,
                       key=operator.itemgetter(sort_by_key),
                       reverse=sort_order_reverse)
 
-    # If header is not empty, add header to data
+    # If header is not empty, create a list of dictionary from the cols and the header and
+    # insert it before first row of data
     if header:
-        # Get the length of each header and create a divider based
-        # on that length
-        header_divider = []
-        for name in header:
-            header_divider.append('-' * len(name))
-
-        # Create a list of dictionary from the keys and the header and
-        # insert it at the beginning of the list. Do the same for the
-        # divider and insert below the header.
-        header_divider = dict(zip(keys, header_divider))
-        data.insert(0, header_divider)
-        header = dict(zip(keys, header))
+        header = dict(zip(cols, header))
         data.insert(0, header)
 
+    # prepare data: decode from (mostly) UTF-8 to Unicode, optionally strip values and get
+    # the maximum length per column
     column_widths = collections.OrderedDict()
-    for key in keys:
-        column_widths[key] = max(len(str(column[key])) for column in data)
+    for idx, row in enumerate(data):
+        for col in cols:
+            try:
+                if strip:
+                    data[idx][col] = str(row[col]).strip()
+                else:
+                    data[idx][col] = str(row[col])
+            except:
+                return 'Unknown column "{}"'.format(col)
+            # get the maximum length
+            try:
+                column_widths[col] = max(column_widths[col], len(data[idx][col]))
+            except:
+                column_widths[col] = len(data[idx][col])
 
+    if header:
+        # Get the length of each column and create a '---' divider based on that length
+        header_divider = []
+        for col, width in column_widths.items():
+            header_divider.append('-' * width)
+
+        # Insert the header divider below the header row
+        header_divider = dict(zip(cols, header_divider))
+        data.insert(1, header_divider)
+
+    # create the output
     table = ''
-    for element in data:
-        for key, width in column_widths.items():
-            table += '{:<{}} '.format(element[key], width)
-        table += '\n'
+    cnt = 0
+    for row in data:
+        tmp = ''
+        for col, width in column_widths.items():
+            if cnt != 1:
+                tmp += '{:<{}} ! '.format(row[col], width)
+            else:
+                # header row
+                tmp += '{:<{}}-+-'.format(row[col], width)
+        cnt += 1
+        table += tmp[:-2] + '\n'
 
     return table
 
@@ -529,6 +614,28 @@ def match_range(value, spec):
     def parse_range(spec):
         """
         Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
+
+        +--------+-------------------+-------------------+--------------------------------+
+        | -w, -c | OK if result is   | WARN/CRIT if      | lib.base.parse_range() returns |
+        +--------+-------------------+-------------------+--------------------------------+
+        | 10     | in (0..10)        | not in (0..10)    | (0, 10, False)                 |
+        +--------+-------------------+-------------------+--------------------------------+
+        | -10    | in (-10..0)       | not in (-10..0)   | (0, -10, False)                |
+        +--------+-------------------+-------------------+--------------------------------+
+        | 10:    | in (10..inf)      | not in (10..inf)  | (10, inf, False)               |
+        +--------+-------------------+-------------------+--------------------------------+
+        | :      | in (0..inf)       | not in (0..inf)   | (0, inf, False)                |
+        +--------+-------------------+-------------------+--------------------------------+
+        | ~:10   | in (-inf..10)     | not in (-inf..10) | (-inf, 10, False)              |
+        +--------+-------------------+-------------------+--------------------------------+
+        | 10:20  | in (10..20)       | not in (10..20)   | (10, 20, False)                |
+        +--------+-------------------+-------------------+--------------------------------+
+        | @10:20 | not in (10..20)   | in 10..20         | (10, 20, True)                 |
+        +--------+-------------------+-------------------+--------------------------------+
+        | @~:20  | not in (-inf..20) | in (-inf..20)     | (-inf, 20, True)               |
+        +--------+-------------------+-------------------+--------------------------------+
+        | @      | not in (0..inf)   | in (0..inf)       | (0, inf, True)                 |
+        +--------+-------------------+-------------------+--------------------------------+
         """
         def parse_atom(atom, default):
             if atom == '':
@@ -963,23 +1070,6 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
     return state
 
 
-def test(args):
-    """Enables unit testing of a check plugin.
-
-    """
-    if args[0] and os.path.isfile(args[0]):
-        success, stdout = disk3.read_file(args[0])
-    else:
-        stdout = args[0]
-    if args[1] and os.path.isfile(args[1]):
-        success, stderr = disk3.read_file(args[1])
-    else:
-        stderr = args[1]
-    retc = int(args[2])
-
-    return stdout, stderr, retc
-
-
 def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
     """Takes a string (default: ISO format) and returns a
     datetime object.
@@ -1006,13 +1096,24 @@ def uniq(string):
     return ' '.join(sorted(set(words), key=words.index))
 
 
-def version(v):
-    """Use this function to compare numerical but string-based version numbers.
+def utc_offset():
+    """Returns the current local UTC offset, for example '+0200'.
 
-    >>> lib.base3.version('3.0.7') < lib.base3.version('3.0.11')
-    True
+    utc_offset()
+    >>> '+0200'
+    """
+    return time.strftime("%z")
+
+
+def version(v):
+    """Use this function to compare string-based version numbers.
+
     >>> '3.0.7' < '3.0.11'
     False
+    >>> lib.base3.version('3.0.7') < lib.base3.version('3.0.11')
+    True
+    >>> lib.base3.version('v3.0.7-2') < lib.base3.version('3.0.11')
+    True
     >>> lib.base3.version(psutil.__version__) >= lib.base3.version('5.3.0')
     True
 
@@ -1026,6 +1127,10 @@ def version(v):
     tuple
         A tuple of version numbers.
     """
+    # if we get something like "v0.10.7-2", remove everything except "." and "-",
+    # and convert "-" to "."
+    v = re.sub(r'[^0-9\.-]', '', v)
+    v = v.replace('-', '.')
     return tuple(map(int, (v.split("."))))
 
 
@@ -1034,10 +1139,51 @@ def version2float(v):
 
     >>> version2float('Version v17.3.2.0')
     17.320
+    >>> version2float('21.60-53-93285')
+    21.605393285
     """
-    v = re.sub(r'[a-z\s]', '', v.lower())
+    v = re.sub(r'[^0-9\.]', '', v)
     v = v.split('.')
     if len(v) > 1:
         return float('{}.{}'.format(v[0], ''.join(v[1:])))
     else:
         return float(''.join(v))
+
+
+def yesterday(as_type='', tz_utc=False):
+    """Returns yesterday's date and time as UNIX time in seconds (default), or
+    as a datetime object.
+
+    >>> lib.base3.yesterday()
+    1626706723
+    >>> lib.base3.yesterday(as_type='', tz_utc=False)
+    1626706723
+    >>> lib.base3.yesterday(as_type='', tz_utc=True)
+    1626706723
+
+    >>> lib.base3.yesterday(as_type='datetime', tz_utc=False)
+    datetime.datetime(2021, 7, 19, 16, 58, 43, 11292)
+    >>> lib.base3.yesterday(as_type='datetime', tz_utc=True)
+    datetime.datetime(2021, 7, 19, 14, 58, 43, 11446, tzinfo=datetime.timezone.utc)
+
+    >>> lib.base3.yesterday(as_type='iso', tz_utc=False)
+    '2021-07-19 16:58:43'
+    >>> lib.base3.yesterday(as_type='iso', tz_utc=True)
+    '2021-07-19T14:58:43Z'
+    """
+    if tz_utc:
+        if as_type == 'datetime':
+            today = datetime.datetime.now(tz=datetime.timezone.utc)
+            return today - datetime.timedelta(days=1)
+        if as_type == 'iso':
+            today = datetime.datetime.now(tz=datetime.timezone.utc)
+            yesterday = today - datetime.timedelta(days=1)
+            return yesterday.isoformat(timespec='seconds').replace('+00:00', 'Z')
+    if as_type == 'datetime':
+        today = datetime.datetime.now()
+        return today - datetime.timedelta(days=1)
+    if as_type == 'iso':
+        today = datetime.datetime.now()
+        yesterday = today - datetime.timedelta(days=1)
+        return yesterday.strftime("%Y-%m-%d %H:%M:%S")
+    return int(time.time()-86400)

@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050602'
+__version__ = '2021083001'
 
 import json
 import re
@@ -24,21 +24,22 @@ import urllib2
 
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
           header={}, data={}, encoding='urlencode',
-          digest_auth_user=None, digest_auth_password=None):
+          digest_auth_user=None, digest_auth_password=None,
+          extended=False):
     """Fetch any URL.
 
+    If using `extended=True`, the result is returned as a dict, also including the response header
+    and the HTTP status code.
+
     Basic authentication:
-    >>> header = {
-            'Authorization': "Basic {}".format(
-                base64.b64encode(username + ':' + password)
-                )
-        }
-    >>> result = fetch(URL)
+    >>> auth = args.USERNAME + ':' + args.PASSWORD
+    >>> encoded_auth = base64.b64encode(auth.encode()).decode()
+    >>> result = lib.base3.coe(lib.url3.fetch(url, timeout=args.TIMEOUT,
+            header={'Authorization': 'Basic {}'.format(encoded_auth)}))
 
     POST: the HTTP request will be a POST instead of a GET when the data parameter is provided
     >>> result = fetch(URL, header=header, data={...})
     """
-
     try:
         if digest_auth_user is not None and digest_auth_password is not None:
             # HTTP Digest Authentication
@@ -63,6 +64,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
             request.add_header(key, value)
         # close http connections by myself
         request.add_header('Connection', 'close')
+        # identify as Linuxfabrik Monitoring-Plugin
+        request.add_header('User-Agent', 'Linuxfabrik Monitoring Plugins')
 
         # SSL/TLS certificate validation
         # see: https://stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
@@ -84,37 +87,41 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     except urllib2.HTTPError as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url))
+        return (False, u'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url))
     except urllib2.URLError as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'URL error "{}" for {}'.format(e.reason, url))
+        return (False, u'URL error "{}" for {}'.format(e.reason, url))
     except TypeError as e:
-        return (False, 'Type error "{}", data="{}"'.format(e, data))
+        return (False, u'Type error "{}", data="{}"'.format(e, data))
     except:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'Unknown error while fetching {}, maybe timeout or '
+        return (False, u'Unknown error while fetching {}, maybe timeout or '
                        'error on webserver'.format(url))
     else:
         try:
-            result = response.read()
-        except SSLError as e:
-            return (False, 'SSL error "{}" while fetching {}'.format(e, url))
+            if not extended:
+                result = response.read()
+            else:
+                result = {}
+                result['response'] = response.read()
+                result['status_code'] = response.getcode()
+                result['response_header'] = response.info()
         except:
-            return (False, 'Unknown error while fetching {}, maybe timeout or '
+            return (False, u'Unknown error while fetching {}, maybe timeout or '
                        'error on webserver'.format(url))
         return (True, result)
 
 
 def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
                header={}, data={}, encoding='urlencode',
-               digest_auth_user=None, digest_auth_password=None):
+               digest_auth_user=None, digest_auth_password=None,
+               extended=False):
     """Fetch JSON from an URL.
 
     >>> fetch_json('https://1.2.3.4/api/v2/?resource=cpu')
     """
-
     success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
                             header=header, data=data, encoding=encoding,
                             digest_auth_user=digest_auth_user, digest_auth_password=digest_auth_password)
@@ -127,13 +134,36 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
     return (True, result)
 
 
+def fetch_json_ext(url, insecure=False, no_proxy=False, timeout=8,
+               header={}, data={}, encoding='urlencode',
+               digest_auth_user=None, digest_auth_password=None):
+    """Fetch JSON from an URL, extended version of fetch_json(). 
+    Returns the response body plus response header.
+
+    >>> success, result, response_header = url2.fetch_json_ext(
+        args.URL, header=header, data=data, timeout=timeout, insecure=True)
+    >>> print(response_header['X-RestSvcSessionId'])
+    NGY5NzI2MDgtMjU3My00MmEzLThiNDEtOWYxZmJkNzI2ZDZl
+    """
+    success, jsonst, response_header = fetch_ext(
+        url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
+        header=header, data=data, encoding=encoding,
+        digest_auth_user=digest_auth_user, digest_auth_password=digest_auth_password)
+    if not success:
+        return (False, jsonst, False)
+    try:
+        result = json.loads(jsonst)
+    except:
+        return (False, 'ValueError: No JSON object could be decoded', False)
+    return (True, result, response_header)
+
+
 def get_latest_version_from_github(user, repo, key='tag_name'):
     """Get the newest release tag from a GitHub repo.
 
     >>> get_latest_version_from_github('matomo-org', 'matomo')
     """
-
-    github_url = 'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
+    github_url = u'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
     success, result = fetch_json(github_url)
     if not success:
         return (success, result)
@@ -147,5 +177,4 @@ def get_latest_version_from_github(user, repo, key='tag_name'):
 def strip_tags(html):
     """Tries to return a string with all HTML tags stripped from a given string.
     """
-
     return re.sub(r'<[^<]+?>', '', html)
