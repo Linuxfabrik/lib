@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050301'
+__version__ = '2021082501'
 
 import sys
 

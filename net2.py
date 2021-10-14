@@ -13,8 +13,9 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021061501'
+__version__ = '2021092901'
 
+import random
 import re
 import socket
 try:
@@ -121,35 +122,75 @@ FQDN_REGEX = re.compile(
 )
 
 
+def fetch(host, port, msg=None, timeout=3, ipv6=False):
+    """Fetch data via a TCP/IP socket connection. You may optionally send a msg first.
+    Supports both IPv4 and IPv6.
+    Taken from https://docs.python.org/3/library/socket.html, enhanced.
+    """
+    try:
+        if ipv6:
+            s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        else:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(int(timeout))
+        s.connect((host, int(port)))
+    except:
+        return (False, 'Could not open socket.')
+
+    if msg is not None:
+        try:
+            s.sendall(msg)
+        except:
+            return (False, u'Could not send payload "{}".'.format(msg))
+
+    fragments = []
+    while True:
+        try:
+            chunk = s.recv(1024)
+            if not chunk:
+                break
+            fragments.append(chunk)
+        except socket.timeout as e:
+            # non-blocking behavior via a time out with socket.settimeout(n)
+            err = e.args[0]
+            # this next if/else is a bit redundant, but illustrates how the
+            # timeout exception is setup
+            if err == 'timed out':
+                return (False, 'Socket timed out.')
+            else:
+                return (False, u'Can\'t fetch data: {}'.format(e))
+        except socket.error as e:
+            # Something else happened, handle error, exit, etc.
+            return (False, u'Can\'t fetch data: {}'.format(e))
+
+    try:
+        s.close()
+    except:
+        s = None
+
+    return (True,  ''.join(fragments))
+
+
 def get_ip_public():
     """Retrieve the public IP address from a list of online services.
     """
-    # List of tuple (url, json, key), from fastest to slowest.
-    # - url: URL of the Web site
-    # - json: service return a JSON (True) or string (False)
-    # - key: key of the IP addresse in the JSON structure
     urls = [
-        ('https://ip.42.pl/raw', False, None),
-        ('https://api.ipify.org/?format=json', True, 'ip'),
-        ('https://httpbin.org/ip', True, 'origin'),
-        ('https://jsonip.com', True, 'ip'),
+        'http://ipv4.icanhazip.com',
+        'http://ipecho.net/plain',
+        'http://ipinfo.io/ip'
     ]
+    random.shuffle(urls)
 
     ip = None
-    for url, json, key in urls:
-        # Request the url service and put the result in the queue_target.
-        if json:
-            success, result = url2.fetch_json(url)
-            ip = result.getattr(key, None)
-        else:
-            success, ip = url2.fetch(url)
-        if ip:
-            break
-
-    try:
-        return ip.decode()
-    except:
-        return ip
+    for url in urls:
+        success, ip = url2.fetch(url, timeout=2)
+        if success and ip:
+            ip = ip.strip()
+            try:
+                return (True, ip.decode('utf-8'))
+            except:
+                return (True, ip)
+    return (False, ip)
 
 
 def get_netinfo():
@@ -232,4 +273,3 @@ def is_valid_absolute_hostname(hostname):
     """
 
     return not hostname.endswith(".") and is_valid_hostname(hostname)
-

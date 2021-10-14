@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021021501'
+__version__ = '2021082501'
 
 
 import warnings
@@ -32,7 +32,7 @@ except ImportError as e:
 
 def open_file(path, username, password, timeout, encrypt=True):
     if missing_smb_lib:
-        return (False, 'Python module "{}" is not installed.'.format(missing_smb_lib))
+        return (False, u'Python module "{}" is not installed.'.format(missing_smb_lib))
     try:
         return (True, smbclient.open_file(
                 path,
@@ -45,14 +45,14 @@ def open_file(path, username, password, timeout, encrypt=True):
     except (smbprotocol.exceptions.SMBAuthenticationError, smbprotocol.exceptions.LogonFailure):
         return (False, 'Login failed')
     except smbprotocol.exceptions.SMBOSError as e:
-        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, path))
+        return (False, u'I/O error "{}" while opening or reading {}'.format(e.strerror, path))
     except Exception as e:
-        return (False, 'Unknown error opening or reading {}:\n{}'.format(path, e))
+        return (False, u'Unknown error opening or reading {}:\n{}'.format(path, e))
 
 
 def glob(path, username, password, timeout, pattern='*', encrypt=True):
     if missing_smb_lib:
-        return (False, 'Python module "{}" is not installed.'.format(missing_smb_lib))
+        return (False, u'Python module "{}" is not installed.'.format(missing_smb_lib))
     try:
         file_entry = smbclient._os.SMBDirEntry.from_path(
                 path,
@@ -80,6 +80,6 @@ def glob(path, username, password, timeout, pattern='*', encrypt=True):
     except smbprotocol.exceptions.SMBOSError as e:
         if e.strerror == 'No such file or directory':
             return (True, [])
-        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, path))
+        return (False, u'I/O error "{}" while opening or reading {}'.format(e.strerror, path))
     except Exception as e:
-        return (False, 'Unknown error opening or reading {}:\n{}'.format(path, e))
+        return (False, u'Unknown error opening or reading {}:\n{}'.format(path, e))

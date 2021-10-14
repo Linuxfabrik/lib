@@ -12,9 +12,9 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021042801'
+__version__ = '2021071501'
 
-from globals3 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
+from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 from . import base3
 from . import url3

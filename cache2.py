@@ -25,13 +25,13 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020051301'
+__version__ = '2021100801'
 
 import base2
 import db_sqlite2
 
 
-def get(key, as_dict=False):
+def get(key, as_dict=False, path='', filename='linuxfabrik-plugin-cache.db'):
     """Get the value of key. If the key does not exist, `False` is returned.
 
     Parameters
@@ -46,7 +46,7 @@ def get(key, as_dict=False):
         failure.
     """
 
-    success, conn = db_sqlite2.connect(filename='linuxfabrik-plugin-cache.db')
+    success, conn = db_sqlite2.connect(path=path, filename=filename)
     if not success:
         return False
 
@@ -71,7 +71,7 @@ def get(key, as_dict=False):
         data = {'key' : result['key']}
         success, result = db_sqlite2.delete(
             conn,
-            sql='DELETE FROM cache WHERE timestamp <= {};'.format(base2.now())
+            sql=u'DELETE FROM cache WHERE timestamp <= {};'.format(base2.now())
         )
         success, result = db_sqlite2.commit(conn)
         db_sqlite2.close(conn)
@@ -87,7 +87,7 @@ def get(key, as_dict=False):
     return result
 
 
-def set(key, value, expire=0):
+def set(key, value, expire=0, path='', filename='linuxfabrik-plugin-cache.db'):
     """Set key to hold the string value.
 
     Keys have to be unique. If the key already holds a value, it is
@@ -109,7 +109,7 @@ def set(key, value, expire=0):
         `True` on success, `False` on failure.
     """
 
-    success, conn = db_sqlite2.connect(filename='linuxfabrik-plugin-cache.db')
+    success, conn = db_sqlite2.connect(path=path, filename=filename)
     if not success:
         return False
 

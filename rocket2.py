@@ -12,7 +12,7 @@
 needed by more than one Rocket.Chat plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2020043001'
+__version__ = '2021082501'
 
 import url2
 
@@ -37,7 +37,7 @@ def get_token(rc_url, user, password):
     if not success:
         return (success, result)
     if not result:
-        return (False, 'There was no result from {}.'.format(rc_url))
+        return (False, u'There was no result from {}.'.format(rc_url))
 
     if not 'authToken' in result['data']:
         return (False, 'Something went wrong, maybe user is unauthorized.')
@@ -65,6 +65,6 @@ def get_stats(rc_url, auth_token, user_id):
     if not success:
         return (success, result)
     if not result:
-        return (False, 'There was no result from {}.'.format(rc_url))
+        return (False, u'There was no result from {}.'.format(rc_url))
 
     return (True, result)
