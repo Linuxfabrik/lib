@@ -8,11 +8,11 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
-"""This library parses data from the Redfish API.
+"""This library parses data returned from the Redfish API.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021110601'
+__version__ = '2021110701'
 
 import base2
 from globals2 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
@@ -63,46 +63,33 @@ def get_state(data):
     return STATE_OK
 
 
-def get_value_state(data, key='Reading', warn_late=False):
-    """
-    UpperThresholdFatal: Above normal range and is fatal.
-    UpperThresholdCritical: Above normal range but not yet fatal.
-    UpperThresholdNonCritical: Above normal range.
-    LowerThresholdNonCritical: Below normal range.
-    LowerThresholdCritical: Below normal range but not yet fatal
-    LowerThresholdFatal: Below normal range and is fatal.
-    """
-    value = data[key]
-    if data.get('UpperThresholdCritical', '') and value >= data['UpperThresholdCritical']:
+def get_sensor_state(data, key='Reading', warn_late=False):
+    value = data.get(key, '')
+    if not value or not (isinstance(value, int) or isinstance(value, float)):
+        return STATE_OK
+    if data.get('Thresholds_UpperCritical', '') and value >= data['Thresholds_UpperCritical']:
         return STATE_CRIT
-    if data.get('LowerThresholdCritical', '') and value <= data['LowerThresholdCritical']:
+    if data.get('Thresholds_LowerCritical', '') and value <= data['Thresholds_LowerCritical']:
         return STATE_CRIT
-    if data.get('UpperThresholdNonCritical', '') and value >= data['UpperThresholdNonCritical']:
+    if data.get('Thresholds_UpperCaution', '') and value >= data['Thresholds_UpperCaution']:
         return STATE_WARN
-    if data.get('LowerThresholdNonCritical', '') and value <= data['LowerThresholdNonCritical']:
+    if data.get('Thresholds_LowerCaution', '') and value <= data['Thresholds_LowerCaution']:
         return STATE_WARN
     return STATE_OK
 
 
-def get_perfdata(data):
-    value = ''
-    if data.get('ReadingCelsius', ''):
-        value = data['ReadingCelsius']
-    if data.get('Reading', ''):
-        value = data['Reading']
+def get_perfdata(data, key='Reading'):
+    value = data.get(key, '')
     if not value or not (isinstance(value, int) or isinstance(value, float)):
         return ''
-    key = data['Name']
-    uom = None  # maybe data['ReadingUnits']
-    if data.get('UpperThresholdNonCritical', ''):
-        warn = data['UpperThresholdNonCritical']
-    else:
-        warn = None
-    if data.get('UpperThresholdCritical', ''):
-        crit = data['UpperThresholdCritical']
-    else:
-        crit = None
-    return base2.get_perfdata(key, value, uom, warn, crit, None, None)
+    name = data.get('Name')
+    physical_context = data.get('PhysicalContext')
+    uom = '%' if data.get('ReadingUnits', '') == '%' else None
+    warn = data['Thresholds_UpperCaution'] if data.get('Thresholds_UpperCaution', '') else None
+    crit = data['Thresholds_UpperCritical'] if data.get('Thresholds_UpperCritical', '') else None
+    _min = data['ReadingRangeMin'] if data.get('ReadingRangeMin', '') else None
+    _max = data['ReadingRangeMax'] if data.get('ReadingRangeMax', '') else None
+    return base2.get_perfdata('{}_{}'.format(physical_context, name).replace(' ', '_'), value, uom, warn, crit, _min, _max)
 
 
 def get_chassis(redfish):
@@ -117,6 +104,25 @@ def get_chassis(redfish):
     data['PowerState'] = redfish.get('PowerState', '')                                  # On
     data['SerialNumber'] = redfish.get('SerialNumber', '')
     data['SKU'] = redfish.get('SKU', '')
+    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
+    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
+    return data
+
+
+def get_chassis_sensors(redfish):
+    data = {}
+    data['Id'] = redfish.get('Id', '')
+    data['Name'] = redfish.get('Name', '')
+    data['PhysicalContext'] = redfish.get('PhysicalContext', '')
+    data['Reading'] = redfish.get('Reading', '')
+    data['ReadingRangeMax'] = redfish.get('ReadingRangeMax', '')
+    data['ReadingRangeMin'] = redfish.get('ReadingRangeMin', '')
+    data['ReadingUnits'] = redfish.get('ReadingUnits', '')
+    data['Thresholds_LowerCaution'] = redfish.get('Thresholds', {}).get('LowerCaution', {}).get('Reading', '')
+    data['Thresholds_LowerCritical'] = redfish.get('Thresholds', {}).get('LowerCritical', {}).get('Reading', '')
+    data['Thresholds_UpperCaution'] = redfish.get('Thresholds', {}).get('UpperCaution', {}).get('Reading', '')
+    data['Thresholds_UpperCritical'] = redfish.get('Thresholds', {}).get('UpperCritical', {}).get('Reading', '')
     data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
     data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
     data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
@@ -160,6 +166,42 @@ def get_chassis_thermal_temperatures(redfish):
     data['Name'] = redfish.get('Name', '')
     data['PhysicalContext'] = redfish.get('PhysicalContext', '')
     data['ReadingCelsius'] = redfish.get('ReadingCelsius', '')
+    data['UpperThresholdCritical'] = redfish.get('UpperThresholdCritical', '')
+    data['UpperThresholdFatal'] = redfish.get('UpperThresholdFatal', '')
+    data['UpperThresholdNonCritical'] = redfish.get('UpperThresholdNonCritical', '')
+    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
+    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    return data
+
+
+def get_chassis_power_powersupplies(redfish):
+    data = {}
+    data['FirmwareVersion'] = redfish.get('FirmwareVersion', '')
+    data['LastPowerOutputWatts'] = redfish.get('LastPowerOutputWatts', '')
+    if data['LastPowerOutputWatts'] == None:
+        data['LastPowerOutputWatts'] = redfish.get('PowerOutputWatts', '')  # DELL uses this instead
+    data['LineInputVoltage'] = redfish.get('LineInputVoltage', '')
+    data['LineInputVoltageType'] = redfish.get('LineInputVoltageType', '')
+    data['Manufacturer'] = redfish.get('Manufacturer', '')
+    data['Model'] = redfish.get('Model', '')
+    data['PartNumber'] = redfish.get('PartNumber', '')
+    data['PowerCapacityWatts'] = redfish.get('PowerCapacityWatts', '')
+    data['PowerSupplyType'] = redfish.get('PowerSupplyType', '')
+    data['SerialNumber'] = redfish.get('SerialNumber', '')
+    data['SparePartNumber'] = redfish.get('SparePartNumber', '')
+    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
+    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    return data
+
+
+def get_chassis_power_voltages(redfish):
+    data = {}
+    data['LowerThresholdCritical'] = redfish.get('LowerThresholdCritical', '')
+    data['LowerThresholdFatal'] = redfish.get('LowerThresholdFatal', '')
+    data['LowerThresholdNonCritical'] = redfish.get('LowerThresholdNonCritical', '')
+    data['Name'] = redfish.get('Name', '')
+    data['PhysicalContext'] = redfish.get('PhysicalContext', '')
+    data['ReadingVolts'] = redfish.get('ReadingVolts', '')
     data['UpperThresholdCritical'] = redfish.get('UpperThresholdCritical', '')
     data['UpperThresholdFatal'] = redfish.get('UpperThresholdFatal', '')
     data['UpperThresholdNonCritical'] = redfish.get('UpperThresholdNonCritical', '')
