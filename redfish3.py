@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021110701'
+__version__ = '2021110802'
 
 from . import base3
 from .globals3 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
@@ -90,6 +90,20 @@ def get_perfdata(data, key='Reading'):
     _min = data['ReadingRangeMin'] if data.get('ReadingRangeMin', '') else None
     _max = data['ReadingRangeMax'] if data.get('ReadingRangeMax', '') else None
     return base3.get_perfdata('{}_{}'.format(physical_context, name).replace(' ', '_'), value, uom, warn, crit, _min, _max)
+
+
+def get_vendor(redfish):
+    vendor = redfish.get('Vendor', '')
+    if not vendor:
+        oem = redfish.get('Oem', {})
+        if oem:
+            # get the first existing key from Oem dict
+            vendor = list(oem)[0]
+    if vendor:
+        vendor = vendor.lower()
+    else:
+        vendor = 'generic'
+    return vendor
 
 
 def get_chassis(redfish):
@@ -208,3 +222,23 @@ def get_chassis_power_voltages(redfish):
     data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
     data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
     return data
+
+
+def get_manager_logservices_sel_entries(redfish):
+    msg = ''
+    state = STATE_OK
+    msg_state = STATE_OK
+    for entry in redfish.get('Members', []):
+        if entry.get('Severity', '').lower() == 'ok':
+            continue
+        if entry.get('Severity', '').lower() == 'critical':
+            msg_state = STATE_CRIT
+        if entry.get('Severity', '').lower() == 'warning':
+            msg_state = STATE_WARN
+        msg += '* {}: {}{}\n'.format(
+            entry.get('Created', ''),
+            entry.get('Message', ''),
+            base3.state2str(msg_state, prefix=' '),
+        )
+        state = base3.get_worst(state, msg_state)
+    return msg, state
