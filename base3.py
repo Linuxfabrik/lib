@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021091701'
+__version__ = '2021110901'
 
 import collections
 import datetime
@@ -685,8 +685,8 @@ def match_range(value, spec):
     return (True, True ^ invert)
 
 
-def md5sum(string):
-    return hashlib.md5(string.encode('utf-8')).hexdigest()
+def sha1sum(string):
+    return hashlib.sha1(string.encode('utf-8')).hexdigest()
 
 
 def mltext2array(input, skip_header=False, sort_key=-1):
