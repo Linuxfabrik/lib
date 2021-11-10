@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021110802'
+__version__ = '2021111002'
 
 import base2
 from globals2 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
@@ -52,13 +52,13 @@ from globals2 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
 
 def get_state(data):
     if data.get('Status_State', '') in ['Enabled', 'Quiesced']:
-        if data.get('Status_HealthRollup', '').lower() == 'critical':
+        if data.get('Status_HealthRollup') is not None and data.get('Status_HealthRollup').lower() == 'critical':
             return STATE_CRIT
-        if data.get('Status_HealthRollup', '').lower() == 'warning':
+        if data.get('Status_HealthRollup') is not None and data.get('Status_HealthRollup').lower() == 'warning':
             return STATE_WARN
-        if data.get('Status_Health', '').lower() == 'critical':
+        if data.get('Status_Health') is not None and data.get('Status_Health').lower() == 'critical':
             return STATE_CRIT
-        if data.get('Status_Health', '').lower() == 'warning':
+        if data.get('Status_Health') is not None and data.get('Status_Health').lower() == 'warning':
             return STATE_WARN
     return STATE_OK
 
@@ -118,6 +118,7 @@ def get_chassis(redfish):
     data['PowerState'] = redfish.get('PowerState', '')                                  # On
     data['SerialNumber'] = redfish.get('SerialNumber', '')
     data['SKU'] = redfish.get('SKU', '')
+    data['Sensors_@odata.id'] = redfish.get('Sensors', {}).get('@odata.id', '')
     data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
     data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
     data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
@@ -242,3 +243,65 @@ def get_manager_logservices_sel_entries(redfish):
         )
         state = base2.get_worst(state, msg_state)
     return msg, state
+
+
+def get_systems(redfish):
+    data = {}
+    data['BiosVersion'] = redfish.get('BiosVersion', '')
+    data['HostName'] = redfish.get('HostName', '')
+    data['Id'] = redfish.get('Id', '')
+    data['IndicatorLED'] = redfish.get('IndicatorLED', '')
+    data['Manufacturer'] = redfish.get('Manufacturer', '')
+    data['Model'] = redfish.get('Model', '')
+    data['PowerState'] = redfish.get('PowerState', '')                                  # On
+    data['ProcessorSummary_Count'] = redfish.get('ProcessorSummary', {}).get('Count', '')
+    data['ProcessorSummary_LogicalProcessorCount'] = redfish.get('ProcessorSummary', {}).get('LogicalProcessorCount', '')
+    data['ProcessorSummary_Model'] = redfish.get('ProcessorSummary', {}).get('Model', '')
+    data['SerialNumber'] = redfish.get('SerialNumber', '')
+    data['SKU'] = redfish.get('SKU', '')
+    data['Storage_@odata.id'] = redfish.get('Storage', {}).get('@odata.id', '')
+    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
+    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
+    return data
+
+
+def get_systems_storage(redfish):
+    data = {}
+    data['Description'] = redfish.get('Description', '')
+    data['Drives@odata.count'] = redfish.get('Drives@odata.count', '')
+    data['Id'] = redfish.get('Id', '')
+    data['Name'] = redfish.get('Name', '')
+    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
+    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
+    return data
+
+
+def get_systems_storage_drives(redfish):
+    data = {}
+    data['BlockSizeBytes'] = redfish.get('BlockSizeBytes', '')
+    data['CapableSpeedGbs'] = redfish.get('CapableSpeedGbs', '')
+    data['CapacityBytes'] = base2.bytes2human(redfish.get('CapacityBytes', ''))
+    data['Description'] = redfish.get('Description', '')
+    data['EncryptionAbility'] = redfish.get('EncryptionAbility', '')
+    data['EncryptionStatus'] = redfish.get('EncryptionStatus', '')
+    data['FailurePredicted'] = redfish.get('FailurePredicted', '')
+    data['HotspareType'] = redfish.get('HotspareType', '')
+    data['Id'] = redfish.get('Id', '')
+    data['Manufacturer'] = redfish.get('Manufacturer', '')
+    data['MediaType'] = redfish.get('MediaType', '')
+    data['Model'] = redfish.get('Model', '')
+    data['Name'] = redfish.get('Name', '')
+    data['NegotiatedSpeedGbs'] = redfish.get('NegotiatedSpeedGbs', '')
+    data['PartNumber'] = redfish.get('PartNumber', '')
+    data['PredictedMediaLifeLeftPercent'] = redfish.get('PredictedMediaLifeLeftPercent', '')
+    data['Protocol'] = redfish.get('Protocol', '')
+    data['Revision'] = redfish.get('Revision', '')
+    data['RotationSpeedRPM'] = redfish.get('RotationSpeedRPM', '')
+    data['SerialNumber'] = redfish.get('SerialNumber', '')
+    data['WriteCacheEnabled'] = redfish.get('WriteCacheEnabled', '')
+    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
+    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
+    return data
