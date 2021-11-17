@@ -12,12 +12,12 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021111501'
+__version__ = '2021111701'
 
 import subprocess
 
 
-def run_cmdlet(cmd):
+def run_ps(cmd):
     """
     You will need PowerShell installed on your system and Python 3.6+.
     This would work cross-platform. No need for external libraries.
@@ -28,10 +28,13 @@ def run_cmdlet(cmd):
     * result.stdout: Byte-String
     * result.stderr: Byte-String
     """
-    result = subprocess.run(['powershell', '-Command', cmd], capture_output=True)
-    return {
-        'args': result.args,
-        'retc': result.returncode,
-        'stdout': result.stdout.decode(), # convert from byte to unicode
-        'stderr': result.stderr.decode(), # convert from byte to unicode
-    }
+    try:
+        result = subprocess.run(['powershell', '-Command', cmd], capture_output=True)
+        return {
+            'args': result.args,
+            'retc': result.returncode,
+            'stdout': result.stdout.decode(), # convert from byte to unicode
+            'stderr': result.stderr.decode(), # convert from byte to unicode
+        }
+    except:
+        return None
