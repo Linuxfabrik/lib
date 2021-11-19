@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021111901'
+__version__ = '2021111903'
 
 import time
 
@@ -58,15 +58,16 @@ def get_creds(args):
     return ibasetoken, cookie
 
 
-def get_data(endpoint, args):
+def get_data(endpoint, args, params=''):
     # login and get iBaseToken and Cookie
     ibasetoken, cookie = get_creds(args)
 
     # fetch data
-    url = '{}/deviceManager/rest/{}/{}'.format(
+    url = '{}/deviceManager/rest/{}/{}{}'.format(
         args.URL,
         args.DEVICE_ID,
         endpoint,
+        params,
     )
     header = {
         'Content-Type': 'application/json',
@@ -98,82 +99,103 @@ def get_data(endpoint, args):
 
 def get_health_status(hs):
     if int(hs) == 1:
-        return 'Normal'
+        return 'Normal (1)'
     if int(hs) == 2:
-        return 'Faulty'
+        return 'Faulty (2)'
     if int(hs) == 3:
-        return 'About to fail'
+        return 'About to fail (3)'
     if int(hs) == 17:
-        return 'Single link'
+        return 'Single link (17)'
+    return 'Unknown'
+
+
+def get_runlevel(rl):
+    if int(rl) == 0:
+        return 'low (0)'
+    if int(rl) == 1:
+        return 'normal (1)'
+    if int(rl) == 2:
+        return 'high (2)'
     return 'Unknown'
 
 
 def get_running_status(rs):
     if int(rs) == 1:
-        return 'Normal'
+        return 'Normal (1)'
+    if int(rs) == 2:
+        return 'Running (2)'
     if int(rs) == 3:
-        return 'Not running'
+        return 'Not running (3)'
     if int(rs) == 12:
-        return 'Powering on'
+        return 'Powering on (12)'
     if int(rs) == 14:
-        return 'Pre-Copy'
+        return 'Pre-Copy (14)'
     if int(rs) == 16:
-        return 'Reconstruction'
+        return 'Reconstruction (16)'
     if int(rs) == 27:
-        return 'Online'
+        return 'Online (27)'
     if int(rs) == 28:
-        return 'Offline'
+        return 'Offline (28)'
     if int(rs) == 47:
-        return 'Powering off'
+        return 'Powering off (47)'
     if int(rs) == 51:
-        return 'Upgrading'
+        return 'Upgrading (51)'
     if int(rs) == 114:
-        return 'Erasing'
+        return 'Erasing (114)'
     if int(rs) == 115:
-        return 'Verifying'
+        return 'Verifying (115)'
     return 'Unknown'
 
 
 def get_product_mode(pm):
     if int(pm) == 812:
-        return 'Dorado 5000 V6 (NVMe)'
+        return 'Dorado 5000 V6 (NVMe) (812)'
     if int(pm) == 813:
-        return 'Dorado 6000 V6 (SAS)'
+        return 'Dorado 6000 V6 (SAS) (813)'
     if int(pm) == 814:
-        return 'Dorado 6000 V6 (NVMe)'
+        return 'Dorado 6000 V6 (NVMe) (814)'
     if int(pm) == 815:
-        return 'Dorado 8000 V6 (SAS)'
+        return 'Dorado 8000 V6 (SAS) (815)'
     if int(pm) == 816:
-        return 'Dorado 8000 V6 (NVMe)'
+        return 'Dorado 8000 V6 (NVMe) (816)'
     if int(pm) == 817:
-        return 'Dorado 18000 V6 (SAS)'
+        return 'Dorado 18000 V6 (SAS) (817)'
     if int(pm) == 818:
-        return 'Dorado 18000 V6 (NVMe)'
+        return 'Dorado 18000 V6 (NVMe) (818)'
     if int(pm) == 819:
-        return 'Dorado 3000 V6 (SAS)'
+        return 'Dorado 3000 V6 (SAS) (819)'
     if int(pm) == 821:
-        return 'Dorado 5000 V6 (IP SAS)'
+        return 'Dorado 5000 V6 (IP SAS) (821)'
     if int(pm) == 822:
-        return 'Dorado 6000 V6 (IP SAS)'
+        return 'Dorado 6000 V6 (IP SAS) (822)'
     if int(pm) == 823:
-        return 'Dorado 8000 V6 (IP SAS)'
+        return 'Dorado 8000 V6 (IP SAS) (823)'
     if int(pm) == 824:
-        return 'Dorado 18000 V6 (IP SAS)'
+        return 'Dorado 18000 V6 (IP SAS) (824)'
     if int(pm) == 825:
-        return 'Dorado 3000 V6 '
+        return 'Dorado 3000 V6  (825)'
     if int(pm) == 826:
-        return 'Dorado 5000 V6'
+        return 'Dorado 5000 V6 (826)'
     if int(pm) == 827:
-        return 'Dorado 6000 V6'
+        return 'Dorado 6000 V6 (827)'
     if int(pm) == 828:
-        return 'Dorado 6000 V6'
+        return 'Dorado 6000 V6 (828)'
     if int(pm) == 829:
-        return 'Dorado 8000 V6'
+        return 'Dorado 8000 V6 (829)'
     if int(pm) == 830:
-        return 'Dorado 18000 V6'
+        return 'Dorado 18000 V6 (830)'
     if int(pm) == 831:
-        return 'Dorado 18000 V6'
+        return 'Dorado 18000 V6 (831)'
     if int(pm) == 832:
-        return 'Dorado 18000 V6'
+        return 'Dorado 18000 V6 (832)'
     return 'Unknown'
 
+
+def get_uuid(data):
+    """Returns the Universally unique identifier (UUID) of a managed object.
+       It is expressed in the format of object type:object ID. For example, if a controller's
+       object type number is "207" and the controller ID is "0A", the UUID is "207:0A".
+
+       The UUID is often needed for querying performance statistics, for example.
+    """
+    return '{}:{}'.format(data['TYPE'], data['ID'])
