@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021111801'
+__version__ = '2021111901'
 
 import time
 
@@ -58,13 +58,16 @@ def get_creds(args):
     return ibasetoken, cookie
 
 
-def get_data(args):
+def get_data(endpoint, args):
     # login and get iBaseToken and Cookie
     ibasetoken, cookie = get_creds(args)
 
     # fetch data
-    # Do not miss the last slash (/) at the end of the URL.
-    url = '{}/deviceManager/rest/{}/system/'.format(args.URL, args.DEVICE_ID)
+    url = '{}/deviceManager/rest/{}/{}'.format(
+        args.URL,
+        args.DEVICE_ID,
+        endpoint,
+    )
     header = {
         'Content-Type': 'application/json',
         'iBaseToken' : ibasetoken,
@@ -98,6 +101,10 @@ def get_health_status(hs):
         return 'Normal'
     if int(hs) == 2:
         return 'Faulty'
+    if int(hs) == 3:
+        return 'About to fail'
+    if int(hs) == 17:
+        return 'Single link'
     return 'Unknown'
 
 
@@ -108,10 +115,22 @@ def get_running_status(rs):
         return 'Not running'
     if int(rs) == 12:
         return 'Powering on'
+    if int(rs) == 14:
+        return 'Pre-Copy'
+    if int(rs) == 16:
+        return 'Reconstruction'
+    if int(rs) == 27:
+        return 'Online'
+    if int(rs) == 28:
+        return 'Offline'
     if int(rs) == 47:
         return 'Powering off'
     if int(rs) == 51:
         return 'Upgrading'
+    if int(rs) == 114:
+        return 'Erasing'
+    if int(rs) == 115:
+        return 'Verifying'
     return 'Unknown'
 
 
