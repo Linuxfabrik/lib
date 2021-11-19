@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021083001'
+__version__ = '2021111702'
 
 import json
 import re
@@ -39,6 +39,10 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
 
     POST: the HTTP request will be a POST instead of a GET when the data parameter is provided
     >>> result = fetch(URL, header=header, data={...})
+
+    Cookies: To fetch Cookies, parse the response header. To get the response header, use extended=True
+    >>> result = fetch(URL, header=header, data={...}, extended=True)
+    >>> result['response_header'].getheader('Set-Cookie')
     """
     try:
         if digest_auth_user is not None and digest_auth_password is not None:
@@ -123,13 +127,26 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
 
     >>> fetch_json('https://1.2.3.4/api/v2/?resource=cpu')
     """
-    success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
-                            header=header, data=data, encoding=encoding,
-                            digest_auth_user=digest_auth_user, digest_auth_password=digest_auth_password)
+    success, jsonst = fetch(
+        url,
+        data=data,
+        digest_auth_password=digest_auth_password,
+        digest_auth_user=digest_auth_user,
+        encoding=encoding,
+        extended=extended,
+        header=header,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
     if not success:
         return (False, jsonst)
     try:
-        result = json.loads(jsonst)
+        if not extended:
+            result = json.loads(jsonst)
+        else:
+            result = jsonst
+            result['response_json'] = json.loads(jsonst['response'])
     except:
         return (False, 'ValueError: No JSON object could be decoded')
     return (True, result)
