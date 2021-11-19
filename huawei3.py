@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021111903'
+__version__ = '2021111904'
 
 import time
 
@@ -104,6 +104,10 @@ def get_health_status(hs):
         return 'Faulty (2)'
     if int(hs) == 3:
         return 'About to fail (3)'
+    if int(hs) == 9:
+        return 'Inconsistent (9)'
+    if int(hs) == 11:
+        return 'No Input (11)'
     if int(hs) == 17:
         return 'Single link (17)'
     return 'Unknown'
