@@ -104,12 +104,24 @@ def get_health_status(hs):
         return 'Faulty (2)'
     if int(hs) == 3:
         return 'About to fail (3)'
+    if int(hs) == 4:
+        return 'Partially damaged (4)'
+    if int(hs) == 5:
+        return 'Degraded (5)'
     if int(hs) == 9:
         return 'Inconsistent (9)'
     if int(hs) == 11:
         return 'No Input (11)'
+    if int(hs) == 12:
+        return 'Low Battery (12)'
+    if int(hs) == 14:
+        return 'Invalid (14)'
+    if int(hs) == 15:
+        return 'Write-protected (15)'
     if int(hs) == 17:
         return 'Single link (17)'
+    if int(hs) == 18:
+        return 'Offline (18)'
     return 'Unknown'
 
 
@@ -138,14 +150,24 @@ def get_running_status(rs):
         return 'Pre-Copy (14)'
     if int(rs) == 16:
         return 'Reconstruction (16)'
+    if int(rs) == 23:
+        return 'Synchronizing (23)'
     if int(rs) == 27:
         return 'Online (27)'
     if int(rs) == 28:
         return 'Offline (28)'
+    if int(rs) == 35:
+        return 'Invalid (35)'
+    if int(rs) == 41:
+        return 'Paused (41)'
     if int(rs) == 47:
         return 'Powering off (47)'
     if int(rs) == 51:
         return 'Upgrading (51)'
+    if int(rs) == 93:
+        return 'Forcibly started (93)'
+    if int(rs) == 100:
+        return 'To be synchronized (100)'
     if int(rs) == 105:
         return 'Abnormal (105)'
     if int(rs) == 114:
@@ -250,6 +272,53 @@ def get_switch_status(st):
         return 'On'
     return 'Unknown'
 
+
+def get_controller_model(cm):
+    if int(cm) == 4127:
+        return 'V6R1C00 2U2C mid-range PALM control board'
+    if int(cm) == 4128:
+        return 'V6R1C00 2U2C mid-range _SAS control board'
+    if int(cm) == 4129:
+        return 'V6R1C00 2U2C SAS entry-level control board (Hi1620S)'
+    if int(cm) == 4132:
+        return 'V6R1C00 4U4C high-end control board'
+    if int(cm) == 4135:
+        return 'V6R1C00 2U2C mid-range control Board'
+    if int(cm) == 4136:
+        return 'V6R1C00 2U2C mid-range SAS1711 control board'
+    if int(cm) == 4137:
+        return 'V6R1C00 2U2C SAS 1711 entry-level control board (Hi1620S)'
+    if int(cm) == 4140:
+        return 'V6R1C00 4U4C high-end 1711 control board'
+    if int(cm) == 4141:
+        return 'V6R1C00 2U2C mid-range SAS 1711 control board (100GE extension board)'
+    if int(cm) == 4142:
+        return 'V6R1C00 2U2C mid-range SAS control board (100GE extension board)'
+    if int(cm) == 4144:
+        return 'V6R3C00 2U2C low-end NVMe control board'
+    return 'Unknown'
+
+
+def get_role(role):
+    if int(role) == 0:
+        return 'Member'
+    if int(role) == 1:
+        return 'Primary'
+    if int(role) == 2:
+        return 'Secondary'
+    return 'Unknown'
+
+
+def get_host_access_state(has):
+    if int(has) == 1:
+        return 'Forbidden'
+    if int(has) == 2:
+        return 'Read-only'
+    if int(has) == 3:
+        return 'R/W'
+    if int(has) == 5:
+        return 'Unknown'
+    return 'Unknown'
 
 
 def get_uuid(data):
