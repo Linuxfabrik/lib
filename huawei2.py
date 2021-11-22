@@ -149,6 +149,8 @@ def get_running_status(rs):
         return 'Sleep in High Temperature (5)'
     if rs == 12:
         return 'Powering on (12)'
+    if rs == 13:
+        return 'Powered off (13)'
     if rs == 14:
         return 'Pre-Copy (14)'
     if rs == 16:
@@ -173,6 +175,8 @@ def get_running_status(rs):
         return 'Forcibly started (93)'
     if rs == 100:
         return 'To be synchronized (100)'
+    if rs == 103:
+        return 'Power-on failed (103)'
     if rs == 105:
         return 'Abnormal (105)'
     if rs == 114:
@@ -278,7 +282,7 @@ def get_switch_status(st):
     if st == 1:
         return 'On'
     if st == 2:
-        return 'On'
+        return 'Off'
     return 'Unknown'
 
 
@@ -374,6 +378,177 @@ def get_os(os):
         return 'Oracle_VM_Server_for_x86'
     if os == 13:
         return 'Oracle_VM_Server_for_SPARC'
+    return 'Unknown'
+
+
+def get_interface_model(im):
+    im = int(im)
+    if im == 516:
+        return '4 ports FE 1 Gbit/s ETH I/O module'
+    if im == 518:
+        return '4 ports BE 12 Gbit/s SAS I/O module'
+    if im == 529:
+        return 'AI Accelerator Card'
+    if im == 535:
+        return 'AI Accelerator Card'
+    if im == 537:
+        return '4 ports FE 1 Gbit/s ETH I/O module'
+    if im == 538:
+        return '4 ports BE 12 Gbit/s SAS I/O module'
+    if im == 580:
+        return '4 ports FE 1 Gbit/s ETH I/O module'
+    if im == 583:
+        return '4 ports BE 12 Gbit/s SAS V2 I/O module'
+    if im == 601:
+        return '4 ports FE 1 Gbit/s ETH I/O module'
+    if im == 2304:
+        return '4 ports FE 8 Gbit/s Fibre Channel I/O module'
+    if im == 2305:
+        return '4 ports FE 16 Gbit/s Fibre Channel I/O module'
+    if im == 2306:
+        return '4 ports FE 32 Gbit/s Fibre Channel I/O module'
+    if im == 2307:
+        return '4 ports FE 10 Gbit/s ETH I/O module'
+    if im == 2308:
+        return '4 ports FE 25 Gbit/s ETH I/O module'
+    if im == 2309:
+        return '4 ports SO 25 Gbit/s RDMA I/O module'
+    if im == 2310:
+        return '4 ports FE 8 Gbit/s Fibre Channel I/O module'
+    if im == 2311:
+        return '4 ports FE 16 Gbit/s Fibre Channel I/O module'
+    if im == 2312:
+        return '4 ports FE 32 Gbit/s Fibre Channel I/O module'
+    if im == 2313:
+        return '4 ports FE 10 Gbit/s ETH I/O module'
+    if im == 2314:
+        return '4 ports FE 25 Gbit/s ETH I/O module'
+    if im == 2315:
+        return '2 ports FE 40 Gbit/s ETH I/O module'
+    if im == 2316:
+        return '2 ports FE 100 Gbit/s ETH I/O module'
+    if im == 2317:
+        return '2 ports BE 100 Gbit/s RDMA I/O module'
+    if im == 2318:
+        return '2 ports SO 100 Gbit/s RDMA I/O module'
+    if im == 2319:
+        return '2 ports FE 40 Gbit/s ETH I/O module'
+    if im == 2320:
+        return '2 ports FE 100 Gbit/s ETH I/O module'
+    if im == 2321:
+        return '2 ports BE 100 Gbit/s RDMA I/O module'
+    if im == 2322:
+        return '2 ports SO 100 Gbit/s RDMA I/O module'
+    if im == 2323:
+        return '4 ports FE 10 Gbit/s ROCE I/O module'
+    if im == 2324:
+        return '4 ports FE 25 Gbit/s ROCE I/O module'
+    if im == 2325:
+        return '4 ports FE 10 Gbit/s ROCE I/O module'
+    if im == 2326:
+        return '4 ports FE 25 Gbit/s ROCE I/O module'
+    if im == 2327:
+        return '2 ports FE 40 Gbit/s ROCE I/O module'
+    if im == 2328:
+        return '2 ports FE 100 Gbit/s ROCE I/O module'
+    if im == 2329:
+        return '2 ports FE 40 Gbit/s ROCE I/O module'
+    if im == 2330:
+        return '2 ports FE 10  Gbit/s ROCE I/O module'
+    if im == 2331:
+        return '4 ports FE 10  bit/s ETH I/O module'
+    if im == 2332:
+        return '4 ports FE 10 G it/s ETH I/O module'
+    if im == 2333:
+        return '4 ports FE 8 Gbi /s Fibre Channel I/O module'
+    if im == 2334:
+        return '4 ports FE 16 Gbi /s Fibre Channel I/O module'
+    if im == 2335:
+        return '4 ports FE 32 Gbit/s Fibre Channel I/O module'
+    if im == 2336:
+        return '4 ports FE 10 Gbit/s ETH I/O module'
+    if im == 2337:
+        return '4 ports FE 25 Gbit/s ETH I/O module'
+    if im == 2338:
+        return '4 ports SO 25 Gbit/s RDMA I/O module'
+    if im == 2339:
+        return '4 ports FE 10 Gbit/s ROCE I/O module'
+    if im == 2340:
+        return '4 ports FE 25 Gbit/s ROCE I/O module'
+    if im == 2341:
+        return '4 ports FE 8 Gbit/s Fibre Channel I/O module'
+    if im == 2342:
+        return '4 ports FE 16 Gbit/s Fibre Channel I/O module'
+    if im == 2343:
+        return '4 ports FE 32 Gbit/s Fibre Channel I/O module'
+    if im == 2344:
+        return '4 ports FE 10 Gbit/s ETH I/O module'
+    if im == 2345:
+        return '4 ports FE 25 Gbit/s ETH I/O module'
+    if im == 2346:
+        return '4 ports FE 10 Gbit/s ROCE I/O module'
+    if im == 2347:
+        return '4 ports FE 25 Gbit/s ROCE I/O module'
+    if im == 2348:
+        return '2 ports FE 40 Gbit/s ETH I/O module'
+    if im == 2349:
+        return '2 ports FE 100 Gbit/s ETH I/O module'
+    if im == 2350:
+        return '2 ports BE 100 Gbit/s RDMA I/O module'
+    if im == 2351:
+        return '2 ports SO 100 Gbit/s RDMA I/O module'
+    if im == 2352:
+        return '2 ports FE 40 Gbit/s ROCE I/O module'
+    if im == 2353:
+        return '2 ports FE 100 Gbit/s ROCE I/O module'
+    if im == 2354:
+        return '2 ports FE 40 Gbit/s ETH I/O module'
+    if im == 2355:
+        return '2 ports FE 100 Gbit/s ETH I/O module'
+    if im == 2356:
+        return '2 ports BE 100 Gbit/s RDMA I/O module'
+    if im == 2357:
+        return '2 ports SO 100 Gbit/s RDMA I/O module'
+    if im == 2358:
+        return '2 ports FE 40 Gbit/s ROCE I/O module'
+    if im == 2359:
+        return '2 ports FE 100 Gbit/s ROCE I/O module'
+    if im == 2360:
+        return '4 ports FE 10 Gbit/s ETH I/O module'
+    if im == 2361:
+        return '4 ports SO 25 Gbit/s RDMA I/O module'
+    if im == 2362:
+        return '2 ports SO 100 Gbit/s RDMA I/O module'
+    if im == 2363:
+        return '2 ports SO 100 Gbit/s RDMA I/O module'
+    if im == 4133:
+        return 'System Management Module'
+    if im == 4134:
+        return 'System Management Module'
+    return 'Unknown'
+
+
+def get_interface_runmode(rm):
+    rm = int(rm)
+    if rm == 1:
+        return 'FC'
+    if rm == 2:
+        return 'FCoE/iSCSI'
+    if rm == 3:
+        return 'Cluster'
+    if rm == 4:
+        return 'Ethernet'
+    if rm == 5:
+        return 'RoCE'
+    return 'Unknown'
+
+
+def get_led_status(st):
+    st = int(st)
+    if st == 0:
+        return 'Off'
+    if st == 1:
+        return 'On'
     return 'Unknown'
 
 
