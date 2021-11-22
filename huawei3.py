@@ -50,8 +50,8 @@ def get_creds(args):
         no_proxy=args.NO_PROXY,
         timeout=args.TIMEOUT,
     ))
-    ibasetoken = result['response_json'].get('data').get('iBaseToken')
-    cookie = result['response_header'].getheader('Set-Cookie')
+    ibasetoken = result.get('response_json').get('data').get('iBaseToken')
+    cookie = result.get('response_header').getheader('Set-Cookie')
     expire = base3.now() + args.CACHE_EXPIRE*60
     cache3.set('huawei-{}-ibasetoken'.format(args.DEVICE_ID), ibasetoken, expire)
     cache3.set('huawei-{}-cookie'.format(args.DEVICE_ID), cookie, expire)
@@ -341,6 +341,39 @@ def get_cp_type(cp):
         return 'Quorum Disk'
     if cp == 3:
         return 'None'
+    return 'Unknown'
+
+
+def get_os(os):
+    os = int(os)
+    if os == 0:
+        return 'Linux'
+    if os == 1:
+        return 'Windows'
+    if os == 2:
+        return 'Solaris'
+    if os == 3:
+        return 'HP-UX'
+    if os == 4:
+        return 'AIX'
+    if os == 5:
+        return 'XenServer'
+    if os == 6:
+        return 'Mac OS'
+    if os == 7:
+        return 'VMware ESX'
+    if os == 8:
+        return 'LINUX_VIS'
+    if os == 9:
+        return 'Windows Server 2012'
+    if os == 10:
+        return 'Oracle VM'
+    if os == 11:
+        return 'OpenVMS'
+    if os == 12:
+        return 'Oracle_VM_Server_for_x86'
+    if os == 13:
+        return 'Oracle_VM_Server_for_SPARC'
     return 'Unknown'
 
 
