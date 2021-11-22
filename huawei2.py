@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021111904'
+__version__ = '2021112202'
 
 import time
 
@@ -130,6 +130,8 @@ def get_running_status(rs):
         return 'Running (2)'
     if int(rs) == 3:
         return 'Not running (3)'
+    if int(rs) == 5:
+        return 'Sleep in High Temperature (5)'
     if int(rs) == 12:
         return 'Powering on (12)'
     if int(rs) == 14:
@@ -144,6 +146,8 @@ def get_running_status(rs):
         return 'Powering off (47)'
     if int(rs) == 51:
         return 'Upgrading (51)'
+    if int(rs) == 105:
+        return 'Abnormal (105)'
     if int(rs) == 114:
         return 'Erasing (114)'
     if int(rs) == 115:
@@ -193,6 +197,59 @@ def get_product_mode(pm):
     if int(pm) == 832:
         return 'Dorado 18000 V6 (832)'
     return 'Unknown'
+
+
+def get_enclosure_model(em):
+    if int(em) == 39:
+        return '4 U 75-slot 3.5-inch 12 Gbit/s SAS disk enclosure'
+    if int(em) == 67:
+        return '2 U 25-slot 2.5-inch SAS disk enclosure'
+    if int(em) == 69:
+        return '4 U 24-slot 3.5-inch SAS disk enclosure'
+    if int(em) == 112:
+        return '4 U 4-controller controller enclosure'
+    if int(em) == 113:
+        return '2 U 2-controller 25-slot 2.5-inch SAS controller enclosure'
+    if int(em) == 114:
+        return '2 U 2-controller 12-slot 3.5-inch SAS controller enclosure'
+    if int(em) == 115:
+        return '2 U 2-controller 36-slot NVMe controller enclosure'
+    if int(em) == 116:
+        return '2 U 2-controller 25-slot 2.5-inch SAS controller enclosure'
+    if int(em) == 117:
+        return '2 U 2-controller 12-slot 3.5-inch SAS controller enclosure'
+    if int(em) == 118:
+        return '2 U 25-slot 2.5-inch smart SAS disk enclosure'
+    if int(em) == 119:
+        return '2 U 12-slot 3.5-inch smart SAS disk enclosure'
+    if int(em) == 120:
+        return '2 U 36-slot smart NVMe disk enclosure'
+    if int(em) == 122:
+        return '2 U 2-controller 25-slot 2.5-inch NVMe controller enclosure'
+    return 'Unknown'
+
+
+def get_logic_type(lt):
+    if int(lt) == 0:
+        return 'Expansion Enclosure (Disk Enclosure)'
+    if int(lt) == 1:
+        return 'Controller Enclosure'
+    if int(lt) == 2:
+        return 'Data Switch'
+    if int(lt) == 3:
+        return 'Management Switch'
+    if int(lt) == 4:
+        return 'Management Server'
+    return 'Unknown'
+
+
+def get_switch_status(st):
+    if int(st) == 1:
+        return 'On'
+    if int(st) == 2:
+        return 'On'
+    return 'Unknown'
+
 
 
 def get_uuid(data):
