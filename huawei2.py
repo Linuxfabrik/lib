@@ -98,226 +98,249 @@ def get_data(endpoint, args, params=''):
 
 
 def get_health_status(hs):
-    if int(hs) == 1:
+    hs = int(hs)
+    if hs == 1:
         return 'Normal (1)'
-    if int(hs) == 2:
+    if hs == 2:
         return 'Faulty (2)'
-    if int(hs) == 3:
+    if hs == 3:
         return 'About to fail (3)'
-    if int(hs) == 4:
+    if hs == 4:
         return 'Partially damaged (4)'
-    if int(hs) == 5:
+    if hs == 5:
         return 'Degraded (5)'
-    if int(hs) == 9:
+    if hs == 9:
         return 'Inconsistent (9)'
-    if int(hs) == 11:
+    if hs == 11:
         return 'No Input (11)'
-    if int(hs) == 12:
+    if hs == 12:
         return 'Low Battery (12)'
-    if int(hs) == 14:
+    if hs == 14:
         return 'Invalid (14)'
-    if int(hs) == 15:
+    if hs == 15:
         return 'Write-protected (15)'
-    if int(hs) == 17:
+    if hs == 17:
         return 'Single link (17)'
-    if int(hs) == 18:
+    if hs == 18:
         return 'Offline (18)'
     return 'Unknown'
 
 
 def get_runlevel(rl):
-    if int(rl) == 0:
+    rl = int(rl)
+    if rl == 0:
         return 'low (0)'
-    if int(rl) == 1:
+    if rl == 1:
         return 'normal (1)'
-    if int(rl) == 2:
+    if rl == 2:
         return 'high (2)'
     return 'Unknown'
 
 
 def get_running_status(rs):
-    if int(rs) == 1:
+    rs = int(rs)
+    if rs == 1:
         return 'Normal (1)'
-    if int(rs) == 2:
+    if rs == 2:
         return 'Running (2)'
-    if int(rs) == 3:
+    if rs == 3:
         return 'Not running (3)'
-    if int(rs) == 5:
+    if rs == 5:
         return 'Sleep in High Temperature (5)'
-    if int(rs) == 12:
+    if rs == 12:
         return 'Powering on (12)'
-    if int(rs) == 14:
+    if rs == 14:
         return 'Pre-Copy (14)'
-    if int(rs) == 16:
+    if rs == 16:
         return 'Reconstruction (16)'
-    if int(rs) == 23:
+    if rs == 23:
         return 'Synchronizing (23)'
-    if int(rs) == 27:
+    if rs == 27:
         return 'Online (27)'
-    if int(rs) == 28:
+    if rs == 28:
         return 'Offline (28)'
-    if int(rs) == 35:
+    if rs == 33:
+        return 'To be recovered (33)'
+    if rs == 35:
         return 'Invalid (35)'
-    if int(rs) == 41:
+    if rs == 41:
         return 'Paused (41)'
-    if int(rs) == 47:
+    if rs == 47:
         return 'Powering off (47)'
-    if int(rs) == 51:
+    if rs == 51:
         return 'Upgrading (51)'
-    if int(rs) == 93:
+    if rs == 93:
         return 'Forcibly started (93)'
-    if int(rs) == 100:
+    if rs == 100:
         return 'To be synchronized (100)'
-    if int(rs) == 105:
+    if rs == 105:
         return 'Abnormal (105)'
-    if int(rs) == 114:
+    if rs == 114:
         return 'Erasing (114)'
-    if int(rs) == 115:
+    if rs == 115:
         return 'Verifying (115)'
     return 'Unknown'
 
 
 def get_product_mode(pm):
-    if int(pm) == 812:
+    pm = int(pm)
+    if pm == 812:
         return 'Dorado 5000 V6 (NVMe) (812)'
-    if int(pm) == 813:
+    if pm == 813:
         return 'Dorado 6000 V6 (SAS) (813)'
-    if int(pm) == 814:
+    if pm == 814:
         return 'Dorado 6000 V6 (NVMe) (814)'
-    if int(pm) == 815:
+    if pm == 815:
         return 'Dorado 8000 V6 (SAS) (815)'
-    if int(pm) == 816:
+    if pm == 816:
         return 'Dorado 8000 V6 (NVMe) (816)'
-    if int(pm) == 817:
+    if pm == 817:
         return 'Dorado 18000 V6 (SAS) (817)'
-    if int(pm) == 818:
+    if pm == 818:
         return 'Dorado 18000 V6 (NVMe) (818)'
-    if int(pm) == 819:
+    if pm == 819:
         return 'Dorado 3000 V6 (SAS) (819)'
-    if int(pm) == 821:
+    if pm == 821:
         return 'Dorado 5000 V6 (IP SAS) (821)'
-    if int(pm) == 822:
+    if pm == 822:
         return 'Dorado 6000 V6 (IP SAS) (822)'
-    if int(pm) == 823:
+    if pm == 823:
         return 'Dorado 8000 V6 (IP SAS) (823)'
-    if int(pm) == 824:
+    if pm == 824:
         return 'Dorado 18000 V6 (IP SAS) (824)'
-    if int(pm) == 825:
+    if pm == 825:
         return 'Dorado 3000 V6  (825)'
-    if int(pm) == 826:
+    if pm == 826:
         return 'Dorado 5000 V6 (826)'
-    if int(pm) == 827:
+    if pm == 827:
         return 'Dorado 6000 V6 (827)'
-    if int(pm) == 828:
+    if pm == 828:
         return 'Dorado 6000 V6 (828)'
-    if int(pm) == 829:
+    if pm == 829:
         return 'Dorado 8000 V6 (829)'
-    if int(pm) == 830:
+    if pm == 830:
         return 'Dorado 18000 V6 (830)'
-    if int(pm) == 831:
+    if pm == 831:
         return 'Dorado 18000 V6 (831)'
-    if int(pm) == 832:
+    if pm == 832:
         return 'Dorado 18000 V6 (832)'
     return 'Unknown'
 
 
 def get_enclosure_model(em):
-    if int(em) == 39:
+    em = int(em)
+    if em == 39:
         return '4 U 75-slot 3.5-inch 12 Gbit/s SAS disk enclosure'
-    if int(em) == 67:
+    if em == 67:
         return '2 U 25-slot 2.5-inch SAS disk enclosure'
-    if int(em) == 69:
+    if em == 69:
         return '4 U 24-slot 3.5-inch SAS disk enclosure'
-    if int(em) == 112:
+    if em == 112:
         return '4 U 4-controller controller enclosure'
-    if int(em) == 113:
+    if em == 113:
         return '2 U 2-controller 25-slot 2.5-inch SAS controller enclosure'
-    if int(em) == 114:
+    if em == 114:
         return '2 U 2-controller 12-slot 3.5-inch SAS controller enclosure'
-    if int(em) == 115:
+    if em == 115:
         return '2 U 2-controller 36-slot NVMe controller enclosure'
-    if int(em) == 116:
+    if em == 116:
         return '2 U 2-controller 25-slot 2.5-inch SAS controller enclosure'
-    if int(em) == 117:
+    if em == 117:
         return '2 U 2-controller 12-slot 3.5-inch SAS controller enclosure'
-    if int(em) == 118:
+    if em == 118:
         return '2 U 25-slot 2.5-inch smart SAS disk enclosure'
-    if int(em) == 119:
+    if em == 119:
         return '2 U 12-slot 3.5-inch smart SAS disk enclosure'
-    if int(em) == 120:
+    if em == 120:
         return '2 U 36-slot smart NVMe disk enclosure'
-    if int(em) == 122:
+    if em == 122:
         return '2 U 2-controller 25-slot 2.5-inch NVMe controller enclosure'
     return 'Unknown'
 
 
 def get_logic_type(lt):
-    if int(lt) == 0:
+    lt = int(lt)
+    if lt == 0:
         return 'Expansion Enclosure (Disk Enclosure)'
-    if int(lt) == 1:
+    if lt == 1:
         return 'Controller Enclosure'
-    if int(lt) == 2:
+    if lt == 2:
         return 'Data Switch'
-    if int(lt) == 3:
+    if lt == 3:
         return 'Management Switch'
-    if int(lt) == 4:
+    if lt == 4:
         return 'Management Server'
     return 'Unknown'
 
 
 def get_switch_status(st):
-    if int(st) == 1:
+    st = int(st)
+    if st == 1:
         return 'On'
-    if int(st) == 2:
+    if st == 2:
         return 'On'
     return 'Unknown'
 
 
 def get_controller_model(cm):
-    if int(cm) == 4127:
+    cm = int(cm)
+    if cm == 4127:
         return 'V6R1C00 2U2C mid-range PALM control board'
-    if int(cm) == 4128:
+    if cm == 4128:
         return 'V6R1C00 2U2C mid-range _SAS control board'
-    if int(cm) == 4129:
+    if cm == 4129:
         return 'V6R1C00 2U2C SAS entry-level control board (Hi1620S)'
-    if int(cm) == 4132:
+    if cm == 4132:
         return 'V6R1C00 4U4C high-end control board'
-    if int(cm) == 4135:
+    if cm == 4135:
         return 'V6R1C00 2U2C mid-range control Board'
-    if int(cm) == 4136:
+    if cm == 4136:
         return 'V6R1C00 2U2C mid-range SAS1711 control board'
-    if int(cm) == 4137:
+    if cm == 4137:
         return 'V6R1C00 2U2C SAS 1711 entry-level control board (Hi1620S)'
-    if int(cm) == 4140:
+    if cm == 4140:
         return 'V6R1C00 4U4C high-end 1711 control board'
-    if int(cm) == 4141:
+    if cm == 4141:
         return 'V6R1C00 2U2C mid-range SAS 1711 control board (100GE extension board)'
-    if int(cm) == 4142:
+    if cm == 4142:
         return 'V6R1C00 2U2C mid-range SAS control board (100GE extension board)'
-    if int(cm) == 4144:
+    if cm == 4144:
         return 'V6R3C00 2U2C low-end NVMe control board'
     return 'Unknown'
 
 
 def get_role(role):
-    if int(role) == 0:
+    role = int(role)
+    if role == 0:
         return 'Member'
-    if int(role) == 1:
+    if role == 1:
         return 'Primary'
-    if int(role) == 2:
+    if role == 2:
         return 'Secondary'
     return 'Unknown'
 
 
 def get_host_access_state(has):
-    if int(has) == 1:
+    has = int(has)
+    if has == 1:
         return 'Forbidden'
-    if int(has) == 2:
+    if has == 2:
         return 'Read-only'
-    if int(has) == 3:
+    if has == 3:
         return 'R/W'
-    if int(has) == 5:
+    if has == 5:
         return 'Unknown'
+    return 'Unknown'
+
+
+def get_cp_type(cp):
+    cp = int(cp)
+    if cp == 1:
+        return 'Quorum Server'
+    if cp == 2:
+        return 'Quorum Disk'
+    if cp == 3:
+        return 'None'
     return 'Unknown'
 
 
