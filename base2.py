@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021110901'
+__version__ = '2022010301'
 
 import collections
 import datetime
@@ -142,8 +142,9 @@ def coe(result, state=STATE_UNKNOWN):
         return result[1]
     codec = locale.getpreferredencoding()
     if isinstance(result[1], str):
-        result[1] = result[1].decode(codec)
-    print(result[1].encode(codec, 'replace'))
+        print(result[1].decode(codec).encode(codec, 'replace'))
+    else:
+        print(result[1].encode(codec, 'replace'))
     sys.exit(state)
 
 
