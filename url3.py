@@ -200,3 +200,4 @@ def strip_tags(html):
     """Tries to return a string with all HTML tags stripped from a given string.
     """
     return re.sub(r'<[^<]+?>', '', html)
+
