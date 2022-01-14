@@ -12,7 +12,7 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021072801'
+__version__ = '2022011401'
 
 import base64
 
@@ -39,8 +39,8 @@ def get_token(args):
     header['Content-Length'] = 0
     # make this a POST request by filling data with anything
     data = {'make-this': 'a-post-request'}
-    success, result, response_header = url3.fetch_json_ext(url, header=header, data=data,
-        timeout=args.TIMEOUT, insecure=True)
+    success, result, response_header = url3.fetch_json(url, header=header, data=data,
+        timeout=args.TIMEOUT, insecure=True, extended=True)
     if not success:
         return (success, result, False)
     if not result:

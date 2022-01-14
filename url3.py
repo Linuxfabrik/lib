@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022010401'
+__version__ = '2022011401'
 
 import json
 import re
@@ -154,30 +154,6 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
     except:
         return (False, 'ValueError: No JSON object could be decoded')
     return (True, result)
-
-
-def fetch_json_ext(url, insecure=False, no_proxy=False, timeout=8,
-               header={}, data={}, encoding='urlencode',
-               digest_auth_user=None, digest_auth_password=None):
-    """Fetch JSON from an URL, extended version of fetch_json(). 
-    Returns the response body plus response header.
-
-    >>> success, result, response_header = url2.fetch_json_ext(
-        args.URL, header=header, data=data, timeout=timeout, insecure=True)
-    >>> print(response_header['X-RestSvcSessionId'])
-    NGY5NzI2MDgtMjU3My00MmEzLThiNDEtOWYxZmJkNzI2ZDZl
-    """
-    success, jsonst, response_header = fetch_ext(
-        url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
-        header=header, data=data, encoding=encoding,
-        digest_auth_user=digest_auth_user, digest_auth_password=digest_auth_password)
-    if not success:
-        return (False, jsonst, False)
-    try:
-        result = json.loads(jsonst)
-    except:
-        return (False, 'ValueError: No JSON object could be decoded', False)
-    return (True, result, response_header)
 
 
 def get_latest_version_from_github(user, repo, key='tag_name'):
