@@ -12,7 +12,7 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022011401'
+__version__ = '2022012001'
 
 import base64
 
@@ -39,12 +39,12 @@ def get_token(args):
     header['Content-Length'] = 0
     # make this a POST request by filling data with anything
     data = {'make-this': 'a-post-request'}
-    success, result, response_header = url3.fetch_json(url, header=header, data=data,
+    success, result = url3.fetch_json(url, header=header, data=data,
         timeout=args.TIMEOUT, insecure=True, extended=True)
     if not success:
-        return (success, result, False)
+        return (success, result)
     if not result:
         return (False, 'There was no result from {}.'.format(url), False)
-    if not 'X-RestSvcSessionId' in response_header:
+    if not 'X-RestSvcSessionId' in result:
         return (False, 'Something went wrong, maybe user is unauthorized.', False)
-    return (True, result, response_header['X-RestSvcSessionId'])
+    return (True, result)
