@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021112202'
+__version__ = '2022012101'
 
 import time
 
@@ -51,7 +51,8 @@ def get_creds(args):
         timeout=args.TIMEOUT,
     ))
     ibasetoken = result.get('response_json').get('data').get('iBaseToken')
-    cookie = result.get('response_header').getheader('Set-Cookie')
+    # In Python 3, getheader() should be get()
+    cookie = result.get('response_header').get('Set-Cookie')
     expire = base3.now() + args.CACHE_EXPIRE*60
     cache3.set('huawei-{}-ibasetoken'.format(args.DEVICE_ID), ibasetoken, expire)
     cache3.set('huawei-{}-cookie'.format(args.DEVICE_ID), cookie, expire)

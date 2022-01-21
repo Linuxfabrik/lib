@@ -12,7 +12,7 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022012001'
+__version__ = '2022012101'
 
 import base64
 
@@ -44,7 +44,9 @@ def get_token(args):
     if not success:
         return (success, result)
     if not result:
-        return (False, 'There was no result from {}.'.format(url), False)
-    if not 'X-RestSvcSessionId' in result:
-        return (False, 'Something went wrong, maybe user is unauthorized.', False)
+        return (False, 'There was no result from {}.'.format(url))
+    # In Python 3, getheader() should be get()
+    result['X-RestSvcSessionId'] = result.get('response_header').get('X-RestSvcSessionId')
+    if not result['X-RestSvcSessionId']:
+        return (False, 'Something went wrong, maybe user is unauthorized.')
     return (True, result)
