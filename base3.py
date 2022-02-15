@@ -15,11 +15,10 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021502'
+__version__ = '2022021503'
 
 import collections
 import datetime
-import hashlib
 import numbers
 import operator
 import os
@@ -574,10 +573,6 @@ def match_range(value, spec):
     if value > end:
         return (True, False ^ invert)
     return (True, True ^ invert)
-
-
-def sha1sum(string):
-    return hashlib.sha1(string.encode('utf-8')).hexdigest()
 
 
 def mltext2array(input, skip_header=False, sort_key=-1):

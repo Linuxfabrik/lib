@@ -26,13 +26,24 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021110901'
+__version__ = '2022021501'
 
+import hashlib
 import os
 import re
 import sqlite3
 
-from . import base3, disk3
+from . import base3
+from . import disk3
+
+
+def __sha1sum(string):
+    """Returns a sha1-encoded string.
+
+    >>> __sha1sum('linuxfabrik')
+    '74301e766db4a4006ec1fbd6e031760e7e322223'
+    """
+    return hashlib.sha1(string.encode('utf-8')).hexdigest()
 
 
 def close(conn):
@@ -40,7 +51,6 @@ def close(conn):
     automatically call commit(). If you just close your database connection
     without calling commit() first, your changes will be lost.
     """
-
     try:
         conn.close()
     except:
@@ -51,7 +61,6 @@ def close(conn):
 def commit(conn):
     """Save (commit) any changes.
     """
-
     try:
         conn.commit()
     except Exception as e:
@@ -64,7 +73,6 @@ def connect(path='', filename=''):
     temporary directory is used. If filename is ommitted,
     `linuxfabrik-plugins.db` is used.
     """
-
     def get_filename(path='', filename=''):
         """Returns a path including filename to a sqlite database file.
 
@@ -104,10 +112,9 @@ def connect(path='', filename=''):
 def create_index(conn, column_list, table='perfdata', unique=False):
     """Creates one index on a list of/one database column/s.
     """
-
     table = base3.filter_str(table)
 
-    index_name = 'idx_{}'.format(base3.sha1sum(table + column_list))
+    index_name = 'idx_{}'.format(__sha1sum(table + column_list))
     c = conn.cursor()
     if unique:
         sql = 'CREATE UNIQUE INDEX IF NOT EXISTS {} ON "{}" ({});'.format(
@@ -131,7 +138,6 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
     >>> create_table('test', 'a,b,c INTEGER NOT NULL')
     results in 'CREATE TABLE "test" (a TEXT, b TEXT, c INTEGER NOT NULL)'
     """
-
     table = base3.filter_str(table)
 
     # create table if it does not exist
@@ -153,7 +159,6 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
 def cut(conn, table='perfdata', max=5):
     """Keep only the latest "max" records, using the sqlite built-in "rowid".
     """
-
     table = base3.filter_str(table)
 
     c = conn.cursor()
@@ -175,7 +180,6 @@ def delete(conn, sql, data={}, fetchone=False):
     clause boolean expression is true are deleted. Rows for which the
     expression is false or NULL are retained.
     """
-
     c = conn.cursor()
 
     try:
@@ -194,7 +198,6 @@ def drop_table(conn, table='perfdata'):
     table can not be recovered. All indices and triggers associated with the
     table are also deleted.
     """
-
     table = base3.filter_str(table)
 
     c = conn.cursor()
@@ -211,7 +214,6 @@ def drop_table(conn, table='perfdata'):
 def insert(conn, data, table='perfdata'):
     """Insert a row of values (= dict).
     """
-
     table = base3.filter_str(table)
 
     c = conn.cursor()
@@ -255,7 +257,6 @@ def replace(conn, data, table='perfdata'):
     constraint occurs, the REPLACE statement will abort the action and roll
     back the transaction.
     """
-
     table = base3.filter_str(table)
 
     c = conn.cursor()
@@ -283,7 +284,6 @@ def select(conn, sql, data={}, fetchone=False, as_dict=True):
     of columns. A SELECT statement does not make any changes to the
     database.
     """
-
     c = conn.cursor()
 
     try:
@@ -309,7 +309,6 @@ def select(conn, sql, data={}, fetchone=False, as_dict=True):
 def get_tables(conn):
     """List all tables in a database.
     """
-
     sql = "SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';"
     return select(conn, sql)
 
@@ -331,7 +330,6 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
          {...},
         ]
     """
-
     table = base3.filter_str(table)
 
     # count the number of different sensors in the perfdata table
