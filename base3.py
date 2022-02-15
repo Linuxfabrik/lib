@@ -15,18 +15,11 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021501'
+__version__ = '2022021502'
 
-import codecs
-try:
-    codecs.lookup_error('surrogateescape')
-    HAS_SURROGATEESCAPE = True
-except LookupError:
-    HAS_SURROGATEESCAPE = False
 import collections
 import datetime
 import hashlib
-import math
 import numbers
 import operator
 import os
@@ -43,77 +36,6 @@ from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 WINDOWS = os.name == "nt"
 LINUX = sys.platform.startswith("linux")
-
-string_types = str
-integer_types = int
-class_types = type
-text_type = str
-binary_type = bytes
-_COMPOSED_ERROR_HANDLERS = frozenset((None, 'surrogate_or_replace',
-                                      'surrogate_or_strict',
-                                      'surrogate_then_replace'))
-
-
-def bits2human(n, format="%(value).1f%(symbol)s"):
-    """Converts n bits to a human readable format.
-
-    >>> bits2human(8191)
-    '1023.9B'
-    >>> bits2human(8192)
-    '1.0KiB'
-    """
-    symbols = ('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB')
-    prefix = {}
-    prefix['B'] = 8
-    for i, s in enumerate(symbols[1:]):
-        prefix[s] = 1024**(i + 1) * 8
-    for symbol in reversed(symbols):
-        if n >= prefix[symbol]:
-            value = float(n) / prefix[symbol]
-            return format % locals()
-    return format % dict(symbol=symbols[0], value=n)
-
-
-def bps2human(n, format="%(value).1f%(symbol)s"):
-    """Converts n bits per scond to a human readable format.
-
-    >>> bps2human(72000000)
-    '72Mbps'
-    """
-    symbols = ('bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps', 'Pbps', 'Ebps', 'Zbps', 'Ybps')
-    prefix = {}
-    for i, s in enumerate(symbols[1:]):
-        prefix[s] = 1000**(i + 1)
-    for symbol in reversed(symbols[1:]):
-        if n >= prefix[symbol]:
-            value = float(n) / prefix[symbol]
-            return format % locals()
-    return format % dict(symbol=symbols[0], value=n)
-
-
-def bytes2human(n, format="%(value).1f%(symbol)s"):
-    """Converts n bytes to a human readable format.
-
-    >>> bytes2human(1023)
-    '1023.0B'
-    >>> bytes2human(1024)
-    '1.0KiB'
-
-    https://github.com/giampaolo/psutil/blob/master/psutil/_common.py
-    """
-    symbols = ('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB')
-    prefix = {}
-    for i, s in enumerate(symbols[1:]):
-        # Returns 1 with the bits shifted to the left by (i + 1)*10 places
-        # (and new bits on the right-hand-side are zeros). This is the same
-        # as multiplying x by 2**y.
-        prefix[s] = 1 << (i + 1) * 10
-    for symbol in reversed(symbols[1:]):
-        if n >= prefix[symbol]:
-            value = float(n) / prefix[symbol]
-            return format % locals()
-    return format % dict(symbol=symbols[0], value=n)
-
 
 def coe(result, state=STATE_UNKNOWN):
     """Continue or Exit (CoE)
@@ -545,55 +467,6 @@ def guess_type(v, consumer='python'):
                     return 'text'
 
 
-def human2bytes(string, binary=True):
-    """Converts a string such as '3.072GiB' to 3298534883 bytes. If "binary" is set to True
-    (default due to Microsoft), it will use powers of 1024, otherwise powers of 1000 (decimal).
-    Returns 0 on failure.
-    """
-    try:
-        string = string.lower()
-        if 'kib' in string:
-            return int(float(string.replace('kib', '').strip()) * 1024)
-        if 'kb' in string:
-            if binary:
-                return int(float(string.replace('kb', '').strip()) * 1024)
-            else:
-                return int(float(string.replace('kb', '').strip()) * 1000)
-        if 'mib' in string:
-            return int(float(string.replace('mib', '').strip()) * 1024 * 1024)
-        if 'mb' in string:
-            if binary:
-                return int(float(string.replace('mb', '').strip()) * 1024 * 1024)
-            else:
-                return int(float(string.replace('mb', '').strip()) * 1000 * 1000)
-        if 'gib' in string:
-            return int(float(string.replace('gib', '').strip()) * 1024 * 1024 * 1024)
-        if 'gb' in string:
-            if binary:
-                return int(float(string.replace('gb', '').strip()) * 1024 * 1024 * 1024)
-            else:
-                return int(float(string.replace('gb', '').strip()) * 1000 * 1000 * 1000)
-        if 'tib' in string:
-            return int(float(string.replace('tib', '').strip()) * 1024 * 1024 * 1024 * 1024)
-        if 'tb' in string:
-            if binary:
-                return int(float(string.replace('tb', '').strip()) * 1024 * 1024 * 1024 * 1024)
-            else:
-                return int(float(string.replace('tb', '').strip()) * 1000 * 1000 * 1000 * 1000)
-        if 'pib' in string:
-            return int(float(string.replace('pib', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
-        if 'pb' in string:
-            if binary:
-                return int(float(string.replace('pb', '').strip()) * 1024 * 1024 * 1024 * 1024 * 1024)
-            else:
-                return int(float(string.replace('pb', '').strip()) * 1000 * 1000 * 1000 * 1000 * 1000)
-        if 'b' in string:
-            return int(float(string.replace('b', '').strip()))
-        return 0
-    except:
-        return 0
-
-
 def is_empty_list(l):
     """Check if a list only contains either empty elements or whitespace
     """
@@ -742,27 +615,6 @@ def now(as_type=''):
     return int(time.time())
 
 
-def number2human(n):
-    """
-    >>> number2human(123456.8)
-    '123K'
-    >>> number2human(123456789.0)
-    '123M'
-    >>> number2human(9223372036854775808)
-    '9.2E'
-    """
-    # according to the SI Symbols at
-    # https://en.wikipedia.org/w/index.php?title=Names_of_large_numbers&section=5#Extensions_of_the_standard_dictionary_numbers
-    millnames = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y']
-    try:
-        n = float(n)
-    except:
-        return n
-    millidx = max(0, min(len(millnames) - 1,
-                         int(math.floor(0 if n == 0 else math.log10(abs(n)) / 3))))
-    return '{:.1f}{}'.format(n / 10**(3 * millidx), millnames[millidx])
-
-
 def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     """Over and Out (OaO)
 
@@ -824,67 +676,6 @@ def pluralize(noun, value, suffix='s'):
     if int(value) == 1:
         return noun + singular
     return noun + plural
-
-
-def seconds2human(seconds, keep_short=True, full_name=False):
-    """Returns a human readable time range string for a number of seconds.
-
-    >>> lib.base3.seconds2human(0.125)
-    '0.12s'
-    >>> lib.base3.seconds2human(1)
-    '1s'
-    >>> lib.base3.seconds2human(59)
-    '59s'
-    >>> lib.base3.seconds2human(60)
-    '1m'
-    >>> lib.base3.seconds2human(61)
-    '1m 1s'
-    >>> lib.base3.seconds2human(1387775)
-    '2W 2D'
-    >>> lib.base3.seconds2human('1387775')
-    '2W 2D'
-    >>> lib.base3.seconds2human('1387775', full_name=True)
-    '2weeks 2days'
-    >>> lib.base3.seconds2human(1387775, keep_short=False, full_name=True)
-    '2weeks 2days 1hour 29minutes 35seconds'
-    """
-    seconds = float(seconds)
-    if seconds < 1:
-        return '{:.2f}s'.format(seconds)
-
-    if full_name:
-        intervals = (
-            ('years', 60*60*24*365),
-            ('months', 60*60*24*30),
-            ('weeks', 60*60*24*7),
-            ('days', 60*60*24),
-            ('hours', 60*60),
-            ('minutes', 60),
-            ('seconds', 1),
-        )
-    else:
-        intervals = (
-            ('Y', 60*60*24*365),
-            ('M', 60*60*24*30),
-            ('W', 60*60*24*7),
-            ('D', 60*60*24),
-            ('h', 60*60),
-            ('m', 60),
-            ('s', 1),
-        )
-
-    result = []
-    for name, count in intervals:
-        value = seconds // count
-        if value:
-            seconds -= value * count
-            if full_name and value == 1:
-                name = name.rstrip('s') # "days" becomes "day"
-            result.append('{:.0f}{}'.format(value, name))
-
-    if len(result) > 2 and keep_short:
-        return ' '.join(result[:2])
-    return ' '.join(result)
 
 
 def shell_exec(cmd, env=None, shell=False, stdin=''):
@@ -1103,216 +894,6 @@ def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%
     timestr2 = timestr2datetime(timestr2, pattern2)
     timedelta = abs(timestr1 - timestr2)
     return timedelta.total_seconds()
-
-
-# from /usr/lib/python3.10/site-packages/ansible/module_utils/_text.py
-def to_bytes(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
-    """Make sure that a string is a byte string
-
-    :arg obj: An object to make sure is a byte string.  In most cases this
-        will be either a text string or a byte string.  However, with
-        ``nonstring='simplerepr'``, this can be used as a traceback-free
-        version of ``str(obj)``.
-    :kwarg encoding: The encoding to use to transform from a text string to
-        a byte string.  Defaults to using 'utf-8'.
-    :kwarg errors: The error handler to use if the text string is not
-        encodable using the specified encoding.  Any valid `codecs error
-        handler <https://docs.python.org/2/library/codecs.html#codec-base-classes>`_
-        may be specified. There are three additional error strategies
-        specifically aimed at helping people to port code.  The first two are:
-
-            :surrogate_or_strict: Will use ``surrogateescape`` if it is a valid
-                handler, otherwise it will use ``strict``
-            :surrogate_or_replace: Will use ``surrogateescape`` if it is a valid
-                handler, otherwise it will use ``replace``.
-
-        Because ``surrogateescape`` was added in Python3 this usually means that
-        Python3 will use ``surrogateescape`` and Python2 will use the fallback
-        error handler. Note that the code checks for ``surrogateescape`` when the
-        module is imported.  If you have a backport of ``surrogateescape`` for
-        Python2, be sure to register the error handler prior to importing this
-        module.
-
-        The last error handler is:
-
-            :surrogate_then_replace: Will use ``surrogateescape`` if it is a valid
-                handler.  If encoding with ``surrogateescape`` would traceback,
-                surrogates are first replaced with a replacement characters
-                and then the string is encoded using ``replace`` (which replaces
-                the rest of the nonencodable bytes).  If ``surrogateescape`` is
-                not present it will simply use ``replace``.  (Added in Ansible 2.3)
-                This strategy is designed to never traceback when it attempts
-                to encode a string.
-
-        The default until Ansible-2.2 was ``surrogate_or_replace``
-        From Ansible-2.3 onwards, the default is ``surrogate_then_replace``.
-
-    :kwarg nonstring: The strategy to use if a nonstring is specified in
-        ``obj``.  Default is 'simplerepr'.  Valid values are:
-
-        :simplerepr: The default.  This takes the ``str`` of the object and
-            then returns the bytes version of that string.
-        :empty: Return an empty byte string
-        :passthru: Return the object passed in
-        :strict: Raise a :exc:`TypeError`
-
-    :returns: Typically this returns a byte string.  If a nonstring object is
-        passed in this may be a different type depending on the strategy
-        specified by nonstring.  This will never return a text string.
-
-    .. note:: If passed a byte string, this function does not check that the
-        string is valid in the specified encoding.  If it's important that the
-        byte string is in the specified encoding do::
-
-            encoded_string = to_bytes(to_text(input_string, 'latin-1'), 'utf-8')
-
-    .. version_changed:: 2.3
-
-        Added the ``surrogate_then_replace`` error handler and made it the default error handler.
-    """
-    if isinstance(obj, binary_type):
-        return obj
-
-    # We're given a text string
-    # If it has surrogates, we know because it will decode
-    original_errors = errors
-    if errors in _COMPOSED_ERROR_HANDLERS:
-        if HAS_SURROGATEESCAPE:
-            errors = 'surrogateescape'
-        elif errors == 'surrogate_or_strict':
-            errors = 'strict'
-        else:
-            errors = 'replace'
-
-    if isinstance(obj, text_type):
-        try:
-            # Try this first as it's the fastest
-            return obj.encode(encoding, errors)
-        except UnicodeEncodeError:
-            if original_errors in (None, 'surrogate_then_replace'):
-                # We should only reach this if encoding was non-utf8 original_errors was
-                # surrogate_then_escape and errors was surrogateescape
-
-                # Slow but works
-                return_string = obj.encode('utf-8', 'surrogateescape')
-                return_string = return_string.decode('utf-8', 'replace')
-                return return_string.encode(encoding, 'replace')
-            raise
-
-    # Note: We do these last even though we have to call to_bytes again on the
-    # value because we're optimizing the common case
-    if nonstring == 'simplerepr':
-        try:
-            value = str(obj)
-        except UnicodeError:
-            try:
-                value = repr(obj)
-            except UnicodeError:
-                # Giving up
-                return to_bytes('')
-    elif nonstring == 'passthru':
-        return obj
-    elif nonstring == 'empty':
-        # python2.4 doesn't have b''
-        return to_bytes('')
-    elif nonstring == 'strict':
-        raise TypeError('obj must be a string type')
-    else:
-        raise TypeError('Invalid value %s for to_bytes\' nonstring parameter' % nonstring)
-
-    return to_bytes(value, encoding, errors)
-
-
-# from /usr/lib/python3.10/site-packages/ansible/module_utils/_text.py
-def to_text(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
-    """Make sure that a string is a text string
-
-    :arg obj: An object to make sure is a text string.  In most cases this
-        will be either a text string or a byte string.  However, with
-        ``nonstring='simplerepr'``, this can be used as a traceback-free
-        version of ``str(obj)``.
-    :kwarg encoding: The encoding to use to transform from a byte string to
-        a text string.  Defaults to using 'utf-8'.
-    :kwarg errors: The error handler to use if the byte string is not
-        decodable using the specified encoding.  Any valid `codecs error
-        handler <https://docs.python.org/2/library/codecs.html#codec-base-classes>`_
-        may be specified.   We support three additional error strategies
-        specifically aimed at helping people to port code:
-
-            :surrogate_or_strict: Will use surrogateescape if it is a valid
-                handler, otherwise it will use strict
-            :surrogate_or_replace: Will use surrogateescape if it is a valid
-                handler, otherwise it will use replace.
-            :surrogate_then_replace: Does the same as surrogate_or_replace but
-                `was added for symmetry with the error handlers in
-                :func:`ansible.module_utils._text.to_bytes` (Added in Ansible 2.3)
-
-        Because surrogateescape was added in Python3 this usually means that
-        Python3 will use `surrogateescape` and Python2 will use the fallback
-        error handler. Note that the code checks for surrogateescape when the
-        module is imported.  If you have a backport of `surrogateescape` for
-        python2, be sure to register the error handler prior to importing this
-        module.
-
-        The default until Ansible-2.2 was `surrogate_or_replace`
-        In Ansible-2.3 this defaults to `surrogate_then_replace` for symmetry
-        with :func:`ansible.module_utils._text.to_bytes` .
-    :kwarg nonstring: The strategy to use if a nonstring is specified in
-        ``obj``.  Default is 'simplerepr'.  Valid values are:
-
-        :simplerepr: The default.  This takes the ``str`` of the object and
-            then returns the text version of that string.
-        :empty: Return an empty text string
-        :passthru: Return the object passed in
-        :strict: Raise a :exc:`TypeError`
-
-    :returns: Typically this returns a text string.  If a nonstring object is
-        passed in this may be a different type depending on the strategy
-        specified by nonstring.  This will never return a byte string.
-        From Ansible-2.3 onwards, the default is `surrogate_then_replace`.
-
-    .. version_changed:: 2.3
-
-        Added the surrogate_then_replace error handler and made it the default error handler.
-    """
-    if isinstance(obj, text_type):
-        return obj
-
-    if errors in _COMPOSED_ERROR_HANDLERS:
-        if HAS_SURROGATEESCAPE:
-            errors = 'surrogateescape'
-        elif errors == 'surrogate_or_strict':
-            errors = 'strict'
-        else:
-            errors = 'replace'
-
-    if isinstance(obj, binary_type):
-        # Note: We don't need special handling for surrogate_then_replace
-        # because all bytes will either be made into surrogates or are valid
-        # to decode.
-        return obj.decode(encoding, errors)
-
-    # Note: We do these last even though we have to call to_text again on the
-    # value because we're optimizing the common case
-    if nonstring == 'simplerepr':
-        try:
-            value = str(obj)
-        except UnicodeError:
-            try:
-                value = repr(obj)
-            except UnicodeError:
-                # Giving up
-                return u''
-    elif nonstring == 'passthru':
-        return obj
-    elif nonstring == 'empty':
-        return u''
-    elif nonstring == 'strict':
-        raise TypeError('obj must be a string type')
-    else:
-        raise TypeError('Invalid value %s for to_text\'s nonstring parameter' % nonstring)
-
-    return to_text(value, encoding, errors)
 
 
 def uniq(string):
