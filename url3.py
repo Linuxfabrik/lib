@@ -21,6 +21,7 @@ import urllib
 import urllib.parse
 import urllib.request
 
+from . import base3
 
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
           header={}, data={}, encoding='urlencode',
@@ -120,7 +121,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
         except:
             return (False, 'Unknown error while fetching {}, maybe timeout or '
                        'error on webserver'.format(url))
-        return (True, result)
+        return (True, base3.to_text(result))
 
 
 def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
