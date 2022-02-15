@@ -26,15 +26,26 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021501'
+__version__ = '2022021502'
 
 import hashlib
 import os
 import re
 import sqlite3
 
-from . import base3
 from . import disk3
+from . import txt3
+
+
+def __filter_str(s, charclass='a-zA-Z0-9_'):
+    """Stripping everything except alphanumeric chars and '_' from a string -
+    chars that are allowed everywhere in variables, database table or index names, etc.
+
+    >>> __filter_str('user@example.ch')
+    'userexamplech'
+    """
+    regex = '[^{}]'.format(charclass)
+    return re.sub(regex, "", s)
 
 
 def __sha1sum(string):
@@ -112,7 +123,7 @@ def connect(path='', filename=''):
 def create_index(conn, column_list, table='perfdata', unique=False):
     """Creates one index on a list of/one database column/s.
     """
-    table = base3.filter_str(table)
+    table = txt3.__filter_str(table)
 
     index_name = 'idx_{}'.format(__sha1sum(table + column_list))
     c = conn.cursor()
@@ -138,7 +149,7 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
     >>> create_table('test', 'a,b,c INTEGER NOT NULL')
     results in 'CREATE TABLE "test" (a TEXT, b TEXT, c INTEGER NOT NULL)'
     """
-    table = base3.filter_str(table)
+    table = txt3.__filter_str(table)
 
     # create table if it does not exist
     if drop_table_first:
@@ -159,7 +170,7 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
 def cut(conn, table='perfdata', max=5):
     """Keep only the latest "max" records, using the sqlite built-in "rowid".
     """
-    table = base3.filter_str(table)
+    table = txt3.__filter_str(table)
 
     c = conn.cursor()
     sql = '''DELETE FROM {table} WHERE rowid IN (
@@ -198,7 +209,7 @@ def drop_table(conn, table='perfdata'):
     table can not be recovered. All indices and triggers associated with the
     table are also deleted.
     """
-    table = base3.filter_str(table)
+    table = txt3.__filter_str(table)
 
     c = conn.cursor()
     sql = 'DROP TABLE IF EXISTS "{}";'.format(table)
@@ -214,7 +225,7 @@ def drop_table(conn, table='perfdata'):
 def insert(conn, data, table='perfdata'):
     """Insert a row of values (= dict).
     """
-    table = base3.filter_str(table)
+    table = txt3.__filter_str(table)
 
     c = conn.cursor()
     sql = 'INSERT INTO "{}" (COLS) VALUES (VALS);'.format(table)
@@ -257,7 +268,7 @@ def replace(conn, data, table='perfdata'):
     constraint occurs, the REPLACE statement will abort the action and roll
     back the transaction.
     """
-    table = base3.filter_str(table)
+    table = txt3.__filter_str(table)
 
     c = conn.cursor()
     sql = 'REPLACE INTO "{}" (COLS) VALUES (VALS);'.format(table)
@@ -330,7 +341,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
          {...},
         ]
     """
-    table = base3.filter_str(table)
+    table = txt3.__filter_str(table)
 
     # count the number of different sensors in the perfdata table
     sql = 'SELECT DISTINCT {sensorcol} FROM {table} ORDER BY {sensorcol} ASC;'.format(
