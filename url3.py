@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022011401'
+__version__ = '2022021501'
 
 import json
 import re
@@ -21,7 +21,7 @@ import urllib
 import urllib.parse
 import urllib.request
 
-from . import base3
+from . import txt3
 
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
           header={}, data={}, encoding='urlencode',
@@ -121,7 +121,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
         except:
             return (False, 'Unknown error while fetching {}, maybe timeout or '
                        'error on webserver'.format(url))
-        return (True, base3.to_text(result))
+        return (True, txt3.to_text(result))
 
 
 def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
