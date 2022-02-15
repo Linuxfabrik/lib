@@ -102,65 +102,6 @@ def epoch2iso(timestamp):
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
 
 
-def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
-    """Extracts text between `from_txt` to `to_txt`.
-    If `include_fromto` is set to False (default), text is returned without both search terms,
-    otherwise `from_txt` and `to_txt` are included.
-    If `from_txt` is not found, always an empty string is returned.
-    If `to_txt` is not found and `be_tolerant` is set to True (default), text is returned from
-    `from_txt` til the end of input text. Otherwise an empty text is returned.
-
-    >>> extract_text('abcde', 'x', 'y')
-    ''
-    >>> extract_text('abcde', 'b', 'x')
-    'cde'
-    >>> extract_text('abcde', 'b', 'x', include_fromto=True)
-    'bcde'
-    >>> extract_text('abcde', 'b', 'x', include_fromto=True, be_tolerant=False)
-    ''
-    >>> extract_text('abcde', 'b', 'd')
-    'c'
-    >>> extract_text('abcde', 'b', 'd', include_fromto=True)
-    'bcd'
-    """
-    pos1 = s.find(from_txt)
-    if pos1 == -1:
-        # nothing found
-        return ''
-    pos2 = s.find(to_txt, pos1+len(from_txt))
-    # to_txt not found:
-    if pos2 == -1 and be_tolerant and not include_fromto:
-        return s[pos1+len(from_txt):]
-    if pos2 == -1 and be_tolerant and include_fromto:
-        return s[pos1:]
-    if pos2 == -1 and not be_tolerant:
-        return ''
-    # from_txt and to_txt found:
-    if not include_fromto:
-        return s[pos1+len(from_txt):pos2-len(to_txt)+ 1]
-    return s[pos1:pos2+len(to_txt)]
-
-
-def filter_mltext(input, ignore):
-    filtered_input = ''
-    for line in input.splitlines():
-        if not any(i_line in line for i_line in ignore):
-            filtered_input += line + '\n'
-
-    return filtered_input
-
-
-def filter_str(s, charclass='a-zA-Z0-9_'):
-    """Stripping everything except alphanumeric chars and '_' from a string -
-    chars that are allowed everywhere in variables, database table or index names, etc.
-
-    >>> filter_str('user@example.ch')
-    'userexamplech'
-    """
-    regex = '[^{}]'.format(charclass)
-    return re.sub(regex, "", s)
-
-
 def get_command_output(cmd, regex=None):
     """Runs a shell command and returns its output. Optionally, applies a regex and just
     returns the first matching group. If the command is not found, an empty string is returned.
@@ -575,18 +516,6 @@ def match_range(value, spec):
     return (True, True ^ invert)
 
 
-def mltext2array(input, skip_header=False, sort_key=-1):
-    input = input.strip(' \t\n\r').split('\n')
-    lines = []
-    if skip_header:
-        del input[0]
-    for row in input:
-        lines.append(row.split())
-    if sort_key != -1:
-        lines = sorted(lines, key=operator.itemgetter(sort_key))
-    return lines
-
-
 def now(as_type=''):
     """Returns the current date and time as UNIX time in seconds (default), or
     as a datetime object.
@@ -624,53 +553,6 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     if always_ok:
         sys.exit(0)
     sys.exit(state)
-
-
-def pluralize(noun, value, suffix='s'):
-    """Returns a plural suffix if the value is not 1. By default, 's' is used as
-    the suffix.
-
-    >>> pluralize('vote', 0)
-    'votes'
-    >>> pluralize('vote', 1)
-    'vote'
-    >>> pluralize('vote', 2)
-    'votes'
-
-    If an argument is provided, that string is used instead:
-
-    >>> pluralize('class', 0, 'es')
-    'classes'
-    >>> pluralize('class', 1, 'es')
-    'class'
-    >>> pluralize('class', 2, 'es')
-    'classes'
-
-    If the provided argument contains a comma, the text before the comma is used
-    for the singular case and the text after the comma is used for the plural
-    case:
-
-    >>> pluralize('cand', 0, 'y,ies)
-    'candies'
-    >>> pluralize('cand', 1, 'y,ies)
-    'candy'
-    >>> pluralize('cand', 2, 'y,ies)
-    'candies'
-
-    >>> pluralize('', 1, 'is,are')
-    'is'
-    >>> pluralize('', 2, 'is,are')
-    'are'
-
-    From https://kite.com/python/docs/django.template.defaultfilters.pluralize
-    """
-    if ',' in suffix:
-        singular, plural = suffix.split(',')
-    else:
-        singular, plural = '', suffix
-    if int(value) == 1:
-        return noun + singular
-    return noun + plural
 
 
 def shell_exec(cmd, env=None, shell=False, stdin=''):
@@ -889,15 +771,6 @@ def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%
     timestr2 = timestr2datetime(timestr2, pattern2)
     timedelta = abs(timestr1 - timestr2)
     return timedelta.total_seconds()
-
-
-def uniq(string):
-    """Removes duplicate words from a string (only the second duplicates).
-    The sequence of the words will not be changed.
-
-    """
-    words = string.split()
-    return ' '.join(sorted(set(words), key=words.index))
 
 
 def utc_offset():
