@@ -9,10 +9,11 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 """This library collects some LibreNMS related functions that are
-needed by LibreNMS check plugins."""
+needed by LibreNMS check plugins.
+"""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022012101'
+__version__ = '2022021501'
 
 import time
 
@@ -20,6 +21,7 @@ from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 from . import base3
 from . import cache3
+from . import time3
 from . import url3
 
 
@@ -53,7 +55,7 @@ def get_creds(args):
     ibasetoken = result.get('response_json').get('data').get('iBaseToken')
     # In Python 3, getheader() should be get()
     cookie = result.get('response_header').get('Set-Cookie')
-    expire = base3.now() + args.CACHE_EXPIRE*60
+    expire = time3.now() + args.CACHE_EXPIRE*60
     cache3.set('huawei-{}-ibasetoken'.format(args.DEVICE_ID), ibasetoken, expire)
     cache3.set('huawei-{}-cookie'.format(args.DEVICE_ID), cookie, expire)
     return ibasetoken, cookie

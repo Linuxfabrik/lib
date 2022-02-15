@@ -10,7 +10,7 @@
 
 """Provides very common every-day functions.
 
-The functions "to_text()" and "to_bytes()" are copied from 
+The functions "to_text()" and "to_bytes()" are copied from
 /usr/lib/python3.10/site-packages/ansible/module_utils/_text.py (BSD license).
 """
 
@@ -18,7 +18,6 @@ __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2022021504'
 
 import collections
-import datetime
 import numbers
 import operator
 import os
@@ -26,7 +25,6 @@ import re
 import shlex
 import subprocess
 import sys
-import time
 
 from traceback import format_exc # pylint: disable=C0413
 
@@ -92,16 +90,6 @@ def cu():
     sys.exit(STATE_UNKNOWN)
 
 
-def epoch2iso(timestamp):
-    """Returns the ISO representaton of a UNIX timestamp (epoch).
-
-    >>> epoch2iso(1620459129)
-    '2021-05-08 09:32:09'
-    """
-    timestamp = float(timestamp)
-    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
-
-
 def get_command_output(cmd, regex=None):
     """Runs a shell command and returns its output. Optionally, applies a regex and just
     returns the first matching group. If the command is not found, an empty string is returned.
@@ -134,7 +122,7 @@ def get_command_output(cmd, regex=None):
         return stdout.strip()
 
 
-def get_perfdata(label, value, uom, warn, crit, min, max):
+def get_perfdata(label, value, uom, warn, crit, _min, _max):
     """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
     """
     msg = "'{}'={}".format(label, value)
@@ -147,11 +135,11 @@ def get_perfdata(label, value, uom, warn, crit, min, max):
     if crit is not None:
         msg += str(crit)
     msg += ';'
-    if min is not None:
-        msg += str(min)
+    if _min is not None:
+        msg += str(_min)
     msg += ';'
-    if max is not None:
-        msg += str(max)
+    if _max is not None:
+        msg += str(_max)
     msg += ' '
     return msg
 
@@ -350,7 +338,8 @@ def get_worst(state1, state2):
 
 
 def guess_type(v, consumer='python'):
-    """Guess the type of a value (None, int, float or string) for different types of consumers (Python, SQLite etc.).
+    """Guess the type of a value (None, int, float or string) for different types of consumers
+    (Python, SQLite etc.).
     For Python, use isinstance() to check for example if a number is an integer.
 
     >>> guess_type('1')
@@ -373,34 +362,32 @@ def guess_type(v, consumer='python'):
     if consumer == 'python':
         if v is None:
             return None
-        else:
+        try:
+            return int(v)
+        except ValueError:
             try:
-                return int(v)
+                return float(v)
             except ValueError:
-                try:
-                    return float(v)
-                except ValueError:
-                    return str(v)
+                return str(v)
 
     if consumer == 'sqlite':
         if v is None:
             return 'string'
-        else:
+        try:
+            int(v)
+            return 'integer'
+        except ValueError:
             try:
-                int(v)
-                return 'integer'
+                float(v)
+                return 'real'
             except ValueError:
-                try:
-                    float(v)
-                    return 'real'
-                except ValueError:
-                    return 'text'
+                return 'text'
 
 
 def is_empty_list(l):
     """Check if a list only contains either empty elements or whitespace
     """
-    return all('' == s or s.isspace() for s in l)
+    return all(s == '' or s.isspace() for s in l)
 
 
 def is_numeric(value):
@@ -497,36 +484,13 @@ def match_range(value, spec):
     if not success:
         return (success, result)
     start, end, invert = result
-    if isinstance(value, str) or isinstance(value, bytes):
+    if isinstance(value, (str, bytes)):
         value = float(value.replace('%', ''))
     if value < start:
         return (True, False ^ invert)
     if value > end:
         return (True, False ^ invert)
     return (True, True ^ invert)
-
-
-def now(as_type=''):
-    """Returns the current date and time as UNIX time in seconds (default), or
-    as a datetime object.
-
-    lib.base3.now()
-    >>> 1586422786
-
-    lib.base3.now(as_type='epoch')
-    >>> 1586422786
-
-    lib.base3.now(as_type='datetime')
-    >>> datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)
-
-    lib.base3.now(as_type='iso')
-    >>> '2020-04-09 11:31:24'
-    """
-    if as_type == 'datetime':
-        return datetime.datetime.now()
-    if as_type == 'iso':
-        return time.strftime("%Y-%m-%d %H:%M:%S")
-    return int(time.time())
 
 
 def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
@@ -746,32 +710,6 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
     return state
 
 
-def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
-    """Takes a string (default: ISO format) and returns a
-    datetime object.
-    """
-    return datetime.datetime.strptime(timestr, pattern)
-
-
-def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%m-%d %H:%M:%S'):
-    """Returns the difference between two datetime strings in seconds. This
-    function expects two ISO timestamps, by default each in ISO format.
-    """
-    timestr1 = timestr2datetime(timestr1, pattern1)
-    timestr2 = timestr2datetime(timestr2, pattern2)
-    timedelta = abs(timestr1 - timestr2)
-    return timedelta.total_seconds()
-
-
-def utc_offset():
-    """Returns the current local UTC offset, for example '+0200'.
-
-    utc_offset()
-    >>> '+0200'
-    """
-    return time.strftime("%z")
-
-
 def version(v):
     """Use this function to compare string-based version numbers.
 
@@ -813,5 +751,4 @@ def version2float(v):
     v = v.split('.')
     if len(v) > 1:
         return float('{}.{}'.format(v[0], ''.join(v[1:])))
-    else:
-        return float(''.join(v))
+    return float(''.join(v))
