@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021501'
+__version__ = '2022021502'
 
 import codecs
 try:
@@ -26,6 +26,7 @@ integer_types = int
 class_types = type
 text_type = str
 binary_type = bytes
+
 _COMPOSED_ERROR_HANDLERS = frozenset((None, 'surrogate_or_replace',
                                       'surrogate_or_strict',
                                       'surrogate_then_replace'))
@@ -356,3 +357,7 @@ def uniq(string):
     """
     words = string.split()
     return ' '.join(sorted(set(words), key=words.index))
+
+
+to_native = to_text
+# PY2: to_native = to_bytes
