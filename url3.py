@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021601'
+__version__ = '2022021602'
 
 import json
 import re
@@ -112,16 +112,16 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                 # if the server doesn't send charset info
                 charset = 'UTF-8'
             if not extended:
-                result = response.read().decode(charset)
+                result = txt3.to_text(response.read(), encoding=charset)
             else:
                 result = {}
-                result['response'] = response.read().decode(charset)
+                result['response'] = txt3.to_text(response.read(), encoding=charset)
                 result['status_code'] = response.getcode()
                 result['response_header'] = response.info()
         except:
             return (False, 'Unknown error while fetching {}, maybe timeout or '
                        'error on webserver'.format(url))
-        return (True, txt3.to_text(result))
+        return (True, result)
 
 
 def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
