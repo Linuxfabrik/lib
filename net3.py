@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021601'
+__version__ = '2022021602'
 
 import random
 import re
@@ -24,7 +24,9 @@ try:
 except ImportError as e:
     lib_netifaces = False
 
+from . import txt3 # pylint: disable=C0413
 from . import url3 # pylint: disable=C0413
+
 
 # address family
 AF_INET = socket.AF_INET                             # 2
@@ -186,7 +188,7 @@ def get_ip_public():
         if success and ip:
             ip = ip.strip()
             try:
-                return (True, ip.decode())
+                return (True, txt3.to_text(ip))
             except:
                 return (True, ip)
     return (False, ip)

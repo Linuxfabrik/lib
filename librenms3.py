@@ -12,24 +12,31 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021601'
+__version__ = '2022021602'
 
 from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
-from . import base3
-from . import url3
+from . import base3 # pylint: disable=C0413
+from . import txt3 # pylint: disable=C0413
+from . import url3 # pylint: disable=C0413
 
 
 def get_data(args, url=''):
-    url = args.URL + url
+    url = '{}{}'.format(args.URL, url)
     header = {'X-Auth-Token': args.TOKEN}
     result = base3.coe(url3.fetch_json(
-        url, timeout=args.TIMEOUT,
+        url,
         header=header,
-        insecure=args.INSECURE, no_proxy=args.NO_PROXY,
+        insecure=args.INSECURE,
+        no_proxy=args.NO_PROXY,
+        timeout=args.TIMEOUT,
     ))
-    if result['status'] != 'ok':
-        base3.oao('Error fetching data: "{}"'.format(result), STATE_UNKNOWN, always_ok=args.ALWAYS_OK)
+    if result['status'].lower() != 'ok':
+        base3.oao(
+            'Error fetching data: "{}"'.format(result),
+            STATE_UNKNOWN,
+            always_ok=args.ALWAYS_OK,
+        )
     return result
 
 
@@ -38,7 +45,7 @@ def get_prop(obj, prop, mytype='str'):
     if mytype == 'str':
         if prop in obj:
             if obj[prop] is not None:
-                return obj[prop].encode('utf-8')
+                return txt.to_text(obj[prop])
         return ''
     if prop in obj:
         if obj[prop] is not None:

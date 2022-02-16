@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021602'
+__version__ = '2022021604'
 
 import json
 import re
@@ -33,8 +33,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     and the HTTP status code.
 
     Basic authentication:
-    >>> auth = args.USERNAME + ':' + args.PASSWORD
-    >>> encoded_auth = base64.b64encode(auth.encode()).decode()
+    >>> auth = '{}:{}'.format(args.USERNAME, args.PASSWORD)
+    >>> encoded_auth = lib.txt3.to_text(base64.b64encode(lib.txt3.to_bytes(auth)))
     >>> result = lib.base3.coe(lib.url3.fetch(url, timeout=args.TIMEOUT,
             header={'Authorization': 'Basic {}'.format(encoded_auth)}))
 
@@ -59,7 +59,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                 data = urllib.parse.urlencode(data)
             if encoding == 'serialized-json':
                 data = json.dumps(data)
-            data = data.encode('utf-8')
+            data = data.to_bytes()
             # the HTTP request will be a POST instead of a GET when the data parameter is provided
             request = urllib.request.Request(url, data=data)
         else:

@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021601'
+__version__ = '2022021602'
 
 import hashlib
 import os
@@ -34,6 +34,7 @@ import re
 import sqlite3
 
 from . import disk3
+from . import txt3
 
 
 def __filter_str(s, charclass='a-zA-Z0-9_'):
@@ -53,7 +54,7 @@ def __sha1sum(string):
     >>> __sha1sum('linuxfabrik')
     '74301e766db4a4006ec1fbd6e031760e7e322223'
     """
-    return hashlib.sha1(string.encode('utf-8')).hexdigest()
+    return hashlib.sha1(txt3.to_bytes(string)).hexdigest()
 
 
 def close(conn):

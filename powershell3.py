@@ -12,14 +12,15 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021111701'
+__version__ = '2022021602'
 
 import subprocess
 
+from . import txt3
+
 
 def run_ps(cmd):
-    """
-    You will need PowerShell installed on your system and Python 3.6+.
+    """You will need PowerShell installed on your system and Python 3.6+.
     This would work cross-platform. No need for external libraries.
 
     Returns
@@ -33,8 +34,8 @@ def run_ps(cmd):
         return {
             'args': result.args,
             'retc': result.returncode,
-            'stdout': result.stdout.decode(), # convert from byte to unicode
-            'stderr': result.stderr.decode(), # convert from byte to unicode
+            'stdout': txt3.to_text(result.stdout), # convert from byte to unicode
+            'stderr': txt3.to_text(result.stderr), # convert from byte to unicode
         }
     except:
         return None
