@@ -13,17 +13,20 @@
 Time zone handling is not implemented.
 """
 
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2022021601'
+
+import sys
+
+from .globals3 import STATE_UNKNOWN
 try:
     from bs4 import BeautifulSoup
 except ImportError as e:
     print('Python module "BeautifulSoup4" is not installed.')
-    exit(3)
+    sys.exit(STATE_UNKNOWN)
 
 from . import time3
 from . import url3
-
-__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021501'
 
 
 def parse_atom(soup):
@@ -83,7 +86,7 @@ def parse(feed_url, insecure=False, no_proxy=False, timeout=5, encoding='urlenco
     """
 
     success, xml = url3.fetch(feed_url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
-        encoding='urlencode')
+        encoding=encoding)
     if not success:
         return (False, xml)
 

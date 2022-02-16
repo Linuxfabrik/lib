@@ -12,10 +12,11 @@
 needed by more than one WildFly/JBoss plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021082501'
+__version__ = '2022021601'
 
 import base2
 import url2
+from globals2 import STATE_UNKNOWN
 
 
 def get_data(args, data, url=''):
@@ -30,8 +31,5 @@ def get_data(args, data, url=''):
         encoding='serialized-json'
         ))
     if result['outcome'] != 'success':
-        base2.oao(u'Error fetching data: "{}"'.format(res), STATE_UNKNOWN, perfdata, always_ok=args.ALWAYS_OK)
+        base2.oao(u'Error fetching data: "{}"'.format(result), STATE_UNKNOWN, always_ok=args.ALWAYS_OK)
     return result['result']
-
-
-

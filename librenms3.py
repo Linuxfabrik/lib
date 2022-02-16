@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021071501'
+__version__ = '2022021601'
 
 from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
@@ -27,9 +27,9 @@ def get_data(args, url=''):
         url, timeout=args.TIMEOUT,
         header=header,
         insecure=args.INSECURE, no_proxy=args.NO_PROXY,
-        ))
+    ))
     if result['status'] != 'ok':
-        base3.oao('Error fetching data: "{}"'.format(res), STATE_UNKNOWN, perfdata, always_ok=args.ALWAYS_OK)
+        base3.oao('Error fetching data: "{}"'.format(result), STATE_UNKNOWN, always_ok=args.ALWAYS_OK)
     return result
 
 
@@ -40,11 +40,10 @@ def get_prop(obj, prop, mytype='str'):
             if obj[prop] is not None:
                 return obj[prop].encode('utf-8')
         return ''
-    else:
-        if prop in obj:
-            if obj[prop] is not None:
-                return obj[prop]
-        return None
+    if prop in obj:
+        if obj[prop] is not None:
+            return obj[prop]
+    return None
 
 
 def get_state(librestate):
@@ -55,4 +54,3 @@ def get_state(librestate):
     if librestate == 'critical':
         return STATE_CRIT
     return STATE_UNKNOWN
-

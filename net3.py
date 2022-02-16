@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021092801'
+__version__ = '2022021601'
 
 import random
 import re
@@ -157,8 +157,7 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
             # timeout exception is setup
             if err == 'timed out':
                 return (False, 'Socket timed out.')
-            else:
-                return (False, 'Can\'t fetch data: {}'.format(e))
+            return (False, 'Can\'t fetch data: {}'.format(e))
         except socket.error as e:
             # Something else happened, handle error, exit, etc.
             return (False, 'Can\'t fetch data: {}'.format(e))
@@ -198,7 +197,7 @@ def get_netinfo():
         # Update stats using the netifaces lib
         try:
             default_gw = netifaces.gateways()['default'][netifaces.AF_INET]
-        except (KeyError, AttributeError) as e:
+        except (KeyError, AttributeError):
             return []
 
         stats = {}

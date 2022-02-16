@@ -12,10 +12,11 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021111002'
+__version__ = '2022021601'
 
 import base2
-from globals2 import STATE_OK, STATE_UNKNOWN, STATE_WARN, STATE_CRIT
+import human2
+from globals2 import STATE_OK, STATE_WARN, STATE_CRIT
 
 
 # The "Status" property is common to many Redfish schema, and contains:
@@ -63,9 +64,9 @@ def get_state(data):
     return STATE_OK
 
 
-def get_sensor_state(data, key='Reading', warn_late=False):
+def get_sensor_state(data, key='Reading'):
     value = data.get(key, '')
-    if not value or not (isinstance(value, int) or isinstance(value, float)):
+    if not value or not isinstance(value, (int, float)):
         return STATE_OK
     if data.get('Thresholds_UpperCritical', '') and value >= data['Thresholds_UpperCritical']:
         return STATE_CRIT
@@ -80,7 +81,7 @@ def get_sensor_state(data, key='Reading', warn_late=False):
 
 def get_perfdata(data, key='Reading'):
     value = data.get(key, '')
-    if not value or not (isinstance(value, int) or isinstance(value, float)):
+    if not value or not isinstance(value, (int, float)):
         return ''
     name = data.get('Name')
     physical_context = data.get('PhysicalContext')
@@ -193,7 +194,7 @@ def get_chassis_power_powersupplies(redfish):
     data = {}
     data['FirmwareVersion'] = redfish.get('FirmwareVersion', '')
     data['LastPowerOutputWatts'] = redfish.get('LastPowerOutputWatts', '')
-    if data['LastPowerOutputWatts'] == None:
+    if data['LastPowerOutputWatts'] is None:
         data['LastPowerOutputWatts'] = redfish.get('PowerOutputWatts', '')  # DELL uses this instead
     data['LineInputVoltage'] = redfish.get('LineInputVoltage', '')
     data['LineInputVoltageType'] = redfish.get('LineInputVoltageType', '')
@@ -282,7 +283,7 @@ def get_systems_storage_drives(redfish):
     data = {}
     data['BlockSizeBytes'] = redfish.get('BlockSizeBytes', '')
     data['CapableSpeedGbs'] = redfish.get('CapableSpeedGbs', '')
-    data['CapacityBytes'] = base2.bytes2human(redfish.get('CapacityBytes', ''))
+    data['CapacityBytes'] = human2.bytes2human(redfish.get('CapacityBytes', ''))
     data['Description'] = redfish.get('Description', '')
     data['EncryptionAbility'] = redfish.get('EncryptionAbility', '')
     data['EncryptionStatus'] = redfish.get('EncryptionStatus', '')

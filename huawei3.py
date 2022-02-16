@@ -8,16 +8,14 @@
 
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
-"""This library collects some LibreNMS related functions that are
-needed by LibreNMS check plugins.
+"""This library collects some Huawei related functions that are
+needed by Huawei check plugins.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021501'
+__version__ = '2022021601'
 
 import time
-
-from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 from . import base3
 from . import cache3

@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021022501'
+__version__ = '2022021601'
 
 import base64
 import time
@@ -66,7 +66,7 @@ def get_service(url, username, password, servicename, attrs='state'):
     >>>         args3.USERNAME,
     >>>         args3.PASSWORD,
     >>>         servicename='hostname!special-service',
-    >>>         attrs='state,acknowledgement'
+    >>>         attrs='state,acknowledgement',
     >>>         ))
     >>> print(result['result'][0]['attrs'])
     """
@@ -80,7 +80,7 @@ def get_service(url, username, password, servicename, attrs='state'):
                     data=data, method_override='GET', insecure=True)
 
 
-def set_ack(url, username, password, objectname, type='service',
+def set_ack(url, username, password, objectname, _type='service',
             author='Linuxfabrik lib.icinga'):
     """Allows you to acknowledge the current problem for hosts or
     services. By acknowledging the current problem, future notifications
@@ -95,8 +95,8 @@ def set_ack(url, username, password, objectname, type='service',
 
     url = url + '/v1/actions/acknowledge-problem'
     data = {
-        'type': type.capitalize(),
-        'filter': 'match("{}", {}.__name)'.format(objectname, type.lower()),
+        'type': _type.capitalize(),
+        'filter': 'match("{}", {}.__name)'.format(objectname, _type.lower()),
         'author': author,
         'comment': 'automatically acknowledged',
         'notify': False,
@@ -105,7 +105,7 @@ def set_ack(url, username, password, objectname, type='service',
                     data=data, insecure=True)
 
 
-def set_downtime(url, username, password, objectname, type='service',
+def set_downtime(url, username, password, objectname, _type='service',
                  starttime=int(time.time()),
                  endtime=int(time.time())+60*60,
                  author='Linuxfabrik lib.icinga'):
@@ -122,15 +122,15 @@ def set_downtime(url, username, password, objectname, type='service',
     >>>              args3.ICINGA_USERNAME,
     >>>              args3.ICINGA_PASSWORD,
     >>>              objectname='hostname!special-service',
-    >>>              author='feed plugin'
+    >>>              author='feed plugin',
     >>>              ))
     'hostname!special-service!3ad20784-52f9-4acc-b2df-90788667d587'
     """
 
     url = url + '/v1/actions/schedule-downtime'
     data = {
-        'type': type.capitalize(),
-        'filter': 'match("{}", {}.__name)'.format(objectname, type.lower()),
+        'type': _type.capitalize(),
+        'filter': 'match("{}", {}.__name)'.format(objectname, _type.lower()),
         'author': author,
         'comment': 'automatic downtime',
         'start_time': starttime,
@@ -143,7 +143,7 @@ def set_downtime(url, username, password, objectname, type='service',
     return (False, result)
 
 
-def remove_ack(url, username, password, objectname, type='service'):
+def remove_ack(url, username, password, objectname, _type='service'):
     """Removes the acknowledgements for services or hosts. Once the
     acknowledgement has been removed the next notification will be sent
     again. Always returns ok.
@@ -153,14 +153,14 @@ def remove_ack(url, username, password, objectname, type='service'):
     >>>     url,
     >>>     args3.ICINGA_USERNAME,
     >>>     args3.ICINGA_PASSWORD,
-    >>>     objectname='hostname!special-service'
+    >>>     objectname='hostname!special-service',
     >>>     )
     """
 
     url = url + '/v1/actions/remove-acknowledgement'
     data = {
-        'type': type.capitalize(),
-        'filter': 'match("{}", {}.__name)'.format(objectname, type.lower()),
+        'type': _type.capitalize(),
+        'filter': 'match("{}", {}.__name)'.format(objectname, _type.lower()),
     }
     return api_post(url=url, username=username, password=password,
                     data=data, insecure=True)

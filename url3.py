@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021501'
+__version__ = '2022021601'
 
 import json
 import re
@@ -177,4 +177,3 @@ def strip_tags(html):
     """Tries to return a string with all HTML tags stripped from a given string.
     """
     return re.sub(r'<[^<]+?>', '', html)
-

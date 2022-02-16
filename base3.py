@@ -15,15 +15,13 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021505'
+__version__ = '2022021601'
 
 import collections
 import numbers
 import operator
 import os
 import re
-import shlex
-import subprocess
 import sys
 
 from traceback import format_exc # pylint: disable=C0413
@@ -112,9 +110,9 @@ def get_perfdata(label, value, uom, warn, crit, _min, _max):
     return msg
 
 
-def get_state(value, warn, crit, operator='ge'):
+def get_state(value, warn, crit, _operator='ge'):
     """Returns the STATE by comparing `value` to the given thresholds using
-    a comparison `operator`. `warn` and `crit` threshold may also be `None`.
+    a comparison `_operator`. `warn` and `crit` threshold may also be `None`.
 
     >>> get_state(15, 10, 20, 'ge')
     1 (STATE_WARN)
@@ -129,7 +127,7 @@ def get_state(value, warn, crit, operator='ge'):
         Numeric warning threshold
     crit : float
         Numeric critical threshold
-    operator : string
+    _operator : string
         `eq` = equal to
         `ge` = greater or equal
         `gt` = greater than
@@ -145,7 +143,7 @@ def get_state(value, warn, crit, operator='ge'):
     """
     # make sure to use float comparison
     value = float(value)
-    if operator == 'ge':
+    if _operator == 'ge':
         if crit is not None:
             if value >= float(crit):
                 return STATE_CRIT
@@ -154,7 +152,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_WARN
         return STATE_OK
 
-    if operator == 'gt':
+    if _operator == 'gt':
         if crit is not None:
             if value > float(crit):
                 return STATE_CRIT
@@ -163,7 +161,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_WARN
         return STATE_OK
 
-    if operator == 'le':
+    if _operator == 'le':
         if crit is not None:
             if value <= float(crit):
                 return STATE_CRIT
@@ -172,7 +170,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_WARN
         return STATE_OK
 
-    if operator == 'lt':
+    if _operator == 'lt':
         if crit is not None:
             if value < float(crit):
                 return STATE_CRIT
@@ -181,7 +179,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_WARN
         return STATE_OK
 
-    if operator == 'eq':
+    if _operator == 'eq':
         if crit is not None:
             if value == float(crit):
                 return STATE_CRIT
@@ -190,7 +188,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_WARN
         return STATE_OK
 
-    if operator == 'ne':
+    if _operator == 'ne':
         if crit is not None:
             if value != float(crit):
                 return STATE_CRIT
@@ -199,7 +197,7 @@ def get_state(value, warn, crit, operator='ge'):
                 return STATE_WARN
         return STATE_OK
 
-    if operator == 'range':
+    if _operator == 'range':
         if crit is not None:
             if not coe(match_range(value, crit)):
                 return STATE_CRIT

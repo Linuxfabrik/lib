@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021502'
+__version__ = '2022021601'
 
 import hashlib
 import os
@@ -166,24 +166,24 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
     return (True, True)
 
 
-def cut(conn, table='perfdata', max=5):
-    """Keep only the latest "max" records, using the sqlite built-in "rowid".
+def cut(conn, table='perfdata', _max=5):
+    """Keep only the latest "_max" records, using the sqlite built-in "rowid".
     """
     table = __filter_str(table)
 
     c = conn.cursor()
     sql = '''DELETE FROM {table} WHERE rowid IN (
-                SELECT rowid FROM {table} ORDER BY rowid DESC LIMIT -1 OFFSET :max
+                SELECT rowid FROM {table} ORDER BY rowid DESC LIMIT -1 OFFSET :_max
             );'''.format(table=table)
     try:
-        c.execute(sql, (max, ))
+        c.execute(sql, (_max, ))
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}'.format(sql, e))
 
     return (True, True)
 
 
-def delete(conn, sql, data={}, fetchone=False):
+def delete(conn, sql, data={}):
     """The DELETE command removes records from a table. If the WHERE
     clause is not present, all records in the table are deleted. If a
     WHERE clause is supplied, then only those rows for which the WHERE
@@ -195,8 +195,7 @@ def delete(conn, sql, data={}, fetchone=False):
     try:
         if data:
             return (True, c.execute(sql, data).rowcount)
-        else:
-            return (True, c.execute(sql).rowcount)
+        return (True, c.execute(sql).rowcount)
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 

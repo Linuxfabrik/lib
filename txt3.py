@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021502'
+__version__ = '2022021601'
 
 import codecs
 try:
@@ -20,6 +20,7 @@ try:
     HAS_SURROGATEESCAPE = True
 except LookupError:
     HAS_SURROGATEESCAPE = False
+import operator
 
 string_types = str
 integer_types = int
@@ -71,21 +72,21 @@ def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
     return s[pos1:pos2+len(to_txt)]
 
 
-def filter_mltext(input, ignore):
+def filter_mltext(_input, ignore):
     filtered_input = ''
-    for line in input.splitlines():
+    for line in _input.splitlines():
         if not any(i_line in line for i_line in ignore):
             filtered_input += line + '\n'
 
     return filtered_input
 
 
-def mltext2array(input, skip_header=False, sort_key=-1):
-    input = input.strip(' \t\n\r').split('\n')
+def mltext2array(_input, skip_header=False, sort_key=-1):
+    _input = _input.strip(' \t\n\r').split('\n')
     lines = []
     if skip_header:
-        del input[0]
-    for row in input:
+        del _input[0]
+    for row in _input:
         lines.append(row.split())
     if sort_key != -1:
         lines = sorted(lines, key=operator.itemgetter(sort_key))

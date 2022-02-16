@@ -25,7 +25,7 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021501'
+__version__ = '2022021601'
 
 from . import time3
 from . import db_sqlite3
@@ -68,7 +68,6 @@ def get(key, as_dict=False, path='', filename='linuxfabrik-plugin-cache.db'):
     if result['timestamp'] != 0 and result['timestamp'] <= time3.now():
         # key was found, but timstamp was set and has expired:
         # delete all expired keys and return false
-        data = {'key' : result['key']}
         success, result = db_sqlite3.delete(
             conn,
             sql='DELETE FROM cache WHERE timestamp <= {};'.format(time3.now())

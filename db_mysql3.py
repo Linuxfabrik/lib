@@ -15,9 +15,9 @@ https://dev.mysql.com/doc/connector-python/en/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021090701'
+__version__ = '2022021601'
 
-from .globals3 import *
+from .globals3 import STATE_UNKNOWN
 
 try:
     import mysql.connector
