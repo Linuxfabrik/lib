@@ -9,10 +9,13 @@
 # https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
 
 """A collection of text functions.
+
+The functions "to_text()" and "to_bytes()" are copied from
+/usr/lib/python3.10/site-packages/ansible/module_utils/_text.py (BSD license).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021601'
+__version__ = '2022021701'
 
 import codecs
 try:
