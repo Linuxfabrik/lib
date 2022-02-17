@@ -12,14 +12,13 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021601'
+__version__ = '2022021701'
 
 try:
     import winrm
-except ImportError as e:
-    winrm_found = False
-else:
-    winrm_found = True
+    HAVE_WINRM = True
+except ImportError:
+    HAVE_WINRM = False
 
 from . import txt3
 

@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050301'
+__version__ = '2022021701'
 
 import sys
 
@@ -37,5 +37,5 @@ def get_partitions(ignore=[]):
             lambda part: not any(
                 ignore_item in part.mountpoint for ignore_item in ignore),
             psutil.disk_partitions(all=False)
-            )
         )
+    )

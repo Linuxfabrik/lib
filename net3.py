@@ -13,16 +13,16 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021602'
+__version__ = '2022021701'
 
 import random
 import re
 import socket
 try:
     import netifaces
-    lib_netifaces = True
-except ImportError as e:
-    lib_netifaces = False
+    HAVE_NETIFACES = True
+except ImportError:
+    HAVE_NETIFACES = False
 
 from . import txt3 # pylint: disable=C0413
 from . import url3 # pylint: disable=C0413
@@ -195,7 +195,7 @@ def get_ip_public():
 
 
 def get_netinfo():
-    if lib_netifaces:
+    if HAVE_NETIFACES:
         # Update stats using the netifaces lib
         try:
             default_gw = netifaces.gateways()['default'][netifaces.AF_INET]
@@ -208,7 +208,7 @@ def get_netinfo():
             stats['mask'] = netifaces.ifaddresses(default_gw[1])[netifaces.AF_INET][0]['netmask']
             stats['mask_cidr'] = ip_to_cidr(stats['mask'])
             stats['gateway'] = netifaces.gateways()['default'][netifaces.AF_INET][0]
-        except (KeyError, AttributeError) as e:
+        except (KeyError, AttributeError):
             return []
 
         stats['public_address'] = None
