@@ -13,17 +13,20 @@
 Time zone handling is not implemented.
 """
 
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2022021601'
+
+import sys
+
+from .globals3 import STATE_UNKNOWN
 try:
     from bs4 import BeautifulSoup
 except ImportError as e:
     print('Python module "BeautifulSoup4" is not installed.')
-    exit(3)
+    sys.exit(STATE_UNKNOWN)
 
-from . import base3
+from . import time3
 from . import url3
-
-__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021050601'
 
 
 def parse_atom(soup):
@@ -31,7 +34,7 @@ def parse_atom(soup):
     result['title'] = soup.title.string
     result['updated'] = soup.updated.string
     # cut the timezone part
-    result['updated_parsed'] = base3.timestr2datetime(result['updated'][0:19], pattern='%Y-%m-%dT%H:%M:%S')
+    result['updated_parsed'] = time3.timestr2datetime(result['updated'][0:19], pattern='%Y-%m-%dT%H:%M:%S')
 
     result['entries'] = []
     for entry in soup.find_all('entry'):
@@ -40,7 +43,7 @@ def parse_atom(soup):
         tmp['id'] = entry.id.string
         tmp['updated'] = entry.updated.string
         # cut the timezone part
-        tmp['updated_parsed'] = base3.timestr2datetime(tmp['updated'][0:19], pattern='%Y-%m-%dT%H:%M:%S')
+        tmp['updated_parsed'] = time3.timestr2datetime(tmp['updated'][0:19], pattern='%Y-%m-%dT%H:%M:%S')
         try:
             soup = BeautifulSoup(entry.summary.string, 'lxml')
             tmp['summary'] = soup.get_text()
@@ -59,7 +62,7 @@ def parse_rss(soup):
     result['title'] = soup.rss.channel.title.string
     result['updated'] = soup.rss.channel.pubDate.string
     # cut the timezone part
-    result['updated_parsed'] = base3.timestr2datetime(result['updated'][0:25], pattern='%a, %d %b %Y %H:%M:%S')
+    result['updated_parsed'] = time3.timestr2datetime(result['updated'][0:25], pattern='%a, %d %b %Y %H:%M:%S')
 
     result['entries'] = []
     for entry in soup.find_all('item'):
@@ -68,7 +71,7 @@ def parse_rss(soup):
         tmp['id'] = entry.guid.string
         tmp['updated'] = entry.pubDate.string
         # cut the timezone part
-        tmp['updated_parsed'] = base3.timestr2datetime(tmp['updated'][0:25], pattern='%a, %d %b %Y %H:%M:%S')
+        tmp['updated_parsed'] = time3.timestr2datetime(tmp['updated'][0:25], pattern='%a, %d %b %Y %H:%M:%S')
         try:
             soup = BeautifulSoup(entry.description.string, 'lxml')
             tmp['summary'] = soup.get_text()
@@ -83,7 +86,7 @@ def parse(feed_url, insecure=False, no_proxy=False, timeout=5, encoding='urlenco
     """
 
     success, xml = url3.fetch(feed_url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
-        encoding='urlencode')
+        encoding=encoding)
     if not success:
         return (False, xml)
 

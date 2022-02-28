@@ -12,10 +12,11 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021072801'
+__version__ = '2022021602'
 
 import base64
 
+from . import txt3
 from . import url3
 
 
@@ -32,19 +33,27 @@ def get_token(args):
     url = args.URL + '/api/sessionMngr/?v=latest'
     header = {}
     # Basic authentication
-    auth = args.USERNAME + ':' + args.PASSWORD
-    encoded_auth = base64.b64encode(auth.encode()).decode()
+    auth = '{}:{}'.format(args.USERNAME, args.PASSWORD)
+    encoded_auth = txt3.to_text(base64.b64encode(txt3.to_bytes(auth)))
     header['Authorization'] = 'Basic {}'.format(encoded_auth)
     header['Accept'] = 'application/json'
     header['Content-Length'] = 0
     # make this a POST request by filling data with anything
     data = {'make-this': 'a-post-request'}
-    success, result, response_header = url3.fetch_json_ext(url, header=header, data=data,
-        timeout=args.TIMEOUT, insecure=True)
+    success, result = url3.fetch_json(
+        url,
+        header=header,
+        data=data,
+        timeout=args.TIMEOUT,
+        insecure=True,
+        extended=True,
+    )
     if not success:
-        return (success, result, False)
+        return (success, result)
     if not result:
-        return (False, 'There was no result from {}.'.format(url), False)
-    if not 'X-RestSvcSessionId' in response_header:
-        return (False, 'Something went wrong, maybe user is unauthorized.', False)
-    return (True, result, response_header['X-RestSvcSessionId'])
+        return (False, 'There was no result from {}.'.format(url))
+    # In Python 3, getheader() should be get()
+    result['X-RestSvcSessionId'] = result.get('response_header').get('X-RestSvcSessionId')
+    if not result['X-RestSvcSessionId']:
+        return (False, 'Something went wrong, maybe user is unauthorized.')
+    return (True, result)

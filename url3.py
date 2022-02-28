@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021083001'
+__version__ = '2022021701'
 
 import json
 import re
@@ -21,6 +21,7 @@ import urllib
 import urllib.parse
 import urllib.request
 
+from . import txt3
 
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
           header={}, data={}, encoding='urlencode',
@@ -32,13 +33,17 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     and the HTTP status code.
 
     Basic authentication:
-    >>> auth = args.USERNAME + ':' + args.PASSWORD
-    >>> encoded_auth = base64.b64encode(auth.encode()).decode()
+    >>> auth = '{}:{}'.format(args.USERNAME, args.PASSWORD)
+    >>> encoded_auth = lib.txt3.to_text(base64.b64encode(lib.txt3.to_bytes(auth)))
     >>> result = lib.base3.coe(lib.url3.fetch(url, timeout=args.TIMEOUT,
             header={'Authorization': 'Basic {}'.format(encoded_auth)}))
 
     POST: the HTTP request will be a POST instead of a GET when the data parameter is provided
     >>> result = fetch(URL, header=header, data={...})
+
+    Cookies: To fetch Cookies, parse the response header. To get the response header, use extended=True
+    >>> result = fetch(URL, header=header, data={...}, extended=True)
+    >>> result['response_header'].getheader('Set-Cookie')
     """
     try:
         if digest_auth_user is not None and digest_auth_password is not None:
@@ -54,7 +59,7 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                 data = urllib.parse.urlencode(data)
             if encoding == 'serialized-json':
                 data = json.dumps(data)
-            data = data.encode('utf-8')
+            data = txt3.to_bytes(data)
             # the HTTP request will be a POST instead of a GET when the data parameter is provided
             request = urllib.request.Request(url, data=data)
         else:
@@ -102,11 +107,15 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                        'error on webserver'.format(url))
     else:
         try:
+            charset = response.headers.get_content_charset()
+            if charset is None:
+                # if the server doesn't send charset info
+                charset = 'UTF-8'
             if not extended:
-                result = response.read()
+                result = txt3.to_text(response.read(), encoding=charset)
             else:
                 result = {}
-                result['response'] = response.read()
+                result['response'] = txt3.to_text(response.read(), encoding=charset)
                 result['status_code'] = response.getcode()
                 result['response_header'] = response.info()
         except:
@@ -123,40 +132,29 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
 
     >>> fetch_json('https://1.2.3.4/api/v2/?resource=cpu')
     """
-    success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
-                            header=header, data=data, encoding=encoding,
-                            digest_auth_user=digest_auth_user, digest_auth_password=digest_auth_password)
+    success, jsonst = fetch(
+        url,
+        data=data,
+        digest_auth_password=digest_auth_password,
+        digest_auth_user=digest_auth_user,
+        encoding=encoding,
+        extended=extended,
+        header=header,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
     if not success:
         return (False, jsonst)
     try:
-        result = json.loads(jsonst)
+        if not extended:
+            result = json.loads(jsonst)
+        else:
+            result = jsonst
+            result['response_json'] = json.loads(jsonst['response'])
     except:
         return (False, 'ValueError: No JSON object could be decoded')
     return (True, result)
-
-
-def fetch_json_ext(url, insecure=False, no_proxy=False, timeout=8,
-               header={}, data={}, encoding='urlencode',
-               digest_auth_user=None, digest_auth_password=None):
-    """Fetch JSON from an URL, extended version of fetch_json(). 
-    Returns the response body plus response header.
-
-    >>> success, result, response_header = url2.fetch_json_ext(
-        args.URL, header=header, data=data, timeout=timeout, insecure=True)
-    >>> print(response_header['X-RestSvcSessionId'])
-    NGY5NzI2MDgtMjU3My00MmEzLThiNDEtOWYxZmJkNzI2ZDZl
-    """
-    success, jsonst, response_header = fetch_ext(
-        url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
-        header=header, data=data, encoding=encoding,
-        digest_auth_user=digest_auth_user, digest_auth_password=digest_auth_password)
-    if not success:
-        return (False, jsonst, False)
-    try:
-        result = json.loads(jsonst)
-    except:
-        return (False, 'ValueError: No JSON object could be decoded', False)
-    return (True, result, response_header)
 
 
 def get_latest_version_from_github(user, repo, key='tag_name'):

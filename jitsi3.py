@@ -12,11 +12,10 @@
 needed by more than one Jitsi plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021083001'
+__version__ = '2022021602'
 
 import base64 # pylint: disable=C0413
 
-from . import base3
 from . import url3
 
 
@@ -24,18 +23,27 @@ def get_data(args, _type='json'):
     """Calls args.URL, optionally using args.USERNAME and args.PASSWORD,
     taking args.TIMEOUT into account, returning JSON (`type='json'`) or raw data (else).
     """
-    if args.USERNAME is None:
-        if _type == 'json':
-            success, result = url3.fetch_json(args.URL, timeout=args.TIMEOUT, insecure=True)
-        else:
-            success, result = url3.fetch(args.URL, timeout=args.TIMEOUT, insecure=True, extended=True)
+    header = {}
+    if not args.USERNAME is None:
+        header['Authorization'] = 'Basic {}'.format(
+            base64.b64encode(args.USERNAME + ':' + args.PASSWORD)
+        )
+    if _type == 'json':
+        success, result = url3.fetch_json(
+            args.URL,
+            extended=True,
+            header=header,
+            insecure=True,
+            timeout=args.TIMEOUT,
+        )
     else:
-        header = {}
-        header['Authorization'] = 'Basic {}'.format(base64.b64encode(args.USERNAME + ':' + args.PASSWORD))
-        if _type == 'json':
-            success, result = url3.fetch_json(args.URL, header=header, timeout=args.TIMEOUT, insecure=True)
-        else:
-            success, result = url3.fetch(args.URL, header=header, timeout=args.TIMEOUT, insecure=True, extended=True)
+        success, result = url3.fetch(
+            args.URL,
+            extended=True,
+            header=header,
+            insecure=True,
+            timeout=args.TIMEOUT,
+        )
 
     if not success:
         return (success, result, False)

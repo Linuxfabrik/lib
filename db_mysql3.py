@@ -15,28 +15,26 @@ https://dev.mysql.com/doc/connector-python/en/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021090701'
+__version__ = '2022021701'
 
-from .globals3 import *
+from .globals3 import STATE_UNKNOWN
 
 try:
     import mysql.connector
-except ImportError as e:
-    mysql_connector_found = False
-else:
-    mysql_connector_found = True
+    HAVE_MYSQL_CONNECTOR = True
+except ImportError:
+    HAVE_MYSQL_CONNECTOR = False
 
 from . import base3
 
-if mysql_connector_found and base3.version(mysql.connector.__version__) < base3.version('2.0.0'):
+if HAVE_MYSQL_CONNECTOR and base3.version(mysql.connector.__version__) < base3.version('2.0.0'):
     try:
         import MySQLdb.cursors
+        HAVE_MYSQL_CURSORS = True
     except ImportError as e:
-        mysql_cursors_found = False
-    else:
-        mysql_cursors_found = True
+        HAVE_MYSQL_CURSORS = False
 else:
-    mysql_cursors_found = None
+    HAVE_MYSQL_CURSORS = None
 
 
 def close(conn):
@@ -74,9 +72,9 @@ def connect(mysql_connection):
     >>> conn = connect(mysql_connection)
     """
 
-    if mysql_connector_found is False:
+    if HAVE_MYSQL_CONNECTOR is False:
         base3.oao('Python module "mysql.connector" is not installed.', STATE_UNKNOWN)
-    if mysql_connector_found is False:
+    if HAVE_MYSQL_CONNECTOR is False:
         base3.oao('Python module "MySQLdb.cursors" is not installed.', STATE_UNKNOWN)
 
     try:
@@ -93,9 +91,9 @@ def select(conn, sql, data={}, fetchone=False):
     database.
     """
 
-    if mysql_connector_found is False:
+    if HAVE_MYSQL_CONNECTOR is False:
         base3.oao('Python module "mysql.connector" is not installed.', STATE_UNKNOWN)
-    if mysql_connector_found is False:
+    if HAVE_MYSQL_CONNECTOR is False:
         base3.oao('Python module "MySQLdb.cursors" is not installed.', STATE_UNKNOWN)
 
     if base3.version(mysql.connector.__version__) >= base3.version('2.0.0'):

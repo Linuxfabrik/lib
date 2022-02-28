@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021092901'
+__version__ = '2021110901'
 
 import os
 import re
@@ -108,7 +108,7 @@ def create_index(conn, column_list, table='perfdata', unique=False):
 
     table = base2.filter_str(table)
 
-    index_name = u'idx_{}'.format(base2.md5sum(table + column_list))
+    index_name = u'idx_{}'.format(base2.sha1sum(table + column_list))
     c = conn.cursor()
     if unique:
         sql = u'CREATE UNIQUE INDEX IF NOT EXISTS {} ON "{}" ({});'.format(
