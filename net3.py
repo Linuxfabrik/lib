@@ -13,18 +13,20 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021092801'
+__version__ = '2022021701'
 
 import random
 import re
 import socket
 try:
     import netifaces
-    lib_netifaces = True
-except ImportError as e:
-    lib_netifaces = False
+    HAVE_NETIFACES = True
+except ImportError:
+    HAVE_NETIFACES = False
 
+from . import txt3 # pylint: disable=C0413
 from . import url3 # pylint: disable=C0413
+
 
 # address family
 AF_INET = socket.AF_INET                             # 2
@@ -157,8 +159,7 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
             # timeout exception is setup
             if err == 'timed out':
                 return (False, 'Socket timed out.')
-            else:
-                return (False, 'Can\'t fetch data: {}'.format(e))
+            return (False, 'Can\'t fetch data: {}'.format(e))
         except socket.error as e:
             # Something else happened, handle error, exit, etc.
             return (False, 'Can\'t fetch data: {}'.format(e))
@@ -187,18 +188,18 @@ def get_ip_public():
         if success and ip:
             ip = ip.strip()
             try:
-                return (True, ip.decode())
+                return (True, txt3.to_text(ip))
             except:
                 return (True, ip)
     return (False, ip)
 
 
 def get_netinfo():
-    if lib_netifaces:
+    if HAVE_NETIFACES:
         # Update stats using the netifaces lib
         try:
             default_gw = netifaces.gateways()['default'][netifaces.AF_INET]
-        except (KeyError, AttributeError) as e:
+        except (KeyError, AttributeError):
             return []
 
         stats = {}
@@ -207,7 +208,7 @@ def get_netinfo():
             stats['mask'] = netifaces.ifaddresses(default_gw[1])[netifaces.AF_INET][0]['netmask']
             stats['mask_cidr'] = ip_to_cidr(stats['mask'])
             stats['gateway'] = netifaces.gateways()['default'][netifaces.AF_INET][0]
-        except (KeyError, AttributeError) as e:
+        except (KeyError, AttributeError):
             return []
 
         stats['public_address'] = None

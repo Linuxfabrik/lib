@@ -12,14 +12,13 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021083001'
+__version__ = '2022011401'
 
 import json
 import re
 import ssl
 import urllib
 import urllib2
-
 
 
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
@@ -39,6 +38,10 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
 
     POST: the HTTP request will be a POST instead of a GET when the data parameter is provided
     >>> result = fetch(URL, header=header, data={...})
+
+    Cookies: To fetch Cookies, parse the response header. To get the response header, use extended=True
+    >>> result = fetch(URL, header=header, data={...}, extended=True)
+    >>> result['response_header'].getheader('Set-Cookie')
     """
     try:
         if digest_auth_user is not None and digest_auth_password is not None:
@@ -122,40 +125,29 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
 
     >>> fetch_json('https://1.2.3.4/api/v2/?resource=cpu')
     """
-    success, jsonst = fetch(url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
-                            header=header, data=data, encoding=encoding,
-                            digest_auth_user=digest_auth_user, digest_auth_password=digest_auth_password)
+    success, jsonst = fetch(
+        url,
+        data=data,
+        digest_auth_password=digest_auth_password,
+        digest_auth_user=digest_auth_user,
+        encoding=encoding,
+        extended=extended,
+        header=header,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
     if not success:
         return (False, jsonst)
     try:
-        result = json.loads(jsonst)
+        if not extended:
+            result = json.loads(jsonst)
+        else:
+            result = jsonst
+            result['response_json'] = json.loads(jsonst['response'])
     except:
         return (False, 'ValueError: No JSON object could be decoded')
     return (True, result)
-
-
-def fetch_json_ext(url, insecure=False, no_proxy=False, timeout=8,
-               header={}, data={}, encoding='urlencode',
-               digest_auth_user=None, digest_auth_password=None):
-    """Fetch JSON from an URL, extended version of fetch_json(). 
-    Returns the response body plus response header.
-
-    >>> success, result, response_header = url2.fetch_json_ext(
-        args.URL, header=header, data=data, timeout=timeout, insecure=True)
-    >>> print(response_header['X-RestSvcSessionId'])
-    NGY5NzI2MDgtMjU3My00MmEzLThiNDEtOWYxZmJkNzI2ZDZl
-    """
-    success, jsonst, response_header = fetch_ext(
-        url, insecure=insecure, no_proxy=no_proxy, timeout=timeout,
-        header=header, data=data, encoding=encoding,
-        digest_auth_user=digest_auth_user, digest_auth_password=digest_auth_password)
-    if not success:
-        return (False, jsonst, False)
-    try:
-        result = json.loads(jsonst)
-    except:
-        return (False, 'ValueError: No JSON object could be decoded', False)
-    return (True, result, response_header)
 
 
 def get_latest_version_from_github(user, repo, key='tag_name'):
@@ -178,3 +170,4 @@ def strip_tags(html):
     """Tries to return a string with all HTML tags stripped from a given string.
     """
     return re.sub(r'<[^<]+?>', '', html)
+

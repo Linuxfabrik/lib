@@ -13,12 +13,11 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021092901'
+__version__ = '2022021601'
 
 import csv
 import os
 import re
-import sys
 import tempfile
 
 
@@ -93,13 +92,13 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
     try:
         with open(filename, newline=newline) as csvfile:
             if not as_dict:
-                reader = csv.reader(csvfile, delimiter=',', quotechar='"')
+                reader = csv.reader(csvfile, delimiter=delimiter, quotechar=quotechar)
             else:
-                reader = csv.DictReader(csvfile, delimiter=',', quotechar='"')
+                reader = csv.DictReader(csvfile, delimiter=delimiter, quotechar=quotechar)
             data = []
             for row in reader:
                 # check if the list contains empty strings only
-                if skip_empty_rows and all('' == s or s.isspace() for s in row):
+                if skip_empty_rows and all(s == '' or s.isspace() for s in row):
                     continue
                 data.append(row)
     except csv.Error as e:

@@ -12,9 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021021501'
-
-import os.path
+__version__ = '2022021601'
 
 missing_smb_lib = False
 try:

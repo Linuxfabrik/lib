@@ -15,7 +15,7 @@ simply return `False`.
 
 >>> cache3.get('session-key')
 False
->>> cache3.set('session-key', '123abc', expire=base.now() + 5)
+>>> cache3.set('session-key', '123abc', expire=time3.now() + 5)
 True
 >>> cache3.get('session-key')
 u'123abc'
@@ -25,9 +25,9 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2021100801'
+__version__ = '2022021601'
 
-from . import base3
+from . import time3
 from . import db_sqlite3
 
 
@@ -65,13 +65,12 @@ def get(key, as_dict=False, path='', filename='linuxfabrik-plugin-cache.db'):
         db_sqlite3.close(conn)
         return False
 
-    if result['timestamp'] != 0 and result['timestamp'] <= base3.now():
+    if result['timestamp'] != 0 and result['timestamp'] <= time3.now():
         # key was found, but timstamp was set and has expired:
         # delete all expired keys and return false
-        data = {'key' : result['key']}
         success, result = db_sqlite3.delete(
             conn,
-            sql='DELETE FROM cache WHERE timestamp <= {};'.format(base3.now())
+            sql='DELETE FROM cache WHERE timestamp <= {};'.format(time3.now())
         )
         success, result = db_sqlite3.commit(conn)
         db_sqlite3.close(conn)
