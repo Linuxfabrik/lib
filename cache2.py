@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://git.linuxfabrik.ch/linuxfabrik-icinga-plugins/checks-linux/-/blob/master/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
 """Simple Cache in the form of a Key-Value Store (KVS) like Redis, based on
 SQLite, optionally supporting expiration of keys. No detailed error handling
