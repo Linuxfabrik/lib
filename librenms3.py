@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021602'
+__version__ = '2022030701'
 
 from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
@@ -45,7 +45,7 @@ def get_prop(obj, prop, mytype='str'):
     if mytype == 'str':
         if prop in obj:
             if obj[prop] is not None:
-                return txt.to_text(obj[prop])
+                return txt3.to_text(obj[prop])
         return ''
     if prop in obj:
         if obj[prop] is not None:
