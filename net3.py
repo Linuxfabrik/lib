@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021701'
+__version__ = '2022031801'
 
 import random
 import re
@@ -151,7 +151,7 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
             chunk = s.recv(1024)
             if not chunk:
                 break
-            fragments.append(chunk)
+            fragments.append(txt3.to_text(chunk))
         except socket.timeout as e:
             # non-blocking behavior via a time out with socket.settimeout(n)
             err = e.args[0]
