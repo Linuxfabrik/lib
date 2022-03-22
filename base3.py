@@ -613,6 +613,11 @@ def version(v):
     # if we get something like "v0.10.7-2", remove everything except "." and "-",
     # and convert "-" to "."
     v = re.sub(r'[^0-9\.-]', '', v)
+    
+    # For something like "5.13.19-4-pve", remove everything after the last hyphen
+    if v.count('-') > 1:
+        v = v.rsplit('-', 1)[0]
+    
     v = v.replace('-', '.')
     return tuple(map(int, (v.split("."))))
 
