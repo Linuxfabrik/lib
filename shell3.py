@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021501'
+__version__ = '2022032201'
 
 
 import os
@@ -110,7 +110,7 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
 
         if stdin:
             # provide stdin as input for the cmd
-            stdout, stderr = p.communicate(input=stdin)
+            stdout, stderr = p.communicate(input=txt3.to_bytes(stdin))
         else:
             stdout, stderr = p.communicate()
         retc = p.returncode
