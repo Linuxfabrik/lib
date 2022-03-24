@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021701'
+__version__ = '2022032401'
 
 import collections
 import numbers
@@ -603,18 +603,22 @@ def version(v):
     Parameters
     ----------
     v : str
-        A version string.
+        A version string, for example "v5.13.19-4-pve".
 
     Returns
     -------
     tuple
-        A tuple of version numbers.
+        A tuple of version numbers, for example (5, 13, 19, 4).
     """
-    # if we get something like "v0.10.7-2", remove everything except "." and "-",
+    # if we get something like "v5.13.19-4-pve", remove everything except "." and "-",
     # and convert "-" to "."
     v = re.sub(r'[^0-9\.-]', '', v)
     v = v.replace('-', '.')
-    return tuple(map(int, (v.split("."))))
+    v = v.split('.')
+    # remove all empty strings from the list of strings
+    v = list(filter(None, v))
+    # create a return tuple, for example (5, 13, 19, 4)
+    return tuple(map(int, v))
 
 
 def version2float(v):
