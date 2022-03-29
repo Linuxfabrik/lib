@@ -85,7 +85,7 @@ def cu():
     sys.exit(STATE_UNKNOWN)
 
 
-def get_perfdata(label, value, uom, warn, crit, _min, _max):
+def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=None):
     """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
     """
     msg = "'{}'={}".format(label, value)
