@@ -12,10 +12,9 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021601'
+__version__ = '2022033001'
 
 import base2
-import human2
 from globals2 import STATE_OK, STATE_WARN, STATE_CRIT
 
 
@@ -283,7 +282,7 @@ def get_systems_storage_drives(redfish):
     data = {}
     data['BlockSizeBytes'] = redfish.get('BlockSizeBytes', '')
     data['CapableSpeedGbs'] = redfish.get('CapableSpeedGbs', '')
-    data['CapacityBytes'] = human2.bytes2human(redfish.get('CapacityBytes', ''))
+    data['CapacityBytes'] = base2.bytes2human(redfish.get('CapacityBytes', ''))
     data['Description'] = redfish.get('Description', '')
     data['EncryptionAbility'] = redfish.get('EncryptionAbility', '')
     data['EncryptionStatus'] = redfish.get('EncryptionStatus', '')
