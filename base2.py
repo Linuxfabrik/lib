@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021701'
+__version__ = '2022040501'
 
 import collections
 import datetime
@@ -434,7 +434,7 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
                     data[idx][col] = to_text(row[col]).strip()
                 except AttributeError:
                     data[idx][col] = to_text(row[col])
-                except IndexError, KeyError:
+                except (IndexError, KeyError):
                     return u'Unknown column "{}"'.format(col)
             else:
                 data[idx][col] = to_text(row[col])
