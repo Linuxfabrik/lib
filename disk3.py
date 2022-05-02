@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021601'
+__version__ = '2022042301'
 
 import csv
 import os
@@ -21,10 +21,27 @@ import re
 import tempfile
 
 
+
+def file_exists(path, allow_empty=False):
+    # not finding the file, exit early
+    if not os.path.exists(path):
+        return False
+
+    # if just the path needs to exists (ie, it can be empty) we are done
+    if allow_empty:
+        return True
+
+    # file exists but is empty and we dont allow_empty
+    if os.path.getsize(path) == 0:
+        return False
+
+    # file exists with some content
+    return True
+
+
 def get_cwd():
     """Gets the current working directory.
     """
-
     return os.getcwd()
 
 
