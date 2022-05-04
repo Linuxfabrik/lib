@@ -15,7 +15,7 @@ https://dev.mysql.com/doc/connector-python/en/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022050201'
+__version__ = '2022050301'
 
 from .globals3 import STATE_UNKNOWN
 
@@ -50,7 +50,7 @@ def check_select_privileges(conn):
     )
     if not success or len(result) < 1:
         return (False, 'You probably did not get enough privileges for running SELECT statements.')
-    return (True, True)
+    return (True, result)
 
 
 def close(conn):
