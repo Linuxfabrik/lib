@@ -15,7 +15,7 @@ https://dev.mysql.com/doc/connector-python/en/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022050301'
+__version__ = '2022050402'
 
 from .globals3 import STATE_UNKNOWN
 
@@ -45,7 +45,7 @@ if HAVE_MYSQL_CONNECTOR is False:
 def check_select_privileges(conn):
     success, result = select(
         conn,
-        'select version();',
+        'select version() as version;',
         fetchone=True,
     )
     if not success or len(result) < 1:
@@ -127,13 +127,21 @@ def select(conn, sql, data={}, fetchone=False):
         return (False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 
 
-def vars2dict(vars):
-    """Converts
+def lod2dict(vars):
+    """Converts a list of simple {'key': 'value'} dictionaries to a
+    {'key1': 'value1', 'key2': 'value2'} dictionary.
+
+    Special keys like "Variable_name" which you get from a `SHOW VARIABLES;` sql statement
+    are translated in a special way like so:
     [{'Variable_name': 'a', 'Value': 'b'}, {'Variable_name': 'c', 'Value': 'd'}]
-    from `show variables;` to
+    results in
     {'a': 'b', 'c': 'd'}
     """
     myvar = {}
     for row in vars:
-        myvar[row['Variable_name']] = row['Value']
+        try:
+            myvar[row['Variable_name']] = row['Value']
+        except:
+            for key, value in row.items():
+                myvar[key] = value
     return myvar
