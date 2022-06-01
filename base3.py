@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022032901'
+__version__ = '2022060101'
 
 import collections
 import numbers
@@ -28,6 +28,8 @@ from .globals3 import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 WINDOWS = os.name == "nt"
 LINUX = sys.platform.startswith("linux")
+X86_64 = sys.maxsize > 2**32
+
 
 def coe(result, state=STATE_UNKNOWN):
     """Continue or Exit (CoE)
