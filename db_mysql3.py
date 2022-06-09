@@ -15,7 +15,7 @@ https://dev.mysql.com/doc/connector-python/en/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022050402'
+__version__ = '2022060901'
 
 from .globals3 import STATE_UNKNOWN
 
@@ -104,6 +104,47 @@ def connect(mysql_connection):
     return (True, conn)
 
 
+def get_engines(conn):
+    """Returns a dict like `{'have_myisam': 'YES', 'have_innodb': 'YES'}`
+
+     `have_*` status variables for engines are deprecated and are removed since MySQL 5.6,
+    so use SHOW ENGINES and set corresponding old style variables.
+    Also works around MySQL bug #59393 wrt. skip-innodb
+    """
+    engines = {}
+    sql = 'show engines'
+    success, result = select(conn, sql)
+    for line in result:
+        engine = line['Engine'].lower()
+        if line['Engine'] == 'federated' or line['Engine'] == 'blackhole':
+            engine += '_engine'
+        elif line['Engine'] == 'berkeleydb':
+            engine = 'bdb'
+        engines['have_{}'.format(engine)] = 'YES' if line['Support'] == 'DEFAULT' else line['Support']
+
+    return engines
+
+
+def lod2dict(vars):
+    """Converts a list of simple {'key': 'value'} dictionaries to a
+    {'key1': 'value1', 'key2': 'value2'} dictionary.
+
+    Special keys like "Variable_name" which you get from a `SHOW VARIABLES;` sql statement
+    are translated in a special way like so:
+    [{'Variable_name': 'a', 'Value': 'b'}, {'Variable_name': 'c', 'Value': 'd'}]
+    results in
+    {'a': 'b', 'c': 'd'}
+    """
+    myvar = {}
+    for row in vars:
+        try:
+            myvar[row['Variable_name']] = row['Value']
+        except:
+            for key, value in row.items():
+                myvar[key] = value
+    return myvar
+
+
 def select(conn, sql, data={}, fetchone=False):
     """The SELECT statement is used to query the database. The result of a
     SELECT is zero or more rows of data where each row has a fixed number
@@ -125,23 +166,3 @@ def select(conn, sql, data={}, fetchone=False):
         return (True, cursor.fetchall())
     except Exception as e:
         return (False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
-
-
-def lod2dict(vars):
-    """Converts a list of simple {'key': 'value'} dictionaries to a
-    {'key1': 'value1', 'key2': 'value2'} dictionary.
-
-    Special keys like "Variable_name" which you get from a `SHOW VARIABLES;` sql statement
-    are translated in a special way like so:
-    [{'Variable_name': 'a', 'Value': 'b'}, {'Variable_name': 'c', 'Value': 'd'}]
-    results in
-    {'a': 'b', 'c': 'd'}
-    """
-    myvar = {}
-    for row in vars:
-        try:
-            myvar[row['Variable_name']] = row['Value']
-        except:
-            for key, value in row.items():
-                myvar[key] = value
-    return myvar
