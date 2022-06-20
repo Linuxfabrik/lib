@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021602'
+__version__ = '2022062001'
 
 import hashlib
 import os
@@ -82,7 +82,7 @@ def commit(conn):
 def connect(path='', filename=''):
     """Connect to a SQLite database file. If path is ommitted, the
     temporary directory is used. If filename is ommitted,
-    `linuxfabrik-plugins.db` is used.
+    `linuxfabrik-monitoring-plugins-sqlite.db` is used.
     """
     def get_filename(path='', filename=''):
         """Returns a path including filename to a sqlite database file.
@@ -92,19 +92,19 @@ def connect(path='', filename=''):
         path : str, optional
             Path to the db file. Default: the tmpdir, `/tmp` for example
         filename : str, optional
-            Filename of the db file. Default: linuxfabrik-plugins.db
+            Filename of the db file. Default: linuxfabrik-monitoring-plugins-sqlite.db
 
         Returns
         -------
         str
             The absolute path to the db file, for example
-            '/tmp/linuxfabrik-plugins.db'
+            '/tmp/linuxfabrik-monitoring-plugins-sqlite.db'
         """
 
         if not path:
             path = disk3.get_tmpdir()
         if not filename:
-            filename = 'linuxfabrik-plugins.db'
+            filename = 'linuxfabrik-monitoring-plugins-sqlite.db'
         return os.path.join(path, filename)
 
     db = get_filename(path, filename)
