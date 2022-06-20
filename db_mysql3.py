@@ -9,37 +9,19 @@
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
 """Library for accessing MySQL/MariaDB servers.
-
-For details have a look at
-https://dev.mysql.com/doc/connector-python/en/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022060901'
+__version__ = '2022062002'
+
+import sys
 
 from .globals3 import STATE_UNKNOWN
-
 try:
-    import mysql.connector
-    HAVE_MYSQL_CONNECTOR = True
-except ImportError:
-    HAVE_MYSQL_CONNECTOR = False
-
-from . import base3
-
-if HAVE_MYSQL_CONNECTOR and base3.version(mysql.connector.__version__) < base3.version('2.0.0'):
-    try:
-        import MySQLdb.cursors
-        HAVE_MYSQL_CURSORS = True
-    except ImportError as e:
-        HAVE_MYSQL_CURSORS = False
-else:
-    HAVE_MYSQL_CURSORS = None
-
-if HAVE_MYSQL_CONNECTOR is False:
-    base3.oao('Python module "mysql.connector" is not installed.', STATE_UNKNOWN)
-if HAVE_MYSQL_CONNECTOR is False:
-    base3.oao('Python module "MySQLdb.cursors" is not installed.', STATE_UNKNOWN)
+    import pymysql.cursors
+except ImportError as e:
+    print('Python module "pymysql" is not installed.')
+    sys.exit(STATE_UNKNOWN)
 
 
 def check_select_privileges(conn):
@@ -75,32 +57,31 @@ def commit(conn):
     return (True, None)
 
 
-def connect(mysql_connection):
+def connect(mysql_connection, **kwargs):
     """Connect to a MySQL/MariaDB. `mysql_connection` has to be a dict.
 
     >>> mysql_connection = {
+    ...     'host':               args3.HOSTNAME,
+    ...     'port':               args3.PORT,
+    ...     'db':                 args3.DATABASE,
     ...     'user':               args3.USERNAME,
     ...     'password':           args3.PASSWORD,
-    ...     'host':               args3.HOSTNAME,
-    ...     'database':           args3.DATABASE,
-    ...     'raise_on_warnings':  True,
+    ...     'cursorclass':        pymysql.cursors.DictCursor,
     ... }
     >>> conn = connect(mysql_connection)
     """
     try:
-        if mysql.connector.__version__ >= '2.1.1':
-            conn = mysql.connector.connect(**mysql_connection, use_pure = False)
-        else:
-            conn = mysql.connector.connect(**mysql_connection)
-    except mysql.connector.Error as e:
+        conn = pymysql.connect(
+            host=mysql_connection.get('host', 'localhost'),
+            port=mysql_connection.get('port', 3306),
+            db=mysql_connection.get('db', None),
+            user=mysql_connection.get('user', 'root'),
+            password=mysql_connection.get('password', ''),
+            cursorclass=mysql_connection.get('cursorclass', pymysql.cursors.DictCursor),
+            **kwargs,
+        )
+    except Exception as e:
         return (False, 'Connecting to DB failed, Error: {}'.format(e))
-    except ImportError as e:
-        # ImportError: MySQL Connector/Python C Extension not available
-        try:
-            conn = mysql.connector.connect(**mysql_connection, use_pure = True)
-        except mysql.connector.Error as e:
-            return (False, 'Connecting to DB failed, Error: {}'.format(e))
-
     return (True, conn)
 
 
@@ -125,7 +106,7 @@ def get_engines(conn):
     return engines
 
 
-def lod2dict(vars):
+def lod2dict(_vars):
     """Converts a list of simple {'key': 'value'} dictionaries to a
     {'key1': 'value1', 'key2': 'value2'} dictionary.
 
@@ -136,7 +117,7 @@ def lod2dict(vars):
     {'a': 'b', 'c': 'd'}
     """
     myvar = {}
-    for row in vars:
+    for row in _vars:
         try:
             myvar[row['Variable_name']] = row['Value']
         except:
@@ -151,18 +132,14 @@ def select(conn, sql, data={}, fetchone=False):
     of columns. A SELECT statement does not make any changes to the
     database.
     """
-    if base3.version(mysql.connector.__version__) >= base3.version('2.0.0'):
-        cursor = conn.cursor(dictionary=True)
-    else:
-        cursor = conn.cursor(MySQLdb.cursors.DictCursor)
-
-    try:
-        if data:
-            cursor.execute(sql, data)
-        else:
-            cursor.execute(sql)
-        if fetchone:
-            return (True, [cursor.fetchone()])
-        return (True, cursor.fetchall())
-    except Exception as e:
-        return (False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
+    with conn.cursor() as cursor:
+        try:
+            if data:
+                cursor.execute(sql, (data,))
+            else:
+                cursor.execute(sql)
+            if fetchone:
+                return (True, cursor.fetchone())
+            return (True, cursor.fetchall())
+        except Exception as e:
+            return (False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
