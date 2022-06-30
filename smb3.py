@@ -12,19 +12,24 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022040501'
+__version__ = '2022062001'
 
-missing_smb_lib = False
+import sys
+
+from .globals3 import STATE_UNKNOWN
 try:
     import smbclient
+except ImportError as e:
+    print('Python module "smbclient" is not installed.')
+    sys.exit(STATE_UNKNOWN)
+try:
     import smbprotocol.exceptions
 except ImportError as e:
-    missing_smb_lib = 'smbclient'
+    print('Python module "smbprotocol" is not installed.')
+    sys.exit(STATE_UNKNOWN)
 
 
 def open_file(path, username, password, timeout, encrypt=True):
-    if missing_smb_lib:
-        return (False, 'Python module "{}" is not installed.'.format(missing_smb_lib))
     try:
         return (True, smbclient.open_file(
             path,
@@ -47,8 +52,6 @@ def open_file(path, username, password, timeout, encrypt=True):
 
 
 def glob(path, username, password, timeout, pattern='*', encrypt=True):
-    if missing_smb_lib:
-        return (False, 'Python module "{}" is not installed.'.format(missing_smb_lib))
     try:
         file_entry = smbclient._os.SMBDirEntry.from_path(
             path,
