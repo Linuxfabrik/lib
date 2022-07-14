@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021502'
+__version__ = '2022071401'
 
 import math
 
@@ -167,11 +167,9 @@ def seconds2human(seconds, keep_short=True, full_name=False):
     '2weeks 2days 1hour 29minutes 35seconds'
     """
     seconds = float(seconds)
-    if seconds < 1:
-        return '{:.2f}s'.format(seconds)
 
     if full_name:
-        intervals = (
+        symbols = (
             ('years', 60*60*24*365),
             ('months', 60*60*24*30),
             ('weeks', 60*60*24*7),
@@ -179,9 +177,13 @@ def seconds2human(seconds, keep_short=True, full_name=False):
             ('hours', 60*60),
             ('minutes', 60),
             ('seconds', 1),
+            ('millisecs', 1e-3),
+            ('microsecs', 1e-6),
+            ('nanosecs', 1e-9),
+            ('picosecs', 1e-12),
         )
     else:
-        intervals = (
+        symbols = (
             ('Y', 60*60*24*365),
             ('M', 60*60*24*30),
             ('W', 60*60*24*7),
@@ -189,10 +191,14 @@ def seconds2human(seconds, keep_short=True, full_name=False):
             ('h', 60*60),
             ('m', 60),
             ('s', 1),
+            ('ms', 1e-3),
+            ('us', 1e-6),
+            ('ns', 1e-9),
+            ('ps', 1e-12),
         )
 
     result = []
-    for name, count in intervals:
+    for name, count in symbols:
         value = seconds // count
         if value:
             seconds -= value * count
