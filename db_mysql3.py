@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022062002'
+__version__ = '2022071401'
 
 import sys
 
@@ -78,6 +78,7 @@ def connect(mysql_connection, **kwargs):
             user=mysql_connection.get('user', 'root'),
             password=mysql_connection.get('password', ''),
             cursorclass=mysql_connection.get('cursorclass', pymysql.cursors.DictCursor),
+            connect_timeout=mysql_connection.get('timeout', 3),
             **kwargs,
         )
     except Exception as e:
