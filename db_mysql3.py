@@ -11,8 +11,11 @@
 """Library for accessing MySQL/MariaDB servers.
 """
 
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
+
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022071401'
+__version__ = '2022071801'
 
 import sys
 
