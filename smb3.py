@@ -12,22 +12,13 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022062001'
+__version__ = '2022071901'
 
 import sys
 
 from .globals3 import STATE_UNKNOWN
-try:
-    import smbclient
-except ImportError as e:
-    print('Python module "smbclient" is not installed.')
-    sys.exit(STATE_UNKNOWN)
-try:
-    import smbprotocol.exceptions
-except ImportError as e:
-    print('Python module "smbprotocol" is not installed.')
-    sys.exit(STATE_UNKNOWN)
-
+import smbclient
+import smbprotocol.exceptions
 
 def open_file(path, username, password, timeout, encrypt=True):
     try:
