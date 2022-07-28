@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022071401'
+__version__ = '2022072801'
 
 import math
 
@@ -83,39 +83,50 @@ def human2bytes(string, binary=True):
     """Converts a string such as '3.072GiB' to 3298534883 bytes. If "binary" is set to True
     (default due to Microsoft), it will use powers of 1024, otherwise powers of 1000 (decimal).
     Returns 0 on failure.
+
+    Works with:
+    * 3.072GiB (always multiplied by 1024)
+    * 3.072GB  (multiplied by 1024 if binary == True, else multiplied by 1000)
+    * 3.072G   (multiplied by 1024 if binary == True, else multiplied by 1000)
     """
     try:
         string = string.lower()
         if 'kib' in string:
             return int(float(string.replace('kib', '').strip()) * 1024)
-        if 'kb' in string:
-            if binary:
-                return int(float(string.replace('kb', '').strip()) * 1024)
-            return int(float(string.replace('kb', '').strip()) * 1000)
         if 'mib' in string:
             return int(float(string.replace('mib', '').strip()) * 1024**2)
-        if 'mb' in string:
-            if binary:
-                return int(float(string.replace('mb', '').strip()) * 1024**2)
-            return int(float(string.replace('mb', '').strip()) * 1000**2)
         if 'gib' in string:
             return int(float(string.replace('gib', '').strip()) * 1024**3)
-        if 'gb' in string:
-            if binary:
-                return int(float(string.replace('gb', '').strip()) * 1024**3)
-            return int(float(string.replace('gb', '').strip()) * 1000**3)
         if 'tib' in string:
             return int(float(string.replace('tib', '').strip()) * 1024**4)
-        if 'tb' in string:
-            if binary:
-                return int(float(string.replace('tb', '').strip()) * 1024**4)
-            return int(float(string.replace('tb', '').strip()) * 1000**4)
         if 'pib' in string:
             return int(float(string.replace('pib', '').strip()) * 1024**5)
-        if 'pb' in string:
+
+        if 'k' in string:  # matches "kb" or "k"
+            string = string.replace('kb', '').replace('k', '').strip()
             if binary:
-                return int(float(string.replace('pb', '').strip()) * 1024**5)
-            return int(float(string.replace('pb', '').strip()) * 1000**5)
+                return int(float(string) * 1024)
+            return int(float(string) * 1000)
+        if 'm' in string:  # matches "mb" or "m"
+            string = string.replace('mb', '').replace('m', '').strip()
+            if binary:
+                return int(float(string) * 1024**2)
+            return int(float(string) * 1000**2)
+        if 'g' in string:  # matches "gb" or "g"
+            string = string.replace('gb', '').replace('g', '').strip()
+            if binary:
+                return int(float(string) * 1024**3)
+            return int(float(string) * 1000**3)
+        if 't' in string:  # matches "tb" or "t"
+            string = string.replace('tb', '').replace('t', '').strip()
+            if binary:
+                return int(float(string) * 1024**4)
+            return int(float(string) * 1000**4)
+        if 'p' in string:  # matches "pb" or "p"
+            string = string.replace('pb', '').replace('p', '').strip()
+            if binary:
+                return int(float(string) * 1024**5)
+            return int(float(string) * 1000**5)
         if 'b' in string:
             return int(float(string.replace('b', '').strip()))
         return 0
