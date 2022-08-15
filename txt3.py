@@ -56,6 +56,9 @@ def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
     'c'
     >>> extract_text('abcde', 'b', 'd', include_fromto=True)
     'bcd'
+    >>> s = '  Time zone: UTC (UTC, +0000)\nSystem clock synchronized: yes\n  NTP service: active\n'
+    >>> extract_str(s, 'System clock synchronized: ', '\n', include_fromto=True)
+    'System clock synchronized: yes\n'
     """
     pos1 = s.find(from_txt)
     if pos1 == -1:
