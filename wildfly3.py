@@ -22,7 +22,7 @@ from .globals3 import STATE_UNKNOWN
 def get_data(args, data, url=''):
     url = args.URL + '/management' + url
     if args.MODE == 'domain':
-        url = '/host/{}/server/{}'.format(args.NODE, args.INSTANCE) + url
+        url = url + '/host/{}/server/{}'.format(args.NODE, args.INSTANCE)
     header = {'Content-Type': 'application/json'}
     result = base3.coe(url3.fetch_json(
         url, timeout=args.TIMEOUT,
