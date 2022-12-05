@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022060101'
+__version__ = '2022120401'
 
 import collections
 import numbers
@@ -293,6 +293,8 @@ def get_worst(state1, state2):
 
     Note that numerically the above does not hold.
     """
+    state1 = int(state1)
+    state2 = int(state2)
     if STATE_CRIT in [state1, state2]:
         return STATE_CRIT
     if STATE_WARN in [state1, state2]:
@@ -470,7 +472,7 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     else:
         print(msg.strip())
     if always_ok:
-        sys.exit(0)
+        sys.exit(STATE_OK)
     sys.exit(state)
 
 
