@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023010201'
+__version__ = '2023010202'
 
 from . import url3
 
@@ -20,12 +20,30 @@ from . import url3
 BASE_URL = 'https://api.infomaniak.com'
 
 
-def get_products(account_id, token):
+def get_events(token):
+    """Get all Infomaniak Events.
+    https://developer.infomaniak.com/docs/api/get/2/events
+    """
+    url = '{}/2/events?locale=en'.format(BASE_URL)
+    success, events = url3.fetch_json(
+        url,
+        header={'Authorization':'Bearer {}'.format(token)},
+    )
+    if not success:
+        return (success, events)
+    if not events:
+        return (False, 'There was no result from {}.'.format(url))
+    if events.get('result') != 'success':
+        return (False, events.get('error').get('description'))
+    return (True, events)
+
+
+def get_swiss_backup_products(account_id, token):
     """Get all Infomaniak Swiss Backup products.
     https://developer.infomaniak.com/docs/api/get/1/swiss_backups
     """
     url = '{}/1/swiss_backups?account_id={}'.format(BASE_URL, account_id)
-    success, products =  url3.fetch_json(
+    success, products = url3.fetch_json(
         url,
         header={'Authorization':'Bearer {}'.format(token)},
     )
@@ -38,11 +56,11 @@ def get_products(account_id, token):
     return (True, products)
 
 
-def get_slots(account_id, token):
+def get_swiss_backup_slots(account_id, token):
     """Get all devices / slots for each Infomaniak Swiss Backup product.
     https://developer.infomaniak.com/docs/api/get/1/swiss_backups/%7Bswiss_backup_id%7D/slots/%7Bslot_id%7D
     """
-    success, products = get_products(account_id, token)
+    success, products = get_swiss_backup_products(account_id, token)
     if not success:
         return (success, products)
     slots = []
@@ -66,3 +84,4 @@ def get_slots(account_id, token):
         slot['product_tags'] = product.get('tags')
         slots.append(slot)
     return (True, slots)
+
