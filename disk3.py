@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022042301'
+__version__ = '2023020601'
 
 import csv
 import os
@@ -62,7 +62,6 @@ def get_tmpdir():
         in that order.
     * As a last resort, the current working directory.
     """
-
     try:
         return tempfile.gettempdir()
     except:
@@ -88,7 +87,6 @@ def grep_file(filename, pattern):
         tuple[0]: bool: if successful (no I/O or file handling errors) or not
         tuple[1]: str: the string matched by `pattern` (if any)
     """
-
     try:
         with open(filename, 'r') as file:
             data = file.read()
@@ -103,9 +101,7 @@ def grep_file(filename, pattern):
 
 def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, skip_empty_rows=False):
     """Reads a CSV file, and returns a list or a dict.
-
     """
-
     try:
         with open(filename, newline=newline) as csvfile:
             if not as_dict:
@@ -129,9 +125,7 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
 
 def read_file(filename):
     """Reads a file.
-
     """
-
     try:
         with open(filename, 'r') as f:
             data = f.read()
@@ -148,7 +142,6 @@ def rm_file(filename):
     >>> rm_file('test.txt')
     (True, None)
     """
-
     try:
         os.remove(filename)
     except OSError as e:
@@ -169,7 +162,6 @@ def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True
     >>> lib.disk3.walk_directory('/tmp', exclude_pattern='.*Temp-.*', relative=False)
     ['/tmp/cpu-usage.db', '/tmp/segv_output.MCiVt9']
     """
-
     if exclude_pattern:
         exclude_pattern = re.compile(exclude_pattern, re.IGNORECASE)
     if include_pattern:
@@ -199,7 +191,6 @@ def write_file(filename, content, append=False):
     >>> write_file('test.txt', 'First line\nSecond line')
     (True, None)
     """
-
     try:
         with open(filename, 'w' if not append else 'a') as f:
             f.write(content)
