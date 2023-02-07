@@ -26,8 +26,9 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022062001'
+__version__ = '2023020701'
 
+import csv
 import hashlib
 import os
 import re
@@ -221,8 +222,74 @@ def drop_table(conn, table='perfdata'):
     return (True, True)
 
 
+def get_colnames(col_definition):
+    """Get list of coumn names from a column definition statement.
+
+    >>> get_colnames('date TEXT PRIMARY KEY, count FLOAT, name TEXT)
+    ['date', 'count', 'name']
+    """
+    return [''.join(col.split()[:1]) for col in col_definition.split(',')]
+
+
+def import_csv(conn, filename, table='data', fieldnames=None, skip_header=False, delimiter=',', quotechar='"', newline='', chunksize=1000):
+    """Import a given CSV file (given by `filename) into a table. `fieldnames` dnoes not have
+    to match the first header row (if any).
+
+    >>> import_csv(conn, 'examples/EXAMPLE01.csv', table='data',
+                   fieldnames='date TEXT PRIMARY KEY, count FLOAT, name TEXT',
+
+
+    This function doesn't use the sqlite command line tool for various reasons:
+    * One more dependency to install on a server.
+    * Some capabilities depend on its version (skipping header row, for example, which is not available in rhel8-).
+    * Not as flexible as we are when it comes to using quotes, guessing column types or handling escaping errors.
+    """
+    if table is None:
+        table = __filter_str(filename)
+
+    # can't use our `disk.read_csv()`, because we want to be able to import large files in chunks
+    # and maybe want to be open to do some magic on the way
+    skipped = False
+    # create the "data" table
+    # TODO: if fieldnames=None, then create some on our own: "col1", "col2", ...
+    success, result = create_table(conn, fieldnames, table=table, drop_table_first=True)
+    if not success:
+        return (success, result)
+    # get pure column names from CREATE statement (`fieldnames`):
+    # 'date TEXT PRIMARY KEY, count FLOAT, name TEXT' => ['date', 'count', 'name']
+    new_fieldnames = get_colnames(fieldnames)
+    try:
+        with open(filename, newline=newline) as csvfile:
+            reader = csv.reader(csvfile, delimiter=delimiter, quotechar=quotechar)
+            i = 0
+            for csv_row in reader:
+                # skip header if wanted
+                if skip_header and not skipped:
+                    skipped = True
+                    continue
+                # check if row is empty
+                if all(s == '' or s.isspace() for s in csv_row):
+                    continue
+                # use dictionary keys from CREATE statement, not that from CSV
+                data = dict(zip(new_fieldnames, csv_row))
+                # INSERT INTO database table
+                insert(conn, data, table)
+                # COMMIT and clear memory in chunks
+                i += 1
+                if i > 0 and i % chunksize == 0:
+                    commit(conn)
+            commit(conn)
+    except csv.Error as e:
+        return (False, 'CSV error in file {}, line {}: {}'.format(filename, reader.line_num, e))
+    except IOError as e:
+        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
+    except e:
+        return (False, '"{}" while opening or reading {}'.format(e, filename))
+    return (True, True)
+
+
 def insert(conn, data, table='perfdata'):
-    """Insert a row of values (= dict).
+    """Insert a row of values (has to be a dict).
     """
     table = __filter_str(table)
 
