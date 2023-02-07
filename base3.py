@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022120401'
+__version__ = '2023012001'
 
 import collections
 import numbers
@@ -368,6 +368,24 @@ def is_numeric(value):
     return isinstance(value, numbers.Number)
 
 
+def lookup_lod(dicts, key, needle, default=None):
+    """Search in a list of dictionaries ("lod)" for a value in a given dict key.
+    Return a default if not found.
+
+    >>> dicts = [
+    ...     { "name": "Tom", "age": 10 },
+    ...     { "name": "Mark", "age": 5 },
+    ...     { "name": "Pam", "age": 7 },
+    ...     { "name": "Dick", "age": 12 }
+    ... ]
+    >>> lookup_lod(dicts, 'name', 'Pam')
+    {'name': 'Pam', 'age': 7}
+    >>> lookup_lod(dicts, 'name', 'Pamela')
+    >>> 
+    """
+    return next((item for item in dicts if item[key] == needle), None)
+
+
 def match_range(value, spec):
     """Decides if `value` is inside/outside the threshold spec.
 
@@ -419,7 +437,6 @@ def match_range(value, spec):
                 return float(atom)
             return int(atom)
 
-
         if spec is None or str(spec).lower() == 'none':
             return (True, None)
         if not isinstance(spec, str):
@@ -443,7 +460,6 @@ def match_range(value, spec):
         if start > end:
             return (False, 'Start %s must not be greater than end %s' % (start, end))
         return (True, (start, end, invert))
-
 
     if spec is None or str(spec).lower() == 'none':
         return (True, True)
@@ -633,7 +649,7 @@ def version2float(v):
     >>> version2float('21.60-53-93285')
     21.605393285
     """
-    v = re.sub(r'[^0-9\.]', '', v)
+    v = re.sub(r'[^0-9\.]', '', v)  # remove everything except 0-9 and .
     v = v.split('.')
     if len(v) > 1:
         return float('{}.{}'.format(v[0], ''.join(v[1:])))
