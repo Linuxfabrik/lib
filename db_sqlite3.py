@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023020701'
+__version__ = '2023020801'
 
 import csv
 import hashlib
@@ -283,8 +283,8 @@ def import_csv(conn, filename, table='data', fieldnames=None, skip_header=False,
         return (False, 'CSV error in file {}, line {}: {}'.format(filename, reader.line_num, e))
     except IOError as e:
         return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
-    except e:
-        return (False, '"{}" while opening or reading {}'.format(e, filename))
+    except Exception as e:
+        return (False, 'Unknown error opening or reading {}:\n{}'.format(filename, e))
     return (True, True)
 
 

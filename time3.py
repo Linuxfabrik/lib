@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021501'
+__version__ = '2023012301'
 
 import datetime
 import time
@@ -54,6 +54,7 @@ def now(as_type=''):
 def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
     """Takes a string (default: ISO format) and returns a
     datetime object.
+    https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
     """
     return datetime.datetime.strptime(timestr, pattern)
 
@@ -61,6 +62,7 @@ def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
 def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%m-%d %H:%M:%S'):
     """Returns the difference between two datetime strings in seconds. This
     function expects two ISO timestamps, by default each in ISO format.
+    https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
     """
     timestr1 = timestr2datetime(timestr1, pattern1)
     timestr2 = timestr2datetime(timestr2, pattern2)
