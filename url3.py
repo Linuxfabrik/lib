@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021701'
+__version__ = '2023021001'
 
 import json
 import re
@@ -26,7 +26,7 @@ from . import txt3
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
           header={}, data={}, encoding='urlencode',
           digest_auth_user=None, digest_auth_password=None,
-          extended=False):
+          extended=False, to_text=True):
     """Fetch any URL.
 
     If using `extended=True`, the result is returned as a dict, also including the response header
@@ -44,6 +44,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     Cookies: To fetch Cookies, parse the response header. To get the response header, use extended=True
     >>> result = fetch(URL, header=header, data={...}, extended=True)
     >>> result['response_header'].getheader('Set-Cookie')
+
+    Setting `to_text=False` disables the automatic converison to a text string. Use this when downloading binary files.
     """
     try:
         if digest_auth_user is not None and digest_auth_password is not None:
@@ -112,10 +114,16 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                 # if the server doesn't send charset info
                 charset = 'UTF-8'
             if not extended:
-                result = txt3.to_text(response.read(), encoding=charset)
+                if to_text:
+                    result = txt3.to_text(response.read(), encoding=charset)
+                else:
+                    result = response.read()
             else:
                 result = {}
-                result['response'] = txt3.to_text(response.read(), encoding=charset)
+                if to_text:
+                    result['response'] = txt3.to_text(response.read(), encoding=charset)
+                else:
+                    result['response'] = response.read()
                 result['status_code'] = response.getcode()
                 result['response_header'] = response.info()
         except:
