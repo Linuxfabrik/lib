@@ -14,7 +14,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023021401'
+__version__ = '2023021403'
 
 import re
 import subprocess
@@ -86,21 +86,6 @@ def dmiget(dmi, type_id):
     return result
 
 
-def size2gb(str):
-    """Convert dmidecode memory size ("2 GB") description to GB.
-    """
-    nb = re.search('[0-9]+', str)
-    if nb:
-        nb = int(re.search('[0-9]+', str).group())
-    else:
-        return 0
-    if 'MB' in str:
-        return nb / 1024 if nb else 0
-    elif 'GB' in str:
-        return nb
-    else:
-        return 0
-
 # ---------
 
 # ('0x0400', '4', '48'): {'dminame': 'Processor Information', 'dmisize': 48, 'dmitype': 4, 'Socket Designation': 'CPU 1', 'Type': 'Central Processor', 'Family': 'Core i7', 'Manufacturer': 'Intel(R) Corporation', 'ID': 'C1 06 08 00 FF FB EB BF', 'Signature': 'Type 0, Family 6, Model 140, Stepping 1', 'Version': '11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz', 'Voltage': '0.8 V', 'External Clock': '100 MHz', 'Max Speed': '3000 MHz', 'Current Speed': '3000 MHz', 'Status': 'Populated, Enabled', 'Upgrade': 'Other', 'L1 Cache Handle': '0x0701', 'L2 Cache Handle': '0x0702', 'L3 Cache Handle': '0x0703', 'Serial Number': ' ', 'Asset Tag': ' ', 'Part Number': ' ', 'Core Count': '4', 'Core Enabled': '4', 'Thread Count': '8'}, 
@@ -138,7 +123,7 @@ def cpu_type(dmi):
     for cpu in dmiget(dmi, 'Processor'):
         if cpu.get('Core Enabled'):
             cpu_type = cpu.get('Version', 'n/a').replace('(R)', '').replace('(TM)', '')
-    return cpu_type
+    return cpu_type.replace('NotSpecified', 'n/a')
 
 
 def firmware(dmi):
@@ -154,7 +139,19 @@ def model(dmi):
 
 
 def ram(dmi):
-    return sum([size2gb(slot['Size']) for slot in dmiget(dmi, 'Memory Device')])
+    """Returns sum of all ram slotes in Bytes.
+    """
+    _sum = 0
+    for slot in dmiget(dmi, 'Memory Device'):
+        size = int(slot['Size'].replace(' MB', '').replace(' GB', ''))
+        if 'GB' in slot['Size']:
+            size = size * 1024 * 1024 * 1024
+        if 'MB' in slot['Size']:
+            size = size * 1024 * 1024
+        if 'KB' in slot['Size']:
+            size = size * 1024
+        _sum += size
+    return _sum
 
 
 def serno(dmi):
