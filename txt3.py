@@ -15,7 +15,7 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021701'
+__version__ = '2023021801'
 
 import codecs
 try:
@@ -88,6 +88,13 @@ def filter_mltext(_input, ignore):
 
 
 def mltext2array(_input, skip_header=False, sort_key=-1):
+    """
+    >>> s = '1662130953 timedatex\n1662130757 python3-pip-wheel\n1662130975 python3-dateutil\n'
+    >>> mltext2array(s, skip_header=False, sort_key=0)
+    [['1662130757', 'python3-pip-wheel'], ['1662130953', 'timedatex'], ['1662130975', 'python3-dateutil']]
+    >>> mltext2array(s, skip_header=False, sort_key=1)
+    [['1662130975', 'python3-dateutil'], ['1662130757', 'python3-pip-wheel'], ['1662130953', 'timedatex']]
+    """
     _input = _input.strip(' \t\n\r').split('\n')
     lines = []
     if skip_header:
