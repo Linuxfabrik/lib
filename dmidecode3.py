@@ -14,7 +14,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023021403'
+__version__ = '2023021801'
 
 import re
 import subprocess
@@ -143,13 +143,14 @@ def ram(dmi):
     """
     _sum = 0
     for slot in dmiget(dmi, 'Memory Device'):
+        if not any(item in slot['Size'] for item in [' MB', ' GB']):
+            # "No module installed"
+            continue
         size = int(slot['Size'].replace(' MB', '').replace(' GB', ''))
         if 'GB' in slot['Size']:
             size = size * 1024 * 1024 * 1024
         if 'MB' in slot['Size']:
             size = size * 1024 * 1024
-        if 'KB' in slot['Size']:
-            size = size * 1024
         _sum += size
     return _sum
 
