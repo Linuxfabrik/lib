@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022032201'
+__version__ = '2023022001'
 
 
 import os
@@ -55,7 +55,7 @@ def get_command_output(cmd, regex=None):
         return stdout.strip()
 
 
-def shell_exec(cmd, env=None, shell=False, stdin=''):
+def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None):
     """Executes external command and returns the complete output as a
     string (stdout, stderr) and the program exit code (retc).
 
@@ -100,7 +100,7 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
         # Pipes '|' are handled by the shell itself.
         try:
             p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE, env=env, shell=True)
+                                  stderr=subprocess.PIPE, env=env, shell=True, cwd=cwd)
         except OSError as e:
             return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
@@ -129,7 +129,7 @@ def shell_exec(cmd, env=None, shell=False, stdin=''):
         stdin = p.stdout if p else subprocess.PIPE
         try:
             p = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE, env=env, shell=False)
+                                  stderr=subprocess.PIPE, env=env, shell=False, cwd=cwd)
         except OSError as e:
             return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
