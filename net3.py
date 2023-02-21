@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022031801'
+__version__ = '2023022101'
 
 import random
 import re
@@ -172,28 +172,6 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
     return (True,  ''.join(fragments))
 
 
-def get_ip_public():
-    """Retrieve the public IP address from a list of online services.
-    """
-    urls = [
-        'http://ipv4.icanhazip.com',
-        'http://ipecho.net/plain',
-        'http://ipinfo.io/ip'
-    ]
-    random.shuffle(urls)
-
-    ip = None
-    for url in urls:
-        success, ip = url3.fetch(url, timeout=2)
-        if success and ip:
-            ip = ip.strip()
-            try:
-                return (True, txt3.to_text(ip))
-            except:
-                return (True, ip)
-    return (False, ip)
-
-
 def get_netinfo():
     if HAVE_NETIFACES:
         # Update stats using the netifaces lib
@@ -219,16 +197,30 @@ def get_netinfo():
         return stats
 
 
-def ip_to_cidr(ip):
-    """Convert IP address to CIDR.
+def get_public_ip(services):
+    """Retrieve the public IP address from a list of online services.
+    The list of "what is my ip" services is shuffled before being used. The first service
+    returning an IP "wins".
 
-    Example: '255.255.255.0' will return 24
+    >>> get_public_ip('https://ipv4.icanhazip.com,https://ipecho.net/plain,https://ipinfo.io/ip')
+    1.2.3.4
     """
-    # Thanks to @Atticfire
-    # See https://github.com/nicolargo/glances/issues/1417#issuecomment-469894399
-    if ip is None:
-        return 0
-    return sum(bin(int(x)).count('1') for x in ip.split('.'))
+    if not services:
+        return (False, None)
+
+    services = services.split(',')
+    random.shuffle(services)
+
+    ip = None
+    for url in services:
+        success, ip = url3.fetch(url.strip(), timeout=2)
+        if success and ip:
+            ip = ip.strip()
+            try:
+                return (True, txt3.to_text(ip))
+            except:
+                return (True, ip)
+    return (False, ip)
 
 
 def is_valid_hostname(hostname):
@@ -274,3 +266,16 @@ def is_valid_absolute_hostname(hostname):
     """
 
     return not hostname.endswith(".") and is_valid_hostname(hostname)
+
+
+def netmask_to_cidr(ip):
+    """Convert IP address to CIDR.
+
+    >>> netmask_to_cdir('255.255.255.0')
+    24
+    """
+    # Thanks to @Atticfire
+    # See https://github.com/nicolargo/glances/issues/1417#issuecomment-469894399
+    if ip is None:
+        return 0
+    return sum(bin(int(x)).count('1') for x in ip.split('.'))
