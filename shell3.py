@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023022001'
+__version__ = '2023022201'
 
 
 import os
@@ -55,7 +55,7 @@ def get_command_output(cmd, regex=None):
         return stdout.strip()
 
 
-def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None):
+def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
     """Executes external command and returns the complete output as a
     string (stdout, stderr) and the program exit code (retc).
 
@@ -75,6 +75,10 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None):
         to True.
     stdin : str
         If set, use this as input into `cmd`.
+    cwd : str
+        Current Working Directory
+    timeout : int
+        If the process does not terminate after timeout seconds, False is returned.
 
     Returns
     -------
@@ -137,6 +141,11 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None):
         except e:
             return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
 
-    stdout, stderr = p.communicate()
+    try:
+        stdout, stderr = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        outs, errs = p.communicate()
+        return (False, 'Timeout after {} seconds.'.format(timeout))
     retc = p.returncode
     return (True, (txt3.to_text(stdout), txt3.to_text(stderr), retc))

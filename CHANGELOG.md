@@ -20,6 +20,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 ### Added
 
 * dmidecode3.py
+* shell3.py: shell_exec() handles timeouts
 
 
 ### Changed
