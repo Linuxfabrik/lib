@@ -15,7 +15,7 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023021801'
+__version__ = '2023030101'
 
 import codecs
 try:
@@ -44,17 +44,19 @@ def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
     If `to_txt` is not found and `be_tolerant` is set to True (default), text is returned from
     `from_txt` til the end of input text. Otherwise an empty text is returned.
 
-    >>> extract_text('abcde', 'x', 'y')
+    >>> extract_str('abcde', 'x', 'y')
     ''
-    >>> extract_text('abcde', 'b', 'x')
+    >>> extract_str('abcde', 'b', 'x')
     'cde'
-    >>> extract_text('abcde', 'b', 'x', include_fromto=True)
+    >>> extract_str('abcde', 'b', 'b')
+    'cde'
+    >>> extract_str('abcde', 'b', 'x', include_fromto=True)
     'bcde'
-    >>> extract_text('abcde', 'b', 'x', include_fromto=True, be_tolerant=False)
+    >>> extract_str('abcde', 'b', 'x', include_fromto=True, be_tolerant=False)
     ''
-    >>> extract_text('abcde', 'b', 'd')
+    >>> extract_str('abcde', 'b', 'd')
     'c'
-    >>> extract_text('abcde', 'b', 'd', include_fromto=True)
+    >>> extract_str('abcde', 'b', 'd', include_fromto=True)
     'bcd'
     >>> s = '  Time zone: UTC (UTC, +0000)\nSystem clock synchronized: yes\n  NTP service: active\n'
     >>> extract_str(s, 'System clock synchronized: ', '\n', include_fromto=True)
@@ -79,11 +81,32 @@ def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
 
 
 def filter_mltext(_input, ignore):
+    """Filter multi-line text, remove lines with matches a simple text ignore pattern (no regex).
+    `ignore` has to be a list.
+
+    >>> filter_mltext('abcde', 'a')  # "ignore" has to be a list
+    ''
+
+    >>> s = 'Lorem ipsum\ndolor sit amet\nconsectetur adipisicing'
+    >>> filter_mltext(s, ['ipsum'])
+    'dolor sit amet\nconsectetur adipisicing\n'
+    >>> filter_mltext(s, ['dol'])
+    'Lorem ipsum\nconsectetur adipisicing\n'
+    >>> filter_mltext(s, ['Dol'])
+    'Lorem ipsum\ndolor sit amet\nconsectetur adipisicing\n'
+    >>> filter_mltext(s, ['d'])
+    'Lorem ipsum\n'
+
+    >>> s = 'Lorem ipsum'
+    >>> filter_mltext(s, ['Dol'])
+    'Lorem ipsum\n'
+    >>> filter_mltext(s, ['ipsum'])
+    ''
+    """
     filtered_input = ''
     for line in _input.splitlines():
         if not any(i_line in line for i_line in ignore):
             filtered_input += line + '\n'
-
     return filtered_input
 
 
@@ -349,11 +372,11 @@ def to_text(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
                 value = repr(obj)
             except UnicodeError:
                 # Giving up
-                return u''
+                return ''
     elif nonstring == 'passthru':
         return obj
     elif nonstring == 'empty':
-        return u''
+        return ''
     elif nonstring == 'strict':
         raise TypeError('obj must be a string type')
     else:
