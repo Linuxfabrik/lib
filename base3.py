@@ -608,6 +608,39 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
     return state
 
 
+def str2state(state, ignore_error=False):
+    """Return the state's nummeral representation.
+    Case independent and only the first 4 letters are relevant.
+
+    >> lib.base.str2state2('OK')
+    0
+    >>> lib.base.str2state('WARN')
+    1
+    >>> lib.base.str2state('CrITical')
+    2
+    >>> lib.base.str2state('UNKNOWN')
+    3
+    >>> lib.base.state2str('gobbledygook', ignore_error=True)
+    3
+    >>> lib.base.state2str('gobbledygook')
+    unknown state: gobbledygook
+    """
+
+    state_upper_short = str(state).upper()[0:4]
+    if state_upper_short == 'OK':
+        return STATE_OK
+    if state_upper_short == 'WARN':
+        return STATE_WARN
+    if state_upper_short == 'CRIT':
+        return STATE_CRIT
+    if state_upper_short == 'UNKN':
+        return STATE_UNKNOWN
+    if ignore_error:
+        return STATE_UNKNOWN
+
+    oao('unknown state: {}'.format(state), STATE_UNKNOWN)
+
+
 def version(v):
     """Use this function to compare string-based version numbers.
 
