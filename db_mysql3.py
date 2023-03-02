@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022071801'
+__version__ = '2023030201'
 
 import sys
 
@@ -64,22 +64,17 @@ def connect(mysql_connection, **kwargs):
     """Connect to a MySQL/MariaDB. `mysql_connection` has to be a dict.
 
     >>> mysql_connection = {
-    ...     'host':               args3.HOSTNAME,
-    ...     'port':               args3.PORT,
-    ...     'db':                 args3.DATABASE,
-    ...     'user':               args3.USERNAME,
-    ...     'password':           args3.PASSWORD,
-    ...     'cursorclass':        pymysql.cursors.DictCursor,
-    ... }
+        'defaults_file':  args.DEFAULTS_FILE,
+        'defaults_group': args.DEFAULTS_GROUP,
+        'timeout':        args.TIMEOUT,
+    }
     >>> conn = connect(mysql_connection)
     """
+    # https://pymysql.readthedocs.io/en/latest/modules/connections.html
     try:
         conn = pymysql.connect(
-            host=mysql_connection.get('host', 'localhost'),
-            port=mysql_connection.get('port', 3306),
-            db=mysql_connection.get('db', None),
-            user=mysql_connection.get('user', 'root'),
-            password=mysql_connection.get('password', ''),
+            read_default_file=mysql_connection.get('defaults_file', None),
+            read_default_group=mysql_connection.get('defaults_group', 'client'),
             cursorclass=mysql_connection.get('cursorclass', pymysql.cursors.DictCursor),
             connect_timeout=mysql_connection.get('timeout', 3),
             **kwargs,
