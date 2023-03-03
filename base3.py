@@ -557,25 +557,36 @@ def sum_lod(mylist):
     return total
 
 
-def str2state(string):
+def str2state(string, ignore_error=True):
     """Return the state based on a string.
+    Case independent and only the first 4 letters are relevant.
 
     >> lib.base.str2state('ok')
     0
     >>> lib.base.str2state('warn')
     1
-    >>> lib.base.str2state('warning')
-    1
+    >>> lib.base.str2state('CrITical')
+    2
+    >>> lib.base.str2state('UNKNOWN')
+    3
+    >>> lib.base.state2str('gobbledygook')
+    3
+    >>> lib.base.state2str('gobbledygook', ignore_error=False)
+    unknown state: gobbledygook
     """
-    string = str(string).lower()
-    if string == 'ok':
+    str_lower_short = str(string).lower()[0:4]
+    if str_lower_short == 'ok':
         return STATE_OK
-    if string.startswith('warn'):
+    if str_lower_short == 'warn':
         return STATE_WARN
-    if string.startswith('crit'):
+    if str_lower_short == 'crit':
         return STATE_CRIT
-    if string.startswith('unk'):
+    if str_lower_short == 'unkn':
         return STATE_UNKNOWN
+    if ignore_error:
+        return STATE_UNKNOWN
+
+    oao('unknown state: {}'.format(string), STATE_UNKNOWN)
 
 
 def state2str(state, empty_ok=True, prefix='', suffix=''):
@@ -606,39 +617,6 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
         return '{}[UNKNOWN]{}'.format(prefix, suffix)
 
     return state
-
-
-def str2state(state, ignore_error=False):
-    """Return the state's nummeral representation.
-    Case independent and only the first 4 letters are relevant.
-
-    >> lib.base.str2state2('OK')
-    0
-    >>> lib.base.str2state('WARN')
-    1
-    >>> lib.base.str2state('CrITical')
-    2
-    >>> lib.base.str2state('UNKNOWN')
-    3
-    >>> lib.base.state2str('gobbledygook', ignore_error=True)
-    3
-    >>> lib.base.state2str('gobbledygook')
-    unknown state: gobbledygook
-    """
-
-    state_upper_short = str(state).upper()[0:4]
-    if state_upper_short == 'OK':
-        return STATE_OK
-    if state_upper_short == 'WARN':
-        return STATE_WARN
-    if state_upper_short == 'CRIT':
-        return STATE_CRIT
-    if state_upper_short == 'UNKN':
-        return STATE_UNKNOWN
-    if ignore_error:
-        return STATE_UNKNOWN
-
-    oao('unknown state: {}'.format(state), STATE_UNKNOWN)
 
 
 def version(v):
