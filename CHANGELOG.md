@@ -13,6 +13,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Breaking Changes
 
+* db_mysql3: Change from username/password authentication to option file authentication in connect()
 * net3: Rename get_ip_public() to get_public_ip()
 * net3: Rename ip_to_cdir() to netmask_to_cdir()
 

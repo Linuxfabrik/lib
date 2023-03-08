@@ -13,7 +13,7 @@ https://ds.example.com/gv2/webservices/API/swagger/ui/index
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023012301'
+__version__ = '2023030802'
 
 from . import url3
 
@@ -24,7 +24,7 @@ def fetch_json(token, host, port, uri, version, func):
     url = 'https://{}:{}{}/v{}/{}'.format(host, port, uri, version, func)
     success, result = url3.fetch_json(
         url,
-        header={'X-ApiKey':token},
+        header={'X-ApiKey': token},
     )
     if not success:
         return (success, result)
@@ -61,29 +61,94 @@ def match(item, _filter):
     return False
 
 
-def set_defaults(item):
+def set_player_defaults(item):
     """These attributes are not returned by the API if they do not contain values, so we
     explicitly set them to `None`.
     """
-    if 'BoxID' not in item:
-        item['BoxID'] = None
+    if 'Address' not in item:
+        item['Address'] = None
+    if 'BoxId' not in item:
+        item['BoxId'] = None
+    if 'BoxState' not in item:
+        item['BoxState'] = None
+    if 'City' not in item:
+        item['City'] = None
     if 'ConfigurationGroupId' not in item:
         item['ConfigurationGroupId'] = None
+    if 'Country' not in item:
+        item['Country'] = None
+    if 'Created' not in item:
+        item['Created'] = None
     if 'CustomId' not in item:
         item['CustomId'] = None
     if 'EditionId' not in item:
         item['EditionId'] = None
-    if 'IsOn' not in item:
-        item['IsOn'] = None
+    if 'Email' not in item:
+        item['Email'] = None
+    if 'FaxNumber' not in item:
+        item['FaxNumber'] = None
+    if 'Id' not in item:
+        item['Id'] = None
+    if 'IsInstalled' not in item:
+        item['IsInstalled'] = None
+    if 'IsLicensed' not in item:
+        item['IsLicensed'] = None
     if 'LastAccess' not in item:
         item['LastAccess'] = None
+    if 'Latitude' not in item:
+        item['Latitude'] = None
+    if 'LicenseType' not in item:
+        item['LicenseType'] = None
+    if 'LocationId' not in item:
+        item['LocationId'] = None
+    if 'Longitude' not in item:
+        item['Longitude'] = None
+    if 'Modified' not in item:
+        item['Modified'] = None
+    if 'Name' not in item:
+        item['Name'] = None
+    if 'PendingTimezoneId' not in item:
+        item['PendingTimezoneId'] = None
+    if 'PhoneNumber' not in item:
+        item['PhoneNumber'] = None
+    if 'PostCode' not in item:
+        item['PostCode'] = None
+    if 'ProvisioningState' not in item:
+        item['ProvisioningState'] = None
+    if 'RootPasswordSet' not in item:
+        item['RootPasswordSet'] = None
+    if 'TemperatureUnit' not in item:
+        item['TemperatureUnit'] = None
+    if 'TimezoneId' not in item:
+        item['TimezoneId'] = None
+    if 'TransferStatus' not in item:
+        item['TransferStatus'] = None
+
+    return item
+
+
+def set_screen_defaults(item):
+    """These attributes are not returned by the API if they do not contain values, so we
+    explicitly set them to `None`.
+    """
+    if 'DisplayName' not in item:
+        item['DisplayName'] = None
+    if 'Id' not in item:
+        item['Id'] = None
+    if 'IsOn' not in item:
+        item['IsOn'] = None
     if 'LastStatusChange' not in item:
         item['LastStatusChange'] = None
     if 'LastUpdate' not in item:
         item['LastUpdate'] = None
+    if 'Number' not in item:
+        item['Number'] = None
+    if 'Orientation' not in item:
+        item['Orientation'] = None
+    if 'PendingOrientation' not in item:
+        item['PendingOrientation'] = None
     if 'Status' not in item:
         item['Status'] = None
-    if 'TimezoneId' not in item:
-        item['TimezoneId'] = None
 
     return item
+
