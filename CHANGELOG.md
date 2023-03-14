@@ -28,7 +28,6 @@ tbd
 
 * dmidecode3.py
 * grassfish3.py
-* shell3.py: shell_exec() handles timeouts
 
 
 ### Changed
@@ -36,6 +35,7 @@ tbd
 * base3.py: Make get_worst() more robust
 * human3.py: human2bytes() is now also able to interpret "3.0M"
 * infomaniak3.py: Apply new API version
+* shell3.py: shell_exec() also handles timeouts
 * wildfly3.py: Update
 
 
