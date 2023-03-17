@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2022021601'
+__version__ = '2023031401'
 
 from . import base3
 from . import human3
@@ -51,62 +51,6 @@ from .globals3 import STATE_OK, STATE_WARN, STATE_CRIT
 #   * Updating              The element is updating and may be unavailable or degraded.
 
 
-def get_state(data):
-    if data.get('Status_State', '') in ['Enabled', 'Quiesced']:
-        if data.get('Status_HealthRollup') is not None and data.get('Status_HealthRollup').lower() == 'critical':
-            return STATE_CRIT
-        if data.get('Status_HealthRollup') is not None and data.get('Status_HealthRollup').lower() == 'warning':
-            return STATE_WARN
-        if data.get('Status_Health') is not None and data.get('Status_Health').lower() == 'critical':
-            return STATE_CRIT
-        if data.get('Status_Health') is not None and data.get('Status_Health').lower() == 'warning':
-            return STATE_WARN
-    return STATE_OK
-
-
-def get_sensor_state(data, key='Reading'):
-    value = data.get(key, '')
-    if not value or not isinstance(value, (int, float)):
-        return STATE_OK
-    if data.get('Thresholds_UpperCritical', '') and value >= data['Thresholds_UpperCritical']:
-        return STATE_CRIT
-    if data.get('Thresholds_LowerCritical', '') and value <= data['Thresholds_LowerCritical']:
-        return STATE_CRIT
-    if data.get('Thresholds_UpperCaution', '') and value >= data['Thresholds_UpperCaution']:
-        return STATE_WARN
-    if data.get('Thresholds_LowerCaution', '') and value <= data['Thresholds_LowerCaution']:
-        return STATE_WARN
-    return STATE_OK
-
-
-def get_perfdata(data, key='Reading'):
-    value = data.get(key, '')
-    if not value or not isinstance(value, (int, float)):
-        return ''
-    name = data.get('Name')
-    physical_context = data.get('PhysicalContext')
-    uom = '%' if data.get('ReadingUnits', '') == '%' else None
-    warn = data['Thresholds_UpperCaution'] if data.get('Thresholds_UpperCaution', '') else None
-    crit = data['Thresholds_UpperCritical'] if data.get('Thresholds_UpperCritical', '') else None
-    _min = data['ReadingRangeMin'] if data.get('ReadingRangeMin', '') else None
-    _max = data['ReadingRangeMax'] if data.get('ReadingRangeMax', '') else None
-    return base3.get_perfdata('{}_{}'.format(physical_context, name).replace(' ', '_'), value, uom, warn, crit, _min, _max)
-
-
-def get_vendor(redfish):
-    vendor = redfish.get('Vendor', '')
-    if not vendor:
-        oem = redfish.get('Oem', {})
-        if oem:
-            # get the first existing key from Oem dict
-            vendor = list(oem)[0]
-    if vendor:
-        vendor = vendor.lower()
-    else:
-        vendor = 'generic'
-    return vendor
-
-
 def get_chassis(redfish):
     data = {}
     data['AssetTag'] = redfish.get('AssetTag', '')
@@ -123,6 +67,42 @@ def get_chassis(redfish):
     data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
     data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
     data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
+    return data
+
+
+def get_chassis_power_powersupplies(redfish):
+    data = {}
+    data['FirmwareVersion'] = redfish.get('FirmwareVersion', '')
+    data['LastPowerOutputWatts'] = redfish.get('LastPowerOutputWatts', '')
+    if data['LastPowerOutputWatts'] is None:
+        data['LastPowerOutputWatts'] = redfish.get('PowerOutputWatts', '')  # DELL uses this instead
+    data['LineInputVoltage'] = redfish.get('LineInputVoltage', '')
+    data['LineInputVoltageType'] = redfish.get('LineInputVoltageType', '')
+    data['Manufacturer'] = redfish.get('Manufacturer', '')
+    data['Model'] = redfish.get('Model', '')
+    data['PartNumber'] = redfish.get('PartNumber', '')
+    data['PowerCapacityWatts'] = redfish.get('PowerCapacityWatts', '')
+    data['PowerSupplyType'] = redfish.get('PowerSupplyType', '')
+    data['SerialNumber'] = redfish.get('SerialNumber', '')
+    data['SparePartNumber'] = redfish.get('SparePartNumber', '')
+    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
+    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    return data
+
+
+def get_chassis_power_voltages(redfish):
+    data = {}
+    data['LowerThresholdCritical'] = redfish.get('LowerThresholdCritical', '')
+    data['LowerThresholdFatal'] = redfish.get('LowerThresholdFatal', '')
+    data['LowerThresholdNonCritical'] = redfish.get('LowerThresholdNonCritical', '')
+    data['Name'] = redfish.get('Name', '')
+    data['PhysicalContext'] = redfish.get('PhysicalContext', '')
+    data['ReadingVolts'] = redfish.get('ReadingVolts', '')
+    data['UpperThresholdCritical'] = redfish.get('UpperThresholdCritical', '')
+    data['UpperThresholdFatal'] = redfish.get('UpperThresholdFatal', '')
+    data['UpperThresholdNonCritical'] = redfish.get('UpperThresholdNonCritical', '')
+    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
+    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
     return data
 
 
@@ -190,42 +170,6 @@ def get_chassis_thermal_temperatures(redfish):
     return data
 
 
-def get_chassis_power_powersupplies(redfish):
-    data = {}
-    data['FirmwareVersion'] = redfish.get('FirmwareVersion', '')
-    data['LastPowerOutputWatts'] = redfish.get('LastPowerOutputWatts', '')
-    if data['LastPowerOutputWatts'] is None:
-        data['LastPowerOutputWatts'] = redfish.get('PowerOutputWatts', '')  # DELL uses this instead
-    data['LineInputVoltage'] = redfish.get('LineInputVoltage', '')
-    data['LineInputVoltageType'] = redfish.get('LineInputVoltageType', '')
-    data['Manufacturer'] = redfish.get('Manufacturer', '')
-    data['Model'] = redfish.get('Model', '')
-    data['PartNumber'] = redfish.get('PartNumber', '')
-    data['PowerCapacityWatts'] = redfish.get('PowerCapacityWatts', '')
-    data['PowerSupplyType'] = redfish.get('PowerSupplyType', '')
-    data['SerialNumber'] = redfish.get('SerialNumber', '')
-    data['SparePartNumber'] = redfish.get('SparePartNumber', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
-    return data
-
-
-def get_chassis_power_voltages(redfish):
-    data = {}
-    data['LowerThresholdCritical'] = redfish.get('LowerThresholdCritical', '')
-    data['LowerThresholdFatal'] = redfish.get('LowerThresholdFatal', '')
-    data['LowerThresholdNonCritical'] = redfish.get('LowerThresholdNonCritical', '')
-    data['Name'] = redfish.get('Name', '')
-    data['PhysicalContext'] = redfish.get('PhysicalContext', '')
-    data['ReadingVolts'] = redfish.get('ReadingVolts', '')
-    data['UpperThresholdCritical'] = redfish.get('UpperThresholdCritical', '')
-    data['UpperThresholdFatal'] = redfish.get('UpperThresholdFatal', '')
-    data['UpperThresholdNonCritical'] = redfish.get('UpperThresholdNonCritical', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
-    return data
-
-
 def get_manager_logservices_sel_entries(redfish):
     msg = ''
     state = STATE_OK
@@ -244,6 +188,48 @@ def get_manager_logservices_sel_entries(redfish):
         )
         state = base3.get_worst(state, msg_state)
     return msg, state
+
+
+def get_perfdata(data, key='Reading'):
+    value = data.get(key, '')
+    if not value or not isinstance(value, (int, float)):
+        return ''
+    name = data.get('Name')
+    physical_context = data.get('PhysicalContext')
+    uom = '%' if data.get('ReadingUnits', '') == '%' else None
+    warn = data['Thresholds_UpperCaution'] if data.get('Thresholds_UpperCaution', '') else None
+    crit = data['Thresholds_UpperCritical'] if data.get('Thresholds_UpperCritical', '') else None
+    _min = data['ReadingRangeMin'] if data.get('ReadingRangeMin', '') else None
+    _max = data['ReadingRangeMax'] if data.get('ReadingRangeMax', '') else None
+    return base3.get_perfdata('{}_{}'.format(physical_context, name).replace(' ', '_'), value, uom, warn, crit, _min, _max)
+
+
+def get_sensor_state(data, key='Reading'):
+    value = data.get(key, '')
+    if not value or not isinstance(value, (int, float)):
+        return STATE_OK
+    if data.get('Thresholds_UpperCritical', '') and value >= data['Thresholds_UpperCritical']:
+        return STATE_CRIT
+    if data.get('Thresholds_LowerCritical', '') and value <= data['Thresholds_LowerCritical']:
+        return STATE_CRIT
+    if data.get('Thresholds_UpperCaution', '') and value >= data['Thresholds_UpperCaution']:
+        return STATE_WARN
+    if data.get('Thresholds_LowerCaution', '') and value <= data['Thresholds_LowerCaution']:
+        return STATE_WARN
+    return STATE_OK
+
+
+def get_state(data):
+    if data.get('Status_State', '') in ['Enabled', 'Quiesced']:
+        if data.get('Status_HealthRollup') is not None and data.get('Status_HealthRollup').lower() == 'critical':
+            return STATE_CRIT
+        if data.get('Status_HealthRollup') is not None and data.get('Status_HealthRollup').lower() == 'warning':
+            return STATE_WARN
+        if data.get('Status_Health') is not None and data.get('Status_Health').lower() == 'critical':
+            return STATE_CRIT
+        if data.get('Status_Health') is not None and data.get('Status_Health').lower() == 'warning':
+            return STATE_WARN
+    return STATE_OK
 
 
 def get_systems(redfish):
@@ -306,3 +292,17 @@ def get_systems_storage_drives(redfish):
     data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
     data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
     return data
+
+
+def get_vendor(redfish):
+    vendor = redfish.get('Vendor', '')
+    if not vendor:
+        oem = redfish.get('Oem', {})
+        if oem:
+            # get the first existing key from Oem dict
+            vendor = list(oem)[0]
+    if vendor:
+        vendor = vendor.lower()
+    else:
+        vendor = 'generic'
+    return vendor
