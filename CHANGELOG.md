@@ -11,6 +11,11 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+### Breaking Changes
+
+* Remove all Python 2 based libraries from the project
+
+
 ### Added
 
 * disk3.py: Add read_env()
