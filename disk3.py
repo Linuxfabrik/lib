@@ -13,13 +13,12 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023020601'
+__version__ = '2023031501'
 
 import csv
 import os
 import re
 import tempfile
-
 
 
 def file_exists(path, allow_empty=False):
@@ -116,6 +115,39 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
                 data.append(row)
     except csv.Error as e:
         return (False, 'CSV error in file {}, line {}: {}'.format(filename, reader.line_num, e))
+    except IOError as e:
+        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
+    except:
+        return (False, 'Unknown error opening or reading {}'.format(filename))
+    return (True, data)
+
+
+def read_env(filename, delimiter='='):
+    """Reads an shell script for setting environment variables,
+    and returns a dict with all of them.
+
+    Example shell script:
+
+        export OS_AUTH_URL="https://api/v3"
+        export OS_PROJECT_NAME=myproject
+        # comment
+        OS_PASSWORD='linuxfabrik'
+        [ -z "$OS_PASSWORD" ] && read -e -p "Pass: " OS_PASSWORD
+        export OS_PASSWORD
+
+    >>> read_env(filename)
+    {'OS_AUTH_URL': 'https://api/v3', 'OS_PROJECT_NAME': 'myproject', 'OS_PASSWORD': 'linuxfabrik'}
+    """
+    try:
+        with open(filename) as envfile:
+            data = {}
+            for line in envfile.readlines():
+                line = line.strip().split(delimiter)
+                try:
+                    if not line[0].startswith('#'):
+                        data[line[0].replace('export ', '')] = line[1].replace("'", '').replace('"', '')
+                except:
+                    continue
     except IOError as e:
         return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
     except:

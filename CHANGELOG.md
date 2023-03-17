@@ -11,7 +11,9 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
-tbd
+### Added
+
+* disk3.py: Add read_env()
 
 
 
