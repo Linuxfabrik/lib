@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023033101'
+__version__ = '2023033102'
 
 import collections
 import numbers
@@ -606,36 +606,3 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
         return '{}[UNKNOWN]{}'.format(prefix, suffix)
 
     return state
-
-
-def version(v):
-    """Use this function to compare string-based version numbers.
-
-    >>> '3.0.7' < '3.0.11'
-    False
-    >>> lib.base3.version('3.0.7') < lib.base3.version('3.0.11')
-    True
-    >>> lib.base3.version('v3.0.7-2') < lib.base3.version('3.0.11')
-    True
-    >>> lib.base3.version(psutil.__version__) >= lib.base3.version('5.3.0')
-    True
-
-    Parameters
-    ----------
-    v : str
-        A version string, for example "v5.13.19-4-pve".
-
-    Returns
-    -------
-    tuple
-        A tuple of version numbers, for example (5, 13, 19, 4).
-    """
-    # if we get something like "v5.13.19-4-pve", remove everything except "." and "-",
-    # and convert "-" to "."
-    v = re.sub(r'[^0-9\.-]', '', v)
-    v = v.replace('-', '.')
-    v = v.split('.')
-    # remove all empty strings from the list of strings
-    v = list(filter(None, v))
-    # create a return tuple, for example (5, 13, 19, 4)
-    return tuple(map(int, v))
