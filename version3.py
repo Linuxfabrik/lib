@@ -12,10 +12,15 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023033101'
+__version__ = '2023033103'
+
+import os
+import re
 
 from .globals3 import STATE_OK, STATE_UNKNOWN, STATE_WARN
 from . import base3
+from . import disk3
+from . import shell3
 from . import time3
 
 
@@ -57,3 +62,28 @@ def check_eol(endoflife_date, version, pattern='%Y-%m-%d'):
     if time3.now(as_type='datetime') > time3.timestr2datetime(eol['eol'], pattern=pattern):
         state = STATE_WARN
     return state, 'EOL {}{}'.format(eol['eol'], base3.state2str(state, prefix=' '))
+
+
+def get_os_info():
+    """Return OS version information.
+    """
+    success, result = shell3.shell_exec('. /etc/os-release && echo $NAME $VERSION', shell=True)
+    if success:
+        stdout, stderr, retc = result
+        return stdout.strip()
+    return ''
+
+
+def version2float(v):
+    """Just get the version number as a float.
+
+    >>> version2float('Version v17.3.2.0')
+    17.320
+    >>> version2float('21.60-53-93285')
+    21.605393285
+    """
+    v = re.sub(r'[^0-9\.]', '', v)  # remove everything except 0-9 and .
+    v = v.split('.')
+    if len(v) > 1:
+        return float('{}.{}'.format(v[0], ''.join(v[1:])))
+    return float(''.join(v))

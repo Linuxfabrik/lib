@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023012001'
+__version__ = '2023033101'
 
 import collections
 import numbers
@@ -639,18 +639,3 @@ def version(v):
     v = list(filter(None, v))
     # create a return tuple, for example (5, 13, 19, 4)
     return tuple(map(int, v))
-
-
-def version2float(v):
-    """Just get the version number as a float.
-
-    >>> version2float('Version v17.3.2.0')
-    17.320
-    >>> version2float('21.60-53-93285')
-    21.605393285
-    """
-    v = re.sub(r'[^0-9\.]', '', v)  # remove everything except 0-9 and .
-    v = v.split('.')
-    if len(v) > 1:
-        return float('{}.{}'.format(v[0], ''.join(v[1:])))
-    return float(''.join(v))
