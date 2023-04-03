@@ -14,7 +14,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023021801'
+__version__ = '2023040301'
 
 import re
 import subprocess
@@ -107,6 +107,9 @@ def cpu_cores_enabled(dmi):
 def cpu_speed(dmi):
     speed = 0
     for cpu in dmiget(dmi, 'Processor'):
+        if not any(item in cpu['Current Speed'] for item in [' MHz']):
+            # "No module installed"
+            continue
         speed = int(cpu.get('Current Speed', '0').replace (' MHz', ''))
     return speed
 
