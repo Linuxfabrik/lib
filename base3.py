@@ -12,13 +12,12 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023033102'
+__version__ = '2023042101'
 
 import collections
 import numbers
 import operator
 import os
-import re
 import sys
 
 from traceback import format_exc # pylint: disable=C0413
@@ -381,7 +380,7 @@ def lookup_lod(dicts, key, needle, default=None):
     >>> lookup_lod(dicts, 'name', 'Pam')
     {'name': 'Pam', 'age': 7}
     >>> lookup_lod(dicts, 'name', 'Pamela')
-    >>> 
+    >>>
     """
     return next((item for item in dicts if item[key] == needle), None)
 
@@ -515,6 +514,74 @@ def sort(array, reverse=True, sort_by_key=False):
     return array
 
 
+def state2str(state, empty_ok=True, prefix='', suffix=''):
+    """Return the state's string representation.
+    The square brackets around the state cause icingaweb2 to color the state.
+
+    >> lib.base.state2str(2)
+    '[CRIT]'
+    >>> state2str(0)
+    ''
+    >>> state2str(0, empty_ok=False)
+    '[OK]'
+    >>> state2str(0, empty_ok=False, suffix=' ')
+    '[OK] '
+    >>> state2str(0, empty_ok=False, prefix=' (', suffix=')')
+    ' ([OK])'
+    """
+    state = int(state)
+    if state == STATE_OK and empty_ok:
+        return ''
+    if state == STATE_OK and not empty_ok:
+        return '{}[OK]{}'.format(prefix, suffix)
+    if state == STATE_WARN:
+        return '{}[WARNING]{}'.format(prefix, suffix)
+    if state == STATE_CRIT:
+        return '{}[CRITICAL]{}'.format(prefix, suffix)
+    if state == STATE_UNKNOWN:
+        return '{}[UNKNOWN]{}'.format(prefix, suffix)
+    return state
+
+
+def str2state(string, ignore_error=True):
+    """Return the numeric state based on a (case-insensitive) string.
+    Matches up to the first four characters.
+
+    >>> str2state('ok')
+    0
+    >>> str2state('okidoki')
+    3
+    >>> str2state('okidoki', ignore_error=False)
+    None
+    >>> str2state('war')
+    3
+    >>> str2state('warn')
+    1
+    >>> str2state('Warnung')
+    1
+    >>> str2state('CrITical')
+    2
+    >>> str2state('UNKNOWN')
+    3
+    >>> str2state('gobbledygook')
+    3
+    >>> str2state('gobbledygook', ignore_error=False)
+    None
+    """
+    string = str(string).lower()[0:4]
+    if string == 'ok':
+        return STATE_OK
+    if string == 'warn':
+        return STATE_WARN
+    if string == 'crit':
+        return STATE_CRIT
+    if string == 'unkn':
+        return STATE_UNKNOWN
+    if ignore_error:
+        return STATE_UNKNOWN
+    return None
+
+
 def sum_dict(dict1, dict2):
     """Sum up two dictionaries, maybe with different keys.
 
@@ -555,65 +622,3 @@ def sum_lod(mylist):
             else:
                 total[key] = value
     return total
-
-
-def str2state(string, ignore_error=True):
-    """Return the state based on a string.
-    Case independent and only the first 4 letters are relevant.
-
-    >> lib.base.str2state('ok')
-    0
-    >>> lib.base.str2state('warn')
-    1
-    >>> lib.base.str2state('CrITical')
-    2
-    >>> lib.base.str2state('UNKNOWN')
-    3
-    >>> lib.base.state2str('gobbledygook')
-    3
-    >>> lib.base.state2str('gobbledygook', ignore_error=False)
-    unknown state: gobbledygook
-    """
-    str_lower_short = str(string).lower()[0:4]
-    if str_lower_short == 'ok':
-        return STATE_OK
-    if str_lower_short == 'warn':
-        return STATE_WARN
-    if str_lower_short == 'crit':
-        return STATE_CRIT
-    if str_lower_short == 'unkn':
-        return STATE_UNKNOWN
-    if ignore_error:
-        return STATE_UNKNOWN
-
-    oao('unknown state: {}'.format(string), STATE_UNKNOWN)
-
-
-def state2str(state, empty_ok=True, prefix='', suffix=''):
-    """Return the state's string representation.
-    The square brackets around the state cause icingaweb2 to color the state.
-
-    >> lib.base.state2str(2)
-    '[CRIT]'
-    >>> lib.base.state2str(0)
-    ''
-    >>> lib.base.state2str(0, empty_ok=False)
-    '[OK]'
-    >>> lib.base.state2str(0, empty_ok=False, suffix=' ')
-    '[OK] '
-    >>> lib.base.state2str(0, empty_ok=False, prefix=' (', suffix=')')
-    ' ([OK])'
-    """
-    state = int(state)
-    if state == STATE_OK and empty_ok:
-        return ''
-    if state == STATE_OK and not empty_ok:
-        return '{}[OK]{}'.format(prefix, suffix)
-    if state == STATE_WARN:
-        return '{}[WARNING]{}'.format(prefix, suffix)
-    if state == STATE_CRIT:
-        return '{}[CRITICAL]{}'.format(prefix, suffix)
-    if state == STATE_UNKNOWN:
-        return '{}[UNKNOWN]{}'.format(prefix, suffix)
-
-    return state
