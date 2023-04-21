@@ -22,6 +22,11 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * version3.py
 
 
+### Changed
+
+* base3.py: Improve str2state()
+
+
 
 ## 2023030801
 
