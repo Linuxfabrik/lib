@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023022201'
+__version__ = '2023042201'
 
 
 import os
@@ -127,11 +127,11 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
     cmds = cmd.split('|')
     p = None
     for cmd in cmds:
-        args = shlex.split(cmd.strip())
-        # use the previous output from last cmd call as input for next cmd in pipe chain,
-        # if there is any
-        stdin = p.stdout if p else subprocess.PIPE
         try:
+            args = shlex.split(cmd.strip())
+            # use the previous output from last cmd call as input for next cmd in pipe chain,
+            # if there is any
+            stdin = p.stdout if p else subprocess.PIPE
             p = subprocess.Popen(args, stdin=stdin, stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE, env=env, shell=False, cwd=cwd)
         except OSError as e:
