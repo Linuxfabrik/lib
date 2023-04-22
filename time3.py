@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023012301'
+__version__ = '2023042201'
 
 import datetime
 import time
@@ -35,6 +35,9 @@ def now(as_type=''):
     lib.base3.now()
     >>> 1586422786
 
+    lib.base3.now(as_type='float')
+    >>> 1586422786.1521912
+
     lib.base3.now(as_type='epoch')
     >>> 1586422786
 
@@ -48,6 +51,8 @@ def now(as_type=''):
         return datetime.datetime.now()
     if as_type == 'iso':
         return time.strftime("%Y-%m-%d %H:%M:%S")
+    if as_type == 'float':
+        return time.time()
     return int(time.time())
 
 
