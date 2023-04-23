@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042201'
+__version__ = '2023042301'
 
 
 import os
@@ -21,6 +21,17 @@ import shlex
 import subprocess
 
 from . import txt3
+
+
+RETC_SSHPASS = {
+    1: 'Invalid command line argument',
+    2: 'Conflicting arguments given',
+    3: 'General runtime error',
+    4: 'Unrecognized response from ssh (parse error)',
+    5: 'Invalid/incorrect password',
+    6: 'Host public key is unknown. sshpass exits without confirming the new key.',
+    7: 'IP public key changed. sshpass exits without confirming the new key.',
+}
 
 
 def get_command_output(cmd, regex=None):
