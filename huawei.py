@@ -13,7 +13,7 @@ needed by Huawei check plugins.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023042501'
 
 import time
 
@@ -31,7 +31,7 @@ def get_creds(args):
     if ibasetoken:
         return ibasetoken, cookie
 
-    url = '{}/deviceManager/rest/{}/sessions'.format(args.URL, args.DEVICE_ID)
+    uri = '{}/deviceManager/rest/{}/sessions'.format(args.URL, args.DEVICE_ID)
     header = {
         'Content-Type': 'application/json',
     }
@@ -41,7 +41,7 @@ def get_creds(args):
         'scope': args.SCOPE,
     }
     result = base.coe(url.fetch_json(
-        url,
+        uri,
         data=data,
         encoding='serialized-json',
         extended=True,
@@ -64,7 +64,7 @@ def get_data(endpoint, args, params=''):
     ibasetoken, cookie = get_creds(args)
 
     # fetch data
-    url = '{}/deviceManager/rest/{}/{}{}'.format(
+    uri = '{}/deviceManager/rest/{}/{}{}'.format(
         args.URL,
         args.DEVICE_ID,
         endpoint,
@@ -83,7 +83,7 @@ def get_data(endpoint, args, params=''):
     while True:
         counter += 1
         result = base.coe(url.fetch_json(
-            url,
+            uri,
             header=header,
             insecure=True,
             no_proxy=args.NO_PROXY,

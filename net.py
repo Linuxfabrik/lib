@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023042501'
 
 import random
 import re
@@ -212,8 +212,8 @@ def get_public_ip(services):
     random.shuffle(services)
 
     ip = None
-    for url in services:
-        success, ip = url.fetch(url.strip(), timeout=2)
+    for uri in services:
+        success, ip = url.fetch(uri.strip(), timeout=2)
         if success and ip:
             ip = ip.strip()
             try:

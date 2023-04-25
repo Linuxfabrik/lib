@@ -12,7 +12,7 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023042501'
 
 import base64
 
@@ -30,7 +30,7 @@ def get_token(args):
     and return allowed methods and the `X-RestSvcSessionId` token
     (looks like `ZWIwMDkzODMtM2YzNy00MDJjLThlNzMtZDEwY2E4ZmU5MzYx`).
     """
-    url = args.URL + '/api/sessionMngr/?v=latest'
+    uri = args.URL + '/api/sessionMngr/?v=latest'
     header = {}
     # Basic authentication
     auth = '{}:{}'.format(args.USERNAME, args.PASSWORD)
@@ -41,7 +41,7 @@ def get_token(args):
     # make this a POST request by filling data with anything
     data = {'make-this': 'a-post-request'}
     success, result = url.fetch_json(
-        url,
+        uri,
         header=header,
         data=data,
         timeout=args.TIMEOUT,
@@ -51,7 +51,7 @@ def get_token(args):
     if not success:
         return (success, result)
     if not result:
-        return (False, 'There was no result from {}.'.format(url))
+        return (False, 'There was no result from {}.'.format(uri))
     # In Python 3, getheader() should be get()
     result['X-RestSvcSessionId'] = result.get('response_header').get('X-RestSvcSessionId')
     if not result['X-RestSvcSessionId']:

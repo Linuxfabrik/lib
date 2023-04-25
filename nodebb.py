@@ -12,18 +12,18 @@
 needed by more than one NodeBB plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023042501'
 
 from . import base
 from . import url
 
 
-def get_data(args, url=''):
+def get_data(args, uri=''):
     """Fetch json from the NodeBB API using an user token. For details have a look at
     https://docs.nodebb.org/api/
     """
     return base.coe(url.fetch_json(
-        args.URL + url,
+        args.URL + uri,
         insecure=args.INSECURE,
         timeout=args.TIMEOUT,
         header={

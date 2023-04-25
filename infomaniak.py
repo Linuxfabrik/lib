@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023042501'
 
 from . import url
 
@@ -24,15 +24,15 @@ def get_events(token):
     """Get all Infomaniak Events.
     https://developer.infomaniak.com/docs/api/get/2/events
     """
-    url = '{}/2/events?locale=en'.format(BASE_URL)
+    uri = '{}/2/events?locale=en'.format(BASE_URL)
     success, events = url.fetch_json(
-        url,
+        uri,
         header={'Authorization':'Bearer {}'.format(token)},
     )
     if not success:
         return (success, events)
     if not events:
-        return (False, 'There was no result from {}.'.format(url))
+        return (False, 'There was no result from {}.'.format(uri))
     if events.get('result') != 'success':
         return (False, events.get('error').get('description'))
     return (True, events)
@@ -42,15 +42,15 @@ def get_swiss_backup_products(account_id, token):
     """Get all Infomaniak Swiss Backup products.
     https://developer.infomaniak.com/docs/api/get/1/swiss_backups
     """
-    url = '{}/1/swiss_backups?account_id={}'.format(BASE_URL, account_id)
+    uri = '{}/1/swiss_backups?account_id={}'.format(BASE_URL, account_id)
     success, products = url.fetch_json(
-        url,
+        uri,
         header={'Authorization':'Bearer {}'.format(token)},
     )
     if not success:
         return (success, products)
     if not products:
-        return (False, 'There was no result from {}.'.format(url))
+        return (False, 'There was no result from {}.'.format(uri))
     if products.get('result') != 'success':
         return (False, products.get('error').get('description'))
     return (True, products)
@@ -65,18 +65,18 @@ def get_swiss_backup_slots(account_id, token):
         return (success, products)
     slots = []
     for product in products.get('data', {}):
-        url = '{}/1/swiss_backups/{}/slots'.format(
+        uri = '{}/1/swiss_backups/{}/slots'.format(
             BASE_URL,
             product.get('id'),
         )
         success, slot = url.fetch_json(
-            url,
+            uri,
             header={'Authorization':'Bearer {}'.format(token)},
         )
         if not success:
             return (success, slot)
         if not slot:
-            return (False, 'There was no result from {}.'.format(url))
+            return (False, 'There was no result from {}.'.format(uri))
         if slot.get('result') != 'success':
             return (False, slot.get('error').get('description'))
         # append some information from the parent, too:

@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023042501'
 
 from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
@@ -21,11 +21,11 @@ from . import txt # pylint: disable=C0413
 from . import url # pylint: disable=C0413
 
 
-def get_data(args, url=''):
-    url = '{}{}'.format(args.URL, url)
+def get_data(args, uri=''):
+    uri = '{}{}'.format(args.URL, uri)
     header = {'X-Auth-Token': args.TOKEN}
     result = base.coe(url.fetch_json(
-        url,
+        uri,
         header=header,
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
