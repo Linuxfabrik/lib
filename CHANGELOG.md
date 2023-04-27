@@ -18,13 +18,14 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Added
 
-* disk3.py: Add read_env()
-* version3.py
+* args.py: Add `number_unit_method` type (used in `disk-usage` monitoring plugin)
+* disk.py: Add read_env()
+* version.py
 
 
 ### Changed
 
-* base3.py: Improve str2state()
+* base.py: Improve str2state()
 
 
 

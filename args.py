@@ -11,8 +11,11 @@
 """Extends argparse by new input argument data types on demand.
 """
 
+import re  # pylint: disable=C0413
+
+
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023042601'
 
 
 def csv(arg):
@@ -37,6 +40,38 @@ def int_or_none(arg):
     return int(arg)
 
 
+def number_unit_method(arg, unit='%', method='USED'):
+    """Expects '<number>[unit][method]. Useful for threshold arguments.
+    Number is an integer or float.
+    Unit is one of `%%|K|M|G|T|P`.
+      If "unit" is omitted, `%` is assumed.
+      `K` means `kibibyte` etc.
+    Method is one of `USED|FREE`.
+      If "method" is ommitted, `USED` is assumed.
+    Examples: '
+    * `95`: returns (95, '%', 'USED')
+    * `9.5M`: returns (9.5, 'M', 'USED')
+    * `95%USED`: returns (95, '%', 'USED')
+    * `5FREE`: : returns (5, '%', 'FREE')
+    * `5%FREE`: : returns (5, '%', 'FREE')
+    * `9.5GFREE`: returns (9.5, 'G', 'FREE')
+    * `1400GUSED`: returns (1400, 'G', 'USED')
+    """
+    # use named groups in regex
+    regex = re.compile(
+        r'(?P<number>\d*\.?\d*)(?P<unit>%|K|M|G|T|P)?(?P<method>USED|FREE)?',
+        re.IGNORECASE,
+    )
+    match = re.search(regex, arg)
+    if match and match.groupdict().get('number'):
+        arg = match.groupdict().get('number').strip()
+        if match and match.groupdict().get('unit'):
+            unit = match.groupdict().get('unit').strip()
+        if match and match.groupdict().get('method'):
+            method = match.groupdict().get('method').strip()
+    return arg, unit.upper(), method.upper()
+
+
 def range_or_none(arg):
     """Returns None or range from a `range_or_none` input argument.
     """
@@ -49,3 +84,4 @@ def str_or_none(arg):
     if arg is None or str(arg).lower() == 'none':
         return None
     return str(arg)
+
