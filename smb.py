@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023042701'
 
 import sys
 
@@ -52,7 +52,7 @@ def open_file(filename, username, password, timeout, encrypt=True):
 
 def glob(filename, username, password, timeout, pattern='*', encrypt=True):
     try:
-        file_entry = smbclient._os.SMBDirEntry.from_filename(
+        file_entry = smbclient._os.SMBDirEntry.from_path(
             filename,
             username=username,
             password=password,

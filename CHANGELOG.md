@@ -28,6 +28,11 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * base.py: Improve str2state()
 
 
+### Fixed
+
+* smb.py: Type object 'SMBDirEntry' has no attribute 'from_filename'
+
+
 
 ## 2023030801
 
