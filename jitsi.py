@@ -12,7 +12,7 @@
 needed by more than one Jitsi plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023051201'
 
 import base64 # pylint: disable=C0413
 

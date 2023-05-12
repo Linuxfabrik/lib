@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042501'
+__version__ = '2023051201'
 
 from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 

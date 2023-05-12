@@ -12,7 +12,7 @@
 needed by more than one NodeBB plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042501'
+__version__ = '2023051201'
 
 from . import base
 from . import url

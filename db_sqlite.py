@@ -26,7 +26,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023051201'
 
 import csv
 import hashlib

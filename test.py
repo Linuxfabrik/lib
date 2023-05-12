@@ -17,7 +17,7 @@ from . import disk
 
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042305'
+__version__ = '2023051201'
 
 
 def test(args):

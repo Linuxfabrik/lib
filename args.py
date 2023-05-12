@@ -15,7 +15,7 @@ import re  # pylint: disable=C0413
 
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042601'
+__version__ = '2023051201'
 
 
 def csv(arg):

@@ -13,7 +13,7 @@ needed by Huawei check plugins.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023042501'
+__version__ = '2023051201'
 
 import time
 
