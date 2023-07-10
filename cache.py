@@ -25,7 +25,7 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023051201'
+__version__ = '2023070701'
 
 from . import time
 from . import db_sqlite
@@ -45,7 +45,6 @@ def get(key, as_dict=False, path='', filename='linuxfabrik-monitoring-plugins-ca
         The value that belongs to the key, `False` if not found or on
         failure.
     """
-
     success, conn = db_sqlite.connect(path=path, filename=filename)
     if not success:
         return False
@@ -107,7 +106,6 @@ def set(key, value, expire=0, path='', filename='linuxfabrik-monitoring-plugins-
     bool
         `True` on success, `False` on failure.
     """
-
     success, conn = db_sqlite.connect(path=path, filename=filename)
     if not success:
         return False
