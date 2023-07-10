@@ -13,9 +13,9 @@ needed by Huawei check plugins.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023051201'
+__version__ = '2023071001'
 
-import time
+import time as _time
 
 from . import base
 from . import cache
@@ -93,7 +93,7 @@ def get_data(endpoint, args, params=''):
             break
         if counter == 9:
             break
-        time.sleep(1)
+        _time.sleep(1)
     result['counter'] = counter
     return result
 
