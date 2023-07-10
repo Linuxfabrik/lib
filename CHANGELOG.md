@@ -16,6 +16,11 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * endoflifedate.py
 
 
+### Changed
+
+* version.py: check_eol() also fetches and caches info from https://endoflife.date/api
+
+
 
 ## 2023051201
 

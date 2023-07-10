@@ -12,48 +12,77 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023051201'
+__version__ = '2023071001'
 
-import os
+import json
 import re
 
 from .globals import STATE_OK, STATE_UNKNOWN, STATE_WARN
 from . import base
-from . import disk
+from . import cache
 from . import shell
 from . import time
+from . import url
 
 
-def check_eol(endoflife_date, version, pattern='%Y-%m-%d'):
+def check_eol(product, ver, pattern='%Y-%m-%d'):
     """Check if a software version is End of Life (EOL) by comparing it to a JSON object
     compatible to the https://endoflife.date API. Return the status and the EOL message.
 
-    >>> ENDOFLIFE_DATE = [
-    ...     {"cycle": "3.7","eol": False},
-    ...     {"cycle": "3.8","eol": "2020-12-31"},
-    ...     {"cycle": "4.0","eol": "2100-12-31"},
-    ... ]
-    >>>
-    >>> check_eol(ENDOFLIFE_DATE, '3.7')
+    EOL dates are taken from:
+    1. Local SQLite DB cache (valid for 24h). If not successful...
+    2. From https://endoflife.date/api (and then cached). If not successful...
+    3. From local JSON definition file, definition copied from endoflife.date (and then cached).
+
+    >>> check_eol('https://endoflife.date/api/example.json', '3.7')
     (STATE_OK, 'EOL unknown')
     >>>
-    >>> check_eol(ENDOFLIFE_DATE, '3.8')
+    >>> check_eol('https://endoflife.date/api/example.json', '3.8')
     (STATE_WARN, 'EOL 2020-12-31')
     >>>
-    >>> check_eol(ENDOFLIFE_DATE, '3.9')
+    >>> check_eol('https://endoflife.date/api/example.json', '3.9')
     (STATE_UNKOWN, 'version unknown')
     >>>
-    >>> check_eol(ENDOFLIFE_DATE, '4.0')
+    >>> check_eol('https://endoflife.date/api/example.json', '4.0')
     (STATE_OK, 'EOL 2100-12-31')
     """
+    # first load from cache
+    eol = cache.get(
+        product,
+        filename='linuxfabrik-lib-version.db',
+    )
+    if eol:
+        try:
+            eol = json.loads(eol)
+        except json.decoder.JSONDecodeError:
+            # don't care, we'll fetch new info
+            eol = False
+    if not eol:
+        # nothing or nothing valid found? load from web
+        success, eol = url.fetch_json(product)
+        if not success or not eol:
+            # not working? timeout? load from local definition
+            try:
+                from . import endoflifedate # pylint: disable=C0415
+                eol = endoflifedate.ENDOFLIFE_DATE[product]
+            except KeyError:
+                # ok, give up
+                return STATE_UNKNOWN, 'product {} unknown'.format(product)
+        # update the cache with the new info
+        retc = cache.set(
+            product,
+            json.dumps(eol),
+            expire=time.now() + 24*60*60,
+            filename='linuxfabrik-lib-version.db',
+        )
     eol = base.lookup_lod(
-        endoflife_date,
+        eol,
         'cycle',
-        version,
+        ver,
     )
     if not eol:
         # version not found
-        return STATE_UNKNOWN, 'version unknown'
+        return STATE_UNKNOWN, 'version {} unknown'.format(eol)
     state = STATE_OK
     if not eol['eol']:
         # EOL is false, no EOL date given
@@ -74,7 +103,7 @@ def get_os_info():
     return ''
 
 
-def version(v):
+def version(ver):
     """Use this function to compare string-based version numbers.
 
     >>> '3.0.7' < '3.0.11'
@@ -88,7 +117,7 @@ def version(v):
 
     Parameters
     ----------
-    v : str
+    ver : str
         A version string, for example "v5.13.19-4-pve".
 
     Returns
@@ -98,16 +127,16 @@ def version(v):
     """
     # if we get something like "v5.13.19-4-pve", remove everything except "." and "-",
     # and convert "-" to "."
-    v = re.sub(r'[^0-9\.-]', '', v)
-    v = v.replace('-', '.')
-    v = v.split('.')
+    ver = re.sub(r'[^0-9\.-]', '', ver)
+    ver = ver.replace('-', '.')
+    ver = ver.split('.')
     # remove all empty strings from the list of strings
-    v = list(filter(None, v))
+    ver = list(filter(None, ver))
     # create a return tuple, for example (5, 13, 19, 4)
-    return tuple(map(int, v))
+    return tuple(map(int, ver))
 
 
-def version2float(v):
+def version2float(ver):
     """Just get the version number as a float.
 
     >>> version2float('Version v17.3.2.0')
@@ -115,8 +144,8 @@ def version2float(v):
     >>> version2float('21.60-53-93285')
     21.605393285
     """
-    v = re.sub(r'[^0-9\.]', '', v)  # remove everything except 0-9 and .
-    v = v.split('.')
-    if len(v) > 1:
-        return float('{}.{}'.format(v[0], ''.join(v[1:])))
-    return float(''.join(v))
+    ver = re.sub(r'[^0-9\.]', '', ver)  # remove everything except 0-9 and .
+    ver = ver.split('.')
+    if len(ver) > 1:
+        return float('{}.{}'.format(ver[0], ''.join(ver[1:])))
+    return float(''.join(ver))
