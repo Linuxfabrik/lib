@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023071201'
+__version__ = '2023071202'
 
 import collections
 import numbers
@@ -20,7 +20,7 @@ import operator
 import os
 import sys
 
-from traceback import format_exc # pylint: disable=C0413
+from traceback import format_exc
 
 from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
@@ -83,9 +83,16 @@ def cu(msg=None):
     and always exits with STATE_UNKNOWN.
     Use this function to print error messages.
     """
-    if msg:
-        print(msg.strip() + '\n')
-    print(format_exc().replace("<", "'").replace(">", "'"))
+    tb = format_exc()
+    if 'NoneType: None' not in tb:
+        # got a stacktrace
+        tb = tb.replace("<", "'").replace(">", "'")
+        if msg is not None:
+            print(msg.strip() + '\n')
+        print(tb)
+    else:
+        if msg is not None:
+            print(msg.strip())
     sys.exit(STATE_UNKNOWN)
 
 
