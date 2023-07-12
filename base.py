@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023051201'
+__version__ = '2023071201'
 
 import collections
 import numbers
@@ -76,12 +76,15 @@ def coe(result, state=STATE_UNKNOWN):
     sys.exit(state)
 
 
-def cu():
+def cu(msg=None):
     """See you (cu)
 
-    Prints a Stacktrace (replacing "<" and ">" to be printable in Web-GUIs), and exits with
-    STATE_UNKNOWN.
+    Prints an optional message and a Stacktrace (replacing "<" and ">" to be printable in Web-GUIs),
+    and always exits with STATE_UNKNOWN.
+    Use this function to print error messages.
     """
+    if msg:
+        print(msg.strip() + '\n')
     print(format_exc().replace("<", "'").replace(">", "'"))
     sys.exit(STATE_UNKNOWN)
 
