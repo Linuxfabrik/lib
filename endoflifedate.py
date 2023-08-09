@@ -13,7 +13,7 @@ and therefore needs to be updated periodically when version checks don't have ac
 Internet."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023071001'
+__version__ = '2023080901'
 
 ENDOFLIFE_DATE = {
 
@@ -194,12 +194,21 @@ ENDOFLIFE_DATE = {
 
     'https://endoflife.date/api/gitlab.json': [
       {
+        "cycle": "16.2",
+        "releaseDate": "2023-07-21",
+        "support": "2023-08-22",
+        "eol": "2023-10-22",
+        "latest": "16.2.3",
+        "latestReleaseDate": "2023-08-03",
+        "lts": False
+      },
+      {
         "cycle": "16.1",
         "releaseDate": "2023-06-21",
         "support": "2023-07-22",
         "eol": "2023-09-22",
-        "latest": "16.1.2",
-        "latestReleaseDate": "2023-07-04",
+        "latest": "16.1.4",
+        "latestReleaseDate": "2023-08-03",
         "lts": False
       },
       {
@@ -207,8 +216,8 @@ ENDOFLIFE_DATE = {
         "releaseDate": "2023-05-18",
         "support": "2023-06-22",
         "eol": "2023-08-22",
-        "latest": "16.0.7",
-        "latestReleaseDate": "2023-07-04",
+        "latest": "16.0.8",
+        "latestReleaseDate": "2023-08-01",
         "lts": False
       },
       {
@@ -216,8 +225,8 @@ ENDOFLIFE_DATE = {
         "releaseDate": "2023-04-21",
         "support": "2023-05-22",
         "eol": "2023-07-22",
-        "latest": "15.11.11",
-        "latestReleaseDate": "2023-07-04",
+        "latest": "15.11.13",
+        "latestReleaseDate": "2023-07-27",
         "lts": False
       },
       {
@@ -827,24 +836,24 @@ ENDOFLIFE_DATE = {
         "cycle": "27",
         "releaseDate": "2023-06-12",
         "eol": "2024-06-01",
-        "latest": "27.0.0",
-        "latestReleaseDate": "2023-06-12",
+        "latest": "27.0.2",
+        "latestReleaseDate": "2023-08-08",
         "lts": False
       },
       {
         "cycle": "26",
         "releaseDate": "2023-03-21",
         "eol": "2024-03-01",
-        "latest": "26.0.3",
-        "latestReleaseDate": "2023-06-22",
+        "latest": "26.0.4",
+        "latestReleaseDate": "2023-07-20",
         "lts": False
       },
       {
         "cycle": "25",
         "releaseDate": "2022-10-18",
         "eol": "2023-10-01",
-        "latest": "25.0.8",
-        "latestReleaseDate": "2023-06-22",
+        "latest": "25.0.9",
+        "latestReleaseDate": "2023-07-20",
         "lts": False
       },
       {
