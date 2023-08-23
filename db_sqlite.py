@@ -8,7 +8,9 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""This is one typical use case of this library (taken from `disk-io`):
+"""Library for accessing SQLite databases.
+
+This is one typical use case of this library (taken from `disk-io`):
 
 >>> conn = lib.base.coe(lib.db_sqlite.connect(filename='disk-io.db'))
 >>> lib.base.coe(lib.db_sqlite.create_table(conn, definition, drop_table_first=False))
@@ -26,7 +28,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023051201'
+__version__ = '2023082301'
 
 import csv
 import hashlib
