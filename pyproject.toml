@@ -1,0 +1,68 @@
+[build-system]
+# In setuptools before version 61.0.0 there is no support for writing the
+# project's packaging metadata in pyproject.toml
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "linuxfabrik-lib"
+version = "2023051201-1"
+description = "Python libraries used in various Linuxfabrik projects, including the 'Linuxfabrik Monitoring Plugins' project."
+readme = "README.md"
+authors = [
+    { name = "Linuxfabrik GmbH, Zurich, Switzerland", email = "info@linuxfabrik.ch" },
+]
+license = { file = "LICENSE" }
+classifiers = [
+    "Development Status :: 6 - Mature",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Manufacturing",
+    "Intended Audience :: Other Audience",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Telecommunications Industry",
+    "License :: OSI Approved :: The Unlicense (Unlicense)",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Networking :: Monitoring",
+]
+keywords = ["lib", "libs", "monitoring", "monitoring plugins", "icinga", "nagios"]
+dependencies = [
+    "beautifulsoup4",
+    "lxml",
+    "netifaces",
+    "psutil",
+    "pymysql",
+    "pysmbclient",
+    "python-keystoneclient",
+    "python-novaclient",
+    "python-swiftclient",
+    "pywinrm",
+    "requests",
+    "smbprotocol",
+    "vici",
+    "xmltodict",
+]
+requires-python = ">=3.6"
+
+[project.urls]
+Homepage = "https://github.com/Linuxfabrik/lib"
+Documentation = "https://github.com/Linuxfabrik/lib/blob/master/README.md"
+Source = "https://github.com/Linuxfabrik/lib"
+Tracker = "https://github.com/Linuxfabrik/lib/issues"
+Download = "https://github.com/Linuxfabrik/lib/releases"
+
+[tool.setuptools]
+# packages are not in the root of the repository or do not correspond exactly to
+# the directory structure, so we need to configure package_dir
+# https://setuptools.pypa.io/en/latest/userguide/package_discovery.html
+package-dir = {"lib" = "."}
