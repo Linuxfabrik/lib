@@ -14,6 +14,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 ### Added
 
 * endoflifedate.py
+* [Published on PyPI](https://pypi.org/project/linuxfabrik-lib/), you may now use `pip install linuxfabrik-lib`
 
 
 ### Changed
