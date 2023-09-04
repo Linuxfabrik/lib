@@ -13,7 +13,7 @@ and therefore needs to be updated periodically when version checks don't have ac
 Internet."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023081702'
+__version__ = '2023090401'
 
 ENDOFLIFE_DATE = {
 
@@ -459,12 +459,21 @@ ENDOFLIFE_DATE = {
 
     'https://endoflife.date/api/grafana.json': [
       {
-        "cycle": "10.0",
-        "releaseDate": "2023-06-09",
+        "cycle": "10.1",
+        "releaseDate": "2023-08-23",
         "support": True,
         "eol": False,
-        "latest": "10.0.1",
-        "latestReleaseDate": "2023-06-22",
+        "latest": "10.1.1",
+        "latestReleaseDate": "2023-08-30",
+        "lts": False
+      },
+      {
+        "cycle": "10.0",
+        "releaseDate": "2023-06-09",
+        "support": "2023-08-23",
+        "eol": False,
+        "latest": "10.0.4",
+        "latestReleaseDate": "2023-08-23",
         "lts": False
       },
       {
@@ -472,8 +481,8 @@ ENDOFLIFE_DATE = {
         "releaseDate": "2023-04-06",
         "support": "2023-06-09",
         "eol": False,
-        "latest": "9.5.5",
-        "latestReleaseDate": "2023-06-22",
+        "latest": "9.5.8",
+        "latestReleaseDate": "2023-08-17",
         "lts": False
       },
       {
