@@ -13,7 +13,7 @@ and therefore needs to be updated periodically when version checks don't have ac
 Internet."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023090401'
+__version__ = '2023092201'
 
 ENDOFLIFE_DATE = {
 
@@ -862,24 +862,24 @@ ENDOFLIFE_DATE = {
         "cycle": "27",
         "releaseDate": "2023-06-12",
         "eol": "2024-06-01",
-        "latest": "27.0.2",
-        "latestReleaseDate": "2023-08-08",
+        "latest": "27.1.1",
+        "latestReleaseDate": "2023-09-21",
         "lts": False
       },
       {
         "cycle": "26",
         "releaseDate": "2023-03-21",
         "eol": "2024-03-01",
-        "latest": "26.0.4",
-        "latestReleaseDate": "2023-07-20",
+        "latest": "26.0.7",
+        "latestReleaseDate": "2023-09-20",
         "lts": False
       },
       {
         "cycle": "25",
         "releaseDate": "2022-10-18",
         "eol": "2023-10-01",
-        "latest": "25.0.9",
-        "latestReleaseDate": "2023-07-20",
+        "latest": "25.0.12",
+        "latestReleaseDate": "2023-09-20",
         "lts": False
       },
       {
