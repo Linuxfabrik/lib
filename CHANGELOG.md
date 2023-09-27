@@ -13,7 +13,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Added
 
-* endoflifedate.py
+* endoflifedate.py (built automatically; version string only changes when products are added or deleted)
 * [Published on PyPI](https://pypi.org/project/linuxfabrik-lib/), you may now use `pip install linuxfabrik-lib`
 
 
