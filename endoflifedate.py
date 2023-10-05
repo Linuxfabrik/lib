@@ -457,8 +457,8 @@ ENDOFLIFE_DATE = {
     'https://endoflife.date/api/keycloak.json': [
     {   'cycle': '22.0',
         'eol': False,
-        'latest': '22.0.3',
-        'latestReleaseDate': '2023-09-12',
+        'latest': '22.0.4',
+        'latestReleaseDate': '2023-10-04',
         'lts': False,
         'releaseDate': '2023-07-11'},
     {   'cycle': '21.1',
