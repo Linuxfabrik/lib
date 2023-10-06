@@ -690,8 +690,8 @@ ENDOFLIFE_DATE = {
     'https://endoflife.date/api/nextcloud.json': [
     {   'cycle': '27',
         'eol': '2024-06-01',
-        'latest': '27.1.1',
-        'latestReleaseDate': '2023-09-21',
+        'latest': '27.1.2',
+        'latestReleaseDate': '2023-10-05',
         'lts': False,
         'releaseDate': '2023-06-12'},
     {   'cycle': '26',
