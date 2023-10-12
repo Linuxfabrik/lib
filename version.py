@@ -12,8 +12,9 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023071001'
+__version__ = '2023101101'
 
+import datetime
 import json
 import re
 
@@ -25,7 +26,7 @@ from . import time
 from . import url
 
 
-def check_eol(product, ver, pattern='%Y-%m-%d'):
+def check_eol(product, version_string, offset_eol=-30, check_major=False, check_minor=False, check_patch=False, pattern='%Y-%m-%d'):
     """Check if a software version is End of Life (EOL) by comparing it to a JSON object
     compatible to the https://endoflife.date API. Return the status and the EOL message.
 
@@ -46,7 +47,8 @@ def check_eol(product, ver, pattern='%Y-%m-%d'):
     >>> check_eol('https://endoflife.date/api/example.json', '4.0')
     (STATE_OK, 'EOL 2100-12-31')
     """
-    # first load from cache
+
+    # gather eol data - first load from cache
     eol = cache.get(
         product,
         filename='linuxfabrik-lib-version.db',
@@ -75,22 +77,84 @@ def check_eol(product, ver, pattern='%Y-%m-%d'):
             expire=time.now() + 24*60*60,
             filename='linuxfabrik-lib-version.db',
         )
-    eol = base.lookup_lod(
-        eol,
-        'cycle',
-        ver,
-    )
-    if not eol:
-        # version not found
-        return STATE_UNKNOWN, 'version {} unknown'.format(eol)
+
+    # find "the cycle's end of life date" automatically upon the given version
+    installed_version = version(version_string)
+    lookup_version = ''
+    for v in installed_version:
+        # search for versions "3", "3.7", "3.7.2", "3.7.2.9", ... in "cycle"
+        if lookup_version:
+            lookup_version += '.{}'.format(v)
+        else:
+            lookup_version = str(v)
+        _, cycles_eoldate = base.lookup_lod(
+            eol,
+            'cycle',
+            lookup_version,
+        )
+        if cycles_eoldate:
+            break
+
+    if not cycles_eoldate:
+        # version not found, so don't know if it's up-to-date or not
+        return STATE_UNKNOWN, 'version {} unknown'.format(version_string)
+
+    # got an EOL date like "False" or "2022-12-31"
+    msg = ''
     state = STATE_OK
-    if not eol['eol']:
+    if isinstance(cycles_eoldate['eol'], str) and cycles_eoldate['eol']:
+        msg += 'EOL {} {}d'.format(
+            cycles_eoldate['eol'],
+            offset_eol if offset_eol < 0 else '+{}'.format(offset_eol),
+        )
+        if time.now(as_type='datetime') > time.timestr2datetime(cycles_eoldate['eol'], pattern=pattern) + datetime.timedelta(offset_eol):
+            state = STATE_WARN
+            msg += base.state2str(state, prefix=' ')
+    else:
         # EOL is false, no EOL date given
-        return state, 'EOL unknown'
-    # we got an EOL timestamp, so check it
-    if time.now(as_type='datetime') > time.timestr2datetime(eol['eol'], pattern=pattern):
-        state = STATE_WARN
-    return state, 'EOL {}{}'.format(eol['eol'], base.state2str(state, prefix=' '))
+        msg += 'EOL unknown'
+
+    # search for newer versions, alert if wanted
+    # no need for "cycle", just let's have a look at all "latest" versions
+    try:
+        eol_versions = [item['latest'] for item in eol]
+    except:
+        return state, msg
+    installed_major, installed_minor, installed_patch = installed_version
+
+    # check major
+    eol_major, _, _  = version(eol_versions[0])
+    if eol_major > installed_major:
+        msg += ', major {} available'.format(eol_versions[0])
+        if check_major:
+            state = STATE_WARN
+            msg += base.state2str(state, prefix=' ')
+
+    # check minor
+    for v in eol_versions:
+        eol_major, eol_minor, eol_patch = version(v)
+        # find the latest entry for the installed major version
+        if eol_major == installed_major:
+            if eol_minor > installed_minor:
+                msg += ', minor {} available'.format(v)
+                if check_minor:
+                    state = STATE_WARN
+                    msg += base.state2str(state, prefix=' ')
+            break
+
+    # check patch
+    for v in eol_versions:
+        eol_major, eol_minor, eol_patch = version(v)
+        # find the latest entry for the installed major.minor version
+        if eol_major == installed_major and eol_minor == installed_minor:
+            if eol_patch > installed_patch:
+                msg += ', patch {} available'.format(v)
+                if check_patch:
+                    state = STATE_WARN
+                    msg += base.state2str(state, prefix=' ')
+            break
+
+    return state, msg
 
 
 def get_os_info():
@@ -103,11 +167,23 @@ def get_os_info():
     return ''
 
 
-def version(ver):
-    """Use this function to compare string-based version numbers.
+def version(ver, maxlen=3):
+    """Returns a tuple based on a (semantic) version string.
+    Use this function to compare version numbers.
 
+    >>> version('1')
+    (1, 0, 0)
+    >>> version('1.2')
+    (1, 2, 0)
+    >>> version('1.2.3alpha')
+    (1, 2, 3)
+    >>> version('v5.13.19-4-pve')
+    (5, 13, 19)
+    >>> version('v5.13.19-4-pve', maxlen=4)
+    (5, 13, 19, 4)
     >>> '3.0.7' < '3.0.11'
     False
+
     >>> version('3.0.7') < version('3.0.11')
     True
     >>> version('v3.0.7-2') < version('3.0.11')
@@ -131,7 +207,11 @@ def version(ver):
     ver = ver.replace('-', '.')
     ver = ver.split('.')
     # remove all empty strings from the list of strings
-    ver = list(filter(None, ver))
+    ver = tuple(filter(None, ver))
+    if len(ver) < maxlen:
+        ver = ver + (0,) * (maxlen - len(ver))
+    else:
+        ver = ver[:maxlen]
     # create a return tuple, for example (5, 13, 19, 4)
     return tuple(map(int, ver))
 
