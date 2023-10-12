@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023071202'
+__version__ = '2023101001'
 
 import collections
 import numbers
@@ -377,22 +377,30 @@ def is_numeric(value):
     return isinstance(value, numbers.Number)
 
 
-def lookup_lod(dicts, key, needle, default=None):
-    """Search in a list of dictionaries ("lod)" for a value in a given dict key.
-    Return a default if not found.
+def lookup_lod(haystack, key, needle, default=None):
+    """Search in a list of dictionaries ("lod)" for the key containing a specific value
+    and return the first dictionary item found.
+    Returns (index, item) if needle was found, (-1, None) in every other case.
 
-    >>> dicts = [
+    >>> haystack = [
     ...     { "name": "Tom", "age": 10 },
     ...     { "name": "Mark", "age": 5 },
     ...     { "name": "Pam", "age": 7 },
     ...     { "name": "Dick", "age": 12 }
     ... ]
-    >>> lookup_lod(dicts, 'name', 'Pam')
-    {'name': 'Pam', 'age': 7}
-    >>> lookup_lod(dicts, 'name', 'Pamela')
+    >>> lookup_lod(haystack, 'name', 'Pam')
+    (2, {'name': 'Pam', 'age': 7})
+    >>> lookup_lod(haystack, 'name', 'Pamela')
+    (-1, None)
     >>>
     """
-    return next((item for item in dicts if item[key] == needle), None)
+    try:
+        for index, item in enumerate(haystack):
+            if item[key] == needle:
+                return index, item
+    except:
+        return -1, None
+    return -1, None
 
 
 def match_range(value, spec):
