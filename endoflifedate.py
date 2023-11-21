@@ -15,7 +15,7 @@ Internet."""
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023102701'
+__version__ = '2023112001'
 
 ENDOFLIFE_DATE = {
 
@@ -159,10 +159,18 @@ ENDOFLIFE_DATE = {
 
 
     'https://endoflife.date/api/gitlab.json': [
+    {   'cycle': '16.6',
+        'eol': '2024-02-15',
+        'latest': '16.6.0',
+        'latestReleaseDate': '2023-11-15',
+        'link': 'https://about.gitlab.com/releases/2023/11/16/gitlab-16-6-released/',
+        'lts': False,
+        'releaseDate': '2023-11-15',
+        'support': '2023-12-21'},
     {   'cycle': '16.5',
         'eol': '2024-01-18',
-        'latest': '16.5.1',
-        'latestReleaseDate': '2023-10-30',
+        'latest': '16.5.2',
+        'latestReleaseDate': '2023-11-14',
         'lts': False,
         'releaseDate': '2023-10-20',
         'support': '2023-11-16'},
@@ -389,8 +397,8 @@ ENDOFLIFE_DATE = {
     'https://endoflife.date/api/grafana.json': [
     {   'cycle': '10.2',
         'eol': False,
-        'latest': '10.2.0',
-        'latestReleaseDate': '2023-10-24',
+        'latest': '10.2.1',
+        'latestReleaseDate': '2023-11-13',
         'lts': False,
         'releaseDate': '2023-10-24',
         'support': True},
@@ -410,8 +418,8 @@ ENDOFLIFE_DATE = {
         'support': '2023-08-23'},
     {   'cycle': '9.5',
         'eol': False,
-        'latest': '9.5.13',
-        'latestReleaseDate': '2023-10-11',
+        'latest': '9.5.14',
+        'latestReleaseDate': '2023-11-14',
         'lts': False,
         'releaseDate': '2023-04-06',
         'support': '2023-06-09'},
@@ -1265,8 +1273,8 @@ ENDOFLIFE_DATE = {
     {   'cycle': '8',
         'eol': '2029-05-31',
         'extendedSupport': '2032-05-31',
-        'latest': '8.8',
-        'latestReleaseDate': '2023-05-16',
+        'latest': '8.9',
+        'latestReleaseDate': '2023-11-14',
         'lts': '2029-05-31',
         'releaseDate': '2019-05-07',
         'support': '2024-05-31'},
@@ -1302,6 +1310,22 @@ ENDOFLIFE_DATE = {
         'lts': False,
         'releaseDate': '2005-02-15',
         'support': '2009-03-31'},
+    ],
+
+
+    'https://endoflife.date/api/solr.json': [
+    {   'cycle': '9',
+        'eol': False,
+        'latest': '9.4.0',
+        'latestReleaseDate': '2023-10-14',
+        'lts': False,
+        'releaseDate': '2022-05-11'},
+    {   'cycle': '8',
+        'eol': False,
+        'latest': '8.11.2',
+        'latestReleaseDate': '2022-06-17',
+        'lts': False,
+        'releaseDate': '2019-03-13'},
     ],
 
 
