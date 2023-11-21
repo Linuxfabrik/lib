@@ -15,7 +15,7 @@ Internet."""
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112001'
+__version__ = '2023112101'
 
 ENDOFLIFE_DATE = {
 
@@ -1219,6 +1219,45 @@ ENDOFLIFE_DATE = {
         'lts': False,
         'releaseDate': '2008-10-01',
         'support': False},
+    ],
+
+
+    'https://endoflife.date/api/redhat-build-of-openjdk.json': [
+    {   'cycle': '17',
+        'eol': '2027-10-30',
+        'latest': '17.0.9.0.9-1',
+        'latestReleaseDate': '2023-10-18',
+        'lts': False,
+        'releaseDate': '2021-05-18'},
+    {   'cycle': '11',
+        'eol': '2024-10-30',
+        'latest': '11.0.21.0.9-1',
+        'latestReleaseDate': '2023-10-18',
+        'lts': False,
+        'releaseDate': '2018-10-30'},
+    {   'cycle': '8',
+        'eol': '2026-11-30',
+        'latest': '1.8.0.392.b08-2',
+        'latestReleaseDate': '2023-10-18',
+        'lts': False,
+        'releaseDate': '2015-03-05',
+        'releaseLabel': 'OpenJDK 8 (1.8)'},
+    {   'cycle': '7',
+        'eol': '2020-06-30',
+        'latest': '1.7.0.261-2.6.22.2',
+        'latestReleaseDate': '2020-04-15',
+        'link': None,
+        'lts': False,
+        'releaseDate': '2013-01-07',
+        'releaseLabel': 'OpenJDK 7 (1.7)'},
+    {   'cycle': '6',
+        'eol': '2016-12-31',
+        'latest': '1.6.0.41-1.13.13.1',
+        'latestReleaseDate': '2017-01-04',
+        'link': None,
+        'lts': False,
+        'releaseDate': '2009-01-20',
+        'releaseLabel': 'OpenJDK 6 (1.6)'},
     ],
 
 
