@@ -16,6 +16,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * qts.py, a library for interacting with the QNAP QTS API
 * endoflifedate.py (built automatically; version string only changes when products are added or deleted)
 * [Published on PyPI](https://pypi.org/project/linuxfabrik-lib/), you may now use `pip install linuxfabrik-lib`
+* tools/update-endoflifedate, which - like its name says - can be used to update endoflifedate.py
 
 
 ### Changed
