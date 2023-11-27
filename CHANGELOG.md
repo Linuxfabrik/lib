@@ -22,6 +22,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 ### Changed
 
 * base.py: cu() appends an optional message, making it a true errormsg function
+* base.py: oao() prints/suffixes ' (always ok)' if `always_ok=True`
 * version.py: check_eol() also fetches and caches info from https://endoflife.date/api
 
 

@@ -500,10 +500,13 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     by `|` and print it stripped. Exit with `state`, or with STATE_OK (0) if
     `always_ok` is set to `True`.
     """
+    msg = msg.strip()
+    if always_ok:
+        msg += ' (always ok)'
     if perfdata:
-        print(msg.strip() + '|' + perfdata.strip())
+        print(msg + '|' + perfdata.strip())
     else:
-        print(msg.strip())
+        print(msg)
     if always_ok:
         sys.exit(STATE_OK)
     sys.exit(state)
