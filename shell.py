@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023051201'
+__version__ = '2023112701'
 
 
 import os
@@ -103,6 +103,9 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
     """
     if not env:
         env = os.environ.copy()
+    else:
+        # merge the OS environment variables with the ones set by the env parameter
+        env = {**os.environ.copy(), **env}
     # set cmd output to English, no matter what the user has choosen
     env['LC_ALL'] = 'C'
 
@@ -120,7 +123,7 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
             return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
             return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
-        except e:
+        except Exception as e:
             return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
 
         if stdin:
@@ -149,7 +152,7 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
             return (False, 'OS Error "{} {}" calling command "{}"'.format(e.errno, e.strerror, cmd))
         except ValueError as e:
             return (False, 'Value Error "{}" calling command "{}"'.format(e, cmd))
-        except e:
+        except Exception as e:
             return (False, 'Unknown error "{}" while calling command "{}"'.format(e, cmd))
 
     try:

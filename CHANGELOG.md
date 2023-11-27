@@ -23,6 +23,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 * base.py: cu() appends an optional message, making it a true errormsg function
 * base.py: oao() prints/suffixes ' (always ok)' if `always_ok=True`
+* shell.py: shell_exec() merges the OS environment variables with the ones set by the env parameter
 * version.py: check_eol() also fetches and caches info from https://endoflife.date/api
 
 
