@@ -13,7 +13,7 @@ operating system via its API.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023092901'
+__version__ = '2023112901'
 
 import base64
 

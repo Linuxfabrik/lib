@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023101001'
+__version__ = '2023112901'
 
 import collections
 import numbers

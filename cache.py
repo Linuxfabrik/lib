@@ -25,7 +25,7 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023070701'
+__version__ = '2023112901'
 
 from . import time
 from . import db_sqlite

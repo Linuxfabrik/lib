@@ -12,7 +12,7 @@
 needed by more than one Rocket.Chat plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023051201'
+__version__ = '2023112901'
 
 from . import url
 

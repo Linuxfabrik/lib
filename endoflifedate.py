@@ -15,7 +15,7 @@ Internet."""
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112101'
+__version__ = '2023112901'
 
 ENDOFLIFE_DATE = {
 
