@@ -10,6 +10,9 @@
 import argparse  # pylint: disable=C0413
 import json  # pylint: disable=C0413
 import pprint  # pylint: disable=C0413
+import sys  # pylint: disable=C0413
+
+sys.path.append('../..')
 
 import lib.base  # pylint: disable=C0413
 import lib.disk  # pylint: disable=C0413
@@ -17,7 +20,7 @@ import lib.url  # pylint: disable=C0413
 
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112101' # adapt this if something in this script changed fundamentally
+__version__ = '2023112901' # adapt this if something in this script changed fundamentally
 
 DESCRIPTION = """Simply creates the file "endoflifedate.py" for a given list of products."""
 
