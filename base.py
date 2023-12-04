@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2023120401'
 
 import collections
 import numbers
@@ -377,7 +377,7 @@ def is_numeric(value):
     return isinstance(value, numbers.Number)
 
 
-def lookup_lod(haystack, key, needle, default=None):
+def lookup_lod(haystack, key, needle):
     """Search in a list of dictionaries ("lod)" for the key containing a specific value
     and return the first dictionary item found.
     Returns (index, item) if needle was found, (-1, None) in every other case.

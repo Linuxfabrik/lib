@@ -9,6 +9,14 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 [Unreleased]: https://github.com/Linuxfabrik/monitoring-plugins/compare/2023030601...HEAD
 
 
+## [Unreleased]
+
+### Changed ("enhancement")
+
+* base.py: lookup_lod() never uses the default parameter ([#82](https://github.com/Linuxfabrik/lib/issues/82))
+
+
+
 ## 2023112901
 
 ### Added
@@ -32,7 +40,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Breaking Changes
 
-* Remove all Python 2 based plugins and libraries from the project, and therefore remove the "3" suffix from all Python3-based plugins and libraries as well (fix [#589](https://github.com/Linuxfabrik/monitoring-plugins/issues/589))
+* Remove all Python 2 based plugins and libraries from the project, and therefore remove the "3" suffix from all Python3-based plugins and libraries as well ([#589](https://github.com/Linuxfabrik/monitoring-plugins/issues/589))
 * db_mysql.py: Change from username/password authentication to option file authentication in `connect()`
 
 
@@ -90,7 +98,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 * cache3.py: Use more unique default names for sqlite databases
 * db_mysql3.py: Enhanced for new mysql-checks
-* db_mysql3.py: Switch from mysql.connector to PyMySQL  ([#570](https://github.com/Linuxfabrik/monitoring-plugins/issues/570))
+* db_mysql3.py: Switch from mysql.connector to PyMySQL ([#570](https://github.com/Linuxfabrik/monitoring-plugins/issues/570))
 * db_mysql3.py: Use more unique default names for sqlite databases
 * disk3.py: Add file_exists() function
 * Revert Python 3.6+ `f`-strings to use `.format()` to be more conservative
