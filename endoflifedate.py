@@ -1254,6 +1254,12 @@ ENDOFLIFE_DATE = {
 
 
     'https://endoflife.date/api/redhat-build-of-openjdk.json': [
+    {   'cycle': '21',
+        'eol': '2029-12-31',
+        'latest': '21.0.1.0.12-3',
+        'latestReleaseDate': '2023-11-13',
+        'lts': False,
+        'releaseDate': '2023-10-30'},
     {   'cycle': '17',
         'eol': '2027-10-30',
         'latest': '17.0.9.0.9-1',
