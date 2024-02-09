@@ -14,6 +14,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 ### Changed ("enhancement")
 
 * base.py: lookup_lod() never uses the default parameter ([#82](https://github.com/Linuxfabrik/lib/issues/82))
+* librenms.py: Introduce caching of the result sets.
 
 
 
