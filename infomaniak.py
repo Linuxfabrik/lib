@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031401'
 
 from . import url
 
@@ -20,7 +20,7 @@ from . import url
 BASE_URL = 'https://api.infomaniak.com'
 
 
-def get_events(token):
+def get_events(token, insecure=False, no_proxy=False, timeout=8):
     """Get all Infomaniak Events.
     https://developer.infomaniak.com/docs/api/get/2/events
     """
@@ -28,6 +28,9 @@ def get_events(token):
     success, events = url.fetch_json(
         uri,
         header={'Authorization':'Bearer {}'.format(token)},
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
     )
     if not success:
         return (success, events)
@@ -38,7 +41,7 @@ def get_events(token):
     return (True, events)
 
 
-def get_swiss_backup_products(account_id, token):
+def get_swiss_backup_products(account_id, token, insecure=False, no_proxy=False, timeout=8):
     """Get all Infomaniak Swiss Backup products.
     https://developer.infomaniak.com/docs/api/get/1/swiss_backups
     """
@@ -46,6 +49,9 @@ def get_swiss_backup_products(account_id, token):
     success, products = url.fetch_json(
         uri,
         header={'Authorization':'Bearer {}'.format(token)},
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
     )
     if not success:
         return (success, products)
@@ -56,7 +62,7 @@ def get_swiss_backup_products(account_id, token):
     return (True, products)
 
 
-def get_swiss_backup_slots(account_id, token):
+def get_swiss_backup_slots(account_id, token, insecure=False, no_proxy=False, timeout=8):
     """Get all devices / slots for each Infomaniak Swiss Backup product.
     https://developer.infomaniak.com/docs/api/get/1/swiss_backups/%7Bswiss_backup_id%7D/slots/%7Bslot_id%7D
     """
@@ -72,6 +78,9 @@ def get_swiss_backup_slots(account_id, token):
         success, slot = url.fetch_json(
             uri,
             header={'Authorization':'Bearer {}'.format(token)},
+            insecure=insecure,
+            no_proxy=no_proxy,
+            timeout=timeout,
         )
         if not success:
             return (success, slot)
