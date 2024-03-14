@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031401'
 
 import random
 import re
@@ -197,7 +197,7 @@ def get_netinfo():
         return stats
 
 
-def get_public_ip(services):
+def get_public_ip(services, insecure=False, no_proxy=False, timeout=2):
     """Retrieve the public IP address from a list of online services.
     The list of "what is my ip" services is shuffled before being used. The first service
     returning an IP "wins".
@@ -213,7 +213,12 @@ def get_public_ip(services):
 
     ip = None
     for uri in services:
-        success, ip = url.fetch(uri.strip(), timeout=2)
+        success, ip = url.fetch(
+            uri.strip(),
+            insecure=insecure,
+            no_proxy=no_proxy,
+            timeout=timeout,
+        )
         if success and ip:
             ip = ip.strip()
             try:
