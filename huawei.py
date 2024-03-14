@@ -13,7 +13,7 @@ needed by Huawei check plugins.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031401'
 
 import time as _time
 
@@ -46,7 +46,7 @@ def get_creds(args):
         encoding='serialized-json',
         extended=True,
         header=header,
-        insecure=True,
+        insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
         timeout=args.TIMEOUT,
     ))
@@ -85,7 +85,7 @@ def get_data(endpoint, args, params=''):
         result = base.coe(url.fetch_json(
             uri,
             header=header,
-            insecure=True,
+            insecure=args.INSECURE,
             no_proxy=args.NO_PROXY,
             timeout=args.TIMEOUT,
         ))

@@ -15,6 +15,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 * base.py: lookup_lod() never uses the default parameter ([#82](https://github.com/Linuxfabrik/lib/issues/82))
 * grassfish.py: Add `insecure=False, no_proxy=False, timeout=8` to `fetch_json()`
+* huawei.py: no more hardcoded `insecure` parameter in `get_creds()` and `get_data()`
 * librenms.py: Introduce caching of the result sets.
 
 
