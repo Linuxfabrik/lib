@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031401'
 
 import base64
 import time
@@ -26,7 +26,7 @@ DEFAULT_SLEEP = 1.0
 
 
 def api_post(uri, username, password, data={}, method_override='',
-             insecure=True, no_proxy=False, timeout=3):
+             insecure=False, no_proxy=False, timeout=3):
     """POST a low level (handmade) request to the Icinga API.
 
     Example:
@@ -61,7 +61,8 @@ def api_post(uri, username, password, data={}, method_override='',
     return result
 
 
-def get_service(uri, username, password, servicename, attrs='state'):
+def get_service(uri, username, password, servicename, attrs='state',
+                insecure=False, no_proxy=False, timeout=3):
     """POST a high level request to the Icinga `objects/service` API
     (with less possibilities). The service name should be unique and has
     to be taken from the `__name` attribute.
@@ -91,12 +92,14 @@ def get_service(uri, username, password, servicename, attrs='state'):
         password=password,
         data=data,
         method_override='GET',
-        insecure=True,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
     )
 
 
-def set_ack(uri, username, password, objectname, _type='service',
-            author='Linuxfabrik lib.icinga'):
+def set_ack(uri, username, password, objectname, _type='service', author='Linuxfabrik lib.icinga',
+            insecure=False, no_proxy=False, timeout=3):
     """Allows you to acknowledge the current problem for hosts or
     services. By acknowledging the current problem, future notifications
     (for the same state if sticky is set to false) are disabled.  The
@@ -121,14 +124,16 @@ def set_ack(uri, username, password, objectname, _type='service',
         username=username,
         password=password,
         data=data,
-        insecure=True,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
     )
 
 
 def set_downtime(uri, username, password, objectname, _type='service',
-                 starttime=int(time.time()),
-                 endtime=int(time.time())+60*60,
-                 author='Linuxfabrik lib.icinga'):
+                 starttime=int(time.time()), endtime=int(time.time())+60*60,
+                 author='Linuxfabrik lib.icinga',
+                 insecure=False, no_proxy=False, timeout=3):
     """POST a high level request to the Icinga `actions/schedule-downtime
     API (with less possibilities). The host or service name should be
     unique and has to be taken from the `__name` attribute.
@@ -161,14 +166,17 @@ def set_downtime(uri, username, password, objectname, _type='service',
         username=username,
         password=password,
         data=data,
-        insecure=True,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
     )
     if success and result['results'][0]['code'] == 200:
         return (True, result['results'][0]['name'])
     return (False, result)
 
 
-def remove_ack(uri, username, password, objectname, _type='service'):
+def remove_ack(uri, username, password, objectname, _type='service',
+               insecure=False, no_proxy=False, timeout=3):
     """Removes the acknowledgements for services or hosts. Once the
     acknowledgement has been removed the next notification will be sent
     again. Always returns ok.
@@ -191,11 +199,14 @@ def remove_ack(uri, username, password, objectname, _type='service'):
         username=username,
         password=password,
         data=data,
-        insecure=True,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
     )
 
 
-def remove_downtime(uri, username, password, downtime):
+def remove_downtime(uri, username, password, downtime,
+                    insecure=False, no_proxy=False, timeout=3):
     """Remove the downtime using its name you got from `set_downtime()`.
     Always returns ok.
     """
@@ -208,5 +219,7 @@ def remove_downtime(uri, username, password, downtime):
         username=username,
         password=password,
         data=data,
-        insecure=True,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
     )
