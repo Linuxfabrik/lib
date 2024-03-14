@@ -12,7 +12,7 @@
 needed by more than one Jitsi plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031401'
 
 import base64 # pylint: disable=C0413
 
@@ -33,7 +33,8 @@ def get_data(args, _type='json'):
             args.URL,
             extended=True,
             header=header,
-            insecure=True,
+            insecure=args.INSECURE,
+            no_proxy=args.NO_PROXY,
             timeout=args.TIMEOUT,
         )
     else:
@@ -41,7 +42,8 @@ def get_data(args, _type='json'):
             args.URL,
             extended=True,
             header=header,
-            insecure=True,
+            insecure=args.INSECURE,
+            no_proxy=args.NO_PROXY,
             timeout=args.TIMEOUT,
         )
 

@@ -18,6 +18,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * huawei.py: no more hardcoded `insecure` parameter in `get_creds()` and `get_data()`
 * icinga.py: no more hardcoded `insecure` parameter; add `insecure=False, no_proxy=False, timeout=3` to all functions
 * infomaniak.py: add `insecure=False, no_proxy=False, timeout=8` to all functions
+* jitsi.py: no more hardcoded `insecure` and evaluate `no_proxy` in `get_data()`
 * librenms.py: Introduce caching of the result sets.
 
 
