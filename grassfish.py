@@ -13,18 +13,21 @@ https://ds.example.com/gv2/webservices/API/swagger/ui/index
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031401'
 
 from . import url
 
 
-def fetch_json(token, host, port, uri, version, func):
+def fetch_json(token, host, port, uri, version, func, insecure=False, no_proxy=False, timeout=8):
     """curl --request GET --header 'Accept: application/json' --header 'X-ApiKey: token' 'https://$host:$port/$uri'
     """
     uri = 'https://{}:{}{}/v{}/{}'.format(host, port, uri, version, func)
     success, result = url.fetch_json(
         uri,
         header={'X-ApiKey': token},
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
     )
     if not success:
         return (success, result)
