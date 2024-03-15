@@ -24,6 +24,8 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * nodebb.py: Evaluate `no_proxy` in `get_data()`
 * rocket.py: add `insecure=False, no_proxy=False, timeout=3` to all functions
 * veeam.py: no more hardcoded `insecure` and also evaluate `no_proxy` in `get_token()`
+* wildfly.py: Evaluate `insecure` and `no_proxy` in `get_data()`
+
 
 
 ## 2023112901
