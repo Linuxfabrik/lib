@@ -22,6 +22,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * librenms.py: Introduce caching of the result sets.
 * net.py: Add `insecure=False, no_proxy=False, timeout=3` to `get_public_ip()`
 * nodebb.py: Evaluate `no_proxy` in `get_data()`
+* rocket.py: add `insecure=False, no_proxy=False, timeout=3` to all functions
 
 
 

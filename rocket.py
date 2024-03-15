@@ -12,12 +12,12 @@
 needed by more than one Rocket.Chat plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031501'
 
 from . import url
 
 
-def get_token(rc_url, user, password):
+def get_token(rc_url, user, password, insecure=False, no_proxy=False, timeout=3):
     """Gets an API token from Rocket.Chat, using your credentials.
     Equivalent to:
 
@@ -31,9 +31,15 @@ def get_token(rc_url, user, password):
     data = {
         'user': user,
         'password': password,
-        }
+    }
 
-    success, result = url.fetch_json(rc_url, data=data)
+    success, result = url.fetch_json(
+        rc_url,
+        data=data,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
     if not success:
         return (success, result)
     if not result:
@@ -44,7 +50,7 @@ def get_token(rc_url, user, password):
     return (True, result['data']['authToken'] + ':' + result['data']['userId'])
 
 
-def get_stats(rc_url, auth_token, user_id):
+def get_stats(rc_url, auth_token, user_id, insecure=False, no_proxy=False, timeout=3):
     """Calls api/v1/statistics. You need to get a token using
     `get_token()` first. Equivalent to:
 
@@ -59,9 +65,15 @@ def get_stats(rc_url, auth_token, user_id):
     header = {
         'X-Auth-Token': auth_token,
         'X-User-Id': user_id,
-        }
+    }
 
-    success, result = url.fetch_json(rc_url, header=header)
+    success, result = url.fetch_json(
+        rc_url,
+        header=header,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
     if not success:
         return (success, result)
     if not result:
