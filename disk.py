@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031501'
 
 import csv
 import os
@@ -113,13 +113,13 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
                 if skip_empty_rows and all(s == '' or s.isspace() for s in row):
                     continue
                 data.append(row)
+        return (True, data)
     except csv.Error as e:
         return (False, 'CSV error in file {}, line {}: {}'.format(filename, reader.line_num, e))
     except IOError as e:
         return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
     except:
         return (False, 'Unknown error opening or reading {}'.format(filename))
-    return (True, data)
 
 
 def read_env(filename, delimiter='='):
@@ -148,11 +148,11 @@ def read_env(filename, delimiter='='):
                         data[line[0].replace('export ', '')] = line[1].replace("'", '').replace('"', '')
                 except:
                     continue
+        return (True, data)
     except IOError as e:
         return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
     except:
         return (False, 'Unknown error opening or reading {}'.format(filename))
-    return (True, data)
 
 
 def read_file(filename):
@@ -161,11 +161,11 @@ def read_file(filename):
     try:
         with open(filename, 'r') as f:
             data = f.read()
+        return (True, data)
     except IOError as e:
         return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
     except:
         return (False, 'Unknown error opening or reading {}'.format(filename))
-    return (True, data)
 
 
 def rm_file(filename):
@@ -176,11 +176,11 @@ def rm_file(filename):
     """
     try:
         os.remove(filename)
+        return (True, None)
     except OSError as e:
         return (False, 'OS error "{}" while deleting {}'.format(e.strerror, filename))
     except:
         return (False, 'Unknown error deleting {}'.format(filename))
-    return (True, None)
 
 
 def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True):
@@ -227,8 +227,8 @@ def write_file(filename, content, append=False):
         with open(filename, 'w' if not append else 'a') as f:
             f.write(content)
         f.close()
+        return (True, None)
     except IOError as e:
         return (False, 'I/O error "{}" while writing {}'.format(e.strerror, filename))
     except:
         return (False, 'Unknown error writing {}, or content is not a string'.format(filename))
-    return (True, None)
