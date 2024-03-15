@@ -13,7 +13,7 @@ operating system via its API.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031501'
 
 import base64
 
@@ -65,7 +65,13 @@ def get_auth_sid(args):
         'user': args.USERNAME,
         'pwd': txt.to_text(base64.b64encode(txt.to_bytes(args.PASSWORD))),
     }
-    result = base.coe(url.fetch(api_url, data=login, insecure=args.INSECURE, no_proxy=args.NO_PROXY, timeout=args.TIMEOUT))
+    result = base.coe(url.fetch(
+        api_url,
+        data=login,
+        insecure=args.INSECURE,
+        no_proxy=args.NO_PROXY,
+        timeout=args.TIMEOUT,
+    ))
     auth_result = xmltodict.parse(result)['QDocRoot']
 
     auth_passed = auth_result['authPassed']
