@@ -12,7 +12,7 @@
 needed by more than one NodeBB plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031401'
 
 from . import base
 from . import url
@@ -24,10 +24,11 @@ def get_data(args, uri=''):
     """
     return base.coe(url.fetch_json(
         args.URL + uri,
-        insecure=args.INSECURE,
-        timeout=args.TIMEOUT,
         header={
             'Accept': 'application/json',
             'Authorization': 'Bearer {}'.format(args.TOKEN),
         },
+        insecure=args.INSECURE,
+        no_proxy=args.NO_PROXY,
+        timeout=args.TIMEOUT,
     ))
