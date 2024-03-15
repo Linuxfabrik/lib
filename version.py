@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024031501'
 
 import datetime
 import json
@@ -26,7 +26,9 @@ from . import time
 from . import url
 
 
-def check_eol(product, version_string, offset_eol=-30, check_major=False, check_minor=False, check_patch=False, pattern='%Y-%m-%d'):
+def check_eol(product, version_string, offset_eol=-30,
+              check_major=False, check_minor=False, check_patch=False, pattern='%Y-%m-%d',
+              insecure=False, no_proxy=False, timeout=8):
     """Check if a software version is End of Life (EOL) by comparing it to a JSON object
     compatible to the https://endoflife.date API. Return the status and the EOL message.
 
@@ -61,7 +63,12 @@ def check_eol(product, version_string, offset_eol=-30, check_major=False, check_
             eol = False
     if not eol:
         # nothing or nothing valid found? load from web
-        success, eol = url.fetch_json(product)
+        success, eol = url.fetch_json(
+            product,
+            insecure=insecure,
+            no_proxy=no_proxy,
+            timeout=timeout,
+        )
         if not success or not eol:
             # not working? timeout? load from local definition
             try:
