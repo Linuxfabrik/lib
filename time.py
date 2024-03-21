@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024032101'
 
 import datetime
 import time
@@ -32,19 +32,19 @@ def now(as_type=''):
     """Returns the current date and time as UNIX time in seconds (default), or
     as a datetime object.
 
-    lib.base.now()
+    lib.time.now()
     >>> 1586422786
 
-    lib.base.now(as_type='float')
+    lib.time.now(as_type='float')
     >>> 1586422786.1521912
 
-    lib.base.now(as_type='epoch')
+    lib.time.now(as_type='epoch')
     >>> 1586422786
 
-    lib.base.now(as_type='datetime')
+    lib.time.now(as_type='datetime')
     >>> datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)
 
-    lib.base.now(as_type='iso')
+    lib.time.now(as_type='iso')
     >>> '2020-04-09 11:31:24'
     """
     if as_type == 'datetime':
