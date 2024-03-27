@@ -23,6 +23,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * net.py: Add `insecure=False, no_proxy=False, timeout=3` to `get_public_ip()`
 * nodebb.py: Evaluate `no_proxy` in `get_data()`
 * rocket.py: add `insecure=False, no_proxy=False, timeout=3` to all functions
+* db_sqlite.py: connect(): Increase connect timeout to 5 secs; close(): return false on failure 
 * veeam.py: No more hardcoded `insecure` and also evaluate `no_proxy` in `get_token()`
 * version.py: Add `insecure=False, no_proxy=False, timeout=8` to `check_eol()`
 * wildfly.py: Evaluate `insecure` and `no_proxy` in `get_data()`

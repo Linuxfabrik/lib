@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024032701'
 
 import csv
 import hashlib
@@ -68,7 +68,7 @@ def close(conn):
     try:
         conn.close()
     except:
-        pass
+        return False
     return True
 
 
@@ -112,7 +112,8 @@ def connect(path='', filename=''):
 
     db = get_filename(path, filename)
     try:
-        conn = sqlite3.connect(db, timeout=1)
+        # https://docs.python.org/3/library/sqlite3.html#sqlite3.connect
+        conn = sqlite3.connect(db)
         # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
         conn.row_factory = sqlite3.Row
         # https://stackoverflow.com/questions/3425320/sqlite3-programmingerror-you-must-not-use-8-bit-bytestrings-unless-you-use-a-te
