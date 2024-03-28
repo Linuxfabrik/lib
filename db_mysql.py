@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024032801'
 
 import sys
 
@@ -125,7 +125,7 @@ def lod2dict(_vars):
     return myvar
 
 
-def select(conn, sql, data={}, fetchone=False):
+def select(conn, sql, data=[], fetchone=False):
     """The SELECT statement is used to query the database. The result of a
     SELECT is zero or more rows of data where each row has a fixed number
     of columns. A SELECT statement does not make any changes to the
@@ -134,7 +134,7 @@ def select(conn, sql, data={}, fetchone=False):
     with conn.cursor() as cursor:
         try:
             if data:
-                cursor.execute(sql, (data,))
+                cursor.execute(sql, (*data,))
             else:
                 cursor.execute(sql)
             if fetchone:
