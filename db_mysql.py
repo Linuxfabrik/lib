@@ -130,6 +130,16 @@ def select(conn, sql, data=[], fetchone=False):
     SELECT is zero or more rows of data where each row has a fixed number
     of columns. A SELECT statement does not make any changes to the
     database.
+
+    >>> data = ['val1%']
+    >>> sql = 'select * from t where c like %s'
+    >>> db_mysql.select(conn, sql, data)
+
+    >>> data = ['val1', 'val2']
+    >>> sql = 'select * from t where c in ({})'.format(
+    ...    ', '.join('%s' for d in data),  # print "%s" for each argument
+    ... )
+    >>> db_mysql.select(conn, sql, data)
     """
     with conn.cursor() as cursor:
         try:
