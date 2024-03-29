@@ -11,19 +11,25 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
+### Breaking Changes
+
+* librenms.py: get_state() now expects numeric status codes
+
+
 ### Changed ("enhancement")
 
 * base.py: lookup_lod() never uses the default parameter ([#82](https://github.com/Linuxfabrik/lib/issues/82))
+* db_mysql.py: Fix select() and providing data
+* db_sqlite.py: connect(): Increase connect timeout to 5 secs; close(): return false on failure 
 * grassfish.py: Add `insecure=False, no_proxy=False, timeout=8` to `fetch_json()`
 * huawei.py: No more hardcoded `insecure` parameter in `get_creds()` and `get_data()`
 * icinga.py: No more hardcoded `insecure` parameter; add `insecure=False, no_proxy=False, timeout=3` to all functions
 * infomaniak.py: add `insecure=False, no_proxy=False, timeout=8` to all functions
 * jitsi.py: No more hardcoded `insecure` and evaluate `no_proxy` in `get_data()`
-* db_mysql.py: Fix select() and providing data
+* librenms.py: Improve get_data() parameter handling
 * net.py: Add `insecure=False, no_proxy=False, timeout=3` to `get_public_ip()`
 * nodebb.py: Evaluate `no_proxy` in `get_data()`
 * rocket.py: add `insecure=False, no_proxy=False, timeout=3` to all functions
-* db_sqlite.py: connect(): Increase connect timeout to 5 secs; close(): return false on failure 
 * veeam.py: No more hardcoded `insecure` and also evaluate `no_proxy` in `get_token()`
 * version.py: Add `insecure=False, no_proxy=False, timeout=8` to `check_eol()`
 * wildfly.py: Evaluate `insecure` and `no_proxy` in `get_data()`
