@@ -19,7 +19,6 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * icinga.py: No more hardcoded `insecure` parameter; add `insecure=False, no_proxy=False, timeout=3` to all functions
 * infomaniak.py: add `insecure=False, no_proxy=False, timeout=8` to all functions
 * jitsi.py: No more hardcoded `insecure` and evaluate `no_proxy` in `get_data()`
-* librenms.py: Introduce caching of the result sets.
 * db_mysql.py: Fix select() and providing data
 * net.py: Add `insecure=False, no_proxy=False, timeout=3` to `get_public_ip()`
 * nodebb.py: Evaluate `no_proxy` in `get_data()`
