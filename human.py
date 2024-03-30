@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024033001'
+__version__ = '2024033002'
 
 import math
 
@@ -129,32 +129,41 @@ def human2bytes(string, binary=True):
             return int(float(string.replace('tib', '').strip()) * 1024**4)
         if 'pib' in string:
             return int(float(string.replace('pib', '').strip()) * 1024**5)
+        if 'eib' in string:
+            return int(float(string.replace('eib', '').strip()) * 1024**6)
+        if 'zib' in string:
+            return int(float(string.replace('zib', '').strip()) * 1024**7)
+        if 'yib' in string:
+            return int(float(string.replace('yib', '').strip()) * 1024**8)
 
+        if binary:
+            base = 1024
+        else:
+            base = 1000
         if 'k' in string:  # matches "kb" or "k"
             string = string.replace('kb', '').replace('k', '').strip()
-            if binary:
-                return int(float(string) * 1024)
-            return int(float(string) * 1000)
+            return int(float(string) * base)
         if 'm' in string:  # matches "mb" or "m"
             string = string.replace('mb', '').replace('m', '').strip()
-            if binary:
-                return int(float(string) * 1024**2)
-            return int(float(string) * 1000**2)
+            return int(float(string) * base**2)
         if 'g' in string:  # matches "gb" or "g"
             string = string.replace('gb', '').replace('g', '').strip()
-            if binary:
-                return int(float(string) * 1024**3)
-            return int(float(string) * 1000**3)
+            return int(float(string) * base**3)
         if 't' in string:  # matches "tb" or "t"
             string = string.replace('tb', '').replace('t', '').strip()
-            if binary:
-                return int(float(string) * 1024**4)
-            return int(float(string) * 1000**4)
+            return int(float(string) * base**4)
         if 'p' in string:  # matches "pb" or "p"
             string = string.replace('pb', '').replace('p', '').strip()
-            if binary:
-                return int(float(string) * 1024**5)
-            return int(float(string) * 1000**5)
+            return int(float(string) * base**5)
+        if 'e' in string:  # matches "eb" or "e"
+            string = string.replace('eb', '').replace('e', '').strip()
+            return int(float(string) * base**6)
+        if 'z' in string:  # matches "zb" or "z"
+            string = string.replace('zb', '').replace('z', '').strip()
+            return int(float(string) * base**7)
+        if 'y' in string:  # matches "yb" or "y"
+            string = string.replace('yb', '').replace('y', '').strip()
+            return int(float(string) * base**8)
         if 'b' in string:
             return int(float(string.replace('b', '').strip()))
         return 0
@@ -219,6 +228,26 @@ def humanduration2seconds(string):
     for duration in durations:
         seconds += human2seconds(duration)
     return seconds
+
+
+def humanrange2bytes(string):
+    """Converts a Nagios range to bytes. Base is always 1024.
+
+    >>> string = '@4K:5 MiB'
+    >>> humanrange2bytes(string)
+    @4096:5242880
+    """
+    result = []
+    for s in string.split(':'):
+        if not s:
+            continue
+        size = s.replace('-', '').replace('~', '').replace('@', '')
+        result.append(s.replace(size, str(human2bytes(size))))
+    if string.startswith(':'):
+        return ':' + ':'.join(result)
+    if string.endswith(':'):
+        return ':'.join(result) + ':'
+    return ':'.join(result)
 
 
 def humanrange2seconds(string):
