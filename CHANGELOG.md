@@ -19,6 +19,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 ### Changed ("enhancement")
 
 * base.py: lookup_lod() never uses the default parameter ([#82](https://github.com/Linuxfabrik/lib/issues/82))
+* base.py: oao() replaces `|` character in output with `! `, because it is reserved to separate plugin output from performance data (and there is no way to escape it).
 * db_mysql.py: Fix select() and providing data
 * db_sqlite.py: connect(): Increase connect timeout to 5 secs; close(): return false on failure 
 * grassfish.py: Add `insecure=False, no_proxy=False, timeout=8` to `fetch_json()`

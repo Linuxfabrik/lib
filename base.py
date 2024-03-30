@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023120401'
+__version__ = '2024033001'
 
 import collections
 import numbers
@@ -142,7 +142,7 @@ def get_state(value, warn, crit, _operator='ge'):
         `le` = less or equal
         `lt` = less than
         `ne` = not equal to
-        `range` = match range
+        `range` = match Nagios range definition
 
     Returns
     -------
@@ -404,7 +404,7 @@ def lookup_lod(haystack, key, needle):
 
 
 def match_range(value, spec):
-    """Decides if `value` is inside/outside the threshold spec.
+    """Decides if `value` is inside/outside the Nagios threshold spec.
 
     Parameters
     ----------
@@ -501,6 +501,9 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     `always_ok` is set to `True`.
     """
     msg = msg.strip()
+    # The `|` character is a reserved one to seperate plugin output from performance data.
+    # There is actually no way to escape it, so replace it.
+    msg = msg.replace('|', '!')
     if always_ok:
         msg += ' (always ok)'
     if perfdata:
