@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024033001'
 
 import math
 
@@ -79,6 +79,34 @@ def bytes2human(n, _format='%(value).1f%(symbol)s'):
     return _format % dict(symbol=symbols[0], value=n)
 
 
+def extract_hrnumbers(s, boundaries=['s', 'm', 'h', 'D', 'W', 'M', 'Y']):
+    """Return a list of all numbers from a string, beginning with a digit and ending
+    with a known boundary.
+
+    >>> string = '31Y 20M7s  88  abc12xyz   4s 5'
+    >>> extract_hrnumbers(string)
+    ['31Y', '20M', '7s', '4s']
+    >>> string = '17G 3M 4B'
+    >>> extract_hrnumbers(string, boundaries=['G', 'M', 'B'])
+    ['17G', '3M', '4B']
+    """
+    words = []  # List to store the extracted words
+    start_index = None  # Start index of a word
+    for i, char in enumerate(s):
+        # Check if we're at the start of a potential word
+        if char.isdigit() and start_index is None:
+            start_index = i
+        # Check if we're at the end of a word
+        elif char in boundaries and start_index is not None:
+            # Extract and append the word
+            words.append(s[start_index:i+1])
+            start_index = None  # Reset the start index for the next word
+        # Reset start_index if current char is not a digit and we're not in a word
+        elif not char.isdigit():
+            start_index = None
+    return words
+
+
 def human2bytes(string, binary=True):
     """Converts a string such as '3.072GiB' to 3298534883 bytes. If "binary" is set to True
     (default due to Microsoft), it will use powers of 1024, otherwise powers of 1000 (decimal).
@@ -132,6 +160,85 @@ def human2bytes(string, binary=True):
         return 0
     except:
         return 0
+
+
+def human2seconds(string):
+    """Converts a simple human-readable duration into seconds.
+
+    >>> human2seconds('26Y')
+    819936000
+    >>> human2seconds('26M')
+    62899200
+    >>> human2seconds('26W')
+    15724800
+    >>> human2seconds('26D')
+    2246400
+    >>> human2seconds('26h')
+    93600
+    >>> human2seconds('26m')
+    1560
+    >>> human2seconds('26s')
+    26
+    >>> human2seconds('a7.3X')
+    0
+    """
+    unit_to_seconds = {
+        's': 1,
+        'm': 60,
+        'h': 60*60,
+        'D': 24*60*60,
+        'W': 7*24*60*60,
+        'M': 30*24*60*60,  # Assuming exactly 30 days
+        'Y': 365*24*60*60,  # Assuming 365 days in a year
+    }
+
+    # Extract the numeric part and the unit from the input string
+    unit = string[-1]
+    try:
+        value = int(string.replace(unit, ''))
+    except:
+        return 0
+
+    # Check if the unit is valid
+    if unit not in unit_to_seconds:
+        return 0
+
+    # Convert the duration to seconds
+    return value * unit_to_seconds[unit]
+
+
+def humanduration2seconds(string):
+    """Converts a more complex string into seconds by summing the individual words.
+
+    >>> string = '3Y 2M any-error 3d7s'  # means: valid is '3Y 2M 7s'
+    >>> humanduration2seconds(string)
+    99446407
+    """
+    durations = extract_hrnumbers(string)
+    seconds = 0
+    for duration in durations:
+        seconds += human2seconds(duration)
+    return seconds
+
+
+def humanrange2seconds(string):
+    """Converts a Nagios range to seconds.
+
+    >>> string = '@10m:1Y1D'
+    >>> humanrange2seconds(string)
+    @600:31622400
+    """
+    result = []
+    for s in string.split(':'):
+        if not s:
+            continue
+        duration = s.replace('-', '').replace('~', '').replace('@', '')
+        result.append(s.replace(duration, str(humanduration2seconds(duration))))
+    if string.startswith(':'):
+        return ':' + ':'.join(result)
+    if string.endswith(':'):
+        return ':'.join(result) + ':'
+    return ':'.join(result)
 
 
 def number2human(n):

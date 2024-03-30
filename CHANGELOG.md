@@ -24,6 +24,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * db_sqlite.py: connect(): Increase connect timeout to 5 secs; close(): return false on failure 
 * grassfish.py: Add `insecure=False, no_proxy=False, timeout=8` to `fetch_json()`
 * huawei.py: No more hardcoded `insecure` parameter in `get_creds()` and `get_data()`
+* human.py: Add human2seconds()
 * icinga.py: No more hardcoded `insecure` parameter; add `insecure=False, no_proxy=False, timeout=3` to all functions
 * infomaniak.py: add `insecure=False, no_proxy=False, timeout=8` to all functions
 * jitsi.py: No more hardcoded `insecure` and evaluate `no_proxy` in `get_data()`

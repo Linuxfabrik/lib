@@ -420,6 +420,25 @@ def match_range(value, spec):
         `spec`, or outside the bounds for an inverted `spec`. Otherwise `False`.
 
     Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
+
+    >>> match_range(15, '10')
+    0 10 False
+    >>> match_range(15, '-10')
+    (False, 'Start 0 must not be greater than end -10')
+    >>> match_range(15, '10:')
+    10 inf False
+    >>> match_range(15, ':')
+    0 inf False
+    >>> match_range(15, '~:10')
+    -inf 10 False
+    >>> match_range(15, '10:20')
+    10 20 False
+    >>> match_range(15, '@10')
+    0 10 True
+    >>> match_range(15, '@~:20')
+    -inf 20 True
+    >>> match_range(15, '@')
+    0 inf True
     """
     def parse_range(spec):
         """
