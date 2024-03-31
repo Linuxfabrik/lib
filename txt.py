@@ -15,9 +15,10 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024033101'
 
 import codecs
+import re
 try:
     codecs.lookup_error('surrogateescape')
     HAS_SURROGATEESCAPE = True
@@ -34,6 +35,29 @@ binary_type = bytes
 _COMPOSED_ERROR_HANDLERS = frozenset((None, 'surrogate_or_replace',
                                       'surrogate_or_strict',
                                       'surrogate_then_replace'))
+
+
+def compile_regex(regex, key=''):
+    """Return a compiled regex from a string or list.
+    Optionally, add a key qualifier/string to help identify the regex in case of an error.
+    """
+
+    def cr(regex, key=''):
+        """Return a compiled regex from a string.
+        """
+        try:
+            return (True, re.compile(regex))
+        except re.error as e:
+            return (False, '`{}`{} contains one or more errors: {}'.format(
+                regex,
+                ' ({})'.format(key) if key else '',
+                e,
+            ))
+
+    if isinstance(regex, str):
+        return cr(regex, key=key)
+    else:
+        return [cr(item, key=key) for item in regex]
 
 
 def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
@@ -108,6 +132,20 @@ def filter_mltext(_input, ignore):
         if not any(i_line in line for i_line in ignore):
             filtered_input += line + '\n'
     return filtered_input
+
+
+def match_regex(regex, string, key=''):
+    """Match a regex on a string.
+    Optionally, add a key qualifier/string to help identify the regex in case of an error.
+    """
+    try:
+        return (True, re.match(regex, string))
+    except re.error as e:
+        return (False, '`{}` contains one or more errors: {}'.format(
+            regex,
+            ' ({})'.format(key) if key else '',
+            e,
+        ))
 
 
 def mltext2array(_input, skip_header=False, sort_key=-1):
