@@ -13,12 +13,14 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024031501'
+__version__ = '2024033101'
 
 import csv
 import os
 import re
 import tempfile
+
+from . import shell
 
 
 def file_exists(path, allow_empty=False):
@@ -42,6 +44,41 @@ def get_cwd():
     """Gets the current working directory.
     """
     return os.getcwd()
+
+
+def get_dm_name(dm_device):
+    """Get the name of a device mapper device. Instead of using `dmsetup ls`, this solution does 
+    not need sudo-permissions and is straight to the point.
+
+    >>> get_dm_name('dm-0')
+    rl_rocky8-root
+    """
+    success, result = read_file('/sys/class/block/{}/dm/name'.format(dm_device))
+    if not success:
+        return dm_device
+    if not result:
+        return dm_device
+    return result
+
+
+def get_real_disks():
+    """Get a list of local devices and their mountpoints.
+    Simply use `df` for that.
+
+    >>> get_real_disks()
+    [['/dev/dm-0', '/'], ['devtmpfs', '/dev'], ['tmpfs', '/dev/shm'], ['/dev/dm-0', '/home'], ['/dev/nvme0n1p2', '/boot'], ['/dev/nvme0n1p1', '/boot/efi'], ['tmpfs', '/tmp'], ['tmpfs', '/run/user/1000']]
+    """
+    success, result = shell.shell_exec('df --local --output=source,target')
+    disks = []
+    if not success:
+        return disks
+    disks, _, _ = result
+    if not disks:
+        return disks
+    disks = disks.strip().splitlines()
+    disks = [disk.split() for disk in disks][1:] # remove header line from `df`
+    disks = [disk[0] for disk in disks]
+    return list(set(disks)) # get the unique values from the list
 
 
 def get_tmpdir():
