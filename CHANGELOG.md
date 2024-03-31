@@ -18,10 +18,12 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Changed ("enhancement")
 
+* args.py: Add `help()`
 * base.py: lookup_lod() never uses the default parameter ([#82](https://github.com/Linuxfabrik/lib/issues/82))
 * base.py: oao() replaces `|` character in output with `! `, because it is reserved to separate plugin output from performance data (and there is no way to escape it).
 * db_mysql.py: Fix select() and providing data
 * db_sqlite.py: connect(): Increase connect timeout to 5 secs; close(): return false on failure 
+* disk.py: Add `get_dm_name(dm_device)`, `get_dm_name(dm_device)`
 * grassfish.py: Add `insecure=False, no_proxy=False, timeout=8` to `fetch_json()`
 * huawei.py: No more hardcoded `insecure` parameter in `get_creds()` and `get_data()`
 * human.py: Add human2seconds()
@@ -32,6 +34,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * net.py: Add `insecure=False, no_proxy=False, timeout=3` to `get_public_ip()`
 * nodebb.py: Evaluate `no_proxy` in `get_data()`
 * rocket.py: add `insecure=False, no_proxy=False, timeout=3` to all functions
+* txt.py: Add `get_dm_name(dm_device)`, `match_regex(regex, string, key='')`
 * veeam.py: No more hardcoded `insecure` and also evaluate `no_proxy` in `get_token()`
 * version.py: Add `insecure=False, no_proxy=False, timeout=8` to `check_eol()`
 * wildfly.py: Evaluate `insecure` and `no_proxy` in `get_data()`
