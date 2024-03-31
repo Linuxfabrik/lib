@@ -15,7 +15,7 @@ import re  # pylint: disable=C0413
 
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2024033101'
 
 
 def csv(arg):
@@ -30,6 +30,26 @@ def float_or_none(arg):
     if arg is None or str(arg).lower() == 'none':
         return None
     return float(arg)
+
+
+def help(param):
+    """Return global valid help text for a parameter.
+    """
+    h = {
+        '--match':
+            'Uses Python regular expressions without any external flags like `re.IGNORECASE`. '
+            'The regular expression is applied to each line of the output. '
+            'Examples: '
+            '`(?i)example` to match the word "example" in a case-insensitive manner. '
+            '`^(?!.*example).*$` to match any string except "example" (negative lookahead). '
+            '`(?: ... )*` is a non-capturing group that matches any sequence of characters  '
+            'that satisfy the condition inside it, zero or more times. ',
+        }
+    return h[param]
+    try:
+        return h[param]
+    except KeyError:
+        return ''
 
 
 def int_or_none(arg):
