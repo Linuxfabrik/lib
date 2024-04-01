@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024033101'
+__version__ = '2024040101'
 
 import csv
 import os
@@ -46,39 +46,59 @@ def get_cwd():
     return os.getcwd()
 
 
-def get_dm_name(dm_device):
+def bd2dmd(device):
     """Get the name of a device mapper device. Instead of using `dmsetup ls`, this solution does 
-    not need sudo-permissions and is straight to the point.
+    not need sudo-permissions and is straight to the point ("block device to device mapper device").
 
-    >>> get_dm_name('dm-0')
-    rl_rocky8-root
+    >>> bd2dmd('dm-0')
+    'rl_rocky8-root'
+    >>> bd2dmd('sda') # not a dm device
+    ''
     """
-    success, result = read_file('/sys/class/block/{}/dm/name'.format(dm_device))
+    device = os.path.basename(device)
+    success, result = read_file('/sys/class/block/{}/dm/name'.format(device))
     if not success:
-        return dm_device
+        return ''
     if not result:
-        return dm_device
+        return ''
+    result = '/dev/mapper/{}'.format(result.strip())
+    if not os.path.islink(result):
+        return ''
     return result
 
 
 def get_real_disks():
-    """Get a list of local devices and their mountpoints.
-    Simply use `df` for that.
+    """Get a list of local devices that are in use and has a filesystem on it.
+    Build the list like so:
+    [{'bd': '<block device name>', 'dmd': '<dm device name>', 'mp': '<mountpoint>'}]
 
     >>> get_real_disks()
-    [['/dev/dm-0', '/'], ['devtmpfs', '/dev'], ['tmpfs', '/dev/shm'], ['/dev/dm-0', '/home'], ['/dev/nvme0n1p2', '/boot'], ['/dev/nvme0n1p1', '/boot/efi'], ['tmpfs', '/tmp'], ['tmpfs', '/run/user/1000']]
+    [{'bd': '/dev/dm-0', 'dmd': '/dev/mapper/rl-root', 'mp:': '/,/home'}]
     """
-    success, result = shell.shell_exec('df --local --output=source,target')
-    disks = []
+    success, result = read_file('/proc/mounts')
     if not success:
-        return disks
-    disks, _, _ = result
-    if not disks:
-        return disks
-    disks = disks.strip().splitlines()
-    disks = [disk.split() for disk in disks][1:] # remove header line from `df`
-    disks = [disk[0] for disk in disks]
-    return list(set(disks)) # get the unique values from the list
+        return []
+
+    disks = {}
+    for line in result.splitlines():
+        if not line.startswith('/dev/'):
+            continue
+        rd = line.split(' ')
+        if rd[0].startswith('/dev/mapper/'):
+            dmdname = rd[0]
+            bdname = udevadm(dmdname, 'DEVNAME')
+        else:
+            bdname = rd[0]
+            dmdname = udevadm(bdname, 'DM_NAME') # get device mapper device name
+            if dmdname:
+                dmdname = '/dev/mapper/{}'.format(dmdname)
+        if not bdname in disks:
+            disks[bdname] = {'bd': bdname, 'dmd': dmdname, 'mp': rd[1]}
+        else:
+            # disk already listed, append additional mount point
+            disks[bdname]['mp'] += ' {}'.format(rd[1])
+
+    return [i for i in disks.values()]
 
 
 def get_tmpdir():
@@ -218,6 +238,30 @@ def rm_file(filename):
         return (False, 'OS error "{}" while deleting {}'.format(e.strerror, filename))
     except:
         return (False, 'Unknown error deleting {}'.format(filename))
+
+
+def udevadm(device, _property):
+    """Run `udevadm info`. To support older systems, we can't use the `--property=` parameter and
+    have to return the desired property on our own.
+
+    >>> udevadm('/dev/mapper/rl_rocky8-root', 'DEVNAME')
+    '/dev/dm-0'
+    >>> udevadm('/dev/dm-0', 'DM_NAME')
+    'rl_rocky8-root'
+    >>> udevadm('/dev/linuxfabrik', 'DEVNAME')
+    ''
+    """
+    success, result = shell.shell_exec('/sbin/udevadm info --query=property --name={}'.format(
+        device,
+    ))
+    if not success:
+        return ''
+    stdout, _, _ = result
+    for line in stdout.strip().splitlines():
+        key, value = line.split('=')
+        if key == _property:
+            return value
+    return ''
 
 
 def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True):

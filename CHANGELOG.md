@@ -23,7 +23,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * base.py: oao() replaces `|` character in output with `! `, because it is reserved to separate plugin output from performance data (and there is no way to escape it).
 * db_mysql.py: Fix select() and providing data
 * db_sqlite.py: connect(): Increase connect timeout to 5 secs; close(): return false on failure 
-* disk.py: Add `get_dm_name(dm_device)`, `get_dm_name(dm_device)`
+* disk.py: Add `get_real_disks()`, `udevadm()`
 * grassfish.py: Add `insecure=False, no_proxy=False, timeout=8` to `fetch_json()`
 * huawei.py: No more hardcoded `insecure` parameter in `get_creds()` and `get_data()`
 * human.py: Add human2seconds()
