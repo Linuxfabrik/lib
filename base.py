@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024033001'
+__version__ = '2024040101'
 
 import collections
 import numbers
@@ -584,6 +584,30 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
     if state == STATE_UNKNOWN:
         return '{}[UNKNOWN]{}'.format(prefix, suffix)
     return state
+
+
+def str2bool(s):
+    """Return True or False depending on the given string.
+
+    >>> str2bool("")
+    False
+    >>> str2bool("false")
+    False
+    >>> str2bool("FalSE")
+    False
+    >>> str2bool("true")
+    True
+    >>> str2bool("Linuxfabrik")
+    True
+    >>> str2bool("0")
+    True
+    """
+    if not s:
+        return False
+    elif s.lower() == 'false':
+        return False
+    else:
+        return True
 
 
 def str2state(string, ignore_error=True):

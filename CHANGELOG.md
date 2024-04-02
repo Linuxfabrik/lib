@@ -21,6 +21,7 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * args.py: Add `help()`
 * base.py: lookup_lod() never uses the default parameter ([#82](https://github.com/Linuxfabrik/lib/issues/82))
 * base.py: oao() replaces `|` character in output with `! `, because it is reserved to separate plugin output from performance data (and there is no way to escape it).
+* base.py: Add str2bool()
 * db_mysql.py: Fix select() and providing data
 * db_sqlite.py: connect(): Increase connect timeout to 5 secs; close(): return false on failure 
 * disk.py: Add `get_real_disks()`, `udevadm()`
