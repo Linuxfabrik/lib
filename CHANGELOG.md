@@ -41,6 +41,11 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 * wildfly.py: Evaluate `insecure` and `no_proxy` in `get_data()`
 
 
+### Fixed
+
+* feed.py: Incompatible with Azure status RSS ([#756](https://github.com/Linuxfabrik/monitoring-plugins/issues/756))
+
+
 
 ## 2023112901
 

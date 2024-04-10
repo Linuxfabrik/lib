@@ -14,7 +14,7 @@ Time zone handling is not implemented.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024031401'
+__version__ = '2024041001'
 
 import sys
 
@@ -66,8 +66,14 @@ def parse_atom(soup):
 def parse_rss(soup):
     result = {}
     result['title'] = soup.rss.channel.title.string
-    result['updated'] = soup.rss.channel.pubDate.string
-    # cut the timezone part
+    try:
+        result['updated'] = soup.rss.channel.pubDate.string
+    except:
+        try:
+            result['updated'] = soup.rss.channel.lastBuildDate.string
+        except:
+            return result
+    # cut the timezone part from "Wed, 10 Apr 2024 06:12:00 Z"
     result['updated_parsed'] = time.timestr2datetime(
         result['updated'][0:25],
         pattern='%a, %d %b %Y %H:%M:%S',
