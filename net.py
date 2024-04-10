@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024031401'
+__version__ = '2024041001'
 
 import random
 import re
@@ -226,6 +226,17 @@ def get_public_ip(services, insecure=False, no_proxy=False, timeout=2):
             except:
                 return (True, ip)
     return (False, ip)
+
+
+def ip_to_cidr(ip):
+    """Convert IP address to CIDR.
+    Example: '255.255.255.0' will return 24
+    """
+    # Thanks to @Atticfire
+    # See https://github.com/nicolargo/glances/issues/1417#issuecomment-469894399
+    if ip is None:
+        return 0
+    return sum(bin(int(x)).count('1') for x in ip.split('.'))
 
 
 def is_valid_hostname(hostname):
