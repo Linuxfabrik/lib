@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024040101'
+__version__ = '2024041201'
 
 import collections
 import numbers
@@ -260,7 +260,7 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
                     data[idx][col] = str(row[col]).strip()
                 else:
                     data[idx][col] = str(row[col])
-            except:
+            except KeyError as e:
                 return 'Unknown column "{}"'.format(col)
             # get the maximum length
             try:
