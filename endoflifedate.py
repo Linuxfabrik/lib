@@ -159,6 +159,13 @@ ENDOFLIFE_DATE = {
 
 
     'https://endoflife.date/api/gitlab.json': [
+    {   'cycle': '16.11',
+        'eol': '2024-07-18',
+        'latest': '16.11.0',
+        'latestReleaseDate': '2024-04-17',
+        'lts': False,
+        'releaseDate': '2024-04-17',
+        'support': '2024-05-16'},
     {   'cycle': '16.10',
         'eol': '2024-06-20',
         'latest': '16.10.3',
@@ -526,8 +533,8 @@ ENDOFLIFE_DATE = {
     'https://endoflife.date/api/keycloak.json': [
     {   'cycle': '24.0',
         'eol': False,
-        'latest': '24.0.2',
-        'latestReleaseDate': '2024-03-24',
+        'latest': '24.0.3',
+        'latestReleaseDate': '2024-04-16',
         'lts': False,
         'releaseDate': '2024-03-04'},
     {   'cycle': '23.0',
@@ -538,8 +545,8 @@ ENDOFLIFE_DATE = {
         'releaseDate': '2023-11-23'},
     {   'cycle': '22.0',
         'eol': '2023-11-23',
-        'latest': '22.0.9',
-        'latestReleaseDate': '2024-03-04',
+        'latest': '22.0.10',
+        'latestReleaseDate': '2024-03-25',
         'lts': False,
         'releaseDate': '2023-07-11'},
     {   'cycle': '21.1',
