@@ -663,8 +663,14 @@ ENDOFLIFE_DATE = {
 
 
     'https://endoflife.date/api/mariadb.json': [
+    {   'cycle': '11.4',
+        'eol': '2029-05-29',
+        'latest': '11.4.2',
+        'latestReleaseDate': '2024-05-29',
+        'lts': True,
+        'releaseDate': '2024-05-29'},
     {   'cycle': '11.3',
-        'eol': '2024-05-16',
+        'eol': False,
         'latest': '11.3.2',
         'latestReleaseDate': '2024-02-16',
         'lts': False,
@@ -843,8 +849,8 @@ ENDOFLIFE_DATE = {
         'releaseDate': '2023-12-11'},
     {   'cycle': '27',
         'eol': '2024-06-30',
-        'latest': '27.1.9',
-        'latestReleaseDate': '2024-04-25',
+        'latest': '27.1.10',
+        'latestReleaseDate': '2024-05-30',
         'lts': False,
         'releaseDate': '2023-06-12'},
     {   'cycle': '26',
@@ -1514,8 +1520,8 @@ ENDOFLIFE_DATE = {
     'https://endoflife.date/api/solr.json': [
     {   'cycle': '9',
         'eol': False,
-        'latest': '9.6.0',
-        'latestReleaseDate': '2024-04-27',
+        'latest': '9.6.1',
+        'latestReleaseDate': '2024-05-29',
         'lts': False,
         'releaseDate': '2022-05-11'},
     {   'cycle': '8',
