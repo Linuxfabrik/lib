@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024041201'
+__version__ = '2024060301'
 
 import collections
 import numbers
@@ -79,9 +79,9 @@ def coe(result, state=STATE_UNKNOWN):
 def cu(msg=None):
     """See you (cu)
 
-    Prints an optional message and a Stacktrace (replacing "<" and ">" to be printable in Web-GUIs),
-    and always exits with STATE_UNKNOWN.
-    Use this function to print error messages.
+    Always exits with STATE_UNKNOWN, prints an optional message and - if a runtime error occurred -
+    a stack trace (replaces "<" and ">" to be printable in web GUIs).
+    Use this to print error messages.
     """
     tb = format_exc()
     if 'NoneType: None' not in tb:
