@@ -22,6 +22,9 @@ Extends argparse by new input argument data types on demand.
 * base.py:  
 Provides very common every-day functions.
 
+* bexio.py:  
+This module tries to make accessing the Bexio API easier.
+
 * cache.py:  
 Simple Cache in the form of a Key-Value Store (KVS) like Redis, based on SQLite, optionally supporting expiration of keys. No detailed error handling here. If the cache does not work, we (currently) don't report the reason and simply return `False`.
 
