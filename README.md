@@ -120,6 +120,7 @@ These libraries are built with a clear set of priorities:
 
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
+| **bexio.py** | [Bexio](https://www.bexio.com/) all-in-one business software REST API. | `fetch_json()` |
 | **grassfish.py** | [Grassfish](https://www.grassfish.com/) digital signage REST API. | `fetch_json()` |
 | **huawei.py** | Huawei storage system status parsing (controller models, health, LED status). | `get_controller_model()` |
 | **icinga.py** | Icinga2 REST API client for querying services, setting acknowledgements, and managing downtimes. | `get_service()`, `set_ack()`, `set_downtime()`, `remove_downtime()` |
