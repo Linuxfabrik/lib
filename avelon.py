@@ -14,16 +14,17 @@
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2024061201'
 
-import requests # type: ignore
 import json
+
+import lib.url
 
 BASE_URL = 'https://avelon.cloud'
 
-def get_token(client_id, client_secret, username, password, verify=True, proxies={}, timeout=8):
-    url = '{}/oauth/token'.format(
+def get_token(client_id, client_secret, username, password, insecure=False, no_proxy=False, timeout=8):
+    uri = '{}/oauth/token'.format(
         BASE_URL
         )
-    headers = {
+    header = {
         "Content-Type": "application/x-www-form-urlencoded"
     }
     data = {
@@ -33,46 +34,43 @@ def get_token(client_id, client_secret, username, password, verify=True, proxies
         "username": username,
         "password": password
     }
+    success, token = lib.url.fetch_json(
+        uri,
+        header=header,
+        data=data,
+        extended=True,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
 
-    try:
-        response = requests.post(url, headers=headers, data=data, verify=verify, proxies=proxies, timeout=timeout)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        try:
-            message = e.response.json().get("message", "An error occurred")
-        except (ValueError, AttributeError):
-            message = str(e)
-        return {
-            "status_code": getattr(e.response, 'status_code', 'N/A'),
-            "message": message
-        }
+    return (True, token['response_json'])
 
-def get_tickets(access_token, verify=True, proxies={}, timeout=8):
-    devices = _get_devices(access_token)
+
+def get_tickets(access_token, insecure=False, no_proxy=False, timeout=8):
+    success, devices = _get_devices(access_token, insecure, no_proxy, timeout)
     tickets_response = []
 
     for device in devices:
-        tickets_response.extend(_get_ticket_info(access_token, device['clientId']))
+        tickets_response.extend(_get_ticket_info(access_token, device['clientId'], insecure, no_proxy, timeout))
     
     return tickets_response
 
-def get_data_points(access_token, data_point_id=None, data_point_name=None, verify=True, proxies={}, timeout=8):
-    devices  = _get_devices(access_token)
+def get_data_points(access_token, data_point_id=None, data_point_name=None, insecure=False, no_proxy=False, timeout=8):
+    success, devices = _get_devices(access_token, insecure, no_proxy, timeout)
     data_points_info = []
     data_points_value = []
     data_points_response = []
 
     for device in devices:
-        data_points_info.extend(_get_data_point_info(access_token, device['id']))
+        success, data_point_info = _get_data_point_info(access_token, device['id'], insecure, no_proxy, timeout)
+        data_points_info.extend(data_point_info)
 
     for data_point in data_points_info:
-        if not (data_point_name or data_point_id):
-            data_points_value = _get_data_point_value(access_token, data_point['id'])
-        elif data_point_id and data_point['id'] in data_point_id:
-            data_points_value = _get_data_point_value(access_token, data_point['id'])
-        elif data_point_name and data_point['systemName'] in data_point_name:
-            data_points_value = _get_data_point_value(access_token, data_point['id'])
+        if (data_point_id and data_point['id'] in data_point_id) or (data_point_name and data_point['systemName'] in data_point_name):
+            success, data_points_value = _get_data_point_value(access_token, data_point['id'], insecure, no_proxy, timeout)
+        elif not (data_point_name or data_point_id):
+            success, data_points_value = _get_data_point_value(access_token, data_point['id'], insecure, no_proxy, timeout)
 
         if data_points_value:
             data_points_response.append({**data_point, **data_points_value[0]})
@@ -83,31 +81,31 @@ def get_data_points(access_token, data_point_id=None, data_point_name=None, veri
 
 
 
-def _get_devices(access_token, verify=True, proxies={}, timeout=8):
-    url = '{}/public-api/v1/devices'.format(
+def _get_devices(access_token, insecure, no_proxy, timeout):
+    uri = '{}/public-api/v1/devices'.format(
         BASE_URL
         )
-    headers = {
+    header = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
+    success, devices = lib.url.fetch_json(
+        uri,
+        header=header,
+        extended=True,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
 
-    response = requests.get(url, headers=headers, verify=verify, proxies=proxies, timeout=timeout)
-    
-    if response.status_code == 200:
-        return response.json()
-    else:
-        return {
-            "status_code": response.status_code,
-            "message": response.json().get("message", "An error occurred")
-        }
+    return (True, devices['response_json'])
 
 
-def _get_ticket_info(access_token, client_id, verify=True, proxies={}, timeout=8):
-    url = '{}/public-api/v1/tickets'.format(
+def _get_ticket_info(access_token, client_id, insecure, no_proxy, timeout):
+    uri = '{}/public-api/v1/tickets'.format(
         BASE_URL
         )
-    headers = {
+    header = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
@@ -115,50 +113,58 @@ def _get_ticket_info(access_token, client_id, verify=True, proxies={}, timeout=8
         "filterScope": "CLIENT",
         "id": client_id
     }
-
-    response = requests.post(url, headers=headers, data=json.dumps(body), verify=verify, proxies=proxies, timeout=timeout)
+    success, devices = lib.url.fetch_json(
+        uri,
+        header=header,
+        data = body,
+        extended=True,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+        encoding = 'serialized-json',
+    )
     
-    if response.status_code == 200:
-        return response.json()
-    else:
-        return {
-            "status_code": response.status_code,
-            "message": response.json().get("message", "An error occurred")
-        }
+    return (True, devices['response_json'])
 
 
-def _get_data_point_info(access_token, device_id, verify=True, proxies={}, timeout=8):
-    url = '{}/public-api/v1/data-points?deviceIds={}'.format(
+def _get_data_point_info(access_token, device_id, insecure, no_proxy, timeout):
+    uri = '{}/public-api/v1/data-points?deviceIds={}'.format(
         BASE_URL,
         device_id
         )
-
-    headers = {
+    header ={
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
+    success, data_point_info = lib.url.fetch_json(
+        uri,
+        header=header,
+        extended=True,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
 
-    response = requests.get(url, headers=headers, verify=verify, proxies=proxies, timeout=timeout)
+    return (True, data_point_info['response_json'])
 
-    if response.status_code == 200:
-        return response.json()
-    else:
-        return {
-            "status_code": response.status_code,
-            "message": response.json().get("message", "An error occurred")
-        }
-
-def _get_data_point_value(access_token, data_point_id, verify=True, proxies={}, timeout=8):
-    url = '{}/public-api/v1/data-points/{}/records/latest?limit=1'.format(
+def _get_data_point_value(access_token, data_point_id, insecure, no_proxy, timeout):
+    uri = '{}/public-api/v1/data-points/{}/records/latest?limit=1'.format(
         BASE_URL,
         data_point_id
         )
-    headers = {
-        "Authorization": f"Bearer {access_token}"
+    header = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
     }
-    response = requests.get(url, headers=headers, verify=verify, proxies=proxies, timeout=timeout)
+    success, data_point_value = lib.url.fetch_json(
+        uri,
+        header=header,
+        extended=True,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
 
-    if response.status_code == 200:
-        return response.json()
-    else:
-        return [response.json()]
+    if not success:
+        return (success, [{'value': data_point_value}])
+    return (True, data_point_value['response_json'])
