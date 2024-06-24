@@ -8,17 +8,16 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Provides functions using the Avelon REST-API.
+"""Provides functions using the Avelon Cloud REST-API.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024061201'
-
-import json
+__version__ = '2024062401'
 
 import lib.url
 
 BASE_URL = 'https://avelon.cloud'
+
 
 def get_token(client_id, client_secret, username, password, insecure=False, no_proxy=False, timeout=8):
     uri = '{}/oauth/token'.format(
@@ -44,11 +43,16 @@ def get_token(client_id, client_secret, username, password, insecure=False, no_p
         timeout=timeout,
     )
 
+    if not success:
+        return (success, token)
     return (True, token['response_json'])
 
 
 def get_tickets(access_token, insecure=False, no_proxy=False, timeout=8):
     success, devices = _get_devices(access_token, insecure, no_proxy, timeout)
+    if not success:
+        return (success, devices)
+    
     tickets_response = []
 
     for device in devices:
@@ -56,8 +60,12 @@ def get_tickets(access_token, insecure=False, no_proxy=False, timeout=8):
     
     return tickets_response
 
+
 def get_data_points(access_token, data_point_id=None, data_point_name=None, insecure=False, no_proxy=False, timeout=8):
     success, devices = _get_devices(access_token, insecure, no_proxy, timeout)
+    if not success:
+        return (success, devices)
+    
     data_points_info = []
     data_points_value = []
     data_points_response = []
@@ -74,11 +82,9 @@ def get_data_points(access_token, data_point_id=None, data_point_name=None, inse
 
         if data_points_value:
             data_points_response.append({**data_point, **data_points_value[0]})
-
         data_points_value = None
 
     return data_points_response
-
 
 
 def _get_devices(access_token, insecure, no_proxy, timeout):
@@ -98,6 +104,9 @@ def _get_devices(access_token, insecure, no_proxy, timeout):
         timeout=timeout,
     )
 
+    if not devices['response_json']:
+        return (False, 'No devices found. Check if devices under this '
+                       'mandate are present in avelon.cloud.')
     return (True, devices['response_json'])
 
 
@@ -113,7 +122,7 @@ def _get_ticket_info(access_token, client_id, insecure, no_proxy, timeout):
         "filterScope": "CLIENT",
         "id": client_id
     }
-    success, devices = lib.url.fetch_json(
+    success, tickets = lib.url.fetch_json(
         uri,
         header=header,
         data = body,
@@ -124,7 +133,7 @@ def _get_ticket_info(access_token, client_id, insecure, no_proxy, timeout):
         encoding = 'serialized-json',
     )
     
-    return (True, devices['response_json'])
+    return (True, tickets['response_json'])
 
 
 def _get_data_point_info(access_token, device_id, insecure, no_proxy, timeout):
