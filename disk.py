@@ -251,7 +251,7 @@ def udevadm(device, _property):
     >>> udevadm('/dev/linuxfabrik', 'DEVNAME')
     ''
     """
-    success, result = shell.shell_exec('/sbin/udevadm info --query=property --name={}'.format(
+    success, result = shell.shell_exec('udevadm info --query=property --name={}'.format(
         device,
     ))
     if not success:
