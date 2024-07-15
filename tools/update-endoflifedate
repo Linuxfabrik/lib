@@ -26,15 +26,19 @@ DESCRIPTION = """Simply creates the file "endoflifedate.py" for a given list of 
 
 DEFAULT_FILE = 'lib/endoflifedate.py'
 
-VERSION = '2023112101' # adapt this if one of PRODUCTS was added/deleted
+VERSION = '2024071501' # adapt this if one of PRODUCTS was added/deleted
 PRODUCTS = [
     'https://endoflife.date/api/apache.json',
+    'https://endoflife.date/api/composer.json',
     'https://endoflife.date/api/fedora.json',
     'https://endoflife.date/api/fortios.json',
     'https://endoflife.date/api/gitlab.json',
     'https://endoflife.date/api/grafana.json',
+    'https://endoflife.date/api/graylog.json',
     'https://endoflife.date/api/keycloak.json',
     'https://endoflife.date/api/mariadb.json',
+    'https://endoflife.date/api/matomo.json',
+    'https://endoflife.date/api/mediawiki.json',
     'https://endoflife.date/api/mysql.json',
     'https://endoflife.date/api/nextcloud.json',
     'https://endoflife.date/api/php.json',
@@ -44,6 +48,7 @@ PRODUCTS = [
     'https://endoflife.date/api/redhat-build-of-openjdk.json',
     'https://endoflife.date/api/redis.json',
     'https://endoflife.date/api/rhel.json',
+    'https://endoflife.date/api/rocketchat.json',
     'https://endoflife.date/api/solr.json',
     'https://endoflife.date/api/wordpress.json',
 ]
