@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024040101'
+__version__ = '2024071701'
 
 import csv
 import os
@@ -117,6 +117,12 @@ def get_tmpdir():
       - On all other platforms, the directories /tmp, /var/tmp, and /usr/tmp,
         in that order.
     * As a last resort, the current working directory.
+
+    >>> get_tmpdir()
+    '/tmp'
+
+    >>> get_tmpdir()
+    'C:\\Users\\vagrant\\AppData\\Local\\Temp\\2'
     """
     try:
         return tempfile.gettempdir()
