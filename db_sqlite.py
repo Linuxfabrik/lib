@@ -124,7 +124,7 @@ def connect(path='', filename=''):
     return (True, conn)
 
 
-def create_index(conn, column_list, table='perfdata', unique=False):
+def create_index(conn, column_list, table='perfdata', unique=False, delete_db_on_operational_error=True):
     """Creates one index on a list of/one database column/s.
     """
     table = __filter_str(table)
@@ -141,6 +141,12 @@ def create_index(conn, column_list, table='perfdata', unique=False):
             )
     try:
         c.execute(sql)
+    except sqlite3.OperationalError as e:
+        # often occurs when the structure of the DB has changed after an update, so try
+        # to delete the db file.
+        if delete_db_on_operational_error:
+            rm_db(conn)
+        return (False, 'Operational Error: {}'.format(e))
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}'.format(sql, e))
 
@@ -171,7 +177,7 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
     return (True, True)
 
 
-def cut(conn, table='perfdata', _max=5):
+def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     """Keep only the latest "_max" records, using the sqlite built-in "rowid".
     """
     table = __filter_str(table)
@@ -182,13 +188,19 @@ def cut(conn, table='perfdata', _max=5):
             );'''.format(table=table)
     try:
         c.execute(sql, (_max, ))
+    except sqlite3.OperationalError as e:
+        # often occurs when the structure of the DB has changed after an update, so try
+        # to delete the db file.
+        if delete_db_on_operational_error:
+            rm_db(conn)
+        return (False, 'Operational Error: {}'.format(e))
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}'.format(sql, e))
 
     return (True, True)
 
 
-def delete(conn, sql, data={}):
+def delete(conn, sql, data={}, delete_db_on_operational_error=True):
     """The DELETE command removes records from a table. If the WHERE
     clause is not present, all records in the table are deleted. If a
     WHERE clause is supplied, then only those rows for which the WHERE
@@ -201,6 +213,12 @@ def delete(conn, sql, data={}):
         if data:
             return (True, c.execute(sql, data).rowcount)
         return (True, c.execute(sql).rowcount)
+    except sqlite3.OperationalError as e:
+        # often occurs when the structure of the DB has changed after an update, so try
+        # to delete the db file.
+        if delete_db_on_operational_error:
+            rm_db(conn)
+        return (False, 'Operational Error: {}'.format(e))
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 
@@ -291,7 +309,7 @@ def import_csv(conn, filename, table='data', fieldnames=None, skip_header=False,
     return (True, True)
 
 
-def insert(conn, data, table='perfdata'):
+def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
     """Insert a row of values (has to be a dict).
     """
     table = __filter_str(table)
@@ -309,8 +327,14 @@ def insert(conn, data, table='perfdata'):
 
     try:
         c.execute(sql, data)
+    except sqlite3.OperationalError as e:
+        # often occurs when the structure of the DB has changed after an update, so try
+        # to delete the db file.
+        if delete_db_on_operational_error:
+            rm_db(conn)
+        return (False, 'Operational Error: {}'.format(e))
     except Exception as e:
-        return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
+        return (False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 
     return (True, True)
 
@@ -325,7 +349,7 @@ def regexp(expr, item):
     return reg.search(item) is not None
 
 
-def replace(conn, data, table='perfdata'):
+def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
     """The REPLACE command is an alias for the "INSERT OR REPLACE" variant
     of the INSERT command. When a UNIQUE or PRIMARY KEY constraint violation
     occurs, it does the following:
@@ -352,13 +376,33 @@ def replace(conn, data, table='perfdata'):
 
     try:
         c.execute(sql, data)
+    except sqlite3.OperationalError as e:
+        # often occurs when the structure of the DB has changed after an update, so try
+        # to delete the db file.
+        if delete_db_on_operational_error:
+            rm_db(conn)
+        return (False, 'Operational Error: {}'.format(e))
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 
     return (True, True)
 
 
-def select(conn, sql, data={}, fetchone=False, as_dict=True):
+def rm_db(conn):
+    """Given an sqlite3 connection object, we retrieve the file path to the sqlite3 file
+    and delete it. Useful if structure of the db changes, and you get OperationErrors
+    on INSERT, for example."""
+    # ask the database itself what connections it has (get the db filename)
+    for id_, name, filename in conn.execute('PRAGMA database_list'):
+        if name == 'main' and filename is not None:
+            # found it
+            close(conn)
+            a, b = disk.rm_file(filename)
+            break
+    return True
+
+
+def select(conn, sql, data={}, fetchone=False, as_dict=True, delete_db_on_operational_error=True):
     """The SELECT statement is used to query the database. The result of a
     SELECT is zero or more rows of data where each row has a fixed number
     of columns. A SELECT statement does not make any changes to the
@@ -382,6 +426,12 @@ def select(conn, sql, data={}, fetchone=False, as_dict=True):
         if fetchone:
             return (True,  c.fetchone())
         return (True, c.fetchall())
+    except sqlite3.OperationalError as e:
+        # often occurs when the structure of the DB has changed after an update, so try
+        # to delete the db file.
+        if delete_db_on_operational_error:
+            rm_db(conn)
+        return (False, 'Operational Error: {}'.format(e))
     except Exception as e:
         return(False, 'Query failed: {}, Error: {}, Data: {}'.format(sql, e, data))
 

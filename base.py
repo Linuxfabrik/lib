@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024060301'
+__version__ = '2024070801'
 
 import collections
 import numbers
@@ -88,7 +88,7 @@ def cu(msg=None):
         # got a stacktrace
         tb = tb.replace("<", "'").replace(">", "'")
         if msg is not None:
-            print(msg.strip() + '\n')
+            print(msg.strip() + ' (Traceback for debugging purposes attached)\n')
         print(tb)
     else:
         if msg is not None:

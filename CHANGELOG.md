@@ -11,7 +11,19 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
-tbd
+### Breaking Changes
+
+Not a breaking change, but a behavior change in db_sqlite.py: The functions
+
+* create_index()
+* cut()
+* delete()
+* insert()
+* replace()
+* select()
+
+now **delete** the underlying sqlite db file by default when they encounter an `OperationalError`. For example, you get this error when you run new SQL code that references columns in an older, existing db file that don't exist there. With this change, it is not necessary to manually delete db files after upgrading to new versions of your software that use newer db layouts. This behavior can be disabled with `delete_db_on_operational_error=False`.
+
 
 
 ## 2024060401
