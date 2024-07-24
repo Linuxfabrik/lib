@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024062401'
+__version__ = '2024072401'
 
 import concurrent.futures
 import lib.url
