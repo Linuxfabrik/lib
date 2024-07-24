@@ -15,6 +15,7 @@ __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2024072401'
 
 import concurrent.futures
+import json
 import lib.url
 
 BASE_URL = 'https://avelon.cloud'
@@ -87,7 +88,7 @@ def get_data_points(access_token, data_point_id=None, data_point_name=None, inse
         for future in concurrent.futures.as_completed(future_to_data_point):
             data_point = future_to_data_point[future]
             success, data_points_value = future.result()
-            if data_points_value:
+            if data_points_value and success == True:
                 data_points_response.append({**data_point, **data_points_value[0]})
                 
     return (True, data_points_response)
@@ -180,7 +181,7 @@ def _get_data_point_value(access_token, data_point_id, insecure, no_proxy, timeo
         no_proxy=no_proxy,
         timeout=timeout,
     )
-
+    
     if not success:
-        return (success, [{'value': data_point_value}])
+        return (success, data_point_value)
     return (True, data_point_value['response_json'])
