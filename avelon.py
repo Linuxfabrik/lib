@@ -14,6 +14,7 @@
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2024062401'
 
+import concurrent.futures
 import lib.url
 
 BASE_URL = 'https://avelon.cloud'
@@ -74,16 +75,21 @@ def get_data_points(access_token, data_point_id=None, data_point_name=None, inse
         success, data_point_info = _get_data_point_info(access_token, device['id'], insecure, no_proxy, timeout)
         data_points_info.extend(data_point_info)
 
-    for data_point in data_points_info:
-        if (data_point_id and data_point['id'] in data_point_id) or (data_point_name and data_point['systemName'] in data_point_name):
-            success, data_points_value = _get_data_point_value(access_token, data_point['id'], insecure, no_proxy, timeout)
-        elif not (data_point_name or data_point_id):
-            success, data_points_value = _get_data_point_value(access_token, data_point['id'], insecure, no_proxy, timeout)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future_to_data_point = {
+            executor.submit(_get_data_point_value, access_token, data_point['id'], insecure, no_proxy, timeout): data_point
+            for data_point in data_points_info
+            if (not data_point_id and not data_point_name) or 
+               (data_point_id and data_point['id'] in data_point_id) or 
+               (data_point_name and data_point['systemName'] in data_point_name)
+        }
 
-        if data_points_value:
-            data_points_response.append({**data_point, **data_points_value[0]})
-        data_points_value = None
-
+        for future in concurrent.futures.as_completed(future_to_data_point):
+            data_point = future_to_data_point[future]
+            success, data_points_value = future.result()
+            if data_points_value:
+                data_points_response.append({**data_point, **data_points_value[0]})
+                
     return data_points_response
 
 
