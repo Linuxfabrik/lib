@@ -90,7 +90,7 @@ def get_data_points(access_token, data_point_id=None, data_point_name=None, inse
             if data_points_value:
                 data_points_response.append({**data_point, **data_points_value[0]})
                 
-    return data_points_response
+    return (True, data_points_response)
 
 
 def _get_devices(access_token, insecure, no_proxy, timeout):
