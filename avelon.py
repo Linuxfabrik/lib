@@ -162,6 +162,7 @@ def _get_data_point_info(access_token, device_id, insecure, no_proxy, timeout):
 
     return (True, data_point_info['response_json'])
 
+
 def _get_data_point_value(access_token, data_point_id, insecure, no_proxy, timeout):
     uri = '{}/public-api/v1/data-points/{}/records/latest?limit=1'.format(
         BASE_URL,
