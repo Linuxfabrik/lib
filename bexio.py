@@ -22,7 +22,12 @@ import urllib
 BEXIO_API_BASE_URL = 'https://api.bexio.com'
 BEXIO_API_CONTACT_TYPE_COMPANY = 1
 BEXIO_API_CONTACT_TYPE_PERSON = 2
-BEXIO_API_CONTACT_URL = '/2.0/contact/'
+BEXIO_API_CONTACT_URL = '/2.0/contact'
+BEXIO_API_LANGUAGE_URL = '/2.0/language'
+BEXIO_API_SALUTATION_URL = '/2.0/salutation'
+BEXIO_API_TITLE_URL = '/2.0/title'
+BEXIO_API_COUNTRY_URL = '/2.0/country'
+
 
 def call_api(api_token: str, path: str, data: dict | None = None) -> tuple[bool, list | str]:
     """Makes an HTTP GET or POST call against the Bexio API
@@ -125,3 +130,95 @@ def get_contacts(api_token: str, data: dict | None = None) -> tuple[bool, list |
         or the error message in case of a failure.
     """
     return get_all(api_token, BEXIO_API_CONTACT_URL, data)
+
+
+def get_countries(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all countries
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    offset : int
+        Defines the record to start paginating.
+    data : dict
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all countries indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_COUNTRY_URL, data)
+
+
+def get_languages(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all languages
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    offset : int
+        Defines the record to start paginating.
+    data : dict
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all languages indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_LANGUAGE_URL, data)
+
+
+def get_salutations(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all salutations
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    offset : int
+        Defines the record to start paginating.
+    data : dict
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all salutations indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_SALUTATION_URL, data)
+
+
+def get_titles(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all titles
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    offset : int
+        Defines the record to start paginating.
+    data : dict
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all titles indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_TITLE_URL, data)
