@@ -17,6 +17,7 @@ __version__ = '2024060601'
 from . import url
 
 import urllib
+import urllib.parse
 
 # https://docs.bexio.com/
 BEXIO_API_BASE_URL = 'https://api.bexio.com'
