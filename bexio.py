@@ -65,7 +65,8 @@ def call_api(api_token: str, path: str, data: dict | None = None) -> tuple[bool,
         '{}{}'.format(BEXIO_API_BASE_URL, path),
         data=data,
         header=headers,
-        timeout=20, # todo
+        timeout=20,  # TODO: choose a sensible value. NOTE: test servers seem to be slower to respond than prod servers?
+        encoding='serialized-json',
     )
 
 
@@ -113,15 +114,13 @@ def get_all(api_token: str, path: str, params: dict | None = None) -> tuple[bool
     return (True, result)
 
 
-def get_contacts(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+def fetch_contacts(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all the contacts
     and returns them in a dictionary indexed by their IDs.
 
     Parameters
     ----------
     api_token : str
-        see call_api()
-    data : dict
         see call_api()
 
     Returns
@@ -131,18 +130,37 @@ def get_contacts(api_token: str, data: dict | None = None) -> tuple[bool, list |
         a dictionary of all monitors indexed by their IDs
         or the error message in case of a failure.
     """
-    return get_all(api_token, BEXIO_API_CONTACT_URL, data)
+    return get_all(api_token, BEXIO_API_CONTACT_URL)
 
 
-def get_contact_groups(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+def create_contact(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to create a contact
+    and returns the created contact as a dictionary.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    data : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of the created contact
+        or the error message in case of a failure.
+    """
+    return call_api(api_token, BEXIO_API_CONTACT_URL, data)
+
+
+def fetch_contact_groups(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all contact groups
     and returns them in a dictionary indexed by their IDs.
 
     Parameters
     ----------
     api_token : str
-        see call_api()
-    data : dict
         see call_api()
 
     Returns
@@ -152,18 +170,16 @@ def get_contact_groups(api_token: str, data: dict | None = None) -> tuple[bool, 
         a dictionary of all contact groups indexed by their IDs
         or the error message in case of a failure.
     """
-    return get_all(api_token, BEXIO_API_CONTACT_GROUP_URL, data)
+    return get_all(api_token, BEXIO_API_CONTACT_GROUP_URL)
 
 
-def get_contact_relations(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+def fetch_contact_relations(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all contact relations
     and returns them in a dictionary indexed by their IDs.
 
     Parameters
     ----------
     api_token : str
-        see call_api()
-    data : dict
         see call_api()
 
     Returns
@@ -173,18 +189,16 @@ def get_contact_relations(api_token: str, data: dict | None = None) -> tuple[boo
         a dictionary of all contact relations indexed by their IDs
         or the error message in case of a failure.
     """
-    return get_all(api_token, BEXIO_API_CONTACT_RELATION_URL, data)
+    return get_all(api_token, BEXIO_API_CONTACT_RELATION_URL)
 
 
-def get_contact_sectors(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+def fetch_contact_sectors(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all contact sectors (branches)
     and returns them in a dictionary indexed by their IDs.
 
     Parameters
     ----------
     api_token : str
-        see call_api()
-    data : dict
         see call_api()
 
     Returns
@@ -194,18 +208,16 @@ def get_contact_sectors(api_token: str, data: dict | None = None) -> tuple[bool,
         a dictionary of all contact sectors (branches) indexed by their IDs
         or the error message in case of a failure.
     """
-    return get_all(api_token, BEXIO_API_CONTACT_SECTOR_URL, data)
+    return get_all(api_token, BEXIO_API_CONTACT_SECTOR_URL)
 
 
-def get_countries(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+def fetch_countries(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all countries
     and returns them in a dictionary indexed by their IDs.
 
     Parameters
     ----------
     api_token : str
-        see call_api()
-    data : dict
         see call_api()
 
     Returns
@@ -215,18 +227,16 @@ def get_countries(api_token: str, data: dict | None = None) -> tuple[bool, list 
         a dictionary of all countries indexed by their IDs
         or the error message in case of a failure.
     """
-    return get_all(api_token, BEXIO_API_COUNTRY_URL, data)
+    return get_all(api_token, BEXIO_API_COUNTRY_URL)
 
 
-def get_languages(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+def fetch_languages(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all languages
     and returns them in a dictionary indexed by their IDs.
 
     Parameters
     ----------
     api_token : str
-        see call_api()
-    data : dict
         see call_api()
 
     Returns
@@ -236,18 +246,16 @@ def get_languages(api_token: str, data: dict | None = None) -> tuple[bool, list 
         a dictionary of all languages indexed by their IDs
         or the error message in case of a failure.
     """
-    return get_all(api_token, BEXIO_API_LANGUAGE_URL, data)
+    return get_all(api_token, BEXIO_API_LANGUAGE_URL)
 
 
-def get_salutations(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+def fetch_salutations(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all salutations
     and returns them in a dictionary indexed by their IDs.
 
     Parameters
     ----------
     api_token : str
-        see call_api()
-    data : dict
         see call_api()
 
     Returns
@@ -257,18 +265,16 @@ def get_salutations(api_token: str, data: dict | None = None) -> tuple[bool, lis
         a dictionary of all salutations indexed by their IDs
         or the error message in case of a failure.
     """
-    return get_all(api_token, BEXIO_API_SALUTATION_URL, data)
+    return get_all(api_token, BEXIO_API_SALUTATION_URL)
 
 
-def get_titles(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+def fetch_titles(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all titles
     and returns them in a dictionary indexed by their IDs.
 
     Parameters
     ----------
     api_token : str
-        see call_api()
-    data : dict
         see call_api()
 
     Returns
@@ -278,4 +284,4 @@ def get_titles(api_token: str, data: dict | None = None) -> tuple[bool, list | s
         a dictionary of all titles indexed by their IDs
         or the error message in case of a failure.
     """
-    return get_all(api_token, BEXIO_API_TITLE_URL, data)
+    return get_all(api_token, BEXIO_API_TITLE_URL)
