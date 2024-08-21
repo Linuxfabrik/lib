@@ -102,11 +102,11 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
         return (False, 'URL error "{}" for {}'.format(e.reason, url))
     except TypeError as e:
         return (False, 'Type error "{}", data="{}"'.format(e, data))
-    except:
+    except Exception as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
         return (False, 'Unknown error while fetching {}, maybe timeout or '
-                       'error on webserver'.format(url))
+                       'error on webserver: {}'.format(url, e))
     else:
         try:
             charset = response.headers.get_content_charset()
