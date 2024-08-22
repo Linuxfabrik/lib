@@ -154,6 +154,29 @@ def create_contact(api_token: str, data: dict | None = None) -> tuple[bool, list
     return call_api(api_token, BEXIO_API_CONTACT_URL, data)
 
 
+def edit_contact(api_token: str, contact_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to edit a contact
+    and returns the edited contact as a dictionary.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    contact_id : int
+        id of the contact to edit
+    data : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of the created contact
+        or the error message in case of a failure.
+    """
+    return call_api(api_token, BEXIO_API_CONTACT_URL + '/' + str(contact_id), data)
+
+
 def fetch_contact_groups(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all contact groups
     and returns them in a dictionary indexed by their IDs.
