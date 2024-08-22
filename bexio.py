@@ -171,7 +171,7 @@ def edit_contact(api_token: str, contact_id: int, data: dict | None = None) -> t
     -------
     tuple[bool, dict | str]
         A boolean indicating the success / failure of the function, and
-        a dictionary of the created contact
+        a dictionary of the edited contact
         or the error message in case of a failure.
     """
     return call_api(api_token, BEXIO_API_CONTACT_URL + '/' + str(contact_id), data)
@@ -213,6 +213,50 @@ def fetch_contact_relations(api_token: str) -> tuple[bool, list | str]:
         or the error message in case of a failure.
     """
     return get_all(api_token, BEXIO_API_CONTACT_RELATION_URL)
+
+
+def create_contact_relation(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to create a new contact relation
+    and returns the created contact relation as a dictionary.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    data : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of the created contact relation
+        or the error message in case of a failure.
+    """
+    return call_api(api_token, BEXIO_API_CONTACT_RELATION_URL, data)
+
+
+def edit_contact_relation(api_token: str, contact_relation_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to edit a new contact relation
+    and returns the edited contact relation as a dictionary.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    contact_relation_id : int
+        id of the contact relation to edit
+    data : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of the edited contact relation
+        or the error message in case of a failure.
+    """
+    return call_api(api_token, BEXIO_API_CONTACT_RELATION_URL + '/' + str(contact_relation_id), data)
 
 
 def fetch_contact_sectors(api_token: str) -> tuple[bool, list | str]:
