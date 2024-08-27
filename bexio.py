@@ -31,6 +31,7 @@ BEXIO_API_COUNTRY_URL = '/2.0/country'
 BEXIO_API_LANGUAGE_URL = '/2.0/language'
 BEXIO_API_SALUTATION_URL = '/2.0/salutation'
 BEXIO_API_TITLE_URL = '/2.0/title'
+BEXIO_API_USER_URL = '/3.0/users'
 
 
 def call_api(api_token: str, path: str, data: dict | None = None) -> tuple[bool, list | str]:
@@ -352,3 +353,22 @@ def fetch_titles(api_token: str) -> tuple[bool, list | str]:
         or the error message in case of a failure.
     """
     return get_all(api_token, BEXIO_API_TITLE_URL)
+
+
+def fetch_users(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all users
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all users indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_USER_URL)
