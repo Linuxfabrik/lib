@@ -34,7 +34,7 @@ BEXIO_API_TITLE_URL = '/2.0/title'
 BEXIO_API_USER_URL = '/3.0/users'
 
 
-def call_api(api_token: str, path: str, data: dict | None = None) -> tuple[bool, list | str]:
+def call_api(api_token: str, path: str, data: dict | None = None, method: str | None = None) -> tuple[bool, list | str]:
     """Makes an HTTP GET or POST call against the Bexio API
     and returns the parsed JSON.
 
@@ -45,7 +45,9 @@ def call_api(api_token: str, path: str, data: dict | None = None) -> tuple[bool,
     path : str
         The URL part to call.
     data : dict
-       Dictionary that will be sent as JSON data.
+        Dictionary that will be sent as JSON data.
+    method : str
+        HTTP method to use for the request. Defaults to GET if data is None else POST.
 
     Returns
     -------
@@ -68,6 +70,8 @@ def call_api(api_token: str, path: str, data: dict | None = None) -> tuple[bool,
         header=headers,
         timeout=20,  # TODO: choose a sensible value. NOTE: test servers seem to be slower to respond than prod servers?
         encoding='serialized-json',
+        method=method,
+        response_on_error=True,
     )
 
 
@@ -238,7 +242,7 @@ def create_contact_relation(api_token: str, data: dict | None = None) -> tuple[b
 
 
 def edit_contact_relation(api_token: str, contact_relation_id: int, data: dict | None = None) -> tuple[bool, list | str]:
-    """Calls the Bexio API to edit a new contact relation
+    """Calls the Bexio API to edit a contact relation
     and returns the edited contact relation as a dictionary.
 
     Parameters
@@ -258,6 +262,27 @@ def edit_contact_relation(api_token: str, contact_relation_id: int, data: dict |
         or the error message in case of a failure.
     """
     return call_api(api_token, BEXIO_API_CONTACT_RELATION_URL + '/' + str(contact_relation_id), data)
+
+
+def delete_contact_relation(api_token: str, contact_relation_id: int) -> tuple[bool, list | str]:
+    """Calls the Bexio API to delete a contact relation
+    and returns the edited contact relation as a dictionary.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    contact_relation_id : int
+        id of the contact relation to delete
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of the deletion status
+        or the error message in case of a failure.
+    """
+    return call_api(api_token, BEXIO_API_CONTACT_RELATION_URL + '/' + str(contact_relation_id), method='DELETE')
 
 
 def fetch_contact_sectors(api_token: str) -> tuple[bool, list | str]:
