@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060701'
+__version__ = '2026061901'
 
 import base64
 import json
@@ -281,6 +281,7 @@ def fetch(
     tls_min=None,
     tls_max=None,
     method=None,
+    response_on_error=False,
 ):
     """
     Fetch any URL with optional POST, basic/digest authentication and SSL/TLS handling.
@@ -306,8 +307,8 @@ def fetch(
          |
          |--> client.stream(method, url, ...)
          |    |--> Capture TLS metadata from network stream
-         |    |--> raise_for_status() on 4xx/5xx
          |    |--> Read body
+         |    |--> raise_for_status() on 4xx/5xx
          |
          |--> Decode body via response charset (default UTF-8)
          |
@@ -359,6 +360,9 @@ def fetch(
         system default (typically TLS 1.2 on modern OpenSSL).
     - **tls_max** (`str`, optional):
         Maximum TLS version, same accepted values as `tls_min`.
+    - **response_on_error** (`bool`, optional):
+        If true, return the response for error conditions (useful when the response body of
+        an API contains error details)
 
     ### Returns
     - **tuple**:
@@ -374,6 +378,7 @@ def fetch(
             - `alpn`: str like `'h2'` or `'http/1.1'` or None
             - `peer_cert_der`: DER-encoded server certificate as bytes, or None
         - On failure, an error message string.
+        - On failure with `response_on_error=True`, the response body.
 
     ### Example
     >>> result = fetch(
@@ -492,12 +497,15 @@ def fetch(
     elapsed_seconds = 0.0
     response_charset = None
 
+    success = True
     try:
         # No parenthesized context managers here: they are Python 3.10+ syntax and
         # break `import lib.url` on RHEL 8's default Python 3.6.
         with client, client.stream(method, url, headers=headers, content=body) as response:
             tls_version, alpn, peer_cert_der = _capture_tls_info(response)
-            response.raise_for_status()
+            # Read body and capture metadata before raise_for_status() so the
+            # response_on_error path can surface error bodies, status codes and
+            # timings to the caller (when using response_on_error).
             body_bytes = response.read()
             status_code = response.status_code
             # HTTP header field names are case-insensitive (RFC 9110, section 5.1).
@@ -509,11 +517,15 @@ def fetch(
             }
             elapsed_seconds = response.elapsed.total_seconds()
             response_charset = response.charset_encoding
+            response.raise_for_status()
     except httpx.HTTPStatusError as e:
-        return False, (
-            f'HTTP error "{e.response.status_code} {e.response.reason_phrase}"'
-            f' while fetching {url_safe}'
-        )
+        if not response_on_error:
+            return False, (
+                f'HTTP error "{e.response.status_code} {e.response.reason_phrase}"'
+                f' while fetching {url_safe}'
+            )
+        else:
+            success = False
     except httpx.HTTPError as e:
         return False, f'URL error "{e}" for {url_safe}'
     except TypeError as e:
@@ -526,12 +538,12 @@ def fetch(
         body_decoded = body_bytes.decode(charset) if to_text else body_bytes
 
         if not extended:
-            return True, body_decoded
+            return success, body_decoded
 
         timings = {'total': elapsed_seconds}
         if timing_backend is not None:
             timings.update(timing_backend.timings)
-        return True, {
+        return success, {
             'response': body_decoded,
             'status_code': status_code,
             'response_header': response_headers,
@@ -560,6 +572,7 @@ def fetch_json(
     tls_max=None,
     method=None,
     retries=0,
+    response_on_error=False,
 ):
     """
     Fetch JSON from a URL with optional POST, authentication and SSL/TLS handling.
@@ -605,6 +618,7 @@ def fetch_json(
             timeout=timeout,
             tls_max=tls_max,
             tls_min=tls_min,
+            response_on_error=response_on_error,
         )
         if success:
             try:
