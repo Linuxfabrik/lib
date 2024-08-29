@@ -26,7 +26,7 @@ from . import txt
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
           header={}, data={}, encoding='urlencode',
           digest_auth_user=None, digest_auth_password=None,
-          extended=False, to_text=True):
+          extended=False, to_text=True, method=None, response_on_error=False):
     """Fetch any URL.
 
     If using `extended=True`, the result is returned as a dict, also including the response header
@@ -38,8 +38,12 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     >>> result = lib.base.coe(lib.url.fetch(url, timeout=args.TIMEOUT,
             header={'Authorization': 'Basic {}'.format(encoded_auth)}))
 
-    POST: the HTTP request will be a POST instead of a GET when the data parameter is provided
+    HTTP request method:
+    By default POST is used for requests when the data parameter is provided otherwise GET is used.
     >>> result = fetch(URL, header=header, data={...})
+    The HTTP request method can be explicitly controlled by providing the method parameter.
+    >>> result = fetch(URL, hreader=header, data=data, method='PUT')
+
 
     Cookies: To fetch Cookies, parse the response header. To get the response header, use extended=True
     >>> result = fetch(URL, header=header, data={...}, extended=True)
@@ -47,6 +51,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
 
     Setting `to_text=False` disables the automatic converison to a text string. Use this when downloading binary files.
     """
+    success = True
+
     try:
         if digest_auth_user is not None and digest_auth_password is not None:
             # HTTP Digest Authentication
@@ -63,10 +69,10 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                 data = json.dumps(data)
             data = txt.to_bytes(data)
             # the HTTP request will be a POST instead of a GET when the data parameter is provided
-            request = urllib.request.Request(url, data=data)
+            request = urllib.request.Request(url, data=data, method=method)
         else:
             # the HTTP request will be a POST instead of a GET when the data parameter is provided
-            request = urllib.request.Request(url)
+            request = urllib.request.Request(url, method=method)
 
         for key, value in header.items():
             request.add_header(key, value)
@@ -95,7 +101,13 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     except urllib.request.HTTPError as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url))
+        if response_on_error:
+            success = False
+            # Passing the error as a response here so it can be read later.
+            # See https://docs.python.org/3/howto/urllib2.html#httperror for details about using HTTPError as response.
+            response = e
+        else:
+            return (False, 'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url))
     except urllib.request.URLError as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
@@ -107,35 +119,35 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
         return (False, 'Unknown error while fetching {}, maybe timeout or '
                        'error on webserver: {}'.format(url, e))
-    else:
-        try:
-            charset = response.headers.get_content_charset()
-            if charset is None:
-                # if the server doesn't send charset info
-                charset = 'UTF-8'
-            if not extended:
-                if to_text:
-                    result = txt.to_text(response.read(), encoding=charset)
-                else:
-                    result = response.read()
+
+    try:
+        charset = response.headers.get_content_charset()
+        if charset is None:
+            # if the server doesn't send charset info
+            charset = 'UTF-8'
+        if not extended:
+            if to_text:
+                result = txt.to_text(response.read(), encoding=charset)
             else:
-                result = {}
-                if to_text:
-                    result['response'] = txt.to_text(response.read(), encoding=charset)
-                else:
-                    result['response'] = response.read()
-                result['status_code'] = response.getcode()
-                result['response_header'] = response.info()
-        except:
-            return (False, 'Unknown error while fetching {}, maybe timeout or '
-                       'error on webserver'.format(url))
-        return (True, result)
+                result = response.read()
+        else:
+            result = {}
+            if to_text:
+                result['response'] = txt.to_text(response.read(), encoding=charset)
+            else:
+                result['response'] = response.read()
+            result['status_code'] = response.getcode()
+            result['response_header'] = response.info()
+    except:
+        return (False, 'Unknown error while fetching {}, maybe timeout or '
+                   'error on webserver'.format(url))
+    return (success, result)
 
 
 def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
                header={}, data={}, encoding='urlencode',
                digest_auth_user=None, digest_auth_password=None,
-               extended=False):
+               extended=False, method=None, response_on_error=False):
     """Fetch JSON from an URL.
 
     >>> fetch_json('https://1.2.3.4/api/v2/?resource=cpu')
@@ -151,6 +163,8 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
         insecure=insecure,
         no_proxy=no_proxy,
         timeout=timeout,
+        method=method,
+        response_on_error=response_on_error
     )
     if not success:
         return (False, jsonst)
