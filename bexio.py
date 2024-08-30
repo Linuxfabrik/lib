@@ -23,14 +23,21 @@ import urllib.parse
 BEXIO_API_BASE_URL = 'https://api.bexio.com'
 BEXIO_API_CONTACT_TYPE_COMPANY = 1
 BEXIO_API_CONTACT_TYPE_PERSON = 2
+BEXIO_API_ACCOUNT_URL = '/2.0/accounts'
 BEXIO_API_CONTACT_URL = '/2.0/contact'
 BEXIO_API_CONTACT_GROUP_URL = '/2.0/contact_group'
 BEXIO_API_CONTACT_RELATION_URL = '/2.0/contact_relation'
 BEXIO_API_CONTACT_SECTOR_URL = '/2.0/contact_branch'  # API endpoint still uses the old name in the URL
 BEXIO_API_COUNTRY_URL = '/2.0/country'
+BEXIO_API_CURRENCY_URL = '/3.0/currencies'
+BEXIO_API_ITEM_URL = '/2.0/article'  # API endpoint uses different name in the URL
 BEXIO_API_LANGUAGE_URL = '/2.0/language'
 BEXIO_API_SALUTATION_URL = '/2.0/salutation'
+BEXIO_API_STOCK_AREA_URL = '/2.0/stock_place'
+BEXIO_API_STOCK_LOCATION_URL = '/2.0/stock'
+BEXIO_API_TAX_URL = '/3.0/taxes'
 BEXIO_API_TITLE_URL = '/2.0/title'
+BEXIO_API_UNIT_URL = '/2.0/unit'
 BEXIO_API_USER_URL = '/3.0/users'
 
 
@@ -119,8 +126,8 @@ def get_all(api_token: str, path: str, params: dict | None = None) -> tuple[bool
     return (True, result)
 
 
-def fetch_contacts(api_token: str) -> tuple[bool, list | str]:
-    """Calls the Bexio API to get a list of all the contacts
+def fetch_accounts(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all accounts
     and returns them in a dictionary indexed by their IDs.
 
     Parameters
@@ -132,7 +139,26 @@ def fetch_contacts(api_token: str) -> tuple[bool, list | str]:
     -------
     tuple[bool, dict | str]
         A boolean indicating the success / failure of the function, and
-        a dictionary of all monitors indexed by their IDs
+        a dictionary of all accounts indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_ACCOUNT_URL)
+
+
+def fetch_contacts(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all contacts
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all contacts indexed by their IDs
         or the error message in case of a failure.
     """
     return get_all(api_token, BEXIO_API_CONTACT_URL)
@@ -323,6 +349,44 @@ def fetch_countries(api_token: str) -> tuple[bool, list | str]:
     return get_all(api_token, BEXIO_API_COUNTRY_URL)
 
 
+def fetch_currencies(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all currencies
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all currencies indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_CURRENCY_URL)
+
+
+def fetch_items(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all items
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all items indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_ITEM_URL)
+
+
 def fetch_languages(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all languages
     and returns them in a dictionary indexed by their IDs.
@@ -361,6 +425,63 @@ def fetch_salutations(api_token: str) -> tuple[bool, list | str]:
     return get_all(api_token, BEXIO_API_SALUTATION_URL)
 
 
+def fetch_stock_areas(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all stock areas
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all stock areas indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_STOCK_AREA_URL)
+
+
+def fetch_stock_locations(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all stock locations
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all stock locations indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_STOCK_LOCATION_URL)
+
+
+def fetch_taxes(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all taxes
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all taxes indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_TAX_URL)
+
+
 def fetch_titles(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all titles
     and returns them in a dictionary indexed by their IDs.
@@ -378,6 +499,25 @@ def fetch_titles(api_token: str) -> tuple[bool, list | str]:
         or the error message in case of a failure.
     """
     return get_all(api_token, BEXIO_API_TITLE_URL)
+
+
+def fetch_units(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all units
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all taxes indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_UNIT_URL)
 
 
 def fetch_users(api_token: str) -> tuple[bool, list | str]:
