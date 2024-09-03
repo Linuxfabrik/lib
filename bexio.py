@@ -387,6 +387,50 @@ def fetch_items(api_token: str) -> tuple[bool, list | str]:
     return get_all(api_token, BEXIO_API_ITEM_URL)
 
 
+def create_item(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to create an item
+    and returns the created item as a dictionary.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    data : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of the created item
+        or the error message in case of a failure.
+    """
+    return call_api(api_token, BEXIO_API_ITEM_URL, data)
+
+
+def edit_item(api_token: str, item_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to edit an item
+    and returns the edited item as a dictionary.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    item_id : int
+        id of the contact relation to edit
+    data : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of the edited item
+        or the error message in case of a failure.
+    """
+    return call_api(api_token, BEXIO_API_ITEM_URL + '/' + str(item_id), data)
+
+
 def fetch_languages(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all languages
     and returns them in a dictionary indexed by their IDs.
