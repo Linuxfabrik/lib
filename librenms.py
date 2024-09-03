@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024032902'
+__version__ = '2024090301'
 
 from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
@@ -59,14 +59,10 @@ def get_prop(obj, prop, mytype='str'):
 
 def get_state(librestate, severity='crit'):
     """Translate LibreNMS' state to the Nagios world.
-    0 = ok, 1 = alert, 2 = ack
+    librestate: 0 = ok, 1 = alert, 2 = ack
     """
-    if not librestate: # including NULL
-        return STATE_OK
     if librestate == 1:
         if severity == 'crit':
             return STATE_CRIT
         return STATE_WARN
-    if librestate == 2:
-        return STATE_OK
-    return STATE_UNKNOWN
+    return STATE_OK
