@@ -24,6 +24,7 @@ BEXIO_API_BASE_URL = 'https://api.bexio.com'
 BEXIO_API_CONTACT_TYPE_COMPANY = 1
 BEXIO_API_CONTACT_TYPE_PERSON = 2
 BEXIO_API_ACCOUNT_URL = '/2.0/accounts'
+BEXIO_API_BUSINESS_ACTIVITY_URL = '/2.0/client_service'  # API endpoint still uses the old name in the URL
 BEXIO_API_CONTACT_URL = '/2.0/contact'
 BEXIO_API_CONTACT_GROUP_URL = '/2.0/contact_group'
 BEXIO_API_CONTACT_RELATION_URL = '/2.0/contact_relation'
@@ -39,6 +40,8 @@ BEXIO_API_PROJECT_URL = '/2.0/pr_project'
 BEXIO_API_STOCK_AREA_URL = '/2.0/stock_place'
 BEXIO_API_STOCK_LOCATION_URL = '/2.0/stock'
 BEXIO_API_TAX_URL = '/3.0/taxes'
+BEXIO_API_TIMESHEET_URL = '/2.0/timesheet'
+BEXIO_API_TIMESHEET_STATUS_URL = '/2.0/timesheet_status'
 BEXIO_API_TITLE_URL = '/2.0/title'
 BEXIO_API_UNIT_URL = '/2.0/unit'
 BEXIO_API_USER_URL = '/3.0/users'
@@ -146,6 +149,25 @@ def fetch_accounts(api_token: str) -> tuple[bool, list | str]:
         or the error message in case of a failure.
     """
     return get_all(api_token, BEXIO_API_ACCOUNT_URL)
+
+
+def fetch_business_activities(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all business activities
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all business activities indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_BUSINESS_ACTIVITY_URL)
 
 
 def fetch_contacts(api_token: str) -> tuple[bool, list | str]:
@@ -628,6 +650,44 @@ def fetch_taxes(api_token: str) -> tuple[bool, list | str]:
         or the error message in case of a failure.
     """
     return get_all(api_token, BEXIO_API_TAX_URL)
+
+
+def fetch_timesheets(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all timesheets
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all timesheets indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_TIMESHEET_URL)
+
+
+def fetch_timesheet_statuses(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all timesheet statuses
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all timesheet statuses indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_TIMESHEET_STATUS_URL)
 
 
 def fetch_titles(api_token: str) -> tuple[bool, list | str]:
