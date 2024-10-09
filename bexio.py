@@ -534,7 +534,7 @@ def fetch_projects(api_token: str) -> tuple[bool, list | str]:
 
 def create_project(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
     """Calls the Bexio API to create a project
-    and returns the created item as a dictionary.
+    and returns the created project as a dictionary.
 
     Parameters
     ----------
@@ -555,7 +555,7 @@ def create_project(api_token: str, data: dict | None = None) -> tuple[bool, list
 
 def edit_project(api_token: str, project_id: int, data: dict | None = None) -> tuple[bool, list | str]:
     """Calls the Bexio API to edit a project
-    and returns the edited item as a dictionary.
+    and returns the edited project as a dictionary.
 
     Parameters
     ----------
@@ -669,6 +669,50 @@ def fetch_timesheets(api_token: str) -> tuple[bool, list | str]:
         or the error message in case of a failure.
     """
     return get_all(api_token, BEXIO_API_TIMESHEET_URL)
+
+
+def create_timesheet(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to create a timesheet
+    and returns the created timesheet as a dictionary.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    data : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of the created timesheet
+        or the error message in case of a failure.
+    """
+    return call_api(api_token, BEXIO_API_TIMESHEET_URL, data)
+
+
+def edit_timesheet(api_token: str, timesheet_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to edit a timesheet
+    and returns the edited timesheet as a dictionary.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    timesheet_id : int
+        id of the timesheet to edit
+    data : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of the edited timesheet
+        or the error message in case of a failure.
+    """
+    return call_api(api_token, BEXIO_API_TIMESHEET_URL + '/' + str(timesheet_id), data)
 
 
 def fetch_timesheet_statuses(api_token: str) -> tuple[bool, list | str]:
