@@ -24,6 +24,7 @@ BEXIO_API_BASE_URL = 'https://api.bexio.com'
 BEXIO_API_CONTACT_TYPE_COMPANY = 1
 BEXIO_API_CONTACT_TYPE_PERSON = 2
 BEXIO_API_ACCOUNT_URL = '/2.0/accounts'
+BEXIO_API_BANK_ACCOUNT_URL = '/3.0/banking/accounts'
 BEXIO_API_BUSINESS_ACTIVITY_URL = '/2.0/client_service'  # API endpoint still uses the old name in the URL
 BEXIO_API_CONTACT_URL = '/2.0/contact'
 BEXIO_API_CONTACT_GROUP_URL = '/2.0/contact_group'
@@ -31,9 +32,11 @@ BEXIO_API_CONTACT_RELATION_URL = '/2.0/contact_relation'
 BEXIO_API_CONTACT_SECTOR_URL = '/2.0/contact_branch'  # API endpoint still uses the old name in the URL
 BEXIO_API_COUNTRY_URL = '/2.0/country'
 BEXIO_API_CURRENCY_URL = '/3.0/currencies'
+BEXIO_API_INVOICE_URL = '/2.0/kb_invoice'
 BEXIO_API_ITEM_URL = '/2.0/article'  # API endpoint uses different name in the URL
 BEXIO_API_LANGUAGE_URL = '/2.0/language'
 BEXIO_API_SALUTATION_URL = '/2.0/salutation'
+BEXIO_API_PAYMENT_TYPE_URL = '/2.0/payment_type'
 BEXIO_API_PROJECT_STATUS_URL = '/2.0/pr_project_state'
 BEXIO_API_PROJECT_TYPE_URL = '/2.0/pr_project_type'
 BEXIO_API_PROJECT_URL = '/2.0/pr_project'
@@ -149,6 +152,25 @@ def fetch_accounts(api_token: str) -> tuple[bool, list | str]:
         or the error message in case of a failure.
     """
     return get_all(api_token, BEXIO_API_ACCOUNT_URL)
+
+
+def fetch_bank_accounts(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all bank accounts
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all bank accounts indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_BANK_ACCOUNT_URL)
 
 
 def fetch_business_activities(api_token: str) -> tuple[bool, list | str]:
@@ -393,6 +415,25 @@ def fetch_currencies(api_token: str) -> tuple[bool, list | str]:
     return get_all(api_token, BEXIO_API_CURRENCY_URL)
 
 
+def fetch_invoices(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all invoices
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all invoices indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_INVOICE_URL)
+
+
 def fetch_items(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all items
     and returns them in a dictionary indexed by their IDs.
@@ -473,6 +514,25 @@ def fetch_languages(api_token: str) -> tuple[bool, list | str]:
         or the error message in case of a failure.
     """
     return get_all(api_token, BEXIO_API_LANGUAGE_URL)
+
+
+def fetch_payment_types(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all payment types
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all payment types indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_PAYMENT_TYPE_URL)
 
 
 def fetch_project_statuses(api_token: str) -> tuple[bool, list | str]:
