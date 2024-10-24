@@ -415,6 +415,25 @@ def fetch_currencies(api_token: str) -> tuple[bool, list | str]:
     return get_all(api_token, BEXIO_API_CURRENCY_URL)
 
 
+def fetch_invoices(api_token: str) -> tuple[bool, list | str]:
+    """Calls the Bexio API to get a list of all invoices
+    and returns them in a dictionary indexed by their IDs.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of all invoices indexed by their IDs
+        or the error message in case of a failure.
+    """
+    return get_all(api_token, BEXIO_API_INVOICE_URL)
+
+
 def create_invoice(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
     """Calls the Bexio API to create an invoice
     and returns the created invoice as a dictionary.
@@ -436,23 +455,27 @@ def create_invoice(api_token: str, data: dict | None = None) -> tuple[bool, list
     return call_api(api_token, BEXIO_API_INVOICE_URL, data)
 
 
-def fetch_invoices(api_token: str) -> tuple[bool, list | str]:
-    """Calls the Bexio API to get a list of all invoices
-    and returns them in a dictionary indexed by their IDs.
+def edit_invoice(api_token: str, invoice_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to edit an invoice
+    and returns the edited invoice as a dictionary.
 
     Parameters
     ----------
     api_token : str
+        see call_api()
+    invoice_id : int
+        id of the invoice to edit
+    data : str
         see call_api()
 
     Returns
     -------
     tuple[bool, dict | str]
         A boolean indicating the success / failure of the function, and
-        a dictionary of all invoices indexed by their IDs
+        a dictionary of the edited invoice
         or the error message in case of a failure.
     """
-    return get_all(api_token, BEXIO_API_INVOICE_URL)
+    return call_api(api_token, BEXIO_API_INVOICE_URL + '/' + str(invoice_id), data)
 
 
 def fetch_items(api_token: str) -> tuple[bool, list | str]:
