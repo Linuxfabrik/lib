@@ -415,6 +415,27 @@ def fetch_currencies(api_token: str) -> tuple[bool, list | str]:
     return get_all(api_token, BEXIO_API_CURRENCY_URL)
 
 
+def create_invoice(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+    """Calls the Bexio API to create an invoice
+    and returns the created invoice as a dictionary.
+
+    Parameters
+    ----------
+    api_token : str
+        see call_api()
+    data : str
+        see call_api()
+
+    Returns
+    -------
+    tuple[bool, dict | str]
+        A boolean indicating the success / failure of the function, and
+        a dictionary of the created invoice
+        or the error message in case of a failure.
+    """
+    return call_api(api_token, BEXIO_API_INVOICE_URL, data)
+
+
 def fetch_invoices(api_token: str) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all invoices
     and returns them in a dictionary indexed by their IDs.
