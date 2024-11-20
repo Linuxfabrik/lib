@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024070801'
+__version__ = '2024112001'
 
 import collections
 import numbers
@@ -496,6 +496,9 @@ def match_range(value, spec):
         if start > end:
             return (False, 'Start %s must not be greater than end %s' % (start, end))
         return (True, (start, end, invert))
+
+    # workaround for https://github.com/Linuxfabrik/monitoring-plugins/issues/789
+    spec = spec.lstrip('\\')
 
     if spec is None or str(spec).lower() == 'none':
         return (True, True)
