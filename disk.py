@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024071701'
+__version__ = '2024112201'
 
 import csv
 import os
@@ -73,7 +73,7 @@ def get_real_disks():
     [{'bd': '<block device name>', 'dmd': '<dm device name>', 'mp': '<mountpoint>'}]
 
     >>> get_real_disks()
-    [{'bd': '/dev/dm-0', 'dmd': '/dev/mapper/rl-root', 'mp:': '/,/home'}]
+    [{'bd': '/dev/dm-0', 'dmd': '/dev/mapper/rl-root', 'mp:': '/ /home'}]
     """
     success, result = read_file('/proc/mounts')
     if not success:
