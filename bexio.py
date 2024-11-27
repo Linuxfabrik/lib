@@ -192,7 +192,7 @@ def fetch_business_activities(api_token: str) -> tuple[bool, list | str]:
     return get_all(api_token, BEXIO_API_BUSINESS_ACTIVITY_URL)
 
 
-def fetch_contacts(api_token: str) -> tuple[bool, list | str]:
+def fetch_contacts(api_token: str, archived: bool = False) -> tuple[bool, list | str]:
     """Calls the Bexio API to get a list of all contacts
     and returns them in a dictionary indexed by their IDs.
 
@@ -200,6 +200,8 @@ def fetch_contacts(api_token: str) -> tuple[bool, list | str]:
     ----------
     api_token : str
         see call_api()
+    archived : bool
+        Fetch archived contacts.
 
     Returns
     -------
@@ -208,7 +210,7 @@ def fetch_contacts(api_token: str) -> tuple[bool, list | str]:
         a dictionary of all contacts indexed by their IDs
         or the error message in case of a failure.
     """
-    return get_all(api_token, BEXIO_API_CONTACT_URL)
+    return get_all(api_token, BEXIO_API_CONTACT_URL, {'show_archived': archived})
 
 
 def create_contact(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
