@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024031501'
+__version__ = '2024120901'
 
 import datetime
 import json
@@ -28,6 +28,7 @@ from . import url
 
 def check_eol(product, version_string, offset_eol=-30,
               check_major=False, check_minor=False, check_patch=False, pattern='%Y-%m-%d',
+              extended_support=False,
               insecure=False, no_proxy=False, timeout=8):
     """Check if a software version is End of Life (EOL) by comparing it to a JSON object
     compatible to the https://endoflife.date API. Return the status and the EOL message.
@@ -109,12 +110,25 @@ def check_eol(product, version_string, offset_eol=-30,
     # got an EOL date like "False" or "2022-12-31"
     msg = ''
     state = STATE_OK
-    if isinstance(cycles_eoldate['eol'], str) and cycles_eoldate['eol']:
+
+    if 'support' in cycles_eoldate and isinstance(cycles_eoldate['support'], str):
+        # if support has ended, no new features will be added to the product. no need to worry,
+        # but notify (of course definition depends on the vendor)
+        if time.now(as_type='datetime') > time.timestr2datetime(cycles_eoldate['support'], pattern=pattern):
+            msg += 'full support ended on {}; '.format(cycles_eoldate['support'])
+
+    # if user wants to check for extended support, and there is one, use this date
+    if extended_support and 'extendedSupport' in cycles_eoldate:
+        eol_col = 'extendedSupport'
+    else:
+        eol_col = 'eol'
+
+    if isinstance(cycles_eoldate[eol_col], str) and cycles_eoldate[eol_col]:
         msg += 'EOL {} {}d'.format(
-            cycles_eoldate['eol'],
+            cycles_eoldate[eol_col],
             offset_eol if offset_eol < 0 else '+{}'.format(offset_eol),
         )
-        if time.now(as_type='datetime') > time.timestr2datetime(cycles_eoldate['eol'], pattern=pattern) + datetime.timedelta(offset_eol):
+        if time.now(as_type='datetime') > time.timestr2datetime(cycles_eoldate[eol_col], pattern=pattern) + datetime.timedelta(offset_eol):
             state = STATE_WARN
             msg += base.state2str(state, prefix=' ')
     else:
