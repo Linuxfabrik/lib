@@ -67,6 +67,9 @@ Provides functions using the Infomanik REST-API.
 * jitsi.py:  
 This library collects some Jitsi related functions that are needed by more than one Jitsi plugin.
 
+* keycloak.py:  
+This library collects some Keycloak related functions that are needed by more than one Keycloak plugin.
+
 * librenms.py:  
 This library collects some LibreNMS related functions that are needed by LibreNMS check plugins.
 

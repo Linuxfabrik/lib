@@ -25,6 +25,11 @@ Not a breaking change, but a behavior change in db_sqlite.py: The functions
 now **delete** the underlying sqlite db file by default when they encounter an `OperationalError`. For example, you get this error when you run new SQL code that references columns in an older, existing db file that don't exist there. With this change, it is not necessary to manually delete db files after upgrading to new versions of your software that use newer db layouts. This behavior can be disabled with `delete_db_on_operational_error=False`.
 
 
+### Added
+
+* keycloak.py: This library collects some Keycloak related functions that are needed by more than one Keycloak plugin.
+
+
 ### Changed ("enhancement")
 
 * librenms.py: `get_state()` returns STATE_OK instead of STATE_UNKNOWN
