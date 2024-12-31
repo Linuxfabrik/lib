@@ -228,6 +228,13 @@ ENDOFLIFE_DATE = {
 
 
     'https://endoflife.date/api/gitlab.json': [
+    {   'cycle': '17.7',
+        'eol': '2025-03-20',
+        'latest': '17.7.0',
+        'latestReleaseDate': '2024-12-18',
+        'lts': False,
+        'releaseDate': '2024-12-19',
+        'support': '2025-01-16'},
     {   'cycle': '17.6',
         'eol': '2025-02-20',
         'latest': '17.6.2',
@@ -1204,6 +1211,12 @@ ENDOFLIFE_DATE = {
 
 
     'https://endoflife.date/api/mediawiki.json': [
+    {   'cycle': '1.43',
+        'eol': '2027-12-31',
+        'latest': '1.43.0',
+        'latestReleaseDate': '2024-12-20',
+        'lts': True,
+        'releaseDate': '2024-12-21'},
     {   'cycle': '1.42',
         'eol': '2025-06-30',
         'latest': '1.42.4',
