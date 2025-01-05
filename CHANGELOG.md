@@ -33,6 +33,7 @@ now **delete** the underlying sqlite db file by default when they encounter an `
 ### Changed ("enhancement")
 
 * librenms.py: `get_state()` returns STATE_OK instead of STATE_UNKNOWN
+* url.py: Improve error messages and comments
 
 
 

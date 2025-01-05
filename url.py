@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2025010501'
 
 import json
 import re
@@ -41,11 +41,13 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     POST: the HTTP request will be a POST instead of a GET when the data parameter is provided
     >>> result = fetch(URL, header=header, data={...})
 
-    Cookies: To fetch Cookies, parse the response header. To get the response header, use extended=True
+    Cookies: To fetch Cookies, parse the response header. To get the response header,
+    use extended=True
     >>> result = fetch(URL, header=header, data={...}, extended=True)
     >>> result['response_header'].getheader('Set-Cookie')
 
-    Setting `to_text=False` disables the automatic converison to a text string. Use this when downloading binary files.
+    Setting `to_text=False` disables the automatic converison to a text string.
+    Use this when downloading binary files.
     """
     try:
         if digest_auth_user is not None and digest_auth_password is not None:
@@ -72,11 +74,12 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
             request.add_header(key, value)
         # close http connections by myself
         request.add_header('Connection', 'close')
-        # identify as Linuxfabrik Monitoring-Plugin
+        # identify as Linuxfabrik Monitoring Plugins
         request.add_header('User-Agent', 'Linuxfabrik Monitoring Plugins')
 
         # SSL/TLS certificate validation
-        # see: https://stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
+        # see:
+        # https://stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
         ctx = ssl.create_default_context()
         if insecure:
             ctx.check_hostname = False
@@ -102,11 +105,10 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
         return (False, 'URL error "{}" for {}'.format(e.reason, url))
     except TypeError as e:
         return (False, 'Type error "{}", data="{}"'.format(e, data))
-    except:
+    except Exception as e:
         # hide passwords
         url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
-        return (False, 'Unknown error while fetching {}, maybe timeout or '
-                       'error on webserver'.format(url))
+        return (False, '{} while fetching {}'.format(e, url))
     else:
         try:
             charset = response.headers.get_content_charset()
@@ -126,9 +128,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                     result['response'] = response.read()
                 result['status_code'] = response.getcode()
                 result['response_header'] = response.info()
-        except:
-            return (False, 'Unknown error while fetching {}, maybe timeout or '
-                       'error on webserver'.format(url))
+        except Exception as e:
+            return (False, '{} while fetching {}'.format(e, url))
         return (True, result)
 
 
@@ -138,7 +139,7 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
                extended=False):
     """Fetch JSON from an URL.
 
-    >>> fetch_json('https://1.2.3.4/api/v2/?resource=cpu')
+    >>> fetch_json('https://192.0.2.74/api/v2/?resource=cpu')
     """
     success, jsonst = fetch(
         url,
@@ -160,15 +161,15 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
         else:
             result = jsonst
             result['response_json'] = json.loads(jsonst['response'])
-    except:
-        return (False, 'ValueError: No JSON object could be decoded')
+    except Exception as e:
+        return (False, '{}. No JSON object could be decoded.'.format(e))
     return (True, result)
 
 
 def get_latest_version_from_github(user, repo, key='tag_name'):
     """Get the newest release tag from a GitHub repo.
 
-    >>> get_latest_version_from_github('matomo-org', 'matomo')
+    >>> get_latest_version_from_github('Linuxfabrik', 'monitoring-plugins')
     """
     github_url = 'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
     success, result = fetch_json(github_url)
