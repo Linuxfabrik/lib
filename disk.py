@@ -264,7 +264,7 @@ def udevadm(device, _property):
         return ''
     stdout, _, _ = result
     for line in stdout.strip().splitlines():
-        key, value = line.split('=')
+        key, value = line.split('=', maxsplit=1)
         if key == _property:
             return value
     return ''
