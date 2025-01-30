@@ -36,6 +36,11 @@ now **delete** the underlying sqlite db file by default when they encounter an `
 * url.py: Improve error messages and comments
 
 
+### Fixed
+
+* fix(disk.py): fix ValueError if the value contains =
+
+
 
 ## 2024060401
 
