@@ -13,6 +13,10 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ### Breaking Changes
 
+Build, CI/CD:
+
+* Due to the new [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) and version string requirements in Windows MSI setup files, the project switches from [calendar versioning](https://calver.org/) to [semantic versioning](https://semver.org/).
+
 Not a breaking change, but a behavior change in db_sqlite.py: The functions
 
 * create_index()
