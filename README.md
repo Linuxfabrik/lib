@@ -70,6 +70,9 @@ This library collects some Jitsi related functions that are needed by more than 
 * keycloak.py:  
 This library collects some Keycloak related functions that are needed by more than one Keycloak plugin.
 
+* lftest.py:  
+Provides test functions for unit tests.
+
 * librenms.py:  
 This library collects some LibreNMS related functions that are needed by LibreNMS check plugins.
 
@@ -96,9 +99,6 @@ Communicates with the Shell.
 
 * smb.py:  
 Provides functions to establish native SMB connections.
-
-* test.py:  
-Provides test functions for unit tests.
 
 * time.py:  
 Provides datetime functions.
