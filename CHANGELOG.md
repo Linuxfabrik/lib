@@ -17,16 +17,18 @@ Build, CI/CD:
 
 * Due to the new [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) and version string requirements in Windows MSI setup files, the project switches from [calendar versioning](https://calver.org/) to [semantic versioning](https://semver.org/).
 
-Not a breaking change, but a behavior change in db_sqlite.py: The functions
+* Not a breaking change, but a behavior change in db_sqlite.py: The functions
 
-* create_index()
-* cut()
-* delete()
-* insert()
-* replace()
-* select()
+    * create_index()
+    * cut()
+    * delete()
+    * insert()
+    * replace()
+    * select()
 
-now **delete** the underlying sqlite db file by default when they encounter an `OperationalError`. For example, you get this error when you run new SQL code that references columns in an older, existing db file that don't exist there. With this change, it is not necessary to manually delete db files after upgrading to new versions of your software that use newer db layouts. This behavior can be disabled with `delete_db_on_operational_error=False`.
+    now **delete** the underlying sqlite db file by default when they encounter an `OperationalError`. For example, you get this error when you run new SQL code that references columns in an older, existing db file that don't exist there. With this change, it is not necessary to manually delete db files after upgrading to new versions of your software that use newer db layouts. This behavior can be disabled with `delete_db_on_operational_error=False`.
+
+* Renamed test.py to lftest.py due to `nuitka.Errors.NuitkaOptimizationError: duplicate locals name` on Windows
 
 
 ### Added
