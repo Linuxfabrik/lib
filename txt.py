@@ -15,7 +15,7 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024033101'
+__version__ = '2025030801'
 
 import codecs
 import re
@@ -61,47 +61,70 @@ def compile_regex(regex, key=''):
 
 
 def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
-    """Extracts text between `from_txt` to `to_txt`.
-    If `include_fromto` is set to False (default), text is returned without both search terms,
-    otherwise `from_txt` and `to_txt` are included.
-    If `from_txt` is not found, always an empty string is returned.
-    If `to_txt` is not found and `be_tolerant` is set to True (default), text is returned from
-    `from_txt` til the end of input text. Otherwise an empty text is returned.
+    """
+    Extracts a substring from `s` that lies between the markers `from_txt` and `to_txt`.
 
-    >>> extract_str('abcde', 'x', 'y')
-    ''
-    >>> extract_str('abcde', 'b', 'x')
-    'cde'
-    >>> extract_str('abcde', 'b', 'b')
-    'cde'
-    >>> extract_str('abcde', 'b', 'x', include_fromto=True)
-    'bcde'
-    >>> extract_str('abcde', 'b', 'x', include_fromto=True, be_tolerant=False)
-    ''
-    >>> extract_str('abcde', 'b', 'd')
-    'c'
-    >>> extract_str('abcde', 'b', 'd', include_fromto=True)
-    'bcd'
-    >>> s = '  Time zone: UTC (UTC, +0000)\nSystem clock synchronized: yes\n  NTP service: active\n'
-    >>> extract_str(s, 'System clock synchronized: ', '\n', include_fromto=True)
-    'System clock synchronized: yes\n'
+    The extraction rules are:
+      - If `from_txt` is not found in `s`, returns an empty string.
+      - If `to_txt` is not found:
+           - When `be_tolerant` is True (default), returns:
+                • If `include_fromto` is False: the substring from immediately after `from_txt` to
+                  the end of `s`
+                • If `include_fromto` is True: the substring from `from_txt` to the end of `s`
+           - When `be_tolerant` is False, returns an empty string.
+      - If both markers are found:
+           - When `include_fromto` is False (default): returns the text between the end of
+            `from_txt` and the start of `to_txt`
+           - When `include_fromto` is True: returns the substring including both `from_txt`
+             and `to_txt`
+
+    Parameters:
+      s (str): The input string.
+      from_txt (str): The starting marker.
+      to_txt (str): The ending marker.
+      include_fromto (bool): Whether to include the markers in the result. Defaults to False.
+      be_tolerant (bool): Whether to return the remainder of the string if `to_txt` isn’t found.
+                          Defaults to True.
+
+    Returns:
+      str: The extracted substring, or an empty string if the required markers are not found
+           (or tolerance is off).
+
+    Examples:
+      >>> extract_str('abcde', 'x', 'y')
+      ''
+      >>> extract_str('abcde', 'b', 'x')
+      'cde'
+      >>> extract_str('abcde', 'b', 'b')
+      'cde'
+      >>> extract_str('abcde', 'b', 'x', include_fromto=True)
+      'bcde'
+      >>> extract_str('abcde', 'b', 'x', include_fromto=True, be_tolerant=False)
+      ''
+      >>> extract_str('abcde', 'b', 'd')
+      'c'
+      >>> extract_str('abcde', 'b', 'd', include_fromto=True)
+      'bcd'
+      >>> s = '  Time zone: UTC (UTC, +0000)\nSystem clock synchronized: yes\n  NTP service: active\n'
+      >>> extract_str(s, 'System clock synchronized: ', '\n', include_fromto=True)
+      'System clock synchronized: yes\n'
     """
     pos1 = s.find(from_txt)
     if pos1 == -1:
-        # nothing found
+        # 'from_txt' not found
         return ''
-    pos2 = s.find(to_txt, pos1+len(from_txt))
-    # to_txt not found:
+    pos2 = s.find(to_txt, pos1 + len(from_txt))
+    # 'to_txt' not found:
     if pos2 == -1 and be_tolerant and not include_fromto:
-        return s[pos1+len(from_txt):]
+        return s[pos1 + len(from_txt):]
     if pos2 == -1 and be_tolerant and include_fromto:
         return s[pos1:]
     if pos2 == -1 and not be_tolerant:
         return ''
-    # from_txt and to_txt found:
+    # Both 'from_txt' and 'to_txt' are found:
     if not include_fromto:
-        return s[pos1+len(from_txt):pos2-len(to_txt)+ 1]
-    return s[pos1:pos2+len(to_txt)]
+        return s[pos1 + len(from_txt):pos2]
+    return s[pos1:pos2 + len(to_txt)]
 
 
 def filter_mltext(_input, ignore):

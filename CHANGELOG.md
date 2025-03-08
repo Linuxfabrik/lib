@@ -11,7 +11,9 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
-tbd
+### Fixed ("fix")
+
+* fix(txt.py): extract_str()
 
 
 ## v2.0.0.0
