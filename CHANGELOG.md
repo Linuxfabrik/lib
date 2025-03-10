@@ -6,14 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project does NOT adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/2024060401...HEAD
 
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.0.0.7...HEAD
 
 ## [Unreleased]
+
+tbd
+
+
+
+## v2.0.0.7
 
 ### Fixed ("fix")
 
 * fix(txt.py): extract_str()
+
+
+### Changed ("refactor", "chore" etc.)
+
+* chore(endoflifedate.py): bump version numbers
+* chore(tools/update-endoflifedate): add openvpn
+* docs(time.py): improve doc strings
+* docs: update README
+
 
 
 ## v2.0.0.0
@@ -43,7 +58,7 @@ Build, CI/CD:
 * keycloak.py: This library collects some Keycloak related functions that are needed by more than one Keycloak plugin.
 
 
-### Changed ("enhancement")
+### Changed ("refactor", "chore" etc.)
 
 * librenms.py: `get_state()` returns STATE_OK instead of STATE_UNKNOWN
 * url.py: Improve error messages and comments
@@ -306,6 +321,3 @@ Minor improvements, barely any changes.
 ## 2020022801
 
 Initial release.
-
-
-
