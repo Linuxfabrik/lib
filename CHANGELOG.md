@@ -7,9 +7,15 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.0.0.7...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.1.0.0...HEAD
 
 ## [Unreleased]
+
+tbd
+
+
+
+## v2.1.0.0
 
 * feat: add uptimerobot.py
 * docs(base.py): improve doc strings
