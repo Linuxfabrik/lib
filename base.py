@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024112002'
+__version__ = '2025032201'
 
 import collections
 import numbers
@@ -552,7 +552,34 @@ def smartcast(value):
 
 
 def sort(array, reverse=True, sort_by_key=False):
-    """Sort a simple 1-dimensional dictionary
+    """Sort a 1-dimensional dictionary by its values or keys.
+
+    When a dictionary is provided, this function returns a list of (key, value)
+    tuples sorted based on the specified criteria:
+      - If sort_by_key is False (default), the dictionary items are sorted by their values.
+      - If sort_by_key is True, the items are sorted by their keys (compared case-insensitively).
+
+    The sort order is descending by default (reverse=True). If the input is not a dictionary,
+    the original input is returned unmodified.
+
+    Parameters:
+        array (dict or any): The dictionary to be sorted. If not a dictionary, the input is returned as is.
+        reverse (bool, optional): If True, sort in descending order; otherwise, sort in ascending order.
+                                  Defaults to True.
+        sort_by_key (bool, optional): If True, sort by dictionary keys; if False, sort by values.
+                                      Defaults to False.
+
+    Returns:
+        list or any: A list of sorted (key, value) tuples if a dictionary is provided,
+                     otherwise the original input.
+
+    Examples:
+        >>> sort({'a': 2, 'b': 1})
+        [('a', 2), ('b', 1)]
+        >>> sort({'a': 2, 'b': 1}, reverse=False)
+        [('b', 1), ('a', 2)]
+        >>> sort({'a': 2, 'B': 1}, sort_by_key=True)
+        [('a', 2), ('B', 1)]
     """
     if isinstance(array, dict):
         if not sort_by_key:
