@@ -106,6 +106,9 @@ Provides datetime functions.
 * txt.py:  
 A collection of text functions.
 
+* uptimerobot.py:  
+Interacts with the UptimeRobot API.
+
 * url.py:  
 Get for example HTML or JSON from an URL.
 

@@ -11,7 +11,8 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
-tbd
+* feat: add uptimerobot.py
+* docs(base.py): improve doc strings
 
 
 
