@@ -11,7 +11,7 @@
 """Interacts with the UptimeRobot API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025032301'
+__version__ = '2025032302'
 
 from . import time
 from . import url
@@ -354,7 +354,7 @@ def monstatus2utr(status):
 
 def monsetstatus2human(status):
     return {
-        0: 'pause',
+        0: 'paused',
         1: 'start',
     }.get(status)
 
