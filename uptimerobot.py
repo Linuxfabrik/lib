@@ -11,14 +11,14 @@
 """Interacts with the UptimeRobot API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025032302'
+__version__ = '2025032701'
 
 from . import time
 from . import url
 
 
 def get_response_header(uri, data):
-    """Call the REST API, including pagination.
+    """Call the REST API, but just return the response headers.
     """
     result = []
     data['format'] = 'json'
@@ -29,7 +29,7 @@ def get_response_header(uri, data):
             'Content-Type': 'application/x-www-form-urlencoded',
         },
         data=data,
-        timeout=20,
+        timeout=10,
         extended=True,
     )
     if not success:
@@ -42,7 +42,6 @@ def get_data(uri, data, result_key):
     """
     offset = 0
     result = []
-    data = human2utr(data)
     data['format'] = 'json'
     while True:
         data['offset'] = offset
@@ -58,7 +57,7 @@ def get_data(uri, data, result_key):
         if not success:
             return (False, item)
         if item['stat'] != 'ok':
-            return (False, item['error']['message'])
+            return (False, f"{item['error']['type']}: {item['error']['message']}")
         if item.get(result_key) is None:
             # status was ok, but response doesn't deliver the result key
             return (True, item['message'])
@@ -76,8 +75,23 @@ def get_data(uri, data, result_key):
     return (True, result)
 
 
+def multi_replace(text, repl_map):
+    """Replace all occurrences based on the provided mapping."""
+    for old, new in repl_map.items():
+        text = text.replace(old, str(new))
+    return text
+
+
 def get_account_details(data):
-    # https://uptimerobot.com/api/#getAccountDetailsWrap
+    # https://uptimerobot.com/api
+    # remove unwanted keys (copied 1:1 from documentation)
+    allowed_keys = {
+        'api_key',
+    }
+    for key in list(data.keys()):
+        if key not in allowed_keys:
+            data.pop(key)
+
     success, rl = get_response_header(
         'https://api.uptimerobot.com/v2/getAccountDetails',
         data,
@@ -87,436 +101,618 @@ def get_account_details(data):
         data,
         'account',
     )
+
     return success, account, rl
 
 
-def get_monitors(data):
-    # https://uptimerobot.com/api/#getMonitorsWrap
-    if 'alert_contacts' not in data:
-        data.update({'alert_contacts': 1})
-    if 'auth_type' not in data:
-        data.update({'auth_type': 'true'})
-    if 'http_request_details' not in data:
-        data.update({'http_request_details': 'true'})
-    if 'mwindows' not in data:
-        data.update({'mwindows': 1})
-    if 'ssl' not in data:
-        data.update({'ssl': 1})
-    return get_data(
+def get_monitors(params):
+    # https://uptimerobot.com/api
+    # remove unwanted keys (copied 1:1 from documentation)
+    # and translate human2uptimerobot and vice versa
+    allowed_keys = {
+        'api_key',
+        'monitors',
+        'types',
+        'statuses',
+        'custom_uptime_ratios',
+        'custom_down_durations',
+        'custom_uptime_ranges',
+        'all_time_uptime_ratio',
+        'all_time_uptime_durations',
+        'logs',
+        'logs_start_date',
+        'logs_end_date',
+        'log_types',
+        'logs_limit',
+        'response_times',
+        'response_times_limit',
+        'response_times_average',
+        'response_times_start_date',
+        'response_times_end_date',
+        'alert_contacts',
+        'mwindows',
+        'ssl',
+        'custom_http_headers',
+        'custom_http_statuses',
+        'http_request_details',
+        'auth_type',
+        'timezone',
+        'offset',
+        'limit',
+        'search',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+
+    # convert human parameters to uptimerobot
+    replace_map = {
+        'statuses': {
+            'paused': '0',
+            'wait': '1',
+            'up': '2',
+            'seems_down': '8',
+            'down': '9',
+        },
+        'types': {
+            'http': '1',
+            'keyw': '2',
+            'ping': '3',
+            'port': '4',
+            'beat': '5',
+        },
+    }
+    for key, replacements in replace_map.items():
+        if key in params and isinstance(params[key], str):
+            params[key] = multi_replace(params[key], replacements)
+
+    success, result = get_data(
         'https://api.uptimerobot.com/v2/getMonitors',
-        data,
+        params,
         'monitors',
     )
+    if not success:
+        return success, result
+
+    # convert uptimerobot result values to human
+    replace_map = {
+        'alert_contacts_type': {
+            1: 'sms',
+            2: 'e-mail',
+            3: 'twitter',
+            5: 'web-hook',
+            6: 'pushbullet',
+            7: 'zapier',
+            8: 'pro-sms',
+            9: 'pushover',
+            11: 'slack',
+            14: 'voice-call',
+            15: 'splunk',
+            16: 'pagerduty',
+            17: 'opsgenie',
+            20: 'ms-teams',
+            21: 'google-chat',
+            23: 'discord',
+        },
+        'auth_type': {
+            1: 'basic',
+            2: 'digest',
+        },
+        'http_method': {
+            1: 'head',
+            2: 'get',
+            3: 'post',
+            4: 'put',
+            5: 'patch',
+            6: 'delete',
+            7: 'options',
+        },
+        'keyword_case_type': {
+            0: 'cs',
+            1: 'ci',
+        },
+        'keyword_type': {
+            1: 'exist',
+            2: 'notex',
+        },
+        'status': {
+            0: 'paused',
+            1: 'wait',
+            2: 'up',
+            8: 'seems_down',
+            9: 'down',
+        },
+        'type': {
+            1: 'http',
+            2: 'keyw',
+            3: 'ping',
+            4: 'port',
+            5: 'beat',
+        },
+    }
+
+    def replace_values(item):
+        # replace the nested alert_contacts 'type' value
+        for contact in item.get('alert_contacts', []):
+            if 'type' in contact:
+                contact['type'] = replace_map['alert_contacts_type'].get(
+                    contact['type'],
+                    contact['type'],
+                )
+        # replace values for top-level keys
+        if 'auth_type' in item:
+            item['auth_type'] = replace_map['auth_type'].get(
+                item['auth_type'],
+                'None',
+            )
+        if 'http_method' in item:
+            item['http_method'] = replace_map['http_method'].get(
+                item['http_method'],
+                item['http_method'],
+            )
+        if 'keyword_case_type' in item:
+            item['keyword_case_type'] = replace_map['keyword_case_type'].get(
+                item['keyword_case_type'],
+                item['keyword_case_type'],
+            )
+        if 'keyword_type' in item:
+            item['keyword_type'] = replace_map['keyword_type'].get(
+                item['keyword_type'],
+                'None',
+            )
+        if 'status' in item:
+            item['status'] = replace_map['status'].get(
+                item['status'],
+                item['status'],
+            )
+        if 'type' in item:
+            item['type'] = replace_map['type'].get(
+                item['type'],
+                item['type'],
+            )
+
+        return item
+
+    # Process each dictionary in your result list
+    result = [replace_values(item) for item in result]
+
+    return success, result
 
 
-def new_monitor(data):
-    # https://uptimerobot.com/api/#newMonitorWrap
+def new_monitor(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'friendly_name',
+        'url',
+        'type',
+        'sub_type',
+        'port',
+        'keyword_type',
+        'keyword_case_type',
+        'keyword_value',
+        'interval',
+        'timeout',
+        'http_username',
+        'http_password',
+        'http_auth_type',
+        'post_type',
+        'post_value',
+        'http_method',
+        'post_content_type',
+        'alert_contacts',
+        'mwindows',
+        'custom_http_headers',
+        'custom_http_statuses',
+        'ignore_ssl_errors',
+        'disable_domain_expire_notifications',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+
+    # convert human parameters to uptimerobot
+    replace_map = {
+        'type': {
+            'http': '1',
+            'keyw': '2',
+            'ping': '3',
+            'port': '4',
+            'beat': '5',
+        },
+        'sub_type': {
+            'http': '1',
+            'https': '443',
+            'ftp': '21',
+            'smtp': '25',
+            'pop3': '110',
+            'imap': '143',
+            'custom': '99',
+        },
+        'keyword_type': {
+            'exist': '1',
+            'notex': '2',
+        },
+        'keyword_case_type': {
+            'cs': '0',
+            'ci': '1',
+        },
+        'auth_type': {
+            'basic': '1',
+            'digest': '2',
+        },
+        'http_auth_type': {
+            'basic': '1',
+            'digest': '2',
+        },
+        'post_type': {
+            'key-value': '1',
+            'raw data': '2',
+        },
+        'http_method': {
+            'head': 1,
+            'get': 2,
+            'post': 3,
+            'put': 4,
+            'patch': 5,
+            'delete': 6,
+            'options': 7,
+        },
+        'post_content_type': {
+            'text/html': '0',
+            'content/json': '1',
+        },
+        'disable_domain_expire_notifications': {
+            'enable': '0',
+            'disable': '1',
+        },
+    }
+    for key, replacements in replace_map.items():
+        if key in params and isinstance(params[key], str):
+            params[key] = multi_replace(params[key], replacements)
+
     return get_data(
         'https://api.uptimerobot.com/v2/newMonitor',
-        data,
+        params,
         'monitor',
     )
 
 
-def update_monitor(data):
-    # https://uptimerobot.com/api/#editMonitorWrap
+def edit_monitor(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'id',
+        'friendly_name',
+        'url',
+        'sub_type',
+        'port',
+        'keyword_type',
+        'keyword_case_type',
+        'keyword_value',
+        'interval',
+        'timeout',
+        'status',
+        'http_username',
+        'http_password',
+        'http_auth_type',
+        'http_method',
+        'post_type',
+        'post_value',
+        'post_content_type',
+        'alert_contacts',
+        'mwindows',
+        'custom_http_headers',
+        'custom_http_statuses',
+        'ignore_ssl_errors',
+        'disable_domain_expire_notifications',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+
+    # convert human parameters to uptimerobot
+    replace_map = {
+        'sub_type': {
+            'http': '1',
+            'https': '443',
+            'ftp': '21',
+            'smtp': '25',
+            'pop3': '110',
+            'imap': '143',
+            'custom': '99',
+        },
+        'keyword_type': {
+            'exist': '1',
+            'notex': '2',
+        },
+        'keyword_case_type': {
+            'cs': '0',
+            'ci': '1',
+        },
+        'status': {
+            'paused': 0,
+            'up': 1,
+        },
+        'auth_type': {
+            'basic': '1',
+            'digest': '2',
+        },
+        'http_auth_type': {
+            'basic': '1',
+            'digest': '2',
+        },
+        'http_method': {
+            'head': 1,
+            'get': 2,
+            'post': 3,
+            'put': 4,
+            'patch': 5,
+            'delete': 6,
+            'options': 7,
+        },
+        'post_type': {
+            'key-value': '1',
+            'raw data': '2',
+        },
+        'post_content_type': {
+            'text/html': '0',
+            'content/json': '1',
+        },
+        'disable_domain_expire_notifications': {
+            'enable': '0',
+            'disable': '1',
+        },
+    }
+    for key, replacements in replace_map.items():
+        if key in params and isinstance(params[key], str):
+            params[key] = multi_replace(params[key], replacements)
+
     return get_data(
         'https://api.uptimerobot.com/v2/editMonitor',
-        data,
+        params,
         'monitor',
     )
 
 
-def delete_monitor(data):
-    # https://uptimerobot.com/api/#deleteMonitorWrap
+def delete_monitor(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'id',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+    
     return get_data(
         'https://api.uptimerobot.com/v2/deleteMonitor',
-        data,
+        params,
         'monitor',
     )
 
 
-def get_mwindows(data):
-    # https://uptimerobot.com/api/#getMWindowsWrap
-    return get_data(
-        'https://api.uptimerobot.com/v2/getMWindows',
-        data,
-        'mwindows',
-    )
+def get_alert_contacts(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'alert_contacts',
+        'offset',
+        'limit',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
 
-
-def new_mwindow(data):
-    # https://uptimerobot.com/api/#newMWindowWrap
-    return get_data(
-        'https://api.uptimerobot.com/v2/newMWindow',
-        data,
-        'mwindow',
-    )
-
-
-def update_mwindow(data):
-    # https://uptimerobot.com/api/#editMWindowWrap
-    return get_data(
-        'https://api.uptimerobot.com/v2/editMWindow',
-        data,
-        'mwindow',
-    )
-
-
-def delete_mwindow(data):
-    # https://uptimerobot.com/api/#deleteMWindowWrap
-    return get_data(
-        'https://api.uptimerobot.com/v2/deleteMWindow',
-        data,
-        'mwindows',
-    )
-
-
-def get_alert_contacts(data):
-    # https://uptimerobot.com/api/#getAlertContactsWrap
-    return get_data(
+    success, result = get_data(
         'https://api.uptimerobot.com/v2/getAlertContacts',
-        data,
+        params,
         'alert_contacts',
     )
+    if not success:
+        return success, result
+
+    # convert uptimerobot result values to human
+    replace_map = {
+        'status': {
+            0: 'not activated',
+            1: 'paused',
+            2: 'active',
+        },
+        'type': {
+            1: 'sms',
+            2: 'e-mail',
+            3: 'twitter',
+            5: 'web-hook',
+            6: 'pushbullet',
+            7: 'zapier',
+            8: 'pro-sms',
+            9: 'pushover',
+            11: 'slack',
+            14: 'voice-call',
+            15: 'splunk',
+            16: 'pagerduty',
+            17: 'opsgenie',
+            20: 'ms-teams',
+            21: 'google-chat',
+            23: 'discord',
+        },
+    }
+
+    def replace_values(item):
+        # replace values for top-level keys
+        if 'status' in item:
+            item['status'] = replace_map['status'].get(
+                item['status'],
+                'None',
+            )
+        if 'type' in item:
+            item['type'] = replace_map['type'].get(
+                item['type'],
+                'None',
+            )
+        return item
+
+    # Process each dictionary in your result list
+    result = [replace_values(item) for item in result]
+
+    return success, result
 
 
-def new_alertcontact(data):
-    # https://uptimerobot.com/api/#newAlertContactWrap
-    return get_data(
-        'https://api.uptimerobot.com/v2/newAlertContact',
-        data,
-        'alertcontact',
-    )
-
-
-def update_alertcontact(data):
-    # https://uptimerobot.com/api/#editAlertContactWrap
-    return get_data(
-        'https://api.uptimerobot.com/v2/editAlertContact',
-        data,
-        'alertcontact',
-    )
-
-
-def delete_alertcontact(data):
-    # https://uptimerobot.com/api/#deleteAlertContactWrap
+def delete_alert_contact(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'id',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+    
     return get_data(
         'https://api.uptimerobot.com/v2/deleteAlertContact',
-        data,
+        params,
         'alert_contact',
     )
 
 
-def alertcontacttype2human(_type):
-    return {
-        1: 'sms',
-        2: 'e-mail',
-        3: 'twitter',
-        5: 'web-hook',
-        6: 'pushbullet',
-        7: 'zapier',
-        8: 'pro-sms',
-        9: 'pushover',
-        11: 'slack',
-        14: 'voice-call',
-        15: 'splunk',
-        16: 'pagerduty',
-        17: 'opsgenie',
-        20: 'ms-teams',
-        21: 'google-chat',
-        23: 'discord',
-    }.get(_type, _type)
+def get_mwindows(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'mwindows',
+        'offset',
+        'limit',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+
+    success, result = get_data(
+        'https://api.uptimerobot.com/v2/getMWindows',
+        params,
+        'mwindows',
+    )
+    if not success:
+        return success, result
+
+    # convert uptimerobot result values to human
+    replace_map = {
+        'status': {
+            0: 'paused',
+            1: 'active',
+        },
+    }
+
+    def replace_values(item):
+        # replace values for top-level keys
+        if 'status' in item:
+            item['status'] = replace_map['status'].get(
+                item['status'],
+                'None',
+            )
+        return item
+
+    # Process each dictionary in your result list
+    result = [replace_values(item) for item in result]
+
+    return success, result
 
 
-def alertcontacttype2utr(_type):
-    return {
-        'sms': 1,
-        'e-mail': 2,
-        'twitter': 3,
-        'web-hook': 5,
-        'pushbullet': 6,
-        'zapier': 7,
-        'pro-sms': 8,
-        'pushover': 9,
-        'slack': 11,
-        'voice-call': 14,
-        'splunk': 15,
-        'pagerduty': 16,
-        'opsgenie': 17,
-        'ms-teams': 20,
-        'google-chat': 21,
-        'discord': 23,
-    }.get(_type)
+def new_mwindow(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'friendly_name',
+        'type',
+        'value',
+        'start_time',
+        'duration',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+
+    # convert human parameters to uptimerobot
+    replace_map = {
+        'type': {
+            'once': 1,
+            'daily': 2,
+            'weekly': 3,
+            'monthly': 4,
+        },
+        'value': {
+            'mon': 1,
+            'tue': 2,
+            'wed': 3,
+            'thu': 4,
+            'fri': 5,
+            'sat': 6,
+            'sun': 7,
+        },
+    }
+    for key, replacements in replace_map.items():
+        if key in params and isinstance(params[key], str):
+            params[key] = multi_replace(params[key], replacements)
+
+    return get_data(
+        'https://api.uptimerobot.com/v2/newMWindow',
+        params,
+        'mwindow',
+    )
 
 
-def alert_contactstatus2human(_type):
-    return {
-        0: 'not activated',
-        1: 'paused',
-        2: 'active',
-    }.get(_type, _type)
+def edit_mwindow(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'id',  # not documented
+        'friendly_name',
+        'type',
+        'value',
+        'start_time',
+        'duration',
+        'status',  # not documented
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+
+    # convert human parameters to uptimerobot
+    replace_map = {
+        'status': {
+            'paused': 0,
+            'active': 1,
+        },
+        'type': {
+            'once': 1,
+            'daily': 2,
+            'weekly': 3,
+            'monthly': 4,
+        },
+        'value': {
+            'mon': 1,
+            'tue': 2,
+            'wed': 3,
+            'thu': 4,
+            'fri': 5,
+            'sat': 6,
+            'sun': 7,
+        },
+    }
+    for key, replacements in replace_map.items():
+        if key in params and isinstance(params[key], str):
+            params[key] = multi_replace(params[key], replacements)
+
+    return get_data(
+        'https://api.uptimerobot.com/v2/editMWindow',
+        params,
+        'mwindow',
+    )
 
 
-def alert_contactstatus2utr(_type):
-    return {
-        'not activated': 0,
-        'paused': 1,
-        'active': 2,
-    }.get(_type)
+def delete_mwindow(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'id',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
 
-
-def http_auth_type2human(_type):
-    return {
-        1: 'basic',
-        2: 'digest',
-    }.get(_type)
-
-
-def http_auth_type2utr(_type):
-    return {
-        'basic': 1,
-        'digest': 2,
-    }.get(_type, _type)  # let utr deal with wrong values
-
-
-def http_method2human(_method):
-    return {
-        1: 'head',
-        2: 'get',
-        3: 'post',
-        4: 'put',
-        5: 'patch',
-        6: 'delete',
-        7: 'options',
-    }.get(_method)
-
-
-def http_method2utr(_method):
-    return {
-        'head': 1,
-        'get': 2,
-        'post': 3,
-        'put': 4,
-        'patch': 5,
-        'delete': 6,
-        'options': 7,
-    }.get(_method, _method)
-
-
-def keywcase2human(_type):
-    return {
-        0: 'cs',
-        1: 'ci',
-    }.get(_type)
-
-
-def keywcase2utr(_type):
-    return {
-        'cs': 0,
-        'ci': 1,
-    }.get(_type, _type)
-
-
-def keywtype2human(_type):
-    return {
-        1: 'exist',
-        2: 'notex',
-    }.get(_type, '')
-
-
-def keywtype2utr(_type):
-    return {
-        'exist': 1,
-        'notex': 2,
-    }.get(_type, _type)
-
-
-def monstatus2human(status):
-    return {
-        0: 'paused',
-        1: 'wait',
-        2: 'up',
-        8: 'down?',
-        9: 'down',
-    }.get(status)
-
-
-def monstatus2utr(status):
-    return {
-        'paused': 0,
-        'wait': 1,
-        'up': 2,
-        'down?': 8,
-        'down': 9,
-    }.get(status, status)
-
-
-def monsetstatus2human(status):
-    return {
-        0: 'paused',
-        1: 'start',
-    }.get(status)
-
-
-def monsetstatus2utr(status):
-    return {
-        'paused': 0,
-        'start': 1,
-    }.get(status, status)
-
-
-def montype2human(_type):
-    return {
-        1: 'http',
-        2: 'keyw',
-        3: 'ping',
-        4: 'port',
-        5: 'beat',
-    }.get(_type)
-
-
-def montype2utr(_type):
-    return {
-        'http': 1,
-        'keyw': 2,
-        'ping': 3,
-        'port': 4,
-        'beat': 5,
-    }.get(_type, _type)
-
-
-def mwinstatus2human(status):
-    return {
-        0: 'paused',
-        1: 'active',
-    }.get(status)
-
-
-def mwinstatus2utr(status):
-    return {
-        'paused': 0,
-        'active': 1,
-    }.get(status, status)
-
-
-def mwintype2human(_type):
-    return _type
-
-
-def mwintype2utr(_type):
-    return {
-        'once': 1,
-        'daily': 2,
-        'weekly': 3,
-        'monthly': 4,
-    }.get(_type, _type)
-
-
-def mwinvalue2human(value):
-    return {
-        1: 'mon',
-        2: 'tue',
-        3: 'wed',
-        4: 'thu',
-        5: 'fri',
-        6: 'sat',
-        7: 'sun',
-        'mon': 'mon',
-        'tue': 'tue',
-        'wed': 'wed',
-        'thu': 'thu',
-        'fri': 'fri',
-        'sat': 'sat',
-        'sun': 'sun',
-    }.get(value, '')
-
-
-def mwinvalue2utr(value):
-    return {
-        'mon': 1,
-        'tue': 2,
-        'wed': 3,
-        'thu': 4,
-        'fri': 5,
-        'sat': 6,
-        'sun': 7,
-    }.get(value)
-
-
-def human2utr(item, section='monitors'):
-    for key, value in item.items():
-        if key == 'http_auth_type':
-            item[key] = http_auth_type2utr(value)
-        if key == 'http_method':
-            item[key] = http_method2utr(value)
-        if key == 'keyword_case_type':
-            item[key] = keywcase2utr(value)
-        if key == 'keyword_type':
-            item[key] = keywtype2utr(value)
-        if section == 'monitors' and key == 'status':
-            item[key] = monstatus2utr(value)
-        if section == 'monitors' and key == 'statuses':
-            t = []
-            for v in value.split('-'):  # keyw-http
-                t.append(str(monstatus2utr(v)))
-            item[key] = '-'.join(t)
-        if section == 'monitors' and key == 'type':
-            item[key] = montype2utr(value)
-        if section == 'monitors' and key == 'types':
-            t = []
-            for v in value.split('-'):  # keyw-http
-                t.append(str(montype2utr(v)))
-            item[key] = '-'.join(t)
-        if section == 'mwindows' and key == 'status':
-            item[key] = mwinstatus2utr(value)
-        if section == 'mwindows' and key == 'type':
-            item[key] = mwintype2utr(value)
-        if section == 'mwindows' and key == 'value':
-            if item['type'] == 1 or item['type'] == 2:
-                pass
-            else:
-                t = []
-                for v in value.split('-'):  # mon-tue-fri
-                    t.append(str(mwinvalue2utr(v)))
-                item[key] = '-'.join(t)
-        if section == 'set' and key == 'status':
-            item[key] = monsetstatus2utr(value)
-    return item
-
-
-def utr2human(item, section='monitors'):
-    for key, value in item.items():
-        if key == 'create_datetime':
-            item[key] = time.epoch2iso(value)
-        if key == 'http_auth_type':
-            item[key] = http_auth_type2human(value)
-        if key == 'http_method':
-            item[key] = http_method2human(value)
-        if key == 'keyword_case_type':
-            item[key] = keywcase2human(value)
-        if key == 'keyword_type':
-            item[key] = keywtype2human(value)
-        if key == 'ssl':
-            item[key]['expires'] = time.epoch2iso(value['expires'])
-        if section == 'monitors' and key == 'status':
-            item[key] = monstatus2human(value)
-        if section == 'monitors' and key == 'type':
-            item[key] = montype2human(value)
-        if section == 'mwindows' and key == 'status':
-            item[key] = mwinstatus2human(value)
-        if section == 'mwindows' and key == 'type':
-            item[key] = mwintype2human(value)
-        if section == 'mwindows' and key == 'value':
-            if item['type'] == 'weekly' or item['type'] == 'monthly':
-                t = []
-                for v in value.split(','):  # 1,2
-                    t.append(str(mwinvalue2human(v)))
-                item[key] = ', '.join(t)
-            else:
-                item[key] = ''
-        if section == 'alert_contacts' and key == 'type':
-            item[key] = alertcontacttype2human(value)
-        if section == 'alert_contacts' and key == 'status':
-            item[key] = alert_contactstatus2human(value)
-    return item
+    return get_data(
+        'https://api.uptimerobot.com/v2/deleteMWindow',
+        params,
+        'mwindows',
+    )
