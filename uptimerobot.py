@@ -11,7 +11,7 @@
 """Interacts with the UptimeRobot API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025032701'
+__version__ = '2025032901'
 
 from . import time
 from . import url
@@ -714,5 +714,153 @@ def delete_mwindow(params):
     return get_data(
         'https://api.uptimerobot.com/v2/deleteMWindow',
         params,
-        'mwindows',
+        'mwindow',
+    )
+
+
+def get_psps(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'psps',
+        'offset',
+        'limit',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+
+    success, result = get_data(
+        'https://api.uptimerobot.com/v2/getPSPs',
+        params,
+        'psps',
+    )
+    if not success:
+        return success, result
+
+    # convert uptimerobot result values to human
+    replace_map = {
+        'sort': {
+            1: 'a-z',
+            2: 'z-a',
+            3: 'up-down-paused',
+            4: 'down-up-paused',
+        },
+        'status': {
+            0: 'paused',
+            1: 'active',
+        },
+    }
+
+    def replace_values(item):
+        # replace values for top-level keys
+        if 'sort' in item:
+            item['sort'] = replace_map['sort'].get(
+                item['sort'],
+                'None',
+            )
+        if 'status' in item:
+            item['status'] = replace_map['status'].get(
+                item['status'],
+                'None',
+            )
+        return item
+
+    # Process each dictionary in your result list
+    result = [replace_values(item) for item in result]
+
+    return success, result
+
+
+def new_psp(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'friendly_name',
+        'monitors',
+        'custom_domain',
+        'password',
+        'sort',
+        'hide_url_links',
+        # 'status',  # not allowed for creation
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+
+    # convert human parameters to uptimerobot
+    replace_map = {
+        'sort': {
+            'a-z': 1,
+            'z-a': 2,
+            'up-down-paused': 3,
+            'down-up-paused': 4,
+        },
+        'status': {
+            'paused': 0,
+            'active': 1,
+        },
+    }
+    for key, replacements in replace_map.items():
+        if key in params and isinstance(params[key], str):
+            params[key] = multi_replace(params[key], replacements)
+
+    return get_data(
+        'https://api.uptimerobot.com/v2/newPSP',
+        params,
+        'psp',
+    )
+
+
+def edit_psp(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'id',  # not documented in the UTR API
+        'friendly_name',
+        'monitors',
+        'custom_domain',
+        'password',
+        'sort',
+        'hide_url_links',
+        'status',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+
+    # convert human parameters to uptimerobot
+    replace_map = {
+        'sort': {
+            'a-z': 1,
+            'z-a': 2,
+            'up-down-paused': 3,
+            'down-up-paused': 4,
+        },
+        'status': {
+            'paused': 0,
+            'active': 1,
+        },
+    }
+    for key, replacements in replace_map.items():
+        if key in params and isinstance(params[key], str):
+            params[key] = multi_replace(params[key], replacements)
+
+    return get_data(
+        'https://api.uptimerobot.com/v2/editPSP',
+        params,
+        'psp',
+    )
+
+
+def delete_psp(params):
+    # https://uptimerobot.com/api
+    allowed_keys = {
+        'api_key',
+        'id',
+    }
+    # Keep only allowed parameters
+    params = {k: v for k, v in params.items() if k in allowed_keys}
+
+    return get_data(
+        'https://api.uptimerobot.com/v2/deletePSP',
+        params,
+        'psp',
     )
