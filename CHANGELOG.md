@@ -7,11 +7,17 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.1.0.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.1.0.4...HEAD
 
 ## [Unreleased]
 
 tbd
+
+
+
+## v2.1.0.4
+
+* refactor: uptimerobot.py
 
 
 
