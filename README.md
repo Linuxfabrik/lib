@@ -19,6 +19,9 @@ For example by browsing http://localhost:8080/ after starting `pydoc -p 8080`.
 * args.py:  
 Extends argparse by new input argument data types on demand.
 
+* avelon.py:  
+This library interacts with the Avelon Cloud API.
+
 * base.py:  
 Provides very common every-day functions.
 
