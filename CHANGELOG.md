@@ -7,11 +7,17 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.1.0.4...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.1.0.7...HEAD
 
 ## [Unreleased]
 
 tbd
+
+
+
+## v2.1.0.7
+
+* disk.py: Fix static path to udevadm ([#85](https://github.com/Linuxfabrik/lib/issues/85))
 
 
 
