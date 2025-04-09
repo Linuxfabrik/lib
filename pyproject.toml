@@ -42,17 +42,11 @@ dependencies = [
     "netifaces",
     "psutil",
     "pymysql",
-    "pysmbclient",
-    "python-keystoneclient",
-    "python-novaclient",
-    "python-swiftclient",
-    "pywinrm",
-    "requests",
+    "PySmbClient",
     "smbprotocol",
-    "vici",
     "xmltodict",
 ]
-requires-python = ">=3.6"
+requires-python = ">=3.9"
 
 [project.urls]
 Homepage = "https://github.com/Linuxfabrik/lib"

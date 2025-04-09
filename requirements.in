@@ -1,0 +1,13 @@
+# dnf -y install python3-pip
+# python3.9 -m pip install --user --upgrade pip
+# python3.9 -m pip install --user pip-tools
+# python3.9 -m piptools compile --generate-hashes requirements.in
+
+beautifulsoup4
+lxml --only-binary=lxml
+netifaces
+psutil
+pymysql
+PySmbClient
+smbprotocol
+xmltodict
