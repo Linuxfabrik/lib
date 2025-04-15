@@ -2,8 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project does NOT adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
@@ -11,11 +10,15 @@ and this project does NOT adhere to [Semantic Versioning](https://semver.org/spe
 
 ## [Unreleased]
 
-tbd
+### Fixed ("fix")
+
+* shell.py: Fix special character decoding in Windows output by explicitly switching to codepage 65001
 
 
 
 ## v2.1.0.7
+
+### Fixed ("fix")
 
 * disk.py: Fix static path to udevadm ([#85](https://github.com/Linuxfabrik/lib/issues/85))
 
@@ -23,13 +26,21 @@ tbd
 
 ## v2.1.0.4
 
+### Changed ("refactor", "chore" etc.)
+
 * refactor: uptimerobot.py
 
 
 
 ## v2.1.0.0
 
+### Added
+
 * feat: add uptimerobot.py
+
+
+### Changed ("refactor", "chore" etc.)
+
 * docs(base.py): improve doc strings
 
 
