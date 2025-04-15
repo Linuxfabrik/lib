@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041501'
+__version__ = '2025041502'
 
 
 import os
@@ -183,7 +183,14 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
         else:
             stdout, stderr = p.communicate()
         retc = p.returncode
-        return (True, (txt.to_text(stdout), txt.to_text(stderr), retc))
+        return (
+            True,
+            (
+                txt.to_text(stdout).replace('Active code page: 65001\r\n', ''),
+                txt.to_text(stderr),
+                retc,
+            )
+        )
 
     # For non-shell invocations, the command is split by pipes and executed in a pipeline manually.
     cmds = cmd.split('|')
