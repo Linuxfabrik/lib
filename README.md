@@ -15,14 +15,17 @@ HTML documentation is built using [https://pdoc.dev/](https://pdoc.dev/). Curren
 ```
 pip install pdoc
 pdoc --output-dir docs \
+    args.py \
     base.py \
     disk.py \
     globals.py \
+    human.py \
     jitsi.py \
     lftest.py \
     nodebb.py \
     powershell.py \
     psutil.py \
+    redfish.py \
     time.py \
     shell.py \
     txt.py \
@@ -142,3 +145,9 @@ This library collects some WildFly/JBoss related functions that are needed by mo
 
 * winrm.py:  
 This library collects some Microsoft WinRM related functions.
+
+
+## Tips & Tricks
+
+* Counts the function calls to any "lib" library in your project and sorts the results by frequency in descending order:  
+  `grep -rhoP '\Wlib\.[a-zA-Z0-9_\.]+' * | sed 's/^[^a-zA-Z0-9]*//' | sort | uniq -c | sort -nr`
