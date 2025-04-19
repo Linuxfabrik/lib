@@ -17,8 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Changed ("refactor", "chore" etc.)
 
-* refactor(disk.py): get_real_disks() now ignores loop devices
 * docs: improve and convert doc strings to markdown for some libs and create new `docs` folder using `pdoc`
+* refactor(txt.py): add sanitize_sensitive_data()
+
 
 
 ## v2.1.0.7

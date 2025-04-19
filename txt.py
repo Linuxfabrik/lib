@@ -36,6 +36,10 @@ _COMPOSED_ERROR_HANDLERS = frozenset((None, 'surrogate_or_replace',
                                       'surrogate_or_strict',
                                       'surrogate_then_replace'))
 
+SENSITIVE_FIELDS_PATTERN = re.compile(
+    r'(?i)\b(password|pass|token|key|secret|api[_-]?key|access[_-]?token)\b\s*=\s*([^\s&]+)'
+)
+
 
 def compile_regex(regex, key=''):
     """
@@ -352,6 +356,42 @@ def pluralize(noun, value, suffix='s'):
     if int(value) == 1:
         return noun + singular
     return noun + plural
+
+
+def sanitize_sensitive_data(msg):
+    """
+    Redact sensitive information such as passwords, tokens, and keys from a message string.
+
+    This function searches for common sensitive fields in the input text (e.g., `password`,
+    `token`, `key`) and replaces their values with asterisks to prevent accidental exposure.
+
+    ### Parameters
+    - **msg** (`str` or `any`): The input message that may contain sensitive data.  
+      If not a string, it is returned unchanged.
+
+    ### Returns
+    - **str** or **original type**: The sanitized string with sensitive values redacted, or the
+      original object if it is not a string.
+
+    ### Notes
+    - Matching is case-insensitive and tolerant of whitespace around `=`.
+    - Only parameters in the format `key=value` are sanitized.
+    - Fields sanitized: `password`, `pass`, `token`, `key`, `secret`, `api-key`, `access_token`,
+      and similar variants.
+
+    ### Example
+    >>> sanitize_sensitive_data("user=admin&password=secret123")
+    'user=admin&password=******'
+
+    >>> sanitize_sensitive_data("Authorization token=abcde12345")
+    'Authorization token=******'
+
+    >>> sanitize_sensitive_data("api_key = xyz987")
+    'api_key = ******'
+    """
+    if not isinstance(msg, str):
+        return msg
+    return SENSITIVE_FIELDS_PATTERN.sub(r'\1=******', msg)
 
 
 # from /usr/lib/python3.10/site-packages/ansible/module_utils/_text.py
