@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ### Changed ("refactor", "chore" etc.)
 
 * refactor(cache.py): improve code-style
+* refactor(db_mysql.py): improve code-style
 
 
 

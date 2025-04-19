@@ -10,7 +10,7 @@ These Python libraries are used in various projects of Linuxfabrik, including th
 
 ## Documentation
 
-HTML documentation is built using [https://pdoc.dev/](https://pdoc.dev/). Currently available:
+HTML documentation is created using [https://pdoc.dev/](https://pdoc.dev/) and can be read in [./docs/index.html](./docs/index.html):
 
 ```
 pip install pdoc
@@ -18,6 +18,7 @@ pdoc --output-dir docs \
     args.py \
     base.py \
     cache.py \
+    db_mysql.py \
     disk.py \
     globals.py \
     human.py \
@@ -37,7 +38,6 @@ pdoc --output-dir docs \
 
 
 ## List of libraries
-
 
 * args.py:  
 Extends argparse by new input argument data types on demand.
