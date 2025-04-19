@@ -13,16 +13,31 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024033002'
+__version__ = '2025041901'
 
 import math
 
 
 def bits2human(n, _format='%(value).1f%(symbol)s'):
-    """Converts n bits to a human readable format.
+    """
+    Converts a given number of bits to a human-readable format (e.g., B, KiB, MiB, etc.).
 
+    This function takes an integer number of bits and converts it to a more readable format, using
+    appropriate units like bytes, kilobytes, megabytes, etc., depending on the size of the input.
+
+    ### Parameters
+    - **n** (`int` or `float`): The number of bits to convert.
+    - **_format** (`str`, optional): The format string for the output.
+      The default is `'%(value).1f%(symbol)s'`, which includes the value and symbol.
+
+    ### Returns
+    - **str**: The human-readable representation of the input bits with the appropriate unit
+      (e.g., '1023.9B', '1.0KiB').
+
+    ### Example
     >>> bits2human(8191)
     '1023.9B'
+
     >>> bits2human(8192)
     '1.0KiB'
     """
@@ -39,8 +54,24 @@ def bits2human(n, _format='%(value).1f%(symbol)s'):
 
 
 def bps2human(n, _format='%(value).1f%(symbol)s'):
-    """Converts n bits per scond to a human readable format.
+    """
+    Converts a given number of bits per second to a human-readable format (e.g., bps, Kbps, Mbps,
+    etc.).
 
+    This function takes an integer number of bits per second and converts it to a more readable
+    format, using appropriate units like bits per second, kilobits per second, megabits per second,
+    etc., depending on the size of the input.
+
+    ### Parameters
+    - **n** (`int` or `float`): The number of bits per second to convert.
+    - **_format** (`str`, optional): The format string for the output.
+      The default is `'%(value).1f%(symbol)s'`, which includes the value and symbol.
+
+    ### Returns
+    - **str**: The human-readable representation of the input bits per second with the appropriate
+      unit (e.g., '72Mbps').
+
+    ### Example
     >>> bps2human(72000000)
     '72Mbps'
     """
@@ -56,14 +87,28 @@ def bps2human(n, _format='%(value).1f%(symbol)s'):
 
 
 def bytes2human(n, _format='%(value).1f%(symbol)s'):
-    """Converts n bytes to a human readable format.
+    """
+    Converts a given number of bytes to a human-readable format (e.g., B, KiB, MiB, etc.).
 
+    This function converts an integer number of bytes into a more readable format, using appropriate
+    units such as bytes, kilobytes, megabytes, gigabytes, etc., depending on the size of the input.
+
+    ### Parameters
+    - **n** (`int` or `float`): The number of bytes to convert.
+    - **_format** (`str`, optional): The format string for the output.
+      The default is `'%(value).1f%(symbol)s'`, 
+      which includes the value and symbol.
+
+    ### Returns
+    - **str**: The human-readable representation of the input bytes with the appropriate unit
+      (e.g., '1.0KiB').
+
+    ### Example
     >>> bytes2human(1023)
     '1023.0B'
+
     >>> bytes2human(1024)
     '1.0KiB'
-
-    https://github.com/giampaolo/psutil/blob/master/psutil/_common.py
     """
     symbols = ('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB')
     prefix = {}
@@ -80,12 +125,27 @@ def bytes2human(n, _format='%(value).1f%(symbol)s'):
 
 
 def extract_hrnumbers(s, boundaries=['s', 'm', 'h', 'D', 'W', 'M', 'Y']):
-    """Return a list of all numbers from a string, beginning with a digit and ending
-    with a known boundary.
+    """
+    Extracts all numbers from a string that start with a digit and end with a known boundary.
 
+    This function scans the input string and extracts substrings that start with a digit and end
+    with a known boundary character (such as 's', 'm', 'h', etc.), and returns these substrings
+    as a list.
+
+    ### Parameters
+    - **s** (`str`): The input string to extract numbers from.
+    - **boundaries** (`list`, optional): A list of boundary characters that signify the end of
+       a number. 
+      Default boundaries are `['s', 'm', 'h', 'D', 'W', 'M', 'Y']`.
+
+    ### Returns
+    - **list**: A list of strings representing the extracted numbers along with their boundaries.
+
+    ### Example
     >>> string = '31Y 20M7s  88  abc12xyz   4s 5'
     >>> extract_hrnumbers(string)
     ['31Y', '20M', '7s', '4s']
+
     >>> string = '17G 3M 4B'
     >>> extract_hrnumbers(string, boundaries=['G', 'M', 'B'])
     ['17G', '3M', '4B']
@@ -108,14 +168,28 @@ def extract_hrnumbers(s, boundaries=['s', 'm', 'h', 'D', 'W', 'M', 'Y']):
 
 
 def human2bytes(string, binary=True):
-    """Converts a string such as '3.072GiB' to 3298534883 bytes. If "binary" is set to True
-    (default due to Microsoft), it will use powers of 1024, otherwise powers of 1000 (decimal).
-    Returns 0 on failure.
+    """
+    Converts a human-readable string to the equivalent number of bytes.
 
-    Works with:
-    * 3.072GiB (always multiplied by 1024)
-    * 3.072GB  (multiplied by 1024 if binary == True, else multiplied by 1000)
-    * 3.072G   (multiplied by 1024 if binary == True, else multiplied by 1000)
+    This function converts a string representation of a file size, such as '3.072GiB' or '3.072GB', 
+    into the corresponding number of bytes. It supports both binary (base 1024) and decimal
+    (base 1000) units.
+
+    ### Parameters
+    - **string** (`str`): A string representing the size to convert. It can include any of the
+      common size units like 'GiB', 'GB', 'MB', 'kB', etc.
+    - **binary** (`bool`, optional): If True (default), the function will use binary units
+      (base 1024). If False, it will use decimal units (base 1000).
+
+    ### Returns
+    - **int**: The equivalent size in bytes, or 0 if the conversion fails.
+
+    ### Example
+    >>> human2bytes('3.072GiB')
+    3298534883
+
+    >>> human2bytes('3.072G', binary=False)
+    3072000000
     """
     try:
         string = string.lower()
@@ -172,22 +246,43 @@ def human2bytes(string, binary=True):
 
 
 def human2seconds(string):
-    """Converts a simple human-readable duration into seconds.
+    """
+    Converts a human-readable duration into seconds.
 
+    This function converts durations given in a human-readable format (e.g., '26Y', '26W', '26s') 
+    into the corresponding number of seconds. The units supported are: years (Y), months (M),
+    weeks (W), days (D), hours (h), minutes (m), and seconds (s).
+
+    ### Parameters
+    - **string** (`str`): A string representing the duration. The string should include a numeric
+      value followed by one of the supported units ('Y', 'M', 'W', 'D', 'h', 'm', or 's').
+
+    ### Returns
+    - **int**: The equivalent duration in seconds, or 0 if the input is invalid or the unit
+      is unrecognized.
+
+    ### Example
     >>> human2seconds('26Y')
     819936000
+
     >>> human2seconds('26M')
     62899200
+
     >>> human2seconds('26W')
     15724800
+
     >>> human2seconds('26D')
     2246400
+
     >>> human2seconds('26h')
     93600
+
     >>> human2seconds('26m')
     1560
+
     >>> human2seconds('26s')
     26
+
     >>> human2seconds('a7.3X')
     0
     """
@@ -217,8 +312,23 @@ def human2seconds(string):
 
 
 def humanduration2seconds(string):
-    """Converts a more complex string into seconds by summing the individual words.
+    """
+    Converts a complex human-readable duration string into seconds by summing individual durations.
 
+    This function processes a string that may contain multiple duration components
+    (e.g., '3Y 2M 7s') and converts each component into seconds. It ignores non-valid components
+    (e.g., 'any-error') and sums the valid ones.
+
+    ### Parameters
+    - **string** (`str`): A string containing one or more human-readable durations, where each
+      duration is represented by a number followed by a unit (e.g., '3Y', '2M', '7s').
+      Invalid components are ignored.
+
+    ### Returns
+    - **int**: The total duration in seconds, summing all valid duration components. Returns 0 if
+      no valid components are found.
+
+    ### Example
     >>> string = '3Y 2M any-error 3d7s'  # means: valid is '3Y 2M 7s'
     >>> humanduration2seconds(string)
     99446407
@@ -231,11 +341,26 @@ def humanduration2seconds(string):
 
 
 def humanrange2bytes(string):
-    """Converts a Nagios range to bytes. Base is always 1024.
+    """
+    Converts a Nagios range (e.g., `@4K:5 MiB`) into a range in bytes, where the base is always
+    1024.
 
+    This function processes a Nagios-style range string that may contain units such as 'K', 'M',
+    'B', etc., and converts each part into bytes using the `human2bytes` function. The result is
+    a string with the range values expressed in bytes.
+
+    ### Parameters
+    - **string** (`str`): A Nagios-style range string, such as '@4K:5 MiB', where units like K, M,
+      or B are used.
+
+    ### Returns
+    - **str**: The range with each value converted into bytes, using 1024 as the base for 
+      conversions.
+
+    ### Example
     >>> string = '@4K:5 MiB'
     >>> humanrange2bytes(string)
-    @4096:5242880
+    '@4096:5242880'
     """
     result = []
     for s in string.split(':'):
@@ -251,11 +376,24 @@ def humanrange2bytes(string):
 
 
 def humanrange2seconds(string):
-    """Converts a Nagios range to seconds.
+    """
+    Converts a Nagios range to seconds by interpreting the duration components and summing them.
 
+    This function processes a Nagios-style range string (e.g., `@10m:1Y1D`) and converts each part
+    into seconds using the `humanduration2seconds` function. The result is a string with the range
+    values expressed in seconds.
+
+    ### Parameters
+    - **string** (`str`): A Nagios-style range string, such as '@10m:1Y1D', where units like 'm',
+      'Y', 'D' are used.
+
+    ### Returns
+    - **str**: The range with each value converted into seconds.
+
+    ### Example
     >>> string = '@10m:1Y1D'
     >>> humanrange2seconds(string)
-    @600:31622400
+    '@600:31622400'
     """
     result = []
     for s in string.split(':'):
@@ -272,10 +410,25 @@ def humanrange2seconds(string):
 
 def number2human(n):
     """
+    Converts a number into a human-readable format using SI prefixes.
+
+    This function converts large numbers into a more concise format with SI prefixes
+    (e.g., 1,000 becomes '1K', 1,000,000 becomes '1M'). It supports values from 1 to extremely large
+    numbers (up to 'Y' for 10^24).
+
+    ### Parameters
+    - **n** (`int` or `float`): The number to convert into a human-readable format.
+
+    ### Returns
+    - **str**: The number formatted with an appropriate SI prefix.
+
+    ### Example
     >>> number2human(123456.8)
     '123K'
+
     >>> number2human(123456789.0)
     '123M'
+
     >>> number2human(9223372036854775808)
     '9.2E'
     """
@@ -292,24 +445,48 @@ def number2human(n):
 
 
 def seconds2human(seconds, keep_short=True, full_name=False):
-    """Returns a human readable time range string for a number of seconds.
+    """
+    Converts a number of seconds into a human-readable time range string.
 
+    This function takes a number of seconds and returns a string that expresses that duration in
+    a more understandable format. It supports both short and full-form time units (e.g., "1m" for
+    minutes, "1 hour 30 minutes" for the full form).
+
+    ### Parameters
+    - **seconds** (`int` or `float` or `str`): The number of seconds to convert.
+    - **keep_short** (`bool`, optional): If True, returns only the largest two time units
+      (default is True).
+    - **full_name** (`bool`, optional): If True, returns full names for the time units
+      (default is False).
+
+    ### Returns
+    - **str**: The formatted time duration in a human-readable format.
+
+    ### Example
     >>> seconds2human(0.125)
     '0.12s'
+
     >>> seconds2human(1)
     '1s'
+
     >>> seconds2human(59)
     '59s'
+
     >>> seconds2human(60)
     '1m'
+
     >>> seconds2human(61)
     '1m 1s'
+
     >>> seconds2human(1387775)
     '2W 2D'
+
     >>> seconds2human('1387775')
     '2W 2D'
+
     >>> seconds2human('1387775', full_name=True)
     '2weeks 2days'
+
     >>> seconds2human(1387775, keep_short=False, full_name=True)
     '2weeks 2days 1hour 29minutes 35seconds'
     """

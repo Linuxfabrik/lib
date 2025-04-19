@@ -15,17 +15,58 @@ import re  # pylint: disable=C0413
 
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024033101'
+__version__ = '2025041901'
 
 
 def csv(arg):
-    """Returns a list from a `csv` input argument.
+    """
+    Converts a CSV string into a list of values.
+
+    This function takes a comma-separated string (CSV format) and returns a list where each element
+    corresponds to a value in the CSV string. Leading and trailing whitespace from each value is
+    removed.
+
+    ### Parameters
+    - **arg** (`str`): A string containing values separated by commas (CSV format).
+
+    ### Returns
+    - **list**: A list of strings, each representing an element from the CSV input string.
+
+    ### Example
+    >>> csv("apple, orange, banana, grape")
+    ['apple', 'orange', 'banana', 'grape']
+    
+    >>> csv(" one, two, three , four ")
+    ['one', 'two', 'three', 'four']
     """
     return [x.strip() for x in arg.split(',')]
 
 
 def float_or_none(arg):
-    """Returns None or float from a `float_or_none` input argument.
+    """
+    Converts an input to a float, or returns None if the input is 'none' or None.
+
+    This function attempts to convert the input argument into a float. If the input is `None` or
+    the string 'none' (case insensitive), the function returns `None`. Otherwise, it returns the
+    argument as a float.
+
+    ### Parameters
+    - **arg** (`str`, `None`, or `float`): The input value that will be converted to a float or
+      returned as `None`.
+
+    ### Returns
+    - **float** or **None**: Returns the input as a float if it is convertible, or `None` if the
+      input is 'none' or `None`.
+
+    ### Example
+    >>> float_or_none("123.45")
+    123.45
+
+    >>> float_or_none("none")
+    None
+
+    >>> float_or_none(None)
+    None
     """
     if arg is None or str(arg).lower() == 'none':
         return None
@@ -33,7 +74,27 @@ def float_or_none(arg):
 
 
 def help(param):
-    """Return global valid help text for a parameter.
+    """
+    Retrieves the help text for a given parameter.
+
+    This function returns the global help text associated with a specific parameter. It contains
+    explanations for the valid options and usage of the parameter. If no help text is available
+    for the parameter, it returns an empty string.
+
+    ### Parameters
+    - **param** (`str`): The parameter for which help text is to be retrieved. This must be a
+      valid key in the predefined help dictionary.
+
+    ### Returns
+    - **str**: The help text for the given parameter, or an empty string if the parameter is not
+      found.
+
+    ### Example
+    >>> help('--match')
+    Lorem ipsum
+
+    >>> help('--nonexistent')
+    ''
     """
     h = {
         '--match':
@@ -53,7 +114,28 @@ def help(param):
 
 
 def int_or_none(arg):
-    """Returns None or int from a `int_or_none` input argument.
+    """
+    Converts a given argument to an integer or returns None.
+
+    This function checks if the argument is `None` or the string `'none'`, in which case it returns
+     `None`. Otherwise, it attempts to convert the argument to an integer and returns the result.
+
+    ### Parameters
+    - **arg** (`str` or `None`): The input value to be converted to an integer, or `None`.
+
+    ### Returns
+    - **int** or **None**: The integer value of the argument if it can be converted, or `None` if
+      the argument is `None` or `'none'`.
+
+    ### Example
+    >>> int_or_none('42')
+    42
+
+    >>> int_or_none('none')
+    None
+
+    >>> int_or_none(None)
+    None
     """
     if arg is None or str(arg).lower() == 'none':
         return None
@@ -61,21 +143,47 @@ def int_or_none(arg):
 
 
 def number_unit_method(arg, unit='%', method='USED'):
-    """Expects '<number>[unit][method]. Useful for threshold arguments.
-    Number is an integer or float.
-    Unit is one of `%%|K|M|G|T|P`.
-      If "unit" is omitted, `%` is assumed.
-      `K` means `kibibyte` etc.
-    Method is one of `USED|FREE`.
-      If "method" is ommitted, `USED` is assumed.
-    Examples: '
-    * `95`: returns (95, '%', 'USED')
-    * `9.5M`: returns (9.5, 'M', 'USED')
-    * `95%USED`: returns (95, '%', 'USED')
-    * `5FREE`: : returns (5, '%', 'FREE')
-    * `5%FREE`: : returns (5, '%', 'FREE')
-    * `9.5GFREE`: returns (9.5, 'G', 'FREE')
-    * `1400GUSED`: returns (1400, 'G', 'USED')
+    """
+    Parses a string representing a number with an optional unit and method, and returns the
+    corresponding components.
+
+    This function expects an input string in the format `<number>[unit][method]`, typically
+    used for threshold arguments. The function extracts and returns the numeric value, unit
+    (defaults to `%`), and method (defaults to `USED`). The function supports various units
+    such as `K`, `M`, `G`, `T`, `P`, and `%`, and methods like `USED` and `FREE`.
+
+    ### Parameters
+    - **arg** (`str`): The input string representing the number, unit, and method.
+    - **unit** (`str`, optional): The unit of measurement, one of `%%|K|M|G|T|P`. Defaults to `%`.
+    - **method** (`str`, optional): The method used, one of `USED|FREE`. Defaults to `USED`.
+
+    ### Returns
+    - **tuple**: A tuple containing:
+      - **float**: The numeric value.
+      - **str**: The unit (defaults to `%` if not specified).
+      - **str**: The method (defaults to `USED` if not specified).
+
+    ### Example
+    >>> number_unit_method('95')
+    (95.0, '%', 'USED')
+
+    >>> number_unit_method('9.5M')
+    (9.5, 'M', 'USED')
+
+    >>> number_unit_method('95%USED')
+    (95.0, '%', 'USED')
+
+    >>> number_unit_method('5FREE')
+    (5.0, '%', 'FREE')
+
+    >>> number_unit_method('5%FREE')
+    (5.0, '%', 'FREE')
+
+    >>> number_unit_method('9.5GFREE')
+    (9.5, 'G', 'FREE')
+
+    >>> number_unit_method('1400GUSED')
+    (1400.0, 'G', 'USED')
     """
     # use named groups in regex
     regex = re.compile(
@@ -93,13 +201,35 @@ def number_unit_method(arg, unit='%', method='USED'):
 
 
 def range_or_none(arg):
-    """Returns None or range from a `range_or_none` input argument.
+    """
+    See str_or_none()
     """
     return str_or_none(arg)
 
 
 def str_or_none(arg):
-    """Returns None or str from a `str_or_none` input argument.
+    """
+    Converts an input argument into a string or returns `None`.
+
+    This function checks if the input is `None` or the string `"none"` (case-insensitive) and
+    returns `None` in those cases. Otherwise, it returns the input as a string.
+
+    ### Parameters
+    - **arg** (`any`): The input argument that can be any type.
+
+    ### Returns
+    - **str** or **None**: If the input is not `None` or `"none"`, it returns the input as a
+      string; otherwise, it returns `None`.
+
+    ### Example
+    >>> str_or_none(123)
+    '123'
+
+    >>> str_or_none('none')
+    None
+
+    >>> str_or_none(None)
+    None
     """
     if arg is None or str(arg).lower() == 'none':
         return None
