@@ -21,6 +21,7 @@ pdoc --output-dir docs \
     db_mysql.py \
     db_sqlite.py \
     disk.py \
+    distro.py \
     globals.py \
     human.py \
     jitsi.py \

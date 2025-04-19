@@ -12,252 +12,394 @@
 """Provides information about the Linux distribution it runs on, such as a reliable
 machine-readable distro ID and "os_family" (known from Ansible).
 
-Source Code is taken, shortened and modified from
-* lib/ansible/module_utils/distro/_distro.py
-* lib/ansible/module_utils/common/sys_info.py
+Source Code is taken, converted, shortened and modified from:
 * lib/ansible/module_utils/facts/system/distribution.py
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2025041901'
 
 
+import os
 import platform
+import re
+ 
+# --- Static mappings ---
 
-from . import disk # pylint: disable=C0413
+OSDIST_LIST = (
+    {'path': '/etc/alpine-release', 'name': 'Alpine'},
+    {'path': '/etc/arch-release', 'name': 'Archlinux', 'allowempty': True},
+    {'path': '/etc/centos-release', 'name': 'CentOS'},
+    {'path': '/etc/redhat-release', 'name': 'RedHat'},
+    {'path': '/etc/oracle-release', 'name': 'OracleLinux'},
+    {'path': '/etc/gentoo-release', 'name': 'Gentoo'},
+    {'path': '/etc/os-release', 'name': 'Debian'},
+    {'path': '/etc/os-release', 'name': 'Ubuntu'},
+    {'path': '/etc/os-release', 'name': 'Amazon'},
+    {'path': '/usr/lib/os-release', 'name': 'ClearLinux'},
+    {'path': '/etc/lsb-release', 'name': 'Debian'},  # fallback
+)
+
+SEARCH_STRING = {
+    'OracleLinux': 'Oracle Linux',
+    'RedHat': 'Red Hat',
+    'Altlinux': 'ALT',
+    'SMGL': 'Source Mage GNU/Linux',
+}
+
+OS_FAMILY_MAP = {
+    'RedHat': ['RedHat', 'RHEL', 'CentOS', 'Scientific', 'OracleLinux', 'Fedora', 'AlmaLinux', 'Rocky'],
+    'Debian': ['Debian', 'Ubuntu', 'Raspbian', 'Pop!_OS', 'Kali', 'Parrot', 'Devuan', 'Deepin', 'Mint'],
+    'Suse': ['SUSE', 'openSUSE', 'SLES', 'SLED'],
+    'Archlinux': ['Archlinux', 'Manjaro', 'Antergos'],
+    'Gentoo': ['Gentoo', 'Funtoo'],
+    'Alpine': ['Alpine'],
+    'ClearLinux': ['ClearLinux'],
+}
+
+STRIP_QUOTES = r'\'\"\\'
+
+# --- Helpers ---
+
+def _file_exists(path, allow_empty=False):
+    """
+    Check if a file exists and optionally allow empty files.
+
+    This function verifies the existence of a file at the given path. If `allow_empty` is `False`,
+    it additionally checks that the file is not empty.
+
+    ### Parameters
+    - **path** (`str`):
+      Path to the file to check.
+    - **allow_empty** (`bool`, optional):
+      Whether to allow empty files as valid. Defaults to `False`.
+
+    ### Returns
+    - **bool**:
+      `True` if the file exists (and is non-empty unless `allow_empty=True`), otherwise `False`.
+
+    ### Notes
+    - Useful to validate configuration or system files before parsing.
+
+    ### Example
+    >>> _file_exists('/etc/os-release')
+    True
+    """
+    if not os.path.isfile(path):
+        return False
+    if allow_empty:
+        return True
+    return os.path.getsize(path) > 0
+
+
+def _get_file_content(path):
+    """
+    Read the content of a text file.
+
+    Opens and reads the entire content of a UTF-8 encoded text file at the specified path.
+
+    ### Parameters
+    - **path** (`str`):
+      Path to the file to read.
+
+    ### Returns
+    - **str**:
+      The complete contents of the file as a string.
+
+    ### Notes
+    - Raises an exception if the file cannot be opened.
+
+    ### Example
+    >>> _get_file_content('/etc/os-release')
+    'NAME="Ubuntu"\nVERSION="22.04.2 LTS (Jammy Jellyfish)"\n...'
+    """
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+
+def _guess_linux_distribution():
+    """
+    Provide basic distribution facts based on platform module.
+
+    Returns baseline information using the `platform` module, including distribution name,
+    kernel version, and major version.
+
+    ### Parameters
+    - *None*
+
+    ### Returns
+    - **dict**:
+      A dictionary containing `distribution`, `distribution_version`, `distribution_release`, and `distribution_major_version`.
+
+    ### Notes
+    - Serves as a fallback if no release file parsing succeeds.
+
+    ### Example
+    >>> _guess_linux_distribution()
+    {'distribution': 'Linux', 'distribution_version': '#1 SMP...', 'distribution_release': '5.15.0-86-generic', 'distribution_major_version': '5'}
+    """
+    system = platform.system()
+    return {
+        'distribution': system if system else 'NA',
+        'distribution_version': platform.version() if system else 'NA',
+        'distribution_release': platform.release() if system else 'NA',
+        'distribution_major_version': platform.version().split('.')[0] if '.' in platform.version() else 'NA',
+    }
+
+
+def _parse_distribution_file(name, data):
+    """
+    Parse distribution information from release file content.
+
+    This function interprets known distro-specific patterns from given release file content
+    and extracts the distribution name if recognized.
+
+    ### Parameters
+    - **name** (`str`):
+      The expected distribution name or file variety.
+    - **data** (`str`):
+      The contents of the release file.
+
+    ### Returns
+    - **tuple** (`bool`, `dict`):
+      - First element: `True` if parsing succeeded, `False` otherwise.
+      - Second element: A dictionary of parsed distribution facts.
+
+    ### Notes
+    - Handles special parsing for Archlinux, Debian, Ubuntu, Amazon, ClearLinux, Alpine.
+
+    ### Example
+    >>> _parse_distribution_file('RedHat', 'Red Hat Enterprise Linux release 8.5...')
+    (True, {'distribution': 'RedHat'})
+    """
+    dist_facts = {}
+    data = data.strip(STRIP_QUOTES)
+
+    if name in SEARCH_STRING:
+        if SEARCH_STRING[name] in data:
+            dist_facts['distribution'] = name
+        else:
+            dist_facts['distribution'] = data.split()[0]
+        return True, dist_facts
+
+    if name == 'Archlinux':
+        if 'Arch Linux' in data:
+            dist_facts['distribution'] = 'Archlinux'
+            return True, dist_facts
+        return False, {}
+
+    if name in ('Debian', 'Ubuntu', 'Amazon', 'ClearLinux'):
+        if 'PRETTY_NAME' in data or 'NAME=' in data:
+            m = re.search(r'^NAME="?([^"\n]*)"?', data, re.M)
+            if m:
+                dist_facts['distribution'] = m.group(1)
+        return True, dist_facts
+
+    if name == 'Alpine':
+        if 'Alpine' in data:
+            dist_facts['distribution'] = 'Alpine'
+            return True, dist_facts
+        return False, {}
+
+    return True, dist_facts
+
+
+def _parse_os_release(path):
+    """
+    Parse `/etc/os-release` for version information.
+
+    Reads the standard `os-release` file and extracts the version ID and major version.
+
+    ### Parameters
+    - **path** (`str`):
+      Path to the `os-release` file.
+
+    ### Returns
+    - **dict**:
+      Parsed facts: `distribution_version` and `distribution_major_version` if found.
+
+    ### Notes
+    - Silent if file does not exist or parsing fails.
+
+    ### Example
+    >>> _parse_os_release('/etc/os-release')
+    {'distribution_version': '22.04', 'distribution_major_version': '22'}
+    """
+    facts = {}
+    if not _file_exists(path):
+        return facts
+
+    try:
+        data = _get_file_content(path)
+    except Exception:
+        return facts
+
+    m_version = re.search(r'^VERSION_ID="?([^"\n]*)"?', data, re.M)
+    if m_version:
+        facts['distribution_version'] = m_version.group(1)
+        facts['distribution_major_version'] = m_version.group(1).split('.')[0]
+    return facts
+
+
+def _parse_lsb_release(path):
+    """
+    Parse `/etc/lsb-release` for version information.
+
+    Reads the `lsb-release` file and extracts the release and major version if available.
+
+    ### Parameters
+    - **path** (`str`):
+      Path to the `lsb-release` file.
+
+    ### Returns
+    - **dict**:
+      Parsed facts: `distribution_version` and `distribution_major_version` if found.
+
+    ### Notes
+    - Useful fallback for Debian-based systems when `os-release` is incomplete.
+
+    ### Example
+    >>> _parse_lsb_release('/etc/lsb-release')
+    {'distribution_version': '20.04', 'distribution_major_version': '20'}
+    """
+    facts = {}
+    if not _file_exists(path):
+        return facts
+
+    try:
+        data = _get_file_content(path)
+    except Exception:
+        return facts
+
+    m_version = re.search(r'^DISTRIB_RELEASE="?([^"\n]*)"?', data, re.M)
+    if m_version:
+        facts['distribution_version'] = m_version.group(1)
+        facts['distribution_major_version'] = m_version.group(1).split('.')[0]
+    return facts
+
+
+def _process_dist_files():
+    """
+    Process distribution-specific files to determine system identity.
+
+    Sequentially checks known distribution marker files and parses them to
+    extract distribution facts. Improves the guessed facts with better data
+    from `/etc/os-release` and `/etc/lsb-release` if available.
+
+    ### Parameters
+    - *None*
+
+    ### Returns
+    - **dict**:
+      Collected facts including distribution, version, major version, and parsing flags.
+
+    ### Notes
+    - Stops at the first successful parsing.
+
+    ### Example
+    >>> _process_dist_files()
+    {'distribution': 'Ubuntu', 'distribution_version': '22.04', 'distribution_major_version': '22', ...}
+    """
+    facts = _guess_linux_distribution()
+
+    for entry in OSDIST_LIST:
+        name = entry['name']
+        path = entry['path']
+        allow_empty = entry.get('allowempty', False)
+
+        if not _file_exists(path, allow_empty=allow_empty):
+            continue
+
+        try:
+            data = _get_file_content(path)
+        except Exception:
+            continue
+
+        if allow_empty:
+            facts.update({
+                'distribution': name,
+                'distribution_file_path': path,
+                'distribution_file_variety': name,
+            })
+            break
+
+        parsed, parsed_facts = _parse_distribution_file(name, data)
+
+        if parsed:
+            facts.update({
+                'distribution': name,
+                'distribution_file_path': path,
+                'distribution_file_variety': name,
+                'distribution_file_parsed': True,
+            })
+            facts.update(parsed_facts)
+            break
+
+    # Improve facts from os-release or lsb-release
+    if '/etc/os-release' in [e['path'] for e in OSDIST_LIST]:
+        facts.update(_parse_os_release('/etc/os-release'))
+    if '/etc/lsb-release' in [e['path'] for e in OSDIST_LIST]:
+        facts.update(_parse_lsb_release('/etc/lsb-release'))
+
+    return facts
+
+
+def _map_os_family(distribution):
+    """
+    Map a detected distribution to its OS family.
+
+    Returns a broader OS family (like `RedHat`, `Debian`, etc.) based on the distribution name.
+
+    ### Parameters
+    - **distribution** (`str`):
+      The detected distribution name.
+
+    ### Returns
+    - **str**:
+      The mapped OS family name, or the original distribution if no mapping exists.
+
+    ### Notes
+    - Helps categorize distributions consistently.
+
+    ### Example
+    >>> _map_os_family('Fedora')
+    'RedHat'
+    """
+    for family, members in OS_FAMILY_MAP.items():
+        if distribution in members:
+            return family
+    return distribution
 
 
 def get_distribution_facts():
-    '''Returns a dict containing
-    {
-        'distribution': 'Fedora',
-        'distribution_release': 'NA',
-        'distribution_version': 'NA',
-        'distribution_major_version': 'NA',
-        'distribution_file_path': '/etc/redhat-release',
-        'distribution_file_variety': 'RedHat',
-        'distribution_file_parsed': True,
-        'os_family': 'RedHat'
-    }
-    '''
+    """
+    Detect the Linux distribution and return normalized facts.
 
-    def get_dist_file_content(path, allow_empty=False):
-        # cant find that dist file or it is incorrectly empty
-        if not disk.file_exists(path, allow_empty=allow_empty):
-            return False, None
+    Collects detailed information about the Linux distribution based on release files,
+    and assigns a standardized OS family name.
 
-        success, data = disk.read_file(path) # pylint: disable=W0612
-        return True, data
+    ### Parameters
+    - *None*
 
+    ### Returns
+    - **dict**:
+      Dictionary of collected distribution facts:
+      - `distribution`
+      - `distribution_version`
+      - `distribution_release`
+      - `distribution_major_version`
+      - `distribution_file_path`
+      - `distribution_file_variety`
+      - `distribution_file_parsed`
+      - `os_family`
 
-    def get_distribution():
-        '''
-        Return the name of the distribution the module is running on.
+    ### Example
+    >>> get_distribution_facts()
+    {'distribution': 'Fedora', 'distribution_version': '41', 'distribution_release': '6.13.10-200.fc41.x86_64', 'distribution_major_version': '41', 'distribution_file_path': '/etc/redhat-release', 'distribution_file_variety': 'RedHat', 'distribution_file_parsed': True, 'os_family': 'RedHat'}
+    """
+    facts = _process_dist_files()
 
-        :rtype: NativeString or None
-        :returns: Name of the distribution the module is running on
+    distro = facts.get('distribution', 'NA')
+    facts['os_family'] = _map_os_family(distro)
 
-        This function attempts to determine what distribution the code is running
-        on and return a string representing that value. If the platform is Linux
-        and the distribution cannot be determined, it returns ``OtherLinux``.
-        '''
-        distribution = ''
-
-        if platform.system() == 'Linux':
-            if distribution == 'Amzn':
-                distribution = 'Amazon'
-            elif distribution == 'Rhel':
-                distribution = 'Redhat'
-            elif not distribution:
-                distribution = 'OtherLinux'
-
-        return distribution
-
-
-    def get_distribution_version():
-        return None
-
-
-    def get_distribution_codename():
-        return None
-
-
-    def guess_distribution():
-        # try to find out which linux distribution this is
-        dist = (get_distribution(), get_distribution_version(), get_distribution_codename())
-        distribution_guess = {
-            'distribution': dist[0] or 'NA',
-            'distribution_version': dist[1] or 'NA',
-            # distribution_release can be the empty string
-            'distribution_release': 'NA' if dist[2] is None else dist[2]
-        }
-
-        distribution_guess['distribution_major_version'] = distribution_guess['distribution_version'].split('.', maxsplit=1)[0] or 'NA' # pylint: disable=C0301
-        return distribution_guess
-
-
-    def parse_dist_file(_name, dist_file_content):
-        search_string = {
-            'OracleLinux': 'Oracle Linux',
-            'RedHat': 'Red Hat',
-            'Altlinux': 'ALT',
-            'SMGL': 'Source Mage GNU/Linux',
-        }
-
-        # We can't include this in search_string because a name match on its keys
-        # causes a fallback to using the first whitespace separated item from the file content
-        # as the name. For os-release, that is in form 'NAME=Arch'
-        os_release_alias = {
-            'Archlinux': 'Arch Linux'
-        }
-
-        dist_file_dict = {}
-        dist_file_content = dist_file_content.strip(r'\'\"\\')
-        if _name in search_string:
-            # look for the distribution string in the data and replace according to RELEASE_NAME_MAP
-            # only the distribution name is set, the version is assumed to be correct from
-            # distro.linux_distribution()
-            if search_string[_name] in dist_file_content:
-                # this sets distribution=RedHat if 'Red Hat' shows up in data
-                dist_file_dict['distribution'] = _name
-                dist_file_dict['distribution_file_search_string'] = search_string[_name]
-            else:
-                # this sets distribution to what's in the data, e.g. CentOS, Scientific, ...
-                dist_file_dict['distribution'] = dist_file_content.split()[0]
-
-            return True, dist_file_dict
-
-        if _name in os_release_alias:
-            if os_release_alias[_name] in dist_file_content:
-                dist_file_dict['distribution'] = _name
-                return True, dist_file_dict
-            return False, dist_file_dict
-
-        return True, dist_file_dict
-
-
-    def process_dist_files():
-        # do not sort this list
-        osdist_list = (
-            {'path': '/etc/alpine-release', 'name': 'Alpine'},
-            {'path': '/etc/altlinux-release', 'name': 'Altlinux'},
-            {'path': '/etc/arch-release', 'name': 'Archlinux', 'allowempty': True},
-            {'path': '/etc/centos-release', 'name': 'CentOS'},
-            {'path': '/etc/coreos/update.conf', 'name': 'Coreos'},
-            {'path': '/etc/flatcar/update.conf', 'name': 'Flatcar'},
-            {'path': '/etc/gentoo-release', 'name': 'Gentoo'},
-            {'path': '/etc/openwrt_release', 'name': 'OpenWrt'},
-            {'path': '/etc/oracle-release', 'name': 'OracleLinux'},
-            {'path': '/etc/redhat-release', 'name': 'RedHat'},
-            {'path': '/etc/slackware-version', 'name': 'Slackware'},
-            {'path': '/etc/sourcemage-release', 'name': 'SMGL'},
-            {'path': '/etc/SuSE-release', 'name': 'SUSE'},
-            {'path': '/etc/system-release', 'name': 'Amazon'},
-            {'path': '/etc/vmware-release', 'name': 'VMwareESX', 'allowempty': True},
-            {'path': '/etc/os-release', 'name': 'Debian'},
-            {'path': '/etc/os-release', 'name': 'SUSE'},
-            {'path': '/etc/os-release', 'name': 'Amazon'},
-            {'path': '/etc/os-release', 'name': 'Archlinux'},
-            {'path': '/etc/lsb-release', 'name': 'Debian'},
-            {'path': '/etc/lsb-release', 'name': 'Mandriva'},
-            {'path': '/usr/lib/os-release', 'name': 'ClearLinux'},
-            {'path': '/etc/os-release', 'name': 'NA'},
-        )
-
-        dist_file_facts = {}
-
-        dist_guess = guess_distribution()
-        dist_file_facts.update(dist_guess)
-
-        for ddict in osdist_list:
-            _name = ddict['name']
-            path = ddict['path']
-            allow_empty = ddict.get('allowempty', False)
-
-            has_dist_file, dist_file_content = get_dist_file_content(path, allow_empty=allow_empty)
-
-            # but we allow_empty. For example, ArchLinux with an empty /etc/arch-release and a
-            # /etc/os-release with a different name
-            if has_dist_file and allow_empty:
-                dist_file_facts['distribution'] = _name
-                dist_file_facts['distribution_file_path'] = path
-                dist_file_facts['distribution_file_variety'] = _name
-                break
-
-            if not has_dist_file:
-                # keep looking
-                continue
-
-            parsed_dist_file, parsed_dist_file_facts = parse_dist_file(_name, dist_file_content)
-
-            # finally found the right os dist file and were able to parse it
-            if parsed_dist_file:
-                dist_file_facts['distribution'] = _name
-                dist_file_facts['distribution_file_path'] = path
-                # distribution and file_variety are the same here, but distribution
-                # will be changed/mapped to a more specific name.
-                # ie, dist=Fedora, file_variety=RedHat
-                dist_file_facts['distribution_file_variety'] = _name
-                dist_file_facts['distribution_file_parsed'] = parsed_dist_file
-                dist_file_facts.update(parsed_dist_file_facts)
-                break
-
-        return dist_file_facts
-
-    os_family_map = {'RedHat': ['RedHat', 'RHEL', 'Fedora', 'CentOS', 'Scientific', 'SLC',
-                                'Ascendos', 'CloudLinux', 'PSBM', 'OracleLinux', 'OVS',
-                                'OEL', 'Amazon', 'Virtuozzo', 'XenServer', 'Alibaba',
-                                'EulerOS', 'openEuler', 'AlmaLinux', 'Rocky', 'TencentOS',
-                                'EuroLinux'],
-                     'Debian': ['Debian', 'Ubuntu', 'Raspbian', 'Neon', 'KDE neon',
-                                'Linux Mint', 'SteamOS', 'Devuan', 'Kali', 'Cumulus Linux',
-                                'Pop!_OS', 'Parrot', 'Pardus GNU/Linux', 'Uos', 'Deepin'],
-                     'Suse': ['SuSE', 'SLES', 'SLED', 'openSUSE', 'openSUSE Tumbleweed',
-                              'SLES_SAP', 'SUSE_LINUX', 'openSUSE Leap'],
-                     'Archlinux': ['Archlinux', 'Antergos', 'Manjaro'],
-                     'Mandrake': ['Mandrake', 'Mandriva'],
-                     'Solaris': ['Solaris', 'Nexenta', 'OmniOS', 'OpenIndiana', 'SmartOS'],
-                     'Slackware': ['Slackware'],
-                     'Altlinux': ['Altlinux'],
-                     'SGML': ['SGML'],
-                     'Gentoo': ['Gentoo', 'Funtoo'],
-                     'Alpine': ['Alpine'],
-                     'AIX': ['AIX'],
-                     'HP-UX': ['HPUX'],
-                     'Darwin': ['MacOSX'],
-                     'FreeBSD': ['FreeBSD', 'TrueOS'],
-                     'ClearLinux': ['Clear Linux OS', 'Clear Linux Mix'],
-                     'DragonFly': ['DragonflyBSD', 'DragonFlyBSD', 'Gentoo/DragonflyBSD',
-                                   'Gentoo/DragonFlyBSD'],
-                     'NetBSD': ['NetBSD'], }
-
-    os_family = {}
-    for family, names in os_family_map.items():
-        for name in names:
-            os_family[name] = family
-
-    distribution_facts = {}
-
-    # The platform module provides information about the running
-    # system/distribution. Use this as a baseline and fix buggy systems
-    # afterwards
-    system = platform.system()
-    distribution_facts['distribution'] = system
-    distribution_facts['distribution_release'] = platform.release()
-    distribution_facts['distribution_version'] = platform.version()
-
-    systems_implemented = (
-        'AIX', 'HP-UX', 'Darwin', 'FreeBSD', 'OpenBSD', 'SunOS', 'DragonFly', 'NetBSD'
-    )
-
-    if system in systems_implemented:
-        pass
-    elif system == 'Linux':
-        dist_file_facts = process_dist_files()
-        distribution_facts.update(dist_file_facts)
-    distro = distribution_facts['distribution']
-
-    # look for a os family alias for the 'distribution', if there isnt one, use 'distribution'
-    distribution_facts['os_family'] = os_family.get(distro, None) or distro
-
-    return distribution_facts
+    return facts
