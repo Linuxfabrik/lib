@@ -19,6 +19,7 @@ pdoc --output-dir docs \
     base.py \
     cache.py \
     db_mysql.py \
+    db_sqlite.py \
     disk.py \
     globals.py \
     human.py \
