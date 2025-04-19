@@ -10,7 +10,26 @@ These Python libraries are used in various projects of Linuxfabrik, including th
 
 ## Documentation
 
-For example by browsing http://localhost:8080/ after starting `pydoc -p 8080`.
+HTML documentation is built using [https://pdoc.dev/](https://pdoc.dev/). Currently available:
+
+```
+pip install pdoc
+pdoc --output-dir docs \
+    base.py \
+    disk.py \
+    globals.py \
+    jitsi.py \
+    lftest.py \
+    nodebb.py \
+    powershell.py \
+    psutil.py \
+    time.py \
+    shell.py \
+    txt.py \
+    uptimerobot.py \
+    url.py \
+    wildfly.py
+```
 
 
 ## List of libraries

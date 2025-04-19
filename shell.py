@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041502'
+__version__ = '2025041901'
 
 
 import os
@@ -38,36 +38,33 @@ def get_command_output(cmd, regex=None):
     """
     Execute a shell command and return its output, optionally filtered by a regular expression.
 
-    This function runs the given command using the shell_exec() function and processes the output
+    This function runs the given command using the `shell_exec()` function and processes the output
     as follows:
-      - If shell_exec() indicates an execution failure, an empty string is returned.
-      - The function retrieves the standard output (stdout), standard error (stderr), and exit code.
-      - If stdout is empty while stderr contains output, stderr is used instead (this handles
-        cases where some programs output version or diagnostic information to stderr).
+      - If `shell_exec()` indicates an execution failure, an empty string is returned.
+      - Retrieves standard output (stdout), standard error (stderr), and exit code.
+      - If stdout is empty but stderr contains output, stderr is used instead.
       - The output is stripped of any leading or trailing whitespace.
-      - If a regex is provided, the function attempts to extract and return the text captured by
-        the first capturing group in the regex. If no match is found or an error occurs during the
-        regex search, an empty string is returned.
-      - If no regex is provided, the complete (stripped) output is returned.
+      - If a regex is provided, attempts to extract and return the text captured by
+        the first capturing group. If no match is found or an error occurs, returns an empty string.
+      - If no regex is provided, the complete stripped output is returned.
 
-    Parameters:
-        cmd (str):
-            The command to execute.
-        regex (str, optional):
-            A regular expression pattern with at least one capturing group to
-            extract a specific part of the command output. Defaults to None.
+    ### Parameters
+    - **cmd** (`str`): The command to execute.
+    - **regex** (`str`, optional): A regular expression pattern with at least one capturing group to
+      extract specific output. Defaults to None.
 
-    Returns:
-        str:
-            The processed command output or the extracted substring if regex is provided;
-            returns an empty string if execution fails or no match is found.
+    ### Returns
+    - **str**: The processed command output, or the extracted substring if regex is provided; 
+      returns an empty string if execution fails or no match is found.
 
+    ### Example
     >>> get_command_output('nano --version')
     GNU nano, version 5.3
-     (C) 1999-2011, 2013-2020 Free Software Foundation, Inc.
-     (C) 2014-2020 the contributors to nano
-     Compiled options: --enable-utf8
-    >>> get_command_output('nano --version', regex=r'version (.*)\n')
+    (C) 1999-2011, 2013-2020 Free Software Foundation, Inc.
+    (C) 2014-2020 the contributors to nano
+    Compiled options: --enable-utf8
+
+    >>> get_command_output('nano --version', regex=r'version (.*)\\n')
     5.3
     """
     success, result = shell_exec(cmd)
@@ -93,53 +90,45 @@ def get_command_output(cmd, regex=None):
 def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
     """
     Execute a command in a subprocess with flexible options for shell execution, environment
-    variables, piping, standard input, working directory, and a timeout. On Windows, the function
-    first changes the codepage to 65001 (UTF-8) so that command output is handled in UTF-8.
+    variables, piping, standard input, working directory, and a timeout.
 
-    This function runs the specified command and returns its standard output, standard error, and
-    exit code. It supports executing the command either via the shell (if the 'shell' parameter is
-    True or if standard input is provided) or by manually handling a pipeline of commands separated
-    by the '|' character.
+    On Windows, the function changes the codepage to 65001 (UTF-8) so that command output is
+    handled in UTF-8.
 
-    Parameters:
-        cmd (str):
-            The command string to execute. If the command involves pipes, use the '|' character to
-            separate the commands.
-        env (dict, optional):
-            A dictionary of environment variables to be merged with the current OS environment.
-            If not provided, the current environment is used.
-        shell (bool, optional):
-            If True, execute the command using the shell. This is useful when you need shell-
-            specific features (e.g., wildcard expansion) or when providing standard input.
-            Defaults to False.
-        stdin (str, optional):
-            A string to be passed as standard input to the command. When provided, a new shell is
-            invoked to support it. Defaults to an empty string.
-        cwd (str, optional):
-            The working directory in which to execute the command. Defaults to None, which uses the
-            current directory.
-        timeout (int or float, optional):
-            The maximum number of seconds to allow the command to run before timing out. If the
-            command exceeds this duration, it will be terminated. Defaults to None (no timeout).
+    ### Parameters
+    - **cmd** (`str`):  
+      The command string to execute. Use `|` to separate piped commands.
+    - **env** (`dict`, optional):  
+      A dictionary of environment variables to merge with the current OS environment.
+      Defaults to the current environment.
+    - **shell** (`bool`, optional):  
+      If True, execute using the shell. Required when using shell features or stdin.
+      Defaults to False.
+    - **stdin** (`str`, optional):  
+      A string to pass as standard input to the command. Defaults to ''.
+    - **cwd** (`str`, optional):  
+      Working directory in which to execute the command. Defaults to None (current directory).
+    - **timeout** (`int` or `float`, optional):  
+      Maximum time (in seconds) to allow the command to run. If exceeded, the process is terminated.
+      Defaults to None.
 
-    Returns:
-        tuple:
-            On success, returns a tuple (True, (stdout, stderr, return_code)) where:
-                - stdout (str): The standard output captured from the command.
-                - stderr (str): The standard error captured from the command.
-                - return_code (int): The exit status code of the command.
-            On failure (including timeout), returns (False, error_message) where error_message is a
-                string describing the error encountered.
+    ### Returns
+    - **tuple**:  
+      On success:  
+      `(True, (stdout, stderr, return_code))`  
+      - **stdout** (`str`): Standard output of the command.  
+      - **stderr** (`str`): Standard error of the command.  
+      - **return_code** (`int`): Exit status of the command.  
 
-    Notes:
-        - The function ensures that command output is in English by setting the environment
-          variable 'LC_ALL' to 'C'.
-        - If the OS is Windows, the command is prefixed with "chcp 65001 &&" to change the codepage
-          to UTF-8.
-        - If neither shell execution nor standard input is needed, and the command contains pipes
-          ('|'), the function splits the command and creates a pipeline manually.
-        - Exceptions like OSError, ValueError, and other general exceptions during command
-          invocation are caught and result in an error message being returned.
+      On failure:  
+      `(False, error_message)` — a string describing the error.
+
+    ### Notes
+    - Output is always forced to English by setting `LC_ALL=C`.
+    - On Windows, the command is prepended with `chcp 65001 &&` to ensure UTF-8 output.
+    - If `shell=False` and the command contains pipes (`|`), it creates a manual pipeline.
+    - Exceptions such as `OSError`, `ValueError`, or general execution errors are caught and
+      reported.
     """
     if not env:
         env = os.environ.copy()

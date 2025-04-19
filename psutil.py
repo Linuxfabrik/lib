@@ -25,11 +25,25 @@ except ImportError as e:
 
 
 def get_partitions(ignore=[]):
-    """Return all mounted disk partitions as a list of named tuples
-    including device, mount point and filesystem type, similarly to
-    `df` command on UNIX.
     """
+    Return all mounted disk partitions as a list of named tuples, including device, mount point, 
+    and filesystem type, similar to the `df` command on UNIX.
 
+    ### Parameters
+    - **ignore** (`list`, optional): A list of strings to ignore. Any partition whose mount
+      point contains any of the strings in this list will be excluded from the result.
+      Defaults to an empty list.
+
+    ### Returns
+    - **list**: A list of named tuples representing the disk partitions, each containing:
+      - **device**: The device name (e.g., `/dev/sda1`).
+      - **mountpoint**: The mount point (e.g., `/`).
+      - **fstype**: The filesystem type (e.g., `ext4`).
+
+    ### Example
+    >>> get_partitions(['/mnt'])
+    [NamedTuple(device='/dev/sda1', mountpoint='/', fstype='ext4')]
+    """
     # remove all empty items from the ignore list, because `'' in 'any_string' == true`
     ignore = list(filter(None, ignore))
     return list(

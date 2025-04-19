@@ -15,6 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * shell.py: Fix special character decoding in Windows output by explicitly switching to codepage 65001
 
 
+### Changed ("refactor", "chore" etc.)
+
+* refactor(disk.py): get_real_disks() now ignores loop devices
+* docs: improve and convert doc strings to markdown for some libs and create new `docs` folder using `pdoc`
+
 
 ## v2.1.0.7
 

@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025010501'
+__version__ = '2025041901'
 
 import json
 import re
@@ -27,27 +27,51 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
           header={}, data={}, encoding='urlencode',
           digest_auth_user=None, digest_auth_password=None,
           extended=False, to_text=True):
-    """Fetch any URL.
+    """
+    Fetch any URL with optional POST, basic authentication, and SSL/TLS handling.
 
-    If using `extended=True`, the result is returned as a dict, also including the response header
-    and the HTTP status code.
+    This function supports:
+    - GET and POST requests (using the `data` parameter).
+    - Basic authentication (using the `header` and `digest_auth_*` parameters).
+    - SSL/TLS certificate validation (with the `insecure` parameter to disable it).
+    - Handling of response headers (with `extended=True`).
 
-    Basic authentication:
-    >>> auth = '{}:{}'.format(args.USERNAME, args.PASSWORD)
-    >>> encoded_auth = lib.txt.to_text(base64.b64encode(lib.txt.to_bytes(auth)))
-    >>> result = lib.base.coe(lib.url.fetch(url, timeout=args.TIMEOUT,
-            header={'Authorization': 'Basic {}'.format(encoded_auth)}))
+    ### Parameters
+    - **url** (`str`):
+        The URL to fetch.
+    - **insecure** (`bool`, optional):
+        If True, disables SSL certificate validation. Defaults to False.
+    - **no_proxy** (`bool`, optional):
+        If True, disables the use of proxies. Defaults to False.
+    - **timeout** (`int`, optional):
+        Timeout in seconds for the request. Defaults to 8 seconds.
+    - **header** (`dict`, optional):
+        Headers to include in the request.
+    - **data** (`dict`, optional):
+        Data to send in the request body (used for POST requests).
+    - **encoding** (`str`, optional):
+        The encoding type for the request body. Defaults to `'urlencode'`.
+    - **digest_auth_user** (`str`, optional):
+        The username for HTTP Digest Authentication.
+    - **digest_auth_password** (`str`, optional):
+        The password for HTTP Digest Authentication.
+    - **extended** (`bool`, optional):
+        If True, includes the response header and status code in the result. Defaults to False.
+    - **to_text** (`bool`, optional):
+        If True, converts the response to text. Defaults to True.
 
-    POST: the HTTP request will be a POST instead of a GET when the data parameter is provided
-    >>> result = fetch(URL, header=header, data={...})
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the request was successful, False otherwise.
+      - **result** (`dict` or `str`): 
+        - If successful, the response body (as a string or raw data).
+        - If `extended=True`, the result includes the response, status code, and response headers.
+        - An error message string if the request failed.
 
-    Cookies: To fetch Cookies, parse the response header. To get the response header,
-    use extended=True
-    >>> result = fetch(URL, header=header, data={...}, extended=True)
+    ### Example
+    >>> result = fetch('https://api.example.com', timeout=10, header={'Authorization': 'Bearer token'})
+    >>> result = fetch('https://api.example.com', data={'key': 'value'}, extended=True)
     >>> result['response_header'].getheader('Set-Cookie')
-
-    Setting `to_text=False` disables the automatic converison to a text string.
-    Use this when downloading binary files.
     """
     try:
         if digest_auth_user is not None and digest_auth_password is not None:
@@ -137,9 +161,43 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
                header={}, data={}, encoding='urlencode',
                digest_auth_user=None, digest_auth_password=None,
                extended=False):
-    """Fetch JSON from an URL.
+    """
+    Fetch JSON from a URL with optional POST, authentication, and SSL/TLS handling.
 
+    This function uses the `fetch()` function to retrieve the content from the URL and then
+    attempts to parse the response as JSON.
+
+    ### Parameters
+    - **url** (`str`): The URL to fetch the JSON from.
+    - **insecure** (`bool`, optional):
+        If True, disables SSL certificate validation. Defaults to False.
+    - **no_proxy** (`bool`, optional):
+        If True, disables the use of proxies. Defaults to False.
+    - **timeout** (`int`, optional):
+        Timeout in seconds for the request. Defaults to 8 seconds.
+    - **header** (`dict`, optional):
+        Headers to include in the request.
+    - **data** (`dict`, optional):
+        Data to send in the request body (used for POST requests).
+    - **encoding** (`str`, optional):
+        The encoding type for the request body. Defaults to `'urlencode'`.
+    - **digest_auth_user** (`str`, optional):
+        The username for HTTP Digest Authentication.
+    - **digest_auth_password** (`str`, optional):
+        The password for HTTP Digest Authentication.
+    - **extended** (`bool`, optional):
+        If True, includes the response header and status code in the result. Defaults to False.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the JSON was successfully fetched and parsed, False otherwise.
+      - **result** (`dict` or `str`): 
+        - The parsed JSON object if successful.
+        - An error message string if the request failed or JSON decoding failed.
+
+    ### Example
     >>> fetch_json('https://192.0.2.74/api/v2/?resource=cpu')
+    (True, {'cpu': {'usage': '45%', 'temperature': '50C'}})
     """
     success, jsonst = fetch(
         url,
@@ -167,9 +225,26 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
 
 
 def get_latest_version_from_github(user, repo, key='tag_name'):
-    """Get the newest release tag from a GitHub repo.
+    """
+    Get the newest release tag from a GitHub repository.
 
+    This function fetches the latest release information from the GitHub API and retrieves the release tag.
+
+    ### Parameters
+    - **user** (`str`): The GitHub username or organization name.
+    - **repo** (`str`): The GitHub repository name.
+    - **key** (`str`, optional): The key to retrieve from the JSON response (default is `'tag_name'`).
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the latest version was successfully fetched, False otherwise.
+      - **result** (`str` or `bool`): 
+        - The value of the specified key (e.g., the latest release tag) if successful.
+        - `False` if no result was found or the GitHub API did not return any data.
+
+    ### Example
     >>> get_latest_version_from_github('Linuxfabrik', 'monitoring-plugins')
+    (True, 'v1.2.3')
     """
     github_url = 'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
     success, result = fetch_json(github_url)
@@ -183,6 +258,19 @@ def get_latest_version_from_github(user, repo, key='tag_name'):
 
 
 def strip_tags(html):
-    """Tries to return a string with all HTML tags stripped from a given string.
+    """
+    Strips all HTML tags from a given string.
+
+    This function removes any HTML tags from the input string, leaving only the raw text content.
+
+    ### Parameters
+    - **html** (`str`): The string containing HTML tags to be stripped.
+
+    ### Returns
+    - **str**: The input string with all HTML tags removed.
+
+    ### Example
+    >>> strip_tags('<div>Hello, <b>world</b>!</div>')
+    'Hello, world!'
     """
     return re.sub(r'<[^<]+?>', '', html)

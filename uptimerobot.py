@@ -11,14 +11,33 @@
 """Interacts with the UptimeRobot API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025032901'
+__version__ = '2025041901'
 
 from . import time
+from . import txt
 from . import url
 
 
 def get_response_header(uri, data):
-    """Call the REST API, but just return the response headers.
+    """
+    Call a REST API and return only the response headers.
+
+    Sends a request with specific headers and optional form data, expecting a JSON-formatted
+    response.
+
+    ### Parameters
+    - **uri** (`str`): The URI of the REST API endpoint.
+    - **data** (`dict`): A dictionary of data to send in the request body.  
+      `'format': 'json'` will be automatically added.
+
+    ### Returns
+    - **tuple**:
+      - On success: (True, response_headers)
+      - On failure: (False, error_message)
+
+    ### Example
+    >>> get_response_header('https://example.com/api', {'key': 'value'})
+    (True, {'Content-Type': 'application/json', 'Content-Length': '123', ...})
     """
     result = []
     data['format'] = 'json'
@@ -38,7 +57,26 @@ def get_response_header(uri, data):
 
 
 def get_data(uri, data, result_key):
-    """Call the REST API, including pagination.
+    """
+    Call a REST API and retrieve paginated results.
+
+    Automatically handles offset-based pagination by requesting subsequent pages until all data is
+    fetched.
+
+    ### Parameters
+    - **uri** (`str`): The URI of the REST API endpoint.
+    - **data** (`dict`): A dictionary of parameters to send with the request.  
+      `'format': 'json'` will be automatically added.
+    - **result_key** (`str`): The key under which the desired data is stored in the API response.
+
+    ### Returns
+    - **tuple**:
+      - On success: (True, list_of_results)
+      - On failure: (False, error_message)
+
+    ### Example
+    >>> get_data('https://example.com/api', {'key': 'value'}, 'items')
+    (True, [{'id': 1, 'name': 'A'}, {'id': 2, 'name': 'B'}, ...])
     """
     offset = 0
     result = []
@@ -75,14 +113,26 @@ def get_data(uri, data, result_key):
     return (True, result)
 
 
-def multi_replace(text, repl_map):
-    """Replace all occurrences based on the provided mapping."""
-    for old, new in repl_map.items():
-        text = text.replace(old, str(new))
-    return text
-
-
 def get_account_details(data):
+    """
+    Call the UptimeRobot API to retrieve account details.
+
+    Filters the input data to include only allowed keys before making the request.
+
+    ### Parameters
+    - **data** (`dict`): A dictionary containing API parameters.  
+      Only keys listed in `allowed_keys` (e.g., `'api_key'`) are kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **account** (`dict` or `str`): The account details if successful, or an error message.
+      - **rl** (`dict`): The response headers from the API call.
+
+    ### Example
+    >>> get_account_details({'api_key': 'your_api_key_here', 'extra_key': 'ignored'})
+    (True, {'email': 'user@example.com', 'monitor_limit': 50, ...}, {'Content-Type': 'application/json', ...})
+    """
     # https://uptimerobot.com/api
     # remove unwanted keys (copied 1:1 from documentation)
     allowed_keys = {
@@ -106,6 +156,32 @@ def get_account_details(data):
 
 
 def get_monitors(params):
+    """
+    Call the UptimeRobot API to retrieve monitor information, including optional translation of
+    statuses and types.
+
+    This function:
+    - Filters allowed parameters according to UptimeRobot API documentation.
+    - Converts human-readable parameters into API-compatible values before sending.
+    - Converts API results back into human-readable values after retrieval.
+
+    ### Parameters
+    - **params** (`dict`): 
+      Parameters to send to the API.  
+      Only allowed keys will be kept, and certain fields will be auto-translated (e.g., status
+      names to numbers).
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`list` or `str`): 
+        - A list of monitor dictionaries if successful.
+        - An error message string if failed.
+
+    ### Example
+    >>> get_monitors({'api_key': 'your_api_key', 'statuses': 'up', 'types': 'http'})
+    (True, [{'id': 12345, 'status': 'up', 'type': 'http', ...}, ...])
+    """
     # https://uptimerobot.com/api
     # remove unwanted keys (copied 1:1 from documentation)
     # and translate human2uptimerobot and vice versa
@@ -163,7 +239,7 @@ def get_monitors(params):
     }
     for key, replacements in replace_map.items():
         if key in params and isinstance(params[key], str):
-            params[key] = multi_replace(params[key], replacements)
+            params[key] = txt.multi_replace(params[key], replacements)
 
     success, result = get_data(
         'https://api.uptimerobot.com/v2/getMonitors',
@@ -279,6 +355,29 @@ def get_monitors(params):
 
 
 def new_monitor(params):
+    """
+    Call the UptimeRobot API to create a new monitor.
+
+    This function:
+    - Filters the input parameters to include only allowed keys.
+    - Converts human-readable values (e.g., protocol types, methods) to UptimeRobot's API-compatible
+      values.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary of parameters for the new monitor. Only the allowed keys
+      will be kept and translated accordingly.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`dict` or `str`): 
+        - A dictionary containing the created monitor's details if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> new_monitor({'api_key': 'your_api_key', 'friendly_name': 'My Monitor', 'url': 'https://example.com', 'type': 'http'})
+    (True, {'id': 123456, 'friendly_name': 'My Monitor', 'url': 'https://example.com', 'status': 'up', ...})
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -367,7 +466,7 @@ def new_monitor(params):
     }
     for key, replacements in replace_map.items():
         if key in params and isinstance(params[key], str):
-            params[key] = multi_replace(params[key], replacements)
+            params[key] = txt.multi_replace(params[key], replacements)
 
     return get_data(
         'https://api.uptimerobot.com/v2/newMonitor',
@@ -377,6 +476,29 @@ def new_monitor(params):
 
 
 def edit_monitor(params):
+    """
+    Call the UptimeRobot API to edit an existing monitor.
+
+    This function:
+    - Filters the input parameters to include only allowed keys.
+    - Converts human-readable values (e.g., protocol types, methods, status) to UptimeRobot's
+      API-compatible values.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary of parameters for editing the monitor. Only the allowed keys
+      will be kept and translated accordingly.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`dict` or `str`): 
+        - A dictionary containing the updated monitor's details if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> edit_monitor({'api_key': 'your_api_key', 'id': 123456, 'friendly_name': 'Updated Monitor', 'status': 'up'})
+    (True, {'id': 123456, 'friendly_name': 'Updated Monitor', 'status': 'up', ...})
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -463,7 +585,7 @@ def edit_monitor(params):
     }
     for key, replacements in replace_map.items():
         if key in params and isinstance(params[key], str):
-            params[key] = multi_replace(params[key], replacements)
+            params[key] = txt.multi_replace(params[key], replacements)
 
     return get_data(
         'https://api.uptimerobot.com/v2/editMonitor',
@@ -473,6 +595,27 @@ def edit_monitor(params):
 
 
 def delete_monitor(params):
+    """
+    Call the UptimeRobot API to delete an existing monitor.
+
+    This function filters the input parameters to include only the allowed keys and then calls the
+    API to delete the specified monitor.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary containing the monitor's parameters. Only the allowed keys
+      (`'api_key'`, `'id'`) are included.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`dict` or `str`): 
+        - A dictionary containing the deleted monitor's details if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> delete_monitor({'api_key': 'your_api_key', 'id': 123456})
+    (True, {'id': 123456, 'status': 'deleted'})
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -489,6 +632,29 @@ def delete_monitor(params):
 
 
 def get_alert_contacts(params):
+    """
+    Call the UptimeRobot API to retrieve alert contacts.
+
+    This function:
+    - Filters the input parameters to include only the allowed keys.
+    - Retrieves the alert contacts, then converts UptimeRobot's status and type values to
+      human-readable formats.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary containing parameters to filter the alert contacts. Only
+      the allowed keys (`'api_key'`, `'alert_contacts'`, `'offset'`, `'limit'`) will be kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`list` or `str`): 
+        - A list of alert contact dictionaries if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> get_alert_contacts({'api_key': 'your_api_key', 'limit': 10})
+    (True, [{'id': 1, 'status': 'active', 'type': 'sms', ...}, ...])
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -555,6 +721,27 @@ def get_alert_contacts(params):
 
 
 def delete_alert_contact(params):
+    """
+    Call the UptimeRobot API to delete an existing alert contact.
+
+    This function filters the input parameters to include only the allowed keys and then calls the
+    API to delete the specified alert contact.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary containing the parameters to delete the alert contact.
+      Only the allowed keys (`'api_key'`, `'id'`) will be kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`dict` or `str`): 
+        - A dictionary containing the deleted alert contact's details if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> delete_alert_contact({'api_key': 'your_api_key', 'id': 123456})
+    (True, {'id': 123456, 'status': 'deleted'})
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -571,6 +758,29 @@ def delete_alert_contact(params):
 
 
 def get_mwindows(params):
+    """
+    Call the UptimeRobot API to retrieve monitoring windows (mwindows).
+
+    This function:
+    - Filters the input parameters to include only the allowed keys.
+    - Retrieves the monitoring windows, then converts UptimeRobot's status values to human-readable
+      formats.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary containing parameters to filter the monitoring windows.
+      Only the allowed keys (`'api_key'`, `'mwindows'`, `'offset'`, `'limit'`) will be kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`list` or `str`): 
+        - A list of monitoring window dictionaries if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> get_mwindows({'api_key': 'your_api_key', 'limit': 10})
+    (True, [{'id': 1, 'status': 'active', 'start_date': '2022-01-01', ...}, ...])
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -613,6 +823,29 @@ def get_mwindows(params):
 
 
 def new_mwindow(params):
+    """
+    Call the UptimeRobot API to create a new monitoring window.
+
+    This function:
+    - Filters the input parameters to include only the allowed keys.
+    - Converts human-readable values (e.g., type and value) to UptimeRobot's API-compatible values.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary of parameters for the new monitoring window. Only the
+      allowed keys (`'api_key'`, `'friendly_name'`, `'type'`, `'value'`, `'start_time'`, 
+      `'duration'`) will be kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`dict` or `str`): 
+        - A dictionary containing the created monitoring window's details if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> new_mwindow({'api_key': 'your_api_key', 'friendly_name': 'Maintenance Window', 'type': 'once', 'value': 'mon', 'start_time': '2022-05-01T00:00:00', 'duration': 60})
+    (True, {'id': 1, 'friendly_name': 'Maintenance Window', 'status': 'active', ...})
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -645,7 +878,7 @@ def new_mwindow(params):
     }
     for key, replacements in replace_map.items():
         if key in params and isinstance(params[key], str):
-            params[key] = multi_replace(params[key], replacements)
+            params[key] = txt.multi_replace(params[key], replacements)
 
     return get_data(
         'https://api.uptimerobot.com/v2/newMWindow',
@@ -655,6 +888,30 @@ def new_mwindow(params):
 
 
 def edit_mwindow(params):
+    """
+    Call the UptimeRobot API to edit an existing monitoring window.
+
+    This function:
+    - Filters the input parameters to include only the allowed keys.
+    - Converts human-readable values (e.g., type, value, and status) to UptimeRobot's API-compatible
+      values.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary of parameters for editing the monitoring window. Only the
+      allowed keys (`'api_key'`, `'id'`, `'friendly_name'`, `'type'`, `'value'`, `'start_time'`,
+      `'duration'`, `'status'`) will be kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`dict` or `str`): 
+        - A dictionary containing the edited monitoring window's details if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> edit_mwindow({'api_key': 'your_api_key', 'id': 123456, 'friendly_name': 'Updated Window', 'status': 'active', 'type': 'daily', 'value': 'mon', 'start_time': '2022-05-01T00:00:00', 'duration': 60})
+    (True, {'id': 123456, 'friendly_name': 'Updated Window', 'status': 'active', 'type': 'daily', 'value': 'mon', 'start_time': '2022-05-01T00:00:00', 'duration': 60})
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -693,7 +950,7 @@ def edit_mwindow(params):
     }
     for key, replacements in replace_map.items():
         if key in params and isinstance(params[key], str):
-            params[key] = multi_replace(params[key], replacements)
+            params[key] = txt.multi_replace(params[key], replacements)
 
     return get_data(
         'https://api.uptimerobot.com/v2/editMWindow',
@@ -703,6 +960,27 @@ def edit_mwindow(params):
 
 
 def delete_mwindow(params):
+    """
+    Call the UptimeRobot API to delete an existing monitoring window.
+
+    This function filters the input parameters to include only the allowed keys and then calls the
+    API to delete the specified monitoring window.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary containing the parameters for deleting the monitoring
+      window. Only the allowed keys (`'api_key'`, `'id'`) will be kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`dict` or `str`): 
+        - A dictionary containing the deleted monitoring window's details if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> delete_mwindow({'api_key': 'your_api_key', 'id': 123456})
+    (True, {'id': 123456, 'status': 'deleted'})
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -719,6 +997,29 @@ def delete_mwindow(params):
 
 
 def get_psps(params):
+    """
+    Call the UptimeRobot API to retrieve PSPs (public service providers).
+
+    This function:
+    - Filters the input parameters to include only the allowed keys.
+    - Retrieves the PSPs, then converts UptimeRobot's status and sort values to human-readable
+      formats.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary containing parameters to filter the PSPs. Only the allowed
+      keys (`'api_key'`, `'psps'`, `'offset'`, `'limit'`) will be kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`list` or `str`): 
+        - A list of PSP dictionaries if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> get_psps({'api_key': 'your_api_key', 'limit': 10})
+    (True, [{'id': 12345, 'sort': 'a-z', 'status': 'active', ...}, ...])
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -772,6 +1073,29 @@ def get_psps(params):
 
 
 def new_psp(params):
+    """
+    Call the UptimeRobot API to create a new PSP (public service provider).
+
+    This function:
+    - Filters the input parameters to include only the allowed keys.
+    - Converts human-readable values (e.g., sort and status) to UptimeRobot's API-compatible values.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary of parameters for the new PSP. Only the allowed keys
+      (`'api_key'`, `'friendly_name'`, `'monitors'`, `'custom_domain'`, `'password'`, `'sort'`,
+      `'hide_url_links'`) will be kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`dict` or `str`): 
+        - A dictionary containing the created PSP's details if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> new_psp({'api_key': 'your_api_key', 'friendly_name': 'New PSP', 'monitors': '12345,67890', 'sort': 'a-z'})
+    (True, {'id': 123456, 'friendly_name': 'New PSP', 'status': 'active', ...})
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -801,7 +1125,7 @@ def new_psp(params):
     }
     for key, replacements in replace_map.items():
         if key in params and isinstance(params[key], str):
-            params[key] = multi_replace(params[key], replacements)
+            params[key] = txt.multi_replace(params[key], replacements)
 
     return get_data(
         'https://api.uptimerobot.com/v2/newPSP',
@@ -811,6 +1135,29 @@ def new_psp(params):
 
 
 def edit_psp(params):
+    """
+    Call the UptimeRobot API to edit an existing PSP (public status page).
+
+    This function:
+    - Filters the input parameters to include only the allowed keys.
+    - Converts human-readable values (e.g., sort and status) to UptimeRobot's API-compatible values.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary of parameters for editing the PSP. Only the allowed keys
+      (`'api_key'`, `'id'`, `'friendly_name'`, `'monitors'`, `'custom_domain'`, `'password'`,
+      `'sort'`, `'hide_url_links'`, `'status'`) will be kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`dict` or `str`): 
+        - A dictionary containing the edited PSP's details if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> edit_psp({'api_key': 'your_api_key', 'id': 123456, 'friendly_name': 'Updated PSP', 'status': 'active', 'sort': 'a-z'})
+    (True, {'id': 123456, 'friendly_name': 'Updated PSP', 'status': 'active', 'sort': 'a-z', ...})
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',
@@ -841,7 +1188,7 @@ def edit_psp(params):
     }
     for key, replacements in replace_map.items():
         if key in params and isinstance(params[key], str):
-            params[key] = multi_replace(params[key], replacements)
+            params[key] = txt.multi_replace(params[key], replacements)
 
     return get_data(
         'https://api.uptimerobot.com/v2/editPSP',
@@ -851,6 +1198,27 @@ def edit_psp(params):
 
 
 def delete_psp(params):
+    """
+    Call the UptimeRobot API to delete an existing PSP (public service provider).
+
+    This function filters the input parameters to include only the allowed keys and then calls the
+    API to delete the specified PSP.
+
+    ### Parameters
+    - **params** (`dict`): A dictionary containing the parameters for deleting the PSP. Only the
+      allowed keys (`'api_key'`, `'id'`) will be kept.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the API call succeeded, False otherwise.
+      - **result** (`dict` or `str`): 
+        - A dictionary containing the deleted PSP's details if successful.
+        - An error message string if the API call failed.
+
+    ### Example
+    >>> delete_psp({'api_key': 'your_api_key', 'id': 123456})
+    (True, {'id': 123456, 'status': 'deleted'})
+    """
     # https://uptimerobot.com/api
     allowed_keys = {
         'api_key',

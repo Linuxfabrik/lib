@@ -12,7 +12,7 @@
 needed by more than one Jitsi plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024031401'
+__version__ = '2025041901'
 
 import base64 # pylint: disable=C0413
 
@@ -20,8 +20,27 @@ from . import url
 
 
 def get_data(args, _type='json'):
-    """Calls args.URL, optionally using args.USERNAME and args.PASSWORD,
-    taking args.TIMEOUT into account, returning JSON (`type='json'`) or raw data (else).
+    """
+    Fetch data from a URL, with optional authentication and content type handling.
+
+    This function calls the provided URL and returns the data in either JSON format (default) or
+    raw format, based on the specified type.
+
+    ### Parameters
+    - **args** (`object`): An object containing the URL (`args.URL`), username (`args.USERNAME`),
+      password (`args.PASSWORD`), and other options (e.g., `TIMEOUT`, `INSECURE`, `NO_PROXY`).
+    - **_type** (`str`, optional): The type of data to fetch. If `'json'`, returns the data as JSON.
+      Otherwise, returns raw data. Defaults to `'json'`.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the fetch was successful, False otherwise.
+      - **result** (`dict` or `str`): The fetched data, either as a parsed JSON object or raw data.
+      - **False** (`bool`): If the fetch failed, False is returned as the third element.
+
+    ### Example
+    >>> get_data(args, _type='json')
+    (True, {'key': 'value'})
     """
     header = {}
     if not args.USERNAME is None:

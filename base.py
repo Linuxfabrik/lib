@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025032201'
+__version__ = '2025041901'
 
 import collections
 import numbers
@@ -31,43 +31,39 @@ X86_64 = sys.maxsize > 2**32
 
 
 def coe(result, state=STATE_UNKNOWN):
-    """Continue or Exit (CoE)
+    """
+    Continue or Exit (CoE)
 
-    This is useful if calling complex library functions in your checks
-    `main()` function. Don't use this in functions.
+    This is useful if calling complex library functions in your check's
+    `main()` function. Don't use this inside library functions.
 
-    If a more complex library function, for example `lib.url.fetch()` fails, it
-    returns `(False, 'the reason why I failed')`, otherwise `(True,
-    'this is my result'). This forces you to do some error handling.
+    If a more complex library function, for example `lib.url.fetch()`, fails, it
+    returns `(False, 'the reason why I failed')`, otherwise `(True, 'this is my result')`. 
+    This normally requires manual error handling. 
     To keep things simple, use `result = lib.base.coe(lib.url.fetch(...))`.
-    If `fetch()` fails, your plugin will exit with STATE_UNKNOWN (default) and
-    print the original error message. Otherwise your script just goes on.
+    If `fetch()` fails, your program will exit with STATE_UNKNOWN (3) and
+    print the original error message. Otherwise, your script just continues.
 
-    The use case in `main()` - without `coe`:
+    Usage in `main()` without `coe`:
 
     >>> success, html = lib.url.fetch(URL)
     >>> if not success:
-    >>>     print(html)             # contains the error message here
-    >>>>    exit(STATE_UNKNOWN)
+    >>>     print(html)             # contains the error message
+    >>>     exit(STATE_UNKNOWN)
 
-    Or simply:
+    Or simply with `coe`:
 
     >>> html = lib.base.coe(lib.url.fetch(URL))
 
-    Parameters
-    ----------
-    result : tuple
-        The result from a function call.
-        result[0] = expects the function return code (True on success)
-        result[1] = expects the function result (could be of any type)
-    state : int
-        If result[0] is False, exit with this state.
-        Default: 3 (which is STATE_UNKNOWN)
+    ### Parameters
+    - **result** (`tuple`): The result from a function call.  
+      - result[0]: expects the function return code (True on success).  
+      - result[1]: expects the function result (could be of any type).
+    - **state** (`int`): If `result[0]` is False, exit with this state.  
+      Default: 3 (which is STATE_UNKNOWN).
 
-    Returns
-    -------
-    any type
-        The result of the inner function call (result[1]).
+    ### Returns
+    - **any type**: The result of the inner function call (`result[1]`).
     """
     if result[0]:
         # success
@@ -77,11 +73,18 @@ def coe(result, state=STATE_UNKNOWN):
 
 
 def cu(msg=None):
-    """See you (cu)
+    """
+    See you (cu)
 
-    Always exits with STATE_UNKNOWN, prints an optional message and - if a runtime error occurred -
-    a stack trace (replaces "<" and ">" to be printable in web GUIs).
-    Use this to print error messages.
+    Always exits with STATE_UNKNOWN, prints an optional message, and — if a runtime error occurred —
+    also prints a stack trace (with "<" and ">" replaced to make it printable in web GUIs).
+    Use this to print error messages and exit cleanly.
+
+    ### Parameters
+    - **msg** (`str`, optional): An optional message to print before exiting. Defaults to None.
+
+    ### Returns
+    - **None**: This function never returns; it always exits the script with STATE_UNKNOWN.
     """
     tb = format_exc()
     if 'NoneType: None' not in tb:
@@ -97,7 +100,25 @@ def cu(msg=None):
 
 
 def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=None):
-    """Returns 'label'=value[UOM];[warn];[crit];[min];[max]
+    """
+    Returns a Nagios performance data string in the format:  
+    `'label'=value[UOM];[warn];[crit];[min];[max]`
+
+    ### Parameters
+    - **label** (`str`): The name of the performance data label.
+    - **value** (`int` or `float`): The measured value.
+    - **uom** (`str`, optional): The unit of measurement (e.g., 's', 'B', '%'). Defaults to None.
+    - **warn** (`int` or `float`, optional): Warning threshold. Defaults to None.
+    - **crit** (`int` or `float`, optional): Critical threshold. Defaults to None.
+    - **_min** (`int` or `float`, optional): Minimum value. Defaults to None.
+    - **_max** (`int` or `float`, optional): Maximum value. Defaults to None.
+
+    ### Returns
+    - **str**: A properly formatted Nagios performance data string.
+
+    ### Example
+    >>> get_perfdata('load1', 0.42, '', 1.0, 5.0, 0, 10)
+    "'load1'=0.42;1.0;5.0;0;10 "
     """
     msg = "'{}'={}".format(label, value)
     if uom is not None:
@@ -119,35 +140,32 @@ def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=N
 
 
 def get_state(value, warn, crit, _operator='ge'):
-    """Returns the STATE by comparing `value` to the given thresholds using
-    a comparison `_operator`. `warn` and `crit` threshold may also be `None`.
+    """
+    Returns the STATE by comparing `value` to the given thresholds using
+    a comparison `_operator`. `warn` and `crit` thresholds may also be `None`.
 
+    ### Parameters
+    - **value** (`float`): Numeric value to evaluate.
+    - **warn** (`float`): Numeric warning threshold.
+    - **crit** (`float`): Numeric critical threshold.
+    - **_operator** (`str`): Comparison operator to use:  
+      - `eq`: equal to  
+      - `ge`: greater or equal  
+      - `gt`: greater than  
+      - `le`: less or equal  
+      - `lt`: less than  
+      - `ne`: not equal to  
+      - `range`: match Nagios range definition
+
+    ### Returns
+    - **int**: `STATE_OK`, `STATE_WARN`, or `STATE_CRIT`.
+
+    ### Example
     >>> get_state(15, 10, 20, 'ge')
-    1 (STATE_WARN)
+    1  # STATE_WARN
+
     >>> get_state(10, 10, 20, 'gt')
-    0 (STATE_OK)
-
-    Parameters
-    ----------
-    value : float
-        Numeric value
-    warn : float
-        Numeric warning threshold
-    crit : float
-        Numeric critical threshold
-    _operator : string
-        `eq` = equal to
-        `ge` = greater or equal
-        `gt` = greater than
-        `le` = less or equal
-        `lt` = less than
-        `ne` = not equal to
-        `range` = match Nagios range definition
-
-    Returns
-    -------
-    int
-        `STATE_OK`, `STATE_WARN` or `STATE_CRIT`
+    0  # STATE_OK
     """
     # make sure to use float comparison
     value = float(value)
@@ -218,22 +236,32 @@ def get_state(value, warn, crit, _operator='ge'):
 
 
 def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_reverse=False):
-    """Takes a list of dictionaries, formats the data, and returns
+    """
+    Takes a list of dictionaries, formats the data, and returns
     the formatted data as a text table.
 
-    Required Parameters:
-        data - Data to process (list of dictionaries). (Type: List)
-        cols - List of cols in the dictionary. (Type: List)
-
-    Optional Parameters:
-        header - The table header. (Type: List)
-        strip - Strip/Trim values or not. (Type: Boolean)
-        sort_by_key - The key to sort by. (Type: String)
-        sort_order_reverse - Default sort order is ascending, if
-            True sort order will change to descending. (Type: bool)
-
-    Inspired by
+    Inspired by:  
     https://www.calazan.com/python-function-for-displaying-a-list-of-dictionaries-in-table-format/
+
+    ### Parameters
+    - **data** (`list`): Data to process (list of dictionaries).
+    - **cols** (`list`): List of keys/columns to include from the dictionaries.
+    - **header** (`list`, optional): Custom table headers. Defaults to None.
+    - **strip** (`bool`, optional): If True, strip/trim values. Defaults to True.
+    - **sort_by_key** (`str`, optional): The key to sort the table by. Defaults to None.
+    - **sort_order_reverse** (`bool`, optional): If True, sort descending. Defaults to False.
+
+    ### Returns
+    - **str**: A formatted text table as a single string.
+
+    ### Example
+    >>> data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]
+    >>> cols = ['name', 'age']
+    >>> print(get_table(data, cols))
+    name  ! age
+    ------+----
+    Alice ! 30
+    Bob   ! 25
     """
     if not data:
         return ''
@@ -296,11 +324,26 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
 
 
 def get_worst(state1, state2):
-    """Compares state1 to state2 and returns result based on the following
-    STATE_OK < STATE_UNKNOWN < STATE_WARNING < STATE_CRITICAL
+    """
+    Compares `state1` to `state2` and returns the worse state based on the following priority:  
+    STATE_OK < STATE_UNKNOWN < STATE_WARNING < STATE_CRITICAL  
     It will prioritize any non-OK state.
 
-    Note that numerically the above does not hold.
+    Note that numerically the priority order does not match their integer values.
+
+    ### Parameters
+    - **state1** (`int`): The first state to compare.
+    - **state2** (`int`): The second state to compare.
+
+    ### Returns
+    - **int**: The worse state according to the priority order.
+
+    ### Example
+    >>> get_worst(STATE_OK, STATE_WARNING)
+    STATE_WARNING
+
+    >>> get_worst(STATE_UNKNOWN, STATE_CRITICAL)
+    STATE_CRITICAL
     """
     state1 = int(state1)
     state2 = int(state2)
@@ -314,23 +357,42 @@ def get_worst(state1, state2):
 
 
 def guess_type(v, consumer='python'):
-    """Guess the type of a value (None, int, float or string) for different types of consumers
-    (Python, SQLite etc.).
-    For Python, use isinstance() to check for example if a number is an integer.
+    """
+    Guess the type of a value (None, int, float, or string) for different types of consumers
+    (e.g., Python, SQLite).
 
+    For Python, it returns the actual type (`int`, `float`, or `str`).
+    For SQLite, it returns a string describing the type (`'integer'`, `'real'`, `'text'`).
+
+    ### Parameters
+    - **v** (`any`): The value to guess the type for.
+    - **consumer** (`str`, optional): The consumer type ('python' or 'sqlite'). Defaults to
+      'python'.
+
+    ### Returns
+    - **any**: 
+      - If `consumer='python'`, returns `None`, `int`, `float`, or `str`.
+      - If `consumer='sqlite'`, returns `'integer'`, `'real'`, or `'text'`.
+
+    ### Example
     >>> guess_type('1')
     1
+
     >>> guess_type('1', 'sqlite')
     'integer'
+
     >>> guess_type('1.0')
     1.0
+
     >>> guess_type('1.0', 'sqlite')
     'real'
+
     >>> guess_type('abc')
     'abc'
+
     >>> guess_type('abc', 'sqlite')
     'text'
-    >>>
+
     >>> value_type = lib.base.guess_type(value)
     >>> if isinstance(value_type, int) or isinstance(value_type, float):
     >>>     ...
@@ -361,16 +423,39 @@ def guess_type(v, consumer='python'):
 
 
 def is_empty_list(l):
-    """Check if a list only contains either empty elements or whitespace
+    """
+    Check if a list only contains either empty elements or whitespace.
+
+    ### Parameters
+    - **l** (`list`): The list to check.
+
+    ### Returns
+    - **bool**: True if all elements are empty strings or whitespace, otherwise False.
+
+    ### Example
+    >>> is_empty_list(['', '   ', ''])
+    True
+
+    >>> is_empty_list(['text', ''])
+    False
     """
     return all(s == '' or s.isspace() for s in l)
 
 
 def is_numeric(value):
-    """Return True if value is really numeric (int, float, whatever).
+    """
+    Return True if the value is truly numeric (int, float, etc.).
 
+    ### Parameters
+    - **value** (`any`): The value to check.
+
+    ### Returns
+    - **bool**: True if the value is numeric, otherwise False.
+
+    ### Example
     >>> is_numeric(+53.4)
     True
+
     >>> is_numeric('53.4')
     False
     """
@@ -378,21 +463,34 @@ def is_numeric(value):
 
 
 def lookup_lod(haystack, key, needle):
-    """Search in a list of dictionaries ("lod)" for the key containing a specific value
+    """
+    Search in a list of dictionaries ("lod") for a key containing a specific value
     and return the first dictionary item found.
-    Returns (index, item) if needle was found, (-1, None) in every other case.
 
+    Returns `(index, item)` if the needle was found, otherwise `(-1, None)`.
+
+    ### Parameters
+    - **haystack** (`list`): A list of dictionaries to search through.
+    - **key** (`str`): The key to look for in each dictionary.
+    - **needle** (`any`): The value to match against the specified key.
+
+    ### Returns
+    - **tuple**: 
+        - If found: (index, dictionary item).
+        - If not found: (-1, None).
+
+    ### Example
     >>> haystack = [
-    ...     { "name": "Tom", "age": 10 },
-    ...     { "name": "Mark", "age": 5 },
-    ...     { "name": "Pam", "age": 7 },
-    ...     { "name": "Dick", "age": 12 }
+    ...     {"name": "Tom", "age": 10},
+    ...     {"name": "Mark", "age": 5},
+    ...     {"name": "Pam", "age": 7},
+    ...     {"name": "Dick", "age": 12}
     ... ]
     >>> lookup_lod(haystack, 'name', 'Pam')
     (2, {'name': 'Pam', 'age': 7})
+
     >>> lookup_lod(haystack, 'name', 'Pamela')
     (-1, None)
-    >>>
     """
     try:
         for index, item in enumerate(haystack):
@@ -404,39 +502,43 @@ def lookup_lod(haystack, key, needle):
 
 
 def match_range(value, spec):
-    """Decides if `value` is inside/outside the Nagios threshold spec.
+    """
+    Decides if `value` is inside or outside the Nagios threshold specification.
 
-    Parameters
-    ----------
-    spec : str
-        Nagios range specification
-    value : int or float
-        Numeric value
+    ### Parameters
+    - **value** (`int` or `float`): The numeric value to check.
+    - **spec** (`str`): The Nagios range specification string.
 
-    Returns
-    -------
-    bool
-        `True` if `value` is inside the bounds for a non-inverted
-        `spec`, or outside the bounds for an inverted `spec`. Otherwise `False`.
+    ### Returns
+    - **bool**: 
+      - True if `value` is inside the bounds for a non-inverted `spec`, or outside the bounds for an inverted `spec`.
+      - Otherwise, False.
 
-    Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
-
+    ### Example
     >>> match_range(15, '10')
     0 10 False
+
     >>> match_range(15, '-10')
     (False, 'Start 0 must not be greater than end -10')
+
     >>> match_range(15, '10:')
     10 inf False
+
     >>> match_range(15, ':')
     0 inf False
+
     >>> match_range(15, '~:10')
     -inf 10 False
+
     >>> match_range(15, '10:20')
     10 20 False
+
     >>> match_range(15, '@10')
     0 10 True
+
     >>> match_range(15, '@~:20')
     -inf 20 True
+
     >>> match_range(15, '@')
     0 inf True
     """
@@ -517,11 +619,22 @@ def match_range(value, spec):
 
 
 def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
-    """Over and Out (OaO)
+    """
+    Over and Out (OaO)
 
-    Print the stripped plugin message. If perfdata is given, attach it
-    by `|` and print it stripped. Exit with `state`, or with STATE_OK (0) if
-    `always_ok` is set to `True`.
+    Print the stripped plugin message. If performance data (`perfdata`) is given, attach it
+    using `|` and print it. Exit with the given `state`, or with `STATE_OK` (0) if `always_ok`
+    is set to True.
+
+    ### Parameters
+    - **msg** (`str`): The plugin message to print.
+    - **state** (`int`, optional): The exit state to use. Defaults to `STATE_OK`.
+    - **perfdata** (`str`, optional): The performance data to append after the `|` separator.
+      Defaults to an empty string.
+    - **always_ok** (`bool`, optional): If True, always exit with `STATE_OK`. Defaults to False.
+
+    ### Returns
+    - **None**: This function does not return; it always exits the script.
     """
     msg = msg.strip()
     # The `|` character is a reserved one to seperate plugin output from performance data.
@@ -539,8 +652,28 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
 
 
 def smartcast(value):
-    """Returns the value converted to float if possible, else string, else the
-    uncasted value.
+    """
+    Returns the value converted to `float` if possible, else to `str`, else returns
+    the uncasted value.
+
+    ### Parameters
+    - **value** (`any`): The value to attempt to cast.
+
+    ### Returns
+    - **float**, **str**, or **any**: 
+      - If convertible to `float`, returns a `float`.
+      - If not, tries to convert to `str`.
+      - If neither succeeds, returns the original value unchanged.
+
+    ### Example
+    >>> smartcast('3.14')
+    3.14
+
+    >>> smartcast(42)
+    42.0
+
+    >>> smartcast('hello')
+    'hello'
     """
     for test in [float, str]:
         try:
@@ -552,34 +685,34 @@ def smartcast(value):
 
 
 def sort(array, reverse=True, sort_by_key=False):
-    """Sort a 1-dimensional dictionary by its values or keys.
+    """
+    Sort a 1-dimensional dictionary by its values or keys.
 
     When a dictionary is provided, this function returns a list of (key, value)
     tuples sorted based on the specified criteria:
-      - If sort_by_key is False (default), the dictionary items are sorted by their values.
-      - If sort_by_key is True, the items are sorted by their keys (compared case-insensitively).
+      - If `sort_by_key` is False (default), the dictionary items are sorted by their values.
+      - If `sort_by_key` is True, the items are sorted by their keys (compared case-insensitively).
 
-    The sort order is descending by default (reverse=True). If the input is not a dictionary,
-    the original input is returned unmodified.
+    The sort order is descending by default (`reverse=True`).  
+    If the input is not a dictionary, the original input is returned unmodified.
 
-    Parameters:
-        array (dict or any): The dictionary to be sorted. If not a dictionary, the input is returned as is.
-        reverse (bool, optional): If True, sort in descending order; otherwise, sort in ascending order.
-                                  Defaults to True.
-        sort_by_key (bool, optional): If True, sort by dictionary keys; if False, sort by values.
-                                      Defaults to False.
+    ### Parameters
+    - **array** (`dict` or `any`): The dictionary to be sorted. If not a dictionary, the input is returned as is.
+    - **reverse** (`bool`, optional): If True, sort in descending order; if False, ascending. Defaults to True.
+    - **sort_by_key** (`bool`, optional): If True, sort by dictionary keys; if False, by values. Defaults to False.
 
-    Returns:
-        list or any: A list of sorted (key, value) tuples if a dictionary is provided,
-                     otherwise the original input.
+    ### Returns
+    - **list** or **any**: A list of sorted (key, value) tuples if a dictionary is provided, otherwise the original input.
 
-    Examples:
-        >>> sort({'a': 2, 'b': 1})
-        [('a', 2), ('b', 1)]
-        >>> sort({'a': 2, 'b': 1}, reverse=False)
-        [('b', 1), ('a', 2)]
-        >>> sort({'a': 2, 'B': 1}, sort_by_key=True)
-        [('a', 2), ('B', 1)]
+    ### Example
+    >>> sort({'a': 2, 'b': 1})
+    [('a', 2), ('b', 1)]
+
+    >>> sort({'a': 2, 'b': 1}, reverse=False)
+    [('b', 1), ('a', 2)]
+
+    >>> sort({'a': 2, 'B': 1}, sort_by_key=True)
+    [('a', 2), ('B', 1)]
     """
     if isinstance(array, dict):
         if not sort_by_key:
@@ -589,17 +722,34 @@ def sort(array, reverse=True, sort_by_key=False):
 
 
 def state2str(state, empty_ok=True, prefix='', suffix=''):
-    """Return the state's string representation.
-    The square brackets around the state cause icingaweb2 to color the state.
+    """
+    Return the state's string representation.
 
-    >> lib.base.state2str(2)
+    The square brackets around the state cause Icinga Web 2 to color the state.
+
+    ### Parameters
+    - **state** (`int`): The state code (e.g., 0, 1, 2, 3).
+    - **empty_ok** (`bool`, optional): If True and the state is OK (0), return an empty string.
+      Defaults to True.
+    - **prefix** (`str`, optional): A prefix string to prepend to the result. Defaults to ''.
+    - **suffix** (`str`, optional): A suffix string to append to the result. Defaults to ''.
+
+    ### Returns
+    - **str**: A formatted string representation of the state.
+
+    ### Example
+    >>> lib.base.state2str(2)
     '[CRIT]'
+
     >>> state2str(0)
     ''
+
     >>> state2str(0, empty_ok=False)
     '[OK]'
+
     >>> state2str(0, empty_ok=False, suffix=' ')
     '[OK] '
+
     >>> state2str(0, empty_ok=False, prefix=' (', suffix=')')
     ' ([OK])'
     """
@@ -618,18 +768,32 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
 
 
 def str2bool(s):
-    """Return True or False depending on the given string.
+    """
+    Return True or False depending on the given string.
 
+    ### Parameters
+    - **s** (`str`): The input string to evaluate.
+
+    ### Returns
+    - **bool**: True if the string is not empty and not equal to "false" (case-insensitive),
+      otherwise False.
+
+    ### Example
     >>> str2bool("")
     False
+
     >>> str2bool("false")
     False
+
     >>> str2bool("FalSE")
     False
+
     >>> str2bool("true")
     True
+
     >>> str2bool("Linuxfabrik")
     True
+
     >>> str2bool("0")
     True
     """
@@ -642,27 +806,50 @@ def str2bool(s):
 
 
 def str2state(string, ignore_error=True):
-    """Return the numeric state based on a (case-insensitive) string.
-    Matches up to the first four characters.
+    """
+    Return the numeric state based on a (case-insensitive) string.
 
+    Matches up to the first four characters of the input string.
+
+    ### Parameters
+    - **string** (`str`): The input string to match against known states.
+    - **ignore_error** (`bool`, optional): If True, unrecognized strings return `STATE_UNKNOWN`.  
+      If False, unrecognized strings return None. Defaults to True.
+
+    ### Returns
+    - **int** or **None**: 
+      - The numeric state code (`STATE_OK`, `STATE_WARN`, `STATE_CRIT`, `STATE_UNKNOWN`) if
+        recognized.
+      - Otherwise, `STATE_UNKNOWN` or None, depending on `ignore_error`.
+
+    ### Example
     >>> str2state('ok')
     0
+
     >>> str2state('okidoki')
     3
+
     >>> str2state('okidoki', ignore_error=False)
     None
+
     >>> str2state('war')
     3
+
     >>> str2state('warn')
     1
+
     >>> str2state('Warnung')
     1
+
     >>> str2state('CrITical')
     2
+
     >>> str2state('UNKNOWN')
     3
+
     >>> str2state('gobbledygook')
     3
+
     >>> str2state('gobbledygook', ignore_error=False)
     None
     """
@@ -681,10 +868,21 @@ def str2state(string, ignore_error=True):
 
 
 def sum_dict(dict1, dict2):
-    """Sum up two dictionaries, maybe with different keys.
+    """
+    Sum up two dictionaries, possibly with different keys.
 
+    Only numeric values are considered for summation; non-numeric values are ignored.
+
+    ### Parameters
+    - **dict1** (`dict`): The first dictionary to sum.
+    - **dict2** (`dict`): The second dictionary to sum.
+
+    ### Returns
+    - **dict**: A new dictionary with summed numeric values by key.
+
+    ### Example
     >>> sum_dict({'in': 100, 'out': 10}, {'in': 50, 'error': 5, 'uuid': '1234-xyz'})
-    {'in': 150, 'error': 5, 'out': 10}
+    {'in': 150, 'out': 10, 'error': 5}
     """
     total = {}
     for key, value in dict1.items():
@@ -705,10 +903,20 @@ def sum_dict(dict1, dict2):
 
 
 def sum_lod(mylist):
-    """Sum up a list of (simple 1-dimensional) dictionary items.
+    """
+    Sum up a list of (simple 1-dimensional) dictionary items.
 
-    sum_lod([{'in': 100, 'out': 10}, {'in': 50, 'out': 20}, {'error': 5, 'uuid': '1234-xyz'}])
-    >>> {'in': 150, 'out': 30, 'error': 5}
+    Only numeric values are considered for summation; non-numeric values are ignored.
+
+    ### Parameters
+    - **mylist** (`list`): A list of dictionaries to sum.
+
+    ### Returns
+    - **dict**: A dictionary with summed numeric values by key.
+
+    ### Example
+    >>> sum_lod([{'in': 100, 'out': 10}, {'in': 50, 'out': 20}, {'error': 5, 'uuid': '1234-xyz'}])
+    {'in': 150, 'out': 30, 'error': 5}
     """
     total = {}
     for mydict in mylist:
