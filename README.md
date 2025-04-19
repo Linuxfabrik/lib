@@ -17,6 +17,7 @@ pip install pdoc
 pdoc --output-dir docs \
     args.py \
     base.py \
+    cache.py \
     disk.py \
     globals.py \
     human.py \

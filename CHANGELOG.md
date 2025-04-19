@@ -10,7 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## [Unreleased]
 
-tbd
+### Changed ("refactor", "chore" etc.)
+
+* refactor(cache.py): improve code-style
+
 
 
 ## v2.1.1.5
