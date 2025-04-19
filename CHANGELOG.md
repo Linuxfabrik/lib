@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ### Changed ("refactor", "chore" etc.)
 
 * docs: improve and convert doc strings to markdown for some libs and create new `docs` folder using `pdoc`
+* refactor(base.py, url.py): make use of txt.sanitize_sensitive_data()
 * refactor(txt.py): add sanitize_sensitive_data()
 
 

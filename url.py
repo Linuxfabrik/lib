@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025041902'
 
 import json
 import re
@@ -22,6 +22,7 @@ import urllib.parse
 import urllib.request
 
 from . import txt
+
 
 def fetch(url, insecure=False, no_proxy=False, timeout=8,
           header={}, data={}, encoding='urlencode',
@@ -70,8 +71,8 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
 
     ### Example
     >>> result = fetch('https://api.example.com', timeout=10, header={'Authorization': 'Bearer token'})
+
     >>> result = fetch('https://api.example.com', data={'key': 'value'}, extended=True)
-    >>> result['response_header'].getheader('Set-Cookie')
     """
     try:
         if digest_auth_user is not None and digest_auth_password is not None:
@@ -121,17 +122,17 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
             response = urllib.request.urlopen(request, context=ctx, timeout=timeout)
     except urllib.request.HTTPError as e:
         # hide passwords
-        url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
+        url = txt.sanitize_sensitive_data(url)
         return (False, 'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url))
     except urllib.request.URLError as e:
         # hide passwords
-        url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
+        url = txt.sanitize_sensitive_data(url)
         return (False, 'URL error "{}" for {}'.format(e.reason, url))
     except TypeError as e:
         return (False, 'Type error "{}", data="{}"'.format(e, data))
     except Exception as e:
         # hide passwords
-        url = re.sub(r'(token|password)=([^&]+)', r'\1********', url)
+        url = txt.sanitize_sensitive_data(url)
         return (False, '{} while fetching {}'.format(e, url))
     else:
         try:

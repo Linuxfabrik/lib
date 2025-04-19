@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025041902'
 
 import collections
 import numbers
@@ -23,6 +23,7 @@ import sys
 from traceback import format_exc
 
 from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
+from . import txt
 
 
 WINDOWS = os.name == "nt"
@@ -34,40 +35,42 @@ def coe(result, state=STATE_UNKNOWN):
     """
     Continue or Exit (CoE)
 
-    This is useful if calling complex library functions in your check's
-    `main()` function. Don't use this inside library functions.
-
-    If a more complex library function, for example `lib.url.fetch()`, fails, it
-    returns `(False, 'the reason why I failed')`, otherwise `(True, 'this is my result')`. 
-    This normally requires manual error handling. 
-    To keep things simple, use `result = lib.base.coe(lib.url.fetch(...))`.
-    If `fetch()` fails, your program will exit with STATE_UNKNOWN (3) and
-    print the original error message. Otherwise, your script just continues.
-
-    Usage in `main()` without `coe`:
-
-    >>> success, html = lib.url.fetch(URL)
-    >>> if not success:
-    >>>     print(html)             # contains the error message
-    >>>     exit(STATE_UNKNOWN)
-
-    Or simply with `coe`:
-
-    >>> html = lib.base.coe(lib.url.fetch(URL))
+    This function simplifies error handling for function calls that return a `(success, result)`
+    tuple. If the operation fails, it sanitizes and prints the error message and exits with a given
+    state. Otherwise, it returns the successful result and allows the script to continue.
 
     ### Parameters
-    - **result** (`tuple`): The result from a function call.  
-      - result[0]: expects the function return code (True on success).  
-      - result[1]: expects the function result (could be of any type).
-    - **state** (`int`): If `result[0]` is False, exit with this state.  
-      Default: 3 (which is STATE_UNKNOWN).
+    - **result** (`tuple`): A two-element tuple returned from a function.
+      - `result[0]` (`bool`): Success indicator (`True` if successful, `False` otherwise).
+      - `result[1]` (`any`): The actual result or an error message.
+    - **state** (`int`, optional): Exit code to use if the function fails.
+      Defaults to `STATE_UNKNOWN` (3).
 
     ### Returns
-    - **any type**: The result of the inner function call (`result[1]`).
+    - **any type**: The second element of the result tuple (`result[1]`) if successful.
+
+    ### Notes
+    - Sensitive information in error messages is automatically redacted before printing.
+    - This function is intended to be used **only** inside the `main()` function of a plugin,
+      not inside library functions.
+    - If the function fails (`result[0]` is `False`), the script immediately exits after printing
+      the sanitized message.
+
+    ### Example
+    Without `coe`:
+    >>> success, html = lib.url.fetch(URL)
+    >>> if not success:
+    >>>     print(html)
+    >>>     sys.exit(STATE_UNKNOWN)
+
+    With `coe`:
+    >>> html = lib.base.coe(lib.url.fetch(URL))
     """
     if result[0]:
         # success
         return result[1]
+    # hide passwords
+    result[1] = txt.sanitize_sensitive_data(result[1])
     print(result[1])
     sys.exit(state)
 
@@ -76,26 +79,44 @@ def cu(msg=None):
     """
     See you (cu)
 
-    Always exits with STATE_UNKNOWN, prints an optional message, and — if a runtime error occurred —
-    also prints a stack trace (with "<" and ">" replaced to make it printable in web GUIs).
-    Use this to print error messages and exit cleanly.
+    Print an optional error message and stack trace, then exit with STATE_UNKNOWN.
+
+    This function prints an optional sanitized message, attaches a stack trace if an error occurred,
+    and exits the script with `STATE_UNKNOWN`. It ensures output is safe for display in web GUIs
+    by replacing `<` and `>` characters.
 
     ### Parameters
-    - **msg** (`str`, optional): An optional message to print before exiting. Defaults to None.
+    - **msg** (`str`, optional): An optional message to print before exiting.
+      If provided, it will be stripped, sanitized, and printed.
 
     ### Returns
-    - **None**: This function never returns; it always exits the script with STATE_UNKNOWN.
+    - **None**: This function does not return; it always exits the script with `STATE_UNKNOWN`.
+
+    ### Notes
+    - If a traceback exists, it is included for debugging, with `<` and `>` replaced by `'`.
+    - Sensitive information in the message is automatically redacted before printing.
+    - If no traceback is present, only the optional message (if any) is printed.
+
+    ### Example
+    >>> cu("Unable to connect to server")
+
+    >>> cu()
     """
     tb = format_exc()
-    if 'NoneType: None' not in tb:
-        # got a stacktrace
-        tb = tb.replace("<", "'").replace(">", "'")
-        if msg is not None:
-            print(msg.strip() + ' (Traceback for debugging purposes attached)\n')
-        print(tb)
-    else:
-        if msg is not None:
-            print(msg.strip())
+    has_traceback = tb and 'NoneType: None' not in tb
+
+    if msg is not None:
+        msg = txt.sanitize_sensitive_data(msg).strip()
+        print(msg, end='')
+        if has_traceback:
+            print(' (Traceback for debugging purposes attached)\n')
+        else:
+            print()
+
+    if has_traceback:
+        safe_tb = tb.replace('<', "'").replace('>', "'")
+        print(safe_tb)
+
     sys.exit(STATE_UNKNOWN)
 
 
@@ -622,24 +643,46 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     """
     Over and Out (OaO)
 
-    Print the stripped plugin message. If performance data (`perfdata`) is given, attach it
-    using `|` and print it. Exit with the given `state`, or with `STATE_OK` (0) if `always_ok`
-    is set to True.
+    Print a sanitized plugin message with optional performance data and exit the script.
+
+    This function formats and prints a plugin message, appends performance data if provided,
+    sanitizes sensitive information, replaces reserved `|` characters, and exits with the
+    specified state code. Optionally, it can always exit with `STATE_OK` regardless of the given
+    state.
 
     ### Parameters
-    - **msg** (`str`): The plugin message to print.
-    - **state** (`int`, optional): The exit state to use. Defaults to `STATE_OK`.
-    - **perfdata** (`str`, optional): The performance data to append after the `|` separator.
-      Defaults to an empty string.
-    - **always_ok** (`bool`, optional): If True, always exit with `STATE_OK`. Defaults to False.
+    - **msg** (`str`): The plugin message to print. Will be stripped, sanitized, and processed.
+    - **state** (`int`, optional): The exit code to use. Defaults to `STATE_OK`.
+    - **perfdata** (`str`, optional): Performance data to append after a `|` separator.  
+      Defaults to an empty string (no performance data).
+    - **always_ok** (`bool`, optional): If `True`, forces the exit code to `STATE_OK` regardless
+      of the specified `state`. Defaults to `False`.
 
     ### Returns
-    - **None**: This function does not return; it always exits the script.
+    - **None**: This function does not return; it terminates the script via `sys.exit()`.
+
+    ### Notes
+    - Any `|` characters inside the message are replaced with `!` to avoid breaking Nagios plugin
+      output format.
+    - Sensitive information like passwords, tokens, and keys is automatically redacted.
+    - `perfdata`, if provided, must follow monitoring plugin standards for performance metrics.
+
+    ### Example
+    >>> oao("Service is healthy", STATE_OK, "load=0.12;1.00;5.00", always_ok=False)
+    Service is healthy|load=0.12;1.00;5.00
+    (and exits with code 0)
+
+    >>> oao("password=secret123 found!", STATE_CRITICAL)
+    password=****** found!
+    (and exits with code 2)
+
     """
     msg = msg.strip()
     # The `|` character is a reserved one to seperate plugin output from performance data.
     # There is actually no way to escape it, so replace it.
     msg = msg.replace('|', '!')
+    # hide passwords
+    msg = txt.sanitize_sensitive_data(msg)
     if always_ok:
         msg += ' (always ok)'
     if perfdata:
@@ -795,6 +838,9 @@ def str2bool(s):
     True
 
     >>> str2bool("0")
+    True
+
+    >>> str2bool("1")
     True
     """
     if not s:
