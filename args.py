@@ -11,11 +11,25 @@
 """Extends argparse by new input argument data types on demand.
 """
 
-import re  # pylint: disable=C0413
-
-
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
+
+
+HELP_TEXTS = {
+    '--match': (
+        'Uses Python regular expressions without any external flags like `re.IGNORECASE`. '
+        'The regular expression is applied to each line of the output. '
+        'Examples: '
+        '`(?i)example` to match the word "example" in a case-insensitive manner. '
+        '`^(?!.*example).*$` to match any string except "example" (negative lookahead). '
+        '`(?: ... )*` is a non-capturing group that matches any sequence of characters '
+        'that satisfy the condition inside it, zero or more times.'
+    ),
+}
+
+# Predefined sets for checking units and methods
+_UNITS = {'%', 'K', 'M', 'G', 'T', 'P'}
+_METHODS = {'USED', 'FREE'}
 
 
 def csv(arg):
@@ -59,16 +73,18 @@ def float_or_none(arg):
       input is 'none' or `None`.
 
     ### Example
-    >>> float_or_none("123.45")
+    >>> float_or_none('123.45')
     123.45
 
-    >>> float_or_none("none")
+    >>> float_or_none('none')
     None
 
     >>> float_or_none(None)
     None
     """
-    if arg is None or str(arg).lower() == 'none':
+    if arg is None:
+        return None
+    if isinstance(arg, str) and arg.strip().lower() == 'none':
         return None
     return float(arg)
 
@@ -82,8 +98,7 @@ def help(param):
     for the parameter, it returns an empty string.
 
     ### Parameters
-    - **param** (`str`): The parameter for which help text is to be retrieved. This must be a
-      valid key in the predefined help dictionary.
+    - **param** (`str`): The parameter for which help text is to be retrieved.
 
     ### Returns
     - **str**: The help text for the given parameter, or an empty string if the parameter is not
@@ -96,21 +111,7 @@ def help(param):
     >>> help('--nonexistent')
     ''
     """
-    h = {
-        '--match':
-            'Uses Python regular expressions without any external flags like `re.IGNORECASE`. '
-            'The regular expression is applied to each line of the output. '
-            'Examples: '
-            '`(?i)example` to match the word "example" in a case-insensitive manner. '
-            '`^(?!.*example).*$` to match any string except "example" (negative lookahead). '
-            '`(?: ... )*` is a non-capturing group that matches any sequence of characters  '
-            'that satisfy the condition inside it, zero or more times. ',
-        }
-    return h[param]
-    try:
-        return h[param]
-    except KeyError:
-        return ''
+    return HELP_TEXTS.get(param, '')
 
 
 def int_or_none(arg):
@@ -137,7 +138,9 @@ def int_or_none(arg):
     >>> int_or_none(None)
     None
     """
-    if arg is None or str(arg).lower() == 'none':
+    if arg is None:
+        return None
+    if isinstance(arg, str) and arg.strip().lower() == 'none':
         return None
     return int(arg)
 
@@ -185,19 +188,34 @@ def number_unit_method(arg, unit='%', method='USED'):
     >>> number_unit_method('1400GUSED')
     (1400.0, 'G', 'USED')
     """
-    # use named groups in regex
-    regex = re.compile(
-        r'(?P<number>\d*\.?\d*)(?P<unit>%|K|M|G|T|P)?(?P<method>USED|FREE)?',
-        re.IGNORECASE,
-    )
-    match = re.search(regex, arg)
-    if match and match.groupdict().get('number'):
-        arg = match.groupdict().get('number').strip()
-        if match and match.groupdict().get('unit'):
-            unit = match.groupdict().get('unit').strip()
-        if match and match.groupdict().get('method'):
-            method = match.groupdict().get('method').strip()
-    return arg, unit.upper(), method.upper()
+    arg = arg.strip()
+    number_part = []
+    unit_part = ''
+    method_part = ''
+
+    i = 0
+    while i < len(arg) and (arg[i].isdigit() or arg[i] == '.'):
+        number_part.append(arg[i])
+        i += 1
+
+    if i < len(arg) and arg[i].upper() in _UNITS:
+        unit_part = arg[i]
+        i += 1
+
+    if i < len(arg):
+        method_part = arg[i:].upper()
+
+    number = ''.join(number_part)
+    if not number:
+        return 0.0, unit.upper(), method.upper()
+
+    if unit_part:
+        unit = unit_part
+
+    if method_part in _METHODS:
+        method = method_part
+
+    return float(number), unit.upper(), method.upper()
 
 
 def range_or_none(arg):
@@ -231,7 +249,11 @@ def str_or_none(arg):
     >>> str_or_none(None)
     None
     """
-    if arg is None or str(arg).lower() == 'none':
+    if arg is None:
         return None
-    return str(arg)
+    if isinstance(arg, str):
+        if arg.strip().lower() == 'none':
+            return None
+        return arg
 
+    return str(arg)
