@@ -28,39 +28,31 @@ def file_exists(path, allow_empty=False):
     Check if a file exists at the given path, optionally allowing empty files.
 
     ### Parameters
-    - **path** (`str`): The path to the file to check.
-    - **allow_empty** (`bool`, optional):  
-      If True, consider empty files as existing.  
+    - **path** (`str`):
+      The path to the file to check.
+    - **allow_empty** (`bool`, optional):
+      If True, consider empty files as existing.
       If False, empty files are treated as non-existent. Defaults to False.
 
     ### Returns
-    - **bool**:  
+    - **bool**:
       True if the file exists (and is non-empty unless `allow_empty` is True), otherwise False.
 
     ### Example
     >>> file_exists("/path/to/file")
     True
-
     >>> file_exists("/path/to/empty_file", allow_empty=False)
     False
-
     >>> file_exists("/path/to/empty_file", allow_empty=True)
     True
     """
-    # not finding the file, exit early
-    if not os.path.exists(path):
+    if not os.path.isfile(path):
         return False
 
-    # if just the path needs to exists (ie, it can be empty) we are done
     if allow_empty:
         return True
 
-    # file exists but is empty and we dont allow_empty
-    if os.path.getsize(path) == 0:
-        return False
-
-    # file exists with some content
-    return True
+    return os.path.getsize(path) > 0
 
 
 def get_cwd():
@@ -71,29 +63,35 @@ def get_cwd():
     - None
 
     ### Returns
-    - **str**: The absolute path of the current working directory.
+    - **str**:
+      The absolute path of the current working directory.
 
     ### Example
     >>> get_cwd()
     '/home/user/project'
     """
-    return os.getcwd()
+    try:
+        return os.getcwd()
+    except OSError as e:
+        # Optional: handle rare cases where the cwd is invalid (e.g., directory was deleted)
+        return ''
 
 
 def bd2dmd(device):
     """
-    Get the mapped device name for a device-mapper device.
+    Retrieve the mapped device name for a device-mapper block device.
 
-    This method reads the appropriate sysfs entry directly instead of using
-    `dmsetup ls`, avoiding the need for elevated (sudo) permissions.
-    ("bd2dmd = block device to device mapper device").
+    This function reads the sysfs entry directly instead of using `dmsetup ls`, thus avoiding
+    elevated privileges. ("bd2dmd" = block device to device-mapper device).
 
     ### Parameters
-    - **device** (`str`): The block device name or path (e.g., 'dm-0', '/dev/dm-0').
+    - **device** (`str`):
+      The block device name or path (e.g., 'dm-0', '/dev/dm-0').
 
     ### Returns
-    - **str**: The corresponding device-mapper path (e.g., '/dev/mapper/rl_rocky8-root'),
-      or an empty string if the device is not a device-mapper device.
+    - **str**:
+      The full path to the mapped device (e.g., '/dev/mapper/rl_rocky8-root'),
+      or an empty string if not a device-mapper device.
 
     ### Example
     >>> bd2dmd('dm-0')
@@ -102,15 +100,13 @@ def bd2dmd(device):
     ''
     """
     device = os.path.basename(device)
-    success, result = read_file('/sys/class/block/{}/dm/name'.format(device))
-    if not success:
+    success, name = read_file(f'/sys/class/block/{device}/dm/name')
+
+    if not success or not name:
         return ''
-    if not result:
-        return ''
-    result = '/dev/mapper/{}'.format(result.strip())
-    if not os.path.islink(result):
-        return ''
-    return result
+
+    mapped_device = f'/dev/mapper/{name.strip()}'
+    return mapped_device if os.path.islink(mapped_device) else ''
 
 
 def get_real_disks():
@@ -135,30 +131,32 @@ def get_real_disks():
     >>> get_real_disks()
     [{'bd': '/dev/dm-0', 'dmd': '/dev/mapper/rl-root', 'mp': '/ /home'}]
     """
-    success, result = read_file('/proc/mounts')
+    success, mounts_content = read_file('/proc/mounts')
     if not success:
         return []
 
     disks = {}
-    for line in result.splitlines():
-        if not line.startswith('/dev/'):
+
+    for line in mounts_content.splitlines():
+        if not line.startswith('/dev/') or line.startswith('/dev/loop'):
             continue
-        if line.startswith('/dev/loop'):
-            continue
-        rd = line.split(' ')
-        if rd[0].startswith('/dev/mapper/'):
-            dmdname = rd[0]
+
+        parts = line.split()
+        device_path, mount_point = parts[0], parts[1]
+
+        if device_path.startswith('/dev/mapper/'):
+            dmdname = device_path
             bdname = udevadm(dmdname, 'DEVNAME')
         else:
-            bdname = rd[0]
-            dmdname = udevadm(bdname, 'DM_NAME') # get device mapper device name
+            bdname = device_path
+            dmdname = udevadm(bdname, 'DM_NAME')
             if dmdname:
-                dmdname = '/dev/mapper/{}'.format(dmdname)
+                dmdname = f'/dev/mapper/{dmdname}'
+
         if bdname not in disks:
-            disks[bdname] = {'bd': bdname, 'dmd': dmdname, 'mp': rd[1]}
+            disks[bdname] = {'bd': bdname, 'dmd': dmdname, 'mp': mount_point}
         else:
-            # disk already listed, append additional mount point
-            disks[bdname]['mp'] += ' {}'.format(rd[1])
+            disks[bdname]['mp'] += f' {mount_point}'
 
     return list(disks.values())
 
@@ -167,8 +165,8 @@ def get_tmpdir():
     """
     Return the name of the directory used for temporary files, always without a trailing '/'.
 
-    Searches a standard list of directories to find one in which the calling user
-    can create files. The search order is:
+    Searches a standard list of directories to find one in which the calling user can create files.
+    The search order is:
 
     - The directory named by the TMPDIR environment variable.
     - The directory named by the TEMP environment variable.
@@ -191,10 +189,13 @@ def get_tmpdir():
     >>> get_tmpdir()
     'C:\\Users\\vagrant\\AppData\\Local\\Temp\\2'
     """
+    tmpdir = None
     try:
-        return tempfile.gettempdir()
-    except:
-        return '/tmp'
+        tmpdir = tempfile.gettempdir()
+    except Exception:
+        pass
+
+    return tmpdir or '/tmp'
 
 
 def grep_file(filename, pattern):
@@ -218,21 +219,20 @@ def grep_file(filename, pattern):
     >>> success, nc_version = grep_file('version.php', r'\\$OC_version=array\\((.*)\\)')
     """
     try:
-        with open(filename, 'r') as file:
-            data = file.read()
+        with open(filename, 'r', encoding='utf-8') as f:
+            data = f.read()
     except IOError as e:
-        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
-    except:
-        return (False, 'Unknown error opening or reading {}'.format(filename))
+        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
+    except Exception as e:
+        return False, f'Unknown error opening or reading {filename}: {e}'
+
     match = re.search(pattern, data)
     if match:
-        return (True, match.group(1))
-    else:
-        return (True, '')  # No crash: just return empty string if no match found
+        return True, match.group(1)
+    return True, ''
 
 
-def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False,
-             skip_empty_rows=False):
+def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, skip_empty_rows=False):
     """
     Read a CSV file and return its content as a list or dictionary.
 
@@ -257,27 +257,23 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False,
     ### Example
     >>> success, data = read_csv('data.csv')
     >>> success, data = read_csv('data.csv', as_dict=True, skip_empty_rows=True)
-
     """
+    reader = None
     try:
-        with open(filename, newline=newline) as csvfile:
-            if not as_dict:
-                reader = csv.reader(csvfile, delimiter=delimiter, quotechar=quotechar)
-            else:
-                reader = csv.DictReader(csvfile, delimiter=delimiter, quotechar=quotechar)
-            data = []
-            for row in reader:
-                # check if the list contains empty strings only
-                if skip_empty_rows and all(s == '' or s.isspace() for s in row):
-                    continue
-                data.append(row)
-        return (True, data)
+        with open(filename, 'r', newline=newline, encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile, delimiter=delimiter, quotechar=quotechar) if as_dict else csv.reader(csvfile, delimiter=delimiter, quotechar=quotechar)
+            data = [
+                row for row in reader
+                if not (skip_empty_rows and all(not str(v).strip() for v in (row.values() if isinstance(row, dict) else row)))
+            ]
+        return True, data
     except csv.Error as e:
-        return (False, 'CSV error in file {}, line {}: {}'.format(filename, reader.line_num, e))
+        line_num = getattr(reader, 'line_num', 'unknown')
+        return False, f'CSV error in file {filename}, line {line_num}: {e}'
     except IOError as e:
-        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
-    except:
-        return (False, 'Unknown error opening or reading {}'.format(filename))
+        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
+    except Exception as e:
+        return False, f'Unknown error opening or reading {filename}: {e}'
 
 
 def read_env(filename, delimiter='='):
@@ -285,7 +281,7 @@ def read_env(filename, delimiter='='):
     Read a shell script that sets environment variables and return a dictionary with the
     extracted variables.
 
-    Lines starting with '#' are treated as comments and ignored. Only lines that set variables 
+    Lines starting with '#' are treated as comments and ignored. Only lines that set variables
     (optionally prefixed with 'export') are processed. More complex shell logic (e.g., conditional
     reads) is ignored.
 
@@ -315,20 +311,23 @@ def read_env(filename, delimiter='='):
     {'OS_AUTH_URL': 'https://api/v3', 'OS_PROJECT_NAME': 'mypro', 'OS_PASSWORD': 'linuxfabrik'}
     """
     try:
-        with open(filename) as envfile:
+        with open(filename, mode='r', encoding='utf-8') as envfile:
             data = {}
-            for line in envfile.readlines():
-                line = line.strip().split(delimiter)
-                try:
-                    if not line[0].startswith('#'):
-                        data[line[0].replace('export ', '')] = line[1].replace("'", '').replace('"', '') # pylint: disable=C0301
-                except:
+            for raw_line in envfile:
+                line = raw_line.strip()
+                if not line or line.startswith('#'):
                     continue
-        return (True, data)
+                if line.startswith('export '):
+                    line = line[7:]
+                if delimiter not in line:
+                    continue
+                key, value = line.split(delimiter, 1)
+                data[key.strip()] = value.strip().strip('\'"')
+        return True, data
     except IOError as e:
-        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
-    except:
-        return (False, 'Unknown error opening or reading {}'.format(filename))
+        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
+    except Exception as e:
+        return False, f'Unknown error opening or reading {filename}: {e}'
 
 
 def read_file(filename):
@@ -349,13 +348,12 @@ def read_file(filename):
     >>> success, content = read_file('example.txt')
     """
     try:
-        with open(filename, 'r') as f:
-            data = f.read()
-        return (True, data)
+        with open(filename, mode='r', encoding='utf-8') as f:
+            return True, f.read()
     except IOError as e:
-        return (False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename))
-    except:
-        return (False, 'Unknown error opening or reading {}'.format(filename))
+        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
+    except Exception as e:
+        return False, f'Unknown error opening or reading {filename}: {e}'
 
 
 def rm_file(filename):
@@ -378,11 +376,11 @@ def rm_file(filename):
     """
     try:
         os.remove(filename)
-        return (True, None)
+        return True, None
     except OSError as e:
-        return (False, 'OS error "{}" while deleting {}'.format(e.strerror, filename))
-    except:
-        return (False, 'Unknown error deleting {}'.format(filename))
+        return False, f'OS error "{e.strerror}" while deleting {filename}'
+    except Exception as e:
+        return False, f'Unknown error deleting {filename}: {e}'
 
 
 def udevadm(device, _property):
@@ -409,13 +407,15 @@ def udevadm(device, _property):
     >>> udevadm('/dev/linuxfabrik', 'DEVNAME')
     ''
     """
-    success, result = shell.shell_exec('udevadm info --query=property --name={}'.format(
-        device,
-    ))
+    success, result = shell.shell_exec(
+        f'udevadm info --query=property --name={device}'
+    )
     if not success:
         return ''
     stdout, _, _ = result
     for line in stdout.strip().splitlines():
+        if '=' not in line:
+            continue
         key, value = line.split('=', maxsplit=1)
         if key == _property:
             return value
@@ -432,15 +432,13 @@ def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True
 
     ### Parameters
     - **path** (`str`): The root directory to walk.
-    - **exclude_pattern** (`str`, optional): A regular expression pattern; files matching this
-      pattern are excluded. Defaults to ''.
-    - **include_pattern** (`str`, optional): A regular expression pattern; only files matching this
-      pattern are included. Defaults to ''.
-    - **relative** (`bool`, optional): If True, return relative paths. If False, return absolute
-      paths. Defaults to True.
+    - **exclude_pattern** (`str`, optional): Regex pattern to exclude files. Defaults to ''.
+    - **include_pattern** (`str`, optional): Regex pattern to include files. Defaults to ''.
+    - **relative** (`bool`, optional): Return relative paths if True, else absolute.
+      Defaults to True.
 
     ### Returns
-    - **list of str**: List of file paths found according to the filter rules.
+    - **list of str**: List of matching file paths.
 
     ### Example
     >>> walk_directory('/tmp')
@@ -453,21 +451,18 @@ def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True
         exclude_pattern = re.compile(exclude_pattern, re.IGNORECASE)
     if include_pattern:
         include_pattern = re.compile(include_pattern, re.IGNORECASE)
-    if not path.endswith('/'):
-        path += '/'
+
+    path = path.rstrip('/') + '/'
 
     result = []
-    for current, dirs, files in os.walk(path):
+    for current, _, files in os.walk(path):
         for file in files:
-            file = os.path.join(current, file)
-            if exclude_pattern and exclude_pattern.match(file) is not None:
+            full_path = os.path.join(current, file)
+            if exclude_pattern and exclude_pattern.match(full_path):
                 continue
-            if include_pattern and include_pattern.match(file) is None:
+            if include_pattern and not include_pattern.match(full_path):
                 continue
-            if relative:
-                result.append(file.replace(path, ''))
-            else:
-                result.append(file)
+            result.append(full_path.replace(path, '') if relative else full_path)
 
     return result
 
@@ -481,7 +476,8 @@ def write_file(filename, content, append=False):
     ### Parameters
     - **filename** (`str`): Path to the file to write to.
     - **content** (`str`): The string content to write into the file.
-    - **append** (`bool`, optional): If True, append to the file; if False, overwrite the file. Defaults to False.
+    - **append** (`bool`, optional): If True, append to the file; if False, overwrite the file. 
+      Defaults to False.
 
     ### Returns
     - **tuple**:
@@ -495,11 +491,11 @@ def write_file(filename, content, append=False):
     (True, None)
     """
     try:
-        with open(filename, 'w' if not append else 'a') as f:
+        mode = 'a' if append else 'w'
+        with open(filename, mode, encoding='utf-8') as f:
             f.write(content)
-        f.close()
-        return (True, None)
+        return True, None
     except IOError as e:
-        return (False, 'I/O error "{}" while writing {}'.format(e.strerror, filename))
-    except:
-        return (False, 'Unknown error writing {}, or content is not a string'.format(filename))
+        return False, f'I/O error "{e.strerror}" while writing {filename}'
+    except Exception as e:
+        return False, f'Unknown error writing {filename}: {e}'

@@ -22,62 +22,57 @@ def epoch2iso(timestamp):
     """
     Converts a UNIX epoch timestamp to an ISO-formatted date and time string.
 
-    This function takes a UNIX timestamp (which can be an integer or float) and returns a string
-    representing the corresponding local time in ISO 8601 format (YYYY-MM-DD HH:MM:SS).
+    This function takes a UNIX timestamp (int or float) and returns a string representing the local
+    time in ISO 8601 format (YYYY-MM-DD HH:MM:SS).
 
     ### Parameters
-    - **timestamp** (`int` or `float`): A UNIX epoch timestamp (seconds since January 1, 1970).
+    - **timestamp** (`int` or `float`): UNIX epoch timestamp (seconds since 1970-01-01).
 
     ### Returns
-    - **str**: A string representing the date and time in ISO format, based on the local timezone.
+    - **str**: Local date and time in ISO 8601 format.
 
     ### Example
     >>> epoch2iso(1620459129)
     '2021-05-08 09:32:09'
     """
-    timestamp = float(timestamp)
-    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
+    try:
+        ts = float(timestamp)
+        return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts))
+    except (TypeError, ValueError):
+        return ''
 
 
 def now(as_type=''):
     """
     Returns the current date and time in various formats.
 
-    Depending on the value of the `as_type` parameter, this function returns:
-    - An integer UNIX epoch (seconds since January 1, 1970) by default.
-    - A floating-point UNIX epoch if 'float' is specified.
-    - A datetime object if 'datetime' is specified.
-    - An ISO formatted string (YYYY-MM-DD HH:MM:SS) if 'iso' is specified.
+    Depending on `as_type`, this returns:
+    - Integer UNIX epoch (default)
+    - Floating-point UNIX epoch ('float')
+    - datetime.datetime object ('datetime')
+    - ISO string 'YYYY-MM-DD HH:MM:SS' ('iso')
 
     ### Parameters
-    - **as_type** (`str`, optional): A string indicating the desired return type.  
-      Accepted values:
-        - '' or 'epoch': Returns an integer UNIX epoch timestamp.
-        - 'float': Returns a floating-point UNIX epoch timestamp.
-        - 'datetime': Returns a `datetime.datetime` object representing the current time.
-        - 'iso': Returns a string formatted as "YYYY-MM-DD HH:MM:SS".  
-      Defaults to '' (integer UNIX epoch).
+    - **as_type** (`str`, optional):
+      '', 'epoch', 'float', 'datetime', or 'iso'. Defaults to ''.
 
     ### Returns
-    - **int**, **float**, **datetime.datetime**, or **str**: The current time in the specified format.
+    - **int**, **float**, **datetime.datetime**, or **str**: Current time in the requested format.
 
     ### Example
     >>> now()
     1586422786
-
     >>> now(as_type='float')
     1586422786.1521912
-
     >>> now(as_type='datetime')
     datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)
-
     >>> now(as_type='iso')
     '2020-04-09 11:31:24'
     """
     if as_type == 'datetime':
         return datetime.datetime.now()
     if as_type == 'iso':
-        return time.strftime("%Y-%m-%d %H:%M:%S")
+        return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     if as_type == 'float':
         return time.time()
     return int(time.time())
@@ -162,10 +157,9 @@ def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%
     >>> timestrdiff("2021-05-08 09:32:09", "2021-05-08 09:30:00")
     129.0
     """
-    timestr1 = timestr2datetime(timestr1, pattern1)
-    timestr2 = timestr2datetime(timestr2, pattern2)
-    timedelta = abs(timestr1 - timestr2)
-    return timedelta.total_seconds()
+    dt1 = timestr2datetime(timestr1, pattern1)
+    dt2 = timestr2datetime(timestr2, pattern2)
+    return abs((dt1 - dt2).total_seconds())
 
 
 def utc_offset():

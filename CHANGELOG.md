@@ -34,6 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * refactor(version.py): improve code-style
 * refactor(winrm.py): improve code-style
 
+* refactor(disk.py): improve code-style
+* refactor(time.py): improve code-style
 
 
 ## v2.1.1.5
