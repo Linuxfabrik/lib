@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * refactor(time.py): improve code-style
 * refactor(shell.py): improve code-style
 * refactor(nodebb.py): improve code-style
+* refactor(lftest.py): improve code-style
 
 
 ## v2.1.1.5

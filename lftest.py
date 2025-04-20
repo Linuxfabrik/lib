@@ -17,7 +17,7 @@ from . import disk
 
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
 
 
 def test(args):
@@ -41,17 +41,13 @@ def test(args):
     >>> test('path/to/stdout.txt', 'path/to/stderr.txt', 128)
     ('This is stdout content', 'This is stderr content', 128)
     """
-    if args[0] and os.path.isfile(args[0]):
-        success, stdout = disk.read_file(args[0])
-    else:
-        stdout = args[0]
-    if args[1] and os.path.isfile(args[1]):
-        success, stderr = disk.read_file(args[1])
-    else:
-        stderr = args[1]
-    if args[2] == '':
-        retc = 0
-    else:
-        retc = int(args[2])
+    stdout = args[0]
+    stderr = args[1]
+    retc = int(args[2]) if len(args) > 2 and args[2] != '' else 0
+
+    if stdout and os.path.isfile(stdout):
+        success, stdout = disk.read_file(stdout)
+    if stderr and os.path.isfile(stderr):
+        success, stderr = disk.read_file(stderr)
 
     return stdout, stderr, retc
