@@ -23,6 +23,8 @@ __version__ = '2025042001'
 import os
 import platform
 import re
+
+from . import shell
  
 # --- Static mappings ---
 
@@ -399,6 +401,14 @@ def get_distribution_facts():
     facts = _process_dist_files()
 
     distro = facts.get('distribution', 'NA')
-    facts['os_family'] = _map_os_family(distro)
+    facts['os_family'] = _map_os_family(distro)  # returns 'RedHat', for example
+
+    cmd = '. /etc/os-release && echo "$NAME $VERSION"'
+    success, result = shell.shell_exec(cmd, shell=True)
+    if not success:
+        return facts
+
+    stdout, _, _ = result
+    facts['os_info'] = stdout.strip()  # returns 'Fedora Linux 41 (Workstation Edition)', for example
 
     return facts
