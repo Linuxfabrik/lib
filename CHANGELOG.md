@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * refactor(jitsi.py): improve code-style
 * refactor(keycloak.py): improve code-style
 * refactor(librenms.py): improve code-style
+* refactor(net.py): improve code-style
 
 
 

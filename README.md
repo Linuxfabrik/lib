@@ -34,6 +34,7 @@ pdoc --output-dir docs \
     keycloak.py \
     lftest.py \
     librenms.py \
+    net.py \
     nodebb.py \
     powershell.py \
     psutil.py \
