@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2023112901'
+__version__ = '2025042001'
 
 import sys
 
@@ -24,7 +24,7 @@ except ImportError as e:
     sys.exit(STATE_UNKNOWN)
 
 
-def get_partitions(ignore=[]):
+def get_partitions(ignore=None):
     """
     Return all mounted disk partitions as a list of named tuples, including device, mount point, 
     and filesystem type, similar to the `df` command on UNIX.
@@ -44,12 +44,11 @@ def get_partitions(ignore=[]):
     >>> get_partitions(['/mnt'])
     [NamedTuple(device='/dev/sda1', mountpoint='/', fstype='ext4')]
     """
-    # remove all empty items from the ignore list, because `'' in 'any_string' == true`
+    if ignore is None:
+        ignore = []
     ignore = list(filter(None, ignore))
-    return list(
-        filter(
-            lambda part: not any(
-                ignore_item in part.mountpoint for ignore_item in ignore),
-            psutil.disk_partitions(all=False)
-        )
-    )
+
+    return [
+        part for part in psutil.disk_partitions(all=False)
+        if not any(item in part.mountpoint for item in ignore)
+    ]
