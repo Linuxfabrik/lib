@@ -26,7 +26,9 @@ pdoc --output-dir docs \
     feedparser.py \
     globals.py \
     grassfish.py \
+    huawei.py \
     human.py \
+    icinga.py \
     jitsi.py \
     lftest.py \
     nodebb.py \

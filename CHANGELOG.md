@@ -19,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * refactor(dmidecode.py): improve code-style
 * refactor(feedparser.py): improve code-style
 * refactor(grassfish.py): improve code-style
+* refactor(huawei.py): improve code-style
+* refactor(icinga.py): improve code-style
 
 
 
