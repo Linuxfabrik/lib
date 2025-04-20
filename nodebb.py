@@ -11,7 +11,7 @@
 """This library collects some NodeBB related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
 
 from . import base
 from . import url
@@ -42,10 +42,10 @@ def get_data(args, uri=''):
     (True, {'posts': [...], 'total': 100})
     """
     return base.coe(url.fetch_json(
-        args.URL + uri,
+        f'{args.URL.rstrip("/")}{uri}',
         header={
             'Accept': 'application/json',
-            'Authorization': 'Bearer {}'.format(args.TOKEN),
+            'Authorization': f'Bearer {args.TOKEN}',
         },
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
