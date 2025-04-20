@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042002'
+__version__ = '2025042003'
 
 import collections
 import numbers
@@ -289,7 +289,9 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
     lines = []
     for idx, row in enumerate(data):
         sep = ' ! ' if idx != 1 else '-+-'
-        lines.append(sep.join(f'{row[col]:<{column_widths[col]}}' for col in cols))
+        lines.append(
+            sep.join(f'{(row[col] or 'None'):<{column_widths[col]}}' for col in cols)
+        )
 
     return '\n'.join(lines) + '\n'
 
