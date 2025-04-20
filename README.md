@@ -33,6 +33,7 @@ pdoc --output-dir docs \
     jitsi.py \
     keycloak.py \
     lftest.py \
+    librenms.py \
     nodebb.py \
     powershell.py \
     psutil.py \
