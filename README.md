@@ -40,6 +40,7 @@ pdoc --output-dir docs \
     psutil.py \
     qts.py \
     redfish.py \
+    rocket.py \
     time.py \
     shell.py \
     txt.py \

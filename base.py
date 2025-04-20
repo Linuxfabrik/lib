@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041902'
+__version__ = '2025042001'
 
 import collections
 import numbers
@@ -69,9 +69,8 @@ def coe(result, state=STATE_UNKNOWN):
     if result[0]:
         # success
         return result[1]
-    # hide passwords
-    result[1] = txt.sanitize_sensitive_data(result[1])
-    print(result[1])
+    # getting something like `(False, 'Error message')`; hide passwords in error message
+    print(txt.sanitize_sensitive_data(result[1]))
     sys.exit(state)
 
 
