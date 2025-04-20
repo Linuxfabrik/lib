@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * refactor(net.py): improve code-style
 * refactor(qts.py): improve code-style
 * refactor(rocket.py): improve code-style
+* refactor(veeam.py): improve code-style
 
 
 

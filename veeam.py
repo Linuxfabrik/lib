@@ -12,7 +12,7 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024031501'
+__version__ = '2025042001'
 
 import base64
 
@@ -21,40 +21,67 @@ from . import url
 
 
 def get_token(args):
-    """Login like
-          `curl --request POST
-                --header "Authorization: Basic $(echo -n 'user:password' | base64)"
-                --header "Accept: application/json"
-                --header "Content-Length: 0"
-                https://veeam:9398/api/sessionMngr/?v=latest`
-    and return allowed methods and the `X-RestSvcSessionId` token
-    (looks like `ZWIwMDkzODMtM2YzNy00MDJjLThlNzMtZDEwY2E4ZmU5MzYx`).
     """
-    uri = args.URL + '/api/sessionMngr/?v=latest'
-    header = {}
-    # Basic authentication
-    auth = '{}:{}'.format(args.USERNAME, args.PASSWORD)
+    Authenticate against the Veeam API and retrieve a session token.
+
+    This function logs into the Veeam Backup REST API by sending a POST request with basic
+    authentication. It returns allowed methods and the `X-RestSvcSessionId` token used for further
+    API requests.
+
+    ### Parameters
+    - **args** (object):
+      An argument object containing:
+        - `URL` (`str`): Base URL of the Veeam API.
+        - `USERNAME` (`str`): API Username.
+        - `PASSWORD` (`str`): API Password.
+        - `INSECURE` (`bool`): Whether to disable SSL verification.
+        - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+        - `TIMEOUT` (`int`): Request timeout in seconds.
+
+    ### Returns
+    - **tuple** (`bool`, `dict` or `str`):
+      - `success` (`bool`): Whether authentication was successful.
+      - `result` (`dict`): Result dictionary containing session token on success, error otherwise.
+
+    ### Notes
+    - The session token `X-RestSvcSessionId` is extracted from the HTTP response headers.
+    - If authentication fails or no token is found, returns an error message.
+
+    ### Example
+    >>> get_token(args)
+    (True, {'X-RestSvcSessionId': 'zwiw....'})
+    """
+
+    uri = f"{args.URL.rstrip('/')}/api/sessionMngr/?v=latest"
+    auth = f"{args.USERNAME}:{args.PASSWORD}"
     encoded_auth = txt.to_text(base64.b64encode(txt.to_bytes(auth)))
-    header['Authorization'] = 'Basic {}'.format(encoded_auth)
-    header['Accept'] = 'application/json'
-    header['Content-Length'] = 0
-    # make this a POST request by filling data with anything
+
+    headers = {
+        'Authorization': f"Basic {encoded_auth}",
+        'Accept': 'application/json',
+        'Content-Length': '0',
+    }
+
     data = {'make-this': 'a-post-request'}
     success, result = url.fetch_json(
         uri,
-        header=header,
+        header=headers,
         data=data,
         extended=True,
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
         timeout=args.TIMEOUT,
     )
+
     if not success:
-        return (success, result)
+        return success, result
+
     if not result:
-        return (False, 'There was no result from {}.'.format(uri))
-    # In Python 3, getheader() should be get()
-    result['X-RestSvcSessionId'] = result.get('response_header').get('X-RestSvcSessionId')
-    if not result['X-RestSvcSessionId']:
-        return (False, 'Something went wrong, maybe user is unauthorized.')
-    return (True, result)
+        return False, f'There was no result from {uri}.'
+
+    token = result.get('response_header', {}).get('X-RestSvcSessionId')
+    if not token:
+        return False, 'Something went wrong, maybe user is unauthorized.'
+
+    result['X-RestSvcSessionId'] = token
+    return True, result

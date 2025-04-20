@@ -46,6 +46,7 @@ pdoc --output-dir docs \
     txt.py \
     uptimerobot.py \
     url.py \
+    veeam.py \
     wildfly.py
 ```
 
