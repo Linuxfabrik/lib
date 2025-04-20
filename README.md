@@ -38,6 +38,7 @@ pdoc --output-dir docs \
     nodebb.py \
     powershell.py \
     psutil.py \
+    qts.py \
     redfish.py \
     time.py \
     shell.py \

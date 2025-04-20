@@ -13,7 +13,7 @@ operating system via its API.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024031501'
+__version__ = '2025042001'
 
 import base64
 
@@ -30,51 +30,58 @@ except ImportError as e:
 
 def get_auth_sid(args):
     """
-    Authenticate against the QTS API.
-    The auth sid token is required for other API calls.
+    Authenticate against the QNAP QTS API.
 
-    API Authentication Documentation: https://download.qnap.com/dev/API_QNAP_QTS_Authentication.pdf
+    This function authenticates against the QNAP QTS API and retrieves an auth SID token needed for
+    other API operations.
 
-    Parameters
-    ----------
-    args : dict
-        Can usually be directly taken from argparse. Subkeys:
+    ### Parameters
+    - **args** (object):
+      An argument object containing:
+        - `USERNAME` (`str`): API Username.
+        - `PASSWORD` (`str`): API Password.
+        - `URL` (`str`): API base URL.
+        - `INSECURE` (`bool`): Whether to allow insecure SSL connections.
+        - `NO_PROXY` (`bool`): Whether to disable proxy usage.
+        - `TIMEOUT` (`int`): Request timeout in seconds.
 
-        USERNAME: string
-            API Username.
-        PASSWORD: string
-            API Password.
-        URL: string
-            API URL.
-        INSECURE: bool
-            Allow to perform "insecure" SSL connections.
-        NO_PROXY: bool
-            Do not use a proxy.
-        TIMEOUT: int
-            Network timeout in seconds.
+    ### Returns
+    - **tuple** (`bool`, `str` or `error`):
+      - `True` and the `auth_sid` if authentication succeeds.
+      - `False` and an error message if authentication fails.
 
-    Returns
-    -------
-    tuple: (success, auth_sid)
+    ### Notes
+    - Requires the `xmltodict` Python library.
+    - Refer to API doc: https://download.qnap.com/dev/API_QNAP_QTS_Authentication.pdf
+
+    ### Example
+    >>> success, auth_sid = get_auth_sid(args)
     """
     if not LIB_XMLTODICT_FOUND:
-        return (False, 'Python module "xmltodict" is not installed.')
+        return False, 'Python module "xmltodict" is not installed.'
 
-    api_url = '{}/cgi-bin/authLogin.cgi'.format(args.URL)
-    login = {
+    api_url = f'{args.URL.rstrip("/")}/cgi-bin/authLogin.cgi'
+    login_payload = {
         'user': args.USERNAME,
         'pwd': txt.to_text(base64.b64encode(txt.to_bytes(args.PASSWORD))),
     }
-    result = base.coe(url.fetch(
+    success, result = url.fetch(
         api_url,
-        data=login,
+        data=login_payload,
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
         timeout=args.TIMEOUT,
-    ))
-    auth_result = xmltodict.parse(result)['QDocRoot']
+    )
 
-    auth_passed = auth_result['authPassed']
-    if auth_passed is not None and len(auth_passed) == 1 and auth_passed == "0":
-        return (False, 'Failed to authenticate.')
-    return (True, auth_result['authSid'])
+    if not success:
+        return False, result
+
+    try:
+        auth_result = xmltodict.parse(result)['QDocRoot']
+    except Exception as e:
+        return False, f'Failed to parse XML: {e}'
+
+    if auth_result.get('authPassed') == "0":
+        return False, 'Failed to authenticate.'
+
+    return True, auth_result.get('authSid')
