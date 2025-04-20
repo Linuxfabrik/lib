@@ -25,7 +25,7 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
 
 from . import time
 from . import db_sqlite
@@ -86,13 +86,13 @@ def get(key, as_dict=False, path='', filename='linuxfabrik-monitoring-plugins-ca
             return False
 
         # Check if the key has expired
-        current_time = time.now()
-        if result['timestamp'] != 0 and result['timestamp'] <= current_time:
+        now = time.now()
+        if result['timestamp'] != 0 and result['timestamp'] <= now:
             # Clean up all expired entries
             db_sqlite.delete(
                 conn,
                 sql='DELETE FROM cache WHERE timestamp <= :now;',
-                data={'now': current_time}
+                data={'now': now}
             )
             db_sqlite.commit(conn)
             return False
@@ -170,10 +170,7 @@ def set(key, value, expire=0, path='', filename='linuxfabrik-monitoring-plugins-
 
         # Commit the transaction
         success, _ = db_sqlite.commit(conn)
-        if not success:
-            return False
-
-        return True
+        return success
 
     finally:
         db_sqlite.close(conn)
