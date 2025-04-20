@@ -159,6 +159,114 @@ def get_service(uri, username, password, servicename, attrs='state',
     )
 
 
+def remove_ack(uri, username, password, objectname, _type='service',
+               insecure=False, no_proxy=False, timeout=3):
+    """
+    Remove an acknowledgement for a host or service in Icinga.
+
+    This function posts a request to the Icinga API to remove an active acknowledgement. Once the
+    acknowledgement is removed, notifications will be triggered again on state changes.
+
+    ### Parameters
+    - **uri** (`str`):
+      Base API URL (e.g., `https://icinga-server:5665`).
+    - **username** (`str`):
+      API username.
+    - **password** (`str`):
+      API password.
+    - **objectname** (`str`):
+      Host or service name (must match the `__name` attribute).
+    - **_type** (`str`, optional):
+      Object type: `host` or `service`. Defaults to `'service'`.
+    - **insecure** (`bool`, optional):
+      Disable SSL certificate verification. Defaults to `False`.
+    - **no_proxy** (`bool`, optional):
+      Ignore proxy settings. Defaults to `False`.
+    - **timeout** (`int`, optional):
+      Request timeout in seconds. Defaults to `3`.
+
+    ### Returns
+    - **tuple** (`bool`, `dict`):
+      API call result as a tuple (success flag, response body).
+
+    ### Notes
+    - Even if the host or service was not acknowledged, calling this is safe and returns success.
+
+    ### Example
+    >>> uri = 'https://icinga-server:5665'
+    >>> icinga.remove_ack(
+    >>>     uri, username, password, objectname='hostname!special-service'
+    >>> )
+    """
+    uri = f"{uri.rstrip('/')}/v1/actions/remove-acknowledgement"
+    data = {
+        'type': _type.capitalize(),
+        'filter': f'match("{objectname}", {_type.lower()}.__name)',
+    }
+    return api_post(
+        uri=uri,
+        username=username,
+        password=password,
+        data=data,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
+
+
+def remove_downtime(uri, username, password, downtime,
+                    insecure=False, no_proxy=False, timeout=3):
+    """
+    Remove a downtime in Icinga by its name.
+
+    This function posts a request to the Icinga API to remove a scheduled downtime. The downtime
+    must be identified by the unique name returned earlier by `set_downtime()`.
+
+    ### Parameters
+    - **uri** (`str`):
+      Base API URL (e.g., `https://icinga-server:5665`).
+    - **username** (`str`):
+      API username.
+    - **password** (`str`):
+      API password.
+    - **downtime** (`str`):
+      Downtime identifier (name).
+    - **insecure** (`bool`, optional):
+      Disable SSL certificate verification. Defaults to `False`.
+    - **no_proxy** (`bool`, optional):
+      Ignore proxy settings. Defaults to `False`.
+    - **timeout** (`int`, optional):
+      Request timeout in seconds. Defaults to `3`.
+
+    ### Returns
+    - **tuple** (`bool`, `dict`):
+      API call result as a tuple (success flag, response body).
+
+    ### Notes
+    - Safe to call even if the downtime is already expired or invalid.
+
+    ### Example
+    >>> uri = 'https://icinga-server:5665'
+    >>> icinga.remove_downtime(
+    >>>     uri, args.ICINGA_USERNAME, args.ICINGA_PASSWORD,
+    >>>     downtime='hostname!service!uuid'
+    >>> )
+    """
+    uri = uri + '/v1/actions/remove-downtime'
+    data = {
+        'downtime': downtime,
+    }
+    return api_post(
+        uri=uri,
+        username=username,
+        password=password,
+        data=data,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+    )
+
+
 def set_ack(uri, username, password, objectname, _type='service', author='Linuxfabrik lib.icinga',
             insecure=False, no_proxy=False, timeout=3):
     """
@@ -297,109 +405,3 @@ def set_downtime(uri, username, password, objectname, _type='service',
     return False, result
 
 
-def remove_ack(uri, username, password, objectname, _type='service',
-               insecure=False, no_proxy=False, timeout=3):
-    """
-    Remove an acknowledgement for a host or service in Icinga.
-
-    This function posts a request to the Icinga API to remove an active acknowledgement. Once the
-    acknowledgement is removed, notifications will be triggered again on state changes.
-
-    ### Parameters
-    - **uri** (`str`):
-      Base API URL (e.g., `https://icinga-server:5665`).
-    - **username** (`str`):
-      API username.
-    - **password** (`str`):
-      API password.
-    - **objectname** (`str`):
-      Host or service name (must match the `__name` attribute).
-    - **_type** (`str`, optional):
-      Object type: `host` or `service`. Defaults to `'service'`.
-    - **insecure** (`bool`, optional):
-      Disable SSL certificate verification. Defaults to `False`.
-    - **no_proxy** (`bool`, optional):
-      Ignore proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional):
-      Request timeout in seconds. Defaults to `3`.
-
-    ### Returns
-    - **tuple** (`bool`, `dict`):
-      API call result as a tuple (success flag, response body).
-
-    ### Notes
-    - Even if the host or service was not acknowledged, calling this is safe and returns success.
-
-    ### Example
-    >>> uri = 'https://icinga-server:5665'
-    >>> icinga.remove_ack(
-    >>>     uri, username, password, objectname='hostname!special-service'
-    >>> )
-    """
-    uri = f"{uri.rstrip('/')}/v1/actions/remove-acknowledgement"
-    data = {
-        'type': _type.capitalize(),
-        'filter': f'match("{objectname}", {_type.lower()}.__name)',
-    }
-    return api_post(
-        uri=uri,
-        username=username,
-        password=password,
-        data=data,
-        insecure=insecure,
-        no_proxy=no_proxy,
-        timeout=timeout,
-    )
-
-
-def remove_downtime(uri, username, password, downtime,
-                    insecure=False, no_proxy=False, timeout=3):
-    """
-    Remove a downtime in Icinga by its name.
-
-    This function posts a request to the Icinga API to remove a scheduled downtime. The downtime
-    must be identified by the unique name returned earlier by `set_downtime()`.
-
-    ### Parameters
-    - **uri** (`str`):
-      Base API URL (e.g., `https://icinga-server:5665`).
-    - **username** (`str`):
-      API username.
-    - **password** (`str`):
-      API password.
-    - **downtime** (`str`):
-      Downtime identifier (name).
-    - **insecure** (`bool`, optional):
-      Disable SSL certificate verification. Defaults to `False`.
-    - **no_proxy** (`bool`, optional):
-      Ignore proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional):
-      Request timeout in seconds. Defaults to `3`.
-
-    ### Returns
-    - **tuple** (`bool`, `dict`):
-      API call result as a tuple (success flag, response body).
-
-    ### Notes
-    - Safe to call even if the downtime is already expired or invalid.
-
-    ### Example
-    >>> uri = 'https://icinga-server:5665'
-    >>> icinga.remove_downtime(
-    >>>     uri, args.ICINGA_USERNAME, args.ICINGA_PASSWORD,
-    >>>     downtime='hostname!service!uuid'
-    >>> )
-    """
-    uri = uri + '/v1/actions/remove-downtime'
-    data = {
-        'downtime': downtime,
-    }
-    return api_post(
-        uri=uri,
-        username=username,
-        password=password,
-        data=data,
-        insecure=insecure,
-        no_proxy=no_proxy,
-        timeout=timeout,
-    )

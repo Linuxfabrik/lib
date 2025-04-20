@@ -29,6 +29,7 @@ pdoc --output-dir docs \
     huawei.py \
     human.py \
     icinga.py \
+    infomaniak.py \
     jitsi.py \
     lftest.py \
     nodebb.py \
