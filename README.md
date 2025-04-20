@@ -25,6 +25,7 @@ pdoc --output-dir docs \
     dmidecode.py \
     feedparser.py \
     globals.py \
+    grassfish.py \
     human.py \
     jitsi.py \
     lftest.py \
