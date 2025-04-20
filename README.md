@@ -23,6 +23,7 @@ pdoc --output-dir docs \
     disk.py \
     distro.py \
     dmidecode.py \
+    feedparser.py \
     globals.py \
     human.py \
     jitsi.py \
