@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
 
 
 import os
@@ -70,21 +70,18 @@ def get_command_output(cmd, regex=None):
     success, result = shell_exec(cmd)
     if not success:
         return ''
+
     stdout, stderr, _ = result
-    if stdout == '' and stderr != '':
-        # https://stackoverflow.com/questions/26028416/why-does-python-print-version-info-to-stderr
-        # https://stackoverflow.com/questions/13483443/why-does-java-version-go-to-stderr]
-        stdout = stderr
-    stdout = stdout.strip()
+    output = stdout.strip() or stderr.strip()
+
     if regex:
-        # extract something special from output
         try:
-            stdout = re.search(regex, stdout)
-            return stdout.group(1).strip()
-        except:
+            match = re.search(regex, output)
+            return match.group(1).strip() if match else ''
+        except Exception:
             return ''
-    else:
-        return stdout.strip()
+
+    return output
 
 
 def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
@@ -130,25 +127,14 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
     - Exceptions such as `OSError`, `ValueError`, or general execution errors are caught and
       reported.
     """
-    if not env:
-        env = os.environ.copy()
-    else:
-        # merge the OS environment variables with the ones set by the env parameter
-        env = {**os.environ.copy(), **env}
-    # set cmd output to English, no matter what the user has chosen
+    env = {**os.environ.copy(), **(env or {})}
     env['LC_ALL'] = 'C'
 
-    # On Windows, change the codepage to 65001 (UTF-8) before executing the command.
-    if os.name == "nt":
-        # Prepend the chcp command.
-        cmd = "chcp 65001 && " + cmd
-        # Force shell execution so that the codepage change takes effect.
+    if os.name == 'nt':
+        cmd = f'chcp 65001 && {cmd}'
         shell = True
 
-    # subprocess.PIPE: Special value used to indicate that a pipe to the standard stream should be
-    # opened.
     if shell or stdin:
-        # If a new console is required or we have standard input, let the shell handle pipes.
         try:
             p = subprocess.Popen(
                 cmd,
@@ -159,58 +145,37 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
                 shell=True,
                 cwd=cwd,
             )
-        except OSError as e:
-            return (False, f'OS Error "{e.errno} {e.strerror}" calling command "{cmd}"')
-        except ValueError as e:
-            return (False, f'Value Error "{e}" calling command "{cmd}"')
-        except Exception as e:
-            return (False, f'Unknown error "{e}" while calling command "{cmd}"')
+        except (OSError, ValueError, Exception) as e:
+            return False, f'Error "{e}" while calling command "{cmd}"'
 
-        if stdin:
-            # Provide stdin as input for the command.
-            stdout, stderr = p.communicate(input=txt.to_bytes(stdin))
-        else:
-            stdout, stderr = p.communicate()
+        stdout, stderr = p.communicate(input=txt.to_bytes(stdin) if stdin else None)
         retc = p.returncode
-        return (
-            True,
-            (
-                txt.to_text(stdout).replace('Active code page: 65001\r\n', ''),
-                txt.to_text(stderr),
-                retc,
-            )
-        )
+        stdout = txt.to_text(stdout).replace('Active code page: 65001\r\n', '')
+        stderr = txt.to_text(stderr)
+        return True, (stdout, stderr, retc)
 
-    # For non-shell invocations, the command is split by pipes and executed in a pipeline manually.
     cmds = cmd.split('|')
     p = None
-    for cmd in cmds:
+    for part in cmds:
         try:
-            args = shlex.split(cmd.strip())
-            # Use the previous command's output as input for the next command in the pipeline, if
-            # available.
-            stdin_pipe = p.stdout if p else subprocess.PIPE
+            args = shlex.split(part.strip())
             p = subprocess.Popen(
                 args,
-                stdin=stdin_pipe,
+                stdin=p.stdout if p else subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
                 shell=False,
                 cwd=cwd,
             )
-        except OSError as e:
-            return (False, f'OS Error "{e.errno} {e.strerror}" calling command "{cmd}"')
-        except ValueError as e:
-            return (False, f'Value Error "{e}" calling command "{cmd}"')
-        except Exception as e:
-            return (False, f'Unknown error "{e}" while calling command "{cmd}"')
+        except (OSError, ValueError, Exception) as e:
+            return False, f'Error "{e}" while calling command "{part}"'
 
     try:
         stdout, stderr = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         p.kill()
-        _, _ = p.communicate()
-        return (False, f'Timeout after {timeout} seconds.')
-    retc = p.returncode
-    return (True, (txt.to_text(stdout), txt.to_text(stderr), retc))
+        p.communicate()
+        return False, f'Timeout after {timeout} seconds.'
+
+    return True, (txt.to_text(stdout), txt.to_text(stderr), p.returncode)
