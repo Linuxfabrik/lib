@@ -22,6 +22,7 @@ pdoc --output-dir docs \
     db_sqlite.py \
     disk.py \
     distro.py \
+    dmidecode.py \
     globals.py \
     human.py \
     jitsi.py \

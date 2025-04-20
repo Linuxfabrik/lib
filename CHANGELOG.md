@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * refactor(db_mysql.py): improve code-style
 * refactor(db_sqlite.py): improve code-style
 * refactor(distro.py): improve code-style
+* refactor(dmidecode.py): improve code-style
 
 
 
