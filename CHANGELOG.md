@@ -40,6 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * refactor(nodebb.py): improve code-style
 * refactor(lftest.py): improve code-style
 * refactor(psutil.py): improve code-style
+* refactor(wildfly.py): improve code-style
 
 
 ## v2.1.1.5

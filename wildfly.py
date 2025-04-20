@@ -12,7 +12,7 @@
 needed by more than one WildFly/JBoss plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
 
 from . import base
 from . import url
@@ -40,12 +40,13 @@ def get_data(args, data, uri=''):
     ### Example
     >>> get_data(args, data={'key': 'value'})
     {'status': 'success', 'data': {'key': 'value'}}
-
     """
-    uri = args.URL + '/management' + uri
+    uri = args.URL.rstrip('/') + '/management' + uri
     if args.MODE == 'domain':
-        uri = '{}/host/{}/server/{}'.format(uri, args.NODE, args.INSTANCE)
+        uri = f'{uri}/host/{args.NODE}/server/{args.INSTANCE}'
+
     header = {'Content-Type': 'application/json'}
+
     result = base.coe(url.fetch_json(
         uri,
         data=data,
@@ -57,10 +58,12 @@ def get_data(args, data, uri=''):
         no_proxy=args.NO_PROXY,
         timeout=args.TIMEOUT,
     ))
-    if result['outcome'] != 'success':
+
+    if result.get('outcome') != 'success':
         base.oao(
-            'Error fetching data: "{}"'.format(result),
+            f'Error fetching data: "{result}"',
             STATE_UNKNOWN,
             always_ok=args.ALWAYS_OK,
         )
+
     return result['result']
