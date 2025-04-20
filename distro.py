@@ -17,7 +17,7 @@ Source Code is taken, converted, shortened and modified from:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
 
 
 import os
@@ -59,7 +59,6 @@ OS_FAMILY_MAP = {
 
 STRIP_QUOTES = r'\'\"\\'
 
-# --- Helpers ---
 
 def _file_exists(path, allow_empty=False):
     """
