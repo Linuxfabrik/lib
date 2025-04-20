@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025042002'
 
 import base64
 import time
@@ -75,9 +75,7 @@ def api_post(uri, username, password, data=None, method_override='',
     uri = uri.replace('//v1', '/v1').replace('//v2', '/v2')
     headers = {
         'Accept': 'application/json',
-        'Authorization': f"Basic {txt.to_text(base64.b64encode(
-            txt.to_bytes(f'{username}:{password}')
-        ))}"
+        'Authorization': f"Basic {txt.to_text(base64.b64encode(txt.to_bytes(f'{username}:{password}')))}"
     }
     if method_override:
         headers['X-HTTP-Method-Override'] = method_override

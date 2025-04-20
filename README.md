@@ -1,6 +1,6 @@
 # Linuxfabrik's Python Libraries
 
-These Python libraries are used in various projects of Linuxfabrik, including the [Linuxfabrik Monitoring Plugins project](https://github.com/Linuxfabrik/monitoring-plugins).
+These Python libraries are used in several Linuxfabrik projects, including the [Linuxfabrik Monitoring Plugins project](https://github.com/Linuxfabrik/monitoring-plugins). Requires Python 3.6+ (default Python version on RHEL 8).
 
 
 ## Installation
@@ -41,13 +41,16 @@ pdoc --output-dir docs \
     qts.py \
     redfish.py \
     rocket.py \
-    time.py \
     shell.py \
+    smb.py \
+    time.py \
     txt.py \
     uptimerobot.py \
     url.py \
     veeam.py \
-    wildfly.py
+    version.py \
+    wildfly.py \
+    winrm.py
 ```
 
 

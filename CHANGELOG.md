@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * refactor(db_mysql.py): improve code-style
 * refactor(db_sqlite.py): improve code-style
 * refactor(distro.py): improve code-style
+* refactor(distro.py): move get_os_info() from version.py to distro.py
 * refactor(dmidecode.py): improve code-style
 * refactor(feedparser.py): improve code-style
 * refactor(grassfish.py): improve code-style
@@ -28,7 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * refactor(net.py): improve code-style
 * refactor(qts.py): improve code-style
 * refactor(rocket.py): improve code-style
+* refactor(smb.py): improve code-style
 * refactor(veeam.py): improve code-style
+* refactor(version.py): improve code-style
+* refactor(winrm.py): improve code-style
 
 
 
