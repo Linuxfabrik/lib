@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025042002'
 
 import collections
 import numbers
@@ -107,14 +107,10 @@ def cu(msg=None):
     if msg is not None:
         msg = txt.sanitize_sensitive_data(msg).strip()
         print(msg, end='')
-        if has_traceback:
-            print(' (Traceback for debugging purposes attached)\n')
-        else:
-            print()
+        print(' (Traceback for debugging purposes attached)\n' if has_tb else '\n')
 
     if has_traceback:
-        safe_tb = tb.replace('<', "'").replace('>', "'")
-        print(safe_tb)
+        print(tb.replace('<', "'").replace('>', "'"))
 
     sys.exit(STATE_UNKNOWN)
 
@@ -140,23 +136,12 @@ def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=N
     >>> get_perfdata('load1', 0.42, '', 1.0, 5.0, 0, 10)
     "'load1'=0.42;1.0;5.0;0;10 "
     """
-    msg = "'{}'={}".format(label, value)
-    if uom is not None:
-        msg += uom
-    msg += ';'
-    if warn is not None:
-        msg += str(warn)
-    msg += ';'
-    if crit is not None:
-        msg += str(crit)
-    msg += ';'
-    if _min is not None:
-        msg += str(_min)
-    msg += ';'
-    if _max is not None:
-        msg += str(_max)
-    msg += ' '
-    return msg
+    msg = f"'{label}'={value}{uom or ''};"
+    msg += f'{warn};' if warn is not None else ';'
+    msg += f'{crit};' if crit is not None else ';'
+    msg += f'{_min};' if _min is not None else ';'
+    msg += f'{_max}' if _max is not None else ''
+    return msg + ' '
 
 
 def get_state(value, warn, crit, _operator='ge'):
@@ -286,61 +271,27 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
     if not data:
         return ''
 
-    # Sort the data if a sort key is specified (default sort order is ascending)
     if sort_by_key:
-        data = sorted(data,
-                      key=operator.itemgetter(sort_by_key),
-                      reverse=sort_order_reverse)
+        data = sorted(data, key=operator.itemgetter(sort_by_key), reverse=sort_order_reverse)
 
-    # If header is not empty, create a list of dictionary from the cols and the header and
-    # insert it before first row of data
     if header:
-        header = dict(zip(cols, header))
-        data.insert(0, header)
+        data.insert(0, dict(zip(cols, header)))
 
-    # prepare data: decode from (mostly) UTF-8 to Unicode, optionally strip values and get
-    # the maximum length per column
-    column_widths = collections.OrderedDict()
+    column_widths = collections.OrderedDict(
+        (col, max(len(str(row.get(col, '')).strip() if strip else str(row.get(col, '')))
+                  for row in data))
+        for col in cols
+    )
+
+    if header:
+        data.insert(1, {col: '-' * width for col, width in column_widths.items()})
+
+    lines = []
     for idx, row in enumerate(data):
-        for col in cols:
-            try:
-                if strip:
-                    data[idx][col] = str(row[col]).strip()
-                else:
-                    data[idx][col] = str(row[col])
-            except KeyError as e:
-                return 'Unknown column "{}"'.format(col)
-            # get the maximum length
-            try:
-                column_widths[col] = max(column_widths[col], len(data[idx][col]))
-            except:
-                column_widths[col] = len(data[idx][col])
+        sep = ' ! ' if idx != 1 else '-+-'
+        lines.append(sep.join(f'{row[col]:<{column_widths[col]}}' for col in cols))
 
-    if header:
-        # Get the length of each column and create a '---' divider based on that length
-        header_divider = []
-        for col, width in column_widths.items():
-            header_divider.append('-' * width)
-
-        # Insert the header divider below the header row
-        header_divider = dict(zip(cols, header_divider))
-        data.insert(1, header_divider)
-
-    # create the output
-    table = ''
-    cnt = 0
-    for row in data:
-        tmp = ''
-        for col, width in column_widths.items():
-            if cnt != 1:
-                tmp += '{:<{}} ! '.format(row[col], width)
-            else:
-                # header row
-                tmp += '{:<{}}-+-'.format(row[col], width)
-        cnt += 1
-        table += tmp[:-2] + '\n'
-
-    return table
+    return '\n'.join(lines) + '\n'
 
 
 def get_worst(state1, state2):
@@ -367,11 +318,11 @@ def get_worst(state1, state2):
     """
     state1 = int(state1)
     state2 = int(state2)
-    if STATE_CRIT in [state1, state2]:
+    if STATE_CRIT in (state1, state2):
         return STATE_CRIT
-    if STATE_WARN in [state1, state2]:
+    if STATE_WARN in (state1, state2):
         return STATE_WARN
-    if STATE_UNKNOWN in [state1, state2]:
+    if STATE_UNKNOWN in (state1, state2):
         return STATE_UNKNOWN
     return STATE_OK
 
@@ -381,7 +332,7 @@ def guess_type(v, consumer='python'):
     Guess the type of a value (None, int, float, or string) for different types of consumers
     (e.g., Python, SQLite).
 
-    For Python, it returns the actual type (`int`, `float`, or `str`).
+    For Python, it returns the actual value converted to its type (`int`, `float`, or `str`).
     For SQLite, it returns a string describing the type (`'integer'`, `'real'`, `'text'`).
 
     ### Parameters
@@ -417,29 +368,18 @@ def guess_type(v, consumer='python'):
     >>> if isinstance(value_type, int) or isinstance(value_type, float):
     >>>     ...
     """
-    if consumer == 'python':
-        if v is None:
-            return None
-        try:
-            return int(v)
-        except ValueError:
-            try:
-                return float(v)
-            except ValueError:
-                return str(v)
+    if v is None:
+        return None if consumer == 'python' else 'text'
 
-    if consumer == 'sqlite':
-        if v is None:
-            return 'string'
+    try:
+        int(v)
+        return int(v) if consumer == 'python' else 'integer'
+    except (ValueError, TypeError):
         try:
-            int(v)
-            return 'integer'
-        except ValueError:
-            try:
-                float(v)
-                return 'real'
-            except ValueError:
-                return 'text'
+            float(v)
+            return float(v) if consumer == 'python' else 'real'
+        except (ValueError, TypeError):
+            return str(v) if consumer == 'python' else 'text'
 
 
 def is_empty_list(l):
@@ -459,7 +399,7 @@ def is_empty_list(l):
     >>> is_empty_list(['text', ''])
     False
     """
-    return all(s == '' or s.isspace() for s in l)
+    return all(not s.strip() for s in lst)
 
 
 def is_numeric(value):
@@ -512,12 +452,9 @@ def lookup_lod(haystack, key, needle):
     >>> lookup_lod(haystack, 'name', 'Pamela')
     (-1, None)
     """
-    try:
-        for index, item in enumerate(haystack):
-            if item[key] == needle:
-                return index, item
-    except:
-        return -1, None
+    for idx, item in enumerate(haystack):
+        if isinstance(item, dict) and key in item and item[key] == needle:
+            return idx, item
     return -1, None
 
 
@@ -591,51 +528,51 @@ def match_range(value, spec):
         def parse_atom(atom, default):
             if atom == '':
                 return default
-            if '.' in atom:
-                return float(atom)
-            return int(atom)
+            return float(atom) if '.' in atom else int(atom)
 
         if spec is None or str(spec).lower() == 'none':
-            return (True, None)
+            return True, None
         if not isinstance(spec, str):
             spec = str(spec)
-        invert = False
-        if spec.startswith('@'):
-            invert = True
+
+        invert = spec.startswith('@')
+        if invert:
             spec = spec[1:]
+
+        start, end = ('', spec)
         if ':' in spec:
-            try:
-                start, end = spec.split(':')
-            except:
-                return (False, 'Not using range definition correctly')
-        else:
-            start, end = '', spec
-        if start == '~':
-            start = float('-inf')
-        else:
-            start = parse_atom(start, 0)
+            parts = spec.split(':', 1)
+            if len(parts) != 2:
+                return False, 'Not using range definition correctly'
+            start, end = parts
+
+        start = float('-inf') if start == '~' else parse_atom(start, 0)
         end = parse_atom(end, float('inf'))
+
         if start > end:
-            return (False, 'Start %s must not be greater than end %s' % (start, end))
-        return (True, (start, end, invert))
+            return False, f'Start {start} must not be greater than end {end}'
+
+        return True, (start, end, invert)
 
     # workaround for https://github.com/Linuxfabrik/monitoring-plugins/issues/789
     if isinstance(spec, str):
         spec = spec.lstrip('\\')
 
     if spec is None or str(spec).lower() == 'none':
-        return (True, True)
+        return True, True
+
     success, result = parse_range(spec)
     if not success:
-        return (success, result)
+        return success, result
+
     start, end, invert = result
+
     if isinstance(value, (str, bytes)):
-        value = float(value.replace('%', ''))
-    if value < start:
-        return (True, False ^ invert)
-    if value > end:
-        return (True, False ^ invert)
-    return (True, True ^ invert)
+        value = float(str(value).replace('%', ''))
+
+    if value < start or value > end:
+        return True, not invert
+    return True, invert
 
 
 def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
@@ -676,21 +613,13 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     (and exits with code 2)
 
     """
-    msg = msg.strip()
-    # The `|` character is a reserved one to seperate plugin output from performance data.
-    # There is actually no way to escape it, so replace it.
-    msg = msg.replace('|', '!')
-    # hide passwords
-    msg = txt.sanitize_sensitive_data(msg)
-    if always_ok:
-        msg += ' (always ok)'
-    if perfdata:
-        print(msg + '|' + perfdata.strip())
-    else:
-        print(msg)
-    if always_ok:
-        sys.exit(STATE_OK)
-    sys.exit(state)
+    msg = txt.sanitize_sensitive_data(msg.strip()).replace('|', '!')
+    if always_ok and msg:
+        parts = msg.split('\n', 1)  # Instead of splitlines(), we just split('\n', 1), so only first line is touched.
+        parts[0] += ' (always ok)'
+        msg = '\n'.join(parts)
+    print(f'{msg}|{perfdata.strip()}' if perfdata else msg)
+    sys.exit(STATE_OK if always_ok else state)
 
 
 def smartcast(value):
@@ -717,18 +646,22 @@ def smartcast(value):
     >>> smartcast('hello')
     'hello'
     """
-    for test in [float, str]:
+    try:
+        return float(value)
+    except (ValueError, TypeError):
         try:
-            return test(value)
-        except ValueError:
-            continue
-            # No match
-    return value
+            return str(value)
+        except (ValueError, TypeError):
+            return value
 
 
 def sort(array, reverse=True, sort_by_key=False):
     """
-    Sort a 1-dimensional dictionary by its values or keys.
+    Sort a dict, list, or tuple.
+
+    - If dict: sorts by values (default) or keys (if sort_by_key=True).
+    - If list or tuple: sorts the elements.
+    - Other types: returned unchanged.
 
     When a dictionary is provided, this function returns a list of (key, value)
     tuples sorted based on the specified criteria:
@@ -757,9 +690,12 @@ def sort(array, reverse=True, sort_by_key=False):
     [('a', 2), ('B', 1)]
     """
     if isinstance(array, dict):
-        if not sort_by_key:
-            return sorted(array.items(), key=lambda x: x[1], reverse=reverse)
-        return sorted(array.items(), key=lambda x: str(x[0]).lower(), reverse=reverse)
+        keyfunc = (lambda x: str(x[0]).lower()) if sort_by_key else (lambda x: x[1])
+        return sorted(array.items(), key=keyfunc, reverse=reverse)
+
+    if isinstance(array, (list, tuple)):
+        return sorted(array, reverse=reverse)
+
     return array
 
 
@@ -796,17 +732,16 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
     ' ([OK])'
     """
     state = int(state)
+    text = {
+        STATE_OK: '[OK]',
+        STATE_WARN: '[WARNING]',
+        STATE_CRIT: '[CRITICAL]',
+        STATE_UNKNOWN: '[UNKNOWN]',
+    }.get(state, str(state))
+
     if state == STATE_OK and empty_ok:
         return ''
-    if state == STATE_OK and not empty_ok:
-        return '{}[OK]{}'.format(prefix, suffix)
-    if state == STATE_WARN:
-        return '{}[WARNING]{}'.format(prefix, suffix)
-    if state == STATE_CRIT:
-        return '{}[CRITICAL]{}'.format(prefix, suffix)
-    if state == STATE_UNKNOWN:
-        return '{}[UNKNOWN]{}'.format(prefix, suffix)
-    return state
+    return f'{prefix}{text}{suffix}'
 
 
 def str2bool(s):
@@ -842,12 +777,7 @@ def str2bool(s):
     >>> str2bool("1")
     True
     """
-    if not s:
-        return False
-    elif s.lower() == 'false':
-        return False
-    else:
-        return True
+    return bool(s) and s.lower() != 'false'
 
 
 def str2state(string, ignore_error=True):
@@ -898,18 +828,13 @@ def str2state(string, ignore_error=True):
     >>> str2state('gobbledygook', ignore_error=False)
     None
     """
-    string = str(string).lower()[0:4]
-    if string == 'ok':
-        return STATE_OK
-    if string == 'warn':
-        return STATE_WARN
-    if string == 'crit':
-        return STATE_CRIT
-    if string == 'unkn':
-        return STATE_UNKNOWN
-    if ignore_error:
-        return STATE_UNKNOWN
-    return None
+    lookup = {
+        'ok': STATE_OK,
+        'warn': STATE_WARN,
+        'crit': STATE_CRIT,
+        'unkn': STATE_UNKNOWN,
+    }
+    return lookup.get(str(string).lower()[:4], STATE_UNKNOWN if ignore_error else None)
 
 
 def sum_dict(dict1, dict2):
@@ -930,20 +855,12 @@ def sum_dict(dict1, dict2):
     {'in': 150, 'out': 10, 'error': 5}
     """
     total = {}
-    for key, value in dict1.items():
-        if not is_numeric(value):
-            continue
-        if key in total:
-            total[key] += value
-        else:
-            total[key] = value
-    for key, value in dict2.items():
-        if not is_numeric(value):
-            continue
-        if key in total:
-            total[key] += value
-        else:
-            total[key] = value
+
+    for d in (dict1, dict2):
+        for key, value in d.items():
+            if is_numeric(value):
+                total[key] = total.get(key, 0) + value
+
     return total
 
 
@@ -964,12 +881,10 @@ def sum_lod(mylist):
     {'in': 150, 'out': 30, 'error': 5}
     """
     total = {}
-    for mydict in mylist:
-        for key, value in mydict.items():
-            if not is_numeric(value):
-                continue
-            if key in total:
-                total[key] += value
-            else:
-                total[key] = value
+
+    for d in mylist:
+        for key, value in d.items():
+            if is_numeric(value):
+                total[key] = total.get(key, 0) + value
+
     return total

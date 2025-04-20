@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025042002'
 
 
 HELP_TEXTS = {
@@ -162,31 +162,31 @@ def number_unit_method(arg, unit='%', method='USED'):
 
     ### Returns
     - **tuple**: A tuple containing:
-      - **float**: The numeric value.
+      - **str**: The numeric value.
       - **str**: The unit (defaults to `%` if not specified).
       - **str**: The method (defaults to `USED` if not specified).
 
     ### Example
     >>> number_unit_method('95')
-    (95.0, '%', 'USED')
+    ('95.0', '%', 'USED')
 
     >>> number_unit_method('9.5M')
-    (9.5, 'M', 'USED')
+    ('9.5', 'M', 'USED')
 
     >>> number_unit_method('95%USED')
-    (95.0, '%', 'USED')
+    ('95.0', '%', 'USED')
 
     >>> number_unit_method('5FREE')
-    (5.0, '%', 'FREE')
+    ('5.0', '%', 'FREE')
 
     >>> number_unit_method('5%FREE')
-    (5.0, '%', 'FREE')
+    ('5.0', '%', 'FREE')
 
     >>> number_unit_method('9.5GFREE')
-    (9.5, 'G', 'FREE')
+    ('9.5', 'G', 'FREE')
 
     >>> number_unit_method('1400GUSED')
-    (1400.0, 'G', 'USED')
+    ('1400.0', 'G', 'USED')
     """
     arg = arg.strip()
     number_part = []
@@ -207,7 +207,7 @@ def number_unit_method(arg, unit='%', method='USED'):
 
     number = ''.join(number_part)
     if not number:
-        return 0.0, unit.upper(), method.upper()
+        return '0.0', unit.upper(), method.upper()
 
     if unit_part:
         unit = unit_part
@@ -215,7 +215,7 @@ def number_unit_method(arg, unit='%', method='USED'):
     if method_part in _METHODS:
         method = method_part
 
-    return float(number), unit.upper(), method.upper()
+    return number, unit.upper(), method.upper()
 
 
 def range_or_none(arg):
