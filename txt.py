@@ -15,7 +15,7 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
 
 import codecs
 import re
@@ -66,22 +66,13 @@ def compile_regex(regex, key=''):
     [(True, re.compile('^[a-z]+$')), (True, re.compile('\\d+'))]
     """
 
-    def cr(regex, key=''):
-        """Return a compiled regex from a string.
-        """
+    def _compile(rgx):
         try:
-            return (True, re.compile(regex))
+            return True, re.compile(rgx)
         except re.error as e:
-            return (False, '`{}`{} contains one or more errors: {}'.format(
-                regex,
-                ' ({})'.format(key) if key else '',
-                e,
-            ))
+            return False, f'`{rgx}`{f" ({key})" if key else ""} contains one or more errors: {e}'
 
-    if isinstance(regex, str):
-        return cr(regex, key=key)
-    else:
-        return [cr(item, key=key) for item in regex]
+    return _compile(regex) if isinstance(regex, str) else [_compile(rgx) for rgx in regex]
 
 
 def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
@@ -140,20 +131,15 @@ def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
     """
     pos1 = s.find(from_txt)
     if pos1 == -1:
-        # 'from_txt' not found
         return ''
-    pos2 = s.find(to_txt, pos1 + len(from_txt))
-    # 'to_txt' not found:
-    if pos2 == -1 and be_tolerant and not include_fromto:
-        return s[pos1 + len(from_txt):]
-    if pos2 == -1 and be_tolerant and include_fromto:
-        return s[pos1:]
-    if pos2 == -1 and not be_tolerant:
-        return ''
-    # Both 'from_txt' and 'to_txt' are found:
-    if not include_fromto:
-        return s[pos1 + len(from_txt):pos2]
-    return s[pos1:pos2 + len(to_txt)]
+
+    start = pos1 if include_fromto else pos1 + len(from_txt)
+    pos2 = s.find(to_txt, start)
+
+    if pos2 != -1:
+        end = pos2 + len(to_txt) if include_fromto else pos2
+        return s[start:end]
+    return s[pos1:] if be_tolerant and include_fromto else s[pos1 + len(from_txt):] if be_tolerant else ''
 
 
 def filter_mltext(_input, ignore):
@@ -175,22 +161,22 @@ def filter_mltext(_input, ignore):
     >>> filter_mltext('abcde', 'a')  # "ignore" has to be a list
     ''
 
-    >>> s = 'Lorem ipsum\\ndolor sit amet\\nconsectetur adipisicing'
+    >>> s = 'Lorem ipsum\n\ndolor sit amet\n\nconsectetur adipisicing'
     >>> filter_mltext(s, ['ipsum'])
-    'dolor sit amet\\nconsectetur adipisicing\\n'
+    '\ndolor sit amet\n\nconsectetur adipisicing\n'
 
     >>> filter_mltext(s, ['dol'])
-    'Lorem ipsum\\nconsectetur adipisicing\\n'
+    'Lorem ipsum\n\n\nconsectetur adipisicing\n'
 
     >>> filter_mltext(s, ['Dol'])
-    'Lorem ipsum\\ndolor sit amet\\nconsectetur adipisicing\\n'
+    'Lorem ipsum\n\ndolor sit amet\n\nconsectetur adipisicing\n'
 
     >>> filter_mltext(s, ['d'])
-    'Lorem ipsum\\n'
+    'Lorem ipsum\n\n\n'
 
     >>> s = 'Lorem ipsum'
     >>> filter_mltext(s, ['Dol'])
-    'Lorem ipsum\\n'
+    'Lorem ipsum\n'
 
     >>> filter_mltext(s, ['ipsum'])
     ''
@@ -227,13 +213,10 @@ def match_regex(regex, string, key=''):
     (False, '`[` contains one or more errors:  (example)')
     """
     try:
-        return (True, re.match(regex, string))
+        return True, re.match(regex, string)
     except re.error as e:
-        return (False, '`{}` contains one or more errors: {}'.format(
-            regex,
-            ' ({})'.format(key) if key else '',
-            e,
-        ))
+        key_str = f' ({key})' if key else ''
+        return False, f'`{regex}` contains one or more errors:{key_str} {e}'
 
 
 def mltext2array(_input, skip_header=False, sort_key=-1):
@@ -252,7 +235,7 @@ def mltext2array(_input, skip_header=False, sort_key=-1):
     - **list of list**: A list where each inner list represents a line split by whitespace.
 
     ### Example
-    >>> s = '1662130953 timedatex\\n1662130757 python3-pip-wheel\\n1662130975 python3-dateutil\\n'
+    >>> s = '1662130953 timedatex\n1662130757 python3-pip-wheel\n1662130975 python3-dateutil'
 
     >>> mltext2array(s, skip_header=False, sort_key=0)
     [['1662130757', 'python3-pip-wheel'], ['1662130953', 'timedatex'], ['1662130975', 'python3-dateutil']]
@@ -260,25 +243,23 @@ def mltext2array(_input, skip_header=False, sort_key=-1):
     >>> mltext2array(s, skip_header=False, sort_key=1)
     [['1662130975', 'python3-dateutil'], ['1662130757', 'python3-pip-wheel'], ['1662130953', 'timedatex']]
     """
-    _input = _input.strip(' \t\n\r').split('\n')
-    lines = []
+    lines = _input.strip().splitlines()
     if skip_header:
-        del _input[0]
-    for row in _input:
-        lines.append(row.split())
+        lines = lines[1:]
+    result = [line.split() for line in lines]
     if sort_key != -1:
-        lines = sorted(lines, key=operator.itemgetter(sort_key))
-    return lines
+        result.sort(key=operator.itemgetter(sort_key))
+    return result
 
 
-def multi_replace(text, repl_map):
+def multi_replace(text, replacements):
     """
     Replace all occurrences in a string based on the provided mapping.
 
     ### Parameters
     - **text** (`str`): The input text in which to perform replacements.
-    - **repl_map** (`dict`): A dictionary where each key is a substring to replace, and each value
-      is its replacement.
+    - **replacements** (`dict`): A dictionary where each key is a substring to replace,
+      and each value is its replacement.
 
     ### Returns
     - **str**: The text after all replacements have been applied.
@@ -287,7 +268,7 @@ def multi_replace(text, repl_map):
     >>> multi_replace('Hello World!', {'Hello': 'Hi', 'World': 'Universe'})
     'Hi Universe!'
     """
-    for old, new in repl_map.items():
+    for old, new in replacements.items():
         text = text.replace(old, str(new))
     return text
 
@@ -349,49 +330,48 @@ def pluralize(noun, value, suffix='s'):
     >>> pluralize('', 2, 'is,are')
     'are'
     """
-    if ',' in suffix:
-        singular, plural = suffix.split(',')
-    else:
-        singular, plural = '', suffix
     if int(value) == 1:
-        return noun + singular
-    return noun + plural
+        return f'{noun}{suffix.split(",")[0]}' if ',' in suffix else noun
+    return f'{noun}{suffix.split(",")[1]}' if ',' in suffix else f'{noun}{suffix}'
 
 
-def sanitize_sensitive_data(msg):
+def sanitize_sensitive_data(msg, replacement='******'):
     """
     Redact sensitive information such as passwords, tokens, and keys from a message string.
 
-    This function searches for common sensitive fields in the input text (e.g., `password`,
-    `token`, `key`) and replaces their values with asterisks to prevent accidental exposure.
+    This function searches for common sensitive fields in the input text (e.g., 'password',
+    'token', 'key') and replaces their values with asterisks or a custom string to prevent
+    accidental exposure.
 
     ### Parameters
     - **msg** (`str` or `any`): The input message that may contain sensitive data.  
       If not a string, it is returned unchanged.
+    - **replacement** (`str`, optional): The string to replace sensitive values with.
+      Defaults to '******'.
 
     ### Returns
-    - **str** or **original type**: The sanitized string with sensitive values redacted, or the
-      original object if it is not a string.
+    - **str** or **original type**: The sanitized string with sensitive values redacted,
+      or the original object if it is not a string.
 
     ### Notes
-    - Matching is case-insensitive and tolerant of whitespace around `=`.
-    - Only parameters in the format `key=value` are sanitized.
-    - Fields sanitized: `password`, `pass`, `token`, `key`, `secret`, `api-key`, `access_token`,
-      and similar variants.
+    - Matching is case-insensitive and tolerant of whitespace around '='.
+    - Only parameters in the format key=value are sanitized.
+    - Fields sanitized: 'password', 'pass', 'token', 'key', 'secret', 'api-key',
+      'access_token', and similar variants.
 
     ### Example
-    >>> sanitize_sensitive_data("user=admin&password=secret123")
+    >>> sanitize_sensitive_data('user=admin&password=secret123')
     'user=admin&password=******'
 
-    >>> sanitize_sensitive_data("Authorization token=abcde12345")
-    'Authorization token=******'
+    >>> sanitize_sensitive_data('Authorization token=abcde12345', replacement='REDACTED')
+    'Authorization token=REDACTED'
 
-    >>> sanitize_sensitive_data("api_key = xyz987")
+    >>> sanitize_sensitive_data('api_key = xyz987')
     'api_key = ******'
     """
     if not isinstance(msg, str):
         return msg
-    return SENSITIVE_FIELDS_PATTERN.sub(r'\1=******', msg)
+    return SENSITIVE_FIELDS_PATTERN.sub(rf'\1={replacement}', msg)
 
 
 # from /usr/lib/python3.10/site-packages/ansible/module_utils/_text.py
@@ -488,7 +468,7 @@ def to_bytes(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     elif nonstring == 'strict':
         raise TypeError('obj must be a string type')
     else:
-        raise TypeError('Invalid value %s for to_bytes\' nonstring parameter' % nonstring)
+        raise TypeError(f'Invalid value {nonstring!r} for to_bytes\' nonstring parameter')
 
     return to_bytes(value, encoding, errors)
 
@@ -576,7 +556,7 @@ def to_text(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     elif nonstring == 'strict':
         raise TypeError('obj must be a string type')
     else:
-        raise TypeError('Invalid value %s for to_text\'s nonstring parameter' % nonstring)
+        raise TypeError(f'Invalid value {nonstring!r} for to_text\'s nonstring parameter')
 
     return to_text(value, encoding, errors)
 
@@ -598,7 +578,8 @@ def uniq(string):
     'This is a test. second And this third'
     """
     words = string.split()
-    return ' '.join(sorted(set(words), key=words.index))
+    seen = set()
+    return ' '.join(w for w in words if not (w in seen or seen.add(w)))
 
 
 to_native = to_text

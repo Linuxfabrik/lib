@@ -12,11 +12,133 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
 
 from . import base
 from . import human
 from .globals import STATE_OK, STATE_WARN, STATE_CRIT
+
+
+CHASSIS_FAN_KEYS = (
+    'FanName', 'HotPluggable', 'LowerThresholdCritical', 'LowerThresholdFatal',
+    'LowerThresholdNonCritical', 'Name', 'PhysicalContext', 'Reading', 'ReadingUnits',
+    'SensorNumber', 'UpperThresholdCritical', 'UpperThresholdFatal', 'UpperThresholdNonCritical',
+)
+
+CHASSIS_FAN_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+}
+
+CHASSIS_KEYS = (
+    'AssetTag', 'ChassisType', 'Id', 'IndicatorLED', 'Manufacturer', 'Model', 'PartNumber',
+    'PowerState', 'SerialNumber', 'SKU',
+)
+
+CHASSIS_NESTED_KEYS = {
+    'Sensors_@odata.id': ('Sensors', '@odata.id'),
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
+CHASSIS_POWER_KEYS = (
+    'FirmwareVersion', 'LastPowerOutputWatts', 'LineInputVoltage', 'LineInputVoltageType',
+    'Manufacturer', 'Model', 'PartNumber', 'PowerCapacityWatts', 'PowerSupplyType',
+    'SerialNumber', 'SparePartNumber',
+)
+
+CHASSIS_POWER_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+}
+
+CHASSIS_SENSOR_KEYS = (
+    'Id', 'Name', 'PhysicalContext', 'Reading', 'ReadingRangeMax',
+    'ReadingRangeMin', 'ReadingUnits',
+)
+
+CHASSIS_SENSOR_NESTED_KEYS = {
+    'Thresholds_LowerCaution': ('Thresholds', 'LowerCaution', 'Reading'),
+    'Thresholds_LowerCritical': ('Thresholds', 'LowerCritical', 'Reading'),
+    'Thresholds_UpperCaution': ('Thresholds', 'UpperCaution', 'Reading'),
+    'Thresholds_UpperCritical': ('Thresholds', 'UpperCritical', 'Reading'),
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
+CHASSIS_THERMAL_REDUNDANCY_KEYS = ('Mode', 'Name')
+
+CHASSIS_THERMAL_REDUNDANCY_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+}
+
+CHASSIS_THERMAL_TEMP_KEYS = (
+    'LowerThresholdCritical', 'LowerThresholdFatal', 'LowerThresholdNonCritical', 'Name',
+    'PhysicalContext', 'ReadingCelsius', 'UpperThresholdCritical', 'UpperThresholdFatal',
+    'UpperThresholdNonCritical'
+)
+
+CHASSIS_THERMAL_TEMP_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+}
+
+CHASSIS_VOLTAGE_KEYS = (
+    'LowerThresholdCritical', 'LowerThresholdFatal', 'LowerThresholdNonCritical',
+    'Name', 'PhysicalContext', 'ReadingVolts',
+    'UpperThresholdCritical', 'UpperThresholdFatal', 'UpperThresholdNonCritical',
+)
+
+CHASSIS_VOLTAGE_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+}
+
+SEVERITY_TO_STATE = {
+    'critical': STATE_CRIT,
+    'warning': STATE_WARN,
+}
+
+SYSTEMS_KEYS = (
+    'BiosVersion', 'HostName', 'Id', 'IndicatorLED',
+    'Manufacturer', 'Model', 'PowerState', 'SerialNumber', 'SKU'
+)
+
+SYSTEMS_NESTED_KEYS = {
+    'ProcessorSummary_Count': ('ProcessorSummary', 'Count'),
+    'ProcessorSummary_LogicalProcessorCount': ('ProcessorSummary', 'LogicalProcessorCount'),
+    'ProcessorSummary_Model': ('ProcessorSummary', 'Model'),
+    'Storage_@odata.id': ('Storage', '@odata.id'),
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
+SYSTEMS_STORAGE_DRIVES_KEYS = (
+    'BlockSizeBytes', 'CapableSpeedGbs', 'Description', 'EncryptionAbility', 'EncryptionStatus',
+    'FailurePredicted', 'HotspareType', 'Id', 'Manufacturer', 'MediaType', 'Model', 'Name',
+    'NegotiatedSpeedGbs', 'PartNumber', 'PredictedMediaLifeLeftPercent', 'Protocol', 'Revision',
+    'RotationSpeedRPM', 'SerialNumber', 'WriteCacheEnabled'
+)
+
+SYSTEMS_STORAGE_DRIVES_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
+SYSTEMS_STORAGE_KEYS = (
+    'Description', 'Drives@odata.count', 'Id', 'Name'
+)
+
+SYSTEMS_STORAGE_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
 
 
 # The "Status" property is common to many Redfish schema, and contains:
@@ -83,21 +205,9 @@ def get_chassis(redfish):
     >>> get_chassis(redfish_data)
     {'AssetTag': '12345', 'ChassisType': 'Rackmount', 'Id': '1', 'PowerState': 'On', ...}
     """
-    data = {}
-    data['AssetTag'] = redfish.get('AssetTag', '')
-    data['ChassisType'] = redfish.get('ChassisType', '')
-    data['Id'] = redfish.get('Id', '')
-    data['IndicatorLED'] = redfish.get('IndicatorLED', '')
-    data['Manufacturer'] = redfish.get('Manufacturer', '')
-    data['Model'] = redfish.get('Model', '')
-    data['PartNumber'] = redfish.get('PartNumber', '')
-    data['PowerState'] = redfish.get('PowerState', '')                                  # On
-    data['SerialNumber'] = redfish.get('SerialNumber', '')
-    data['SKU'] = redfish.get('SKU', '')
-    data['Sensors_@odata.id'] = redfish.get('Sensors', {}).get('@odata.id', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
-    data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
+    data = {key: redfish.get(key, '') for key in CHASSIS_KEYS}
+    for output_key, (parent_key, child_key) in CHASSIS_NESTED_KEYS.items():
+        data[output_key] = redfish.get(parent_key, {}).get(child_key, '')
     return data
 
 
@@ -132,22 +242,13 @@ def get_chassis_power_powersupplies(redfish):
     >>> get_chassis_power_powersupplies(redfish_data)
     {'FirmwareVersion': '1.0', 'LastPowerOutputWatts': 200, 'PowerCapacityWatts': 500, ...}
     """
-    data = {}
-    data['FirmwareVersion'] = redfish.get('FirmwareVersion', '')
-    data['LastPowerOutputWatts'] = redfish.get('LastPowerOutputWatts', '')
-    if data['LastPowerOutputWatts'] is None:
-        data['LastPowerOutputWatts'] = redfish.get('PowerOutputWatts', '')  # DELL uses this instead
-    data['LineInputVoltage'] = redfish.get('LineInputVoltage', '')
-    data['LineInputVoltageType'] = redfish.get('LineInputVoltageType', '')
-    data['Manufacturer'] = redfish.get('Manufacturer', '')
-    data['Model'] = redfish.get('Model', '')
-    data['PartNumber'] = redfish.get('PartNumber', '')
-    data['PowerCapacityWatts'] = redfish.get('PowerCapacityWatts', '')
-    data['PowerSupplyType'] = redfish.get('PowerSupplyType', '')
-    data['SerialNumber'] = redfish.get('SerialNumber', '')
-    data['SparePartNumber'] = redfish.get('SparePartNumber', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    data = {key: redfish.get(key, '') for key in CHASSIS_POWER_KEYS}
+    if data['LastPowerOutputWatts'] in ('', None):
+        data['LastPowerOutputWatts'] = redfish.get('PowerOutputWatts', '')
+
+    for output_key, (parent_key, child_key) in CHASSIS_POWER_NESTED_KEYS.items():
+        data[output_key] = redfish.get(parent_key, {}).get(child_key, '')
+
     return data
 
 
@@ -180,18 +281,11 @@ def get_chassis_power_voltages(redfish):
     >>> get_chassis_power_voltages(redfish_data)
     {'LowerThresholdCritical': 10, 'ReadingVolts': 12, 'UpperThresholdCritical': 15, ...}
     """
-    data = {}
-    data['LowerThresholdCritical'] = redfish.get('LowerThresholdCritical', '')
-    data['LowerThresholdFatal'] = redfish.get('LowerThresholdFatal', '')
-    data['LowerThresholdNonCritical'] = redfish.get('LowerThresholdNonCritical', '')
-    data['Name'] = redfish.get('Name', '')
-    data['PhysicalContext'] = redfish.get('PhysicalContext', '')
-    data['ReadingVolts'] = redfish.get('ReadingVolts', '')
-    data['UpperThresholdCritical'] = redfish.get('UpperThresholdCritical', '')
-    data['UpperThresholdFatal'] = redfish.get('UpperThresholdFatal', '')
-    data['UpperThresholdNonCritical'] = redfish.get('UpperThresholdNonCritical', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    data = {key: redfish.get(key, '') for key in CHASSIS_VOLTAGE_KEYS}
+
+    for output_key, (parent_key, child_key) in CHASSIS_VOLTAGE_NESTED_KEYS.items():
+        data[output_key] = redfish.get(parent_key, {}).get(child_key, '')
+
     return data
 
 
@@ -227,21 +321,14 @@ def get_chassis_sensors(redfish):
     >>> get_chassis_sensors(redfish_data)
     {'Id': 'sensor1', 'Reading': 75, 'ReadingRangeMax': 100, 'Thresholds_LowerCaution': 30, ...}
     """
-    data = {}
-    data['Id'] = redfish.get('Id', '')
-    data['Name'] = redfish.get('Name', '')
-    data['PhysicalContext'] = redfish.get('PhysicalContext', '')
-    data['Reading'] = redfish.get('Reading', '')
-    data['ReadingRangeMax'] = redfish.get('ReadingRangeMax', '')
-    data['ReadingRangeMin'] = redfish.get('ReadingRangeMin', '')
-    data['ReadingUnits'] = redfish.get('ReadingUnits', '')
-    data['Thresholds_LowerCaution'] = redfish.get('Thresholds', {}).get('LowerCaution', {}).get('Reading', '')
-    data['Thresholds_LowerCritical'] = redfish.get('Thresholds', {}).get('LowerCritical', {}).get('Reading', '')
-    data['Thresholds_UpperCaution'] = redfish.get('Thresholds', {}).get('UpperCaution', {}).get('Reading', '')
-    data['Thresholds_UpperCritical'] = redfish.get('Thresholds', {}).get('UpperCritical', {}).get('Reading', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
-    data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
+    data = {key: redfish.get(key, '') for key in CHASSIS_SENSOR_KEYS}
+
+    for out_key, path in CHASSIS_SENSOR_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
     return data
 
 
@@ -280,22 +367,14 @@ def get_chassis_thermal_fans(redfish):
     >>> get_chassis_thermal_fans(redfish_data)
     {'FanName': 'Fan1', 'Reading': 80, 'UpperThresholdCritical': 100, ...}
     """
-    data = {}
-    data['FanName'] = redfish.get('FanName', '')
-    data['HotPluggable'] = redfish.get('HotPluggable', '')
-    data['LowerThresholdCritical'] = redfish.get('LowerThresholdCritical', '')
-    data['LowerThresholdFatal'] = redfish.get('LowerThresholdFatal', '')
-    data['LowerThresholdNonCritical'] = redfish.get('LowerThresholdNonCritical', '')
-    data['Name'] = redfish.get('Name', '')
-    data['PhysicalContext'] = redfish.get('PhysicalContext', '')
-    data['Reading'] = redfish.get('Reading', '')
-    data['ReadingUnits'] = redfish.get('ReadingUnits', '')
-    data['SensorNumber'] = redfish.get('SensorNumber', '')
-    data['UpperThresholdCritical'] = redfish.get('UpperThresholdCritical', '')
-    data['UpperThresholdFatal'] = redfish.get('UpperThresholdFatal', '')
-    data['UpperThresholdNonCritical'] = redfish.get('UpperThresholdNonCritical', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    data = {key: redfish.get(key, '') for key in CHASSIS_FAN_KEYS}
+
+    for out_key, path in CHASSIS_FAN_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
     return data
 
 
@@ -321,11 +400,14 @@ def get_chassis_thermal_redundancy(redfish):
     >>> get_chassis_thermal_redundancy(redfish_data)
     {'Mode': 'Active', 'Name': 'Thermal Redundancy', 'Status_State': 'Enabled', 'Status_Health': 'OK'}
     """
-    data = {}
-    data['Mode'] = redfish.get('Mode', '')
-    data['Name'] = redfish.get('Name', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    data = {key: redfish.get(key, '') for key in CHASSIS_THERMAL_REDUNDANCY_KEYS}
+
+    for out_key, path in CHASSIS_THERMAL_REDUNDANCY_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
     return data
 
 
@@ -358,18 +440,14 @@ def get_chassis_thermal_temperatures(redfish):
     >>> get_chassis_thermal_temperatures(redfish_data)
     {'LowerThresholdCritical': '10', 'LowerThresholdFatal': '5', 'LowerThresholdNonCritical': '15', 'Name': 'Thermal Sensor', 'ReadingCelsius': '22', 'Status_State': 'Enabled', 'Status_Health': 'OK'}
     """
-    data = {}
-    data['LowerThresholdCritical'] = redfish.get('LowerThresholdCritical', '')
-    data['LowerThresholdFatal'] = redfish.get('LowerThresholdFatal', '')
-    data['LowerThresholdNonCritical'] = redfish.get('LowerThresholdNonCritical', '')
-    data['Name'] = redfish.get('Name', '')
-    data['PhysicalContext'] = redfish.get('PhysicalContext', '')
-    data['ReadingCelsius'] = redfish.get('ReadingCelsius', '')
-    data['UpperThresholdCritical'] = redfish.get('UpperThresholdCritical', '')
-    data['UpperThresholdFatal'] = redfish.get('UpperThresholdFatal', '')
-    data['UpperThresholdNonCritical'] = redfish.get('UpperThresholdNonCritical', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
+    data = {key: redfish.get(key, '') for key in CHASSIS_THERMAL_TEMP_KEYS}
+
+    for out_key, path in CHASSIS_THERMAL_TEMP_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
     return data
 
 
@@ -404,23 +482,22 @@ def get_manager_logservices_sel_entries(redfish):
     >>> get_manager_logservices_sel_entries(redfish_data)
     ('* 2021-08-01: Temperature is high [CRITICAL]\n', 2)
     """
-    msg = ''
+    lines = []
     state = STATE_OK
-    msg_state = STATE_OK
     for entry in redfish.get('Members', []):
-        if entry.get('Severity', '').lower() == 'ok':
+        severity = entry.get('Severity', '').lower()
+        if severity == 'ok':
             continue
-        if entry.get('Severity', '').lower() == 'critical':
-            msg_state = STATE_CRIT
-        if entry.get('Severity', '').lower() == 'warning':
-            msg_state = STATE_WARN
-        msg += '* {}: {}{}\n'.format(
-            entry.get('Created', ''),
-            entry.get('Message', ''),
-            base.state2str(msg_state, prefix=' '),
+        msg_state = SEVERITY_TO_STATE.get(severity, STATE_OK)
+        lines.append(
+            '* {}: {}{}'.format(
+                entry.get('Created', ''),
+                entry.get('Message', ''),
+                base.state2str(msg_state, prefix=' ')
+            )
         )
         state = base.get_worst(state, msg_state)
-    return msg, state
+    return '\n'.join(lines) + ('\n' if lines else ''), state
 
 
 def get_perfdata(data, key='Reading'):
@@ -454,17 +531,20 @@ def get_perfdata(data, key='Reading'):
     >>> get_perfdata(data)
     'Chassis_Temperature_Sensor_1=75.0%;80;90;0;100'
     """
-    value = data.get(key, '')
-    if not value or not isinstance(value, (int, float)):
+    value = data.get(key)
+    if not isinstance(value, (int, float)):
         return ''
-    name = data.get('Name')
-    physical_context = data.get('PhysicalContext')
-    uom = '%' if data.get('ReadingUnits', '') == '%' else None
-    warn = data['Thresholds_UpperCaution'] if data.get('Thresholds_UpperCaution', '') else None
-    crit = data['Thresholds_UpperCritical'] if data.get('Thresholds_UpperCritical', '') else None
-    _min = data['ReadingRangeMin'] if data.get('ReadingRangeMin', '') else None
-    _max = data['ReadingRangeMax'] if data.get('ReadingRangeMax', '') else None
-    return base.get_perfdata('{}_{}'.format(physical_context, name).replace(' ', '_'), value, uom, warn, crit, _min, _max)
+
+    name = data.get('Name', '')
+    physical_context = data.get('PhysicalContext', '')
+    uom = '%' if data.get('ReadingUnits') == '%' else None
+    warn = data.get('Thresholds_UpperCaution') or None
+    crit = data.get('Thresholds_UpperCritical') or None
+    _min = data.get('ReadingRangeMin') or None
+    _max = data.get('ReadingRangeMax') or None
+
+    label = f'{physical_context}_{name}'.replace(' ', '_')
+    return base.get_perfdata(label, value, uom, warn, crit, _min, _max)
 
 
 def get_sensor_state(data, key='Reading'):
@@ -498,17 +578,19 @@ def get_sensor_state(data, key='Reading'):
     >>> get_sensor_state(data)
     1  # STATE_WARN
     """
-    value = data.get(key, '')
-    if not value or not isinstance(value, (int, float)):
+    value = data.get(key)
+    if not isinstance(value, (int, float)):
         return STATE_OK
-    if data.get('Thresholds_UpperCritical', '') and value >= data['Thresholds_UpperCritical']:
+
+    if data.get('Thresholds_UpperCritical') is not None and value >= data['Thresholds_UpperCritical']:
         return STATE_CRIT
-    if data.get('Thresholds_LowerCritical', '') and value <= data['Thresholds_LowerCritical']:
+    if data.get('Thresholds_LowerCritical') is not None and value <= data['Thresholds_LowerCritical']:
         return STATE_CRIT
-    if data.get('Thresholds_UpperCaution', '') and value >= data['Thresholds_UpperCaution']:
+    if data.get('Thresholds_UpperCaution') is not None and value >= data['Thresholds_UpperCaution']:
         return STATE_WARN
-    if data.get('Thresholds_LowerCaution', '') and value <= data['Thresholds_LowerCaution']:
+    if data.get('Thresholds_LowerCaution') is not None and value <= data['Thresholds_LowerCaution']:
         return STATE_WARN
+
     return STATE_OK
 
 
@@ -540,15 +622,18 @@ def get_state(data):
     >>> get_state(data)
     2  # STATE_CRIT
     """
-    if data.get('Status_State', '') in ['Enabled', 'Quiesced']:
-        if data.get('Status_HealthRollup') is not None and data.get('Status_HealthRollup').lower() == 'critical':
-            return STATE_CRIT
-        if data.get('Status_HealthRollup') is not None and data.get('Status_HealthRollup').lower() == 'warning':
-            return STATE_WARN
-        if data.get('Status_Health') is not None and data.get('Status_Health').lower() == 'critical':
-            return STATE_CRIT
-        if data.get('Status_Health') is not None and data.get('Status_Health').lower() == 'warning':
-            return STATE_WARN
+    if data.get('Status_State') not in ('Enabled', 'Quiesced'):
+        return STATE_OK
+
+    for field in ('Status_HealthRollup', 'Status_Health'):
+        value = data.get(field)
+        if value:
+            value = value.lower()
+            if value == 'critical':
+                return STATE_CRIT
+            if value == 'warning':
+                return STATE_WARN
+
     return STATE_OK
 
 
@@ -611,23 +696,14 @@ def get_systems(redfish):
         'Status_HealthRollup': 'OK',
     }
     """
-    data = {}
-    data['BiosVersion'] = redfish.get('BiosVersion', '')
-    data['HostName'] = redfish.get('HostName', '')
-    data['Id'] = redfish.get('Id', '')
-    data['IndicatorLED'] = redfish.get('IndicatorLED', '')
-    data['Manufacturer'] = redfish.get('Manufacturer', '')
-    data['Model'] = redfish.get('Model', '')
-    data['PowerState'] = redfish.get('PowerState', '')                                  # On
-    data['ProcessorSummary_Count'] = redfish.get('ProcessorSummary', {}).get('Count', '')
-    data['ProcessorSummary_LogicalProcessorCount'] = redfish.get('ProcessorSummary', {}).get('LogicalProcessorCount', '')
-    data['ProcessorSummary_Model'] = redfish.get('ProcessorSummary', {}).get('Model', '')
-    data['SerialNumber'] = redfish.get('SerialNumber', '')
-    data['SKU'] = redfish.get('SKU', '')
-    data['Storage_@odata.id'] = redfish.get('Storage', {}).get('@odata.id', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
-    data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
+    data = {key: redfish.get(key, '') for key in SYSTEMS_KEYS}
+
+    for out_key, path in SYSTEMS_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
     return data
 
 
@@ -671,14 +747,14 @@ def get_systems_storage(redfish):
         'Status_HealthRollup': 'OK',
     }
     """
-    data = {}
-    data['Description'] = redfish.get('Description', '')
-    data['Drives@odata.count'] = redfish.get('Drives@odata.count', '')
-    data['Id'] = redfish.get('Id', '')
-    data['Name'] = redfish.get('Name', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
-    data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
+    data = {key: redfish.get(key, '') for key in SYSTEMS_STORAGE_KEYS}
+
+    for out_key, path in SYSTEMS_STORAGE_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
     return data
 
 
@@ -744,31 +820,17 @@ def get_systems_storage_drives(redfish):
         'Status_HealthRollup': 'OK',
     }
     """
-    data = {}
-    data['BlockSizeBytes'] = redfish.get('BlockSizeBytes', '')
-    data['CapableSpeedGbs'] = redfish.get('CapableSpeedGbs', '')
-    data['CapacityBytes'] = human.bytes2human(redfish.get('CapacityBytes', ''))
-    data['Description'] = redfish.get('Description', '')
-    data['EncryptionAbility'] = redfish.get('EncryptionAbility', '')
-    data['EncryptionStatus'] = redfish.get('EncryptionStatus', '')
-    data['FailurePredicted'] = redfish.get('FailurePredicted', '')
-    data['HotspareType'] = redfish.get('HotspareType', '')
-    data['Id'] = redfish.get('Id', '')
-    data['Manufacturer'] = redfish.get('Manufacturer', '')
-    data['MediaType'] = redfish.get('MediaType', '')
-    data['Model'] = redfish.get('Model', '')
-    data['Name'] = redfish.get('Name', '')
-    data['NegotiatedSpeedGbs'] = redfish.get('NegotiatedSpeedGbs', '')
-    data['PartNumber'] = redfish.get('PartNumber', '')
-    data['PredictedMediaLifeLeftPercent'] = redfish.get('PredictedMediaLifeLeftPercent', '')
-    data['Protocol'] = redfish.get('Protocol', '')
-    data['Revision'] = redfish.get('Revision', '')
-    data['RotationSpeedRPM'] = redfish.get('RotationSpeedRPM', '')
-    data['SerialNumber'] = redfish.get('SerialNumber', '')
-    data['WriteCacheEnabled'] = redfish.get('WriteCacheEnabled', '')
-    data['Status_State'] = redfish.get('Status', {}).get('State', '')                   # Enabled
-    data['Status_Health'] = redfish.get('Status', {}).get('Health', '')                 # OK
-    data['Status_HealthRollup'] = redfish.get('Status', {}).get('HealthRollup', '')     # OK
+    data = {key: redfish.get(key, '') for key in SYSTEMS_STORAGE_DRIVES_KEYS}
+
+    for out_key, path in SYSTEMS_STORAGE_DRIVES_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
+    capacity = redfish.get('CapacityBytes')
+    data['CapacityBytes'] = human.bytes2human(capacity) if capacity else ''
+
     return data
 
 
@@ -804,12 +866,8 @@ def get_vendor(redfish):
     >>> get_vendor(redfish_data)
     'generic'
     """
-    vendor = redfish.get('Vendor', '')
+    vendor = redfish.get('Vendor')
     if not vendor:
-        oem = redfish.get('Oem', {})
-        if oem:
-            # get the first existing key from Oem dict
-            vendor = list(oem)[0]
-    if vendor:
-        return vendor.lower()
-    return 'generic'
+        oem = redfish.get('Oem') or {}
+        vendor = next(iter(oem), '')
+    return vendor.lower() if vendor else 'generic'

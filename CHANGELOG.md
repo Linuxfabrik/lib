@@ -12,38 +12,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Changed ("refactor", "chore" etc.)
 
+* refactor(args.py): improve code-style
 * refactor(cache.py): improve code-style
 * refactor(db_mysql.py): improve code-style
 * refactor(db_sqlite.py): improve code-style
+* refactor(disk.py): improve code-style
 * refactor(distro.py): improve code-style
 * refactor(distro.py): move get_os_info() from version.py to distro.py
 * refactor(dmidecode.py): improve code-style
 * refactor(feedparser.py): improve code-style
 * refactor(grassfish.py): improve code-style
 * refactor(huawei.py): improve code-style
+* refactor(human.py): change parameters for bits2human() (no weird %-syntax for users to worry about)
+* refactor(human.py): improve code-style
 * refactor(icinga.py): improve code-style
 * refactor(infomaniak.py): improve code-style
 * refactor(jitsi.py): improve code-style
 * refactor(keycloak.py): improve code-style
+* refactor(lftest.py): improve code-style
 * refactor(librenms.py): improve code-style
 * refactor(net.py): improve code-style
+* refactor(nodebb.py): improve code-style
+* refactor(psutil.py): improve code-style
 * refactor(qts.py): improve code-style
+* refactor(redfish.py): improve code-style
 * refactor(rocket.py): improve code-style
+* refactor(shell.py): improve code-style
 * refactor(smb.py): improve code-style
+* refactor(time.py): improve code-style
+* refactor(txt.py): improve code-style
 * refactor(veeam.py): improve code-style
 * refactor(version.py): improve code-style
-* refactor(winrm.py): improve code-style
-
-* refactor(disk.py): improve code-style
-* refactor(time.py): improve code-style
-* refactor(shell.py): improve code-style
-* refactor(nodebb.py): improve code-style
-* refactor(lftest.py): improve code-style
-* refactor(psutil.py): improve code-style
 * refactor(wildfly.py): improve code-style
-* refactor(human.py): change parameters for bits2human() (no weird %-syntax for users to worry about)
-* refactor(human.py): improve code-style
-* refactor(args.py): improve code-style
+* refactor(winrm.py): improve code-style
 
 
 
