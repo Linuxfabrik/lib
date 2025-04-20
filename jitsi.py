@@ -12,7 +12,7 @@
 needed by more than one Jitsi plugin."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
 
 import base64 # pylint: disable=C0413
 
@@ -27,45 +27,43 @@ def get_data(args, _type='json'):
     raw format, based on the specified type.
 
     ### Parameters
-    - **args** (`object`): An object containing the URL (`args.URL`), username (`args.USERNAME`),
-      password (`args.PASSWORD`), and other options (e.g., `TIMEOUT`, `INSECURE`, `NO_PROXY`).
-    - **_type** (`str`, optional): The type of data to fetch. If `'json'`, returns the data as JSON.
-      Otherwise, returns raw data. Defaults to `'json'`.
+    - **args** (`object`):
+      An object containing:
+        - `URL` (`str`): URL to fetch.
+        - `USERNAME` (`str`): Username for Basic Auth (optional).
+        - `PASSWORD` (`str`): Password for Basic Auth (optional).
+        - `TIMEOUT` (`int`): Request timeout in seconds.
+        - `INSECURE` (`bool`): Disable SSL verification.
+        - `NO_PROXY` (`bool`): Ignore proxy settings.
+    - **_type** (`str`, optional):
+      Either `'json'` for JSON parsing or anything else for raw fetch. Defaults to `'json'`.
 
     ### Returns
     - **tuple**:
-      - **success** (`bool`): True if the fetch was successful, False otherwise.
-      - **result** (`dict` or `str`): The fetched data, either as a parsed JSON object or raw data.
-      - **False** (`bool`): If the fetch failed, False is returned as the third element.
+      - **success** (`bool`): Whether the request succeeded.
+      - **result** (`dict` or `str`): Parsed JSON or raw response.
+      - **False** (`bool`): False if fetch failed.
 
     ### Example
-    >>> get_data(args, _type='json')
-    (True, {'key': 'value'})
+    >>> success, result = get_data(args, _type='json')
+    >>> print(result)
     """
-    header = {}
-    if not args.USERNAME is None:
-        header['Authorization'] = 'Basic {}'.format(
-            base64.b64encode(args.USERNAME + ':' + args.PASSWORD)
-        )
-    if _type == 'json':
-        success, result = url.fetch_json(
-            args.URL,
-            extended=True,
-            header=header,
-            insecure=args.INSECURE,
-            no_proxy=args.NO_PROXY,
-            timeout=args.TIMEOUT,
-        )
-    else:
-        success, result = url.fetch(
-            args.URL,
-            extended=True,
-            header=header,
-            insecure=args.INSECURE,
-            no_proxy=args.NO_PROXY,
-            timeout=args.TIMEOUT,
-        )
+    headers = {}
+    if args.USERNAME:
+        auth = f"{args.USERNAME}:{args.PASSWORD}"
+        headers['Authorization'] = f"Basic {base64.b64encode(auth.encode()).decode()}"
+
+    fetch_func = url.fetch_json if _type == 'json' else url.fetch
+    success, result = fetch_func(
+        args.URL,
+        extended=True,
+        header=headers,
+        insecure=args.INSECURE,
+        no_proxy=args.NO_PROXY,
+        timeout=args.TIMEOUT,
+    )
 
     if not success:
         return (success, result, False)
+
     return (True, result)

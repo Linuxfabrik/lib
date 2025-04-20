@@ -73,7 +73,7 @@ needed by more than one Jitsi plugin.</p>
 </span><span id="L-12"><a href="#L-12"><span class="linenos">12</span></a><span class="sd">needed by more than one Jitsi plugin.&quot;&quot;&quot;</span>
 </span><span id="L-13"><a href="#L-13"><span class="linenos">13</span></a>
 </span><span id="L-14"><a href="#L-14"><span class="linenos">14</span></a><span class="n">__author__</span> <span class="o">=</span> <span class="s1">&#39;Linuxfabrik GmbH, Zurich/Switzerland&#39;</span>
-</span><span id="L-15"><a href="#L-15"><span class="linenos">15</span></a><span class="n">__version__</span> <span class="o">=</span> <span class="s1">&#39;2025041901&#39;</span>
+</span><span id="L-15"><a href="#L-15"><span class="linenos">15</span></a><span class="n">__version__</span> <span class="o">=</span> <span class="s1">&#39;2025042001&#39;</span>
 </span><span id="L-16"><a href="#L-16"><span class="linenos">16</span></a>
 </span><span id="L-17"><a href="#L-17"><span class="linenos">17</span></a><span class="kn">import</span> <span class="nn">base64</span> <span class="c1"># pylint: disable=C0413</span>
 </span><span id="L-18"><a href="#L-18"><span class="linenos">18</span></a>
@@ -88,48 +88,46 @@ needed by more than one Jitsi plugin.</p>
 </span><span id="L-27"><a href="#L-27"><span class="linenos">27</span></a><span class="sd">    raw format, based on the specified type.</span>
 </span><span id="L-28"><a href="#L-28"><span class="linenos">28</span></a>
 </span><span id="L-29"><a href="#L-29"><span class="linenos">29</span></a><span class="sd">    ### Parameters</span>
-</span><span id="L-30"><a href="#L-30"><span class="linenos">30</span></a><span class="sd">    - **args** (`object`): An object containing the URL (`args.URL`), username (`args.USERNAME`),</span>
-</span><span id="L-31"><a href="#L-31"><span class="linenos">31</span></a><span class="sd">      password (`args.PASSWORD`), and other options (e.g., `TIMEOUT`, `INSECURE`, `NO_PROXY`).</span>
-</span><span id="L-32"><a href="#L-32"><span class="linenos">32</span></a><span class="sd">    - **_type** (`str`, optional): The type of data to fetch. If `&#39;json&#39;`, returns the data as JSON.</span>
-</span><span id="L-33"><a href="#L-33"><span class="linenos">33</span></a><span class="sd">      Otherwise, returns raw data. Defaults to `&#39;json&#39;`.</span>
-</span><span id="L-34"><a href="#L-34"><span class="linenos">34</span></a>
-</span><span id="L-35"><a href="#L-35"><span class="linenos">35</span></a><span class="sd">    ### Returns</span>
-</span><span id="L-36"><a href="#L-36"><span class="linenos">36</span></a><span class="sd">    - **tuple**:</span>
-</span><span id="L-37"><a href="#L-37"><span class="linenos">37</span></a><span class="sd">      - **success** (`bool`): True if the fetch was successful, False otherwise.</span>
-</span><span id="L-38"><a href="#L-38"><span class="linenos">38</span></a><span class="sd">      - **result** (`dict` or `str`): The fetched data, either as a parsed JSON object or raw data.</span>
-</span><span id="L-39"><a href="#L-39"><span class="linenos">39</span></a><span class="sd">      - **False** (`bool`): If the fetch failed, False is returned as the third element.</span>
+</span><span id="L-30"><a href="#L-30"><span class="linenos">30</span></a><span class="sd">    - **args** (`object`):</span>
+</span><span id="L-31"><a href="#L-31"><span class="linenos">31</span></a><span class="sd">      An object containing:</span>
+</span><span id="L-32"><a href="#L-32"><span class="linenos">32</span></a><span class="sd">        - `URL` (`str`): URL to fetch.</span>
+</span><span id="L-33"><a href="#L-33"><span class="linenos">33</span></a><span class="sd">        - `USERNAME` (`str`): Username for Basic Auth (optional).</span>
+</span><span id="L-34"><a href="#L-34"><span class="linenos">34</span></a><span class="sd">        - `PASSWORD` (`str`): Password for Basic Auth (optional).</span>
+</span><span id="L-35"><a href="#L-35"><span class="linenos">35</span></a><span class="sd">        - `TIMEOUT` (`int`): Request timeout in seconds.</span>
+</span><span id="L-36"><a href="#L-36"><span class="linenos">36</span></a><span class="sd">        - `INSECURE` (`bool`): Disable SSL verification.</span>
+</span><span id="L-37"><a href="#L-37"><span class="linenos">37</span></a><span class="sd">        - `NO_PROXY` (`bool`): Ignore proxy settings.</span>
+</span><span id="L-38"><a href="#L-38"><span class="linenos">38</span></a><span class="sd">    - **_type** (`str`, optional):</span>
+</span><span id="L-39"><a href="#L-39"><span class="linenos">39</span></a><span class="sd">      Either `&#39;json&#39;` for JSON parsing or anything else for raw fetch. Defaults to `&#39;json&#39;`.</span>
 </span><span id="L-40"><a href="#L-40"><span class="linenos">40</span></a>
-</span><span id="L-41"><a href="#L-41"><span class="linenos">41</span></a><span class="sd">    ### Example</span>
-</span><span id="L-42"><a href="#L-42"><span class="linenos">42</span></a><span class="sd">    &gt;&gt;&gt; get_data(args, _type=&#39;json&#39;)</span>
-</span><span id="L-43"><a href="#L-43"><span class="linenos">43</span></a><span class="sd">    (True, {&#39;key&#39;: &#39;value&#39;})</span>
-</span><span id="L-44"><a href="#L-44"><span class="linenos">44</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="L-45"><a href="#L-45"><span class="linenos">45</span></a>    <span class="n">header</span> <span class="o">=</span> <span class="p">{}</span>
-</span><span id="L-46"><a href="#L-46"><span class="linenos">46</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">USERNAME</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="L-47"><a href="#L-47"><span class="linenos">47</span></a>        <span class="n">header</span><span class="p">[</span><span class="s1">&#39;Authorization&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;Basic </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
-</span><span id="L-48"><a href="#L-48"><span class="linenos">48</span></a>            <span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">USERNAME</span> <span class="o">+</span> <span class="s1">&#39;:&#39;</span> <span class="o">+</span> <span class="n">args</span><span class="o">.</span><span class="n">PASSWORD</span><span class="p">)</span>
-</span><span id="L-49"><a href="#L-49"><span class="linenos">49</span></a>        <span class="p">)</span>
-</span><span id="L-50"><a href="#L-50"><span class="linenos">50</span></a>    <span class="k">if</span> <span class="n">_type</span> <span class="o">==</span> <span class="s1">&#39;json&#39;</span><span class="p">:</span>
-</span><span id="L-51"><a href="#L-51"><span class="linenos">51</span></a>        <span class="n">success</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">fetch_json</span><span class="p">(</span>
-</span><span id="L-52"><a href="#L-52"><span class="linenos">52</span></a>            <span class="n">args</span><span class="o">.</span><span class="n">URL</span><span class="p">,</span>
-</span><span id="L-53"><a href="#L-53"><span class="linenos">53</span></a>            <span class="n">extended</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-</span><span id="L-54"><a href="#L-54"><span class="linenos">54</span></a>            <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span>
-</span><span id="L-55"><a href="#L-55"><span class="linenos">55</span></a>            <span class="n">insecure</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">INSECURE</span><span class="p">,</span>
-</span><span id="L-56"><a href="#L-56"><span class="linenos">56</span></a>            <span class="n">no_proxy</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">NO_PROXY</span><span class="p">,</span>
-</span><span id="L-57"><a href="#L-57"><span class="linenos">57</span></a>            <span class="n">timeout</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">TIMEOUT</span><span class="p">,</span>
-</span><span id="L-58"><a href="#L-58"><span class="linenos">58</span></a>        <span class="p">)</span>
-</span><span id="L-59"><a href="#L-59"><span class="linenos">59</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="L-60"><a href="#L-60"><span class="linenos">60</span></a>        <span class="n">success</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span>
-</span><span id="L-61"><a href="#L-61"><span class="linenos">61</span></a>            <span class="n">args</span><span class="o">.</span><span class="n">URL</span><span class="p">,</span>
-</span><span id="L-62"><a href="#L-62"><span class="linenos">62</span></a>            <span class="n">extended</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-</span><span id="L-63"><a href="#L-63"><span class="linenos">63</span></a>            <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span>
-</span><span id="L-64"><a href="#L-64"><span class="linenos">64</span></a>            <span class="n">insecure</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">INSECURE</span><span class="p">,</span>
-</span><span id="L-65"><a href="#L-65"><span class="linenos">65</span></a>            <span class="n">no_proxy</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">NO_PROXY</span><span class="p">,</span>
-</span><span id="L-66"><a href="#L-66"><span class="linenos">66</span></a>            <span class="n">timeout</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">TIMEOUT</span><span class="p">,</span>
-</span><span id="L-67"><a href="#L-67"><span class="linenos">67</span></a>        <span class="p">)</span>
+</span><span id="L-41"><a href="#L-41"><span class="linenos">41</span></a><span class="sd">    ### Returns</span>
+</span><span id="L-42"><a href="#L-42"><span class="linenos">42</span></a><span class="sd">    - **tuple**:</span>
+</span><span id="L-43"><a href="#L-43"><span class="linenos">43</span></a><span class="sd">      - **success** (`bool`): Whether the request succeeded.</span>
+</span><span id="L-44"><a href="#L-44"><span class="linenos">44</span></a><span class="sd">      - **result** (`dict` or `str`): Parsed JSON or raw response.</span>
+</span><span id="L-45"><a href="#L-45"><span class="linenos">45</span></a><span class="sd">      - **False** (`bool`): False if fetch failed.</span>
+</span><span id="L-46"><a href="#L-46"><span class="linenos">46</span></a>
+</span><span id="L-47"><a href="#L-47"><span class="linenos">47</span></a><span class="sd">    ### Example</span>
+</span><span id="L-48"><a href="#L-48"><span class="linenos">48</span></a><span class="sd">    &gt;&gt;&gt; success, result = get_data(args, _type=&#39;json&#39;)</span>
+</span><span id="L-49"><a href="#L-49"><span class="linenos">49</span></a><span class="sd">    &gt;&gt;&gt; print(result)</span>
+</span><span id="L-50"><a href="#L-50"><span class="linenos">50</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="L-51"><a href="#L-51"><span class="linenos">51</span></a>    <span class="n">headers</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="L-52"><a href="#L-52"><span class="linenos">52</span></a>    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">USERNAME</span><span class="p">:</span>
+</span><span id="L-53"><a href="#L-53"><span class="linenos">53</span></a>        <span class="n">auth</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">args</span><span class="o">.</span><span class="n">USERNAME</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">args</span><span class="o">.</span><span class="n">PASSWORD</span><span class="si">}</span><span class="s2">&quot;</span>
+</span><span id="L-54"><a href="#L-54"><span class="linenos">54</span></a>        <span class="n">headers</span><span class="p">[</span><span class="s1">&#39;Authorization&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Basic </span><span class="si">{</span><span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">auth</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+</span><span id="L-55"><a href="#L-55"><span class="linenos">55</span></a>
+</span><span id="L-56"><a href="#L-56"><span class="linenos">56</span></a>    <span class="n">fetch_func</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">fetch_json</span> <span class="k">if</span> <span class="n">_type</span> <span class="o">==</span> <span class="s1">&#39;json&#39;</span> <span class="k">else</span> <span class="n">url</span><span class="o">.</span><span class="n">fetch</span>
+</span><span id="L-57"><a href="#L-57"><span class="linenos">57</span></a>    <span class="n">success</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">fetch_func</span><span class="p">(</span>
+</span><span id="L-58"><a href="#L-58"><span class="linenos">58</span></a>        <span class="n">args</span><span class="o">.</span><span class="n">URL</span><span class="p">,</span>
+</span><span id="L-59"><a href="#L-59"><span class="linenos">59</span></a>        <span class="n">extended</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="L-60"><a href="#L-60"><span class="linenos">60</span></a>        <span class="n">header</span><span class="o">=</span><span class="n">headers</span><span class="p">,</span>
+</span><span id="L-61"><a href="#L-61"><span class="linenos">61</span></a>        <span class="n">insecure</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">INSECURE</span><span class="p">,</span>
+</span><span id="L-62"><a href="#L-62"><span class="linenos">62</span></a>        <span class="n">no_proxy</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">NO_PROXY</span><span class="p">,</span>
+</span><span id="L-63"><a href="#L-63"><span class="linenos">63</span></a>        <span class="n">timeout</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">TIMEOUT</span><span class="p">,</span>
+</span><span id="L-64"><a href="#L-64"><span class="linenos">64</span></a>    <span class="p">)</span>
+</span><span id="L-65"><a href="#L-65"><span class="linenos">65</span></a>
+</span><span id="L-66"><a href="#L-66"><span class="linenos">66</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
+</span><span id="L-67"><a href="#L-67"><span class="linenos">67</span></a>        <span class="k">return</span> <span class="p">(</span><span class="n">success</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
 </span><span id="L-68"><a href="#L-68"><span class="linenos">68</span></a>
-</span><span id="L-69"><a href="#L-69"><span class="linenos">69</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
-</span><span id="L-70"><a href="#L-70"><span class="linenos">70</span></a>        <span class="k">return</span> <span class="p">(</span><span class="n">success</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-</span><span id="L-71"><a href="#L-71"><span class="linenos">71</span></a>    <span class="k">return</span> <span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
+</span><span id="L-69"><a href="#L-69"><span class="linenos">69</span></a>    <span class="k">return</span> <span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
 </span></pre></div>
 
 
@@ -153,48 +151,46 @@ needed by more than one Jitsi plugin.</p>
 </span><span id="get_data-28"><a href="#get_data-28"><span class="linenos">28</span></a><span class="sd">    raw format, based on the specified type.</span>
 </span><span id="get_data-29"><a href="#get_data-29"><span class="linenos">29</span></a>
 </span><span id="get_data-30"><a href="#get_data-30"><span class="linenos">30</span></a><span class="sd">    ### Parameters</span>
-</span><span id="get_data-31"><a href="#get_data-31"><span class="linenos">31</span></a><span class="sd">    - **args** (`object`): An object containing the URL (`args.URL`), username (`args.USERNAME`),</span>
-</span><span id="get_data-32"><a href="#get_data-32"><span class="linenos">32</span></a><span class="sd">      password (`args.PASSWORD`), and other options (e.g., `TIMEOUT`, `INSECURE`, `NO_PROXY`).</span>
-</span><span id="get_data-33"><a href="#get_data-33"><span class="linenos">33</span></a><span class="sd">    - **_type** (`str`, optional): The type of data to fetch. If `&#39;json&#39;`, returns the data as JSON.</span>
-</span><span id="get_data-34"><a href="#get_data-34"><span class="linenos">34</span></a><span class="sd">      Otherwise, returns raw data. Defaults to `&#39;json&#39;`.</span>
-</span><span id="get_data-35"><a href="#get_data-35"><span class="linenos">35</span></a>
-</span><span id="get_data-36"><a href="#get_data-36"><span class="linenos">36</span></a><span class="sd">    ### Returns</span>
-</span><span id="get_data-37"><a href="#get_data-37"><span class="linenos">37</span></a><span class="sd">    - **tuple**:</span>
-</span><span id="get_data-38"><a href="#get_data-38"><span class="linenos">38</span></a><span class="sd">      - **success** (`bool`): True if the fetch was successful, False otherwise.</span>
-</span><span id="get_data-39"><a href="#get_data-39"><span class="linenos">39</span></a><span class="sd">      - **result** (`dict` or `str`): The fetched data, either as a parsed JSON object or raw data.</span>
-</span><span id="get_data-40"><a href="#get_data-40"><span class="linenos">40</span></a><span class="sd">      - **False** (`bool`): If the fetch failed, False is returned as the third element.</span>
+</span><span id="get_data-31"><a href="#get_data-31"><span class="linenos">31</span></a><span class="sd">    - **args** (`object`):</span>
+</span><span id="get_data-32"><a href="#get_data-32"><span class="linenos">32</span></a><span class="sd">      An object containing:</span>
+</span><span id="get_data-33"><a href="#get_data-33"><span class="linenos">33</span></a><span class="sd">        - `URL` (`str`): URL to fetch.</span>
+</span><span id="get_data-34"><a href="#get_data-34"><span class="linenos">34</span></a><span class="sd">        - `USERNAME` (`str`): Username for Basic Auth (optional).</span>
+</span><span id="get_data-35"><a href="#get_data-35"><span class="linenos">35</span></a><span class="sd">        - `PASSWORD` (`str`): Password for Basic Auth (optional).</span>
+</span><span id="get_data-36"><a href="#get_data-36"><span class="linenos">36</span></a><span class="sd">        - `TIMEOUT` (`int`): Request timeout in seconds.</span>
+</span><span id="get_data-37"><a href="#get_data-37"><span class="linenos">37</span></a><span class="sd">        - `INSECURE` (`bool`): Disable SSL verification.</span>
+</span><span id="get_data-38"><a href="#get_data-38"><span class="linenos">38</span></a><span class="sd">        - `NO_PROXY` (`bool`): Ignore proxy settings.</span>
+</span><span id="get_data-39"><a href="#get_data-39"><span class="linenos">39</span></a><span class="sd">    - **_type** (`str`, optional):</span>
+</span><span id="get_data-40"><a href="#get_data-40"><span class="linenos">40</span></a><span class="sd">      Either `&#39;json&#39;` for JSON parsing or anything else for raw fetch. Defaults to `&#39;json&#39;`.</span>
 </span><span id="get_data-41"><a href="#get_data-41"><span class="linenos">41</span></a>
-</span><span id="get_data-42"><a href="#get_data-42"><span class="linenos">42</span></a><span class="sd">    ### Example</span>
-</span><span id="get_data-43"><a href="#get_data-43"><span class="linenos">43</span></a><span class="sd">    &gt;&gt;&gt; get_data(args, _type=&#39;json&#39;)</span>
-</span><span id="get_data-44"><a href="#get_data-44"><span class="linenos">44</span></a><span class="sd">    (True, {&#39;key&#39;: &#39;value&#39;})</span>
-</span><span id="get_data-45"><a href="#get_data-45"><span class="linenos">45</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="get_data-46"><a href="#get_data-46"><span class="linenos">46</span></a>    <span class="n">header</span> <span class="o">=</span> <span class="p">{}</span>
-</span><span id="get_data-47"><a href="#get_data-47"><span class="linenos">47</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">USERNAME</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="get_data-48"><a href="#get_data-48"><span class="linenos">48</span></a>        <span class="n">header</span><span class="p">[</span><span class="s1">&#39;Authorization&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;Basic </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
-</span><span id="get_data-49"><a href="#get_data-49"><span class="linenos">49</span></a>            <span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">USERNAME</span> <span class="o">+</span> <span class="s1">&#39;:&#39;</span> <span class="o">+</span> <span class="n">args</span><span class="o">.</span><span class="n">PASSWORD</span><span class="p">)</span>
-</span><span id="get_data-50"><a href="#get_data-50"><span class="linenos">50</span></a>        <span class="p">)</span>
-</span><span id="get_data-51"><a href="#get_data-51"><span class="linenos">51</span></a>    <span class="k">if</span> <span class="n">_type</span> <span class="o">==</span> <span class="s1">&#39;json&#39;</span><span class="p">:</span>
-</span><span id="get_data-52"><a href="#get_data-52"><span class="linenos">52</span></a>        <span class="n">success</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">fetch_json</span><span class="p">(</span>
-</span><span id="get_data-53"><a href="#get_data-53"><span class="linenos">53</span></a>            <span class="n">args</span><span class="o">.</span><span class="n">URL</span><span class="p">,</span>
-</span><span id="get_data-54"><a href="#get_data-54"><span class="linenos">54</span></a>            <span class="n">extended</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-</span><span id="get_data-55"><a href="#get_data-55"><span class="linenos">55</span></a>            <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span>
-</span><span id="get_data-56"><a href="#get_data-56"><span class="linenos">56</span></a>            <span class="n">insecure</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">INSECURE</span><span class="p">,</span>
-</span><span id="get_data-57"><a href="#get_data-57"><span class="linenos">57</span></a>            <span class="n">no_proxy</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">NO_PROXY</span><span class="p">,</span>
-</span><span id="get_data-58"><a href="#get_data-58"><span class="linenos">58</span></a>            <span class="n">timeout</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">TIMEOUT</span><span class="p">,</span>
-</span><span id="get_data-59"><a href="#get_data-59"><span class="linenos">59</span></a>        <span class="p">)</span>
-</span><span id="get_data-60"><a href="#get_data-60"><span class="linenos">60</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="get_data-61"><a href="#get_data-61"><span class="linenos">61</span></a>        <span class="n">success</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span>
-</span><span id="get_data-62"><a href="#get_data-62"><span class="linenos">62</span></a>            <span class="n">args</span><span class="o">.</span><span class="n">URL</span><span class="p">,</span>
-</span><span id="get_data-63"><a href="#get_data-63"><span class="linenos">63</span></a>            <span class="n">extended</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-</span><span id="get_data-64"><a href="#get_data-64"><span class="linenos">64</span></a>            <span class="n">header</span><span class="o">=</span><span class="n">header</span><span class="p">,</span>
-</span><span id="get_data-65"><a href="#get_data-65"><span class="linenos">65</span></a>            <span class="n">insecure</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">INSECURE</span><span class="p">,</span>
-</span><span id="get_data-66"><a href="#get_data-66"><span class="linenos">66</span></a>            <span class="n">no_proxy</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">NO_PROXY</span><span class="p">,</span>
-</span><span id="get_data-67"><a href="#get_data-67"><span class="linenos">67</span></a>            <span class="n">timeout</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">TIMEOUT</span><span class="p">,</span>
-</span><span id="get_data-68"><a href="#get_data-68"><span class="linenos">68</span></a>        <span class="p">)</span>
+</span><span id="get_data-42"><a href="#get_data-42"><span class="linenos">42</span></a><span class="sd">    ### Returns</span>
+</span><span id="get_data-43"><a href="#get_data-43"><span class="linenos">43</span></a><span class="sd">    - **tuple**:</span>
+</span><span id="get_data-44"><a href="#get_data-44"><span class="linenos">44</span></a><span class="sd">      - **success** (`bool`): Whether the request succeeded.</span>
+</span><span id="get_data-45"><a href="#get_data-45"><span class="linenos">45</span></a><span class="sd">      - **result** (`dict` or `str`): Parsed JSON or raw response.</span>
+</span><span id="get_data-46"><a href="#get_data-46"><span class="linenos">46</span></a><span class="sd">      - **False** (`bool`): False if fetch failed.</span>
+</span><span id="get_data-47"><a href="#get_data-47"><span class="linenos">47</span></a>
+</span><span id="get_data-48"><a href="#get_data-48"><span class="linenos">48</span></a><span class="sd">    ### Example</span>
+</span><span id="get_data-49"><a href="#get_data-49"><span class="linenos">49</span></a><span class="sd">    &gt;&gt;&gt; success, result = get_data(args, _type=&#39;json&#39;)</span>
+</span><span id="get_data-50"><a href="#get_data-50"><span class="linenos">50</span></a><span class="sd">    &gt;&gt;&gt; print(result)</span>
+</span><span id="get_data-51"><a href="#get_data-51"><span class="linenos">51</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="get_data-52"><a href="#get_data-52"><span class="linenos">52</span></a>    <span class="n">headers</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span id="get_data-53"><a href="#get_data-53"><span class="linenos">53</span></a>    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">USERNAME</span><span class="p">:</span>
+</span><span id="get_data-54"><a href="#get_data-54"><span class="linenos">54</span></a>        <span class="n">auth</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">args</span><span class="o">.</span><span class="n">USERNAME</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">args</span><span class="o">.</span><span class="n">PASSWORD</span><span class="si">}</span><span class="s2">&quot;</span>
+</span><span id="get_data-55"><a href="#get_data-55"><span class="linenos">55</span></a>        <span class="n">headers</span><span class="p">[</span><span class="s1">&#39;Authorization&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Basic </span><span class="si">{</span><span class="n">base64</span><span class="o">.</span><span class="n">b64encode</span><span class="p">(</span><span class="n">auth</span><span class="o">.</span><span class="n">encode</span><span class="p">())</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+</span><span id="get_data-56"><a href="#get_data-56"><span class="linenos">56</span></a>
+</span><span id="get_data-57"><a href="#get_data-57"><span class="linenos">57</span></a>    <span class="n">fetch_func</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">fetch_json</span> <span class="k">if</span> <span class="n">_type</span> <span class="o">==</span> <span class="s1">&#39;json&#39;</span> <span class="k">else</span> <span class="n">url</span><span class="o">.</span><span class="n">fetch</span>
+</span><span id="get_data-58"><a href="#get_data-58"><span class="linenos">58</span></a>    <span class="n">success</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">fetch_func</span><span class="p">(</span>
+</span><span id="get_data-59"><a href="#get_data-59"><span class="linenos">59</span></a>        <span class="n">args</span><span class="o">.</span><span class="n">URL</span><span class="p">,</span>
+</span><span id="get_data-60"><a href="#get_data-60"><span class="linenos">60</span></a>        <span class="n">extended</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+</span><span id="get_data-61"><a href="#get_data-61"><span class="linenos">61</span></a>        <span class="n">header</span><span class="o">=</span><span class="n">headers</span><span class="p">,</span>
+</span><span id="get_data-62"><a href="#get_data-62"><span class="linenos">62</span></a>        <span class="n">insecure</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">INSECURE</span><span class="p">,</span>
+</span><span id="get_data-63"><a href="#get_data-63"><span class="linenos">63</span></a>        <span class="n">no_proxy</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">NO_PROXY</span><span class="p">,</span>
+</span><span id="get_data-64"><a href="#get_data-64"><span class="linenos">64</span></a>        <span class="n">timeout</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">TIMEOUT</span><span class="p">,</span>
+</span><span id="get_data-65"><a href="#get_data-65"><span class="linenos">65</span></a>    <span class="p">)</span>
+</span><span id="get_data-66"><a href="#get_data-66"><span class="linenos">66</span></a>
+</span><span id="get_data-67"><a href="#get_data-67"><span class="linenos">67</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
+</span><span id="get_data-68"><a href="#get_data-68"><span class="linenos">68</span></a>        <span class="k">return</span> <span class="p">(</span><span class="n">success</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
 </span><span id="get_data-69"><a href="#get_data-69"><span class="linenos">69</span></a>
-</span><span id="get_data-70"><a href="#get_data-70"><span class="linenos">70</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">success</span><span class="p">:</span>
-</span><span id="get_data-71"><a href="#get_data-71"><span class="linenos">71</span></a>        <span class="k">return</span> <span class="p">(</span><span class="n">success</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
-</span><span id="get_data-72"><a href="#get_data-72"><span class="linenos">72</span></a>    <span class="k">return</span> <span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
+</span><span id="get_data-70"><a href="#get_data-70"><span class="linenos">70</span></a>    <span class="k">return</span> <span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
 </span></pre></div>
 
 
@@ -206,10 +202,18 @@ raw format, based on the specified type.</p>
 <h3 id="parameters">Parameters</h3>
 
 <ul>
-<li><strong>args</strong> (<code>object</code>): An object containing the URL (<code>args.URL</code>), username (<code>args.USERNAME</code>),
-password (<code>args.PASSWORD</code>), and other options (e.g., <code>TIMEOUT</code>, <code>INSECURE</code>, <code>NO_PROXY</code>).</li>
-<li><strong>_type</strong> (<code>str</code>, optional): The type of data to fetch. If <code>'json'</code>, returns the data as JSON.
-Otherwise, returns raw data. Defaults to <code>'json'</code>.</li>
+<li><strong>args</strong> (<code>object</code>):
+An object containing:
+<ul>
+<li><code>URL</code> (<code>str</code>): URL to fetch.</li>
+<li><code>USERNAME</code> (<code>str</code>): Username for Basic Auth (optional).</li>
+<li><code>PASSWORD</code> (<code>str</code>): Password for Basic Auth (optional).</li>
+<li><code>TIMEOUT</code> (<code>int</code>): Request timeout in seconds.</li>
+<li><code>INSECURE</code> (<code>bool</code>): Disable SSL verification.</li>
+<li><code>NO_PROXY</code> (<code>bool</code>): Ignore proxy settings.</li>
+</ul></li>
+<li><strong>_type</strong> (<code>str</code>, optional):
+Either <code>'json'</code> for JSON parsing or anything else for raw fetch. Defaults to <code>'json'</code>.</li>
 </ul>
 
 <h3 id="returns">Returns</h3>
@@ -217,17 +221,17 @@ Otherwise, returns raw data. Defaults to <code>'json'</code>.</li>
 <ul>
 <li><strong>tuple</strong>:
 <ul>
-<li><strong>success</strong> (<code>bool</code>): True if the fetch was successful, False otherwise.</li>
-<li><strong>result</strong> (<code>dict</code> or <code>str</code>): The fetched data, either as a parsed JSON object or raw data.</li>
-<li><strong>False</strong> (<code>bool</code>): If the fetch failed, False is returned as the third element.</li>
+<li><strong>success</strong> (<code>bool</code>): Whether the request succeeded.</li>
+<li><strong>result</strong> (<code>dict</code> or <code>str</code>): Parsed JSON or raw response.</li>
+<li><strong>False</strong> (<code>bool</code>): False if fetch failed.</li>
 </ul></li>
 </ul>
 
 <h3 id="example">Example</h3>
 
 <div class="pdoc-code codehilite">
-<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">get_data</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">_type</span><span class="o">=</span><span class="s1">&#39;json&#39;</span><span class="p">)</span>
-<span class="go">(True, {&#39;key&#39;: &#39;value&#39;})</span>
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">success</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="n">get_data</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">_type</span><span class="o">=</span><span class="s1">&#39;json&#39;</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
 </code></pre>
 </div>
 </div>
