@@ -499,7 +499,7 @@ def match_range(value, spec):
     >>> match_range(15, '@')
     0 inf True
     """
-    def parse_range(spec):
+    def parse_range(spec_):
         """
         Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
 
@@ -526,35 +526,35 @@ def match_range(value, spec):
         +--------+-------------------+-------------------+--------------------------------+
         """
         def parse_atom(atom, default):
-            if atom == '':
+            if not atom:
                 return default
             return float(atom) if '.' in atom else int(atom)
 
-        if spec is None or str(spec).lower() == 'none':
+        if spec_ is None or str(spec_).lower() == 'none':
             return True, None
-        if not isinstance(spec, str):
-            spec = str(spec)
 
-        invert = spec.startswith('@')
+        if not isinstance(spec_, str):
+            spec_ = str(spec_)
+
+        invert = spec_.startswith('@')
         if invert:
-            spec = spec[1:]
+            spec_ = spec_[1:]
 
-        start, end = ('', spec)
-        if ':' in spec:
-            parts = spec.split(':', 1)
-            if len(parts) != 2:
+        if ':' in spec_:
+            try:
+                start, end = spec_.split(':')
+            except ValueError:
                 return False, 'Not using range definition correctly'
-            start, end = parts
+        else:
+            start, end = '', spec_
 
         start = float('-inf') if start == '~' else parse_atom(start, 0)
         end = parse_atom(end, float('inf'))
 
         if start > end:
             return False, f'Start {start} must not be greater than end {end}'
-
         return True, (start, end, invert)
 
-    # workaround for https://github.com/Linuxfabrik/monitoring-plugins/issues/789
     if isinstance(spec, str):
         spec = spec.lstrip('\\')
 
@@ -568,11 +568,11 @@ def match_range(value, spec):
     start, end, invert = result
 
     if isinstance(value, (str, bytes)):
-        value = float(str(value).replace('%', ''))
+        value = float(value.replace('%', ''))
 
     if value < start or value > end:
-        return True, not invert
-    return True, invert
+        return True, bool(invert)
+    return True, not invert
 
 
 def oao(msg, state=STATE_OK, perfdata='', always_ok=False):

@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041902'
+__version__ = '2025042001'
 
 import json
 import re
@@ -36,6 +36,38 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     - Basic authentication (using the `header` and `digest_auth_*` parameters).
     - SSL/TLS certificate validation (with the `insecure` parameter to disable it).
     - Handling of response headers (with `extended=True`).
+
+    Flowchart:
+
+        Start
+         |
+         |--> Digest Auth? --Yes--> Setup opener
+         |                  No
+         |
+         |--> Data? --Yes--> Encode+POST
+         |            No --> GET
+         |
+         |--> Set Headers
+         |
+         |--> SSL Context Setup (insecure?)
+         |
+         |--> Proxy? --Yes--> Use ProxyHandler
+         |         No --> DigestAuth? --Yes--> urlopen (timeout)
+         |                               No --> urlopen (context, timeout)
+         |
+         |--> Try to fetch
+         |    |--> HTTPError?  --> return False + msg
+         |    |--> URLError?   --> return False + msg
+         |    |--> TypeError?  --> return False + msg
+         |    |--> Exception?  --> return False + msg
+         |
+         |--> If Success:
+         |    |--> Charset? (default UTF-8)
+         |    |--> extended? --Yes--> build full dict
+         |                     No --> simple response
+         |
+         |--> Return True + result
+        End
 
     ### Parameters
     - **url** (`str`):
@@ -75,87 +107,69 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     >>> result = fetch('https://api.example.com', data={'key': 'value'}, extended=True)
     """
     try:
-        if digest_auth_user is not None and digest_auth_password is not None:
-            # HTTP Digest Authentication
+        if digest_auth_user and digest_auth_password:
             passmgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
             passmgr.add_password(None, url, digest_auth_user, digest_auth_password)
             auth_handler = urllib.request.HTTPDigestAuthHandler(passmgr)
-            opener = urllib.request.build_opener(auth_handler)
-            urllib.request.install_opener(opener)
+            urllib.request.install_opener(urllib.request.build_opener(auth_handler))
+
         if data:
-            # serializing dictionary
             if encoding == 'urlencode':
                 data = urllib.parse.urlencode(data)
-            if encoding == 'serialized-json':
+            elif encoding == 'serialized-json':
                 data = json.dumps(data)
             data = txt.to_bytes(data)
-            # the HTTP request will be a POST instead of a GET when the data parameter is provided
             request = urllib.request.Request(url, data=data)
         else:
-            # the HTTP request will be a POST instead of a GET when the data parameter is provided
             request = urllib.request.Request(url)
 
         for key, value in header.items():
             request.add_header(key, value)
-        # close http connections by myself
         request.add_header('Connection', 'close')
-        # identify as Linuxfabrik Monitoring Plugins
         request.add_header('User-Agent', 'Linuxfabrik Monitoring Plugins')
 
-        # SSL/TLS certificate validation
-        # see:
-        # https://stackoverflow.com/questions/19268548/python-ignore-certificate-validation-urllib2
         ctx = ssl.create_default_context()
         if insecure:
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
 
-        # Proxy handler
         if no_proxy:
             proxy_handler = urllib.request.ProxyHandler({})
-            ctx_handler = urllib.request.HTTPSHandler(context=ctx)
-            opener = urllib.request.build_opener(proxy_handler, ctx_handler)
+            opener = urllib.request.build_opener(
+                proxy_handler,
+                urllib.request.HTTPSHandler(context=ctx),
+            )
             response = opener.open(request)
-        elif digest_auth_user is not None:
-            response = urllib.request.urlopen(request, timeout=timeout)
         else:
-            response = urllib.request.urlopen(request, context=ctx, timeout=timeout)
-    except urllib.request.HTTPError as e:
-        # hide passwords
-        url = txt.sanitize_sensitive_data(url)
-        return (False, 'HTTP error "{} {}" while fetching {}'.format(e.code, e.reason, url))
-    except urllib.request.URLError as e:
-        # hide passwords
-        url = txt.sanitize_sensitive_data(url)
-        return (False, 'URL error "{}" for {}'.format(e.reason, url))
-    except TypeError as e:
-        return (False, 'Type error "{}", data="{}"'.format(e, data))
+            response = urllib.request.urlopen(
+                request,
+                timeout=timeout if digest_auth_user else timeout,
+                context=None if digest_auth_user else ctx,
+            )
+
+    except (urllib.request.HTTPError, urllib.request.URLError, TypeError, Exception) as e:
+        url_safe = re.sub(r'(token|password)=([^&]+)', r'\1=********', url)
+        if isinstance(e, urllib.request.HTTPError):
+            return False, f'HTTP error "{e.code} {e.reason}" while fetching {url_safe}'
+        if isinstance(e, urllib.request.URLError):
+            return False, f'URL error "{e.reason}" for {url_safe}'
+        if isinstance(e, TypeError):
+            return False, f'Type error "{e}", data="{data}"'
+        return False, f'{e} while fetching {url_safe}'
+
+    try:
+        charset = response.headers.get_content_charset() or 'UTF-8'
+        if not extended:
+            return True, txt.to_text(response.read(), encoding=charset) if to_text else response.read()
+
+        result = {
+            'response': txt.to_text(response.read(), encoding=charset) if to_text else response.read(),
+            'status_code': response.getcode(),
+            'response_header': response.info(),
+        }
+        return True, result
     except Exception as e:
-        # hide passwords
-        url = txt.sanitize_sensitive_data(url)
-        return (False, '{} while fetching {}'.format(e, url))
-    else:
-        try:
-            charset = response.headers.get_content_charset()
-            if charset is None:
-                # if the server doesn't send charset info
-                charset = 'UTF-8'
-            if not extended:
-                if to_text:
-                    result = txt.to_text(response.read(), encoding=charset)
-                else:
-                    result = response.read()
-            else:
-                result = {}
-                if to_text:
-                    result['response'] = txt.to_text(response.read(), encoding=charset)
-                else:
-                    result['response'] = response.read()
-                result['status_code'] = response.getcode()
-                result['response_header'] = response.info()
-        except Exception as e:
-            return (False, '{} while fetching {}'.format(e, url))
-        return (True, result)
+        return False, f'{e} while fetching {url}'
 
 
 def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
@@ -213,16 +227,15 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
         timeout=timeout,
     )
     if not success:
-        return (False, jsonst)
+        return False, jsonst
+
     try:
-        if not extended:
-            result = json.loads(jsonst)
-        else:
-            result = jsonst
-            result['response_json'] = json.loads(jsonst['response'])
+        if extended:
+            jsonst['response_json'] = json.loads(jsonst['response'])
+            return True, jsonst
+        return True, json.loads(jsonst)
     except Exception as e:
-        return (False, '{}. No JSON object could be decoded.'.format(e))
-    return (True, result)
+        return False, f'{e}. No JSON object could be decoded.'
 
 
 def get_latest_version_from_github(user, repo, key='tag_name'):
@@ -247,15 +260,15 @@ def get_latest_version_from_github(user, repo, key='tag_name'):
     >>> get_latest_version_from_github('Linuxfabrik', 'monitoring-plugins')
     (True, 'v1.2.3')
     """
-    github_url = 'https://api.github.com/repos/{}/{}/releases/latest'.format(user, repo)
-    success, result = fetch_json(github_url)
-    if not success:
-        return (success, result)
-    if not result:
-        return (True, False)
+    url = f'https://api.github.com/repos/{user}/{repo}/releases/latest'
+    success, result = fetch_json(url)
 
-    # on GitHub, here is the version (format of the version string depends on the maintainer)
-    return (True, result[key])
+    if not success:
+        return success, result
+    if not isinstance(result, dict) or not result:
+        return True, False
+
+    return True, result.get(key, False)
 
 
 def strip_tags(html):
@@ -274,4 +287,4 @@ def strip_tags(html):
     >>> strip_tags('<div>Hello, <b>world</b>!</div>')
     'Hello, world!'
     """
-    return re.sub(r'<[^<]+?>', '', html)
+    return re.sub(r'<[^<]+?>', '', html or '')

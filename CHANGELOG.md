@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ### Changed ("refactor", "chore" etc.)
 
 * refactor(args.py): improve code-style
+* refactor(base.py): improve code-style
 * refactor(cache.py): improve code-style
 * refactor(db_mysql.py): improve code-style
 * refactor(db_sqlite.py): improve code-style
@@ -41,6 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * refactor(smb.py): improve code-style
 * refactor(time.py): improve code-style
 * refactor(txt.py): improve code-style
+* refactor(uptimerobot.py): improve code-style
+* refactor(url.py): improve code-style
 * refactor(veeam.py): improve code-style
 * refactor(version.py): improve code-style
 * refactor(wildfly.py): improve code-style
