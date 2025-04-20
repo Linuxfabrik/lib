@@ -31,6 +31,7 @@ pdoc --output-dir docs \
     icinga.py \
     infomaniak.py \
     jitsi.py \
+    keycloak.py \
     lftest.py \
     nodebb.py \
     powershell.py \
