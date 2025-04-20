@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042001'
 
 import sys
 
@@ -56,14 +56,10 @@ def check_select_privileges(conn):
     >>> else:
     >>>     print(version)
     """
-    success, result = select(
-        conn,
-        'SELECT VERSION() AS version;',
-        fetchone=True,
-    )
-    if not success or not result:
-        return False, 'You probably do not have sufficient privileges to run SELECT statements.'
-    return True, result
+    success, result = select(conn, 'SELECT VERSION() AS version;', fetchone=True)
+    if success and result:
+        return True, result
+    return False, 'You probably do not have sufficient privileges to run SELECT statements.'
 
 
 def close(conn):
@@ -228,26 +224,24 @@ def get_engines(conn):
     }
     """
     engines = {}
-    sql = 'SHOW ENGINES'
-    success, result = select(conn, sql)
+    success, result = select(conn, 'SHOW ENGINES')
 
     if not success or not result:
-        return engines  # return empty dict on failure
+        return engines
 
     for line in result:
         engine = line['Engine'].lower()
-        if engine == 'federated' or engine == 'blackhole':
+        if engine in ('federated', 'blackhole'):
             engine += '_engine'
         elif engine == 'berkeleydb':
             engine = 'bdb'
 
-        support = 'YES' if line['Support'] == 'DEFAULT' else line['Support']
-        engines[f'have_{engine}'] = support
+        engines[f'have_{engine}'] = 'YES' if line['Support'] == 'DEFAULT' else line['Support']
 
     return engines
 
 
-def lod2dict(_vars):
+def lod2dict(lod):
     """
     Convert a list of simple key-value dictionaries into a single dictionary.
 
@@ -256,7 +250,7 @@ def lod2dict(_vars):
     by SQL queries like `SHOW VARIABLES;`.
 
     ### Parameters
-    - **_vars** (`list` of `dict`):
+    - **lod** (`list` of `dict`):
       A list where each element is a dictionary with either:
       - A simple `{key: value}` structure.
       - A special `{Variable_name: ..., Value: ...}` structure (from MySQL system queries).
@@ -277,14 +271,13 @@ def lod2dict(_vars):
     >>> lod2dict([{'key1': 'value1'}, {'key2': 'value2'}])
     {'key1': 'value1', 'key2': 'value2'}
     """
-    myvar = {}
-    for row in _vars:
+    result = {}
+    for row in lod:
         if 'Variable_name' in row and 'Value' in row:
-            myvar[row['Variable_name']] = row['Value']
+            result[row['Variable_name']] = row['Value']
         else:
-            for key, value in row.items():
-                myvar[key] = value
-    return myvar
+            result.update(row)
+    return result
 
 
 def select(conn, sql, data=None, fetchone=False):
@@ -332,17 +325,10 @@ def select(conn, sql, data=None, fetchone=False):
     >>> sql = 'SELECT * FROM t WHERE c IN (f{", ".join("%s" for _ in data)})'
     >>> success, result = select(conn, sql, data)
     """
-    if data is None:
-        data = []
-
-    with conn.cursor() as cursor:
-        try:
-            if data:
-                cursor.execute(sql, tuple(data))
-            else:
-                cursor.execute(sql)
-            if fetchone:
-                return True, cursor.fetchone()
-            return True, cursor.fetchall()
-        except Exception as e:
-            return False, f"Query failed: {sql}, Error: {e}, Data: {data}"
+    data = data or []
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, tuple(data)) if data else cursor.execute(sql)
+            return (True, cursor.fetchone()) if fetchone else (True, cursor.fetchall())
+    except Exception as e:
+        return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
