@@ -113,7 +113,7 @@ lib<wbr>.args    </h1>
 </span><span id="L-32"><a href="#L-32"><span class="linenos"> 32</span></a><span class="n">_METHODS</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;USED&#39;</span><span class="p">,</span> <span class="s1">&#39;FREE&#39;</span><span class="p">}</span>
 </span><span id="L-33"><a href="#L-33"><span class="linenos"> 33</span></a>
 </span><span id="L-34"><a href="#L-34"><span class="linenos"> 34</span></a>
-</span><span id="L-35"><a href="#L-35"><span class="linenos"> 35</span></a><span class="k">def</span> <span class="nf">csv</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+</span><span id="L-35"><a href="#L-35"><span class="linenos"> 35</span></a><span class="k">def</span><span class="w"> </span><span class="nf">csv</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
 </span><span id="L-36"><a href="#L-36"><span class="linenos"> 36</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-37"><a href="#L-37"><span class="linenos"> 37</span></a><span class="sd">    Converts a CSV string into a list of values.</span>
 </span><span id="L-38"><a href="#L-38"><span class="linenos"> 38</span></a>
@@ -137,7 +137,7 @@ lib<wbr>.args    </h1>
 </span><span id="L-56"><a href="#L-56"><span class="linenos"> 56</span></a>    <span class="k">return</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">arg</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">)]</span>
 </span><span id="L-57"><a href="#L-57"><span class="linenos"> 57</span></a>
 </span><span id="L-58"><a href="#L-58"><span class="linenos"> 58</span></a>
-</span><span id="L-59"><a href="#L-59"><span class="linenos"> 59</span></a><span class="k">def</span> <span class="nf">float_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+</span><span id="L-59"><a href="#L-59"><span class="linenos"> 59</span></a><span class="k">def</span><span class="w"> </span><span class="nf">float_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
 </span><span id="L-60"><a href="#L-60"><span class="linenos"> 60</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-61"><a href="#L-61"><span class="linenos"> 61</span></a><span class="sd">    Converts an input to a float, or returns None if the input is &#39;none&#39; or None.</span>
 </span><span id="L-62"><a href="#L-62"><span class="linenos"> 62</span></a>
@@ -170,7 +170,7 @@ lib<wbr>.args    </h1>
 </span><span id="L-89"><a href="#L-89"><span class="linenos"> 89</span></a>    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
 </span><span id="L-90"><a href="#L-90"><span class="linenos"> 90</span></a>
 </span><span id="L-91"><a href="#L-91"><span class="linenos"> 91</span></a>
-</span><span id="L-92"><a href="#L-92"><span class="linenos"> 92</span></a><span class="k">def</span> <span class="nf">help</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+</span><span id="L-92"><a href="#L-92"><span class="linenos"> 92</span></a><span class="k">def</span><span class="w"> </span><span class="nf">help</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
 </span><span id="L-93"><a href="#L-93"><span class="linenos"> 93</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-94"><a href="#L-94"><span class="linenos"> 94</span></a><span class="sd">    Retrieves the help text for a given parameter.</span>
 </span><span id="L-95"><a href="#L-95"><span class="linenos"> 95</span></a>
@@ -195,7 +195,7 @@ lib<wbr>.args    </h1>
 </span><span id="L-114"><a href="#L-114"><span class="linenos">114</span></a>    <span class="k">return</span> <span class="n">HELP_TEXTS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">param</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
 </span><span id="L-115"><a href="#L-115"><span class="linenos">115</span></a>
 </span><span id="L-116"><a href="#L-116"><span class="linenos">116</span></a>
-</span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a><span class="k">def</span> <span class="nf">int_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+</span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a><span class="k">def</span><span class="w"> </span><span class="nf">int_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
 </span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a><span class="sd">    Converts a given argument to an integer or returns None.</span>
 </span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a>
@@ -226,7 +226,7 @@ lib<wbr>.args    </h1>
 </span><span id="L-145"><a href="#L-145"><span class="linenos">145</span></a>    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
 </span><span id="L-146"><a href="#L-146"><span class="linenos">146</span></a>
 </span><span id="L-147"><a href="#L-147"><span class="linenos">147</span></a>
-</span><span id="L-148"><a href="#L-148"><span class="linenos">148</span></a><span class="k">def</span> <span class="nf">number_unit_method</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;%&#39;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;USED&#39;</span><span class="p">):</span>
+</span><span id="L-148"><a href="#L-148"><span class="linenos">148</span></a><span class="k">def</span><span class="w"> </span><span class="nf">number_unit_method</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;%&#39;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;USED&#39;</span><span class="p">):</span>
 </span><span id="L-149"><a href="#L-149"><span class="linenos">149</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-150"><a href="#L-150"><span class="linenos">150</span></a><span class="sd">    Parses a string representing a number with an optional unit and method, and returns the</span>
 </span><span id="L-151"><a href="#L-151"><span class="linenos">151</span></a><span class="sd">    corresponding components.</span>
@@ -299,14 +299,14 @@ lib<wbr>.args    </h1>
 </span><span id="L-218"><a href="#L-218"><span class="linenos">218</span></a>    <span class="k">return</span> <span class="n">number</span><span class="p">,</span> <span class="n">unit</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span> <span class="n">method</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
 </span><span id="L-219"><a href="#L-219"><span class="linenos">219</span></a>
 </span><span id="L-220"><a href="#L-220"><span class="linenos">220</span></a>
-</span><span id="L-221"><a href="#L-221"><span class="linenos">221</span></a><span class="k">def</span> <span class="nf">range_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+</span><span id="L-221"><a href="#L-221"><span class="linenos">221</span></a><span class="k">def</span><span class="w"> </span><span class="nf">range_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
 </span><span id="L-222"><a href="#L-222"><span class="linenos">222</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-223"><a href="#L-223"><span class="linenos">223</span></a><span class="sd">    See str_or_none()</span>
 </span><span id="L-224"><a href="#L-224"><span class="linenos">224</span></a><span class="sd">    &quot;&quot;&quot;</span>
 </span><span id="L-225"><a href="#L-225"><span class="linenos">225</span></a>    <span class="k">return</span> <span class="n">str_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span>
 </span><span id="L-226"><a href="#L-226"><span class="linenos">226</span></a>
 </span><span id="L-227"><a href="#L-227"><span class="linenos">227</span></a>
-</span><span id="L-228"><a href="#L-228"><span class="linenos">228</span></a><span class="k">def</span> <span class="nf">str_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+</span><span id="L-228"><a href="#L-228"><span class="linenos">228</span></a><span class="k">def</span><span class="w"> </span><span class="nf">str_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
 </span><span id="L-229"><a href="#L-229"><span class="linenos">229</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-230"><a href="#L-230"><span class="linenos">230</span></a><span class="sd">    Converts an input argument into a string or returns `None`.</span>
 </span><span id="L-231"><a href="#L-231"><span class="linenos">231</span></a>
@@ -366,7 +366,7 @@ lib<wbr>.args    </h1>
 
     </div>
     <a class="headerlink" href="#csv"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="csv-36"><a href="#csv-36"><span class="linenos">36</span></a><span class="k">def</span> <span class="nf">csv</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="csv-36"><a href="#csv-36"><span class="linenos">36</span></a><span class="k">def</span><span class="w"> </span><span class="nf">csv</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
 </span><span id="csv-37"><a href="#csv-37"><span class="linenos">37</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="csv-38"><a href="#csv-38"><span class="linenos">38</span></a><span class="sd">    Converts a CSV string into a list of values.</span>
 </span><span id="csv-39"><a href="#csv-39"><span class="linenos">39</span></a>
@@ -437,7 +437,7 @@ removed.</p>
 
     </div>
     <a class="headerlink" href="#float_or_none"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="float_or_none-60"><a href="#float_or_none-60"><span class="linenos">60</span></a><span class="k">def</span> <span class="nf">float_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="float_or_none-60"><a href="#float_or_none-60"><span class="linenos">60</span></a><span class="k">def</span><span class="w"> </span><span class="nf">float_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
 </span><span id="float_or_none-61"><a href="#float_or_none-61"><span class="linenos">61</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="float_or_none-62"><a href="#float_or_none-62"><span class="linenos">62</span></a><span class="sd">    Converts an input to a float, or returns None if the input is &#39;none&#39; or None.</span>
 </span><span id="float_or_none-63"><a href="#float_or_none-63"><span class="linenos">63</span></a>
@@ -525,7 +525,7 @@ input is 'none' or <code>None</code>.</li>
 
     </div>
     <a class="headerlink" href="#help"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="help-93"><a href="#help-93"><span class="linenos"> 93</span></a><span class="k">def</span> <span class="nf">help</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="help-93"><a href="#help-93"><span class="linenos"> 93</span></a><span class="k">def</span><span class="w"> </span><span class="nf">help</span><span class="p">(</span><span class="n">param</span><span class="p">):</span>
 </span><span id="help-94"><a href="#help-94"><span class="linenos"> 94</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="help-95"><a href="#help-95"><span class="linenos"> 95</span></a><span class="sd">    Retrieves the help text for a given parameter.</span>
 </span><span id="help-96"><a href="#help-96"><span class="linenos"> 96</span></a>
@@ -598,7 +598,7 @@ found.</li>
 
     </div>
     <a class="headerlink" href="#int_or_none"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="int_or_none-118"><a href="#int_or_none-118"><span class="linenos">118</span></a><span class="k">def</span> <span class="nf">int_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="int_or_none-118"><a href="#int_or_none-118"><span class="linenos">118</span></a><span class="k">def</span><span class="w"> </span><span class="nf">int_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
 </span><span id="int_or_none-119"><a href="#int_or_none-119"><span class="linenos">119</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="int_or_none-120"><a href="#int_or_none-120"><span class="linenos">120</span></a><span class="sd">    Converts a given argument to an integer or returns None.</span>
 </span><span id="int_or_none-121"><a href="#int_or_none-121"><span class="linenos">121</span></a>
@@ -682,7 +682,7 @@ the argument is <code>None</code> or <code>'none'</code>.</li>
 
     </div>
     <a class="headerlink" href="#number_unit_method"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="number_unit_method-149"><a href="#number_unit_method-149"><span class="linenos">149</span></a><span class="k">def</span> <span class="nf">number_unit_method</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;%&#39;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;USED&#39;</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="number_unit_method-149"><a href="#number_unit_method-149"><span class="linenos">149</span></a><span class="k">def</span><span class="w"> </span><span class="nf">number_unit_method</span><span class="p">(</span><span class="n">arg</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s1">&#39;%&#39;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;USED&#39;</span><span class="p">):</span>
 </span><span id="number_unit_method-150"><a href="#number_unit_method-150"><span class="linenos">150</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="number_unit_method-151"><a href="#number_unit_method-151"><span class="linenos">151</span></a><span class="sd">    Parses a string representing a number with an optional unit and method, and returns the</span>
 </span><span id="number_unit_method-152"><a href="#number_unit_method-152"><span class="linenos">152</span></a><span class="sd">    corresponding components.</span>
@@ -841,7 +841,7 @@ such as <code>K</code>, <code>M</code>, <code>G</code>, <code>T</code>, <code>P<
 
     </div>
     <a class="headerlink" href="#range_or_none"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="range_or_none-222"><a href="#range_or_none-222"><span class="linenos">222</span></a><span class="k">def</span> <span class="nf">range_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="range_or_none-222"><a href="#range_or_none-222"><span class="linenos">222</span></a><span class="k">def</span><span class="w"> </span><span class="nf">range_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
 </span><span id="range_or_none-223"><a href="#range_or_none-223"><span class="linenos">223</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="range_or_none-224"><a href="#range_or_none-224"><span class="linenos">224</span></a><span class="sd">    See str_or_none()</span>
 </span><span id="range_or_none-225"><a href="#range_or_none-225"><span class="linenos">225</span></a><span class="sd">    &quot;&quot;&quot;</span>
@@ -865,7 +865,7 @@ such as <code>K</code>, <code>M</code>, <code>G</code>, <code>T</code>, <code>P<
 
     </div>
     <a class="headerlink" href="#str_or_none"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="str_or_none-229"><a href="#str_or_none-229"><span class="linenos">229</span></a><span class="k">def</span> <span class="nf">str_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="str_or_none-229"><a href="#str_or_none-229"><span class="linenos">229</span></a><span class="k">def</span><span class="w"> </span><span class="nf">str_or_none</span><span class="p">(</span><span class="n">arg</span><span class="p">):</span>
 </span><span id="str_or_none-230"><a href="#str_or_none-230"><span class="linenos">230</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="str_or_none-231"><a href="#str_or_none-231"><span class="linenos">231</span></a><span class="sd">    Converts an input argument into a string or returns `None`.</span>
 </span><span id="str_or_none-232"><a href="#str_or_none-232"><span class="linenos">232</span></a>

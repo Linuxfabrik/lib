@@ -129,10 +129,10 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-16"><a href="#L-16"><span class="linenos"> 16</span></a><span class="n">__author__</span> <span class="o">=</span> <span class="s1">&#39;Linuxfabrik GmbH, Zurich/Switzerland&#39;</span>
 </span><span id="L-17"><a href="#L-17"><span class="linenos"> 17</span></a><span class="n">__version__</span> <span class="o">=</span> <span class="s1">&#39;2025042001&#39;</span>
 </span><span id="L-18"><a href="#L-18"><span class="linenos"> 18</span></a>
-</span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a><span class="kn">import</span> <span class="nn">re</span>
-</span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="kn">import</span> <span class="nn">subprocess</span>
+</span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+</span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
 </span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a>
-</span><span id="L-22"><a href="#L-22"><span class="linenos"> 22</span></a><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">shell</span>
+</span><span id="L-22"><a href="#L-22"><span class="linenos"> 22</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">shell</span>
 </span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a>
 </span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a>
 </span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a><span class="n">HANDLE_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="s1">&#39;^Handle</span><span class="se">\\</span><span class="s1">s+(.+),</span><span class="se">\\</span><span class="s1">s+DMI</span><span class="se">\\</span><span class="s1">s+type</span><span class="se">\\</span><span class="s1">s+(</span><span class="se">\\</span><span class="s1">d+),</span><span class="se">\\</span><span class="s1">s+(</span><span class="se">\\</span><span class="s1">d+)</span><span class="se">\\</span><span class="s1">s+bytes$&#39;</span><span class="p">)</span>
@@ -190,7 +190,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-77"><a href="#L-77"><span class="linenos"> 77</span></a><span class="c1"># (&#39;0x0400&#39;, &#39;4&#39;, &#39;48&#39;): {&#39;dminame&#39;: &#39;Processor Information&#39;, &#39;dmisize&#39;: 48, &#39;dmitype&#39;: 4, &#39;Socket Designation&#39;: &#39;CPU 1&#39;, &#39;Type&#39;: &#39;Central Processor&#39;, &#39;Family&#39;: &#39;Core i7&#39;, &#39;Manufacturer&#39;: &#39;Intel(R) Corporation&#39;, &#39;ID&#39;: &#39;C1 06 08 00 FF FB EB BF&#39;, &#39;Signature&#39;: &#39;Type 0, Family 6, Model 140, Stepping 1&#39;, &#39;Version&#39;: &#39;11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz&#39;, &#39;Voltage&#39;: &#39;0.8 V&#39;, &#39;External Clock&#39;: &#39;100 MHz&#39;, &#39;Max Speed&#39;: &#39;3000 MHz&#39;, &#39;Current Speed&#39;: &#39;3000 MHz&#39;, &#39;Status&#39;: &#39;Populated, Enabled&#39;, &#39;Upgrade&#39;: &#39;Other&#39;, &#39;L1 Cache Handle&#39;: &#39;0x0701&#39;, &#39;L2 Cache Handle&#39;: &#39;0x0702&#39;, &#39;L3 Cache Handle&#39;: &#39;0x0703&#39;, &#39;Serial Number&#39;: &#39; &#39;, &#39;Asset Tag&#39;: &#39; &#39;, &#39;Part Number&#39;: &#39; &#39;, &#39;Core Count&#39;: &#39;4&#39;, &#39;Core Enabled&#39;: &#39;4&#39;, &#39;Thread Count&#39;: &#39;8&#39;}, </span>
 </span><span id="L-78"><a href="#L-78"><span class="linenos"> 78</span></a>
 </span><span id="L-79"><a href="#L-79"><span class="linenos"> 79</span></a>
-</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a><span class="k">def</span> <span class="nf">cpu_cores</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cpu_cores</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="L-81"><a href="#L-81"><span class="linenos"> 81</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-82"><a href="#L-82"><span class="linenos"> 82</span></a><span class="sd">    Calculate the total number of CPU cores.</span>
 </span><span id="L-83"><a href="#L-83"><span class="linenos"> 83</span></a>
@@ -216,7 +216,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a>    <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">cpu</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;Core Count&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span> <span class="k">for</span> <span class="n">cpu</span> <span class="ow">in</span> <span class="n">dmiget</span><span class="p">(</span><span class="n">dmi</span><span class="p">,</span> <span class="s1">&#39;Processor&#39;</span><span class="p">))</span>
 </span><span id="L-104"><a href="#L-104"><span class="linenos">104</span></a>
 </span><span id="L-105"><a href="#L-105"><span class="linenos">105</span></a>
-</span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a><span class="k">def</span> <span class="nf">cpu_cores_enabled</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+</span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cpu_cores_enabled</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="L-107"><a href="#L-107"><span class="linenos">107</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-108"><a href="#L-108"><span class="linenos">108</span></a><span class="sd">    Calculate the total number of enabled CPU cores.</span>
 </span><span id="L-109"><a href="#L-109"><span class="linenos">109</span></a>
@@ -242,7 +242,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-129"><a href="#L-129"><span class="linenos">129</span></a>    <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">cpu</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;Core Enabled&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span> <span class="k">for</span> <span class="n">cpu</span> <span class="ow">in</span> <span class="n">dmiget</span><span class="p">(</span><span class="n">dmi</span><span class="p">,</span> <span class="s1">&#39;Processor&#39;</span><span class="p">))</span>
 </span><span id="L-130"><a href="#L-130"><span class="linenos">130</span></a>
 </span><span id="L-131"><a href="#L-131"><span class="linenos">131</span></a>
-</span><span id="L-132"><a href="#L-132"><span class="linenos">132</span></a><span class="k">def</span> <span class="nf">cpu_speed</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+</span><span id="L-132"><a href="#L-132"><span class="linenos">132</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cpu_speed</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="L-133"><a href="#L-133"><span class="linenos">133</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-134"><a href="#L-134"><span class="linenos">134</span></a><span class="sd">    Retrieve the CPU speed in megahertz (MHz).</span>
 </span><span id="L-135"><a href="#L-135"><span class="linenos">135</span></a>
@@ -272,7 +272,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-159"><a href="#L-159"><span class="linenos">159</span></a>    <span class="k">return</span> <span class="mi">0</span>
 </span><span id="L-160"><a href="#L-160"><span class="linenos">160</span></a>
 </span><span id="L-161"><a href="#L-161"><span class="linenos">161</span></a>
-</span><span id="L-162"><a href="#L-162"><span class="linenos">162</span></a><span class="k">def</span> <span class="nf">cpu_threads</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+</span><span id="L-162"><a href="#L-162"><span class="linenos">162</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cpu_threads</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="L-163"><a href="#L-163"><span class="linenos">163</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-164"><a href="#L-164"><span class="linenos">164</span></a><span class="sd">    Calculate the total number of CPU threads.</span>
 </span><span id="L-165"><a href="#L-165"><span class="linenos">165</span></a>
@@ -298,7 +298,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-185"><a href="#L-185"><span class="linenos">185</span></a>    <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">cpu</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;Thread Count&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span> <span class="k">for</span> <span class="n">cpu</span> <span class="ow">in</span> <span class="n">dmiget</span><span class="p">(</span><span class="n">dmi</span><span class="p">,</span> <span class="s1">&#39;Processor&#39;</span><span class="p">))</span>
 </span><span id="L-186"><a href="#L-186"><span class="linenos">186</span></a>
 </span><span id="L-187"><a href="#L-187"><span class="linenos">187</span></a>
-</span><span id="L-188"><a href="#L-188"><span class="linenos">188</span></a><span class="k">def</span> <span class="nf">cpu_type</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+</span><span id="L-188"><a href="#L-188"><span class="linenos">188</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cpu_type</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="L-189"><a href="#L-189"><span class="linenos">189</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-190"><a href="#L-190"><span class="linenos">190</span></a><span class="sd">    Retrieve the CPU type string.</span>
 </span><span id="L-191"><a href="#L-191"><span class="linenos">191</span></a>
@@ -330,7 +330,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-217"><a href="#L-217"><span class="linenos">217</span></a>    <span class="k">return</span> <span class="s1">&#39;n/a&#39;</span>
 </span><span id="L-218"><a href="#L-218"><span class="linenos">218</span></a>
 </span><span id="L-219"><a href="#L-219"><span class="linenos">219</span></a>
-</span><span id="L-220"><a href="#L-220"><span class="linenos">220</span></a><span class="k">def</span> <span class="nf">dmidecode_parse</span><span class="p">(</span><span class="n">output</span><span class="p">):</span>
+</span><span id="L-220"><a href="#L-220"><span class="linenos">220</span></a><span class="k">def</span><span class="w"> </span><span class="nf">dmidecode_parse</span><span class="p">(</span><span class="n">output</span><span class="p">):</span>
 </span><span id="L-221"><a href="#L-221"><span class="linenos">221</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-222"><a href="#L-222"><span class="linenos">222</span></a><span class="sd">    Parse the raw output of `dmidecode` into a structured dictionary.</span>
 </span><span id="L-223"><a href="#L-223"><span class="linenos">223</span></a>
@@ -419,7 +419,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-306"><a href="#L-306"><span class="linenos">306</span></a>    <span class="k">return</span> <span class="n">data</span>
 </span><span id="L-307"><a href="#L-307"><span class="linenos">307</span></a>
 </span><span id="L-308"><a href="#L-308"><span class="linenos">308</span></a>
-</span><span id="L-309"><a href="#L-309"><span class="linenos">309</span></a><span class="k">def</span> <span class="nf">dmiget</span><span class="p">(</span><span class="n">dmi</span><span class="p">,</span> <span class="n">type_id</span><span class="p">):</span>
+</span><span id="L-309"><a href="#L-309"><span class="linenos">309</span></a><span class="k">def</span><span class="w"> </span><span class="nf">dmiget</span><span class="p">(</span><span class="n">dmi</span><span class="p">,</span> <span class="n">type_id</span><span class="p">):</span>
 </span><span id="L-310"><a href="#L-310"><span class="linenos">310</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-311"><a href="#L-311"><span class="linenos">311</span></a><span class="sd">    Retrieve DMI entries of a specific type.</span>
 </span><span id="L-312"><a href="#L-312"><span class="linenos">312</span></a>
@@ -456,7 +456,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-343"><a href="#L-343"><span class="linenos">343</span></a>    <span class="k">return</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">dmi</span><span class="o">.</span><span class="n">values</span><span class="p">()</span> <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;dmitype&#39;</span><span class="p">)</span> <span class="o">==</span> <span class="n">type_id</span><span class="p">]</span>
 </span><span id="L-344"><a href="#L-344"><span class="linenos">344</span></a>
 </span><span id="L-345"><a href="#L-345"><span class="linenos">345</span></a>
-</span><span id="L-346"><a href="#L-346"><span class="linenos">346</span></a><span class="k">def</span> <span class="nf">firmware</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+</span><span id="L-346"><a href="#L-346"><span class="linenos">346</span></a><span class="k">def</span><span class="w"> </span><span class="nf">firmware</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="L-347"><a href="#L-347"><span class="linenos">347</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-348"><a href="#L-348"><span class="linenos">348</span></a><span class="sd">    Retrieve the firmware revision from DMI data.</span>
 </span><span id="L-349"><a href="#L-349"><span class="linenos">349</span></a>
@@ -484,7 +484,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-371"><a href="#L-371"><span class="linenos">371</span></a>    <span class="k">return</span> <span class="s1">&#39;n/a&#39;</span>
 </span><span id="L-372"><a href="#L-372"><span class="linenos">372</span></a>
 </span><span id="L-373"><a href="#L-373"><span class="linenos">373</span></a>
-</span><span id="L-374"><a href="#L-374"><span class="linenos">374</span></a><span class="k">def</span> <span class="nf">get_data</span><span class="p">():</span>
+</span><span id="L-374"><a href="#L-374"><span class="linenos">374</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_data</span><span class="p">():</span>
 </span><span id="L-375"><a href="#L-375"><span class="linenos">375</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-376"><a href="#L-376"><span class="linenos">376</span></a><span class="sd">    Retrieve and parse DMI data using `dmidecode`.</span>
 </span><span id="L-377"><a href="#L-377"><span class="linenos">377</span></a>
@@ -538,7 +538,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-425"><a href="#L-425"><span class="linenos">425</span></a>    <span class="k">return</span> <span class="n">dmidecode_parse</span><span class="p">(</span><span class="n">stdout</span><span class="p">)</span>
 </span><span id="L-426"><a href="#L-426"><span class="linenos">426</span></a>
 </span><span id="L-427"><a href="#L-427"><span class="linenos">427</span></a>
-</span><span id="L-428"><a href="#L-428"><span class="linenos">428</span></a><span class="k">def</span> <span class="nf">manufacturer</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+</span><span id="L-428"><a href="#L-428"><span class="linenos">428</span></a><span class="k">def</span><span class="w"> </span><span class="nf">manufacturer</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="L-429"><a href="#L-429"><span class="linenos">429</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-430"><a href="#L-430"><span class="linenos">430</span></a><span class="sd">    Retrieve the system manufacturer from DMI data.</span>
 </span><span id="L-431"><a href="#L-431"><span class="linenos">431</span></a>
@@ -566,7 +566,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-453"><a href="#L-453"><span class="linenos">453</span></a>    <span class="k">return</span> <span class="s1">&#39;n/a&#39;</span>
 </span><span id="L-454"><a href="#L-454"><span class="linenos">454</span></a>
 </span><span id="L-455"><a href="#L-455"><span class="linenos">455</span></a>
-</span><span id="L-456"><a href="#L-456"><span class="linenos">456</span></a><span class="k">def</span> <span class="nf">model</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+</span><span id="L-456"><a href="#L-456"><span class="linenos">456</span></a><span class="k">def</span><span class="w"> </span><span class="nf">model</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="L-457"><a href="#L-457"><span class="linenos">457</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-458"><a href="#L-458"><span class="linenos">458</span></a><span class="sd">    Retrieve the system model name from DMI data.</span>
 </span><span id="L-459"><a href="#L-459"><span class="linenos">459</span></a>
@@ -594,7 +594,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-481"><a href="#L-481"><span class="linenos">481</span></a>    <span class="k">return</span> <span class="s1">&#39;n/a&#39;</span>
 </span><span id="L-482"><a href="#L-482"><span class="linenos">482</span></a>
 </span><span id="L-483"><a href="#L-483"><span class="linenos">483</span></a>
-</span><span id="L-484"><a href="#L-484"><span class="linenos">484</span></a><span class="k">def</span> <span class="nf">ram</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+</span><span id="L-484"><a href="#L-484"><span class="linenos">484</span></a><span class="k">def</span><span class="w"> </span><span class="nf">ram</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="L-485"><a href="#L-485"><span class="linenos">485</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-486"><a href="#L-486"><span class="linenos">486</span></a><span class="sd">    Calculate the total amount of RAM installed in bytes.</span>
 </span><span id="L-487"><a href="#L-487"><span class="linenos">487</span></a>
@@ -629,7 +629,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 </span><span id="L-516"><a href="#L-516"><span class="linenos">516</span></a>    <span class="k">return</span> <span class="n">total</span>
 </span><span id="L-517"><a href="#L-517"><span class="linenos">517</span></a>
 </span><span id="L-518"><a href="#L-518"><span class="linenos">518</span></a>
-</span><span id="L-519"><a href="#L-519"><span class="linenos">519</span></a><span class="k">def</span> <span class="nf">serno</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+</span><span id="L-519"><a href="#L-519"><span class="linenos">519</span></a><span class="k">def</span><span class="w"> </span><span class="nf">serno</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="L-520"><a href="#L-520"><span class="linenos">520</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-521"><a href="#L-521"><span class="linenos">521</span></a><span class="sd">    Retrieve the system serial number from DMI data.</span>
 </span><span id="L-522"><a href="#L-522"><span class="linenos">522</span></a>
@@ -733,7 +733,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 
     </div>
     <a class="headerlink" href="#cpu_cores"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="cpu_cores-81"><a href="#cpu_cores-81"><span class="linenos"> 81</span></a><span class="k">def</span> <span class="nf">cpu_cores</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="cpu_cores-81"><a href="#cpu_cores-81"><span class="linenos"> 81</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cpu_cores</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="cpu_cores-82"><a href="#cpu_cores-82"><span class="linenos"> 82</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="cpu_cores-83"><a href="#cpu_cores-83"><span class="linenos"> 83</span></a><span class="sd">    Calculate the total number of CPU cores.</span>
 </span><span id="cpu_cores-84"><a href="#cpu_cores-84"><span class="linenos"> 84</span></a>
@@ -808,7 +808,7 @@ The total number of CPU cores found across all processors.</li>
 
     </div>
     <a class="headerlink" href="#cpu_cores_enabled"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="cpu_cores_enabled-107"><a href="#cpu_cores_enabled-107"><span class="linenos">107</span></a><span class="k">def</span> <span class="nf">cpu_cores_enabled</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="cpu_cores_enabled-107"><a href="#cpu_cores_enabled-107"><span class="linenos">107</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cpu_cores_enabled</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="cpu_cores_enabled-108"><a href="#cpu_cores_enabled-108"><span class="linenos">108</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="cpu_cores_enabled-109"><a href="#cpu_cores_enabled-109"><span class="linenos">109</span></a><span class="sd">    Calculate the total number of enabled CPU cores.</span>
 </span><span id="cpu_cores_enabled-110"><a href="#cpu_cores_enabled-110"><span class="linenos">110</span></a>
@@ -883,7 +883,7 @@ The total number of enabled CPU cores across all processors.</li>
 
     </div>
     <a class="headerlink" href="#cpu_speed"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="cpu_speed-133"><a href="#cpu_speed-133"><span class="linenos">133</span></a><span class="k">def</span> <span class="nf">cpu_speed</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="cpu_speed-133"><a href="#cpu_speed-133"><span class="linenos">133</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cpu_speed</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="cpu_speed-134"><a href="#cpu_speed-134"><span class="linenos">134</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="cpu_speed-135"><a href="#cpu_speed-135"><span class="linenos">135</span></a><span class="sd">    Retrieve the CPU speed in megahertz (MHz).</span>
 </span><span id="cpu_speed-136"><a href="#cpu_speed-136"><span class="linenos">136</span></a>
@@ -962,7 +962,7 @@ The CPU speed in MHz. If no valid entry is found, returns <code>0</code>.</li>
 
     </div>
     <a class="headerlink" href="#cpu_threads"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="cpu_threads-163"><a href="#cpu_threads-163"><span class="linenos">163</span></a><span class="k">def</span> <span class="nf">cpu_threads</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="cpu_threads-163"><a href="#cpu_threads-163"><span class="linenos">163</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cpu_threads</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="cpu_threads-164"><a href="#cpu_threads-164"><span class="linenos">164</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="cpu_threads-165"><a href="#cpu_threads-165"><span class="linenos">165</span></a><span class="sd">    Calculate the total number of CPU threads.</span>
 </span><span id="cpu_threads-166"><a href="#cpu_threads-166"><span class="linenos">166</span></a>
@@ -1037,7 +1037,7 @@ The total number of CPU threads across all processors.</li>
 
     </div>
     <a class="headerlink" href="#cpu_type"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="cpu_type-189"><a href="#cpu_type-189"><span class="linenos">189</span></a><span class="k">def</span> <span class="nf">cpu_type</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="cpu_type-189"><a href="#cpu_type-189"><span class="linenos">189</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cpu_type</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="cpu_type-190"><a href="#cpu_type-190"><span class="linenos">190</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="cpu_type-191"><a href="#cpu_type-191"><span class="linenos">191</span></a><span class="sd">    Retrieve the CPU type string.</span>
 </span><span id="cpu_type-192"><a href="#cpu_type-192"><span class="linenos">192</span></a>
@@ -1118,7 +1118,7 @@ The CPU type as a clean string. Returns <code>'n/a'</code> if no valid CPU entry
 
     </div>
     <a class="headerlink" href="#dmidecode_parse"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="dmidecode_parse-221"><a href="#dmidecode_parse-221"><span class="linenos">221</span></a><span class="k">def</span> <span class="nf">dmidecode_parse</span><span class="p">(</span><span class="n">output</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="dmidecode_parse-221"><a href="#dmidecode_parse-221"><span class="linenos">221</span></a><span class="k">def</span><span class="w"> </span><span class="nf">dmidecode_parse</span><span class="p">(</span><span class="n">output</span><span class="p">):</span>
 </span><span id="dmidecode_parse-222"><a href="#dmidecode_parse-222"><span class="linenos">222</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="dmidecode_parse-223"><a href="#dmidecode_parse-223"><span class="linenos">223</span></a><span class="sd">    Parse the raw output of `dmidecode` into a structured dictionary.</span>
 </span><span id="dmidecode_parse-224"><a href="#dmidecode_parse-224"><span class="linenos">224</span></a>
@@ -1276,7 +1276,7 @@ dmitype, and parsed key-value pairs from the output.</li>
 
     </div>
     <a class="headerlink" href="#dmiget"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="dmiget-310"><a href="#dmiget-310"><span class="linenos">310</span></a><span class="k">def</span> <span class="nf">dmiget</span><span class="p">(</span><span class="n">dmi</span><span class="p">,</span> <span class="n">type_id</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="dmiget-310"><a href="#dmiget-310"><span class="linenos">310</span></a><span class="k">def</span><span class="w"> </span><span class="nf">dmiget</span><span class="p">(</span><span class="n">dmi</span><span class="p">,</span> <span class="n">type_id</span><span class="p">):</span>
 </span><span id="dmiget-311"><a href="#dmiget-311"><span class="linenos">311</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="dmiget-312"><a href="#dmiget-312"><span class="linenos">312</span></a><span class="sd">    Retrieve DMI entries of a specific type.</span>
 </span><span id="dmiget-313"><a href="#dmiget-313"><span class="linenos">313</span></a>
@@ -1365,7 +1365,7 @@ A list of DMI entries (dicts) matching the specified type ID.</li>
 
     </div>
     <a class="headerlink" href="#firmware"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="firmware-347"><a href="#firmware-347"><span class="linenos">347</span></a><span class="k">def</span> <span class="nf">firmware</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="firmware-347"><a href="#firmware-347"><span class="linenos">347</span></a><span class="k">def</span><span class="w"> </span><span class="nf">firmware</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="firmware-348"><a href="#firmware-348"><span class="linenos">348</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="firmware-349"><a href="#firmware-349"><span class="linenos">349</span></a><span class="sd">    Retrieve the firmware revision from DMI data.</span>
 </span><span id="firmware-350"><a href="#firmware-350"><span class="linenos">350</span></a>
@@ -1441,7 +1441,7 @@ The firmware revision string, or <code>'n/a'</code> if not found.</li>
 
     </div>
     <a class="headerlink" href="#get_data"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_data-375"><a href="#get_data-375"><span class="linenos">375</span></a><span class="k">def</span> <span class="nf">get_data</span><span class="p">():</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_data-375"><a href="#get_data-375"><span class="linenos">375</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_data</span><span class="p">():</span>
 </span><span id="get_data-376"><a href="#get_data-376"><span class="linenos">376</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_data-377"><a href="#get_data-377"><span class="linenos">377</span></a><span class="sd">    Retrieve and parse DMI data using `dmidecode`.</span>
 </span><span id="get_data-378"><a href="#get_data-378"><span class="linenos">378</span></a>
@@ -1563,7 +1563,7 @@ Parsed DMI data if successful.</p></li>
 
     </div>
     <a class="headerlink" href="#manufacturer"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="manufacturer-429"><a href="#manufacturer-429"><span class="linenos">429</span></a><span class="k">def</span> <span class="nf">manufacturer</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="manufacturer-429"><a href="#manufacturer-429"><span class="linenos">429</span></a><span class="k">def</span><span class="w"> </span><span class="nf">manufacturer</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="manufacturer-430"><a href="#manufacturer-430"><span class="linenos">430</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="manufacturer-431"><a href="#manufacturer-431"><span class="linenos">431</span></a><span class="sd">    Retrieve the system manufacturer from DMI data.</span>
 </span><span id="manufacturer-432"><a href="#manufacturer-432"><span class="linenos">432</span></a>
@@ -1639,7 +1639,7 @@ The manufacturer name, or <code>'n/a'</code> if not found.</li>
 
     </div>
     <a class="headerlink" href="#model"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="model-457"><a href="#model-457"><span class="linenos">457</span></a><span class="k">def</span> <span class="nf">model</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="model-457"><a href="#model-457"><span class="linenos">457</span></a><span class="k">def</span><span class="w"> </span><span class="nf">model</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="model-458"><a href="#model-458"><span class="linenos">458</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="model-459"><a href="#model-459"><span class="linenos">459</span></a><span class="sd">    Retrieve the system model name from DMI data.</span>
 </span><span id="model-460"><a href="#model-460"><span class="linenos">460</span></a>
@@ -1715,7 +1715,7 @@ The model name, or <code>'n/a'</code> if not found.</li>
 
     </div>
     <a class="headerlink" href="#ram"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="ram-485"><a href="#ram-485"><span class="linenos">485</span></a><span class="k">def</span> <span class="nf">ram</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="ram-485"><a href="#ram-485"><span class="linenos">485</span></a><span class="k">def</span><span class="w"> </span><span class="nf">ram</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="ram-486"><a href="#ram-486"><span class="linenos">486</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="ram-487"><a href="#ram-487"><span class="linenos">487</span></a><span class="sd">    Calculate the total amount of RAM installed in bytes.</span>
 </span><span id="ram-488"><a href="#ram-488"><span class="linenos">488</span></a>
@@ -1799,7 +1799,7 @@ The total amount of RAM in bytes.</li>
 
     </div>
     <a class="headerlink" href="#serno"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="serno-520"><a href="#serno-520"><span class="linenos">520</span></a><span class="k">def</span> <span class="nf">serno</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="serno-520"><a href="#serno-520"><span class="linenos">520</span></a><span class="k">def</span><span class="w"> </span><span class="nf">serno</span><span class="p">(</span><span class="n">dmi</span><span class="p">):</span>
 </span><span id="serno-521"><a href="#serno-521"><span class="linenos">521</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="serno-522"><a href="#serno-522"><span class="linenos">522</span></a><span class="sd">    Retrieve the system serial number from DMI data.</span>
 </span><span id="serno-523"><a href="#serno-523"><span class="linenos">523</span></a>
