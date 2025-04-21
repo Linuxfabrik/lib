@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042003'
+__version__ = '2025042101'
 
 import collections
 import numbers
@@ -107,7 +107,7 @@ def cu(msg=None):
     if msg is not None:
         msg = txt.sanitize_sensitive_data(msg).strip()
         print(msg, end='')
-        print(' (Traceback for debugging purposes attached)\n' if has_tb else '\n')
+        print(' (Traceback for debugging purposes attached)\n' if has_traceback else '\n')
 
     if has_traceback:
         print(tb.replace('<', "'").replace('>', "'"))
@@ -242,22 +242,21 @@ def get_state(value, warn, crit, _operator='ge'):
 
 def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_reverse=False):
     """
-    Takes a list of dictionaries, formats the data, and returns
-    the formatted data as a text table.
+    Format a list of dictionaries into a simple ASCII table (generator version).
 
-    Inspired by:  
-    https://www.calazan.com/python-function-for-displaying-a-list-of-dictionaries-in-table-format/
+    Each dictionary must contain the specified columns (`cols`). Optionally supports a custom
+    header, sorting by a given key, and stripping whitespace from values.
 
     ### Parameters
-    - **data** (`list`): Data to process (list of dictionaries).
-    - **cols** (`list`): List of keys/columns to include from the dictionaries.
-    - **header** (`list`, optional): Custom table headers. Defaults to None.
-    - **strip** (`bool`, optional): If True, strip/trim values. Defaults to True.
-    - **sort_by_key** (`str`, optional): The key to sort the table by. Defaults to None.
-    - **sort_order_reverse** (`bool`, optional): If True, sort descending. Defaults to False.
+    - **data** (`list`): List of dictionaries representing the table rows.
+    - **cols** (`list`): List of keys to display as table columns.
+    - **header** (`list`, optional): List of custom column headers. Defaults to None.
+    - **strip** (`bool`, optional): Whether to strip whitespace from values. Defaults to True.
+    - **sort_by_key** (`str`, optional): Column key to sort the table by. Defaults to None.
+    - **sort_order_reverse** (`bool`, optional): Sort descending if True. Defaults to False.
 
     ### Returns
-    - **str**: A formatted text table as a single string.
+    - **str**: A string containing the formatted table.
 
     ### Example
     >>> data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]
@@ -277,23 +276,33 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
     if header:
         data.insert(0, dict(zip(cols, header)))
 
-    column_widths = collections.OrderedDict(
-        (col, max(len(str(row.get(col, '')).strip() if strip else str(row.get(col, '')))
-                  for row in data))
-        for col in cols
-    )
+    column_widths = collections.OrderedDict()
+    for idx, row in enumerate(data):
+        for col in cols:
+            if col not in row:
+                return f'Unknown column "{col}"'
+            value = str(row[col])
+            if strip:
+                value = value.strip()
+            data[idx][col] = value
+            column_widths[col] = max(column_widths.get(col, 0), len(value))
 
     if header:
-        data.insert(1, {col: '-' * width for col, width in column_widths.items()})
+        divider = {col: '-' * width for col, width in column_widths.items()}
+        data.insert(1, divider)
 
-    lines = []
-    for idx, row in enumerate(data):
-        sep = ' ! ' if idx != 1 else '-+-'
-        lines.append(
-            sep.join(f'{(row[col] or 'None'):<{column_widths[col]}}' for col in cols)
-        )
+    def generate_lines():
+        for idx, row in enumerate(data):
+            parts = []
+            for col, width in column_widths.items():
+                fmt = f'{{:<{width}}}'
+                value = row[col]
+                if idx == 1:
+                    value = value.replace(' ', '-')
+                parts.append(fmt.format(value))
+            yield '-+-'.join(parts) if idx == 1 else ' ! '.join(parts)
 
-    return '\n'.join(lines) + '\n'
+    return '\n'.join(generate_lines()) + '\n'
 
 
 def get_worst(state1, state2):

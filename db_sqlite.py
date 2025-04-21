@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2025042102'
 
 import csv
 import hashlib
@@ -360,19 +360,19 @@ def create_index(conn, column_list, table='perfdata', unique=False, delete_db_on
     """
     table = __filter_str(table)
     index_name = f"idx_{__sha1sum(table + column_list)}"
+    if unique:
+        sql = f'CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON "{table}" ({column_list});'
+    else:
+        sql = f'CREATE INDEX IF NOT EXISTS {index_name} ON "{table}" ({column_list});'
 
+    c = conn.cursor()
     try:
-        c = conn.cursor()
-        if unique:
-            sql = f'CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON "{table}" ({column_list});'
-        else:
-            sql = f'CREATE INDEX IF NOT EXISTS {index_name} ON "{table}" ({column_list});'
         c.execute(sql)
         return True, True
     except sqlite3.OperationalError as e:
         if delete_db_on_operational_error:
             rm_db(conn)
-        return False, f'Operational Error: {e}'
+        return False, f'Operational Error: {e}, Query: {sql}'
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}'
 
@@ -487,7 +487,7 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     except sqlite3.OperationalError as e:
         if delete_db_on_operational_error:
             rm_db(conn)
-        return False, f'Operational Error: {e}'
+        return False, f'Operational Error: {e}, Query: {sql}'
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}'
 
@@ -545,7 +545,7 @@ def delete(conn, sql, data=None, delete_db_on_operational_error=True):
     except sqlite3.OperationalError as e:
         if delete_db_on_operational_error:
             rm_db(conn)
-        return False, f'Operational Error: {e}'
+        return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
@@ -581,10 +581,9 @@ def drop_table(conn, table='perfdata'):
     (True, True)
     """
     table = __filter_str(table)
-
     sql = f'DROP TABLE IF EXISTS "{table}";'
-    c = conn.cursor()
 
+    c = conn.cursor()
     try:
         c.execute(sql)
         return True, True
@@ -617,6 +616,7 @@ def get_colnames(col_definition):
     ['date', 'count', 'name']
     """
     return [col.strip().split()[0] for col in col_definition.split(',') if col.strip()]
+
 
 def get_tables(conn):
     """
@@ -804,7 +804,7 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
     except sqlite3.OperationalError as e:
         if delete_db_on_operational_error:
             rm_db(conn)
-        return False, f'Operational Error: {e}'
+        return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
@@ -897,7 +897,7 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
     except sqlite3.OperationalError as e:
         if delete_db_on_operational_error:
             rm_db(conn)
-        return False, f'Operational Error: {e}'
+        return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
@@ -1000,13 +1000,13 @@ def select(conn, sql, data=None, fetchone=False, as_dict=True, delete_db_on_oper
             rows = [dict(row) for row in rows]
 
         if fetchone:
-            return (True, rows[0] if rows else [])
+            return True, rows[0] if rows else []
 
-        return (True, rows)
+        return True, rows
 
     except sqlite3.OperationalError as e:
         if delete_db_on_operational_error:
             rm_db(conn)
-        return (False, f'Operational Error: {e}')
+        return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
     except Exception as e:
-        return (False, f'Query failed: {sql}, Error: {e}, Data: {data}')
+        return False, f'Query failed: {sql}, Error: {e}, Data: {data}'

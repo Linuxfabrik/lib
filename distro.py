@@ -17,7 +17,7 @@ Source Code is taken, converted, shortened and modified from:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025042002'
 
 
 import os
@@ -51,7 +51,7 @@ SEARCH_STRING = {
 
 OS_FAMILY_MAP = {
     'RedHat': ['RedHat', 'RHEL', 'CentOS', 'Scientific', 'OracleLinux', 'Fedora', 'AlmaLinux', 'Rocky'],
-    'Debian': ['Debian', 'Ubuntu', 'Raspbian', 'Pop!_OS', 'Kali', 'Parrot', 'Devuan', 'Deepin', 'Mint'],
+    'Debian': ['Debian', 'Debian GNU/Linux', 'Ubuntu', 'Raspbian', 'Pop!_OS', 'Kali', 'Parrot', 'Devuan', 'Deepin', 'Mint'],
     'Suse': ['SUSE', 'openSUSE', 'SLES', 'SLED'],
     'Archlinux': ['Archlinux', 'Manjaro', 'Antergos'],
     'Gentoo': ['Gentoo', 'Funtoo'],

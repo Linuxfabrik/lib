@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042002'
+__version__ = '2025042101'
 
 import datetime
 import json
@@ -97,7 +97,7 @@ def check_eol(product, version_string, offset_eol=-30,
     support = cycles_eoldate.get('support')
     if support and isinstance(support, str):
         if now > time.timestr2datetime(support, pattern=pattern):
-            msg.append(f'full support ended on {support};')
+            msg.append(f'full support ended on {support}; ')
 
     eol_key = 'extendedSupport' if extended_support and cycles_eoldate.get('extendedSupport') else 'eol'
     eol_date = cycles_eoldate.get(eol_key)
@@ -135,7 +135,7 @@ def check_eol(product, version_string, offset_eol=-30,
                 state = STATE_WARN
             break
 
-    return state, ' '.join(msg)
+    return state, ''.join(msg)
 
 
 def get_os_info():
