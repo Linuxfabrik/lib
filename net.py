@@ -13,11 +13,12 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025042901'
 
 import random
 import re
 import socket
+import ssl
 try:
     import netifaces
     HAVE_NETIFACES = True
@@ -124,6 +125,74 @@ SOCKETSTR = {
 }
 
 
+def _socket_fetch(open_socket_func, connect_args, payload=None, timeout=3, socket_name="socket"):
+    """
+    Fetch data via an open socket connection.
+
+    This internal helper function opens a socket using a provided callable, optionally sends a
+    payload, and returns the received response. It supports both TCP/IP and Unix domain sockets
+    transparently.
+
+    ### Parameters
+    - **open_socket_func** (`callable`):
+      A function that creates and returns a new socket object.
+    - **connect_args** (`tuple` or `str`):
+      Arguments passed to the socket's `connect()` method.
+    - **payload** (`bytes`, optional):
+      A payload to send after connecting. If `None`, no payload is sent.
+    - **timeout** (`int`, optional):
+      Socket timeout in seconds. Defaults to `3`.
+    - **socket_name** (`str`, optional):
+      A human-readable name used in error messages for context. Defaults to `"socket"`.
+
+    ### Returns
+    - **tuple** (`bool`, `str`):
+      - `True`, followed by the received response text if successful.
+      - `False`, followed by an error message if failed.
+
+    ### Notes
+    - Timeout and socket errors are handled gracefully.
+    - Response is decoded into UTF-8 text with replacement for decode errors.
+    - This is an internal function intended for use by `fetch()`, `fetch_socket()`, and similar
+      functions.
+
+    ### Example
+    >>> success, response = _socket_fetch(open_socket_func, connect_args, payload=b'ping')
+    """
+    try:
+        with open_socket_func() as s:
+            s.settimeout(timeout)
+            s.connect(connect_args)
+
+            if payload is not None:
+                try:
+                    s.sendall(payload)
+                except Exception as e:
+                    return False, f'Could not send payload on {socket_name}: {e}'
+
+            try:
+                s.shutdown(socket.SHUT_WR)
+            except Exception:
+                pass  # Not fatal
+
+            fragments = []
+            while True:
+                try:
+                    chunk = s.recv(1024)
+                    if not chunk:
+                        break
+                    fragments.append(chunk.decode('utf-8', errors='replace'))
+                except socket.timeout:
+                    return False, f'{socket_name} timed out.'
+                except socket.error as e:
+                    return False, f'Cannot fetch data from {socket_name}: {e}'
+
+            return True, ''.join(fragments)
+
+    except Exception as e:
+        return False, f'Error using {socket_name}: {e}'
+
+
 def fetch(host, port, msg=None, timeout=3, ipv6=False):
     """
     Fetch data via a TCP/IP socket connection.
@@ -137,7 +206,7 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
     - **port** (`int`):
       Target TCP port number.
     - **msg** (`bytes`, optional):
-      A message to send after connecting. If None, no message is sent.
+      A message to send after connecting. If `None`, no message is sent.
     - **timeout** (`int`, optional):
       Socket timeout in seconds. Defaults to `3`.
     - **ipv6** (`bool`, optional):
@@ -151,38 +220,122 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
     ### Notes
     - Timeout and socket errors are handled gracefully.
     - Response is decoded into text.
+    - IPv6 addresses are supported when `ipv6=True`.
 
     ### Example
     >>> success, response = fetch('example.com', 80)
     """
+    def open_tcp_socket():
+        family = AF_INET6 if ipv6 else AF_INET
+        return socket.socket(family, SOCK_TCP)
+
     try:
-        family = socket.AF_INET6 if ipv6 else socket.AF_INET
-        with socket.socket(family, socket.SOCK_STREAM) as s:
-            s.settimeout(timeout)
-            s.connect((host, int(port)))
-
-            if msg is not None:
-                try:
-                    s.sendall(msg)
-                except Exception as e:
-                    return False, f'Could not send payload "{msg}": {e}'
-
-            fragments = []
-            while True:
-                try:
-                    chunk = s.recv(1024)
-                    if not chunk:
-                        break
-                    fragments.append(txt.to_text(chunk))
-                except socket.timeout:
-                    return False, 'Socket timed out.'
-                except socket.error as e:
-                    return False, f'Cannot fetch data: {e}'
-
-            return True, ''.join(fragments)
+        return _socket_fetch(
+            open_tcp_socket,
+            (host, int(port)),
+            payload=msg,
+            timeout=timeout,
+            socket_name=f'TCP socket {host}:{port}',
+        )
 
     except Exception as e:
-        return False, f'Could not open socket: {e}'
+        return False, f'Could not open TCP socket {host}:{port}: {e}'
+
+
+def fetch_socket(sock_file, cmd):
+    """
+    Fetch data via a Unix domain socket connection.
+
+    This function opens a connection to a Unix socket file, optionally sends a command,
+    and returns the received response. It is similar to `fetch()` but operates over local
+    filesystem sockets.
+
+    ### Parameters
+    - **sock_file** (`str`):
+      Path to the Unix domain socket file.
+    - **cmd** (`bytes`, optional):
+      A command to send after connecting. If `None`, no command is sent.
+    - **timeout** (`int`, optional):
+      Socket timeout in seconds. Defaults to `3`.
+
+    ### Returns
+    - **tuple** (`bool`, `str`):
+      - `True`, followed by the received response text if successful.
+      - `False`, followed by an error message if failed.
+
+    ### Notes
+    - Timeout and socket errors are handled gracefully.
+    - Response is decoded into text.
+    - Unix domain sockets must exist and have appropriate permissions.
+
+    ### Example
+    >>> success, response = fetch_socket('/var/run/haproxy.sock', b'show stat\n')
+    """
+    def open_unix_socket():
+        return socket.socket(socket.AF_UNIX, SOCK_TCP)
+
+    try:
+        return _socket_fetch(
+            open_unix_socket,
+            sock_file,
+            payload=cmd,
+            socket_name=f'Unix socket "{sock_file}"',
+        )
+
+    except FileNotFoundError:
+        return False, f'Socket file "{sock_file}" not found.'
+    except PermissionError:
+        return False, f'Access to socket file "{sock_file}" denied.'
+    except TimeoutError:
+        return False, f'Connection to socket "{sock_file}" timed out.'
+    except ConnectionError as err:
+        return False, f'Error during socket connection to "{sock_file}": {err}'
+    except Exception as e:
+        return False, f'Could not open Unix socket "{sock_file}": {e}'
+
+
+def fetch_ssl(host, port, msg=None, timeout=3):
+    """
+    Fetch data via an SSL/TLS encrypted TCP socket connection.
+
+    This function opens a secure SSL/TLS socket connection to a given host and port, optionally
+    sends a message, and returns the received response. It uses the system's default trusted CA
+    certificates.
+
+    ### Parameters
+    - **host** (`str`):
+      Target hostname or IP address for the SSL connection.
+    - **port** (`int`):
+      Target TCP port number (usually 443 for HTTPS services).
+    - **msg** (`bytes`, optional):
+      A message to send after connecting. If `None`, no message is sent.
+    - **timeout** (`int`, optional):
+      Socket timeout in seconds. Defaults to `3`.
+
+    ### Returns
+    - **tuple** (`bool`, `str`):
+      - `True`, followed by the received response text if successful.
+      - `False`, followed by an error message if failed.
+
+    ### Notes
+    - Timeout, SSL, and socket errors are handled gracefully.
+    - Response is decoded into UTF-8 text.
+    - SSL certificate validation is performed automatically based on the system's trusted CAs.
+    - Uses `server_hostname` to support Server Name Indication (SNI).
+
+    ### Example
+    >>> success, response = fetch_ssl('example.com', 443, b'GET / HTTP/1.0\r\nHost: example.com\r\n\r\n')
+    """
+    def open_ssl_socket():
+        context = ssl.create_default_context()
+        raw_sock = socket.socket(socket.AF_INET, SOCK_TCP)
+        return context.wrap_socket(raw_sock, server_hostname=host)
+
+    try:
+        return _socket_fetch(open_ssl_socket, (host, int(port)), payload=msg, timeout=timeout)
+
+    except Exception as e:
+        return False, f'Could not open SSL socket: {e}'
 
 
 def get_netinfo():

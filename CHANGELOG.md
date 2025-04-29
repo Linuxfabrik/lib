@@ -10,8 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## [Unreleased]
 
-tbd
+### Changed ("refactor", "chore" etc.)
 
+* refactor(net.py): add fetch_socket() and fetch_sssl(), improve fetch()
 
 
 ## v2.1.1.7
