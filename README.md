@@ -10,7 +10,9 @@ These Python libraries are used in several Linuxfabrik projects, including the [
 
 ## Documentation
 
-HTML documentation is created using [https://pdoc.dev/](https://pdoc.dev/) and can be read in [./docs/index.html](./docs/index.html):
+[API Documentation](https://linuxfabrik.github.io/lib/) (hosted on GitHub Pages).
+
+The HTML documentation is created using [https://pdoc.dev/](https://pdoc.dev/) and is located in [./docs/index.html](./docs/index.html).
 
 ```
 pip install pdoc
@@ -54,7 +56,7 @@ pdoc --output-dir docs \
 ```
 
 
-## List of libraries
+## Library Index
 
 * args.py:  
 Extends argparse by new input argument data types on demand.
