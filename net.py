@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042901'
+__version__ = '2025042902'
 
 import random
 import re
@@ -269,7 +269,7 @@ def fetch_socket(sock_file, cmd):
     - Unix domain sockets must exist and have appropriate permissions.
 
     ### Example
-    >>> success, response = fetch_socket('/var/run/haproxy.sock', b'show stat\n')
+    >>> success, response = fetch_socket('/var/run/haproxy.sock', b'show stat\\n')
     """
     def open_unix_socket():
         return socket.socket(socket.AF_UNIX, SOCK_TCP)
@@ -324,7 +324,7 @@ def fetch_ssl(host, port, msg=None, timeout=3):
     - Uses `server_hostname` to support Server Name Indication (SNI).
 
     ### Example
-    >>> success, response = fetch_ssl('example.com', 443, b'GET / HTTP/1.0\r\nHost: example.com\r\n\r\n')
+    >>> success, response = fetch_ssl('example.com', 443, b'GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n')
     """
     def open_ssl_socket():
         context = ssl.create_default_context()

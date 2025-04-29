@@ -398,7 +398,7 @@ lib<wbr>.net    </h1>
 </span><span id="L-269"><a href="#L-269"><span class="linenos">269</span></a><span class="sd">    - Unix domain sockets must exist and have appropriate permissions.</span>
 </span><span id="L-270"><a href="#L-270"><span class="linenos">270</span></a>
 </span><span id="L-271"><a href="#L-271"><span class="linenos">271</span></a><span class="sd">    ### Example</span>
-</span><span id="L-272"><a href="#L-272"><span class="linenos">272</span></a><span class="sd">    &gt;&gt;&gt; success, response = fetch_socket(&#39;/var/run/haproxy.sock&#39;, b&#39;show stat\n&#39;)</span>
+</span><span id="L-272"><a href="#L-272"><span class="linenos">272</span></a><span class="sd">    &gt;&gt;&gt; success, response = fetch_socket(&#39;/var/run/haproxy.sock&#39;, b&#39;show stat\\n&#39;)</span>
 </span><span id="L-273"><a href="#L-273"><span class="linenos">273</span></a><span class="sd">    &quot;&quot;&quot;</span>
 </span><span id="L-274"><a href="#L-274"><span class="linenos">274</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">open_unix_socket</span><span class="p">():</span>
 </span><span id="L-275"><a href="#L-275"><span class="linenos">275</span></a>        <span class="k">return</span> <span class="n">socket</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">AF_UNIX</span><span class="p">,</span> <span class="n">SOCK_TCP</span><span class="p">)</span>
@@ -453,7 +453,7 @@ lib<wbr>.net    </h1>
 </span><span id="L-324"><a href="#L-324"><span class="linenos">324</span></a><span class="sd">    - Uses `server_hostname` to support Server Name Indication (SNI).</span>
 </span><span id="L-325"><a href="#L-325"><span class="linenos">325</span></a>
 </span><span id="L-326"><a href="#L-326"><span class="linenos">326</span></a><span class="sd">    ### Example</span>
-</span><span id="L-327"><a href="#L-327"><span class="linenos">327</span></a><span class="sd">    &gt;&gt;&gt; success, response = fetch_ssl(&#39;example.com&#39;, 443, b&#39;GET / HTTP/1.0\r\nHost: example.com\r\n\r\n&#39;)</span>
+</span><span id="L-327"><a href="#L-327"><span class="linenos">327</span></a><span class="sd">    &gt;&gt;&gt; success, response = fetch_ssl(&#39;example.com&#39;, 443, b&#39;GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n&#39;)</span>
 </span><span id="L-328"><a href="#L-328"><span class="linenos">328</span></a><span class="sd">    &quot;&quot;&quot;</span>
 </span><span id="L-329"><a href="#L-329"><span class="linenos">329</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">open_ssl_socket</span><span class="p">():</span>
 </span><span id="L-330"><a href="#L-330"><span class="linenos">330</span></a>        <span class="n">context</span> <span class="o">=</span> <span class="n">ssl</span><span class="o">.</span><span class="n">create_default_context</span><span class="p">()</span>
@@ -1062,7 +1062,7 @@ Whether to use an IPv6 connection instead of IPv4. Defaults to <code>False</code
 </span><span id="fetch_socket-270"><a href="#fetch_socket-270"><span class="linenos">270</span></a><span class="sd">    - Unix domain sockets must exist and have appropriate permissions.</span>
 </span><span id="fetch_socket-271"><a href="#fetch_socket-271"><span class="linenos">271</span></a>
 </span><span id="fetch_socket-272"><a href="#fetch_socket-272"><span class="linenos">272</span></a><span class="sd">    ### Example</span>
-</span><span id="fetch_socket-273"><a href="#fetch_socket-273"><span class="linenos">273</span></a><span class="sd">    &gt;&gt;&gt; success, response = fetch_socket(&#39;/var/run/haproxy.sock&#39;, b&#39;show stat\n&#39;)</span>
+</span><span id="fetch_socket-273"><a href="#fetch_socket-273"><span class="linenos">273</span></a><span class="sd">    &gt;&gt;&gt; success, response = fetch_socket(&#39;/var/run/haproxy.sock&#39;, b&#39;show stat\\n&#39;)</span>
 </span><span id="fetch_socket-274"><a href="#fetch_socket-274"><span class="linenos">274</span></a><span class="sd">    &quot;&quot;&quot;</span>
 </span><span id="fetch_socket-275"><a href="#fetch_socket-275"><span class="linenos">275</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">open_unix_socket</span><span class="p">():</span>
 </span><span id="fetch_socket-276"><a href="#fetch_socket-276"><span class="linenos">276</span></a>        <span class="k">return</span> <span class="n">socket</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">AF_UNIX</span><span class="p">,</span> <span class="n">SOCK_TCP</span><span class="p">)</span>
@@ -1090,33 +1090,45 @@ Whether to use an IPv6 connection instead of IPv4. Defaults to <code>False</code
 
             <div class="docstring"><p>Fetch data via a Unix domain socket connection.</p>
 
-<pre><code>This function opens a connection to a Unix socket file, optionally sends a command,
-and returns the received response. It is similar to `fetch()` but operates over local
-filesystem sockets.
+<p>This function opens a connection to a Unix socket file, optionally sends a command,
+and returns the received response. It is similar to <code><a href="#fetch">fetch()</a></code> but operates over local
+filesystem sockets.</p>
 
-### Parameters
-- **sock_file** (`str`):
-  Path to the Unix domain socket file.
-- **cmd** (`bytes`, optional):
-  A command to send after connecting. If `None`, no command is sent.
-- **timeout** (`int`, optional):
-  Socket timeout in seconds. Defaults to `3`.
+<h3 id="parameters">Parameters</h3>
 
-### Returns
-- **tuple** (`bool`, `str`):
-  - `True`, followed by the received response text if successful.
-  - `False`, followed by an error message if failed.
+<ul>
+<li><strong>sock_file</strong> (<code>str</code>):
+Path to the Unix domain socket file.</li>
+<li><strong>cmd</strong> (<code>bytes</code>, optional):
+A command to send after connecting. If <code>None</code>, no command is sent.</li>
+<li><strong>timeout</strong> (<code>int</code>, optional):
+Socket timeout in seconds. Defaults to <code>3</code>.</li>
+</ul>
 
-### Notes
-- Timeout and socket errors are handled gracefully.
-- Response is decoded into text.
-- Unix domain sockets must exist and have appropriate permissions.
+<h3 id="returns">Returns</h3>
 
-### Example
-&gt;&gt;&gt; success, response = fetch_socket('/var/run/haproxy.sock', b'show stat
+<ul>
+<li><strong>tuple</strong> (<code>bool</code>, <code>str</code>):
+<ul>
+<li><code>True</code>, followed by the received response text if successful.</li>
+<li><code>False</code>, followed by an error message if failed.</li>
+</ul></li>
+</ul>
+
+<h3 id="notes">Notes</h3>
+
+<ul>
+<li>Timeout and socket errors are handled gracefully.</li>
+<li>Response is decoded into text.</li>
+<li>Unix domain sockets must exist and have appropriate permissions.</li>
+</ul>
+
+<h3 id="example">Example</h3>
+
+<div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">success</span><span class="p">,</span> <span class="n">response</span> <span class="o">=</span> <span class="n">fetch_socket</span><span class="p">(</span><span class="s1">&#39;/var/run/haproxy.sock&#39;</span><span class="p">,</span> <span class="sa">b</span><span class="s1">&#39;show stat</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">)</span>
 </code></pre>
-
-<p>')</p>
+</div>
 </div>
 
 
@@ -1162,7 +1174,7 @@ filesystem sockets.
 </span><span id="fetch_ssl-325"><a href="#fetch_ssl-325"><span class="linenos">325</span></a><span class="sd">    - Uses `server_hostname` to support Server Name Indication (SNI).</span>
 </span><span id="fetch_ssl-326"><a href="#fetch_ssl-326"><span class="linenos">326</span></a>
 </span><span id="fetch_ssl-327"><a href="#fetch_ssl-327"><span class="linenos">327</span></a><span class="sd">    ### Example</span>
-</span><span id="fetch_ssl-328"><a href="#fetch_ssl-328"><span class="linenos">328</span></a><span class="sd">    &gt;&gt;&gt; success, response = fetch_ssl(&#39;example.com&#39;, 443, b&#39;GET / HTTP/1.0\r\nHost: example.com\r\n\r\n&#39;)</span>
+</span><span id="fetch_ssl-328"><a href="#fetch_ssl-328"><span class="linenos">328</span></a><span class="sd">    &gt;&gt;&gt; success, response = fetch_ssl(&#39;example.com&#39;, 443, b&#39;GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n&#39;)</span>
 </span><span id="fetch_ssl-329"><a href="#fetch_ssl-329"><span class="linenos">329</span></a><span class="sd">    &quot;&quot;&quot;</span>
 </span><span id="fetch_ssl-330"><a href="#fetch_ssl-330"><span class="linenos">330</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">open_ssl_socket</span><span class="p">():</span>
 </span><span id="fetch_ssl-331"><a href="#fetch_ssl-331"><span class="linenos">331</span></a>        <span class="n">context</span> <span class="o">=</span> <span class="n">ssl</span><span class="o">.</span><span class="n">create_default_context</span><span class="p">()</span>
@@ -1179,38 +1191,48 @@ filesystem sockets.
 
             <div class="docstring"><p>Fetch data via an SSL/TLS encrypted TCP socket connection.</p>
 
-<pre><code>This function opens a secure SSL/TLS socket connection to a given host and port, optionally
+<p>This function opens a secure SSL/TLS socket connection to a given host and port, optionally
 sends a message, and returns the received response. It uses the system's default trusted CA
-certificates.
+certificates.</p>
 
-### Parameters
-- **host** (`str`):
-  Target hostname or IP address for the SSL connection.
-- **port** (`int`):
-  Target TCP port number (usually 443 for HTTPS services).
-- **msg** (`bytes`, optional):
-  A message to send after connecting. If `None`, no message is sent.
-- **timeout** (`int`, optional):
-  Socket timeout in seconds. Defaults to `3`.
+<h3 id="parameters">Parameters</h3>
 
-### Returns
-- **tuple** (`bool`, `str`):
-  - `True`, followed by the received response text if successful.
-  - `False`, followed by an error message if failed.
+<ul>
+<li><strong>host</strong> (<code>str</code>):
+Target hostname or IP address for the SSL connection.</li>
+<li><strong>port</strong> (<code>int</code>):
+Target TCP port number (usually 443 for HTTPS services).</li>
+<li><strong>msg</strong> (<code>bytes</code>, optional):
+A message to send after connecting. If <code>None</code>, no message is sent.</li>
+<li><strong>timeout</strong> (<code>int</code>, optional):
+Socket timeout in seconds. Defaults to <code>3</code>.</li>
+</ul>
 
-### Notes
-- Timeout, SSL, and socket errors are handled gracefully.
-- Response is decoded into UTF-8 text.
-- SSL certificate validation is performed automatically based on the system's trusted CAs.
-- Uses `server_hostname` to support Server Name Indication (SNI).
+<h3 id="returns">Returns</h3>
 
-### Example
-&gt;&gt;&gt; success, response = fetch_ssl('example.com', 443, b'GET / HTTP/1.0
+<ul>
+<li><strong>tuple</strong> (<code>bool</code>, <code>str</code>):
+<ul>
+<li><code>True</code>, followed by the received response text if successful.</li>
+<li><code>False</code>, followed by an error message if failed.</li>
+</ul></li>
+</ul>
+
+<h3 id="notes">Notes</h3>
+
+<ul>
+<li>Timeout, SSL, and socket errors are handled gracefully.</li>
+<li>Response is decoded into UTF-8 text.</li>
+<li>SSL certificate validation is performed automatically based on the system's trusted CAs.</li>
+<li>Uses <code>server_hostname</code> to support Server Name Indication (SNI).</li>
+</ul>
+
+<h3 id="example">Example</h3>
+
+<div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">success</span><span class="p">,</span> <span class="n">response</span> <span class="o">=</span> <span class="n">fetch_ssl</span><span class="p">(</span><span class="s1">&#39;example.com&#39;</span><span class="p">,</span> <span class="mi">443</span><span class="p">,</span> <span class="sa">b</span><span class="s1">&#39;GET / HTTP/1.0</span><span class="se">\r\n</span><span class="s1">Host: example.com</span><span class="se">\r\n\r\n</span><span class="s1">&#39;</span><span class="p">)</span>
 </code></pre>
-
-<p>Host: example.com</p>
-
-<p>')</p>
+</div>
 </div>
 
 
