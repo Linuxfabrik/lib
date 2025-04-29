@@ -12,7 +12,7 @@ These Python libraries are used in several Linuxfabrik projects, including the [
 
 [API Documentation](https://linuxfabrik.github.io/lib/) (hosted on GitHub Pages).
 
-The HTML documentation is created using [https://pdoc.dev/](https://pdoc.dev/) and is located in [./docs/index.html](./docs/index.html).
+The HTML documentation is created using [https://pdoc.dev/](https://pdoc.dev/):
 
 ```
 pip install pdoc
