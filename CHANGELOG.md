@@ -6,13 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.1.1.7...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.1.1.15...HEAD
 
 ## [Unreleased]
 
+tbd
+
+
+## v2.1.1.15
+
 ### Changed ("refactor", "chore" etc.)
 
-* refactor(net.py): add fetch_socket() and fetch_sssl(), improve fetch()
+* refactor(net.py): add fetch_socket() and fetch_ssl(), improve fetch()
 
 
 ## v2.1.1.7
