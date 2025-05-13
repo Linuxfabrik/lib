@@ -10,7 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## [Unreleased]
 
-tbd
+### Changed ("refactor", "chore" etc.)
+
+* refactor(txt.py): enhance sanitize regex
 
 
 ## v2.1.1.15
