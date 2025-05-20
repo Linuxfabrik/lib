@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042902'
+__version__ = '2025052001'
 
 import random
 import re
@@ -328,6 +328,9 @@ def fetch_ssl(host, port, msg=None, timeout=3):
     """
     def open_ssl_socket():
         context = ssl.create_default_context()
+        # forcing TLS 1.2+
+        ctx.options |= ssl.OP_NO_TLSv1
+        ctx.options |= ssl.OP_NO_TLSv1_1
         raw_sock = socket.socket(socket.AF_INET, SOCK_TCP)
         return context.wrap_socket(raw_sock, server_hostname=host)
 
