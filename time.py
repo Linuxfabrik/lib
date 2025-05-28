@@ -12,10 +12,13 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025052801'
 
 import datetime
+import sys
 import time
+if sys.version_info >= (3, 9):
+    import zoneinfo  # available in python 3.9+
 
 
 def epoch2iso(timestamp):
@@ -40,6 +43,36 @@ def epoch2iso(timestamp):
         return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts))
     except (TypeError, ValueError):
         return ''
+
+
+def get_timezone(tz_name):
+    """
+    Load an IANA time-zone by name and return a ZoneInfo object, defaulting to UTC if invalid.
+
+    This function takes an IANA time-zone name (str) and returns the corresponding
+    zoneinfo.ZoneInfo object. If loading fails, UTC ("Etc/UTC") is returned.
+
+    ### Parameters
+    - **tz_name** (`str`): IANA time-zone identifier (e.g. "Europe/London").
+
+    ### Returns
+    - **ZoneInfo**: A `zoneinfo.ZoneInfo` object for the requested zone, or UTC if not found.
+
+    ### Example
+    >>> get_timezone("Europe/London").key
+    'Europe/London'
+    >>> get_timezone("Invalid/Zone").key
+    'Etc/UTC'
+    """
+    try:
+        return zoneinfo.ZoneInfo(tz_name)
+    except Exception:
+        # Fallback to UTC if the name isn't found
+        try:
+            return zoneinfo.ZoneInfo('Etc/UTC')
+        except Exception:
+            # Python < 3.9
+            return datetime.timezone.utc
 
 
 def now(as_type=''):

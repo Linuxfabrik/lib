@@ -121,12 +121,12 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-13"><a href="#L-13"><span class="linenos">  13</span></a><span class="n">__author__</span> <span class="o">=</span> <span class="s1">&#39;Linuxfabrik GmbH, Zurich/Switzerland&#39;</span>
 </span><span id="L-14"><a href="#L-14"><span class="linenos">  14</span></a><span class="n">__version__</span> <span class="o">=</span> <span class="s1">&#39;2025041901&#39;</span>
 </span><span id="L-15"><a href="#L-15"><span class="linenos">  15</span></a>
-</span><span id="L-16"><a href="#L-16"><span class="linenos">  16</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">time</span>
-</span><span id="L-17"><a href="#L-17"><span class="linenos">  17</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">txt</span>
-</span><span id="L-18"><a href="#L-18"><span class="linenos">  18</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">url</span>
+</span><span id="L-16"><a href="#L-16"><span class="linenos">  16</span></a><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">time</span>
+</span><span id="L-17"><a href="#L-17"><span class="linenos">  17</span></a><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">txt</span>
+</span><span id="L-18"><a href="#L-18"><span class="linenos">  18</span></a><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">url</span>
 </span><span id="L-19"><a href="#L-19"><span class="linenos">  19</span></a>
 </span><span id="L-20"><a href="#L-20"><span class="linenos">  20</span></a>
-</span><span id="L-21"><a href="#L-21"><span class="linenos">  21</span></a><span class="k">def</span><span class="w"> </span><span class="nf">delete_alert_contact</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-21"><a href="#L-21"><span class="linenos">  21</span></a><span class="k">def</span> <span class="nf">delete_alert_contact</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-22"><a href="#L-22"><span class="linenos">  22</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-23"><a href="#L-23"><span class="linenos">  23</span></a><span class="sd">    Call the UptimeRobot API to delete an existing alert contact.</span>
 </span><span id="L-24"><a href="#L-24"><span class="linenos">  24</span></a>
@@ -163,7 +163,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-55"><a href="#L-55"><span class="linenos">  55</span></a>    <span class="p">)</span>
 </span><span id="L-56"><a href="#L-56"><span class="linenos">  56</span></a>
 </span><span id="L-57"><a href="#L-57"><span class="linenos">  57</span></a>
-</span><span id="L-58"><a href="#L-58"><span class="linenos">  58</span></a><span class="k">def</span><span class="w"> </span><span class="nf">delete_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-58"><a href="#L-58"><span class="linenos">  58</span></a><span class="k">def</span> <span class="nf">delete_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-59"><a href="#L-59"><span class="linenos">  59</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-60"><a href="#L-60"><span class="linenos">  60</span></a><span class="sd">    Call the UptimeRobot API to delete an existing monitor.</span>
 </span><span id="L-61"><a href="#L-61"><span class="linenos">  61</span></a>
@@ -200,7 +200,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-92"><a href="#L-92"><span class="linenos">  92</span></a>    <span class="p">)</span>
 </span><span id="L-93"><a href="#L-93"><span class="linenos">  93</span></a>
 </span><span id="L-94"><a href="#L-94"><span class="linenos">  94</span></a>
-</span><span id="L-95"><a href="#L-95"><span class="linenos">  95</span></a><span class="k">def</span><span class="w"> </span><span class="nf">delete_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-95"><a href="#L-95"><span class="linenos">  95</span></a><span class="k">def</span> <span class="nf">delete_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-96"><a href="#L-96"><span class="linenos">  96</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-97"><a href="#L-97"><span class="linenos">  97</span></a><span class="sd">    Call the UptimeRobot API to delete an existing monitoring window.</span>
 </span><span id="L-98"><a href="#L-98"><span class="linenos">  98</span></a>
@@ -237,7 +237,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-129"><a href="#L-129"><span class="linenos"> 129</span></a>    <span class="p">)</span>
 </span><span id="L-130"><a href="#L-130"><span class="linenos"> 130</span></a>
 </span><span id="L-131"><a href="#L-131"><span class="linenos"> 131</span></a>
-</span><span id="L-132"><a href="#L-132"><span class="linenos"> 132</span></a><span class="k">def</span><span class="w"> </span><span class="nf">delete_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-132"><a href="#L-132"><span class="linenos"> 132</span></a><span class="k">def</span> <span class="nf">delete_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-133"><a href="#L-133"><span class="linenos"> 133</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-134"><a href="#L-134"><span class="linenos"> 134</span></a><span class="sd">    Call the UptimeRobot API to delete an existing PSP (public service provider).</span>
 </span><span id="L-135"><a href="#L-135"><span class="linenos"> 135</span></a>
@@ -274,7 +274,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-166"><a href="#L-166"><span class="linenos"> 166</span></a>    <span class="p">)</span>
 </span><span id="L-167"><a href="#L-167"><span class="linenos"> 167</span></a>
 </span><span id="L-168"><a href="#L-168"><span class="linenos"> 168</span></a>
-</span><span id="L-169"><a href="#L-169"><span class="linenos"> 169</span></a><span class="k">def</span><span class="w"> </span><span class="nf">edit_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-169"><a href="#L-169"><span class="linenos"> 169</span></a><span class="k">def</span> <span class="nf">edit_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-170"><a href="#L-170"><span class="linenos"> 170</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-171"><a href="#L-171"><span class="linenos"> 171</span></a><span class="sd">    Call the UptimeRobot API to edit an existing monitor.</span>
 </span><span id="L-172"><a href="#L-172"><span class="linenos"> 172</span></a>
@@ -393,7 +393,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-285"><a href="#L-285"><span class="linenos"> 285</span></a>    <span class="p">)</span>
 </span><span id="L-286"><a href="#L-286"><span class="linenos"> 286</span></a>
 </span><span id="L-287"><a href="#L-287"><span class="linenos"> 287</span></a>
-</span><span id="L-288"><a href="#L-288"><span class="linenos"> 288</span></a><span class="k">def</span><span class="w"> </span><span class="nf">edit_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-288"><a href="#L-288"><span class="linenos"> 288</span></a><span class="k">def</span> <span class="nf">edit_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-289"><a href="#L-289"><span class="linenos"> 289</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-290"><a href="#L-290"><span class="linenos"> 290</span></a><span class="sd">    Call the UptimeRobot API to edit an existing monitoring window.</span>
 </span><span id="L-291"><a href="#L-291"><span class="linenos"> 291</span></a>
@@ -465,7 +465,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-357"><a href="#L-357"><span class="linenos"> 357</span></a>    <span class="p">)</span>
 </span><span id="L-358"><a href="#L-358"><span class="linenos"> 358</span></a>
 </span><span id="L-359"><a href="#L-359"><span class="linenos"> 359</span></a>
-</span><span id="L-360"><a href="#L-360"><span class="linenos"> 360</span></a><span class="k">def</span><span class="w"> </span><span class="nf">edit_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-360"><a href="#L-360"><span class="linenos"> 360</span></a><span class="k">def</span> <span class="nf">edit_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-361"><a href="#L-361"><span class="linenos"> 361</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-362"><a href="#L-362"><span class="linenos"> 362</span></a><span class="sd">    Call the UptimeRobot API to edit an existing PSP (public status page).</span>
 </span><span id="L-363"><a href="#L-363"><span class="linenos"> 363</span></a>
@@ -528,7 +528,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-420"><a href="#L-420"><span class="linenos"> 420</span></a>    <span class="p">)</span>
 </span><span id="L-421"><a href="#L-421"><span class="linenos"> 421</span></a>
 </span><span id="L-422"><a href="#L-422"><span class="linenos"> 422</span></a>
-</span><span id="L-423"><a href="#L-423"><span class="linenos"> 423</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_account_details</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+</span><span id="L-423"><a href="#L-423"><span class="linenos"> 423</span></a><span class="k">def</span> <span class="nf">get_account_details</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
 </span><span id="L-424"><a href="#L-424"><span class="linenos"> 424</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-425"><a href="#L-425"><span class="linenos"> 425</span></a><span class="sd">    Call the UptimeRobot API to retrieve account details.</span>
 </span><span id="L-426"><a href="#L-426"><span class="linenos"> 426</span></a>
@@ -570,7 +570,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-462"><a href="#L-462"><span class="linenos"> 462</span></a>    <span class="k">return</span> <span class="n">success</span><span class="p">,</span> <span class="n">account</span><span class="p">,</span> <span class="n">rl</span>
 </span><span id="L-463"><a href="#L-463"><span class="linenos"> 463</span></a>
 </span><span id="L-464"><a href="#L-464"><span class="linenos"> 464</span></a>
-</span><span id="L-465"><a href="#L-465"><span class="linenos"> 465</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_alert_contacts</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-465"><a href="#L-465"><span class="linenos"> 465</span></a><span class="k">def</span> <span class="nf">get_alert_contacts</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-466"><a href="#L-466"><span class="linenos"> 466</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-467"><a href="#L-467"><span class="linenos"> 467</span></a><span class="sd">    Call the UptimeRobot API to retrieve alert contacts.</span>
 </span><span id="L-468"><a href="#L-468"><span class="linenos"> 468</span></a>
@@ -639,7 +639,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-531"><a href="#L-531"><span class="linenos"> 531</span></a>        <span class="p">},</span>
 </span><span id="L-532"><a href="#L-532"><span class="linenos"> 532</span></a>    <span class="p">}</span>
 </span><span id="L-533"><a href="#L-533"><span class="linenos"> 533</span></a>
-</span><span id="L-534"><a href="#L-534"><span class="linenos"> 534</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+</span><span id="L-534"><a href="#L-534"><span class="linenos"> 534</span></a>    <span class="k">def</span> <span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="L-535"><a href="#L-535"><span class="linenos"> 535</span></a>        <span class="c1"># replace values for top-level keys</span>
 </span><span id="L-536"><a href="#L-536"><span class="linenos"> 536</span></a>        <span class="k">if</span> <span class="s1">&#39;status&#39;</span> <span class="ow">in</span> <span class="n">item</span><span class="p">:</span>
 </span><span id="L-537"><a href="#L-537"><span class="linenos"> 537</span></a>            <span class="n">item</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">replace_map</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
@@ -659,7 +659,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-551"><a href="#L-551"><span class="linenos"> 551</span></a>    <span class="k">return</span> <span class="n">success</span><span class="p">,</span> <span class="n">result</span>
 </span><span id="L-552"><a href="#L-552"><span class="linenos"> 552</span></a>
 </span><span id="L-553"><a href="#L-553"><span class="linenos"> 553</span></a>
-</span><span id="L-554"><a href="#L-554"><span class="linenos"> 554</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_data</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">result_key</span><span class="p">):</span>
+</span><span id="L-554"><a href="#L-554"><span class="linenos"> 554</span></a><span class="k">def</span> <span class="nf">get_data</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">result_key</span><span class="p">):</span>
 </span><span id="L-555"><a href="#L-555"><span class="linenos"> 555</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-556"><a href="#L-556"><span class="linenos"> 556</span></a><span class="sd">    Call a REST API and retrieve paginated results.</span>
 </span><span id="L-557"><a href="#L-557"><span class="linenos"> 557</span></a>
@@ -716,7 +716,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-608"><a href="#L-608"><span class="linenos"> 608</span></a>    <span class="k">return</span> <span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
 </span><span id="L-609"><a href="#L-609"><span class="linenos"> 609</span></a>
 </span><span id="L-610"><a href="#L-610"><span class="linenos"> 610</span></a>
-</span><span id="L-611"><a href="#L-611"><span class="linenos"> 611</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_monitors</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-611"><a href="#L-611"><span class="linenos"> 611</span></a><span class="k">def</span> <span class="nf">get_monitors</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-612"><a href="#L-612"><span class="linenos"> 612</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-613"><a href="#L-613"><span class="linenos"> 613</span></a><span class="sd">    Call the UptimeRobot API to retrieve monitor information, including optional translation of</span>
 </span><span id="L-614"><a href="#L-614"><span class="linenos"> 614</span></a><span class="sd">    statuses and types.</span>
@@ -867,7 +867,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-759"><a href="#L-759"><span class="linenos"> 759</span></a>        <span class="p">},</span>
 </span><span id="L-760"><a href="#L-760"><span class="linenos"> 760</span></a>    <span class="p">}</span>
 </span><span id="L-761"><a href="#L-761"><span class="linenos"> 761</span></a>
-</span><span id="L-762"><a href="#L-762"><span class="linenos"> 762</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+</span><span id="L-762"><a href="#L-762"><span class="linenos"> 762</span></a>    <span class="k">def</span> <span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="L-763"><a href="#L-763"><span class="linenos"> 763</span></a>        <span class="c1"># replace the nested alert_contacts &#39;type&#39; value</span>
 </span><span id="L-764"><a href="#L-764"><span class="linenos"> 764</span></a>        <span class="k">for</span> <span class="n">contact</span> <span class="ow">in</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;alert_contacts&#39;</span><span class="p">,</span> <span class="p">[]):</span>
 </span><span id="L-765"><a href="#L-765"><span class="linenos"> 765</span></a>            <span class="k">if</span> <span class="s1">&#39;type&#39;</span> <span class="ow">in</span> <span class="n">contact</span><span class="p">:</span>
@@ -915,7 +915,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-807"><a href="#L-807"><span class="linenos"> 807</span></a>    <span class="k">return</span> <span class="n">success</span><span class="p">,</span> <span class="n">result</span>
 </span><span id="L-808"><a href="#L-808"><span class="linenos"> 808</span></a>
 </span><span id="L-809"><a href="#L-809"><span class="linenos"> 809</span></a>
-</span><span id="L-810"><a href="#L-810"><span class="linenos"> 810</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_mwindows</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-810"><a href="#L-810"><span class="linenos"> 810</span></a><span class="k">def</span> <span class="nf">get_mwindows</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-811"><a href="#L-811"><span class="linenos"> 811</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-812"><a href="#L-812"><span class="linenos"> 812</span></a><span class="sd">    Call the UptimeRobot API to retrieve monitoring windows (mwindows).</span>
 </span><span id="L-813"><a href="#L-813"><span class="linenos"> 813</span></a>
@@ -965,7 +965,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-857"><a href="#L-857"><span class="linenos"> 857</span></a>        <span class="p">},</span>
 </span><span id="L-858"><a href="#L-858"><span class="linenos"> 858</span></a>    <span class="p">}</span>
 </span><span id="L-859"><a href="#L-859"><span class="linenos"> 859</span></a>
-</span><span id="L-860"><a href="#L-860"><span class="linenos"> 860</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+</span><span id="L-860"><a href="#L-860"><span class="linenos"> 860</span></a>    <span class="k">def</span> <span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="L-861"><a href="#L-861"><span class="linenos"> 861</span></a>        <span class="c1"># replace values for top-level keys</span>
 </span><span id="L-862"><a href="#L-862"><span class="linenos"> 862</span></a>        <span class="k">if</span> <span class="s1">&#39;status&#39;</span> <span class="ow">in</span> <span class="n">item</span><span class="p">:</span>
 </span><span id="L-863"><a href="#L-863"><span class="linenos"> 863</span></a>            <span class="n">item</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">replace_map</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
@@ -980,7 +980,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-872"><a href="#L-872"><span class="linenos"> 872</span></a>    <span class="k">return</span> <span class="n">success</span><span class="p">,</span> <span class="n">result</span>
 </span><span id="L-873"><a href="#L-873"><span class="linenos"> 873</span></a>
 </span><span id="L-874"><a href="#L-874"><span class="linenos"> 874</span></a>
-</span><span id="L-875"><a href="#L-875"><span class="linenos"> 875</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_psps</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-875"><a href="#L-875"><span class="linenos"> 875</span></a><span class="k">def</span> <span class="nf">get_psps</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-876"><a href="#L-876"><span class="linenos"> 876</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-877"><a href="#L-877"><span class="linenos"> 877</span></a><span class="sd">    Call the UptimeRobot API to retrieve PSPs (public service providers).</span>
 </span><span id="L-878"><a href="#L-878"><span class="linenos"> 878</span></a>
@@ -1036,7 +1036,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-928"><a href="#L-928"><span class="linenos"> 928</span></a>        <span class="p">},</span>
 </span><span id="L-929"><a href="#L-929"><span class="linenos"> 929</span></a>    <span class="p">}</span>
 </span><span id="L-930"><a href="#L-930"><span class="linenos"> 930</span></a>
-</span><span id="L-931"><a href="#L-931"><span class="linenos"> 931</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+</span><span id="L-931"><a href="#L-931"><span class="linenos"> 931</span></a>    <span class="k">def</span> <span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="L-932"><a href="#L-932"><span class="linenos"> 932</span></a>        <span class="c1"># replace values for top-level keys</span>
 </span><span id="L-933"><a href="#L-933"><span class="linenos"> 933</span></a>        <span class="k">if</span> <span class="s1">&#39;sort&#39;</span> <span class="ow">in</span> <span class="n">item</span><span class="p">:</span>
 </span><span id="L-934"><a href="#L-934"><span class="linenos"> 934</span></a>            <span class="n">item</span><span class="p">[</span><span class="s1">&#39;sort&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">replace_map</span><span class="p">[</span><span class="s1">&#39;sort&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
@@ -1056,7 +1056,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-948"><a href="#L-948"><span class="linenos"> 948</span></a>    <span class="k">return</span> <span class="n">success</span><span class="p">,</span> <span class="n">result</span>
 </span><span id="L-949"><a href="#L-949"><span class="linenos"> 949</span></a>
 </span><span id="L-950"><a href="#L-950"><span class="linenos"> 950</span></a>
-</span><span id="L-951"><a href="#L-951"><span class="linenos"> 951</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_response_header</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+</span><span id="L-951"><a href="#L-951"><span class="linenos"> 951</span></a><span class="k">def</span> <span class="nf">get_response_header</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
 </span><span id="L-952"><a href="#L-952"><span class="linenos"> 952</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-953"><a href="#L-953"><span class="linenos"> 953</span></a><span class="sd">    Call a REST API and return only the response headers.</span>
 </span><span id="L-954"><a href="#L-954"><span class="linenos"> 954</span></a>
@@ -1094,7 +1094,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-986"><a href="#L-986"><span class="linenos"> 986</span></a>    <span class="k">return</span> <span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">result</span><span class="p">[</span><span class="s1">&#39;response_header&#39;</span><span class="p">])</span>
 </span><span id="L-987"><a href="#L-987"><span class="linenos"> 987</span></a>
 </span><span id="L-988"><a href="#L-988"><span class="linenos"> 988</span></a>
-</span><span id="L-989"><a href="#L-989"><span class="linenos"> 989</span></a><span class="k">def</span><span class="w"> </span><span class="nf">new_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-989"><a href="#L-989"><span class="linenos"> 989</span></a><span class="k">def</span> <span class="nf">new_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-990"><a href="#L-990"><span class="linenos"> 990</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-991"><a href="#L-991"><span class="linenos"> 991</span></a><span class="sd">    Call the UptimeRobot API to create a new monitor.</span>
 </span><span id="L-992"><a href="#L-992"><span class="linenos"> 992</span></a>
@@ -1215,7 +1215,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-1107"><a href="#L-1107"><span class="linenos">1107</span></a>    <span class="p">)</span>
 </span><span id="L-1108"><a href="#L-1108"><span class="linenos">1108</span></a>
 </span><span id="L-1109"><a href="#L-1109"><span class="linenos">1109</span></a>
-</span><span id="L-1110"><a href="#L-1110"><span class="linenos">1110</span></a><span class="k">def</span><span class="w"> </span><span class="nf">new_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-1110"><a href="#L-1110"><span class="linenos">1110</span></a><span class="k">def</span> <span class="nf">new_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-1111"><a href="#L-1111"><span class="linenos">1111</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-1112"><a href="#L-1112"><span class="linenos">1112</span></a><span class="sd">    Call the UptimeRobot API to create a new monitoring window.</span>
 </span><span id="L-1113"><a href="#L-1113"><span class="linenos">1113</span></a>
@@ -1280,7 +1280,7 @@ lib<wbr>.uptimerobot    </h1>
 </span><span id="L-1172"><a href="#L-1172"><span class="linenos">1172</span></a>    <span class="p">)</span>
 </span><span id="L-1173"><a href="#L-1173"><span class="linenos">1173</span></a>
 </span><span id="L-1174"><a href="#L-1174"><span class="linenos">1174</span></a>
-</span><span id="L-1175"><a href="#L-1175"><span class="linenos">1175</span></a><span class="k">def</span><span class="w"> </span><span class="nf">new_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+</span><span id="L-1175"><a href="#L-1175"><span class="linenos">1175</span></a><span class="k">def</span> <span class="nf">new_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="L-1176"><a href="#L-1176"><span class="linenos">1176</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-1177"><a href="#L-1177"><span class="linenos">1177</span></a><span class="sd">    Call the UptimeRobot API to create a new PSP (public service provider).</span>
 </span><span id="L-1178"><a href="#L-1178"><span class="linenos">1178</span></a>
@@ -1355,7 +1355,7 @@ lib<wbr>.uptimerobot    </h1>
 
     </div>
     <a class="headerlink" href="#delete_alert_contact"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="delete_alert_contact-22"><a href="#delete_alert_contact-22"><span class="linenos">22</span></a><span class="k">def</span><span class="w"> </span><span class="nf">delete_alert_contact</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="delete_alert_contact-22"><a href="#delete_alert_contact-22"><span class="linenos">22</span></a><span class="k">def</span> <span class="nf">delete_alert_contact</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="delete_alert_contact-23"><a href="#delete_alert_contact-23"><span class="linenos">23</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="delete_alert_contact-24"><a href="#delete_alert_contact-24"><span class="linenos">24</span></a><span class="sd">    Call the UptimeRobot API to delete an existing alert contact.</span>
 </span><span id="delete_alert_contact-25"><a href="#delete_alert_contact-25"><span class="linenos">25</span></a>
@@ -1441,7 +1441,7 @@ Only the allowed keys (<code>'api_key'</code>, <code>'id'</code>) will be kept.<
 
     </div>
     <a class="headerlink" href="#delete_monitor"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="delete_monitor-59"><a href="#delete_monitor-59"><span class="linenos">59</span></a><span class="k">def</span><span class="w"> </span><span class="nf">delete_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="delete_monitor-59"><a href="#delete_monitor-59"><span class="linenos">59</span></a><span class="k">def</span> <span class="nf">delete_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="delete_monitor-60"><a href="#delete_monitor-60"><span class="linenos">60</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="delete_monitor-61"><a href="#delete_monitor-61"><span class="linenos">61</span></a><span class="sd">    Call the UptimeRobot API to delete an existing monitor.</span>
 </span><span id="delete_monitor-62"><a href="#delete_monitor-62"><span class="linenos">62</span></a>
@@ -1527,7 +1527,7 @@ API to delete the specified monitor.</p>
 
     </div>
     <a class="headerlink" href="#delete_mwindow"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="delete_mwindow-96"><a href="#delete_mwindow-96"><span class="linenos"> 96</span></a><span class="k">def</span><span class="w"> </span><span class="nf">delete_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="delete_mwindow-96"><a href="#delete_mwindow-96"><span class="linenos"> 96</span></a><span class="k">def</span> <span class="nf">delete_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="delete_mwindow-97"><a href="#delete_mwindow-97"><span class="linenos"> 97</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="delete_mwindow-98"><a href="#delete_mwindow-98"><span class="linenos"> 98</span></a><span class="sd">    Call the UptimeRobot API to delete an existing monitoring window.</span>
 </span><span id="delete_mwindow-99"><a href="#delete_mwindow-99"><span class="linenos"> 99</span></a>
@@ -1613,7 +1613,7 @@ window. Only the allowed keys (<code>'api_key'</code>, <code>'id'</code>) will b
 
     </div>
     <a class="headerlink" href="#delete_psp"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="delete_psp-133"><a href="#delete_psp-133"><span class="linenos">133</span></a><span class="k">def</span><span class="w"> </span><span class="nf">delete_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="delete_psp-133"><a href="#delete_psp-133"><span class="linenos">133</span></a><span class="k">def</span> <span class="nf">delete_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="delete_psp-134"><a href="#delete_psp-134"><span class="linenos">134</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="delete_psp-135"><a href="#delete_psp-135"><span class="linenos">135</span></a><span class="sd">    Call the UptimeRobot API to delete an existing PSP (public service provider).</span>
 </span><span id="delete_psp-136"><a href="#delete_psp-136"><span class="linenos">136</span></a>
@@ -1699,7 +1699,7 @@ allowed keys (<code>'api_key'</code>, <code>'id'</code>) will be kept.</li>
 
     </div>
     <a class="headerlink" href="#edit_monitor"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="edit_monitor-170"><a href="#edit_monitor-170"><span class="linenos">170</span></a><span class="k">def</span><span class="w"> </span><span class="nf">edit_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="edit_monitor-170"><a href="#edit_monitor-170"><span class="linenos">170</span></a><span class="k">def</span> <span class="nf">edit_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="edit_monitor-171"><a href="#edit_monitor-171"><span class="linenos">171</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="edit_monitor-172"><a href="#edit_monitor-172"><span class="linenos">172</span></a><span class="sd">    Call the UptimeRobot API to edit an existing monitor.</span>
 </span><span id="edit_monitor-173"><a href="#edit_monitor-173"><span class="linenos">173</span></a>
@@ -1872,7 +1872,7 @@ will be kept and translated accordingly.</li>
 
     </div>
     <a class="headerlink" href="#edit_mwindow"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="edit_mwindow-289"><a href="#edit_mwindow-289"><span class="linenos">289</span></a><span class="k">def</span><span class="w"> </span><span class="nf">edit_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="edit_mwindow-289"><a href="#edit_mwindow-289"><span class="linenos">289</span></a><span class="k">def</span> <span class="nf">edit_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="edit_mwindow-290"><a href="#edit_mwindow-290"><span class="linenos">290</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="edit_mwindow-291"><a href="#edit_mwindow-291"><span class="linenos">291</span></a><span class="sd">    Call the UptimeRobot API to edit an existing monitoring window.</span>
 </span><span id="edit_mwindow-292"><a href="#edit_mwindow-292"><span class="linenos">292</span></a>
@@ -1999,7 +1999,7 @@ allowed keys (<code>'api_key'</code>, <code>'id'</code>, <code>'friendly_name'</
 
     </div>
     <a class="headerlink" href="#edit_psp"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="edit_psp-361"><a href="#edit_psp-361"><span class="linenos">361</span></a><span class="k">def</span><span class="w"> </span><span class="nf">edit_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="edit_psp-361"><a href="#edit_psp-361"><span class="linenos">361</span></a><span class="k">def</span> <span class="nf">edit_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="edit_psp-362"><a href="#edit_psp-362"><span class="linenos">362</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="edit_psp-363"><a href="#edit_psp-363"><span class="linenos">363</span></a><span class="sd">    Call the UptimeRobot API to edit an existing PSP (public status page).</span>
 </span><span id="edit_psp-364"><a href="#edit_psp-364"><span class="linenos">364</span></a>
@@ -2116,7 +2116,7 @@ allowed keys (<code>'api_key'</code>, <code>'id'</code>, <code>'friendly_name'</
 
     </div>
     <a class="headerlink" href="#get_account_details"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_account_details-424"><a href="#get_account_details-424"><span class="linenos">424</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_account_details</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_account_details-424"><a href="#get_account_details-424"><span class="linenos">424</span></a><span class="k">def</span> <span class="nf">get_account_details</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
 </span><span id="get_account_details-425"><a href="#get_account_details-425"><span class="linenos">425</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_account_details-426"><a href="#get_account_details-426"><span class="linenos">426</span></a><span class="sd">    Call the UptimeRobot API to retrieve account details.</span>
 </span><span id="get_account_details-427"><a href="#get_account_details-427"><span class="linenos">427</span></a>
@@ -2203,7 +2203,7 @@ Only keys listed in <code>allowed_keys</code> (e.g., <code>'api_key'</code>) are
 
     </div>
     <a class="headerlink" href="#get_alert_contacts"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_alert_contacts-466"><a href="#get_alert_contacts-466"><span class="linenos">466</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_alert_contacts</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_alert_contacts-466"><a href="#get_alert_contacts-466"><span class="linenos">466</span></a><span class="k">def</span> <span class="nf">get_alert_contacts</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="get_alert_contacts-467"><a href="#get_alert_contacts-467"><span class="linenos">467</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_alert_contacts-468"><a href="#get_alert_contacts-468"><span class="linenos">468</span></a><span class="sd">    Call the UptimeRobot API to retrieve alert contacts.</span>
 </span><span id="get_alert_contacts-469"><a href="#get_alert_contacts-469"><span class="linenos">469</span></a>
@@ -2272,7 +2272,7 @@ Only keys listed in <code>allowed_keys</code> (e.g., <code>'api_key'</code>) are
 </span><span id="get_alert_contacts-532"><a href="#get_alert_contacts-532"><span class="linenos">532</span></a>        <span class="p">},</span>
 </span><span id="get_alert_contacts-533"><a href="#get_alert_contacts-533"><span class="linenos">533</span></a>    <span class="p">}</span>
 </span><span id="get_alert_contacts-534"><a href="#get_alert_contacts-534"><span class="linenos">534</span></a>
-</span><span id="get_alert_contacts-535"><a href="#get_alert_contacts-535"><span class="linenos">535</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+</span><span id="get_alert_contacts-535"><a href="#get_alert_contacts-535"><span class="linenos">535</span></a>    <span class="k">def</span> <span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="get_alert_contacts-536"><a href="#get_alert_contacts-536"><span class="linenos">536</span></a>        <span class="c1"># replace values for top-level keys</span>
 </span><span id="get_alert_contacts-537"><a href="#get_alert_contacts-537"><span class="linenos">537</span></a>        <span class="k">if</span> <span class="s1">&#39;status&#39;</span> <span class="ow">in</span> <span class="n">item</span><span class="p">:</span>
 </span><span id="get_alert_contacts-538"><a href="#get_alert_contacts-538"><span class="linenos">538</span></a>            <span class="n">item</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">replace_map</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
@@ -2346,7 +2346,7 @@ the allowed keys (<code>'api_key'</code>, <code>'alert_contacts'</code>, <code>'
 
     </div>
     <a class="headerlink" href="#get_data"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_data-555"><a href="#get_data-555"><span class="linenos">555</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_data</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">result_key</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_data-555"><a href="#get_data-555"><span class="linenos">555</span></a><span class="k">def</span> <span class="nf">get_data</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">result_key</span><span class="p">):</span>
 </span><span id="get_data-556"><a href="#get_data-556"><span class="linenos">556</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_data-557"><a href="#get_data-557"><span class="linenos">557</span></a><span class="sd">    Call a REST API and retrieve paginated results.</span>
 </span><span id="get_data-558"><a href="#get_data-558"><span class="linenos">558</span></a>
@@ -2450,7 +2450,7 @@ fetched.</p>
 
     </div>
     <a class="headerlink" href="#get_monitors"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_monitors-612"><a href="#get_monitors-612"><span class="linenos">612</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_monitors</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_monitors-612"><a href="#get_monitors-612"><span class="linenos">612</span></a><span class="k">def</span> <span class="nf">get_monitors</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="get_monitors-613"><a href="#get_monitors-613"><span class="linenos">613</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_monitors-614"><a href="#get_monitors-614"><span class="linenos">614</span></a><span class="sd">    Call the UptimeRobot API to retrieve monitor information, including optional translation of</span>
 </span><span id="get_monitors-615"><a href="#get_monitors-615"><span class="linenos">615</span></a><span class="sd">    statuses and types.</span>
@@ -2601,7 +2601,7 @@ fetched.</p>
 </span><span id="get_monitors-760"><a href="#get_monitors-760"><span class="linenos">760</span></a>        <span class="p">},</span>
 </span><span id="get_monitors-761"><a href="#get_monitors-761"><span class="linenos">761</span></a>    <span class="p">}</span>
 </span><span id="get_monitors-762"><a href="#get_monitors-762"><span class="linenos">762</span></a>
-</span><span id="get_monitors-763"><a href="#get_monitors-763"><span class="linenos">763</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+</span><span id="get_monitors-763"><a href="#get_monitors-763"><span class="linenos">763</span></a>    <span class="k">def</span> <span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="get_monitors-764"><a href="#get_monitors-764"><span class="linenos">764</span></a>        <span class="c1"># replace the nested alert_contacts &#39;type&#39; value</span>
 </span><span id="get_monitors-765"><a href="#get_monitors-765"><span class="linenos">765</span></a>        <span class="k">for</span> <span class="n">contact</span> <span class="ow">in</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;alert_contacts&#39;</span><span class="p">,</span> <span class="p">[]):</span>
 </span><span id="get_monitors-766"><a href="#get_monitors-766"><span class="linenos">766</span></a>            <span class="k">if</span> <span class="s1">&#39;type&#39;</span> <span class="ow">in</span> <span class="n">contact</span><span class="p">:</span>
@@ -2706,7 +2706,7 @@ names to numbers).</li>
 
     </div>
     <a class="headerlink" href="#get_mwindows"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_mwindows-811"><a href="#get_mwindows-811"><span class="linenos">811</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_mwindows</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_mwindows-811"><a href="#get_mwindows-811"><span class="linenos">811</span></a><span class="k">def</span> <span class="nf">get_mwindows</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="get_mwindows-812"><a href="#get_mwindows-812"><span class="linenos">812</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_mwindows-813"><a href="#get_mwindows-813"><span class="linenos">813</span></a><span class="sd">    Call the UptimeRobot API to retrieve monitoring windows (mwindows).</span>
 </span><span id="get_mwindows-814"><a href="#get_mwindows-814"><span class="linenos">814</span></a>
@@ -2756,7 +2756,7 @@ names to numbers).</li>
 </span><span id="get_mwindows-858"><a href="#get_mwindows-858"><span class="linenos">858</span></a>        <span class="p">},</span>
 </span><span id="get_mwindows-859"><a href="#get_mwindows-859"><span class="linenos">859</span></a>    <span class="p">}</span>
 </span><span id="get_mwindows-860"><a href="#get_mwindows-860"><span class="linenos">860</span></a>
-</span><span id="get_mwindows-861"><a href="#get_mwindows-861"><span class="linenos">861</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+</span><span id="get_mwindows-861"><a href="#get_mwindows-861"><span class="linenos">861</span></a>    <span class="k">def</span> <span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="get_mwindows-862"><a href="#get_mwindows-862"><span class="linenos">862</span></a>        <span class="c1"># replace values for top-level keys</span>
 </span><span id="get_mwindows-863"><a href="#get_mwindows-863"><span class="linenos">863</span></a>        <span class="k">if</span> <span class="s1">&#39;status&#39;</span> <span class="ow">in</span> <span class="n">item</span><span class="p">:</span>
 </span><span id="get_mwindows-864"><a href="#get_mwindows-864"><span class="linenos">864</span></a>            <span class="n">item</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">replace_map</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
@@ -2825,7 +2825,7 @@ Only the allowed keys (<code>'api_key'</code>, <code>'mwindows'</code>, <code>'o
 
     </div>
     <a class="headerlink" href="#get_psps"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_psps-876"><a href="#get_psps-876"><span class="linenos">876</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_psps</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_psps-876"><a href="#get_psps-876"><span class="linenos">876</span></a><span class="k">def</span> <span class="nf">get_psps</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="get_psps-877"><a href="#get_psps-877"><span class="linenos">877</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_psps-878"><a href="#get_psps-878"><span class="linenos">878</span></a><span class="sd">    Call the UptimeRobot API to retrieve PSPs (public service providers).</span>
 </span><span id="get_psps-879"><a href="#get_psps-879"><span class="linenos">879</span></a>
@@ -2881,7 +2881,7 @@ Only the allowed keys (<code>'api_key'</code>, <code>'mwindows'</code>, <code>'o
 </span><span id="get_psps-929"><a href="#get_psps-929"><span class="linenos">929</span></a>        <span class="p">},</span>
 </span><span id="get_psps-930"><a href="#get_psps-930"><span class="linenos">930</span></a>    <span class="p">}</span>
 </span><span id="get_psps-931"><a href="#get_psps-931"><span class="linenos">931</span></a>
-</span><span id="get_psps-932"><a href="#get_psps-932"><span class="linenos">932</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+</span><span id="get_psps-932"><a href="#get_psps-932"><span class="linenos">932</span></a>    <span class="k">def</span> <span class="nf">replace_values</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="get_psps-933"><a href="#get_psps-933"><span class="linenos">933</span></a>        <span class="c1"># replace values for top-level keys</span>
 </span><span id="get_psps-934"><a href="#get_psps-934"><span class="linenos">934</span></a>        <span class="k">if</span> <span class="s1">&#39;sort&#39;</span> <span class="ow">in</span> <span class="n">item</span><span class="p">:</span>
 </span><span id="get_psps-935"><a href="#get_psps-935"><span class="linenos">935</span></a>            <span class="n">item</span><span class="p">[</span><span class="s1">&#39;sort&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">replace_map</span><span class="p">[</span><span class="s1">&#39;sort&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
@@ -2955,7 +2955,7 @@ keys (<code>'api_key'</code>, <code>'psps'</code>, <code>'offset'</code>, <code>
 
     </div>
     <a class="headerlink" href="#get_response_header"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_response_header-952"><a href="#get_response_header-952"><span class="linenos">952</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_response_header</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_response_header-952"><a href="#get_response_header-952"><span class="linenos">952</span></a><span class="k">def</span> <span class="nf">get_response_header</span><span class="p">(</span><span class="n">uri</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
 </span><span id="get_response_header-953"><a href="#get_response_header-953"><span class="linenos">953</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_response_header-954"><a href="#get_response_header-954"><span class="linenos">954</span></a><span class="sd">    Call a REST API and return only the response headers.</span>
 </span><span id="get_response_header-955"><a href="#get_response_header-955"><span class="linenos">955</span></a>
@@ -3039,7 +3039,7 @@ response.</p>
 
     </div>
     <a class="headerlink" href="#new_monitor"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="new_monitor-990"><a href="#new_monitor-990"><span class="linenos"> 990</span></a><span class="k">def</span><span class="w"> </span><span class="nf">new_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="new_monitor-990"><a href="#new_monitor-990"><span class="linenos"> 990</span></a><span class="k">def</span> <span class="nf">new_monitor</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="new_monitor-991"><a href="#new_monitor-991"><span class="linenos"> 991</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="new_monitor-992"><a href="#new_monitor-992"><span class="linenos"> 992</span></a><span class="sd">    Call the UptimeRobot API to create a new monitor.</span>
 </span><span id="new_monitor-993"><a href="#new_monitor-993"><span class="linenos"> 993</span></a>
@@ -3214,7 +3214,7 @@ will be kept and translated accordingly.</li>
 
     </div>
     <a class="headerlink" href="#new_mwindow"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="new_mwindow-1111"><a href="#new_mwindow-1111"><span class="linenos">1111</span></a><span class="k">def</span><span class="w"> </span><span class="nf">new_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="new_mwindow-1111"><a href="#new_mwindow-1111"><span class="linenos">1111</span></a><span class="k">def</span> <span class="nf">new_mwindow</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="new_mwindow-1112"><a href="#new_mwindow-1112"><span class="linenos">1112</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="new_mwindow-1113"><a href="#new_mwindow-1113"><span class="linenos">1113</span></a><span class="sd">    Call the UptimeRobot API to create a new monitoring window.</span>
 </span><span id="new_mwindow-1114"><a href="#new_mwindow-1114"><span class="linenos">1114</span></a>
@@ -3333,7 +3333,7 @@ allowed keys (<code>'api_key'</code>, <code>'friendly_name'</code>, <code>'type'
 
     </div>
     <a class="headerlink" href="#new_psp"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="new_psp-1176"><a href="#new_psp-1176"><span class="linenos">1176</span></a><span class="k">def</span><span class="w"> </span><span class="nf">new_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="new_psp-1176"><a href="#new_psp-1176"><span class="linenos">1176</span></a><span class="k">def</span> <span class="nf">new_psp</span><span class="p">(</span><span class="n">params</span><span class="p">):</span>
 </span><span id="new_psp-1177"><a href="#new_psp-1177"><span class="linenos">1177</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="new_psp-1178"><a href="#new_psp-1178"><span class="linenos">1178</span></a><span class="sd">    Call the UptimeRobot API to create a new PSP (public service provider).</span>
 </span><span id="new_psp-1179"><a href="#new_psp-1179"><span class="linenos">1179</span></a>

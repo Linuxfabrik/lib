@@ -99,11 +99,11 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 </span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="n">__version__</span> <span class="o">=</span> <span class="s1">&#39;2025042002&#39;</span>
 </span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a>
 </span><span id="L-22"><a href="#L-22"><span class="linenos"> 22</span></a>
-</span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-</span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">platform</span>
-</span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+</span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a><span class="kn">import</span> <span class="nn">os</span>
+</span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a><span class="kn">import</span> <span class="nn">platform</span>
+</span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a><span class="kn">import</span> <span class="nn">re</span>
 </span><span id="L-26"><a href="#L-26"><span class="linenos"> 26</span></a>
-</span><span id="L-27"><a href="#L-27"><span class="linenos"> 27</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">shell</span>
+</span><span id="L-27"><a href="#L-27"><span class="linenos"> 27</span></a><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">shell</span>
 </span><span id="L-28"><a href="#L-28"><span class="linenos"> 28</span></a> 
 </span><span id="L-29"><a href="#L-29"><span class="linenos"> 29</span></a><span class="c1"># --- Static mappings ---</span>
 </span><span id="L-30"><a href="#L-30"><span class="linenos"> 30</span></a>
@@ -141,7 +141,7 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 </span><span id="L-62"><a href="#L-62"><span class="linenos"> 62</span></a><span class="n">STRIP_QUOTES</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;</span><span class="se">\&#39;</span><span class="s1">\&quot;</span><span class="se">\\</span><span class="s1">&#39;</span>
 </span><span id="L-63"><a href="#L-63"><span class="linenos"> 63</span></a>
 </span><span id="L-64"><a href="#L-64"><span class="linenos"> 64</span></a>
-</span><span id="L-65"><a href="#L-65"><span class="linenos"> 65</span></a><span class="k">def</span><span class="w"> </span><span class="nf">_file_exists</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">allow_empty</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+</span><span id="L-65"><a href="#L-65"><span class="linenos"> 65</span></a><span class="k">def</span> <span class="nf">_file_exists</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">allow_empty</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 </span><span id="L-66"><a href="#L-66"><span class="linenos"> 66</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-67"><a href="#L-67"><span class="linenos"> 67</span></a><span class="sd">    Check if a file exists and optionally allow empty files.</span>
 </span><span id="L-68"><a href="#L-68"><span class="linenos"> 68</span></a>
@@ -172,7 +172,7 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 </span><span id="L-93"><a href="#L-93"><span class="linenos"> 93</span></a>    <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
 </span><span id="L-94"><a href="#L-94"><span class="linenos"> 94</span></a>
 </span><span id="L-95"><a href="#L-95"><span class="linenos"> 95</span></a>
-</span><span id="L-96"><a href="#L-96"><span class="linenos"> 96</span></a><span class="k">def</span><span class="w"> </span><span class="nf">_get_file_content</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+</span><span id="L-96"><a href="#L-96"><span class="linenos"> 96</span></a><span class="k">def</span> <span class="nf">_get_file_content</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
 </span><span id="L-97"><a href="#L-97"><span class="linenos"> 97</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-98"><a href="#L-98"><span class="linenos"> 98</span></a><span class="sd">    Read the content of a text file.</span>
 </span><span id="L-99"><a href="#L-99"><span class="linenos"> 99</span></a>
@@ -197,7 +197,7 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 </span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a>        <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
 </span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a>
 </span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a>
-</span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a><span class="k">def</span><span class="w"> </span><span class="nf">_guess_linux_distribution</span><span class="p">():</span>
+</span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a><span class="k">def</span> <span class="nf">_guess_linux_distribution</span><span class="p">():</span>
 </span><span id="L-122"><a href="#L-122"><span class="linenos">122</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-123"><a href="#L-123"><span class="linenos">123</span></a><span class="sd">    Provide basic distribution facts based on platform module.</span>
 </span><span id="L-124"><a href="#L-124"><span class="linenos">124</span></a>
@@ -227,7 +227,7 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 </span><span id="L-148"><a href="#L-148"><span class="linenos">148</span></a>    <span class="p">}</span>
 </span><span id="L-149"><a href="#L-149"><span class="linenos">149</span></a>
 </span><span id="L-150"><a href="#L-150"><span class="linenos">150</span></a>
-</span><span id="L-151"><a href="#L-151"><span class="linenos">151</span></a><span class="k">def</span><span class="w"> </span><span class="nf">_parse_distribution_file</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+</span><span id="L-151"><a href="#L-151"><span class="linenos">151</span></a><span class="k">def</span> <span class="nf">_parse_distribution_file</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
 </span><span id="L-152"><a href="#L-152"><span class="linenos">152</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-153"><a href="#L-153"><span class="linenos">153</span></a><span class="sd">    Parse distribution information from release file content.</span>
 </span><span id="L-154"><a href="#L-154"><span class="linenos">154</span></a>
@@ -284,7 +284,7 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 </span><span id="L-205"><a href="#L-205"><span class="linenos">205</span></a>    <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">dist_facts</span>
 </span><span id="L-206"><a href="#L-206"><span class="linenos">206</span></a>
 </span><span id="L-207"><a href="#L-207"><span class="linenos">207</span></a>
-</span><span id="L-208"><a href="#L-208"><span class="linenos">208</span></a><span class="k">def</span><span class="w"> </span><span class="nf">_parse_os_release</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+</span><span id="L-208"><a href="#L-208"><span class="linenos">208</span></a><span class="k">def</span> <span class="nf">_parse_os_release</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
 </span><span id="L-209"><a href="#L-209"><span class="linenos">209</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-210"><a href="#L-210"><span class="linenos">210</span></a><span class="sd">    Parse `/etc/os-release` for version information.</span>
 </span><span id="L-211"><a href="#L-211"><span class="linenos">211</span></a>
@@ -321,7 +321,7 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 </span><span id="L-242"><a href="#L-242"><span class="linenos">242</span></a>    <span class="k">return</span> <span class="n">facts</span>
 </span><span id="L-243"><a href="#L-243"><span class="linenos">243</span></a>
 </span><span id="L-244"><a href="#L-244"><span class="linenos">244</span></a>
-</span><span id="L-245"><a href="#L-245"><span class="linenos">245</span></a><span class="k">def</span><span class="w"> </span><span class="nf">_parse_lsb_release</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+</span><span id="L-245"><a href="#L-245"><span class="linenos">245</span></a><span class="k">def</span> <span class="nf">_parse_lsb_release</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
 </span><span id="L-246"><a href="#L-246"><span class="linenos">246</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-247"><a href="#L-247"><span class="linenos">247</span></a><span class="sd">    Parse `/etc/lsb-release` for version information.</span>
 </span><span id="L-248"><a href="#L-248"><span class="linenos">248</span></a>
@@ -358,7 +358,7 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 </span><span id="L-279"><a href="#L-279"><span class="linenos">279</span></a>    <span class="k">return</span> <span class="n">facts</span>
 </span><span id="L-280"><a href="#L-280"><span class="linenos">280</span></a>
 </span><span id="L-281"><a href="#L-281"><span class="linenos">281</span></a>
-</span><span id="L-282"><a href="#L-282"><span class="linenos">282</span></a><span class="k">def</span><span class="w"> </span><span class="nf">_process_dist_files</span><span class="p">():</span>
+</span><span id="L-282"><a href="#L-282"><span class="linenos">282</span></a><span class="k">def</span> <span class="nf">_process_dist_files</span><span class="p">():</span>
 </span><span id="L-283"><a href="#L-283"><span class="linenos">283</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-284"><a href="#L-284"><span class="linenos">284</span></a><span class="sd">    Process distribution-specific files to determine system identity.</span>
 </span><span id="L-285"><a href="#L-285"><span class="linenos">285</span></a>
@@ -424,7 +424,7 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 </span><span id="L-345"><a href="#L-345"><span class="linenos">345</span></a>    <span class="k">return</span> <span class="n">facts</span>
 </span><span id="L-346"><a href="#L-346"><span class="linenos">346</span></a>
 </span><span id="L-347"><a href="#L-347"><span class="linenos">347</span></a>
-</span><span id="L-348"><a href="#L-348"><span class="linenos">348</span></a><span class="k">def</span><span class="w"> </span><span class="nf">_map_os_family</span><span class="p">(</span><span class="n">distribution</span><span class="p">):</span>
+</span><span id="L-348"><a href="#L-348"><span class="linenos">348</span></a><span class="k">def</span> <span class="nf">_map_os_family</span><span class="p">(</span><span class="n">distribution</span><span class="p">):</span>
 </span><span id="L-349"><a href="#L-349"><span class="linenos">349</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-350"><a href="#L-350"><span class="linenos">350</span></a><span class="sd">    Map a detected distribution to its OS family.</span>
 </span><span id="L-351"><a href="#L-351"><span class="linenos">351</span></a>
@@ -451,7 +451,7 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 </span><span id="L-372"><a href="#L-372"><span class="linenos">372</span></a>    <span class="k">return</span> <span class="n">distribution</span>
 </span><span id="L-373"><a href="#L-373"><span class="linenos">373</span></a>
 </span><span id="L-374"><a href="#L-374"><span class="linenos">374</span></a>
-</span><span id="L-375"><a href="#L-375"><span class="linenos">375</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_distribution_facts</span><span class="p">():</span>
+</span><span id="L-375"><a href="#L-375"><span class="linenos">375</span></a><span class="k">def</span> <span class="nf">get_distribution_facts</span><span class="p">():</span>
 </span><span id="L-376"><a href="#L-376"><span class="linenos">376</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-377"><a href="#L-377"><span class="linenos">377</span></a><span class="sd">    Detect the Linux distribution and return normalized facts.</span>
 </span><span id="L-378"><a href="#L-378"><span class="linenos">378</span></a>
@@ -557,7 +557,7 @@ machine-readable distro ID and "os_family" (known from Ansible).</p>
 
     </div>
     <a class="headerlink" href="#get_distribution_facts"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_distribution_facts-376"><a href="#get_distribution_facts-376"><span class="linenos">376</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_distribution_facts</span><span class="p">():</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_distribution_facts-376"><a href="#get_distribution_facts-376"><span class="linenos">376</span></a><span class="k">def</span> <span class="nf">get_distribution_facts</span><span class="p">():</span>
 </span><span id="get_distribution_facts-377"><a href="#get_distribution_facts-377"><span class="linenos">377</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_distribution_facts-378"><a href="#get_distribution_facts-378"><span class="linenos">378</span></a><span class="sd">    Detect the Linux distribution and return normalized facts.</span>
 </span><span id="get_distribution_facts-379"><a href="#get_distribution_facts-379"><span class="linenos">379</span></a>

@@ -81,14 +81,14 @@ needed by LibreNMS check plugins.</p>
 </span><span id="L-14"><a href="#L-14"><span class="linenos"> 14</span></a><span class="n">__author__</span> <span class="o">=</span> <span class="s1">&#39;Linuxfabrik GmbH, Zurich/Switzerland&#39;</span>
 </span><span id="L-15"><a href="#L-15"><span class="linenos"> 15</span></a><span class="n">__version__</span> <span class="o">=</span> <span class="s1">&#39;2025042001&#39;</span>
 </span><span id="L-16"><a href="#L-16"><span class="linenos"> 16</span></a>
-</span><span id="L-17"><a href="#L-17"><span class="linenos"> 17</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.globals</span><span class="w"> </span><span class="kn">import</span> <span class="n">STATE_CRIT</span><span class="p">,</span> <span class="n">STATE_OK</span><span class="p">,</span> <span class="n">STATE_UNKNOWN</span><span class="p">,</span> <span class="n">STATE_WARN</span>
+</span><span id="L-17"><a href="#L-17"><span class="linenos"> 17</span></a><span class="kn">from</span> <span class="nn">.globals</span> <span class="kn">import</span> <span class="n">STATE_CRIT</span><span class="p">,</span> <span class="n">STATE_OK</span><span class="p">,</span> <span class="n">STATE_UNKNOWN</span><span class="p">,</span> <span class="n">STATE_WARN</span>
 </span><span id="L-18"><a href="#L-18"><span class="linenos"> 18</span></a>
-</span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">base</span> <span class="c1"># pylint: disable=C0413</span>
-</span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">txt</span> <span class="c1"># pylint: disable=C0413</span>
-</span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">url</span> <span class="c1"># pylint: disable=C0413</span>
+</span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">base</span> <span class="c1"># pylint: disable=C0413</span>
+</span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">txt</span> <span class="c1"># pylint: disable=C0413</span>
+</span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">url</span> <span class="c1"># pylint: disable=C0413</span>
 </span><span id="L-22"><a href="#L-22"><span class="linenos"> 22</span></a>
 </span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a>
-</span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_data</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">uri</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
+</span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a><span class="k">def</span> <span class="nf">get_data</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">uri</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
 </span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-26"><a href="#L-26"><span class="linenos"> 26</span></a><span class="sd">    Fetch data from the LibreNMS API.</span>
 </span><span id="L-27"><a href="#L-27"><span class="linenos"> 27</span></a>
@@ -144,7 +144,7 @@ needed by LibreNMS check plugins.</p>
 </span><span id="L-77"><a href="#L-77"><span class="linenos"> 77</span></a>    <span class="k">return</span> <span class="n">result</span>
 </span><span id="L-78"><a href="#L-78"><span class="linenos"> 78</span></a>
 </span><span id="L-79"><a href="#L-79"><span class="linenos"> 79</span></a>
-</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_prop</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">prop</span><span class="p">,</span> <span class="n">mytype</span><span class="o">=</span><span class="s1">&#39;str&#39;</span><span class="p">):</span>
+</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a><span class="k">def</span> <span class="nf">get_prop</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">prop</span><span class="p">,</span> <span class="n">mytype</span><span class="o">=</span><span class="s1">&#39;str&#39;</span><span class="p">):</span>
 </span><span id="L-81"><a href="#L-81"><span class="linenos"> 81</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-82"><a href="#L-82"><span class="linenos"> 82</span></a><span class="sd">    Retrieve a property from a dictionary with safe type handling.</span>
 </span><span id="L-83"><a href="#L-83"><span class="linenos"> 83</span></a>
@@ -184,7 +184,7 @@ needed by LibreNMS check plugins.</p>
 </span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a>    <span class="k">return</span> <span class="n">value</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
 </span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a>
 </span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a>
-</span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_state</span><span class="p">(</span><span class="n">librestate</span><span class="p">,</span> <span class="n">severity</span><span class="o">=</span><span class="s1">&#39;crit&#39;</span><span class="p">):</span>
+</span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a><span class="k">def</span> <span class="nf">get_state</span><span class="p">(</span><span class="n">librestate</span><span class="p">,</span> <span class="n">severity</span><span class="o">=</span><span class="s1">&#39;crit&#39;</span><span class="p">):</span>
 </span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-122"><a href="#L-122"><span class="linenos">122</span></a><span class="sd">    Translate LibreNMS service state to a Nagios-compatible state.</span>
 </span><span id="L-123"><a href="#L-123"><span class="linenos">123</span></a>
@@ -238,7 +238,7 @@ needed by LibreNMS check plugins.</p>
 
     </div>
     <a class="headerlink" href="#get_data"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_data-25"><a href="#get_data-25"><span class="linenos">25</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_data</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">uri</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_data-25"><a href="#get_data-25"><span class="linenos">25</span></a><span class="k">def</span> <span class="nf">get_data</span><span class="p">(</span><span class="n">args</span><span class="p">,</span> <span class="n">uri</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
 </span><span id="get_data-26"><a href="#get_data-26"><span class="linenos">26</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_data-27"><a href="#get_data-27"><span class="linenos">27</span></a><span class="sd">    Fetch data from the LibreNMS API.</span>
 </span><span id="get_data-28"><a href="#get_data-28"><span class="linenos">28</span></a>
@@ -354,7 +354,7 @@ The fetched data as a parsed JSON dictionary.</li>
 
     </div>
     <a class="headerlink" href="#get_prop"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_prop-81"><a href="#get_prop-81"><span class="linenos"> 81</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_prop</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">prop</span><span class="p">,</span> <span class="n">mytype</span><span class="o">=</span><span class="s1">&#39;str&#39;</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_prop-81"><a href="#get_prop-81"><span class="linenos"> 81</span></a><span class="k">def</span> <span class="nf">get_prop</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">prop</span><span class="p">,</span> <span class="n">mytype</span><span class="o">=</span><span class="s1">&#39;str&#39;</span><span class="p">):</span>
 </span><span id="get_prop-82"><a href="#get_prop-82"><span class="linenos"> 82</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_prop-83"><a href="#get_prop-83"><span class="linenos"> 83</span></a><span class="sd">    Retrieve a property from a dictionary with safe type handling.</span>
 </span><span id="get_prop-84"><a href="#get_prop-84"><span class="linenos"> 84</span></a>
@@ -453,7 +453,7 @@ Expected type of the property. <code>'str'</code> ensures text formatting. Defau
 
     </div>
     <a class="headerlink" href="#get_state"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_state-121"><a href="#get_state-121"><span class="linenos">121</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_state</span><span class="p">(</span><span class="n">librestate</span><span class="p">,</span> <span class="n">severity</span><span class="o">=</span><span class="s1">&#39;crit&#39;</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_state-121"><a href="#get_state-121"><span class="linenos">121</span></a><span class="k">def</span> <span class="nf">get_state</span><span class="p">(</span><span class="n">librestate</span><span class="p">,</span> <span class="n">severity</span><span class="o">=</span><span class="s1">&#39;crit&#39;</span><span class="p">):</span>
 </span><span id="get_state-122"><a href="#get_state-122"><span class="linenos">122</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_state-123"><a href="#get_state-123"><span class="linenos">123</span></a><span class="sd">    Translate LibreNMS service state to a Nagios-compatible state.</span>
 </span><span id="get_state-124"><a href="#get_state-124"><span class="linenos">124</span></a>

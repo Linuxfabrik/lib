@@ -85,12 +85,12 @@ lib<wbr>.grassfish    </h1>
 </span><span id="L-15"><a href="#L-15"><span class="linenos"> 15</span></a><span class="n">__author__</span> <span class="o">=</span> <span class="s1">&#39;Linuxfabrik GmbH, Zurich/Switzerland&#39;</span>
 </span><span id="L-16"><a href="#L-16"><span class="linenos"> 16</span></a><span class="n">__version__</span> <span class="o">=</span> <span class="s1">&#39;2025042001&#39;</span>
 </span><span id="L-17"><a href="#L-17"><span class="linenos"> 17</span></a>
-</span><span id="L-18"><a href="#L-18"><span class="linenos"> 18</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">url</span>
+</span><span id="L-18"><a href="#L-18"><span class="linenos"> 18</span></a><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">url</span>
 </span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a>
 </span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a>
 </span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a><span class="c1"># curl --header &#39;Accept: application/json&#39; --header &#39;X-ApiKey: token&#39; &#39;https://$host:$port/$uri&#39;</span>
 </span><span id="L-22"><a href="#L-22"><span class="linenos"> 22</span></a>
-</span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_json</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">,</span> <span class="n">uri</span><span class="p">,</span> <span class="n">version</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">insecure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">no_proxy</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
+</span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a><span class="k">def</span> <span class="nf">fetch_json</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">,</span> <span class="n">uri</span><span class="p">,</span> <span class="n">version</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">insecure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">no_proxy</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
 </span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a><span class="sd">    Fetch JSON data from a Grassfish API endpoint.</span>
 </span><span id="L-26"><a href="#L-26"><span class="linenos"> 26</span></a>
@@ -154,7 +154,7 @@ lib<wbr>.grassfish    </h1>
 </span><span id="L-84"><a href="#L-84"><span class="linenos"> 84</span></a>    <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">result</span>
 </span><span id="L-85"><a href="#L-85"><span class="linenos"> 85</span></a>
 </span><span id="L-86"><a href="#L-86"><span class="linenos"> 86</span></a>
-</span><span id="L-87"><a href="#L-87"><span class="linenos"> 87</span></a><span class="k">def</span><span class="w"> </span><span class="nf">match</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">_filter</span><span class="p">):</span>
+</span><span id="L-87"><a href="#L-87"><span class="linenos"> 87</span></a><span class="k">def</span> <span class="nf">match</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">_filter</span><span class="p">):</span>
 </span><span id="L-88"><a href="#L-88"><span class="linenos"> 88</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-89"><a href="#L-89"><span class="linenos"> 89</span></a><span class="sd">    Check if an item matches given filter criteria.</span>
 </span><span id="L-90"><a href="#L-90"><span class="linenos"> 90</span></a>
@@ -208,7 +208,7 @@ lib<wbr>.grassfish    </h1>
 </span><span id="L-138"><a href="#L-138"><span class="linenos">138</span></a>    <span class="k">return</span> <span class="kc">True</span>
 </span><span id="L-139"><a href="#L-139"><span class="linenos">139</span></a>
 </span><span id="L-140"><a href="#L-140"><span class="linenos">140</span></a>
-</span><span id="L-141"><a href="#L-141"><span class="linenos">141</span></a><span class="k">def</span><span class="w"> </span><span class="nf">set_player_defaults</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+</span><span id="L-141"><a href="#L-141"><span class="linenos">141</span></a><span class="k">def</span> <span class="nf">set_player_defaults</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="L-142"><a href="#L-142"><span class="linenos">142</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-143"><a href="#L-143"><span class="linenos">143</span></a><span class="sd">    Ensure all expected player attributes are set, even if missing.</span>
 </span><span id="L-144"><a href="#L-144"><span class="linenos">144</span></a>
@@ -277,7 +277,7 @@ lib<wbr>.grassfish    </h1>
 </span><span id="L-207"><a href="#L-207"><span class="linenos">207</span></a>    <span class="k">return</span> <span class="n">item</span>
 </span><span id="L-208"><a href="#L-208"><span class="linenos">208</span></a>
 </span><span id="L-209"><a href="#L-209"><span class="linenos">209</span></a>
-</span><span id="L-210"><a href="#L-210"><span class="linenos">210</span></a><span class="k">def</span><span class="w"> </span><span class="nf">set_screen_defaults</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+</span><span id="L-210"><a href="#L-210"><span class="linenos">210</span></a><span class="k">def</span> <span class="nf">set_screen_defaults</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="L-211"><a href="#L-211"><span class="linenos">211</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-212"><a href="#L-212"><span class="linenos">212</span></a><span class="sd">    Ensure all expected screen attributes are set, even if missing.</span>
 </span><span id="L-213"><a href="#L-213"><span class="linenos">213</span></a>
@@ -338,7 +338,7 @@ lib<wbr>.grassfish    </h1>
 
     </div>
     <a class="headerlink" href="#fetch_json"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="fetch_json-24"><a href="#fetch_json-24"><span class="linenos">24</span></a><span class="k">def</span><span class="w"> </span><span class="nf">fetch_json</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">,</span> <span class="n">uri</span><span class="p">,</span> <span class="n">version</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">insecure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">no_proxy</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="fetch_json-24"><a href="#fetch_json-24"><span class="linenos">24</span></a><span class="k">def</span> <span class="nf">fetch_json</span><span class="p">(</span><span class="n">token</span><span class="p">,</span> <span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">,</span> <span class="n">uri</span><span class="p">,</span> <span class="n">version</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">insecure</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">no_proxy</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">8</span><span class="p">):</span>
 </span><span id="fetch_json-25"><a href="#fetch_json-25"><span class="linenos">25</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="fetch_json-26"><a href="#fetch_json-26"><span class="linenos">26</span></a><span class="sd">    Fetch JSON data from a Grassfish API endpoint.</span>
 </span><span id="fetch_json-27"><a href="#fetch_json-27"><span class="linenos">27</span></a>
@@ -477,7 +477,7 @@ Request timeout in seconds. Default is <code>8</code>.</li>
 
     </div>
     <a class="headerlink" href="#match"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="match-88"><a href="#match-88"><span class="linenos"> 88</span></a><span class="k">def</span><span class="w"> </span><span class="nf">match</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">_filter</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="match-88"><a href="#match-88"><span class="linenos"> 88</span></a><span class="k">def</span> <span class="nf">match</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">_filter</span><span class="p">):</span>
 </span><span id="match-89"><a href="#match-89"><span class="linenos"> 89</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="match-90"><a href="#match-90"><span class="linenos"> 90</span></a><span class="sd">    Check if an item matches given filter criteria.</span>
 </span><span id="match-91"><a href="#match-91"><span class="linenos"> 91</span></a>
@@ -592,7 +592,7 @@ An object containing filter criteria attributes:
 
     </div>
     <a class="headerlink" href="#set_player_defaults"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="set_player_defaults-142"><a href="#set_player_defaults-142"><span class="linenos">142</span></a><span class="k">def</span><span class="w"> </span><span class="nf">set_player_defaults</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="set_player_defaults-142"><a href="#set_player_defaults-142"><span class="linenos">142</span></a><span class="k">def</span> <span class="nf">set_player_defaults</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="set_player_defaults-143"><a href="#set_player_defaults-143"><span class="linenos">143</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="set_player_defaults-144"><a href="#set_player_defaults-144"><span class="linenos">144</span></a><span class="sd">    Ensure all expected player attributes are set, even if missing.</span>
 </span><span id="set_player_defaults-145"><a href="#set_player_defaults-145"><span class="linenos">145</span></a>
@@ -719,7 +719,7 @@ The modified player dictionary with all expected fields initialized.</li>
 
     </div>
     <a class="headerlink" href="#set_screen_defaults"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="set_screen_defaults-211"><a href="#set_screen_defaults-211"><span class="linenos">211</span></a><span class="k">def</span><span class="w"> </span><span class="nf">set_screen_defaults</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="set_screen_defaults-211"><a href="#set_screen_defaults-211"><span class="linenos">211</span></a><span class="k">def</span> <span class="nf">set_screen_defaults</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 </span><span id="set_screen_defaults-212"><a href="#set_screen_defaults-212"><span class="linenos">212</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="set_screen_defaults-213"><a href="#set_screen_defaults-213"><span class="linenos">213</span></a><span class="sd">    Ensure all expected screen attributes are set, even if missing.</span>
 </span><span id="set_screen_defaults-214"><a href="#set_screen_defaults-214"><span class="linenos">214</span></a>

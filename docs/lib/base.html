@@ -137,16 +137,16 @@ lib<wbr>.base    </h1>
 </span><span id="L-14"><a href="#L-14"><span class="linenos"> 14</span></a><span class="n">__author__</span> <span class="o">=</span> <span class="s1">&#39;Linuxfabrik GmbH, Zurich/Switzerland&#39;</span>
 </span><span id="L-15"><a href="#L-15"><span class="linenos"> 15</span></a><span class="n">__version__</span> <span class="o">=</span> <span class="s1">&#39;2025042101&#39;</span>
 </span><span id="L-16"><a href="#L-16"><span class="linenos"> 16</span></a>
-</span><span id="L-17"><a href="#L-17"><span class="linenos"> 17</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">collections</span>
-</span><span id="L-18"><a href="#L-18"><span class="linenos"> 18</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">numbers</span>
-</span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">operator</span>
-</span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-</span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a><span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+</span><span id="L-17"><a href="#L-17"><span class="linenos"> 17</span></a><span class="kn">import</span> <span class="nn">collections</span>
+</span><span id="L-18"><a href="#L-18"><span class="linenos"> 18</span></a><span class="kn">import</span> <span class="nn">numbers</span>
+</span><span id="L-19"><a href="#L-19"><span class="linenos"> 19</span></a><span class="kn">import</span> <span class="nn">operator</span>
+</span><span id="L-20"><a href="#L-20"><span class="linenos"> 20</span></a><span class="kn">import</span> <span class="nn">os</span>
+</span><span id="L-21"><a href="#L-21"><span class="linenos"> 21</span></a><span class="kn">import</span> <span class="nn">sys</span>
 </span><span id="L-22"><a href="#L-22"><span class="linenos"> 22</span></a>
-</span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">traceback</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_exc</span>
+</span><span id="L-23"><a href="#L-23"><span class="linenos"> 23</span></a><span class="kn">from</span> <span class="nn">traceback</span> <span class="kn">import</span> <span class="n">format_exc</span>
 </span><span id="L-24"><a href="#L-24"><span class="linenos"> 24</span></a>
-</span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.globals</span><span class="w"> </span><span class="kn">import</span> <span class="n">STATE_CRIT</span><span class="p">,</span> <span class="n">STATE_OK</span><span class="p">,</span> <span class="n">STATE_UNKNOWN</span><span class="p">,</span> <span class="n">STATE_WARN</span>
-</span><span id="L-26"><a href="#L-26"><span class="linenos"> 26</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">txt</span>
+</span><span id="L-25"><a href="#L-25"><span class="linenos"> 25</span></a><span class="kn">from</span> <span class="nn">.globals</span> <span class="kn">import</span> <span class="n">STATE_CRIT</span><span class="p">,</span> <span class="n">STATE_OK</span><span class="p">,</span> <span class="n">STATE_UNKNOWN</span><span class="p">,</span> <span class="n">STATE_WARN</span>
+</span><span id="L-26"><a href="#L-26"><span class="linenos"> 26</span></a><span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">txt</span>
 </span><span id="L-27"><a href="#L-27"><span class="linenos"> 27</span></a>
 </span><span id="L-28"><a href="#L-28"><span class="linenos"> 28</span></a>
 </span><span id="L-29"><a href="#L-29"><span class="linenos"> 29</span></a><span class="n">WINDOWS</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;nt&quot;</span>
@@ -154,7 +154,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-31"><a href="#L-31"><span class="linenos"> 31</span></a><span class="n">X86_64</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">maxsize</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="o">**</span><span class="mi">32</span>
 </span><span id="L-32"><a href="#L-32"><span class="linenos"> 32</span></a>
 </span><span id="L-33"><a href="#L-33"><span class="linenos"> 33</span></a>
-</span><span id="L-34"><a href="#L-34"><span class="linenos"> 34</span></a><span class="k">def</span><span class="w"> </span><span class="nf">coe</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">STATE_UNKNOWN</span><span class="p">):</span>
+</span><span id="L-34"><a href="#L-34"><span class="linenos"> 34</span></a><span class="k">def</span> <span class="nf">coe</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">STATE_UNKNOWN</span><span class="p">):</span>
 </span><span id="L-35"><a href="#L-35"><span class="linenos"> 35</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-36"><a href="#L-36"><span class="linenos"> 36</span></a><span class="sd">    Continue or Exit (CoE)</span>
 </span><span id="L-37"><a href="#L-37"><span class="linenos"> 37</span></a>
@@ -197,7 +197,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-74"><a href="#L-74"><span class="linenos"> 74</span></a>    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
 </span><span id="L-75"><a href="#L-75"><span class="linenos"> 75</span></a>
 </span><span id="L-76"><a href="#L-76"><span class="linenos"> 76</span></a>
-</span><span id="L-77"><a href="#L-77"><span class="linenos"> 77</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cu</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+</span><span id="L-77"><a href="#L-77"><span class="linenos"> 77</span></a><span class="k">def</span> <span class="nf">cu</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 </span><span id="L-78"><a href="#L-78"><span class="linenos"> 78</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-79"><a href="#L-79"><span class="linenos"> 79</span></a><span class="sd">    See you (cu)</span>
 </span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a>
@@ -238,7 +238,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-115"><a href="#L-115"><span class="linenos">115</span></a>    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="n">STATE_UNKNOWN</span><span class="p">)</span>
 </span><span id="L-116"><a href="#L-116"><span class="linenos">116</span></a>
 </span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a>
-</span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_perfdata</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">uom</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">crit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_min</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_max</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+</span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a><span class="k">def</span> <span class="nf">get_perfdata</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">uom</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">crit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_min</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_max</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 </span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a><span class="sd">    Returns a Nagios performance data string in the format:  </span>
 </span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a><span class="sd">    `&#39;label&#39;=value[UOM];[warn];[crit];[min];[max]`</span>
@@ -267,7 +267,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-144"><a href="#L-144"><span class="linenos">144</span></a>    <span class="k">return</span> <span class="n">msg</span> <span class="o">+</span> <span class="s1">&#39; &#39;</span>
 </span><span id="L-145"><a href="#L-145"><span class="linenos">145</span></a>
 </span><span id="L-146"><a href="#L-146"><span class="linenos">146</span></a>
-</span><span id="L-147"><a href="#L-147"><span class="linenos">147</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_state</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">warn</span><span class="p">,</span> <span class="n">crit</span><span class="p">,</span> <span class="n">_operator</span><span class="o">=</span><span class="s1">&#39;ge&#39;</span><span class="p">):</span>
+</span><span id="L-147"><a href="#L-147"><span class="linenos">147</span></a><span class="k">def</span> <span class="nf">get_state</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">warn</span><span class="p">,</span> <span class="n">crit</span><span class="p">,</span> <span class="n">_operator</span><span class="o">=</span><span class="s1">&#39;ge&#39;</span><span class="p">):</span>
 </span><span id="L-148"><a href="#L-148"><span class="linenos">148</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-149"><a href="#L-149"><span class="linenos">149</span></a><span class="sd">    Returns the STATE by comparing `value` to the given thresholds using</span>
 </span><span id="L-150"><a href="#L-150"><span class="linenos">150</span></a><span class="sd">    a comparison `_operator`. `warn` and `crit` thresholds may also be `None`.</span>
@@ -363,7 +363,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-240"><a href="#L-240"><span class="linenos">240</span></a>    <span class="k">return</span> <span class="n">STATE_UNKNOWN</span>
 </span><span id="L-241"><a href="#L-241"><span class="linenos">241</span></a>
 </span><span id="L-242"><a href="#L-242"><span class="linenos">242</span></a>
-</span><span id="L-243"><a href="#L-243"><span class="linenos">243</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">cols</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sort_by_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_order_reverse</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+</span><span id="L-243"><a href="#L-243"><span class="linenos">243</span></a><span class="k">def</span> <span class="nf">get_table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">cols</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sort_by_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_order_reverse</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 </span><span id="L-244"><a href="#L-244"><span class="linenos">244</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-245"><a href="#L-245"><span class="linenos">245</span></a><span class="sd">    Format a list of dictionaries into a simple ASCII table (generator version).</span>
 </span><span id="L-246"><a href="#L-246"><span class="linenos">246</span></a>
@@ -414,7 +414,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-291"><a href="#L-291"><span class="linenos">291</span></a>        <span class="n">divider</span> <span class="o">=</span> <span class="p">{</span><span class="n">col</span><span class="p">:</span> <span class="s1">&#39;-&#39;</span> <span class="o">*</span> <span class="n">width</span> <span class="k">for</span> <span class="n">col</span><span class="p">,</span> <span class="n">width</span> <span class="ow">in</span> <span class="n">column_widths</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 </span><span id="L-292"><a href="#L-292"><span class="linenos">292</span></a>        <span class="n">data</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">divider</span><span class="p">)</span>
 </span><span id="L-293"><a href="#L-293"><span class="linenos">293</span></a>
-</span><span id="L-294"><a href="#L-294"><span class="linenos">294</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">generate_lines</span><span class="p">():</span>
+</span><span id="L-294"><a href="#L-294"><span class="linenos">294</span></a>    <span class="k">def</span> <span class="nf">generate_lines</span><span class="p">():</span>
 </span><span id="L-295"><a href="#L-295"><span class="linenos">295</span></a>        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
 </span><span id="L-296"><a href="#L-296"><span class="linenos">296</span></a>            <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
 </span><span id="L-297"><a href="#L-297"><span class="linenos">297</span></a>            <span class="k">for</span> <span class="n">col</span><span class="p">,</span> <span class="n">width</span> <span class="ow">in</span> <span class="n">column_widths</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
@@ -428,7 +428,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-305"><a href="#L-305"><span class="linenos">305</span></a>    <span class="k">return</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">generate_lines</span><span class="p">())</span> <span class="o">+</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span>
 </span><span id="L-306"><a href="#L-306"><span class="linenos">306</span></a>
 </span><span id="L-307"><a href="#L-307"><span class="linenos">307</span></a>
-</span><span id="L-308"><a href="#L-308"><span class="linenos">308</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_worst</span><span class="p">(</span><span class="n">state1</span><span class="p">,</span> <span class="n">state2</span><span class="p">):</span>
+</span><span id="L-308"><a href="#L-308"><span class="linenos">308</span></a><span class="k">def</span> <span class="nf">get_worst</span><span class="p">(</span><span class="n">state1</span><span class="p">,</span> <span class="n">state2</span><span class="p">):</span>
 </span><span id="L-309"><a href="#L-309"><span class="linenos">309</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-310"><a href="#L-310"><span class="linenos">310</span></a><span class="sd">    Compares `state1` to `state2` and returns the worse state based on the following priority:  </span>
 </span><span id="L-311"><a href="#L-311"><span class="linenos">311</span></a><span class="sd">    STATE_OK &lt; STATE_UNKNOWN &lt; STATE_WARNING &lt; STATE_CRITICAL  </span>
@@ -461,7 +461,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-338"><a href="#L-338"><span class="linenos">338</span></a>    <span class="k">return</span> <span class="n">STATE_OK</span>
 </span><span id="L-339"><a href="#L-339"><span class="linenos">339</span></a>
 </span><span id="L-340"><a href="#L-340"><span class="linenos">340</span></a>
-</span><span id="L-341"><a href="#L-341"><span class="linenos">341</span></a><span class="k">def</span><span class="w"> </span><span class="nf">guess_type</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">consumer</span><span class="o">=</span><span class="s1">&#39;python&#39;</span><span class="p">):</span>
+</span><span id="L-341"><a href="#L-341"><span class="linenos">341</span></a><span class="k">def</span> <span class="nf">guess_type</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">consumer</span><span class="o">=</span><span class="s1">&#39;python&#39;</span><span class="p">):</span>
 </span><span id="L-342"><a href="#L-342"><span class="linenos">342</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-343"><a href="#L-343"><span class="linenos">343</span></a><span class="sd">    Guess the type of a value (None, int, float, or string) for different types of consumers</span>
 </span><span id="L-344"><a href="#L-344"><span class="linenos">344</span></a><span class="sd">    (e.g., Python, SQLite).</span>
@@ -516,7 +516,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-393"><a href="#L-393"><span class="linenos">393</span></a>            <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">if</span> <span class="n">consumer</span> <span class="o">==</span> <span class="s1">&#39;python&#39;</span> <span class="k">else</span> <span class="s1">&#39;text&#39;</span>
 </span><span id="L-394"><a href="#L-394"><span class="linenos">394</span></a>
 </span><span id="L-395"><a href="#L-395"><span class="linenos">395</span></a>
-</span><span id="L-396"><a href="#L-396"><span class="linenos">396</span></a><span class="k">def</span><span class="w"> </span><span class="nf">is_empty_list</span><span class="p">(</span><span class="n">l</span><span class="p">):</span>
+</span><span id="L-396"><a href="#L-396"><span class="linenos">396</span></a><span class="k">def</span> <span class="nf">is_empty_list</span><span class="p">(</span><span class="n">l</span><span class="p">):</span>
 </span><span id="L-397"><a href="#L-397"><span class="linenos">397</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-398"><a href="#L-398"><span class="linenos">398</span></a><span class="sd">    Check if a list only contains either empty elements or whitespace.</span>
 </span><span id="L-399"><a href="#L-399"><span class="linenos">399</span></a>
@@ -536,7 +536,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-413"><a href="#L-413"><span class="linenos">413</span></a>    <span class="k">return</span> <span class="nb">all</span><span class="p">(</span><span class="ow">not</span> <span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">lst</span><span class="p">)</span>
 </span><span id="L-414"><a href="#L-414"><span class="linenos">414</span></a>
 </span><span id="L-415"><a href="#L-415"><span class="linenos">415</span></a>
-</span><span id="L-416"><a href="#L-416"><span class="linenos">416</span></a><span class="k">def</span><span class="w"> </span><span class="nf">is_numeric</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+</span><span id="L-416"><a href="#L-416"><span class="linenos">416</span></a><span class="k">def</span> <span class="nf">is_numeric</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
 </span><span id="L-417"><a href="#L-417"><span class="linenos">417</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-418"><a href="#L-418"><span class="linenos">418</span></a><span class="sd">    Return True if the value is truly numeric (int, float, etc.).</span>
 </span><span id="L-419"><a href="#L-419"><span class="linenos">419</span></a>
@@ -556,7 +556,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-433"><a href="#L-433"><span class="linenos">433</span></a>    <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">numbers</span><span class="o">.</span><span class="n">Number</span><span class="p">)</span>
 </span><span id="L-434"><a href="#L-434"><span class="linenos">434</span></a>
 </span><span id="L-435"><a href="#L-435"><span class="linenos">435</span></a>
-</span><span id="L-436"><a href="#L-436"><span class="linenos">436</span></a><span class="k">def</span><span class="w"> </span><span class="nf">lookup_lod</span><span class="p">(</span><span class="n">haystack</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">needle</span><span class="p">):</span>
+</span><span id="L-436"><a href="#L-436"><span class="linenos">436</span></a><span class="k">def</span> <span class="nf">lookup_lod</span><span class="p">(</span><span class="n">haystack</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">needle</span><span class="p">):</span>
 </span><span id="L-437"><a href="#L-437"><span class="linenos">437</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-438"><a href="#L-438"><span class="linenos">438</span></a><span class="sd">    Search in a list of dictionaries (&quot;lod&quot;) for a key containing a specific value</span>
 </span><span id="L-439"><a href="#L-439"><span class="linenos">439</span></a><span class="sd">    and return the first dictionary item found.</span>
@@ -592,7 +592,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-469"><a href="#L-469"><span class="linenos">469</span></a>    <span class="k">return</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="kc">None</span>
 </span><span id="L-470"><a href="#L-470"><span class="linenos">470</span></a>
 </span><span id="L-471"><a href="#L-471"><span class="linenos">471</span></a>
-</span><span id="L-472"><a href="#L-472"><span class="linenos">472</span></a><span class="k">def</span><span class="w"> </span><span class="nf">match_range</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">spec</span><span class="p">):</span>
+</span><span id="L-472"><a href="#L-472"><span class="linenos">472</span></a><span class="k">def</span> <span class="nf">match_range</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">spec</span><span class="p">):</span>
 </span><span id="L-473"><a href="#L-473"><span class="linenos">473</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-474"><a href="#L-474"><span class="linenos">474</span></a><span class="sd">    Decides if `value` is inside or outside the Nagios threshold specification.</span>
 </span><span id="L-475"><a href="#L-475"><span class="linenos">475</span></a>
@@ -633,7 +633,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-510"><a href="#L-510"><span class="linenos">510</span></a><span class="sd">    &gt;&gt;&gt; match_range(15, &#39;@&#39;)</span>
 </span><span id="L-511"><a href="#L-511"><span class="linenos">511</span></a><span class="sd">    0 inf True</span>
 </span><span id="L-512"><a href="#L-512"><span class="linenos">512</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="L-513"><a href="#L-513"><span class="linenos">513</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">parse_range</span><span class="p">(</span><span class="n">spec_</span><span class="p">):</span>
+</span><span id="L-513"><a href="#L-513"><span class="linenos">513</span></a>    <span class="k">def</span> <span class="nf">parse_range</span><span class="p">(</span><span class="n">spec_</span><span class="p">):</span>
 </span><span id="L-514"><a href="#L-514"><span class="linenos">514</span></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-515"><a href="#L-515"><span class="linenos">515</span></a><span class="sd">        Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py</span>
 </span><span id="L-516"><a href="#L-516"><span class="linenos">516</span></a>
@@ -659,7 +659,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-536"><a href="#L-536"><span class="linenos">536</span></a><span class="sd">        | @      | not in (0..inf)   | in (0..inf)       | (0, inf, True)                 |</span>
 </span><span id="L-537"><a href="#L-537"><span class="linenos">537</span></a><span class="sd">        +--------+-------------------+-------------------+--------------------------------+</span>
 </span><span id="L-538"><a href="#L-538"><span class="linenos">538</span></a><span class="sd">        &quot;&quot;&quot;</span>
-</span><span id="L-539"><a href="#L-539"><span class="linenos">539</span></a>        <span class="k">def</span><span class="w"> </span><span class="nf">parse_atom</span><span class="p">(</span><span class="n">atom</span><span class="p">,</span> <span class="n">default</span><span class="p">):</span>
+</span><span id="L-539"><a href="#L-539"><span class="linenos">539</span></a>        <span class="k">def</span> <span class="nf">parse_atom</span><span class="p">(</span><span class="n">atom</span><span class="p">,</span> <span class="n">default</span><span class="p">):</span>
 </span><span id="L-540"><a href="#L-540"><span class="linenos">540</span></a>            <span class="k">if</span> <span class="ow">not</span> <span class="n">atom</span><span class="p">:</span>
 </span><span id="L-541"><a href="#L-541"><span class="linenos">541</span></a>                <span class="k">return</span> <span class="n">default</span>
 </span><span id="L-542"><a href="#L-542"><span class="linenos">542</span></a>            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span> <span class="k">if</span> <span class="s1">&#39;.&#39;</span> <span class="ow">in</span> <span class="n">atom</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span>
@@ -709,7 +709,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-586"><a href="#L-586"><span class="linenos">586</span></a>    <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="ow">not</span> <span class="n">invert</span>
 </span><span id="L-587"><a href="#L-587"><span class="linenos">587</span></a>
 </span><span id="L-588"><a href="#L-588"><span class="linenos">588</span></a>
-</span><span id="L-589"><a href="#L-589"><span class="linenos">589</span></a><span class="k">def</span><span class="w"> </span><span class="nf">oao</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">STATE_OK</span><span class="p">,</span> <span class="n">perfdata</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">always_ok</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+</span><span id="L-589"><a href="#L-589"><span class="linenos">589</span></a><span class="k">def</span> <span class="nf">oao</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">STATE_OK</span><span class="p">,</span> <span class="n">perfdata</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">always_ok</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 </span><span id="L-590"><a href="#L-590"><span class="linenos">590</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-591"><a href="#L-591"><span class="linenos">591</span></a><span class="sd">    Over and Out (OaO)</span>
 </span><span id="L-592"><a href="#L-592"><span class="linenos">592</span></a>
@@ -756,7 +756,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-633"><a href="#L-633"><span class="linenos">633</span></a>    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="n">STATE_OK</span> <span class="k">if</span> <span class="n">always_ok</span> <span class="k">else</span> <span class="n">state</span><span class="p">)</span>
 </span><span id="L-634"><a href="#L-634"><span class="linenos">634</span></a>
 </span><span id="L-635"><a href="#L-635"><span class="linenos">635</span></a>
-</span><span id="L-636"><a href="#L-636"><span class="linenos">636</span></a><span class="k">def</span><span class="w"> </span><span class="nf">smartcast</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+</span><span id="L-636"><a href="#L-636"><span class="linenos">636</span></a><span class="k">def</span> <span class="nf">smartcast</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
 </span><span id="L-637"><a href="#L-637"><span class="linenos">637</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-638"><a href="#L-638"><span class="linenos">638</span></a><span class="sd">    Returns the value converted to `float` if possible, else to `str`, else returns</span>
 </span><span id="L-639"><a href="#L-639"><span class="linenos">639</span></a><span class="sd">    the uncasted value.</span>
@@ -789,7 +789,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-666"><a href="#L-666"><span class="linenos">666</span></a>            <span class="k">return</span> <span class="n">value</span>
 </span><span id="L-667"><a href="#L-667"><span class="linenos">667</span></a>
 </span><span id="L-668"><a href="#L-668"><span class="linenos">668</span></a>
-</span><span id="L-669"><a href="#L-669"><span class="linenos">669</span></a><span class="k">def</span><span class="w"> </span><span class="nf">sort</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sort_by_key</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+</span><span id="L-669"><a href="#L-669"><span class="linenos">669</span></a><span class="k">def</span> <span class="nf">sort</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sort_by_key</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 </span><span id="L-670"><a href="#L-670"><span class="linenos">670</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-671"><a href="#L-671"><span class="linenos">671</span></a><span class="sd">    Sort a dict, list, or tuple.</span>
 </span><span id="L-672"><a href="#L-672"><span class="linenos">672</span></a>
@@ -833,7 +833,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-710"><a href="#L-710"><span class="linenos">710</span></a>    <span class="k">return</span> <span class="n">array</span>
 </span><span id="L-711"><a href="#L-711"><span class="linenos">711</span></a>
 </span><span id="L-712"><a href="#L-712"><span class="linenos">712</span></a>
-</span><span id="L-713"><a href="#L-713"><span class="linenos">713</span></a><span class="k">def</span><span class="w"> </span><span class="nf">state2str</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">empty_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
+</span><span id="L-713"><a href="#L-713"><span class="linenos">713</span></a><span class="k">def</span> <span class="nf">state2str</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">empty_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
 </span><span id="L-714"><a href="#L-714"><span class="linenos">714</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-715"><a href="#L-715"><span class="linenos">715</span></a><span class="sd">    Return the state&#39;s string representation.</span>
 </span><span id="L-716"><a href="#L-716"><span class="linenos">716</span></a>
@@ -878,7 +878,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-755"><a href="#L-755"><span class="linenos">755</span></a>    <span class="k">return</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">prefix</span><span class="si">}{</span><span class="n">text</span><span class="si">}{</span><span class="n">suffix</span><span class="si">}</span><span class="s1">&#39;</span>
 </span><span id="L-756"><a href="#L-756"><span class="linenos">756</span></a>
 </span><span id="L-757"><a href="#L-757"><span class="linenos">757</span></a>
-</span><span id="L-758"><a href="#L-758"><span class="linenos">758</span></a><span class="k">def</span><span class="w"> </span><span class="nf">str2bool</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+</span><span id="L-758"><a href="#L-758"><span class="linenos">758</span></a><span class="k">def</span> <span class="nf">str2bool</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
 </span><span id="L-759"><a href="#L-759"><span class="linenos">759</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-760"><a href="#L-760"><span class="linenos">760</span></a><span class="sd">    Return True or False depending on the given string.</span>
 </span><span id="L-761"><a href="#L-761"><span class="linenos">761</span></a>
@@ -914,7 +914,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-791"><a href="#L-791"><span class="linenos">791</span></a>    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="ow">and</span> <span class="n">s</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">!=</span> <span class="s1">&#39;false&#39;</span>
 </span><span id="L-792"><a href="#L-792"><span class="linenos">792</span></a>
 </span><span id="L-793"><a href="#L-793"><span class="linenos">793</span></a>
-</span><span id="L-794"><a href="#L-794"><span class="linenos">794</span></a><span class="k">def</span><span class="w"> </span><span class="nf">str2state</span><span class="p">(</span><span class="n">string</span><span class="p">,</span> <span class="n">ignore_error</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+</span><span id="L-794"><a href="#L-794"><span class="linenos">794</span></a><span class="k">def</span> <span class="nf">str2state</span><span class="p">(</span><span class="n">string</span><span class="p">,</span> <span class="n">ignore_error</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 </span><span id="L-795"><a href="#L-795"><span class="linenos">795</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-796"><a href="#L-796"><span class="linenos">796</span></a><span class="sd">    Return the numeric state based on a (case-insensitive) string.</span>
 </span><span id="L-797"><a href="#L-797"><span class="linenos">797</span></a>
@@ -971,7 +971,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-848"><a href="#L-848"><span class="linenos">848</span></a>    <span class="k">return</span> <span class="n">lookup</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">string</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()[:</span><span class="mi">4</span><span class="p">],</span> <span class="n">STATE_UNKNOWN</span> <span class="k">if</span> <span class="n">ignore_error</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
 </span><span id="L-849"><a href="#L-849"><span class="linenos">849</span></a>
 </span><span id="L-850"><a href="#L-850"><span class="linenos">850</span></a>
-</span><span id="L-851"><a href="#L-851"><span class="linenos">851</span></a><span class="k">def</span><span class="w"> </span><span class="nf">sum_dict</span><span class="p">(</span><span class="n">dict1</span><span class="p">,</span> <span class="n">dict2</span><span class="p">):</span>
+</span><span id="L-851"><a href="#L-851"><span class="linenos">851</span></a><span class="k">def</span> <span class="nf">sum_dict</span><span class="p">(</span><span class="n">dict1</span><span class="p">,</span> <span class="n">dict2</span><span class="p">):</span>
 </span><span id="L-852"><a href="#L-852"><span class="linenos">852</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-853"><a href="#L-853"><span class="linenos">853</span></a><span class="sd">    Sum up two dictionaries, possibly with different keys.</span>
 </span><span id="L-854"><a href="#L-854"><span class="linenos">854</span></a>
@@ -998,7 +998,7 @@ lib<wbr>.base    </h1>
 </span><span id="L-875"><a href="#L-875"><span class="linenos">875</span></a>    <span class="k">return</span> <span class="n">total</span>
 </span><span id="L-876"><a href="#L-876"><span class="linenos">876</span></a>
 </span><span id="L-877"><a href="#L-877"><span class="linenos">877</span></a>
-</span><span id="L-878"><a href="#L-878"><span class="linenos">878</span></a><span class="k">def</span><span class="w"> </span><span class="nf">sum_lod</span><span class="p">(</span><span class="n">mylist</span><span class="p">):</span>
+</span><span id="L-878"><a href="#L-878"><span class="linenos">878</span></a><span class="k">def</span> <span class="nf">sum_lod</span><span class="p">(</span><span class="n">mylist</span><span class="p">):</span>
 </span><span id="L-879"><a href="#L-879"><span class="linenos">879</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-880"><a href="#L-880"><span class="linenos">880</span></a><span class="sd">    Sum up a list of (simple 1-dimensional) dictionary items.</span>
 </span><span id="L-881"><a href="#L-881"><span class="linenos">881</span></a>
@@ -1073,7 +1073,7 @@ lib<wbr>.base    </h1>
 
     </div>
     <a class="headerlink" href="#coe"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="coe-35"><a href="#coe-35"><span class="linenos">35</span></a><span class="k">def</span><span class="w"> </span><span class="nf">coe</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">STATE_UNKNOWN</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="coe-35"><a href="#coe-35"><span class="linenos">35</span></a><span class="k">def</span> <span class="nf">coe</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">STATE_UNKNOWN</span><span class="p">):</span>
 </span><span id="coe-36"><a href="#coe-36"><span class="linenos">36</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="coe-37"><a href="#coe-37"><span class="linenos">37</span></a><span class="sd">    Continue or Exit (CoE)</span>
 </span><span id="coe-38"><a href="#coe-38"><span class="linenos">38</span></a>
@@ -1184,7 +1184,7 @@ the sanitized message.</li>
 
     </div>
     <a class="headerlink" href="#cu"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="cu-78"><a href="#cu-78"><span class="linenos"> 78</span></a><span class="k">def</span><span class="w"> </span><span class="nf">cu</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="cu-78"><a href="#cu-78"><span class="linenos"> 78</span></a><span class="k">def</span> <span class="nf">cu</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 </span><span id="cu-79"><a href="#cu-79"><span class="linenos"> 79</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="cu-80"><a href="#cu-80"><span class="linenos"> 80</span></a><span class="sd">    See you (cu)</span>
 </span><span id="cu-81"><a href="#cu-81"><span class="linenos"> 81</span></a>
@@ -1281,7 +1281,7 @@ If provided, it will be stripped, sanitized, and printed.</li>
 
     </div>
     <a class="headerlink" href="#get_perfdata"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_perfdata-119"><a href="#get_perfdata-119"><span class="linenos">119</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_perfdata</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">uom</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">crit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_min</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_max</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_perfdata-119"><a href="#get_perfdata-119"><span class="linenos">119</span></a><span class="k">def</span> <span class="nf">get_perfdata</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">uom</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">warn</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">crit</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_min</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">_max</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 </span><span id="get_perfdata-120"><a href="#get_perfdata-120"><span class="linenos">120</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_perfdata-121"><a href="#get_perfdata-121"><span class="linenos">121</span></a><span class="sd">    Returns a Nagios performance data string in the format:  </span>
 </span><span id="get_perfdata-122"><a href="#get_perfdata-122"><span class="linenos">122</span></a><span class="sd">    `&#39;label&#39;=value[UOM];[warn];[crit];[min];[max]`</span>
@@ -1354,7 +1354,7 @@ If provided, it will be stripped, sanitized, and printed.</li>
 
     </div>
     <a class="headerlink" href="#get_state"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_state-148"><a href="#get_state-148"><span class="linenos">148</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_state</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">warn</span><span class="p">,</span> <span class="n">crit</span><span class="p">,</span> <span class="n">_operator</span><span class="o">=</span><span class="s1">&#39;ge&#39;</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_state-148"><a href="#get_state-148"><span class="linenos">148</span></a><span class="k">def</span> <span class="nf">get_state</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">warn</span><span class="p">,</span> <span class="n">crit</span><span class="p">,</span> <span class="n">_operator</span><span class="o">=</span><span class="s1">&#39;ge&#39;</span><span class="p">):</span>
 </span><span id="get_state-149"><a href="#get_state-149"><span class="linenos">149</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_state-150"><a href="#get_state-150"><span class="linenos">150</span></a><span class="sd">    Returns the STATE by comparing `value` to the given thresholds using</span>
 </span><span id="get_state-151"><a href="#get_state-151"><span class="linenos">151</span></a><span class="sd">    a comparison `_operator`. `warn` and `crit` thresholds may also be `None`.</span>
@@ -1506,7 +1506,7 @@ a comparison <code>_operator</code>. <code>warn</code> and <code>crit</code> thr
 
     </div>
     <a class="headerlink" href="#get_table"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_table-244"><a href="#get_table-244"><span class="linenos">244</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">cols</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sort_by_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_order_reverse</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_table-244"><a href="#get_table-244"><span class="linenos">244</span></a><span class="k">def</span> <span class="nf">get_table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">cols</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">strip</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sort_by_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">sort_order_reverse</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 </span><span id="get_table-245"><a href="#get_table-245"><span class="linenos">245</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_table-246"><a href="#get_table-246"><span class="linenos">246</span></a><span class="sd">    Format a list of dictionaries into a simple ASCII table (generator version).</span>
 </span><span id="get_table-247"><a href="#get_table-247"><span class="linenos">247</span></a>
@@ -1557,7 +1557,7 @@ a comparison <code>_operator</code>. <code>warn</code> and <code>crit</code> thr
 </span><span id="get_table-292"><a href="#get_table-292"><span class="linenos">292</span></a>        <span class="n">divider</span> <span class="o">=</span> <span class="p">{</span><span class="n">col</span><span class="p">:</span> <span class="s1">&#39;-&#39;</span> <span class="o">*</span> <span class="n">width</span> <span class="k">for</span> <span class="n">col</span><span class="p">,</span> <span class="n">width</span> <span class="ow">in</span> <span class="n">column_widths</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 </span><span id="get_table-293"><a href="#get_table-293"><span class="linenos">293</span></a>        <span class="n">data</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">divider</span><span class="p">)</span>
 </span><span id="get_table-294"><a href="#get_table-294"><span class="linenos">294</span></a>
-</span><span id="get_table-295"><a href="#get_table-295"><span class="linenos">295</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">generate_lines</span><span class="p">():</span>
+</span><span id="get_table-295"><a href="#get_table-295"><span class="linenos">295</span></a>    <span class="k">def</span> <span class="nf">generate_lines</span><span class="p">():</span>
 </span><span id="get_table-296"><a href="#get_table-296"><span class="linenos">296</span></a>        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
 </span><span id="get_table-297"><a href="#get_table-297"><span class="linenos">297</span></a>            <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
 </span><span id="get_table-298"><a href="#get_table-298"><span class="linenos">298</span></a>            <span class="k">for</span> <span class="n">col</span><span class="p">,</span> <span class="n">width</span> <span class="ow">in</span> <span class="n">column_widths</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
@@ -1621,7 +1621,7 @@ header, sorting by a given key, and stripping whitespace from values.</p>
 
     </div>
     <a class="headerlink" href="#get_worst"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="get_worst-309"><a href="#get_worst-309"><span class="linenos">309</span></a><span class="k">def</span><span class="w"> </span><span class="nf">get_worst</span><span class="p">(</span><span class="n">state1</span><span class="p">,</span> <span class="n">state2</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_worst-309"><a href="#get_worst-309"><span class="linenos">309</span></a><span class="k">def</span> <span class="nf">get_worst</span><span class="p">(</span><span class="n">state1</span><span class="p">,</span> <span class="n">state2</span><span class="p">):</span>
 </span><span id="get_worst-310"><a href="#get_worst-310"><span class="linenos">310</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="get_worst-311"><a href="#get_worst-311"><span class="linenos">311</span></a><span class="sd">    Compares `state1` to `state2` and returns the worse state based on the following priority:  </span>
 </span><span id="get_worst-312"><a href="#get_worst-312"><span class="linenos">312</span></a><span class="sd">    STATE_OK &lt; STATE_UNKNOWN &lt; STATE_WARNING &lt; STATE_CRITICAL  </span>
@@ -1702,7 +1702,7 @@ It will prioritize any non-OK state.</p>
 
     </div>
     <a class="headerlink" href="#guess_type"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="guess_type-342"><a href="#guess_type-342"><span class="linenos">342</span></a><span class="k">def</span><span class="w"> </span><span class="nf">guess_type</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">consumer</span><span class="o">=</span><span class="s1">&#39;python&#39;</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="guess_type-342"><a href="#guess_type-342"><span class="linenos">342</span></a><span class="k">def</span> <span class="nf">guess_type</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">consumer</span><span class="o">=</span><span class="s1">&#39;python&#39;</span><span class="p">):</span>
 </span><span id="guess_type-343"><a href="#guess_type-343"><span class="linenos">343</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="guess_type-344"><a href="#guess_type-344"><span class="linenos">344</span></a><span class="sd">    Guess the type of a value (None, int, float, or string) for different types of consumers</span>
 </span><span id="guess_type-345"><a href="#guess_type-345"><span class="linenos">345</span></a><span class="sd">    (e.g., Python, SQLite).</span>
@@ -1841,7 +1841,7 @@ For SQLite, it returns a string describing the type (<code>'integer'</code>, <co
 
     </div>
     <a class="headerlink" href="#is_empty_list"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="is_empty_list-397"><a href="#is_empty_list-397"><span class="linenos">397</span></a><span class="k">def</span><span class="w"> </span><span class="nf">is_empty_list</span><span class="p">(</span><span class="n">l</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="is_empty_list-397"><a href="#is_empty_list-397"><span class="linenos">397</span></a><span class="k">def</span> <span class="nf">is_empty_list</span><span class="p">(</span><span class="n">l</span><span class="p">):</span>
 </span><span id="is_empty_list-398"><a href="#is_empty_list-398"><span class="linenos">398</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="is_empty_list-399"><a href="#is_empty_list-399"><span class="linenos">399</span></a><span class="sd">    Check if a list only contains either empty elements or whitespace.</span>
 </span><span id="is_empty_list-400"><a href="#is_empty_list-400"><span class="linenos">400</span></a>
@@ -1904,7 +1904,7 @@ For SQLite, it returns a string describing the type (<code>'integer'</code>, <co
 
     </div>
     <a class="headerlink" href="#is_numeric"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="is_numeric-417"><a href="#is_numeric-417"><span class="linenos">417</span></a><span class="k">def</span><span class="w"> </span><span class="nf">is_numeric</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="is_numeric-417"><a href="#is_numeric-417"><span class="linenos">417</span></a><span class="k">def</span> <span class="nf">is_numeric</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
 </span><span id="is_numeric-418"><a href="#is_numeric-418"><span class="linenos">418</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="is_numeric-419"><a href="#is_numeric-419"><span class="linenos">419</span></a><span class="sd">    Return True if the value is truly numeric (int, float, etc.).</span>
 </span><span id="is_numeric-420"><a href="#is_numeric-420"><span class="linenos">420</span></a>
@@ -1967,7 +1967,7 @@ For SQLite, it returns a string describing the type (<code>'integer'</code>, <co
 
     </div>
     <a class="headerlink" href="#lookup_lod"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="lookup_lod-437"><a href="#lookup_lod-437"><span class="linenos">437</span></a><span class="k">def</span><span class="w"> </span><span class="nf">lookup_lod</span><span class="p">(</span><span class="n">haystack</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">needle</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="lookup_lod-437"><a href="#lookup_lod-437"><span class="linenos">437</span></a><span class="k">def</span> <span class="nf">lookup_lod</span><span class="p">(</span><span class="n">haystack</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">needle</span><span class="p">):</span>
 </span><span id="lookup_lod-438"><a href="#lookup_lod-438"><span class="linenos">438</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="lookup_lod-439"><a href="#lookup_lod-439"><span class="linenos">439</span></a><span class="sd">    Search in a list of dictionaries (&quot;lod&quot;) for a key containing a specific value</span>
 </span><span id="lookup_lod-440"><a href="#lookup_lod-440"><span class="linenos">440</span></a><span class="sd">    and return the first dictionary item found.</span>
@@ -2061,7 +2061,7 @@ and return the first dictionary item found.</p>
 
     </div>
     <a class="headerlink" href="#match_range"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="match_range-473"><a href="#match_range-473"><span class="linenos">473</span></a><span class="k">def</span><span class="w"> </span><span class="nf">match_range</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">spec</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="match_range-473"><a href="#match_range-473"><span class="linenos">473</span></a><span class="k">def</span> <span class="nf">match_range</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">spec</span><span class="p">):</span>
 </span><span id="match_range-474"><a href="#match_range-474"><span class="linenos">474</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="match_range-475"><a href="#match_range-475"><span class="linenos">475</span></a><span class="sd">    Decides if `value` is inside or outside the Nagios threshold specification.</span>
 </span><span id="match_range-476"><a href="#match_range-476"><span class="linenos">476</span></a>
@@ -2102,7 +2102,7 @@ and return the first dictionary item found.</p>
 </span><span id="match_range-511"><a href="#match_range-511"><span class="linenos">511</span></a><span class="sd">    &gt;&gt;&gt; match_range(15, &#39;@&#39;)</span>
 </span><span id="match_range-512"><a href="#match_range-512"><span class="linenos">512</span></a><span class="sd">    0 inf True</span>
 </span><span id="match_range-513"><a href="#match_range-513"><span class="linenos">513</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="match_range-514"><a href="#match_range-514"><span class="linenos">514</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">parse_range</span><span class="p">(</span><span class="n">spec_</span><span class="p">):</span>
+</span><span id="match_range-514"><a href="#match_range-514"><span class="linenos">514</span></a>    <span class="k">def</span> <span class="nf">parse_range</span><span class="p">(</span><span class="n">spec_</span><span class="p">):</span>
 </span><span id="match_range-515"><a href="#match_range-515"><span class="linenos">515</span></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="match_range-516"><a href="#match_range-516"><span class="linenos">516</span></a><span class="sd">        Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py</span>
 </span><span id="match_range-517"><a href="#match_range-517"><span class="linenos">517</span></a>
@@ -2128,7 +2128,7 @@ and return the first dictionary item found.</p>
 </span><span id="match_range-537"><a href="#match_range-537"><span class="linenos">537</span></a><span class="sd">        | @      | not in (0..inf)   | in (0..inf)       | (0, inf, True)                 |</span>
 </span><span id="match_range-538"><a href="#match_range-538"><span class="linenos">538</span></a><span class="sd">        +--------+-------------------+-------------------+--------------------------------+</span>
 </span><span id="match_range-539"><a href="#match_range-539"><span class="linenos">539</span></a><span class="sd">        &quot;&quot;&quot;</span>
-</span><span id="match_range-540"><a href="#match_range-540"><span class="linenos">540</span></a>        <span class="k">def</span><span class="w"> </span><span class="nf">parse_atom</span><span class="p">(</span><span class="n">atom</span><span class="p">,</span> <span class="n">default</span><span class="p">):</span>
+</span><span id="match_range-540"><a href="#match_range-540"><span class="linenos">540</span></a>        <span class="k">def</span> <span class="nf">parse_atom</span><span class="p">(</span><span class="n">atom</span><span class="p">,</span> <span class="n">default</span><span class="p">):</span>
 </span><span id="match_range-541"><a href="#match_range-541"><span class="linenos">541</span></a>            <span class="k">if</span> <span class="ow">not</span> <span class="n">atom</span><span class="p">:</span>
 </span><span id="match_range-542"><a href="#match_range-542"><span class="linenos">542</span></a>                <span class="k">return</span> <span class="n">default</span>
 </span><span id="match_range-543"><a href="#match_range-543"><span class="linenos">543</span></a>            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span> <span class="k">if</span> <span class="s1">&#39;.&#39;</span> <span class="ow">in</span> <span class="n">atom</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">atom</span><span class="p">)</span>
@@ -2268,7 +2268,7 @@ and return the first dictionary item found.</p>
 
     </div>
     <a class="headerlink" href="#oao"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="oao-590"><a href="#oao-590"><span class="linenos">590</span></a><span class="k">def</span><span class="w"> </span><span class="nf">oao</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">STATE_OK</span><span class="p">,</span> <span class="n">perfdata</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">always_ok</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="oao-590"><a href="#oao-590"><span class="linenos">590</span></a><span class="k">def</span> <span class="nf">oao</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">state</span><span class="o">=</span><span class="n">STATE_OK</span><span class="p">,</span> <span class="n">perfdata</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">always_ok</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 </span><span id="oao-591"><a href="#oao-591"><span class="linenos">591</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="oao-592"><a href="#oao-592"><span class="linenos">592</span></a><span class="sd">    Over and Out (OaO)</span>
 </span><span id="oao-593"><a href="#oao-593"><span class="linenos">593</span></a>
@@ -2381,7 +2381,7 @@ output format.</li>
 
     </div>
     <a class="headerlink" href="#smartcast"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="smartcast-637"><a href="#smartcast-637"><span class="linenos">637</span></a><span class="k">def</span><span class="w"> </span><span class="nf">smartcast</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="smartcast-637"><a href="#smartcast-637"><span class="linenos">637</span></a><span class="k">def</span> <span class="nf">smartcast</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
 </span><span id="smartcast-638"><a href="#smartcast-638"><span class="linenos">638</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="smartcast-639"><a href="#smartcast-639"><span class="linenos">639</span></a><span class="sd">    Returns the value converted to `float` if possible, else to `str`, else returns</span>
 </span><span id="smartcast-640"><a href="#smartcast-640"><span class="linenos">640</span></a><span class="sd">    the uncasted value.</span>
@@ -2469,7 +2469,7 @@ the uncasted value.</p>
 
     </div>
     <a class="headerlink" href="#sort"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="sort-670"><a href="#sort-670"><span class="linenos">670</span></a><span class="k">def</span><span class="w"> </span><span class="nf">sort</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sort_by_key</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="sort-670"><a href="#sort-670"><span class="linenos">670</span></a><span class="k">def</span> <span class="nf">sort</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">sort_by_key</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 </span><span id="sort-671"><a href="#sort-671"><span class="linenos">671</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="sort-672"><a href="#sort-672"><span class="linenos">672</span></a><span class="sd">    Sort a dict, list, or tuple.</span>
 </span><span id="sort-673"><a href="#sort-673"><span class="linenos">673</span></a>
@@ -2581,7 +2581,7 @@ If the input is not a dictionary, the original input is returned unmodified.</p>
 
     </div>
     <a class="headerlink" href="#state2str"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="state2str-714"><a href="#state2str-714"><span class="linenos">714</span></a><span class="k">def</span><span class="w"> </span><span class="nf">state2str</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">empty_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="state2str-714"><a href="#state2str-714"><span class="linenos">714</span></a><span class="k">def</span> <span class="nf">state2str</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">empty_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
 </span><span id="state2str-715"><a href="#state2str-715"><span class="linenos">715</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="state2str-716"><a href="#state2str-716"><span class="linenos">716</span></a><span class="sd">    Return the state&#39;s string representation.</span>
 </span><span id="state2str-717"><a href="#state2str-717"><span class="linenos">717</span></a>
@@ -2693,7 +2693,7 @@ Defaults to True.</li>
 
     </div>
     <a class="headerlink" href="#str2bool"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="str2bool-759"><a href="#str2bool-759"><span class="linenos">759</span></a><span class="k">def</span><span class="w"> </span><span class="nf">str2bool</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="str2bool-759"><a href="#str2bool-759"><span class="linenos">759</span></a><span class="k">def</span> <span class="nf">str2bool</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
 </span><span id="str2bool-760"><a href="#str2bool-760"><span class="linenos">760</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="str2bool-761"><a href="#str2bool-761"><span class="linenos">761</span></a><span class="sd">    Return True or False depending on the given string.</span>
 </span><span id="str2bool-762"><a href="#str2bool-762"><span class="linenos">762</span></a>
@@ -2803,7 +2803,7 @@ otherwise False.</li>
 
     </div>
     <a class="headerlink" href="#str2state"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="str2state-795"><a href="#str2state-795"><span class="linenos">795</span></a><span class="k">def</span><span class="w"> </span><span class="nf">str2state</span><span class="p">(</span><span class="n">string</span><span class="p">,</span> <span class="n">ignore_error</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="str2state-795"><a href="#str2state-795"><span class="linenos">795</span></a><span class="k">def</span> <span class="nf">str2state</span><span class="p">(</span><span class="n">string</span><span class="p">,</span> <span class="n">ignore_error</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 </span><span id="str2state-796"><a href="#str2state-796"><span class="linenos">796</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="str2state-797"><a href="#str2state-797"><span class="linenos">797</span></a><span class="sd">    Return the numeric state based on a (case-insensitive) string.</span>
 </span><span id="str2state-798"><a href="#str2state-798"><span class="linenos">798</span></a>
@@ -2960,7 +2960,7 @@ recognized.</li>
 
     </div>
     <a class="headerlink" href="#sum_dict"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="sum_dict-852"><a href="#sum_dict-852"><span class="linenos">852</span></a><span class="k">def</span><span class="w"> </span><span class="nf">sum_dict</span><span class="p">(</span><span class="n">dict1</span><span class="p">,</span> <span class="n">dict2</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="sum_dict-852"><a href="#sum_dict-852"><span class="linenos">852</span></a><span class="k">def</span> <span class="nf">sum_dict</span><span class="p">(</span><span class="n">dict1</span><span class="p">,</span> <span class="n">dict2</span><span class="p">):</span>
 </span><span id="sum_dict-853"><a href="#sum_dict-853"><span class="linenos">853</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="sum_dict-854"><a href="#sum_dict-854"><span class="linenos">854</span></a><span class="sd">    Sum up two dictionaries, possibly with different keys.</span>
 </span><span id="sum_dict-855"><a href="#sum_dict-855"><span class="linenos">855</span></a>
@@ -3027,7 +3027,7 @@ recognized.</li>
 
     </div>
     <a class="headerlink" href="#sum_lod"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="sum_lod-879"><a href="#sum_lod-879"><span class="linenos">879</span></a><span class="k">def</span><span class="w"> </span><span class="nf">sum_lod</span><span class="p">(</span><span class="n">mylist</span><span class="p">):</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="sum_lod-879"><a href="#sum_lod-879"><span class="linenos">879</span></a><span class="k">def</span> <span class="nf">sum_lod</span><span class="p">(</span><span class="n">mylist</span><span class="p">):</span>
 </span><span id="sum_lod-880"><a href="#sum_lod-880"><span class="linenos">880</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="sum_lod-881"><a href="#sum_lod-881"><span class="linenos">881</span></a><span class="sd">    Sum up a list of (simple 1-dimensional) dictionary items.</span>
 </span><span id="sum_lod-882"><a href="#sum_lod-882"><span class="linenos">882</span></a>

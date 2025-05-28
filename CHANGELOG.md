@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Changed ("refactor", "chore" etc.)
 
+* feat(time.py): add `get_timezone()`
 * refactor(net.py): force `fetch_ssl()` to use TLS 1.2+
 * refactor(txt.py): enhance sanitize regex
 
