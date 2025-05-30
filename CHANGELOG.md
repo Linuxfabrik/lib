@@ -6,11 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.1.1.15...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.2.0...HEAD
 
 ## [Unreleased]
 
-### Changed ("refactor", "chore" etc.)
+tbd
+
+
+## v2.2.0
+
+### Changed ("refactor", "chore", "feat" etc.)
 
 * feat(time.py): add `get_timezone()`
 * refactor(net.py): force `fetch_ssl()` to use TLS 1.2+
@@ -19,14 +24,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## v2.1.1.15
 
-### Changed ("refactor", "chore" etc.)
+### Changed ("refactor", "chore", "feat" etc.)
 
 * refactor(net.py): add fetch_socket() and fetch_ssl(), improve fetch()
 
 
 ## v2.1.1.7
 
-### Changed ("refactor", "chore" etc.)
+### Changed ("refactor", "chore", "feat" etc.)
 
 * refactor(args.py): improve code-style
 * refactor(base.py): improve code-style
@@ -74,7 +79,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * shell.py: Fix special character decoding in Windows output by explicitly switching to codepage 65001
 
 
-### Changed ("refactor", "chore" etc.)
+### Changed ("refactor", "chore", "feat" etc.)
 
 * docs: improve and convert doc strings to markdown for some libs and create new `docs` folder using `pdoc`
 * refactor(base.py, url.py): make use of txt.sanitize_sensitive_data()
@@ -92,7 +97,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## v2.1.0.4
 
-### Changed ("refactor", "chore" etc.)
+### Changed ("refactor", "chore", "feat" etc.)
 
 * refactor: uptimerobot.py
 
@@ -100,12 +105,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## v2.1.0.0
 
-### Added
+### Added ("feat")
 
 * feat: add uptimerobot.py
 
 
-### Changed ("refactor", "chore" etc.)
+### Changed ("refactor", "chore", "feat" etc.)
 
 * docs(base.py): improve doc strings
 
@@ -118,7 +123,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * fix(txt.py): extract_str()
 
 
-### Changed ("refactor", "chore" etc.)
+### Changed ("refactor", "chore", "feat" etc.)
 
 * chore(endoflifedate.py): bump version numbers
 * chore(tools/update-endoflifedate): add openvpn
@@ -149,12 +154,12 @@ Build, CI/CD:
 * Renamed test.py to lftest.py due to `nuitka.Errors.NuitkaOptimizationError: duplicate locals name` on Windows
 
 
-### Added
+### Added ("feat")
 
 * keycloak.py: This library collects some Keycloak related functions that are needed by more than one Keycloak plugin.
 
 
-### Changed ("refactor", "chore" etc.)
+### Changed ("refactor", "chore", "feat" etc.)
 
 * librenms.py: `get_state()` returns STATE_OK instead of STATE_UNKNOWN
 * url.py: Improve error messages and comments
@@ -212,7 +217,7 @@ Minor improvements, barely any changes.
 
 ## 2023112901
 
-### Added
+### Added ("feat")
 
 * qts.py: A library for interacting with the QNAP QTS API
 * endoflifedate.py (built automatically; version string only changes when products are added or deleted)
@@ -237,7 +242,7 @@ Minor improvements, barely any changes.
 * db_mysql.py: Change from username/password authentication to option file authentication in `connect()`
 
 
-### Added
+### Added ("feat")
 
 * args.py: Add `number_unit_method` type (used in `disk-usage` monitoring plugin)
 * disk.py: Add read_env()
@@ -264,7 +269,7 @@ Minor improvements, barely any changes.
 * net3: Rename ip_to_cdir() to netmask_to_cdir()
 
 
-### Added
+### Added ("feat")
 
 * dmidecode3.py
 * grassfish3.py
@@ -282,7 +287,7 @@ Minor improvements, barely any changes.
 
 ## 2022072001
 
-### Added
+### Added ("feat")
 
 * distro3.py
 
@@ -300,7 +305,7 @@ Minor improvements, barely any changes.
 
 ## 2022022801
 
-### Added
+### Added ("feat")
 
 * human3.py: Collects functions to convert raw numbers, times etc. to a human readable representation.
 * shell3.py: Communicates with the Shell.
@@ -341,7 +346,7 @@ Minor improvements, barely any changes.
 
 ## 2021101401
 
-### Added
+### Added ("feat")
 
 * nodebb
 * jitsi
@@ -381,7 +386,7 @@ Minor improvements, barely any changes.
 
 ## 2020052801
 
-### Added
+### Added ("feat")
 
 * db_mysql
 * feedparser
@@ -401,7 +406,7 @@ Minor improvements, barely any changes.
 
 ## 2020041501
 
-### Added
+### Added ("feat")
 
 * args.py
 * base.py
