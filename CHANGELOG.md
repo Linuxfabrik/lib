@@ -10,28 +10,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## [Unreleased]
 
-tbd
+### Fixed ("fix")
+
+* fix(net.py): use `ssl.PROTOCOL_TLS_CLIENT` as "best practice" in `fetch_ssl()`
+
 
 
 ## v2.2.0
 
-### Changed ("refactor", "chore", "feat" etc.)
+### Added ("feat")
 
 * feat(time.py): add `get_timezone()`
+
+
+### Changed ("refactor", "chore" etc.)
+
 * refactor(net.py): force `fetch_ssl()` to use TLS 1.2+
 * refactor(txt.py): enhance sanitize regex
 
 
+
 ## v2.1.1.15
 
-### Changed ("refactor", "chore", "feat" etc.)
+### Changed ("refactor", "chore" etc.)
 
 * refactor(net.py): add fetch_socket() and fetch_ssl(), improve fetch()
 
 
+
 ## v2.1.1.7
 
-### Changed ("refactor", "chore", "feat" etc.)
+### Changed ("refactor", "chore" etc.)
 
 * refactor(args.py): improve code-style
 * refactor(base.py): improve code-style
@@ -79,7 +88,7 @@ tbd
 * shell.py: Fix special character decoding in Windows output by explicitly switching to codepage 65001
 
 
-### Changed ("refactor", "chore", "feat" etc.)
+### Changed ("refactor", "chore" etc.)
 
 * docs: improve and convert doc strings to markdown for some libs and create new `docs` folder using `pdoc`
 * refactor(base.py, url.py): make use of txt.sanitize_sensitive_data()
@@ -97,7 +106,7 @@ tbd
 
 ## v2.1.0.4
 
-### Changed ("refactor", "chore", "feat" etc.)
+### Changed ("refactor", "chore" etc.)
 
 * refactor: uptimerobot.py
 
@@ -110,7 +119,7 @@ tbd
 * feat: add uptimerobot.py
 
 
-### Changed ("refactor", "chore", "feat" etc.)
+### Changed ("refactor", "chore" etc.)
 
 * docs(base.py): improve doc strings
 
@@ -123,7 +132,7 @@ tbd
 * fix(txt.py): extract_str()
 
 
-### Changed ("refactor", "chore", "feat" etc.)
+### Changed ("refactor", "chore" etc.)
 
 * chore(endoflifedate.py): bump version numbers
 * chore(tools/update-endoflifedate): add openvpn
@@ -159,7 +168,7 @@ Build, CI/CD:
 * keycloak.py: This library collects some Keycloak related functions that are needed by more than one Keycloak plugin.
 
 
-### Changed ("refactor", "chore", "feat" etc.)
+### Changed ("refactor", "chore" etc.)
 
 * librenms.py: `get_state()` returns STATE_OK instead of STATE_UNKNOWN
 * url.py: Improve error messages and comments

@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025052001'
+__version__ = '2025053001'
 
 import random
 import re
@@ -327,10 +327,14 @@ def fetch_ssl(host, port, msg=None, timeout=3):
     >>> success, response = fetch_ssl('example.com', 443, b'GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n')
     """
     def open_ssl_socket():
-        context = ssl.create_default_context()
-        # forcing TLS 1.2+
-        ctx.options |= ssl.OP_NO_TLSv1
-        ctx.options |= ssl.OP_NO_TLSv1_1
+        # PROTOCOL_TLS_CLIENT automatically disables SSLv2/3 and
+        # TLSv1.0/1.1 on recent OpenSSL builds
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+        # context.check_hostname = True
+        # context.verify_mode = ssl.CERT_REQUIRED
+        context.minimum_version = ssl.TLSVersion.TLSv1_2  # enforce at least TLS 1.2 just to be sure
+
         raw_sock = socket.socket(socket.AF_INET, SOCK_TCP)
         return context.wrap_socket(raw_sock, server_hostname=host)
 
