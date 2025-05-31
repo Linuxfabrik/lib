@@ -15,7 +15,7 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025051301'
+__version__ = '2025053101'
 
 import codecs
 import re
@@ -180,22 +180,22 @@ def filter_mltext(_input, ignore):
     >>> filter_mltext('abcde', 'a')  # "ignore" has to be a list
     ''
 
-    >>> s = 'Lorem ipsum\n\ndolor sit amet\n\nconsectetur adipisicing'
+    >>> s = 'Lorem ipsum\\n\\ndolor sit amet\\n\\nconsectetur adipisicing'
     >>> filter_mltext(s, ['ipsum'])
-    '\ndolor sit amet\n\nconsectetur adipisicing\n'
+    '\\ndolor sit amet\\n\\nconsectetur adipisicing\\n'
 
     >>> filter_mltext(s, ['dol'])
-    'Lorem ipsum\n\n\nconsectetur adipisicing\n'
+    'Lorem ipsum\\n\\n\\nconsectetur adipisicing\\n'
 
     >>> filter_mltext(s, ['Dol'])
-    'Lorem ipsum\n\ndolor sit amet\n\nconsectetur adipisicing\n'
+    'Lorem ipsum\\n\\ndolor sit amet\\n\\nconsectetur adipisicing\\n'
 
     >>> filter_mltext(s, ['d'])
-    'Lorem ipsum\n\n\n'
+    'Lorem ipsum\\n\\n\\n'
 
     >>> s = 'Lorem ipsum'
     >>> filter_mltext(s, ['Dol'])
-    'Lorem ipsum\n'
+    'Lorem ipsum\\n'
 
     >>> filter_mltext(s, ['ipsum'])
     ''
@@ -254,7 +254,7 @@ def mltext2array(_input, skip_header=False, sort_key=-1):
     - **list of list**: A list where each inner list represents a line split by whitespace.
 
     ### Example
-    >>> s = '1662130953 timedatex\n1662130757 python3-pip-wheel\n1662130975 python3-dateutil'
+    >>> s = '1662130953 timedatex\\n1662130757 python3-pip-wheel\\n1662130975 python3-dateutil'
 
     >>> mltext2array(s, skip_header=False, sort_key=0)
     [['1662130757', 'python3-pip-wheel'], ['1662130953', 'timedatex'], ['1662130975', 'python3-dateutil']]
