@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025060401'
 
 
 import os
@@ -84,51 +84,64 @@ def get_command_output(cmd, regex=None):
     return output
 
 
-def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None):
+def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None, lc_all='C'):
     """
     Execute a command in a subprocess with flexible options for shell execution, environment
     variables, piping, standard input, working directory, and a timeout.
 
-    On Windows, the function changes the codepage to 65001 (UTF-8) so that command output is
+    On Windows, the function changes the code page to 65001 (UTF-8) so that command output is
     handled in UTF-8.
 
     ### Parameters
     - **cmd** (`str`):  
-      The command string to execute. Use `|` to separate piped commands.
+      The command string to execute. If using pipes (`|`), individual commands will be run
+      in a pipeline when `shell=False`. If `shell=True`, the entire string is passed to the shell.
     - **env** (`dict`, optional):  
       A dictionary of environment variables to merge with the current OS environment.
       Defaults to the current environment.
     - **shell** (`bool`, optional):  
-      If True, execute using the shell. Required when using shell features or stdin.
-      Defaults to False.
+      If True, execute the command through the shell. Required when using shell features
+      (e.g., redirection, globbing) or when providing `stdin`. Defaults to False.
     - **stdin** (`str`, optional):  
-      A string to pass as standard input to the command. Defaults to ''.
+      A string to pass as standard input to the command. If non‐empty, `shell` will be set
+      to True on Windows. Defaults to an empty string.
     - **cwd** (`str`, optional):  
       Working directory in which to execute the command. Defaults to None (current directory).
     - **timeout** (`int` or `float`, optional):  
-      Maximum time (in seconds) to allow the command to run. If exceeded, the process is terminated.
-      Defaults to None.
+      Maximum time (in seconds) to allow the command to run. If exceeded, the process is
+      terminated. Defaults to None (no timeout).
+    - **lc_all** (`str`, optional):  
+      Value to set for the `LC_ALL` environment variable, forcing command output locale.
+      Defaults to `'C'` (POSIX "C" locale, i.e., English).
 
     ### Returns
     - **tuple**:  
-      On success:  
-      `(True, (stdout, stderr, return_code))`  
-      - **stdout** (`str`): Standard output of the command.  
-      - **stderr** (`str`): Standard error of the command.  
-      - **return_code** (`int`): Exit status of the command.  
-
-      On failure:  
-      `(False, error_message)` — a string describing the error.
+      - On success:  
+        `(True, (stdout, stderr, return_code))`  
+        - **stdout** (`str`): Standard output of the command (decoded to text).  
+        - **stderr** (`str`): Standard error of the command (decoded to text).  
+        - **return_code** (`int`): Exit status of the command.  
+      - On failure:  
+        `(False, error_message)` — a string describing the error.
 
     ### Notes
-    - Output is always forced to English by setting `LC_ALL=C`.
-    - On Windows, the command is prepended with `chcp 65001 &&` to ensure UTF-8 output.
-    - If `shell=False` and the command contains pipes (`|`), it creates a manual pipeline.
-    - Exceptions such as `OSError`, `ValueError`, or general execution errors are caught and
-      reported.
+    - The environment is merged with `env` and always includes `LC_ALL=<lc_all>`, forcing output
+      to the specified locale.
+    - On Windows (`os.name == 'nt'`), `cmd` is automatically prefixed with `chcp 65001 &&` to
+      switch to UTF-8 code page, and `shell` is set to True.
+    - If `shell=False` and `cmd` contains pipes (`|`), the function splits `cmd` on `|` and
+      creates a pipeline of subprocesses. Each segment is run without a shell, with stdout of
+      one feeding stdin of the next.
+    - If `shell=True` or `stdin` is provided, the command is executed in a single shell
+      invocation (`subprocess.Popen(..., shell=True)`). The provided `stdin` string is passed
+      to `communicate()`.
+    - Exceptions such as `OSError`, `ValueError`, or other execution errors during process
+      creation are caught and reported as `(False, <error message>)`.
+    - If the process exceeds the specified `timeout`, it is killed, and the function returns
+      `(False, "Timeout after <timeout> seconds.")`.
     """
     env = {**os.environ.copy(), **(env or {})}
-    env['LC_ALL'] = 'C'
+    env['LC_ALL'] = lc_all
 
     if os.name == 'nt':
         cmd = f'chcp 65001 && {cmd}'

@@ -9,7 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## [Unreleased]
 
-tbd
+### Changed ("refactor", "chore" etc.)
+
+* refactor(shell.py): new optional parameter `lc_all='C'` for `shell_exec()`
+
 
 
 ## v2.2.1
