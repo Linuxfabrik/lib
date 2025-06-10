@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## [Unreleased]
 
+### Fixed ("fix")
+
+* fix(distro.py): incorrect os_family for Devuan in `get_distribution_facts()` ([#87](https://github.com/Linuxfabrik/lib/issues/87))
+
+
 ### Changed ("refactor", "chore" etc.)
 
 * refactor(shell.py): new optional parameter `lc_all='C'` for `shell_exec()`
