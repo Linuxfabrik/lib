@@ -5,8 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.2.1...HEAD
-
 ## [Unreleased]
 
 ### Fixed ("fix")
@@ -20,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-## v2.2.1
+## [v2.2.1] - 2025-05-30
 
 ### Fixed ("fix")
 
@@ -28,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-## v2.2.0
+## [v2.2.0] - 2025-05-30
 
 ### Added ("feat")
 
@@ -42,7 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-## v2.1.1.15
+## [v2.1.1.15] - 2025-05-07
 
 ### Changed ("refactor", "chore" etc.)
 
@@ -50,7 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-## v2.1.1.7
+## [v2.1.1.7] - 2025-04-21
 
 ### Changed ("refactor", "chore" etc.)
 
@@ -93,7 +91,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-## v2.1.1.5
+## [v2.1.1.5] - 2025-04-19
 
 ### Fixed ("fix")
 
@@ -108,7 +106,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-## v2.1.0.7
+## [v2.1.0.7] - 2025-04-08
 
 ### Fixed ("fix")
 
@@ -116,7 +114,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-## v2.1.0.4
+## [v2.1.0.4] - 2025-03-29
 
 ### Changed ("refactor", "chore" etc.)
 
@@ -124,7 +122,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-## v2.1.0.0
+## [v2.1.0.0] - 2025-03-23
 
 ### Added ("feat")
 
@@ -137,7 +135,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-## v2.0.0.7
+## [v2.0.0.7] - 2025-03-10
 
 ### Fixed ("fix")
 
@@ -153,7 +151,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 
 
-## v2.0.0.0
+## [v2.0.0.0] - 2025-02-15
 
 ### Breaking Changes
 
@@ -192,13 +190,13 @@ Build, CI/CD:
 
 
 
-## 2024060401
+## [2024060401] - 2024-06-04
 
 Minor improvements, barely any changes.
 
 
 
-## 2024052901
+## [2024052901] - 2024-05-29
 
 ### Breaking Changes
 
@@ -236,7 +234,7 @@ Minor improvements, barely any changes.
 
 
 
-## 2023112901
+## [2023112901] - 2023-11-29
 
 ### Added ("feat")
 
@@ -255,7 +253,7 @@ Minor improvements, barely any changes.
 
 
 
-## 2023051201
+## [2023051201] - 2023-05-12
 
 ### Breaking Changes
 
@@ -281,7 +279,7 @@ Minor improvements, barely any changes.
 
 
 
-## 2023030801
+## [2023030801] - 2023-03-08
 
 ### Breaking Changes
 
@@ -306,7 +304,7 @@ Minor improvements, barely any changes.
 
 
 
-## 2022072001
+## [2022072001] - 2022-07-20
 
 ### Added ("feat")
 
@@ -324,7 +322,7 @@ Minor improvements, barely any changes.
 
 
 
-## 2022022801
+## [2022022801] - 2022-02-28
 
 ### Added ("feat")
 
@@ -365,7 +363,7 @@ Minor improvements, barely any changes.
 
 
 
-## 2021101401
+## [2021101401] - 2021-10-14
 
 ### Added ("feat")
 
@@ -405,7 +403,7 @@ Minor improvements, barely any changes.
 
 
 
-## 2020052801
+## [2020052801] - 2020-05-28
 
 ### Added ("feat")
 
@@ -415,7 +413,7 @@ Minor improvements, barely any changes.
 
 
 
-## 2020042001
+## [2020042001] - 2020-04-20
 
 ### Changed
 
@@ -425,7 +423,7 @@ Minor improvements, barely any changes.
 
 
 
-## 2020041501
+## [2020041501] - 2020-04-15
 
 ### Added ("feat")
 
@@ -440,6 +438,31 @@ Minor improvements, barely any changes.
 
 
 
-## 2020022801
+## [2020022801] - 2020-02-28
 
 Initial release.
+
+
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.2.1...HEAD
+[v2.2.1]: https://github.com/Linuxfabrik/lib/compare/v2.2.0...v2.2.1
+[v2.2.0]: https://github.com/Linuxfabrik/lib/compare/v2.1.1.15...v2.2.0
+[v2.1.1.15]: https://github.com/Linuxfabrik/lib/compare/v2.1.1.7...v2.1.1.15
+[v2.1.1.7]: https://github.com/Linuxfabrik/lib/compare/v2.1.1.5...v2.1.1.7
+[v2.1.1.5]: https://github.com/Linuxfabrik/lib/compare/v2.1.0.7...v2.1.1.5
+[v2.1.0.7]: https://github.com/Linuxfabrik/lib/compare/v2.1.0.4...v2.1.0.7
+[v2.1.0.4]: https://github.com/Linuxfabrik/lib/compare/v2.1.0.0...v2.1.0.4
+[v2.1.0.0]: https://github.com/Linuxfabrik/lib/compare/v2.0.0.7...v2.1.0.0
+[v2.0.0.7]: https://github.com/Linuxfabrik/lib/compare/v2.0.0.0...v2.0.0.7
+[v2.0.0.0]: https://github.com/Linuxfabrik/lib/compare/2024060401...v2.0.0.0
+[2024060401]: https://github.com/Linuxfabrik/lib/compare/2024052901...2024060401
+[2024052901]: https://github.com/Linuxfabrik/lib/compare/2023112901...2024052901
+[2023112901]: https://github.com/Linuxfabrik/lib/compare/2023051201...2023112901
+[2023051201]: https://github.com/Linuxfabrik/lib/compare/2023030801...2023051201
+[2023030801]: https://github.com/Linuxfabrik/lib/compare/2022072001...2023030801
+[2022072001]: https://github.com/Linuxfabrik/lib/compare/2022022801...2022072001
+[2022022801]: https://github.com/Linuxfabrik/lib/compare/2021101401...2022022801
+[2021101401]: https://github.com/Linuxfabrik/lib/compare/2020052801...2021101401
+[2020052801]: https://github.com/Linuxfabrik/lib/compare/2020042001...2020052801
+[2020042001]: https://github.com/Linuxfabrik/lib/compare/2020041501...2020042001
+[2020041501]: https://github.com/Linuxfabrik/lib/compare/2020022801...2020041501
+[2020022801]: https://github.com/Linuxfabrik/lib/releases/tag/2020022801
