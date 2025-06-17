@@ -413,7 +413,7 @@ Minor improvements, barely any changes.
 
 
 
-## [2020042001] - 2020-04-20
+## 2020042001 - 2020-04-20
 
 ### Changed
 
