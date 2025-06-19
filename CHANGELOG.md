@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## [Unreleased]
 
+### Added ("feat")
+
+* feat(endoflifedate.py): add Icinga
+
+
 ### Fixed ("fix")
 
 * fix(distro.py): incorrect os_family for Devuan in `get_distribution_facts()` ([#87](https://github.com/Linuxfabrik/lib/issues/87))
