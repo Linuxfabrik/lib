@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "linuxfabrik-lib"
-version = "2.2.1"
+version = "2.3.0"
 description = "Python libraries used in various Linuxfabrik projects, including the 'Linuxfabrik Monitoring Plugins' project."
 readme = "README.md"
 authors = [
