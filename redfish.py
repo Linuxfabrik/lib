@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025062601'
 
 from . import base
 from . import human
@@ -60,9 +60,13 @@ CHASSIS_SENSOR_KEYS = (
 
 CHASSIS_SENSOR_NESTED_KEYS = {
     'Thresholds_LowerCaution': ('Thresholds', 'LowerCaution', 'Reading'),
+    'Thresholds_LowerCautionUser': ('Thresholds', 'LowerCautionUser', 'Reading'),
     'Thresholds_LowerCritical': ('Thresholds', 'LowerCritical', 'Reading'),
+    'Thresholds_LowerCriticalUser': ('Thresholds', 'LowerCriticalUser', 'Reading'),
     'Thresholds_UpperCaution': ('Thresholds', 'UpperCaution', 'Reading'),
+    'Thresholds_UpperCautionUser': ('Thresholds', 'UpperCautionUser', 'Reading'),
     'Thresholds_UpperCritical': ('Thresholds', 'UpperCritical', 'Reading'),
+    'Thresholds_UpperCriticalUser': ('Thresholds', 'UpperCriticalUser', 'Reading'),
     'Status_State': ('Status', 'State'),
     'Status_Health': ('Status', 'Health'),
     'Status_HealthRollup': ('Status', 'HealthRollup'),
@@ -549,48 +553,137 @@ def get_perfdata(data, key='Reading'):
 
 def get_sensor_state(data, key='Reading'):
     """
-    Determine the state of a sensor based on its reading and threshold values.
+    Determine the state of a Redfish sensor according to status, health, thresholds, and range.
 
-    This function evaluates the reading of a sensor and compares it against the defined
-    thresholds to determine its state. It returns one of the predefined states: `STATE_OK`,
-    `STATE_WARN`, or `STATE_CRIT`.
+    This function evaluates the sensor reading in the following order:
+
+    1. **Status_State**  
+       If `data['Status_State']` is not `'Enabled'` or `'Quiesced'`, the sensor is considered OK.
+    2. **Status_HealthRollup / Status_Health**  
+       - Returns STATE_CRIT if either is `'Critical'`.  
+       - Returns STATE_WARN if either is `'Warning'`.
+    3. **Thresholds** (with user-defined overrides)  
+       Checks in this sequence for any defined thresholds:
+       - **User-defined critical** (`Thresholds_LowerCriticalUser`, `Thresholds_UpperCriticalUser`) → STATE_CRIT
+       - **Default critical**      (`Thresholds_LowerCritical`,     `Thresholds_UpperCritical`)     → STATE_CRIT
+       - **User-defined caution**  (`Thresholds_LowerCautionUser`,  `Thresholds_UpperCautionUser`)  → STATE_WARN
+       - **Default caution**       (`Thresholds_LowerCaution`,      `Thresholds_UpperCaution`)      → STATE_WARN
+       Otherwise, if any thresholds were present but none breached, returns STATE_OK.
+    4. **ReadingRange** (last-resort sanity check)  
+       If both `ReadingRangeMin` and `ReadingRangeMax` are defined, returns STATE_WARN if the
+       reading lies outside that range; otherwise STATE_OK.
+    5. **Default**  
+       If no other checks apply, returns STATE_OK.
 
     ### Parameters
-    - **data** (`dict`): A dictionary containing the sensor data and its thresholds (e.g.,
-      'Reading', 'Thresholds_UpperCritical', etc.).
-    - **key** (`str`, optional): The key in the dictionary whose value should be evaluated.
+    - **data** (`dict`): Sensor data containing keys such as:
+        - `'Reading'` (float or numeric string)
+        - `'Status_State'`, `'Status_HealthRollup'`, `'Status_Health'`
+        - Default thresholds: `'Thresholds_LowerCritical'`, `'Thresholds_UpperCritical'`,
+          `'Thresholds_LowerCaution'`, `'Thresholds_UpperCaution'`
+        - User thresholds: `'Thresholds_LowerCriticalUser'`, `'Thresholds_UpperCriticalUser'`,
+          `'Thresholds_LowerCautionUser'`, `'Thresholds_UpperCautionUser'`
+        - Reading ranges: `'ReadingRangeMin'`, `'ReadingRangeMax'`.
+    - **key** (`str`, optional): The key in `data` whose value is the sensor reading.
       Defaults to `'Reading'`.
 
     ### Returns
-    - **int**: The state of the sensor, which can be:
-      - `STATE_OK` (0): If the sensor reading is within acceptable thresholds.
-      - `STATE_WARN` (1): If the sensor reading is in a warning range.
-      - `STATE_CRIT` (2): If the sensor reading exceeds critical thresholds.
+    - **int**: One of:
+        - `STATE_OK`   (0)
+        - `STATE_WARN` (1)
+        - `STATE_CRIT` (2)
 
     ### Example
-    >>> data = {
-    ...     'Reading': 75.0,
-    ...     'Thresholds_UpperCritical': 80,
+    >>> sample = {
+    ...     'Reading': 95.0,
+    ...     'Status_State': 'Enabled',
+    ...     'Status_Health': '',
+    ...     'Status_HealthRollup': '',
+    ...     'Thresholds_UpperCriticalUser': 85,
+    ...     'Thresholds_UpperCritical': 90,
+    ...     'Thresholds_UpperCaution': 80,
     ...     'Thresholds_LowerCritical': 10,
-    ...     'Thresholds_UpperCaution': 70,
     ...     'Thresholds_LowerCaution': 20,
     ... }
-    >>> get_sensor_state(data)
-    1  # STATE_WARN
+    >>> get_sensor_state(sample)
+    2  # STATE_CRIT (reading > user-defined upper critical)
     """
-    value = data.get(key)
-    if not isinstance(value, (int, float)):
+    # helper to parse floats, treating '', None, or bad strings as None
+    def _parse(val):
+        if val in (None, ''):
+            return None
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
+
+    # read the actual sensor reading
+    raw = data.get(key)
+    try:
+        reading = float(raw)
+    except (TypeError, ValueError):
         return STATE_OK
 
-    if data.get('Thresholds_UpperCritical') is not None and value >= data['Thresholds_UpperCritical']:
-        return STATE_CRIT
-    if data.get('Thresholds_LowerCritical') is not None and value <= data['Thresholds_LowerCritical']:
-        return STATE_CRIT
-    if data.get('Thresholds_UpperCaution') is not None and value >= data['Thresholds_UpperCaution']:
-        return STATE_WARN
-    if data.get('Thresholds_LowerCaution') is not None and value <= data['Thresholds_LowerCaution']:
-        return STATE_WARN
+    # get redfish's states first
+    if data.get('Status_State') not in ('Enabled', 'Quiesced'):
+        return STATE_OK
 
+    for field in ('Status_HealthRollup', 'Status_Health'):
+        value = data.get(field)
+        if value:
+            value = value.lower()
+            if value == 'critical':
+                return STATE_CRIT
+            if value == 'warning':
+                return STATE_WARN
+
+    # parse thresholds
+    low_caut  = _parse(data.get('Thresholds_LowerCaution'))
+    low_caut_usr  = _parse(data.get('Thresholds_LowerCautionUser'))
+    low_crit  = _parse(data.get('Thresholds_LowerCritical'))
+    low_crit_usr  = _parse(data.get('Thresholds_LowerCriticalUser'))
+    up_caut = _parse(data.get('Thresholds_UpperCaution'))
+    up_caut_usr = _parse(data.get('Thresholds_UpperCautionUser'))
+    up_crit = _parse(data.get('Thresholds_UpperCritical'))
+    up_crit_usr = _parse(data.get('Thresholds_UpperCriticalUser'))
+
+    # if *any* thresholds are defined, use threshold logic
+    if any(t is not None for t in (
+        low_caut, low_caut_usr, low_crit, low_crit_usr, up_caut, up_caut_usr, up_crit, up_crit_usr
+    )):
+        # critical bounds first
+        # (user-defined thresholds exist too and should normally override the default
+        # thresholds if present)
+        if ((low_crit_usr is not None  and reading < low_crit_usr) or
+            (up_crit_usr is not None and reading > up_crit_usr)):
+            return STATE_CRIT
+
+        if ((low_crit is not None  and reading < low_crit) or
+            (up_crit is not None and reading > up_crit)):
+            return STATE_CRIT
+
+        # then caution bounds
+        if ((low_caut_usr is not None  and reading < low_caut_usr) or
+            (up_caut_usr is not None and reading > up_caut_usr)):
+            return STATE_WARN
+
+        if ((low_caut is not None  and reading < low_caut) or
+            (up_caut is not None and reading > up_caut)):
+            return STATE_WARN
+
+        # otherwise we're inside all defined thresholds
+        return STATE_OK
+
+    # we're using ReadingRangeMin/Max purely as a last-resort sanity check,
+    # since Redfish doesn't specify health semantics for that
+    range_min = _parse(data.get('ReadingRangeMin'))
+    range_max = _parse(data.get('ReadingRangeMax'))
+    if range_min is not None and range_max is not None:
+        if reading < range_min or reading > range_max:
+            return STATE_WARN
+        return STATE_OK
+
+    # nothing defined to check against
     return STATE_OK
 
 
