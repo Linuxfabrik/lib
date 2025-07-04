@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042101'
+__version__ = '2025070401'
 
 import collections
 import numbers
@@ -269,6 +269,7 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
     """
     if not data:
         return ''
+    data = data.copy()  # data has been passed by-reference - kick the reference
 
     if sort_by_key:
         data = sorted(data, key=operator.itemgetter(sort_by_key), reverse=sort_order_reverse)
@@ -393,7 +394,7 @@ def guess_type(v, consumer='python'):
             return str(v) if consumer == 'python' else 'text'
 
 
-def is_empty_list(l):
+def is_empty_list(lst):
     """
     Check if a list only contains either empty elements or whitespace.
 
@@ -479,7 +480,8 @@ def match_range(value, spec):
 
     ### Returns
     - **bool**: 
-      - True if `value` is inside the bounds for a non-inverted `spec`, or outside the bounds for an inverted `spec`.
+      - True if `value` is inside the bounds for a non-inverted `spec`, or outside the bounds for an
+        inverted `spec`.
       - Otherwise, False.
 
     ### Example
@@ -626,7 +628,8 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     """
     msg = txt.sanitize_sensitive_data(msg.strip()).replace('|', '!')
     if always_ok and msg:
-        parts = msg.split('\n', 1)  # Instead of splitlines(), we just split('\n', 1), so only first line is touched.
+        # Instead of splitlines(), we just split('\n', 1), so only first line is touched.
+        parts = msg.split('\n', 1)
         parts[0] += ' (always ok)'
         msg = '\n'.join(parts)
     print(f'{msg}|{perfdata.strip()}' if perfdata else msg)
@@ -683,12 +686,16 @@ def sort(array, reverse=True, sort_by_key=False):
     If the input is not a dictionary, the original input is returned unmodified.
 
     ### Parameters
-    - **array** (`dict` or `any`): The dictionary to be sorted. If not a dictionary, the input is returned as is.
-    - **reverse** (`bool`, optional): If True, sort in descending order; if False, ascending. Defaults to True.
-    - **sort_by_key** (`bool`, optional): If True, sort by dictionary keys; if False, by values. Defaults to False.
+    - **array** (`dict` or `any`): The dictionary to be sorted. If not a dictionary, the input is
+      returned as is.
+    - **reverse** (`bool`, optional): If True, sort in descending order; if False, ascending.
+      Defaults to True.
+    - **sort_by_key** (`bool`, optional): If True, sort by dictionary keys; if False, by values.
+      Defaults to False.
 
     ### Returns
-    - **list** or **any**: A list of sorted (key, value) tuples if a dictionary is provided, otherwise the original input.
+    - **list** or **any**: A list of sorted (key, value) tuples if a dictionary is provided,
+      otherwise the original input.
 
     ### Example
     >>> sort({'a': 2, 'b': 1})

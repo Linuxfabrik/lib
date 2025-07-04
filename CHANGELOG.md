@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Fixed ("fix")
 
+* fix(base.py): `get_table()` does not modify `data` any longer
 * fix(redfish.py): make lib more robust and check the sensor state against the user's thresholds first
 
 
