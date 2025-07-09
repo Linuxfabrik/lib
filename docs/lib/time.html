@@ -39,6 +39,9 @@
                     <a class="function" href="#get_timezone">get_timezone</a>
             </li>
             <li>
+                    <a class="function" href="#get_weekday">get_weekday</a>
+            </li>
+            <li>
                     <a class="function" href="#now">now</a>
             </li>
             <li>
@@ -153,142 +156,163 @@ lib<wbr>.time    </h1>
 </span><span id="L-75"><a href="#L-75"><span class="linenos"> 75</span></a>            <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span>
 </span><span id="L-76"><a href="#L-76"><span class="linenos"> 76</span></a>
 </span><span id="L-77"><a href="#L-77"><span class="linenos"> 77</span></a>
-</span><span id="L-78"><a href="#L-78"><span class="linenos"> 78</span></a><span class="k">def</span> <span class="nf">now</span><span class="p">(</span><span class="n">as_type</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
+</span><span id="L-78"><a href="#L-78"><span class="linenos"> 78</span></a><span class="k">def</span> <span class="nf">get_weekday</span><span class="p">(</span><span class="n">epoch</span><span class="p">):</span>
 </span><span id="L-79"><a href="#L-79"><span class="linenos"> 79</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a><span class="sd">    Returns the current date and time in various formats.</span>
+</span><span id="L-80"><a href="#L-80"><span class="linenos"> 80</span></a><span class="sd">    Convert a UNIX epoch timestamp to a lowercase three-letter weekday abbreviation.</span>
 </span><span id="L-81"><a href="#L-81"><span class="linenos"> 81</span></a>
-</span><span id="L-82"><a href="#L-82"><span class="linenos"> 82</span></a><span class="sd">    Depending on `as_type`, this returns:</span>
-</span><span id="L-83"><a href="#L-83"><span class="linenos"> 83</span></a><span class="sd">    - Integer UNIX epoch (default)</span>
-</span><span id="L-84"><a href="#L-84"><span class="linenos"> 84</span></a><span class="sd">    - Floating-point UNIX epoch (&#39;float&#39;)</span>
-</span><span id="L-85"><a href="#L-85"><span class="linenos"> 85</span></a><span class="sd">    - datetime.datetime object (&#39;datetime&#39;)</span>
-</span><span id="L-86"><a href="#L-86"><span class="linenos"> 86</span></a><span class="sd">    - ISO string &#39;YYYY-MM-DD HH:MM:SS&#39; (&#39;iso&#39;)</span>
+</span><span id="L-82"><a href="#L-82"><span class="linenos"> 82</span></a><span class="sd">    This function takes a UNIX timestamp (int or float) and returns the local weekday</span>
+</span><span id="L-83"><a href="#L-83"><span class="linenos"> 83</span></a><span class="sd">    as a three-letter lowercase string: &#39;mon&#39;, &#39;tue&#39;, &#39;wed&#39;, &#39;thu&#39;, &#39;fri&#39;, &#39;sat&#39;, or &#39;sun&#39;.</span>
+</span><span id="L-84"><a href="#L-84"><span class="linenos"> 84</span></a>
+</span><span id="L-85"><a href="#L-85"><span class="linenos"> 85</span></a><span class="sd">    ### Parameters</span>
+</span><span id="L-86"><a href="#L-86"><span class="linenos"> 86</span></a><span class="sd">    - **epoch** (`int` or `float`): UNIX epoch timestamp (seconds since 1970-01-01).</span>
 </span><span id="L-87"><a href="#L-87"><span class="linenos"> 87</span></a>
-</span><span id="L-88"><a href="#L-88"><span class="linenos"> 88</span></a><span class="sd">    ### Parameters</span>
-</span><span id="L-89"><a href="#L-89"><span class="linenos"> 89</span></a><span class="sd">    - **as_type** (`str`, optional):</span>
-</span><span id="L-90"><a href="#L-90"><span class="linenos"> 90</span></a><span class="sd">      &#39;&#39;, &#39;epoch&#39;, &#39;float&#39;, &#39;datetime&#39;, or &#39;iso&#39;. Defaults to &#39;&#39;.</span>
-</span><span id="L-91"><a href="#L-91"><span class="linenos"> 91</span></a>
-</span><span id="L-92"><a href="#L-92"><span class="linenos"> 92</span></a><span class="sd">    ### Returns</span>
-</span><span id="L-93"><a href="#L-93"><span class="linenos"> 93</span></a><span class="sd">    - **int**, **float**, **datetime.datetime**, or **str**: Current time in the requested format.</span>
-</span><span id="L-94"><a href="#L-94"><span class="linenos"> 94</span></a>
-</span><span id="L-95"><a href="#L-95"><span class="linenos"> 95</span></a><span class="sd">    ### Example</span>
-</span><span id="L-96"><a href="#L-96"><span class="linenos"> 96</span></a><span class="sd">    &gt;&gt;&gt; now()</span>
-</span><span id="L-97"><a href="#L-97"><span class="linenos"> 97</span></a><span class="sd">    1586422786</span>
-</span><span id="L-98"><a href="#L-98"><span class="linenos"> 98</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;float&#39;)</span>
-</span><span id="L-99"><a href="#L-99"><span class="linenos"> 99</span></a><span class="sd">    1586422786.1521912</span>
-</span><span id="L-100"><a href="#L-100"><span class="linenos">100</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;datetime&#39;)</span>
-</span><span id="L-101"><a href="#L-101"><span class="linenos">101</span></a><span class="sd">    datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)</span>
-</span><span id="L-102"><a href="#L-102"><span class="linenos">102</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;iso&#39;)</span>
-</span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a><span class="sd">    &#39;2020-04-09 11:31:24&#39;</span>
-</span><span id="L-104"><a href="#L-104"><span class="linenos">104</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="L-105"><a href="#L-105"><span class="linenos">105</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;datetime&#39;</span><span class="p">:</span>
-</span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a>        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
-</span><span id="L-107"><a href="#L-107"><span class="linenos">107</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;iso&#39;</span><span class="p">:</span>
-</span><span id="L-108"><a href="#L-108"><span class="linenos">108</span></a>        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">)</span>
-</span><span id="L-109"><a href="#L-109"><span class="linenos">109</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;float&#39;</span><span class="p">:</span>
-</span><span id="L-110"><a href="#L-110"><span class="linenos">110</span></a>        <span class="k">return</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-</span><span id="L-111"><a href="#L-111"><span class="linenos">111</span></a>    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">())</span>
+</span><span id="L-88"><a href="#L-88"><span class="linenos"> 88</span></a><span class="sd">    ### Returns</span>
+</span><span id="L-89"><a href="#L-89"><span class="linenos"> 89</span></a><span class="sd">    - **str**: Lowercase three-letter abbreviation of the weekday corresponding to the local date.</span>
+</span><span id="L-90"><a href="#L-90"><span class="linenos"> 90</span></a>
+</span><span id="L-91"><a href="#L-91"><span class="linenos"> 91</span></a><span class="sd">    ### Example</span>
+</span><span id="L-92"><a href="#L-92"><span class="linenos"> 92</span></a><span class="sd">    &gt;&gt;&gt; get_weekday(1620459129)</span>
+</span><span id="L-93"><a href="#L-93"><span class="linenos"> 93</span></a><span class="sd">    &#39;sat&#39;</span>
+</span><span id="L-94"><a href="#L-94"><span class="linenos"> 94</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="L-95"><a href="#L-95"><span class="linenos"> 95</span></a>    <span class="n">_WEEKDAYS</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;mon&#39;</span><span class="p">,</span> <span class="s1">&#39;tue&#39;</span><span class="p">,</span> <span class="s1">&#39;wed&#39;</span><span class="p">,</span> <span class="s1">&#39;thu&#39;</span><span class="p">,</span> <span class="s1">&#39;fri&#39;</span><span class="p">,</span> <span class="s1">&#39;sat&#39;</span><span class="p">,</span> <span class="s1">&#39;sun&#39;</span><span class="p">]</span>
+</span><span id="L-96"><a href="#L-96"><span class="linenos"> 96</span></a>    <span class="k">return</span> <span class="n">_WEEKDAYS</span><span class="p">[</span><span class="n">time</span><span class="o">.</span><span class="n">localtime</span><span class="p">(</span><span class="n">epoch</span><span class="p">)</span><span class="o">.</span><span class="n">tm_wday</span><span class="p">]</span>
+</span><span id="L-97"><a href="#L-97"><span class="linenos"> 97</span></a>
+</span><span id="L-98"><a href="#L-98"><span class="linenos"> 98</span></a>
+</span><span id="L-99"><a href="#L-99"><span class="linenos"> 99</span></a><span class="k">def</span> <span class="nf">now</span><span class="p">(</span><span class="n">as_type</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
+</span><span id="L-100"><a href="#L-100"><span class="linenos">100</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="L-101"><a href="#L-101"><span class="linenos">101</span></a><span class="sd">    Returns the current date and time in various formats.</span>
+</span><span id="L-102"><a href="#L-102"><span class="linenos">102</span></a>
+</span><span id="L-103"><a href="#L-103"><span class="linenos">103</span></a><span class="sd">    Depending on `as_type`, this returns:</span>
+</span><span id="L-104"><a href="#L-104"><span class="linenos">104</span></a><span class="sd">    - Integer UNIX epoch (default)</span>
+</span><span id="L-105"><a href="#L-105"><span class="linenos">105</span></a><span class="sd">    - Floating-point UNIX epoch (&#39;float&#39;)</span>
+</span><span id="L-106"><a href="#L-106"><span class="linenos">106</span></a><span class="sd">    - datetime.datetime object (&#39;datetime&#39;)</span>
+</span><span id="L-107"><a href="#L-107"><span class="linenos">107</span></a><span class="sd">    - ISO string &#39;YYYY-MM-DD HH:MM:SS&#39; (&#39;iso&#39;)</span>
+</span><span id="L-108"><a href="#L-108"><span class="linenos">108</span></a>
+</span><span id="L-109"><a href="#L-109"><span class="linenos">109</span></a><span class="sd">    ### Parameters</span>
+</span><span id="L-110"><a href="#L-110"><span class="linenos">110</span></a><span class="sd">    - **as_type** (`str`, optional):</span>
+</span><span id="L-111"><a href="#L-111"><span class="linenos">111</span></a><span class="sd">      &#39;&#39;, &#39;epoch&#39;, &#39;float&#39;, &#39;datetime&#39;, or &#39;iso&#39;. Defaults to &#39;&#39;.</span>
 </span><span id="L-112"><a href="#L-112"><span class="linenos">112</span></a>
-</span><span id="L-113"><a href="#L-113"><span class="linenos">113</span></a>
-</span><span id="L-114"><a href="#L-114"><span class="linenos">114</span></a><span class="k">def</span> <span class="nf">timestr2datetime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">):</span>
-</span><span id="L-115"><a href="#L-115"><span class="linenos">115</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="L-116"><a href="#L-116"><span class="linenos">116</span></a><span class="sd">    Converts a time string into a datetime object using the specified format.</span>
-</span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a>
-</span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a><span class="sd">    This function parses a string representing a date and time into a `datetime.datetime`</span>
-</span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a><span class="sd">    object based on the provided format pattern. The default format is ISO (YYYY-MM-DD HH:MM:SS).</span>
-</span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a>
-</span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a><span class="sd">    ### Parameters</span>
-</span><span id="L-122"><a href="#L-122"><span class="linenos">122</span></a><span class="sd">    - **timestr** (`str`): A string representing the date and time.</span>
-</span><span id="L-123"><a href="#L-123"><span class="linenos">123</span></a><span class="sd">    - **pattern** (`str`, optional): The format string corresponding to the structure of `timestr`.  </span>
-</span><span id="L-124"><a href="#L-124"><span class="linenos">124</span></a><span class="sd">      Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;. For more details on format codes, see:  </span>
-</span><span id="L-125"><a href="#L-125"><span class="linenos">125</span></a><span class="sd">      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes</span>
-</span><span id="L-126"><a href="#L-126"><span class="linenos">126</span></a>
-</span><span id="L-127"><a href="#L-127"><span class="linenos">127</span></a><span class="sd">    ### Returns</span>
-</span><span id="L-128"><a href="#L-128"><span class="linenos">128</span></a><span class="sd">    - **datetime.datetime**: A datetime object corresponding to the parsed date and time.</span>
-</span><span id="L-129"><a href="#L-129"><span class="linenos">129</span></a>
-</span><span id="L-130"><a href="#L-130"><span class="linenos">130</span></a><span class="sd">    ### Example</span>
-</span><span id="L-131"><a href="#L-131"><span class="linenos">131</span></a><span class="sd">    &gt;&gt;&gt; timestr2datetime(&quot;2021-05-08 09:32:09&quot;)</span>
-</span><span id="L-132"><a href="#L-132"><span class="linenos">132</span></a><span class="sd">    datetime.datetime(2021, 5, 8, 9, 32, 9)</span>
-</span><span id="L-133"><a href="#L-133"><span class="linenos">133</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="L-134"><a href="#L-134"><span class="linenos">134</span></a>    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="p">)</span>
-</span><span id="L-135"><a href="#L-135"><span class="linenos">135</span></a>
-</span><span id="L-136"><a href="#L-136"><span class="linenos">136</span></a>
-</span><span id="L-137"><a href="#L-137"><span class="linenos">137</span></a><span class="k">def</span> <span class="nf">timestr2epoch</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">,</span> <span class="n">tzinfo</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-</span><span id="L-138"><a href="#L-138"><span class="linenos">138</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="L-139"><a href="#L-139"><span class="linenos">139</span></a><span class="sd">    Converts a time string to a UNIX epoch timestamp.</span>
-</span><span id="L-140"><a href="#L-140"><span class="linenos">140</span></a>
-</span><span id="L-141"><a href="#L-141"><span class="linenos">141</span></a><span class="sd">    ### Parameters</span>
-</span><span id="L-142"><a href="#L-142"><span class="linenos">142</span></a><span class="sd">    - **timestr** (`str`): The time string to convert.</span>
-</span><span id="L-143"><a href="#L-143"><span class="linenos">143</span></a><span class="sd">    - **pattern** (`str`): The format of the time string (default is &#39;%Y-%m-%d %H:%M:%S&#39;).</span>
-</span><span id="L-144"><a href="#L-144"><span class="linenos">144</span></a><span class="sd">    - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.  </span>
-</span><span id="L-145"><a href="#L-145"><span class="linenos">145</span></a><span class="sd">      If provided, the parsed datetime is set to this timezone.  </span>
-</span><span id="L-146"><a href="#L-146"><span class="linenos">146</span></a><span class="sd">      If None, the time is assumed to be local time.</span>
+</span><span id="L-113"><a href="#L-113"><span class="linenos">113</span></a><span class="sd">    ### Returns</span>
+</span><span id="L-114"><a href="#L-114"><span class="linenos">114</span></a><span class="sd">    - **int**, **float**, **datetime.datetime**, or **str**: Current time in the requested format.</span>
+</span><span id="L-115"><a href="#L-115"><span class="linenos">115</span></a>
+</span><span id="L-116"><a href="#L-116"><span class="linenos">116</span></a><span class="sd">    ### Example</span>
+</span><span id="L-117"><a href="#L-117"><span class="linenos">117</span></a><span class="sd">    &gt;&gt;&gt; now()</span>
+</span><span id="L-118"><a href="#L-118"><span class="linenos">118</span></a><span class="sd">    1586422786</span>
+</span><span id="L-119"><a href="#L-119"><span class="linenos">119</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;float&#39;)</span>
+</span><span id="L-120"><a href="#L-120"><span class="linenos">120</span></a><span class="sd">    1586422786.1521912</span>
+</span><span id="L-121"><a href="#L-121"><span class="linenos">121</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;datetime&#39;)</span>
+</span><span id="L-122"><a href="#L-122"><span class="linenos">122</span></a><span class="sd">    datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)</span>
+</span><span id="L-123"><a href="#L-123"><span class="linenos">123</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;iso&#39;)</span>
+</span><span id="L-124"><a href="#L-124"><span class="linenos">124</span></a><span class="sd">    &#39;2020-04-09 11:31:24&#39;</span>
+</span><span id="L-125"><a href="#L-125"><span class="linenos">125</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="L-126"><a href="#L-126"><span class="linenos">126</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;datetime&#39;</span><span class="p">:</span>
+</span><span id="L-127"><a href="#L-127"><span class="linenos">127</span></a>        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+</span><span id="L-128"><a href="#L-128"><span class="linenos">128</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;iso&#39;</span><span class="p">:</span>
+</span><span id="L-129"><a href="#L-129"><span class="linenos">129</span></a>        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">)</span>
+</span><span id="L-130"><a href="#L-130"><span class="linenos">130</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;float&#39;</span><span class="p">:</span>
+</span><span id="L-131"><a href="#L-131"><span class="linenos">131</span></a>        <span class="k">return</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+</span><span id="L-132"><a href="#L-132"><span class="linenos">132</span></a>    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">())</span>
+</span><span id="L-133"><a href="#L-133"><span class="linenos">133</span></a>
+</span><span id="L-134"><a href="#L-134"><span class="linenos">134</span></a>
+</span><span id="L-135"><a href="#L-135"><span class="linenos">135</span></a><span class="k">def</span> <span class="nf">timestr2datetime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">):</span>
+</span><span id="L-136"><a href="#L-136"><span class="linenos">136</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="L-137"><a href="#L-137"><span class="linenos">137</span></a><span class="sd">    Converts a time string into a datetime object using the specified format.</span>
+</span><span id="L-138"><a href="#L-138"><span class="linenos">138</span></a>
+</span><span id="L-139"><a href="#L-139"><span class="linenos">139</span></a><span class="sd">    This function parses a string representing a date and time into a `datetime.datetime`</span>
+</span><span id="L-140"><a href="#L-140"><span class="linenos">140</span></a><span class="sd">    object based on the provided format pattern. The default format is ISO (YYYY-MM-DD HH:MM:SS).</span>
+</span><span id="L-141"><a href="#L-141"><span class="linenos">141</span></a>
+</span><span id="L-142"><a href="#L-142"><span class="linenos">142</span></a><span class="sd">    ### Parameters</span>
+</span><span id="L-143"><a href="#L-143"><span class="linenos">143</span></a><span class="sd">    - **timestr** (`str`): A string representing the date and time.</span>
+</span><span id="L-144"><a href="#L-144"><span class="linenos">144</span></a><span class="sd">    - **pattern** (`str`, optional): The format string corresponding to the structure of `timestr`.  </span>
+</span><span id="L-145"><a href="#L-145"><span class="linenos">145</span></a><span class="sd">      Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;. For more details on format codes, see:  </span>
+</span><span id="L-146"><a href="#L-146"><span class="linenos">146</span></a><span class="sd">      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes</span>
 </span><span id="L-147"><a href="#L-147"><span class="linenos">147</span></a>
 </span><span id="L-148"><a href="#L-148"><span class="linenos">148</span></a><span class="sd">    ### Returns</span>
-</span><span id="L-149"><a href="#L-149"><span class="linenos">149</span></a><span class="sd">    - **float**: The UNIX epoch timestamp (seconds since January 1, 1970, 00:00:00 UTC).</span>
+</span><span id="L-149"><a href="#L-149"><span class="linenos">149</span></a><span class="sd">    - **datetime.datetime**: A datetime object corresponding to the parsed date and time.</span>
 </span><span id="L-150"><a href="#L-150"><span class="linenos">150</span></a>
-</span><span id="L-151"><a href="#L-151"><span class="linenos">151</span></a><span class="sd">    ### Raises</span>
-</span><span id="L-152"><a href="#L-152"><span class="linenos">152</span></a><span class="sd">    - **ValueError**: If the time string does not match the provided format.</span>
-</span><span id="L-153"><a href="#L-153"><span class="linenos">153</span></a>
-</span><span id="L-154"><a href="#L-154"><span class="linenos">154</span></a><span class="sd">    ### Example</span>
-</span><span id="L-155"><a href="#L-155"><span class="linenos">155</span></a><span class="sd">        # Convert a time string in local time:</span>
-</span><span id="L-156"><a href="#L-156"><span class="linenos">156</span></a><span class="sd">        epoch_local = timestr2epoch(&quot;2025-03-01 12:00:00&quot;)</span>
+</span><span id="L-151"><a href="#L-151"><span class="linenos">151</span></a><span class="sd">    ### Example</span>
+</span><span id="L-152"><a href="#L-152"><span class="linenos">152</span></a><span class="sd">    &gt;&gt;&gt; timestr2datetime(&quot;2021-05-08 09:32:09&quot;)</span>
+</span><span id="L-153"><a href="#L-153"><span class="linenos">153</span></a><span class="sd">    datetime.datetime(2021, 5, 8, 9, 32, 9)</span>
+</span><span id="L-154"><a href="#L-154"><span class="linenos">154</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="L-155"><a href="#L-155"><span class="linenos">155</span></a>    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="p">)</span>
+</span><span id="L-156"><a href="#L-156"><span class="linenos">156</span></a>
 </span><span id="L-157"><a href="#L-157"><span class="linenos">157</span></a>
-</span><span id="L-158"><a href="#L-158"><span class="linenos">158</span></a><span class="sd">        # Convert a time string assuming it&#39;s in UTC:</span>
-</span><span id="L-159"><a href="#L-159"><span class="linenos">159</span></a><span class="sd">        epoch_utc = timestr2epoch(&quot;2025-03-01 12:00:00&quot;, tzinfo=datetime.timezone.utc)</span>
-</span><span id="L-160"><a href="#L-160"><span class="linenos">160</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="L-161"><a href="#L-161"><span class="linenos">161</span></a>    <span class="n">dt</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="p">)</span>
-</span><span id="L-162"><a href="#L-162"><span class="linenos">162</span></a>
-</span><span id="L-163"><a href="#L-163"><span class="linenos">163</span></a>    <span class="c1"># If a timezone is provided, make the datetime timezone-aware.</span>
-</span><span id="L-164"><a href="#L-164"><span class="linenos">164</span></a>    <span class="k">if</span> <span class="n">tzinfo</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="L-165"><a href="#L-165"><span class="linenos">165</span></a>        <span class="n">dt</span> <span class="o">=</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">tzinfo</span><span class="p">)</span>
-</span><span id="L-166"><a href="#L-166"><span class="linenos">166</span></a>
-</span><span id="L-167"><a href="#L-167"><span class="linenos">167</span></a>    <span class="k">return</span> <span class="n">dt</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+</span><span id="L-158"><a href="#L-158"><span class="linenos">158</span></a><span class="k">def</span> <span class="nf">timestr2epoch</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">,</span> <span class="n">tzinfo</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+</span><span id="L-159"><a href="#L-159"><span class="linenos">159</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="L-160"><a href="#L-160"><span class="linenos">160</span></a><span class="sd">    Converts a time string to a UNIX epoch timestamp.</span>
+</span><span id="L-161"><a href="#L-161"><span class="linenos">161</span></a>
+</span><span id="L-162"><a href="#L-162"><span class="linenos">162</span></a><span class="sd">    ### Parameters</span>
+</span><span id="L-163"><a href="#L-163"><span class="linenos">163</span></a><span class="sd">    - **timestr** (`str`): The time string to convert.</span>
+</span><span id="L-164"><a href="#L-164"><span class="linenos">164</span></a><span class="sd">    - **pattern** (`str`): The format of the time string (default is &#39;%Y-%m-%d %H:%M:%S&#39;).</span>
+</span><span id="L-165"><a href="#L-165"><span class="linenos">165</span></a><span class="sd">    - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.  </span>
+</span><span id="L-166"><a href="#L-166"><span class="linenos">166</span></a><span class="sd">      If provided, the parsed datetime is set to this timezone.  </span>
+</span><span id="L-167"><a href="#L-167"><span class="linenos">167</span></a><span class="sd">      If None, the time is assumed to be local time.</span>
 </span><span id="L-168"><a href="#L-168"><span class="linenos">168</span></a>
-</span><span id="L-169"><a href="#L-169"><span class="linenos">169</span></a>
-</span><span id="L-170"><a href="#L-170"><span class="linenos">170</span></a><span class="k">def</span> <span class="nf">timestrdiff</span><span class="p">(</span><span class="n">timestr1</span><span class="p">,</span> <span class="n">timestr2</span><span class="p">,</span> <span class="n">pattern1</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">,</span> <span class="n">pattern2</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">):</span>
-</span><span id="L-171"><a href="#L-171"><span class="linenos">171</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="L-172"><a href="#L-172"><span class="linenos">172</span></a><span class="sd">    Computes the absolute difference in seconds between two datetime strings.</span>
-</span><span id="L-173"><a href="#L-173"><span class="linenos">173</span></a>
-</span><span id="L-174"><a href="#L-174"><span class="linenos">174</span></a><span class="sd">    This function converts two datetime strings into `datetime.datetime` objects using</span>
-</span><span id="L-175"><a href="#L-175"><span class="linenos">175</span></a><span class="sd">    their respective format patterns, then calculates the absolute time difference between them.</span>
-</span><span id="L-176"><a href="#L-176"><span class="linenos">176</span></a><span class="sd">    By default, both strings are expected to be in ISO format (YYYY-MM-DD HH:MM:SS).</span>
-</span><span id="L-177"><a href="#L-177"><span class="linenos">177</span></a>
-</span><span id="L-178"><a href="#L-178"><span class="linenos">178</span></a><span class="sd">    ### Parameters</span>
-</span><span id="L-179"><a href="#L-179"><span class="linenos">179</span></a><span class="sd">    - **timestr1** (`str`): The first datetime string.</span>
-</span><span id="L-180"><a href="#L-180"><span class="linenos">180</span></a><span class="sd">    - **timestr2** (`str`): The second datetime string.</span>
-</span><span id="L-181"><a href="#L-181"><span class="linenos">181</span></a><span class="sd">    - **pattern1** (`str`, optional): The format pattern for `timestr1`. Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;.</span>
-</span><span id="L-182"><a href="#L-182"><span class="linenos">182</span></a><span class="sd">    - **pattern2** (`str`, optional): The format pattern for `timestr2`. Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;.  </span>
-</span><span id="L-183"><a href="#L-183"><span class="linenos">183</span></a><span class="sd">      For more information on format codes, refer to:  </span>
-</span><span id="L-184"><a href="#L-184"><span class="linenos">184</span></a><span class="sd">      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes</span>
-</span><span id="L-185"><a href="#L-185"><span class="linenos">185</span></a>
-</span><span id="L-186"><a href="#L-186"><span class="linenos">186</span></a><span class="sd">    ### Returns</span>
-</span><span id="L-187"><a href="#L-187"><span class="linenos">187</span></a><span class="sd">    - **float**: The absolute difference between the two timestamps in seconds.</span>
-</span><span id="L-188"><a href="#L-188"><span class="linenos">188</span></a>
-</span><span id="L-189"><a href="#L-189"><span class="linenos">189</span></a><span class="sd">    ### Example</span>
-</span><span id="L-190"><a href="#L-190"><span class="linenos">190</span></a><span class="sd">    &gt;&gt;&gt; timestrdiff(&quot;2021-05-08 09:32:09&quot;, &quot;2021-05-08 09:30:00&quot;)</span>
-</span><span id="L-191"><a href="#L-191"><span class="linenos">191</span></a><span class="sd">    129.0</span>
-</span><span id="L-192"><a href="#L-192"><span class="linenos">192</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="L-193"><a href="#L-193"><span class="linenos">193</span></a>    <span class="n">dt1</span> <span class="o">=</span> <span class="n">timestr2datetime</span><span class="p">(</span><span class="n">timestr1</span><span class="p">,</span> <span class="n">pattern1</span><span class="p">)</span>
-</span><span id="L-194"><a href="#L-194"><span class="linenos">194</span></a>    <span class="n">dt2</span> <span class="o">=</span> <span class="n">timestr2datetime</span><span class="p">(</span><span class="n">timestr2</span><span class="p">,</span> <span class="n">pattern2</span><span class="p">)</span>
-</span><span id="L-195"><a href="#L-195"><span class="linenos">195</span></a>    <span class="k">return</span> <span class="nb">abs</span><span class="p">((</span><span class="n">dt1</span> <span class="o">-</span> <span class="n">dt2</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span>
-</span><span id="L-196"><a href="#L-196"><span class="linenos">196</span></a>
-</span><span id="L-197"><a href="#L-197"><span class="linenos">197</span></a>
-</span><span id="L-198"><a href="#L-198"><span class="linenos">198</span></a><span class="k">def</span> <span class="nf">utc_offset</span><span class="p">():</span>
-</span><span id="L-199"><a href="#L-199"><span class="linenos">199</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="L-200"><a href="#L-200"><span class="linenos">200</span></a><span class="sd">    Retrieves the current local UTC offset as a string.</span>
-</span><span id="L-201"><a href="#L-201"><span class="linenos">201</span></a>
-</span><span id="L-202"><a href="#L-202"><span class="linenos">202</span></a><span class="sd">    This function returns the local timezone&#39;s UTC offset formatted as a string</span>
-</span><span id="L-203"><a href="#L-203"><span class="linenos">203</span></a><span class="sd">    in the format ±HHMM (e.g., &#39;+0200&#39; or &#39;-0500&#39;), where HH represents hours and MM represents</span>
-</span><span id="L-204"><a href="#L-204"><span class="linenos">204</span></a><span class="sd">    minutes.</span>
-</span><span id="L-205"><a href="#L-205"><span class="linenos">205</span></a>
-</span><span id="L-206"><a href="#L-206"><span class="linenos">206</span></a><span class="sd">    ### Returns</span>
-</span><span id="L-207"><a href="#L-207"><span class="linenos">207</span></a><span class="sd">    - **str**: The current local UTC offset.</span>
-</span><span id="L-208"><a href="#L-208"><span class="linenos">208</span></a>
-</span><span id="L-209"><a href="#L-209"><span class="linenos">209</span></a><span class="sd">    ### Example</span>
-</span><span id="L-210"><a href="#L-210"><span class="linenos">210</span></a><span class="sd">    &gt;&gt;&gt; utc_offset()</span>
-</span><span id="L-211"><a href="#L-211"><span class="linenos">211</span></a><span class="sd">    &#39;+0200&#39;</span>
-</span><span id="L-212"><a href="#L-212"><span class="linenos">212</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="L-213"><a href="#L-213"><span class="linenos">213</span></a>    <span class="k">return</span> <span class="n">time</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%z&quot;</span><span class="p">)</span>
+</span><span id="L-169"><a href="#L-169"><span class="linenos">169</span></a><span class="sd">    ### Returns</span>
+</span><span id="L-170"><a href="#L-170"><span class="linenos">170</span></a><span class="sd">    - **float**: The UNIX epoch timestamp (seconds since January 1, 1970, 00:00:00 UTC).</span>
+</span><span id="L-171"><a href="#L-171"><span class="linenos">171</span></a>
+</span><span id="L-172"><a href="#L-172"><span class="linenos">172</span></a><span class="sd">    ### Raises</span>
+</span><span id="L-173"><a href="#L-173"><span class="linenos">173</span></a><span class="sd">    - **ValueError**: If the time string does not match the provided format.</span>
+</span><span id="L-174"><a href="#L-174"><span class="linenos">174</span></a>
+</span><span id="L-175"><a href="#L-175"><span class="linenos">175</span></a><span class="sd">    ### Example</span>
+</span><span id="L-176"><a href="#L-176"><span class="linenos">176</span></a><span class="sd">        # Convert a time string in local time:</span>
+</span><span id="L-177"><a href="#L-177"><span class="linenos">177</span></a><span class="sd">        epoch_local = timestr2epoch(&quot;2025-03-01 12:00:00&quot;)</span>
+</span><span id="L-178"><a href="#L-178"><span class="linenos">178</span></a>
+</span><span id="L-179"><a href="#L-179"><span class="linenos">179</span></a><span class="sd">        # Convert a time string assuming it&#39;s in UTC:</span>
+</span><span id="L-180"><a href="#L-180"><span class="linenos">180</span></a><span class="sd">        epoch_utc = timestr2epoch(&quot;2025-03-01 12:00:00&quot;, tzinfo=datetime.timezone.utc)</span>
+</span><span id="L-181"><a href="#L-181"><span class="linenos">181</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="L-182"><a href="#L-182"><span class="linenos">182</span></a>    <span class="n">dt</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="p">)</span>
+</span><span id="L-183"><a href="#L-183"><span class="linenos">183</span></a>
+</span><span id="L-184"><a href="#L-184"><span class="linenos">184</span></a>    <span class="c1"># If a timezone is provided, make the datetime timezone-aware.</span>
+</span><span id="L-185"><a href="#L-185"><span class="linenos">185</span></a>    <span class="k">if</span> <span class="n">tzinfo</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="L-186"><a href="#L-186"><span class="linenos">186</span></a>        <span class="n">dt</span> <span class="o">=</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">tzinfo</span><span class="p">)</span>
+</span><span id="L-187"><a href="#L-187"><span class="linenos">187</span></a>
+</span><span id="L-188"><a href="#L-188"><span class="linenos">188</span></a>    <span class="k">return</span> <span class="n">dt</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+</span><span id="L-189"><a href="#L-189"><span class="linenos">189</span></a>
+</span><span id="L-190"><a href="#L-190"><span class="linenos">190</span></a>
+</span><span id="L-191"><a href="#L-191"><span class="linenos">191</span></a><span class="k">def</span> <span class="nf">timestrdiff</span><span class="p">(</span><span class="n">timestr1</span><span class="p">,</span> <span class="n">timestr2</span><span class="p">,</span> <span class="n">pattern1</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">,</span> <span class="n">pattern2</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">):</span>
+</span><span id="L-192"><a href="#L-192"><span class="linenos">192</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="L-193"><a href="#L-193"><span class="linenos">193</span></a><span class="sd">    Computes the absolute difference in seconds between two datetime strings.</span>
+</span><span id="L-194"><a href="#L-194"><span class="linenos">194</span></a>
+</span><span id="L-195"><a href="#L-195"><span class="linenos">195</span></a><span class="sd">    This function converts two datetime strings into `datetime.datetime` objects using</span>
+</span><span id="L-196"><a href="#L-196"><span class="linenos">196</span></a><span class="sd">    their respective format patterns, then calculates the absolute time difference between them.</span>
+</span><span id="L-197"><a href="#L-197"><span class="linenos">197</span></a><span class="sd">    By default, both strings are expected to be in ISO format (YYYY-MM-DD HH:MM:SS).</span>
+</span><span id="L-198"><a href="#L-198"><span class="linenos">198</span></a>
+</span><span id="L-199"><a href="#L-199"><span class="linenos">199</span></a><span class="sd">    ### Parameters</span>
+</span><span id="L-200"><a href="#L-200"><span class="linenos">200</span></a><span class="sd">    - **timestr1** (`str`): The first datetime string.</span>
+</span><span id="L-201"><a href="#L-201"><span class="linenos">201</span></a><span class="sd">    - **timestr2** (`str`): The second datetime string.</span>
+</span><span id="L-202"><a href="#L-202"><span class="linenos">202</span></a><span class="sd">    - **pattern1** (`str`, optional): The format pattern for `timestr1`. Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;.</span>
+</span><span id="L-203"><a href="#L-203"><span class="linenos">203</span></a><span class="sd">    - **pattern2** (`str`, optional): The format pattern for `timestr2`. Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;.  </span>
+</span><span id="L-204"><a href="#L-204"><span class="linenos">204</span></a><span class="sd">      For more information on format codes, refer to:  </span>
+</span><span id="L-205"><a href="#L-205"><span class="linenos">205</span></a><span class="sd">      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes</span>
+</span><span id="L-206"><a href="#L-206"><span class="linenos">206</span></a>
+</span><span id="L-207"><a href="#L-207"><span class="linenos">207</span></a><span class="sd">    ### Returns</span>
+</span><span id="L-208"><a href="#L-208"><span class="linenos">208</span></a><span class="sd">    - **float**: The absolute difference between the two timestamps in seconds.</span>
+</span><span id="L-209"><a href="#L-209"><span class="linenos">209</span></a>
+</span><span id="L-210"><a href="#L-210"><span class="linenos">210</span></a><span class="sd">    ### Example</span>
+</span><span id="L-211"><a href="#L-211"><span class="linenos">211</span></a><span class="sd">    &gt;&gt;&gt; timestrdiff(&quot;2021-05-08 09:32:09&quot;, &quot;2021-05-08 09:30:00&quot;)</span>
+</span><span id="L-212"><a href="#L-212"><span class="linenos">212</span></a><span class="sd">    129.0</span>
+</span><span id="L-213"><a href="#L-213"><span class="linenos">213</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="L-214"><a href="#L-214"><span class="linenos">214</span></a>    <span class="n">dt1</span> <span class="o">=</span> <span class="n">timestr2datetime</span><span class="p">(</span><span class="n">timestr1</span><span class="p">,</span> <span class="n">pattern1</span><span class="p">)</span>
+</span><span id="L-215"><a href="#L-215"><span class="linenos">215</span></a>    <span class="n">dt2</span> <span class="o">=</span> <span class="n">timestr2datetime</span><span class="p">(</span><span class="n">timestr2</span><span class="p">,</span> <span class="n">pattern2</span><span class="p">)</span>
+</span><span id="L-216"><a href="#L-216"><span class="linenos">216</span></a>    <span class="k">return</span> <span class="nb">abs</span><span class="p">((</span><span class="n">dt1</span> <span class="o">-</span> <span class="n">dt2</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span>
+</span><span id="L-217"><a href="#L-217"><span class="linenos">217</span></a>
+</span><span id="L-218"><a href="#L-218"><span class="linenos">218</span></a>
+</span><span id="L-219"><a href="#L-219"><span class="linenos">219</span></a><span class="k">def</span> <span class="nf">utc_offset</span><span class="p">():</span>
+</span><span id="L-220"><a href="#L-220"><span class="linenos">220</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="L-221"><a href="#L-221"><span class="linenos">221</span></a><span class="sd">    Retrieves the current local UTC offset as a string.</span>
+</span><span id="L-222"><a href="#L-222"><span class="linenos">222</span></a>
+</span><span id="L-223"><a href="#L-223"><span class="linenos">223</span></a><span class="sd">    This function returns the local timezone&#39;s UTC offset formatted as a string</span>
+</span><span id="L-224"><a href="#L-224"><span class="linenos">224</span></a><span class="sd">    in the format ±HHMM (e.g., &#39;+0200&#39; or &#39;-0500&#39;), where HH represents hours and MM represents</span>
+</span><span id="L-225"><a href="#L-225"><span class="linenos">225</span></a><span class="sd">    minutes.</span>
+</span><span id="L-226"><a href="#L-226"><span class="linenos">226</span></a>
+</span><span id="L-227"><a href="#L-227"><span class="linenos">227</span></a><span class="sd">    ### Returns</span>
+</span><span id="L-228"><a href="#L-228"><span class="linenos">228</span></a><span class="sd">    - **str**: The current local UTC offset.</span>
+</span><span id="L-229"><a href="#L-229"><span class="linenos">229</span></a>
+</span><span id="L-230"><a href="#L-230"><span class="linenos">230</span></a><span class="sd">    ### Example</span>
+</span><span id="L-231"><a href="#L-231"><span class="linenos">231</span></a><span class="sd">    &gt;&gt;&gt; utc_offset()</span>
+</span><span id="L-232"><a href="#L-232"><span class="linenos">232</span></a><span class="sd">    &#39;+0200&#39;</span>
+</span><span id="L-233"><a href="#L-233"><span class="linenos">233</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="L-234"><a href="#L-234"><span class="linenos">234</span></a>    <span class="k">return</span> <span class="n">time</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%z&quot;</span><span class="p">)</span>
 </span></pre></div>
 
 
@@ -429,6 +453,67 @@ zoneinfo.ZoneInfo object. If loading fails, UTC ("Etc/UTC") is returned.</p>
 
 
                 </section>
+                <section id="get_weekday">
+                            <input id="get_weekday-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
+<div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">get_weekday</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">epoch</span></span><span class="return-annotation">):</span></span>
+
+                <label class="view-source-button" for="get_weekday-view-source"><span>View Source</span></label>
+
+    </div>
+    <a class="headerlink" href="#get_weekday"></a>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="get_weekday-79"><a href="#get_weekday-79"><span class="linenos">79</span></a><span class="k">def</span> <span class="nf">get_weekday</span><span class="p">(</span><span class="n">epoch</span><span class="p">):</span>
+</span><span id="get_weekday-80"><a href="#get_weekday-80"><span class="linenos">80</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="get_weekday-81"><a href="#get_weekday-81"><span class="linenos">81</span></a><span class="sd">    Convert a UNIX epoch timestamp to a lowercase three-letter weekday abbreviation.</span>
+</span><span id="get_weekday-82"><a href="#get_weekday-82"><span class="linenos">82</span></a>
+</span><span id="get_weekday-83"><a href="#get_weekday-83"><span class="linenos">83</span></a><span class="sd">    This function takes a UNIX timestamp (int or float) and returns the local weekday</span>
+</span><span id="get_weekday-84"><a href="#get_weekday-84"><span class="linenos">84</span></a><span class="sd">    as a three-letter lowercase string: &#39;mon&#39;, &#39;tue&#39;, &#39;wed&#39;, &#39;thu&#39;, &#39;fri&#39;, &#39;sat&#39;, or &#39;sun&#39;.</span>
+</span><span id="get_weekday-85"><a href="#get_weekday-85"><span class="linenos">85</span></a>
+</span><span id="get_weekday-86"><a href="#get_weekday-86"><span class="linenos">86</span></a><span class="sd">    ### Parameters</span>
+</span><span id="get_weekday-87"><a href="#get_weekday-87"><span class="linenos">87</span></a><span class="sd">    - **epoch** (`int` or `float`): UNIX epoch timestamp (seconds since 1970-01-01).</span>
+</span><span id="get_weekday-88"><a href="#get_weekday-88"><span class="linenos">88</span></a>
+</span><span id="get_weekday-89"><a href="#get_weekday-89"><span class="linenos">89</span></a><span class="sd">    ### Returns</span>
+</span><span id="get_weekday-90"><a href="#get_weekday-90"><span class="linenos">90</span></a><span class="sd">    - **str**: Lowercase three-letter abbreviation of the weekday corresponding to the local date.</span>
+</span><span id="get_weekday-91"><a href="#get_weekday-91"><span class="linenos">91</span></a>
+</span><span id="get_weekday-92"><a href="#get_weekday-92"><span class="linenos">92</span></a><span class="sd">    ### Example</span>
+</span><span id="get_weekday-93"><a href="#get_weekday-93"><span class="linenos">93</span></a><span class="sd">    &gt;&gt;&gt; get_weekday(1620459129)</span>
+</span><span id="get_weekday-94"><a href="#get_weekday-94"><span class="linenos">94</span></a><span class="sd">    &#39;sat&#39;</span>
+</span><span id="get_weekday-95"><a href="#get_weekday-95"><span class="linenos">95</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="get_weekday-96"><a href="#get_weekday-96"><span class="linenos">96</span></a>    <span class="n">_WEEKDAYS</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;mon&#39;</span><span class="p">,</span> <span class="s1">&#39;tue&#39;</span><span class="p">,</span> <span class="s1">&#39;wed&#39;</span><span class="p">,</span> <span class="s1">&#39;thu&#39;</span><span class="p">,</span> <span class="s1">&#39;fri&#39;</span><span class="p">,</span> <span class="s1">&#39;sat&#39;</span><span class="p">,</span> <span class="s1">&#39;sun&#39;</span><span class="p">]</span>
+</span><span id="get_weekday-97"><a href="#get_weekday-97"><span class="linenos">97</span></a>    <span class="k">return</span> <span class="n">_WEEKDAYS</span><span class="p">[</span><span class="n">time</span><span class="o">.</span><span class="n">localtime</span><span class="p">(</span><span class="n">epoch</span><span class="p">)</span><span class="o">.</span><span class="n">tm_wday</span><span class="p">]</span>
+</span></pre></div>
+
+
+            <div class="docstring"><p>Convert a UNIX epoch timestamp to a lowercase three-letter weekday abbreviation.</p>
+
+<p>This function takes a UNIX timestamp (int or float) and returns the local weekday
+as a three-letter lowercase string: 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', or 'sun'.</p>
+
+<h3 id="parameters">Parameters</h3>
+
+<ul>
+<li><strong>epoch</strong> (<code>int</code> or <code>float</code>): UNIX epoch timestamp (seconds since 1970-01-01).</li>
+</ul>
+
+<h3 id="returns">Returns</h3>
+
+<ul>
+<li><strong>str</strong>: Lowercase three-letter abbreviation of the weekday corresponding to the local date.</li>
+</ul>
+
+<h3 id="example">Example</h3>
+
+<div class="pdoc-code codehilite">
+<pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">get_weekday</span><span class="p">(</span><span class="mi">1620459129</span><span class="p">)</span>
+<span class="go">&#39;sat&#39;</span>
+</code></pre>
+</div>
+</div>
+
+
+                </section>
                 <section id="now">
                             <input id="now-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
 <div class="attr function">
@@ -440,40 +525,40 @@ zoneinfo.ZoneInfo object. If loading fails, UTC ("Etc/UTC") is returned.</p>
 
     </div>
     <a class="headerlink" href="#now"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="now-79"><a href="#now-79"><span class="linenos"> 79</span></a><span class="k">def</span> <span class="nf">now</span><span class="p">(</span><span class="n">as_type</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
-</span><span id="now-80"><a href="#now-80"><span class="linenos"> 80</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="now-81"><a href="#now-81"><span class="linenos"> 81</span></a><span class="sd">    Returns the current date and time in various formats.</span>
-</span><span id="now-82"><a href="#now-82"><span class="linenos"> 82</span></a>
-</span><span id="now-83"><a href="#now-83"><span class="linenos"> 83</span></a><span class="sd">    Depending on `as_type`, this returns:</span>
-</span><span id="now-84"><a href="#now-84"><span class="linenos"> 84</span></a><span class="sd">    - Integer UNIX epoch (default)</span>
-</span><span id="now-85"><a href="#now-85"><span class="linenos"> 85</span></a><span class="sd">    - Floating-point UNIX epoch (&#39;float&#39;)</span>
-</span><span id="now-86"><a href="#now-86"><span class="linenos"> 86</span></a><span class="sd">    - datetime.datetime object (&#39;datetime&#39;)</span>
-</span><span id="now-87"><a href="#now-87"><span class="linenos"> 87</span></a><span class="sd">    - ISO string &#39;YYYY-MM-DD HH:MM:SS&#39; (&#39;iso&#39;)</span>
-</span><span id="now-88"><a href="#now-88"><span class="linenos"> 88</span></a>
-</span><span id="now-89"><a href="#now-89"><span class="linenos"> 89</span></a><span class="sd">    ### Parameters</span>
-</span><span id="now-90"><a href="#now-90"><span class="linenos"> 90</span></a><span class="sd">    - **as_type** (`str`, optional):</span>
-</span><span id="now-91"><a href="#now-91"><span class="linenos"> 91</span></a><span class="sd">      &#39;&#39;, &#39;epoch&#39;, &#39;float&#39;, &#39;datetime&#39;, or &#39;iso&#39;. Defaults to &#39;&#39;.</span>
-</span><span id="now-92"><a href="#now-92"><span class="linenos"> 92</span></a>
-</span><span id="now-93"><a href="#now-93"><span class="linenos"> 93</span></a><span class="sd">    ### Returns</span>
-</span><span id="now-94"><a href="#now-94"><span class="linenos"> 94</span></a><span class="sd">    - **int**, **float**, **datetime.datetime**, or **str**: Current time in the requested format.</span>
-</span><span id="now-95"><a href="#now-95"><span class="linenos"> 95</span></a>
-</span><span id="now-96"><a href="#now-96"><span class="linenos"> 96</span></a><span class="sd">    ### Example</span>
-</span><span id="now-97"><a href="#now-97"><span class="linenos"> 97</span></a><span class="sd">    &gt;&gt;&gt; now()</span>
-</span><span id="now-98"><a href="#now-98"><span class="linenos"> 98</span></a><span class="sd">    1586422786</span>
-</span><span id="now-99"><a href="#now-99"><span class="linenos"> 99</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;float&#39;)</span>
-</span><span id="now-100"><a href="#now-100"><span class="linenos">100</span></a><span class="sd">    1586422786.1521912</span>
-</span><span id="now-101"><a href="#now-101"><span class="linenos">101</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;datetime&#39;)</span>
-</span><span id="now-102"><a href="#now-102"><span class="linenos">102</span></a><span class="sd">    datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)</span>
-</span><span id="now-103"><a href="#now-103"><span class="linenos">103</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;iso&#39;)</span>
-</span><span id="now-104"><a href="#now-104"><span class="linenos">104</span></a><span class="sd">    &#39;2020-04-09 11:31:24&#39;</span>
-</span><span id="now-105"><a href="#now-105"><span class="linenos">105</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="now-106"><a href="#now-106"><span class="linenos">106</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;datetime&#39;</span><span class="p">:</span>
-</span><span id="now-107"><a href="#now-107"><span class="linenos">107</span></a>        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
-</span><span id="now-108"><a href="#now-108"><span class="linenos">108</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;iso&#39;</span><span class="p">:</span>
-</span><span id="now-109"><a href="#now-109"><span class="linenos">109</span></a>        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">)</span>
-</span><span id="now-110"><a href="#now-110"><span class="linenos">110</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;float&#39;</span><span class="p">:</span>
-</span><span id="now-111"><a href="#now-111"><span class="linenos">111</span></a>        <span class="k">return</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
-</span><span id="now-112"><a href="#now-112"><span class="linenos">112</span></a>    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">())</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="now-100"><a href="#now-100"><span class="linenos">100</span></a><span class="k">def</span> <span class="nf">now</span><span class="p">(</span><span class="n">as_type</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">):</span>
+</span><span id="now-101"><a href="#now-101"><span class="linenos">101</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="now-102"><a href="#now-102"><span class="linenos">102</span></a><span class="sd">    Returns the current date and time in various formats.</span>
+</span><span id="now-103"><a href="#now-103"><span class="linenos">103</span></a>
+</span><span id="now-104"><a href="#now-104"><span class="linenos">104</span></a><span class="sd">    Depending on `as_type`, this returns:</span>
+</span><span id="now-105"><a href="#now-105"><span class="linenos">105</span></a><span class="sd">    - Integer UNIX epoch (default)</span>
+</span><span id="now-106"><a href="#now-106"><span class="linenos">106</span></a><span class="sd">    - Floating-point UNIX epoch (&#39;float&#39;)</span>
+</span><span id="now-107"><a href="#now-107"><span class="linenos">107</span></a><span class="sd">    - datetime.datetime object (&#39;datetime&#39;)</span>
+</span><span id="now-108"><a href="#now-108"><span class="linenos">108</span></a><span class="sd">    - ISO string &#39;YYYY-MM-DD HH:MM:SS&#39; (&#39;iso&#39;)</span>
+</span><span id="now-109"><a href="#now-109"><span class="linenos">109</span></a>
+</span><span id="now-110"><a href="#now-110"><span class="linenos">110</span></a><span class="sd">    ### Parameters</span>
+</span><span id="now-111"><a href="#now-111"><span class="linenos">111</span></a><span class="sd">    - **as_type** (`str`, optional):</span>
+</span><span id="now-112"><a href="#now-112"><span class="linenos">112</span></a><span class="sd">      &#39;&#39;, &#39;epoch&#39;, &#39;float&#39;, &#39;datetime&#39;, or &#39;iso&#39;. Defaults to &#39;&#39;.</span>
+</span><span id="now-113"><a href="#now-113"><span class="linenos">113</span></a>
+</span><span id="now-114"><a href="#now-114"><span class="linenos">114</span></a><span class="sd">    ### Returns</span>
+</span><span id="now-115"><a href="#now-115"><span class="linenos">115</span></a><span class="sd">    - **int**, **float**, **datetime.datetime**, or **str**: Current time in the requested format.</span>
+</span><span id="now-116"><a href="#now-116"><span class="linenos">116</span></a>
+</span><span id="now-117"><a href="#now-117"><span class="linenos">117</span></a><span class="sd">    ### Example</span>
+</span><span id="now-118"><a href="#now-118"><span class="linenos">118</span></a><span class="sd">    &gt;&gt;&gt; now()</span>
+</span><span id="now-119"><a href="#now-119"><span class="linenos">119</span></a><span class="sd">    1586422786</span>
+</span><span id="now-120"><a href="#now-120"><span class="linenos">120</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;float&#39;)</span>
+</span><span id="now-121"><a href="#now-121"><span class="linenos">121</span></a><span class="sd">    1586422786.1521912</span>
+</span><span id="now-122"><a href="#now-122"><span class="linenos">122</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;datetime&#39;)</span>
+</span><span id="now-123"><a href="#now-123"><span class="linenos">123</span></a><span class="sd">    datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)</span>
+</span><span id="now-124"><a href="#now-124"><span class="linenos">124</span></a><span class="sd">    &gt;&gt;&gt; now(as_type=&#39;iso&#39;)</span>
+</span><span id="now-125"><a href="#now-125"><span class="linenos">125</span></a><span class="sd">    &#39;2020-04-09 11:31:24&#39;</span>
+</span><span id="now-126"><a href="#now-126"><span class="linenos">126</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="now-127"><a href="#now-127"><span class="linenos">127</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;datetime&#39;</span><span class="p">:</span>
+</span><span id="now-128"><a href="#now-128"><span class="linenos">128</span></a>        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+</span><span id="now-129"><a href="#now-129"><span class="linenos">129</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;iso&#39;</span><span class="p">:</span>
+</span><span id="now-130"><a href="#now-130"><span class="linenos">130</span></a>        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">)</span>
+</span><span id="now-131"><a href="#now-131"><span class="linenos">131</span></a>    <span class="k">if</span> <span class="n">as_type</span> <span class="o">==</span> <span class="s1">&#39;float&#39;</span><span class="p">:</span>
+</span><span id="now-132"><a href="#now-132"><span class="linenos">132</span></a>        <span class="k">return</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+</span><span id="now-133"><a href="#now-133"><span class="linenos">133</span></a>    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">())</span>
 </span></pre></div>
 
 
@@ -529,27 +614,27 @@ zoneinfo.ZoneInfo object. If loading fails, UTC ("Etc/UTC") is returned.</p>
 
     </div>
     <a class="headerlink" href="#timestr2datetime"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="timestr2datetime-115"><a href="#timestr2datetime-115"><span class="linenos">115</span></a><span class="k">def</span> <span class="nf">timestr2datetime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">):</span>
-</span><span id="timestr2datetime-116"><a href="#timestr2datetime-116"><span class="linenos">116</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="timestr2datetime-117"><a href="#timestr2datetime-117"><span class="linenos">117</span></a><span class="sd">    Converts a time string into a datetime object using the specified format.</span>
-</span><span id="timestr2datetime-118"><a href="#timestr2datetime-118"><span class="linenos">118</span></a>
-</span><span id="timestr2datetime-119"><a href="#timestr2datetime-119"><span class="linenos">119</span></a><span class="sd">    This function parses a string representing a date and time into a `datetime.datetime`</span>
-</span><span id="timestr2datetime-120"><a href="#timestr2datetime-120"><span class="linenos">120</span></a><span class="sd">    object based on the provided format pattern. The default format is ISO (YYYY-MM-DD HH:MM:SS).</span>
-</span><span id="timestr2datetime-121"><a href="#timestr2datetime-121"><span class="linenos">121</span></a>
-</span><span id="timestr2datetime-122"><a href="#timestr2datetime-122"><span class="linenos">122</span></a><span class="sd">    ### Parameters</span>
-</span><span id="timestr2datetime-123"><a href="#timestr2datetime-123"><span class="linenos">123</span></a><span class="sd">    - **timestr** (`str`): A string representing the date and time.</span>
-</span><span id="timestr2datetime-124"><a href="#timestr2datetime-124"><span class="linenos">124</span></a><span class="sd">    - **pattern** (`str`, optional): The format string corresponding to the structure of `timestr`.  </span>
-</span><span id="timestr2datetime-125"><a href="#timestr2datetime-125"><span class="linenos">125</span></a><span class="sd">      Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;. For more details on format codes, see:  </span>
-</span><span id="timestr2datetime-126"><a href="#timestr2datetime-126"><span class="linenos">126</span></a><span class="sd">      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes</span>
-</span><span id="timestr2datetime-127"><a href="#timestr2datetime-127"><span class="linenos">127</span></a>
-</span><span id="timestr2datetime-128"><a href="#timestr2datetime-128"><span class="linenos">128</span></a><span class="sd">    ### Returns</span>
-</span><span id="timestr2datetime-129"><a href="#timestr2datetime-129"><span class="linenos">129</span></a><span class="sd">    - **datetime.datetime**: A datetime object corresponding to the parsed date and time.</span>
-</span><span id="timestr2datetime-130"><a href="#timestr2datetime-130"><span class="linenos">130</span></a>
-</span><span id="timestr2datetime-131"><a href="#timestr2datetime-131"><span class="linenos">131</span></a><span class="sd">    ### Example</span>
-</span><span id="timestr2datetime-132"><a href="#timestr2datetime-132"><span class="linenos">132</span></a><span class="sd">    &gt;&gt;&gt; timestr2datetime(&quot;2021-05-08 09:32:09&quot;)</span>
-</span><span id="timestr2datetime-133"><a href="#timestr2datetime-133"><span class="linenos">133</span></a><span class="sd">    datetime.datetime(2021, 5, 8, 9, 32, 9)</span>
-</span><span id="timestr2datetime-134"><a href="#timestr2datetime-134"><span class="linenos">134</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="timestr2datetime-135"><a href="#timestr2datetime-135"><span class="linenos">135</span></a>    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="p">)</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="timestr2datetime-136"><a href="#timestr2datetime-136"><span class="linenos">136</span></a><span class="k">def</span> <span class="nf">timestr2datetime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">):</span>
+</span><span id="timestr2datetime-137"><a href="#timestr2datetime-137"><span class="linenos">137</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="timestr2datetime-138"><a href="#timestr2datetime-138"><span class="linenos">138</span></a><span class="sd">    Converts a time string into a datetime object using the specified format.</span>
+</span><span id="timestr2datetime-139"><a href="#timestr2datetime-139"><span class="linenos">139</span></a>
+</span><span id="timestr2datetime-140"><a href="#timestr2datetime-140"><span class="linenos">140</span></a><span class="sd">    This function parses a string representing a date and time into a `datetime.datetime`</span>
+</span><span id="timestr2datetime-141"><a href="#timestr2datetime-141"><span class="linenos">141</span></a><span class="sd">    object based on the provided format pattern. The default format is ISO (YYYY-MM-DD HH:MM:SS).</span>
+</span><span id="timestr2datetime-142"><a href="#timestr2datetime-142"><span class="linenos">142</span></a>
+</span><span id="timestr2datetime-143"><a href="#timestr2datetime-143"><span class="linenos">143</span></a><span class="sd">    ### Parameters</span>
+</span><span id="timestr2datetime-144"><a href="#timestr2datetime-144"><span class="linenos">144</span></a><span class="sd">    - **timestr** (`str`): A string representing the date and time.</span>
+</span><span id="timestr2datetime-145"><a href="#timestr2datetime-145"><span class="linenos">145</span></a><span class="sd">    - **pattern** (`str`, optional): The format string corresponding to the structure of `timestr`.  </span>
+</span><span id="timestr2datetime-146"><a href="#timestr2datetime-146"><span class="linenos">146</span></a><span class="sd">      Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;. For more details on format codes, see:  </span>
+</span><span id="timestr2datetime-147"><a href="#timestr2datetime-147"><span class="linenos">147</span></a><span class="sd">      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes</span>
+</span><span id="timestr2datetime-148"><a href="#timestr2datetime-148"><span class="linenos">148</span></a>
+</span><span id="timestr2datetime-149"><a href="#timestr2datetime-149"><span class="linenos">149</span></a><span class="sd">    ### Returns</span>
+</span><span id="timestr2datetime-150"><a href="#timestr2datetime-150"><span class="linenos">150</span></a><span class="sd">    - **datetime.datetime**: A datetime object corresponding to the parsed date and time.</span>
+</span><span id="timestr2datetime-151"><a href="#timestr2datetime-151"><span class="linenos">151</span></a>
+</span><span id="timestr2datetime-152"><a href="#timestr2datetime-152"><span class="linenos">152</span></a><span class="sd">    ### Example</span>
+</span><span id="timestr2datetime-153"><a href="#timestr2datetime-153"><span class="linenos">153</span></a><span class="sd">    &gt;&gt;&gt; timestr2datetime(&quot;2021-05-08 09:32:09&quot;)</span>
+</span><span id="timestr2datetime-154"><a href="#timestr2datetime-154"><span class="linenos">154</span></a><span class="sd">    datetime.datetime(2021, 5, 8, 9, 32, 9)</span>
+</span><span id="timestr2datetime-155"><a href="#timestr2datetime-155"><span class="linenos">155</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="timestr2datetime-156"><a href="#timestr2datetime-156"><span class="linenos">156</span></a>    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="p">)</span>
 </span></pre></div>
 
 
@@ -595,37 +680,37 @@ Defaults to '%Y-%m-%d %H:%M:%S'. For more details on format codes, see:<br />
 
     </div>
     <a class="headerlink" href="#timestr2epoch"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="timestr2epoch-138"><a href="#timestr2epoch-138"><span class="linenos">138</span></a><span class="k">def</span> <span class="nf">timestr2epoch</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">,</span> <span class="n">tzinfo</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-</span><span id="timestr2epoch-139"><a href="#timestr2epoch-139"><span class="linenos">139</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="timestr2epoch-140"><a href="#timestr2epoch-140"><span class="linenos">140</span></a><span class="sd">    Converts a time string to a UNIX epoch timestamp.</span>
-</span><span id="timestr2epoch-141"><a href="#timestr2epoch-141"><span class="linenos">141</span></a>
-</span><span id="timestr2epoch-142"><a href="#timestr2epoch-142"><span class="linenos">142</span></a><span class="sd">    ### Parameters</span>
-</span><span id="timestr2epoch-143"><a href="#timestr2epoch-143"><span class="linenos">143</span></a><span class="sd">    - **timestr** (`str`): The time string to convert.</span>
-</span><span id="timestr2epoch-144"><a href="#timestr2epoch-144"><span class="linenos">144</span></a><span class="sd">    - **pattern** (`str`): The format of the time string (default is &#39;%Y-%m-%d %H:%M:%S&#39;).</span>
-</span><span id="timestr2epoch-145"><a href="#timestr2epoch-145"><span class="linenos">145</span></a><span class="sd">    - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.  </span>
-</span><span id="timestr2epoch-146"><a href="#timestr2epoch-146"><span class="linenos">146</span></a><span class="sd">      If provided, the parsed datetime is set to this timezone.  </span>
-</span><span id="timestr2epoch-147"><a href="#timestr2epoch-147"><span class="linenos">147</span></a><span class="sd">      If None, the time is assumed to be local time.</span>
-</span><span id="timestr2epoch-148"><a href="#timestr2epoch-148"><span class="linenos">148</span></a>
-</span><span id="timestr2epoch-149"><a href="#timestr2epoch-149"><span class="linenos">149</span></a><span class="sd">    ### Returns</span>
-</span><span id="timestr2epoch-150"><a href="#timestr2epoch-150"><span class="linenos">150</span></a><span class="sd">    - **float**: The UNIX epoch timestamp (seconds since January 1, 1970, 00:00:00 UTC).</span>
-</span><span id="timestr2epoch-151"><a href="#timestr2epoch-151"><span class="linenos">151</span></a>
-</span><span id="timestr2epoch-152"><a href="#timestr2epoch-152"><span class="linenos">152</span></a><span class="sd">    ### Raises</span>
-</span><span id="timestr2epoch-153"><a href="#timestr2epoch-153"><span class="linenos">153</span></a><span class="sd">    - **ValueError**: If the time string does not match the provided format.</span>
-</span><span id="timestr2epoch-154"><a href="#timestr2epoch-154"><span class="linenos">154</span></a>
-</span><span id="timestr2epoch-155"><a href="#timestr2epoch-155"><span class="linenos">155</span></a><span class="sd">    ### Example</span>
-</span><span id="timestr2epoch-156"><a href="#timestr2epoch-156"><span class="linenos">156</span></a><span class="sd">        # Convert a time string in local time:</span>
-</span><span id="timestr2epoch-157"><a href="#timestr2epoch-157"><span class="linenos">157</span></a><span class="sd">        epoch_local = timestr2epoch(&quot;2025-03-01 12:00:00&quot;)</span>
-</span><span id="timestr2epoch-158"><a href="#timestr2epoch-158"><span class="linenos">158</span></a>
-</span><span id="timestr2epoch-159"><a href="#timestr2epoch-159"><span class="linenos">159</span></a><span class="sd">        # Convert a time string assuming it&#39;s in UTC:</span>
-</span><span id="timestr2epoch-160"><a href="#timestr2epoch-160"><span class="linenos">160</span></a><span class="sd">        epoch_utc = timestr2epoch(&quot;2025-03-01 12:00:00&quot;, tzinfo=datetime.timezone.utc)</span>
-</span><span id="timestr2epoch-161"><a href="#timestr2epoch-161"><span class="linenos">161</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="timestr2epoch-162"><a href="#timestr2epoch-162"><span class="linenos">162</span></a>    <span class="n">dt</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="p">)</span>
-</span><span id="timestr2epoch-163"><a href="#timestr2epoch-163"><span class="linenos">163</span></a>
-</span><span id="timestr2epoch-164"><a href="#timestr2epoch-164"><span class="linenos">164</span></a>    <span class="c1"># If a timezone is provided, make the datetime timezone-aware.</span>
-</span><span id="timestr2epoch-165"><a href="#timestr2epoch-165"><span class="linenos">165</span></a>    <span class="k">if</span> <span class="n">tzinfo</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="timestr2epoch-166"><a href="#timestr2epoch-166"><span class="linenos">166</span></a>        <span class="n">dt</span> <span class="o">=</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">tzinfo</span><span class="p">)</span>
-</span><span id="timestr2epoch-167"><a href="#timestr2epoch-167"><span class="linenos">167</span></a>
-</span><span id="timestr2epoch-168"><a href="#timestr2epoch-168"><span class="linenos">168</span></a>    <span class="k">return</span> <span class="n">dt</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="timestr2epoch-159"><a href="#timestr2epoch-159"><span class="linenos">159</span></a><span class="k">def</span> <span class="nf">timestr2epoch</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">,</span> <span class="n">tzinfo</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+</span><span id="timestr2epoch-160"><a href="#timestr2epoch-160"><span class="linenos">160</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="timestr2epoch-161"><a href="#timestr2epoch-161"><span class="linenos">161</span></a><span class="sd">    Converts a time string to a UNIX epoch timestamp.</span>
+</span><span id="timestr2epoch-162"><a href="#timestr2epoch-162"><span class="linenos">162</span></a>
+</span><span id="timestr2epoch-163"><a href="#timestr2epoch-163"><span class="linenos">163</span></a><span class="sd">    ### Parameters</span>
+</span><span id="timestr2epoch-164"><a href="#timestr2epoch-164"><span class="linenos">164</span></a><span class="sd">    - **timestr** (`str`): The time string to convert.</span>
+</span><span id="timestr2epoch-165"><a href="#timestr2epoch-165"><span class="linenos">165</span></a><span class="sd">    - **pattern** (`str`): The format of the time string (default is &#39;%Y-%m-%d %H:%M:%S&#39;).</span>
+</span><span id="timestr2epoch-166"><a href="#timestr2epoch-166"><span class="linenos">166</span></a><span class="sd">    - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.  </span>
+</span><span id="timestr2epoch-167"><a href="#timestr2epoch-167"><span class="linenos">167</span></a><span class="sd">      If provided, the parsed datetime is set to this timezone.  </span>
+</span><span id="timestr2epoch-168"><a href="#timestr2epoch-168"><span class="linenos">168</span></a><span class="sd">      If None, the time is assumed to be local time.</span>
+</span><span id="timestr2epoch-169"><a href="#timestr2epoch-169"><span class="linenos">169</span></a>
+</span><span id="timestr2epoch-170"><a href="#timestr2epoch-170"><span class="linenos">170</span></a><span class="sd">    ### Returns</span>
+</span><span id="timestr2epoch-171"><a href="#timestr2epoch-171"><span class="linenos">171</span></a><span class="sd">    - **float**: The UNIX epoch timestamp (seconds since January 1, 1970, 00:00:00 UTC).</span>
+</span><span id="timestr2epoch-172"><a href="#timestr2epoch-172"><span class="linenos">172</span></a>
+</span><span id="timestr2epoch-173"><a href="#timestr2epoch-173"><span class="linenos">173</span></a><span class="sd">    ### Raises</span>
+</span><span id="timestr2epoch-174"><a href="#timestr2epoch-174"><span class="linenos">174</span></a><span class="sd">    - **ValueError**: If the time string does not match the provided format.</span>
+</span><span id="timestr2epoch-175"><a href="#timestr2epoch-175"><span class="linenos">175</span></a>
+</span><span id="timestr2epoch-176"><a href="#timestr2epoch-176"><span class="linenos">176</span></a><span class="sd">    ### Example</span>
+</span><span id="timestr2epoch-177"><a href="#timestr2epoch-177"><span class="linenos">177</span></a><span class="sd">        # Convert a time string in local time:</span>
+</span><span id="timestr2epoch-178"><a href="#timestr2epoch-178"><span class="linenos">178</span></a><span class="sd">        epoch_local = timestr2epoch(&quot;2025-03-01 12:00:00&quot;)</span>
+</span><span id="timestr2epoch-179"><a href="#timestr2epoch-179"><span class="linenos">179</span></a>
+</span><span id="timestr2epoch-180"><a href="#timestr2epoch-180"><span class="linenos">180</span></a><span class="sd">        # Convert a time string assuming it&#39;s in UTC:</span>
+</span><span id="timestr2epoch-181"><a href="#timestr2epoch-181"><span class="linenos">181</span></a><span class="sd">        epoch_utc = timestr2epoch(&quot;2025-03-01 12:00:00&quot;, tzinfo=datetime.timezone.utc)</span>
+</span><span id="timestr2epoch-182"><a href="#timestr2epoch-182"><span class="linenos">182</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="timestr2epoch-183"><a href="#timestr2epoch-183"><span class="linenos">183</span></a>    <span class="n">dt</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">timestr</span><span class="p">,</span> <span class="n">pattern</span><span class="p">)</span>
+</span><span id="timestr2epoch-184"><a href="#timestr2epoch-184"><span class="linenos">184</span></a>
+</span><span id="timestr2epoch-185"><a href="#timestr2epoch-185"><span class="linenos">185</span></a>    <span class="c1"># If a timezone is provided, make the datetime timezone-aware.</span>
+</span><span id="timestr2epoch-186"><a href="#timestr2epoch-186"><span class="linenos">186</span></a>    <span class="k">if</span> <span class="n">tzinfo</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="timestr2epoch-187"><a href="#timestr2epoch-187"><span class="linenos">187</span></a>        <span class="n">dt</span> <span class="o">=</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">tzinfo</span><span class="p">)</span>
+</span><span id="timestr2epoch-188"><a href="#timestr2epoch-188"><span class="linenos">188</span></a>
+</span><span id="timestr2epoch-189"><a href="#timestr2epoch-189"><span class="linenos">189</span></a>    <span class="k">return</span> <span class="n">dt</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
 </span></pre></div>
 
 
@@ -676,32 +761,32 @@ epoch_utc = timestr2epoch("2025-03-01 12:00:00", tzinfo=datetime.timezone.utc)
 
     </div>
     <a class="headerlink" href="#timestrdiff"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="timestrdiff-171"><a href="#timestrdiff-171"><span class="linenos">171</span></a><span class="k">def</span> <span class="nf">timestrdiff</span><span class="p">(</span><span class="n">timestr1</span><span class="p">,</span> <span class="n">timestr2</span><span class="p">,</span> <span class="n">pattern1</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">,</span> <span class="n">pattern2</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">):</span>
-</span><span id="timestrdiff-172"><a href="#timestrdiff-172"><span class="linenos">172</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="timestrdiff-173"><a href="#timestrdiff-173"><span class="linenos">173</span></a><span class="sd">    Computes the absolute difference in seconds between two datetime strings.</span>
-</span><span id="timestrdiff-174"><a href="#timestrdiff-174"><span class="linenos">174</span></a>
-</span><span id="timestrdiff-175"><a href="#timestrdiff-175"><span class="linenos">175</span></a><span class="sd">    This function converts two datetime strings into `datetime.datetime` objects using</span>
-</span><span id="timestrdiff-176"><a href="#timestrdiff-176"><span class="linenos">176</span></a><span class="sd">    their respective format patterns, then calculates the absolute time difference between them.</span>
-</span><span id="timestrdiff-177"><a href="#timestrdiff-177"><span class="linenos">177</span></a><span class="sd">    By default, both strings are expected to be in ISO format (YYYY-MM-DD HH:MM:SS).</span>
-</span><span id="timestrdiff-178"><a href="#timestrdiff-178"><span class="linenos">178</span></a>
-</span><span id="timestrdiff-179"><a href="#timestrdiff-179"><span class="linenos">179</span></a><span class="sd">    ### Parameters</span>
-</span><span id="timestrdiff-180"><a href="#timestrdiff-180"><span class="linenos">180</span></a><span class="sd">    - **timestr1** (`str`): The first datetime string.</span>
-</span><span id="timestrdiff-181"><a href="#timestrdiff-181"><span class="linenos">181</span></a><span class="sd">    - **timestr2** (`str`): The second datetime string.</span>
-</span><span id="timestrdiff-182"><a href="#timestrdiff-182"><span class="linenos">182</span></a><span class="sd">    - **pattern1** (`str`, optional): The format pattern for `timestr1`. Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;.</span>
-</span><span id="timestrdiff-183"><a href="#timestrdiff-183"><span class="linenos">183</span></a><span class="sd">    - **pattern2** (`str`, optional): The format pattern for `timestr2`. Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;.  </span>
-</span><span id="timestrdiff-184"><a href="#timestrdiff-184"><span class="linenos">184</span></a><span class="sd">      For more information on format codes, refer to:  </span>
-</span><span id="timestrdiff-185"><a href="#timestrdiff-185"><span class="linenos">185</span></a><span class="sd">      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes</span>
-</span><span id="timestrdiff-186"><a href="#timestrdiff-186"><span class="linenos">186</span></a>
-</span><span id="timestrdiff-187"><a href="#timestrdiff-187"><span class="linenos">187</span></a><span class="sd">    ### Returns</span>
-</span><span id="timestrdiff-188"><a href="#timestrdiff-188"><span class="linenos">188</span></a><span class="sd">    - **float**: The absolute difference between the two timestamps in seconds.</span>
-</span><span id="timestrdiff-189"><a href="#timestrdiff-189"><span class="linenos">189</span></a>
-</span><span id="timestrdiff-190"><a href="#timestrdiff-190"><span class="linenos">190</span></a><span class="sd">    ### Example</span>
-</span><span id="timestrdiff-191"><a href="#timestrdiff-191"><span class="linenos">191</span></a><span class="sd">    &gt;&gt;&gt; timestrdiff(&quot;2021-05-08 09:32:09&quot;, &quot;2021-05-08 09:30:00&quot;)</span>
-</span><span id="timestrdiff-192"><a href="#timestrdiff-192"><span class="linenos">192</span></a><span class="sd">    129.0</span>
-</span><span id="timestrdiff-193"><a href="#timestrdiff-193"><span class="linenos">193</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="timestrdiff-194"><a href="#timestrdiff-194"><span class="linenos">194</span></a>    <span class="n">dt1</span> <span class="o">=</span> <span class="n">timestr2datetime</span><span class="p">(</span><span class="n">timestr1</span><span class="p">,</span> <span class="n">pattern1</span><span class="p">)</span>
-</span><span id="timestrdiff-195"><a href="#timestrdiff-195"><span class="linenos">195</span></a>    <span class="n">dt2</span> <span class="o">=</span> <span class="n">timestr2datetime</span><span class="p">(</span><span class="n">timestr2</span><span class="p">,</span> <span class="n">pattern2</span><span class="p">)</span>
-</span><span id="timestrdiff-196"><a href="#timestrdiff-196"><span class="linenos">196</span></a>    <span class="k">return</span> <span class="nb">abs</span><span class="p">((</span><span class="n">dt1</span> <span class="o">-</span> <span class="n">dt2</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="timestrdiff-192"><a href="#timestrdiff-192"><span class="linenos">192</span></a><span class="k">def</span> <span class="nf">timestrdiff</span><span class="p">(</span><span class="n">timestr1</span><span class="p">,</span> <span class="n">timestr2</span><span class="p">,</span> <span class="n">pattern1</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">,</span> <span class="n">pattern2</span><span class="o">=</span><span class="s1">&#39;%Y-%m-</span><span class="si">%d</span><span class="s1"> %H:%M:%S&#39;</span><span class="p">):</span>
+</span><span id="timestrdiff-193"><a href="#timestrdiff-193"><span class="linenos">193</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="timestrdiff-194"><a href="#timestrdiff-194"><span class="linenos">194</span></a><span class="sd">    Computes the absolute difference in seconds between two datetime strings.</span>
+</span><span id="timestrdiff-195"><a href="#timestrdiff-195"><span class="linenos">195</span></a>
+</span><span id="timestrdiff-196"><a href="#timestrdiff-196"><span class="linenos">196</span></a><span class="sd">    This function converts two datetime strings into `datetime.datetime` objects using</span>
+</span><span id="timestrdiff-197"><a href="#timestrdiff-197"><span class="linenos">197</span></a><span class="sd">    their respective format patterns, then calculates the absolute time difference between them.</span>
+</span><span id="timestrdiff-198"><a href="#timestrdiff-198"><span class="linenos">198</span></a><span class="sd">    By default, both strings are expected to be in ISO format (YYYY-MM-DD HH:MM:SS).</span>
+</span><span id="timestrdiff-199"><a href="#timestrdiff-199"><span class="linenos">199</span></a>
+</span><span id="timestrdiff-200"><a href="#timestrdiff-200"><span class="linenos">200</span></a><span class="sd">    ### Parameters</span>
+</span><span id="timestrdiff-201"><a href="#timestrdiff-201"><span class="linenos">201</span></a><span class="sd">    - **timestr1** (`str`): The first datetime string.</span>
+</span><span id="timestrdiff-202"><a href="#timestrdiff-202"><span class="linenos">202</span></a><span class="sd">    - **timestr2** (`str`): The second datetime string.</span>
+</span><span id="timestrdiff-203"><a href="#timestrdiff-203"><span class="linenos">203</span></a><span class="sd">    - **pattern1** (`str`, optional): The format pattern for `timestr1`. Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;.</span>
+</span><span id="timestrdiff-204"><a href="#timestrdiff-204"><span class="linenos">204</span></a><span class="sd">    - **pattern2** (`str`, optional): The format pattern for `timestr2`. Defaults to &#39;%Y-%m-%d %H:%M:%S&#39;.  </span>
+</span><span id="timestrdiff-205"><a href="#timestrdiff-205"><span class="linenos">205</span></a><span class="sd">      For more information on format codes, refer to:  </span>
+</span><span id="timestrdiff-206"><a href="#timestrdiff-206"><span class="linenos">206</span></a><span class="sd">      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes</span>
+</span><span id="timestrdiff-207"><a href="#timestrdiff-207"><span class="linenos">207</span></a>
+</span><span id="timestrdiff-208"><a href="#timestrdiff-208"><span class="linenos">208</span></a><span class="sd">    ### Returns</span>
+</span><span id="timestrdiff-209"><a href="#timestrdiff-209"><span class="linenos">209</span></a><span class="sd">    - **float**: The absolute difference between the two timestamps in seconds.</span>
+</span><span id="timestrdiff-210"><a href="#timestrdiff-210"><span class="linenos">210</span></a>
+</span><span id="timestrdiff-211"><a href="#timestrdiff-211"><span class="linenos">211</span></a><span class="sd">    ### Example</span>
+</span><span id="timestrdiff-212"><a href="#timestrdiff-212"><span class="linenos">212</span></a><span class="sd">    &gt;&gt;&gt; timestrdiff(&quot;2021-05-08 09:32:09&quot;, &quot;2021-05-08 09:30:00&quot;)</span>
+</span><span id="timestrdiff-213"><a href="#timestrdiff-213"><span class="linenos">213</span></a><span class="sd">    129.0</span>
+</span><span id="timestrdiff-214"><a href="#timestrdiff-214"><span class="linenos">214</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="timestrdiff-215"><a href="#timestrdiff-215"><span class="linenos">215</span></a>    <span class="n">dt1</span> <span class="o">=</span> <span class="n">timestr2datetime</span><span class="p">(</span><span class="n">timestr1</span><span class="p">,</span> <span class="n">pattern1</span><span class="p">)</span>
+</span><span id="timestrdiff-216"><a href="#timestrdiff-216"><span class="linenos">216</span></a>    <span class="n">dt2</span> <span class="o">=</span> <span class="n">timestr2datetime</span><span class="p">(</span><span class="n">timestr2</span><span class="p">,</span> <span class="n">pattern2</span><span class="p">)</span>
+</span><span id="timestrdiff-217"><a href="#timestrdiff-217"><span class="linenos">217</span></a>    <span class="k">return</span> <span class="nb">abs</span><span class="p">((</span><span class="n">dt1</span> <span class="o">-</span> <span class="n">dt2</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span>
 </span></pre></div>
 
 
@@ -750,22 +835,22 @@ For more information on format codes, refer to:<br />
 
     </div>
     <a class="headerlink" href="#utc_offset"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="utc_offset-199"><a href="#utc_offset-199"><span class="linenos">199</span></a><span class="k">def</span> <span class="nf">utc_offset</span><span class="p">():</span>
-</span><span id="utc_offset-200"><a href="#utc_offset-200"><span class="linenos">200</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="utc_offset-201"><a href="#utc_offset-201"><span class="linenos">201</span></a><span class="sd">    Retrieves the current local UTC offset as a string.</span>
-</span><span id="utc_offset-202"><a href="#utc_offset-202"><span class="linenos">202</span></a>
-</span><span id="utc_offset-203"><a href="#utc_offset-203"><span class="linenos">203</span></a><span class="sd">    This function returns the local timezone&#39;s UTC offset formatted as a string</span>
-</span><span id="utc_offset-204"><a href="#utc_offset-204"><span class="linenos">204</span></a><span class="sd">    in the format ±HHMM (e.g., &#39;+0200&#39; or &#39;-0500&#39;), where HH represents hours and MM represents</span>
-</span><span id="utc_offset-205"><a href="#utc_offset-205"><span class="linenos">205</span></a><span class="sd">    minutes.</span>
-</span><span id="utc_offset-206"><a href="#utc_offset-206"><span class="linenos">206</span></a>
-</span><span id="utc_offset-207"><a href="#utc_offset-207"><span class="linenos">207</span></a><span class="sd">    ### Returns</span>
-</span><span id="utc_offset-208"><a href="#utc_offset-208"><span class="linenos">208</span></a><span class="sd">    - **str**: The current local UTC offset.</span>
-</span><span id="utc_offset-209"><a href="#utc_offset-209"><span class="linenos">209</span></a>
-</span><span id="utc_offset-210"><a href="#utc_offset-210"><span class="linenos">210</span></a><span class="sd">    ### Example</span>
-</span><span id="utc_offset-211"><a href="#utc_offset-211"><span class="linenos">211</span></a><span class="sd">    &gt;&gt;&gt; utc_offset()</span>
-</span><span id="utc_offset-212"><a href="#utc_offset-212"><span class="linenos">212</span></a><span class="sd">    &#39;+0200&#39;</span>
-</span><span id="utc_offset-213"><a href="#utc_offset-213"><span class="linenos">213</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="utc_offset-214"><a href="#utc_offset-214"><span class="linenos">214</span></a>    <span class="k">return</span> <span class="n">time</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%z&quot;</span><span class="p">)</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="utc_offset-220"><a href="#utc_offset-220"><span class="linenos">220</span></a><span class="k">def</span> <span class="nf">utc_offset</span><span class="p">():</span>
+</span><span id="utc_offset-221"><a href="#utc_offset-221"><span class="linenos">221</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="utc_offset-222"><a href="#utc_offset-222"><span class="linenos">222</span></a><span class="sd">    Retrieves the current local UTC offset as a string.</span>
+</span><span id="utc_offset-223"><a href="#utc_offset-223"><span class="linenos">223</span></a>
+</span><span id="utc_offset-224"><a href="#utc_offset-224"><span class="linenos">224</span></a><span class="sd">    This function returns the local timezone&#39;s UTC offset formatted as a string</span>
+</span><span id="utc_offset-225"><a href="#utc_offset-225"><span class="linenos">225</span></a><span class="sd">    in the format ±HHMM (e.g., &#39;+0200&#39; or &#39;-0500&#39;), where HH represents hours and MM represents</span>
+</span><span id="utc_offset-226"><a href="#utc_offset-226"><span class="linenos">226</span></a><span class="sd">    minutes.</span>
+</span><span id="utc_offset-227"><a href="#utc_offset-227"><span class="linenos">227</span></a>
+</span><span id="utc_offset-228"><a href="#utc_offset-228"><span class="linenos">228</span></a><span class="sd">    ### Returns</span>
+</span><span id="utc_offset-229"><a href="#utc_offset-229"><span class="linenos">229</span></a><span class="sd">    - **str**: The current local UTC offset.</span>
+</span><span id="utc_offset-230"><a href="#utc_offset-230"><span class="linenos">230</span></a>
+</span><span id="utc_offset-231"><a href="#utc_offset-231"><span class="linenos">231</span></a><span class="sd">    ### Example</span>
+</span><span id="utc_offset-232"><a href="#utc_offset-232"><span class="linenos">232</span></a><span class="sd">    &gt;&gt;&gt; utc_offset()</span>
+</span><span id="utc_offset-233"><a href="#utc_offset-233"><span class="linenos">233</span></a><span class="sd">    &#39;+0200&#39;</span>
+</span><span id="utc_offset-234"><a href="#utc_offset-234"><span class="linenos">234</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="utc_offset-235"><a href="#utc_offset-235"><span class="linenos">235</span></a>    <span class="k">return</span> <span class="n">time</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%z&quot;</span><span class="p">)</span>
 </span></pre></div>
 
 

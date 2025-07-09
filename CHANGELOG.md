@@ -7,28 +7,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## [Unreleased]
 
+### Added ("feat")
+
+* endoflifedate.py: add Icinga
+* rocket.py: add `get_groups_history()`, `get_rooms_info()`, `send2webhook()`
+* time.py: add `get_weekday()`
+
+
 ### Fixed ("fix")
 
-* fix(base.py): `get_table()` does not modify `data` any longer
-* fix(redfish.py): make lib more robust and check the sensor state against the user's thresholds first
-
+* base.py: `get_table()` does not modify `data` any longer
+* redfish.py: make lib more robust and check the sensor state against the user's thresholds first
 
 
 ## [v2.3.0] - 2025-06-20
 
 ### Added ("feat")
 
-* feat(endoflifedate.py): add Icinga
+* endoflifedate.py: add Icinga
 
 
 ### Fixed ("fix")
 
-* fix(distro.py): incorrect os_family for Devuan in `get_distribution_facts()` ([#87](https://github.com/Linuxfabrik/lib/issues/87))
+* distro.py: incorrect os_family for Devuan in `get_distribution_facts()` ([#87](https://github.com/Linuxfabrik/lib/issues/87))
 
 
 ### Changed ("refactor", "chore" etc.)
 
-* refactor(shell.py): new optional parameter `lc_all='C'` for `shell_exec()`
+* shell.py: new optional parameter `lc_all='C'` for `shell_exec()`
 
 
 
@@ -36,7 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Fixed ("fix")
 
-* fix(net.py): use `ssl.PROTOCOL_TLS_CLIENT` as "best practice" in `fetch_ssl()`
+* net.py: use `ssl.PROTOCOL_TLS_CLIENT` as "best practice" in `fetch_ssl()`
 
 
 
@@ -44,13 +50,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Added ("feat")
 
-* feat(time.py): add `get_timezone()`
+* time.py: add `get_timezone()`
 
 
 ### Changed ("refactor", "chore" etc.)
 
-* refactor(net.py): force `fetch_ssl()` to use TLS 1.2+
-* refactor(txt.py): enhance sanitize regex
+* net.py: force `fetch_ssl()` to use TLS 1.2+
+* txt.py: enhance sanitize regex
 
 
 
@@ -58,7 +64,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Changed ("refactor", "chore" etc.)
 
-* refactor(net.py): add fetch_socket() and fetch_ssl(), improve fetch()
+* net.py: add fetch_socket() and fetch_ssl(), improve fetch()
 
 
 
@@ -66,42 +72,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Changed ("refactor", "chore" etc.)
 
-* refactor(args.py): improve code-style
-* refactor(base.py): improve code-style
-* refactor(cache.py): improve code-style
-* refactor(db_mysql.py): improve code-style
-* refactor(db_sqlite.py): improve code-style
-* refactor(disk.py): improve code-style
-* refactor(distro.py): improve code-style
-* refactor(distro.py): move get_os_info() from version.py to distro.py
-* refactor(dmidecode.py): improve code-style
-* refactor(feedparser.py): improve code-style
-* refactor(grassfish.py): improve code-style
-* refactor(huawei.py): improve code-style
-* refactor(human.py): change parameters for bits2human() (no weird %-syntax for users to worry about)
-* refactor(human.py): improve code-style
-* refactor(icinga.py): improve code-style
-* refactor(infomaniak.py): improve code-style
-* refactor(jitsi.py): improve code-style
-* refactor(keycloak.py): improve code-style
-* refactor(lftest.py): improve code-style
-* refactor(librenms.py): improve code-style
-* refactor(net.py): improve code-style
-* refactor(nodebb.py): improve code-style
-* refactor(psutil.py): improve code-style
-* refactor(qts.py): improve code-style
-* refactor(redfish.py): improve code-style
-* refactor(rocket.py): improve code-style
-* refactor(shell.py): improve code-style
-* refactor(smb.py): improve code-style
-* refactor(time.py): improve code-style
-* refactor(txt.py): improve code-style
-* refactor(uptimerobot.py): improve code-style
-* refactor(url.py): improve code-style
-* refactor(veeam.py): improve code-style
-* refactor(version.py): improve code-style
-* refactor(wildfly.py): improve code-style
-* refactor(winrm.py): improve code-style
+* args.py: improve code-style
+* base.py: improve code-style
+* cache.py: improve code-style
+* db_mysql.py: improve code-style
+* db_sqlite.py: improve code-style
+* disk.py: improve code-style
+* distro.py: improve code-style
+* distro.py: move get_os_info() from version.py to distro.py
+* dmidecode.py: improve code-style
+* feedparser.py: improve code-style
+* grassfish.py: improve code-style
+* huawei.py: improve code-style
+* human.py: change parameters for bits2human() (no weird %-syntax for users to worry about)
+* human.py: improve code-style
+* icinga.py: improve code-style
+* infomaniak.py: improve code-style
+* jitsi.py: improve code-style
+* keycloak.py: improve code-style
+* lftest.py: improve code-style
+* librenms.py: improve code-style
+* net.py: improve code-style
+* nodebb.py: improve code-style
+* psutil.py: improve code-style
+* qts.py: improve code-style
+* redfish.py: improve code-style
+* rocket.py: improve code-style
+* shell.py: improve code-style
+* smb.py: improve code-style
+* time.py: improve code-style
+* txt.py: improve code-style
+* uptimerobot.py: improve code-style
+* url.py: improve code-style
+* veeam.py: improve code-style
+* version.py: improve code-style
+* wildfly.py: improve code-style
+* winrm.py: improve code-style
 
 
 
@@ -115,8 +121,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ### Changed ("refactor", "chore" etc.)
 
 * docs: improve and convert doc strings to markdown for some libs and create new `docs` folder using `pdoc`
-* refactor(base.py, url.py): make use of txt.sanitize_sensitive_data()
-* refactor(txt.py): add sanitize_sensitive_data()
+* base.py, url.py: make use of txt.sanitize_sensitive_data()
+* txt.py: add sanitize_sensitive_data()
 
 
 
@@ -132,7 +138,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Changed ("refactor", "chore" etc.)
 
-* refactor: uptimerobot.py
+* uptimerobot.py
 
 
 
@@ -140,12 +146,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Added ("feat")
 
-* feat: add uptimerobot.py
+* add uptimerobot.py
 
 
 ### Changed ("refactor", "chore" etc.)
 
-* docs(base.py): improve doc strings
+* base.py: improve doc strings
 
 
 
@@ -153,14 +159,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Fixed ("fix")
 
-* fix(txt.py): extract_str()
+* txt.py: extract_str()
 
 
 ### Changed ("refactor", "chore" etc.)
 
-* chore(endoflifedate.py): bump version numbers
-* chore(tools/update-endoflifedate): add openvpn
-* docs(time.py): improve doc strings
+* endoflifedate.py: bump version numbers
+* tools/update-endoflifedate: add openvpn
+* time.py: improve doc strings
 * docs: update README
 
 
@@ -200,7 +206,7 @@ Build, CI/CD:
 
 ### Fixed
 
-* fix(disk.py): fix ValueError if the value contains =
+* disk.py: fix ValueError if the value contains =
 
 
 
