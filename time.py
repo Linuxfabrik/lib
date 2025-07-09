@@ -75,6 +75,27 @@ def get_timezone(tz_name):
             return datetime.timezone.utc
 
 
+def get_weekday(epoch):
+    """
+    Convert a UNIX epoch timestamp to a lowercase three-letter weekday abbreviation.
+
+    This function takes a UNIX timestamp (int or float) and returns the local weekday
+    as a three-letter lowercase string: 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', or 'sun'.
+
+    ### Parameters
+    - **epoch** (`int` or `float`): UNIX epoch timestamp (seconds since 1970-01-01).
+
+    ### Returns
+    - **str**: Lowercase three-letter abbreviation of the weekday corresponding to the local date.
+
+    ### Example
+    >>> get_weekday(1620459129)
+    'sat'
+    """
+    _WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+    return _WEEKDAYS[time.localtime(epoch).tm_wday]
+
+
 def now(as_type=''):
     """
     Returns the current date and time in various formats.
