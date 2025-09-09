@@ -20,6 +20,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * redfish.py: make lib more robust and check the sensor state against the user's thresholds first
 
 
+### Changed ("refactor", "chore" etc.)
+
+* dmidecode.py: collapse near-duplicate data in an admin-friendly way
+
+
+
 ## [v2.3.0] - 2025-06-20
 
 ### Added ("feat")

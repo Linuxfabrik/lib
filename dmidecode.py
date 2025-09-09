@@ -14,7 +14,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025090901'
 
 import re
 import subprocess
@@ -219,49 +219,86 @@ def cpu_type(dmi):
 
 def dmidecode_parse(output):
     """
-    Parse the raw output of `dmidecode` into a structured dictionary.
+    Parse `dmidecode` output into a dict, collapsing near-duplicates in an admin-friendly way.
 
-    This function processes the raw textual output of the `dmidecode` tool and extracts
-    structured information about system hardware, organized by DMI handle.
+    Type-aware dedupe rules:
+      - Type 4 (Processor Information): ignore per-thread/core/socket noise fields; merge;
+        add dedup_count/dedup_sockets
+      - Type 17 (Memory Device): drop unpopulated; ignore slot labels; merge;
+        add dedup_count/dedup_slots
+      - Other types: generic dedupe (exact content after normalization)
 
-    ### Parameters
-    - **output** (`str`):
-      The raw string output from the `dmidecode` command.
-
-    ### Returns
-    - **dict**:
-      A dictionary keyed by DMI handle. Each value contains fields such as dminame, dmisize,
-      dmitype, and parsed key-value pairs from the output.
-
-    ### Notes
-    - Records are separated by double newlines in the output.
-    - Only records with at least three lines are considered valid.
-    - Multi-line blocks are handled if needed.
-
-    ### Example
-    >>> dmidecode_parse(dmidecode_output)
-    {
-        ('0xDA00', '218', '251'): {
-            'dminame': 'OEM-specific Type',
-            'dmisize': 251,
-            'dmitype': 218,
-            'H': 'D\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0'
-        },
-        ('0x0001', '0', '26'): {
-            'dminame': 'BIOS Information',
-            'dmisize': 26,
-            'dmitype': 0,
-            'Vendor': 'Dell Inc.',
-            'Version': '1.7.1',
-            'Release Date': '12/06/2024',
-            'ROM Size': '64 MB',
-            ...,
-        },
-        ...
-    }
+    Returns:
+      { dmi_handle_tuple: parsed_record_dict, ... }
+      where parsed_record_dict includes keys: dminame, dmisize, dmitype, parsed fields,
+      and possibly:
+        - dedup_count (int >= 1)
+        - dedup_sockets / dedup_slots (sorted list of labels encountered)
+        - dedup_handles (list of original DMI handle strings that were merged)
     """
     data = {}
+    seen = {}  # fp -> (first_handle, aggregated_record)
 
+    # --- helpers -------------------------------------------------------------
+    def _normalize(s):
+        if s is None:
+            return ''
+        s = str(s).strip()
+        # treat common "unknown" variants as empty so they don't block dedupe
+        if s.lower() in {'unknown', 'not specified', 'not provided', 'n/a'}:
+            return ''
+        # collapse whitespace
+        return ' '.join(s.split())
+
+    def _lower(s):
+        return _normalize(s).lower()
+
+    def _drop_unpopulated_type17(rec):
+        size = _lower(rec.get('Size'))
+        if not size:
+            return True
+        if 'no module installed' in size:
+            return True
+        # Sometimes vendors encode 0-sized entries
+        if size.startswith('0 ') or size == '0':
+            return True
+        return False
+
+    # Fields to ignore by DMI type when constructing fingerprints (order-independent)
+    IGNORE_BY_TYPE = {
+        4: {  # Processor Information
+            'Socket Designation', 'ID',
+            'L1 Cache Handle', 'L2 Cache Handle', 'L3 Cache Handle',
+            'Serial Number', 'Asset Tag', 'Part Number',
+            'Core Count', 'Core Enabled',  # often bogus or per-core
+        },
+        17: {  # Memory Device
+            'Locator', 'Bank Locator', 'Device Locator',
+            'Memory Array Mapped Address Handle', 'Mem Array Error Info Handle',
+            'Total Width', 'Data Width',  # width can vary by board reporting; not essential
+            'Serial Number',  # sometimes blank; can differ even for identical sticks
+        },
+    }
+
+    def _fingerprint(rec):
+        """Build a stable, type-aware fingerprint for dedupe."""
+        dtype = int(rec.get('dmitype', -1))
+        ignore = IGNORE_BY_TYPE.get(dtype, set())
+        base = (_normalize(rec.get('dminame', '')), dtype)
+
+        # normalize all fields except ignored + meta
+        items = []
+        for k in sorted(rec.keys()):
+            if k in ('dminame', 'dmitype', 'dmisize'):
+                continue
+            if k in ignore:
+                continue
+            v = rec[k]
+            # Multi-line blocks were joined with tabs; normalize them
+            items.append((k, _normalize(v)))
+        return base + tuple(items)
+
+    # --- parse loop ----------------------------------------------------------
     for record in output.split('\n\n'):
         record_element = record.splitlines()
         if len(record_element) < 3:
@@ -271,8 +308,8 @@ def dmidecode_parse(output):
         if not handle_data:
             continue
 
-        dmi_handle = handle_data[0]
-        data[dmi_handle] = {
+        dmi_handle = handle_data[0]  # ('0x0004','4','42')
+        current = {
             'dminame': record_element[1],
             'dmisize': int(dmi_handle[2]),
             'dmitype': int(dmi_handle[1]),
@@ -282,11 +319,11 @@ def dmidecode_parse(output):
         in_block_list = []
 
         for line in record_element[2:]:
-            if in_block_element:
+            if in_block_element is not None:
                 in_block_data = IN_BLOCK_RE.findall(line)
                 if in_block_data:
                     in_block_list.append(in_block_data[0][0])
-                    data[dmi_handle][in_block_element] = '\t\t'.join(in_block_list)
+                    current[in_block_element] = '\t\t'.join(in_block_list)
                     continue
                 else:
                     in_block_element = None
@@ -295,13 +332,61 @@ def dmidecode_parse(output):
             record_data = RECORD_RE.findall(line)
             if record_data:
                 key, value = record_data[0]
-                data[dmi_handle][key] = value
+                current[key] = value
                 continue
 
             record_data2 = RECORD2_RE.findall(line)
             if record_data2:
                 in_block_element = record_data2[0][0]
                 in_block_list = []
+
+        # Type-specific filters (drop obviously irrelevant entries)
+        dtype = int(current.get('dmitype', -1))
+        if dtype == 4:
+            # keep only populated/enabled when reported
+            status = _lower(current.get('Status'))
+            if status and not ('populated' in status and 'enabled' in status):
+                continue
+        if dtype == 17:
+            if _drop_unpopulated_type17(current):
+                continue
+
+        # Build type-aware fingerprint and aggregate
+        fp = _fingerprint(current)
+        if fp not in seen:
+            # first occurrence becomes the representative
+            # attach dedupe metadata containers up-front (lazy-friendly)
+            rep = dict(current)
+            rep['dedup_count'] = 1
+            rep['dedup_handles'] = [dmi_handle[0]]
+            # capture socket/slot labels if present for admin visibility
+            if dtype == 4 and 'Socket Designation' in current:
+                rep['dedup_sockets'] = [current['Socket Designation']]
+            if dtype == 17:
+                labels = []
+                for k in ('Locator', 'Device Locator', 'Bank Locator'):
+                    if current.get(k):
+                        labels.append(current[k])
+                if labels:
+                    rep['dedup_slots'] = sorted({*labels})
+            seen[fp] = (dmi_handle, rep)
+            data[dmi_handle] = rep
+        else:
+            first_handle, rep = seen[fp]
+            rep['dedup_count'] = int(rep.get('dedup_count', 1)) + 1
+            rep['dedup_handles'].append(dmi_handle[0])
+            # enrich socket/slot lists
+            if dtype == 4 and current.get('Socket Designation'):
+                sockets = set(rep.get('dedup_sockets', []))
+                sockets.add(current['Socket Designation'])
+                rep['dedup_sockets'] = sorted(sockets)
+            if dtype == 17:
+                slots = set(rep.get('dedup_slots', []))
+                for k in ('Locator', 'Device Locator', 'Bank Locator'):
+                    if current.get(k):
+                        slots.add(current[k])
+                if slots:
+                    rep['dedup_slots'] = sorted(slots)
 
     return data
 
