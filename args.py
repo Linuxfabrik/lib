@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042002'
+__version__ = '2025090901'
 
 
 HELP_TEXTS = {
@@ -24,6 +24,10 @@ HELP_TEXTS = {
         '`^(?!.*example).*$` to match any string except "example" (negative lookahead). '
         '`(?: ... )*` is a non-capturing group that matches any sequence of characters '
         'that satisfy the condition inside it, zero or more times.'
+    ),
+    '--verbose': (
+        'Makes this plugin verbose during the operation. Useful for debugging and seeing '
+        'what\'s going on under the hood.'
     ),
 }
 
