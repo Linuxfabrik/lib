@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### Changed ("refactor", "chore" etc.)
 
+* args.py: add `--stratum` parameter
 * args.py: add `--verbose` parameter
 * dmidecode.py: collapse near-duplicate data in an admin-friendly way
 

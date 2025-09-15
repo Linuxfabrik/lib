@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025090901'
+__version__ = '2025091501'
 
 
 HELP_TEXTS = {
@@ -24,6 +24,13 @@ HELP_TEXTS = {
         '`^(?!.*example).*$` to match any string except "example" (negative lookahead). '
         '`(?: ... )*` is a non-capturing group that matches any sequence of characters '
         'that satisfy the condition inside it, zero or more times.'
+    ),
+    '--stratum': (
+        'Warns if the determined stratum of the time server is greater than or equal to this '
+        'value. '
+        'Stratum 1 indicates a computer with a locally attached reference clock. A computer that '
+        'is synchronised to a stratum 1 computer is at stratum 2. A computer that is synchronised '
+        'to a stratum 2 computer is at stratum 3, and so on.'
     ),
     '--verbose': (
         'Makes this plugin verbose during the operation. Useful for debugging and seeing '
