@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ## [Unreleased]
 
+tbd
+
+
+## [v2.4.0] - 2025-09-17
+
+
 ### Added ("feat")
 
 * endoflifedate.py: add Icinga
@@ -471,7 +477,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.4.0...HEAD
+[v2.4.0]: https://github.com/Linuxfabrik/lib/compare/v2.3.0...v2.4.0
 [v2.3.0]: https://github.com/Linuxfabrik/lib/compare/v2.2.1...v2.3.0
 [v2.2.1]: https://github.com/Linuxfabrik/lib/compare/v2.2.0...v2.2.1
 [v2.2.0]: https://github.com/Linuxfabrik/lib/compare/v2.1.1.15...v2.2.0
