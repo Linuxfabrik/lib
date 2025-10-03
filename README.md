@@ -37,6 +37,7 @@ pdoc --output-dir docs \
     lftest.py \
     librenms.py \
     net.py \
+    nextcloud.py \
     nodebb.py \
     powershell.py \
     psutil.py \
@@ -120,6 +121,9 @@ This library collects some LibreNMS related functions that are needed by LibreNM
 
 * net.py:  
 Provides network related functions and variables.
+
+* nextcloud.py:  
+This library collects some Nextcloud related functions.
 
 * nodebb.py:  
 This library collects some NodeBB related functions that are needed by more than one NodeBB plugin.
