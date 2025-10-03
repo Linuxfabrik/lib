@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025100201'
 
 import csv
 import os
@@ -21,6 +21,38 @@ import re
 import tempfile
 
 from . import shell
+
+
+def bd2dmd(device):
+    """
+    Retrieve the mapped device name for a device-mapper block device.
+
+    This function reads the sysfs entry directly instead of using `dmsetup ls`, thus avoiding
+    elevated privileges. ("bd2dmd" = block device to device-mapper device).
+
+    ### Parameters
+    - **device** (`str`):
+      The block device name or path (e.g., 'dm-0', '/dev/dm-0').
+
+    ### Returns
+    - **str**:
+      The full path to the mapped device (e.g., '/dev/mapper/rl_rocky8-root'),
+      or an empty string if not a device-mapper device.
+
+    ### Example
+    >>> bd2dmd('dm-0')
+    '/dev/mapper/rl_rocky8-root'
+    >>> bd2dmd('sda')
+    ''
+    """
+    device = os.path.basename(device)
+    success, name = read_file(f'/sys/class/block/{device}/dm/name')
+
+    if not success or not name:
+        return ''
+
+    mapped_device = f'/dev/mapper/{name.strip()}'
+    return mapped_device if os.path.islink(mapped_device) else ''
 
 
 def file_exists(path, allow_empty=False):
@@ -77,36 +109,34 @@ def get_cwd():
         return ''
 
 
-def bd2dmd(device):
+def get_owner(file):
     """
-    Retrieve the mapped device name for a device-mapper block device.
-
-    This function reads the sysfs entry directly instead of using `dmsetup ls`, thus avoiding
-    elevated privileges. ("bd2dmd" = block device to device-mapper device).
+    Get the numeric user ID (UID) of the owner of a filesystem entry.
 
     ### Parameters
-    - **device** (`str`):
-      The block device name or path (e.g., 'dm-0', '/dev/dm-0').
+    - **file** *(str | os.PathLike)*:
+      Path to the file or directory whose owner UID should be retrieved.
 
     ### Returns
-    - **str**:
-      The full path to the mapped device (e.g., '/dev/mapper/rl_rocky8-root'),
-      or an empty string if not a device-mapper device.
+    - **int**:
+      The owner's UID if available; `-1` if the call fails or ownership cannot be determined.
+
+    ### Notes
+    - This function is POSIX-oriented. On Windows, `st_uid` may be `0` for all files
+      and not reflect the real owner. If you need the account name on Windows,
+      consider platform-specific APIs (e.g., `win32security`).
+    - All exceptions are caught and result in `-1`.
 
     ### Example
-    >>> bd2dmd('dm-0')
-    '/dev/mapper/rl_rocky8-root'
-    >>> bd2dmd('sda')
-    ''
+    >>> get_owner('/etc/passwd')  # doctest: +SKIP (system-dependent)
+    0
+    >>> get_owner('/path/does/not/exist')
+    -1
     """
-    device = os.path.basename(device)
-    success, name = read_file(f'/sys/class/block/{device}/dm/name')
-
-    if not success or not name:
-        return ''
-
-    mapped_device = f'/dev/mapper/{name.strip()}'
-    return mapped_device if os.path.islink(mapped_device) else ''
+    try:
+        return os.stat(file).st_uid
+    except:
+        return -1
 
 
 def get_real_disks():
