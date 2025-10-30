@@ -58,7 +58,7 @@ lib<wbr>.powershell    </h1>
 
                         <label class="view-source-button" for="mod-powershell-view-source"><span>View Source</span></label>
 
-                        <div class="pdoc-code codehilite"><pre><span></span><span id="L-1"><a href="#L-1"><span class="linenos"> 1</span></a><span class="ch">#! /usr/bin/env python2</span>
+                        <div class="pdoc-code codehilite"><pre><span></span><span id="L-1"><a href="#L-1"><span class="linenos"> 1</span></a><span class="ch">#!/usr/bin/env python3</span>
 </span><span id="L-2"><a href="#L-2"><span class="linenos"> 2</span></a><span class="c1"># -*- coding: utf-8; py-indent-offset: 4 -*-</span>
 </span><span id="L-3"><a href="#L-3"><span class="linenos"> 3</span></a><span class="c1">#</span>
 </span><span id="L-4"><a href="#L-4"><span class="linenos"> 4</span></a><span class="c1"># Author:  Linuxfabrik GmbH, Zurich, Switzerland</span>
@@ -72,7 +72,7 @@ lib<wbr>.powershell    </h1>
 </span><span id="L-12"><a href="#L-12"><span class="linenos">12</span></a><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-13"><a href="#L-13"><span class="linenos">13</span></a>
 </span><span id="L-14"><a href="#L-14"><span class="linenos">14</span></a><span class="n">__author__</span> <span class="o">=</span> <span class="s1">&#39;Linuxfabrik GmbH, Zurich/Switzerland&#39;</span>
-</span><span id="L-15"><a href="#L-15"><span class="linenos">15</span></a><span class="n">__version__</span> <span class="o">=</span> <span class="s1">&#39;2025041901&#39;</span>
+</span><span id="L-15"><a href="#L-15"><span class="linenos">15</span></a><span class="n">__version__</span> <span class="o">=</span> <span class="s1">&#39;2025103002&#39;</span>
 </span><span id="L-16"><a href="#L-16"><span class="linenos">16</span></a>
 </span><span id="L-17"><a href="#L-17"><span class="linenos">17</span></a><span class="kn">import</span> <span class="nn">subprocess</span>
 </span><span id="L-18"><a href="#L-18"><span class="linenos">18</span></a>
@@ -81,40 +81,52 @@ lib<wbr>.powershell    </h1>
 </span><span id="L-21"><a href="#L-21"><span class="linenos">21</span></a>
 </span><span id="L-22"><a href="#L-22"><span class="linenos">22</span></a><span class="k">def</span> <span class="nf">run_ps</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
 </span><span id="L-23"><a href="#L-23"><span class="linenos">23</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="L-24"><a href="#L-24"><span class="linenos">24</span></a><span class="sd">    Run a PowerShell command and return the results.</span>
+</span><span id="L-24"><a href="#L-24"><span class="linenos">24</span></a><span class="sd">    Run a PowerShell command and return its results.</span>
 </span><span id="L-25"><a href="#L-25"><span class="linenos">25</span></a>
-</span><span id="L-26"><a href="#L-26"><span class="linenos">26</span></a><span class="sd">    This function works cross-platform as long as PowerShell is installed and Python 3.6+ is used.</span>
-</span><span id="L-27"><a href="#L-27"><span class="linenos">27</span></a><span class="sd">    It doesn&#39;t require any external libraries.</span>
-</span><span id="L-28"><a href="#L-28"><span class="linenos">28</span></a>
-</span><span id="L-29"><a href="#L-29"><span class="linenos">29</span></a><span class="sd">    ### Parameters</span>
-</span><span id="L-30"><a href="#L-30"><span class="linenos">30</span></a><span class="sd">    - **cmd** (`str`): The PowerShell command to run.</span>
-</span><span id="L-31"><a href="#L-31"><span class="linenos">31</span></a>
-</span><span id="L-32"><a href="#L-32"><span class="linenos">32</span></a><span class="sd">    ### Returns</span>
-</span><span id="L-33"><a href="#L-33"><span class="linenos">33</span></a><span class="sd">    - **dict**: A dictionary containing the following keys:</span>
-</span><span id="L-34"><a href="#L-34"><span class="linenos">34</span></a><span class="sd">      - **args** (`list`): The arguments passed to the PowerShell command.</span>
-</span><span id="L-35"><a href="#L-35"><span class="linenos">35</span></a><span class="sd">      - **retc** (`int`): The return code of the command. `0` indicates success.</span>
-</span><span id="L-36"><a href="#L-36"><span class="linenos">36</span></a><span class="sd">      - **stdout** (`str`): The standard output of the command, converted from byte to Unicode.</span>
-</span><span id="L-37"><a href="#L-37"><span class="linenos">37</span></a><span class="sd">      - **stderr** (`str`): The standard error of the command, converted from byte to Unicode.</span>
-</span><span id="L-38"><a href="#L-38"><span class="linenos">38</span></a>
-</span><span id="L-39"><a href="#L-39"><span class="linenos">39</span></a><span class="sd">    ### Example</span>
-</span><span id="L-40"><a href="#L-40"><span class="linenos">40</span></a><span class="sd">    &gt;&gt;&gt; run_ps(&#39;Get-Process&#39;)</span>
-</span><span id="L-41"><a href="#L-41"><span class="linenos">41</span></a><span class="sd">    {</span>
-</span><span id="L-42"><a href="#L-42"><span class="linenos">42</span></a><span class="sd">        &#39;args&#39;: [&#39;powershell&#39;, &#39;-Command&#39;, &#39;Get-Process&#39;],</span>
-</span><span id="L-43"><a href="#L-43"><span class="linenos">43</span></a><span class="sd">        &#39;retc&#39;: 0,</span>
-</span><span id="L-44"><a href="#L-44"><span class="linenos">44</span></a><span class="sd">        &#39;stdout&#39;: &#39;List of processes...&#39;,</span>
-</span><span id="L-45"><a href="#L-45"><span class="linenos">45</span></a><span class="sd">        &#39;stderr&#39;: &#39;&#39;</span>
-</span><span id="L-46"><a href="#L-46"><span class="linenos">46</span></a><span class="sd">    }</span>
-</span><span id="L-47"><a href="#L-47"><span class="linenos">47</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="L-48"><a href="#L-48"><span class="linenos">48</span></a>    <span class="k">try</span><span class="p">:</span>
-</span><span id="L-49"><a href="#L-49"><span class="linenos">49</span></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="s1">&#39;powershell&#39;</span><span class="p">,</span> <span class="s1">&#39;-Command&#39;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">],</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-</span><span id="L-50"><a href="#L-50"><span class="linenos">50</span></a>        <span class="k">return</span> <span class="p">{</span>
-</span><span id="L-51"><a href="#L-51"><span class="linenos">51</span></a>            <span class="s1">&#39;args&#39;</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">args</span><span class="p">,</span>
-</span><span id="L-52"><a href="#L-52"><span class="linenos">52</span></a>            <span class="s1">&#39;retc&#39;</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span><span class="p">,</span>
-</span><span id="L-53"><a href="#L-53"><span class="linenos">53</span></a>            <span class="s1">&#39;stdout&#39;</span><span class="p">:</span> <span class="n">txt</span><span class="o">.</span><span class="n">to_text</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="p">),</span> <span class="c1"># convert from byte to unicode</span>
-</span><span id="L-54"><a href="#L-54"><span class="linenos">54</span></a>            <span class="s1">&#39;stderr&#39;</span><span class="p">:</span> <span class="n">txt</span><span class="o">.</span><span class="n">to_text</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stderr</span><span class="p">),</span> <span class="c1"># convert from byte to unicode</span>
-</span><span id="L-55"><a href="#L-55"><span class="linenos">55</span></a>        <span class="p">}</span>
-</span><span id="L-56"><a href="#L-56"><span class="linenos">56</span></a>    <span class="k">except</span><span class="p">:</span>
-</span><span id="L-57"><a href="#L-57"><span class="linenos">57</span></a>        <span class="k">return</span> <span class="kc">None</span>
+</span><span id="L-26"><a href="#L-26"><span class="linenos">26</span></a><span class="sd">    This function invokes `powershell -Command &lt;cmd&gt;` via `subprocess.run`</span>
+</span><span id="L-27"><a href="#L-27"><span class="linenos">27</span></a><span class="sd">    and returns the return code and decoded streams. It is synchronous</span>
+</span><span id="L-28"><a href="#L-28"><span class="linenos">28</span></a><span class="sd">    (blocking) and relies on PowerShell being available on PATH</span>
+</span><span id="L-29"><a href="#L-29"><span class="linenos">29</span></a><span class="sd">    (Windows PowerShell or PowerShell 7+). No external libraries are required.</span>
+</span><span id="L-30"><a href="#L-30"><span class="linenos">30</span></a>
+</span><span id="L-31"><a href="#L-31"><span class="linenos">31</span></a><span class="sd">    ### Parameters</span>
+</span><span id="L-32"><a href="#L-32"><span class="linenos">32</span></a><span class="sd">    - **cmd** (`str`): The PowerShell command to execute (passed as a single string</span>
+</span><span id="L-33"><a href="#L-33"><span class="linenos">33</span></a><span class="sd">      to the `-Command` argument).</span>
+</span><span id="L-34"><a href="#L-34"><span class="linenos">34</span></a>
+</span><span id="L-35"><a href="#L-35"><span class="linenos">35</span></a><span class="sd">    ### Returns</span>
+</span><span id="L-36"><a href="#L-36"><span class="linenos">36</span></a><span class="sd">    - **dict**: A result dictionary with:</span>
+</span><span id="L-37"><a href="#L-37"><span class="linenos">37</span></a><span class="sd">      - `retc` (`int`): Process return code (`0` indicates success).</span>
+</span><span id="L-38"><a href="#L-38"><span class="linenos">38</span></a><span class="sd">      - `stdout` (`str`): Decoded standard output.</span>
+</span><span id="L-39"><a href="#L-39"><span class="linenos">39</span></a><span class="sd">      - `stderr` (`str`): Decoded standard error.</span>
+</span><span id="L-40"><a href="#L-40"><span class="linenos">40</span></a>
+</span><span id="L-41"><a href="#L-41"><span class="linenos">41</span></a><span class="sd">    ### Notes</span>
+</span><span id="L-42"><a href="#L-42"><span class="linenos">42</span></a><span class="sd">    - Output decoding is performed via `txt.to_text(...)`.</span>
+</span><span id="L-43"><a href="#L-43"><span class="linenos">43</span></a><span class="sd">    - Exceptions are caught and converted to a result with `retc=1`,</span>
+</span><span id="L-44"><a href="#L-44"><span class="linenos">44</span></a><span class="sd">      empty `stdout`, and `stderr` containing the formatted exception text.</span>
+</span><span id="L-45"><a href="#L-45"><span class="linenos">45</span></a><span class="sd">    - No timeout is applied; the call will block until the command exits.</span>
+</span><span id="L-46"><a href="#L-46"><span class="linenos">46</span></a><span class="sd">    - `stderr` is not merged into `stdout`.</span>
+</span><span id="L-47"><a href="#L-47"><span class="linenos">47</span></a>
+</span><span id="L-48"><a href="#L-48"><span class="linenos">48</span></a><span class="sd">    ### Example</span>
+</span><span id="L-49"><a href="#L-49"><span class="linenos">49</span></a><span class="sd">    &gt;&gt;&gt; run_ps(&#39;Get-Process&#39;)</span>
+</span><span id="L-50"><a href="#L-50"><span class="linenos">50</span></a><span class="sd">    {</span>
+</span><span id="L-51"><a href="#L-51"><span class="linenos">51</span></a><span class="sd">        &#39;retc&#39;: 0,</span>
+</span><span id="L-52"><a href="#L-52"><span class="linenos">52</span></a><span class="sd">        &#39;stdout&#39;: &#39;...process list...&#39;,</span>
+</span><span id="L-53"><a href="#L-53"><span class="linenos">53</span></a><span class="sd">        &#39;stderr&#39;: &#39;&#39;</span>
+</span><span id="L-54"><a href="#L-54"><span class="linenos">54</span></a><span class="sd">    }</span>
+</span><span id="L-55"><a href="#L-55"><span class="linenos">55</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="L-56"><a href="#L-56"><span class="linenos">56</span></a>    <span class="k">try</span><span class="p">:</span>
+</span><span id="L-57"><a href="#L-57"><span class="linenos">57</span></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="s1">&#39;powershell&#39;</span><span class="p">,</span> <span class="s1">&#39;-Command&#39;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">],</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="L-58"><a href="#L-58"><span class="linenos">58</span></a>        <span class="k">return</span> <span class="p">{</span>
+</span><span id="L-59"><a href="#L-59"><span class="linenos">59</span></a>            <span class="c1">#&#39;args&#39;: result.args,</span>
+</span><span id="L-60"><a href="#L-60"><span class="linenos">60</span></a>            <span class="s1">&#39;retc&#39;</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span><span class="p">,</span>
+</span><span id="L-61"><a href="#L-61"><span class="linenos">61</span></a>            <span class="s1">&#39;stdout&#39;</span><span class="p">:</span> <span class="n">txt</span><span class="o">.</span><span class="n">to_text</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="p">),</span> <span class="c1"># convert from byte to unicode</span>
+</span><span id="L-62"><a href="#L-62"><span class="linenos">62</span></a>            <span class="s1">&#39;stderr&#39;</span><span class="p">:</span> <span class="n">txt</span><span class="o">.</span><span class="n">to_text</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stderr</span><span class="p">),</span> <span class="c1"># convert from byte to unicode</span>
+</span><span id="L-63"><a href="#L-63"><span class="linenos">63</span></a>        <span class="p">}</span>
+</span><span id="L-64"><a href="#L-64"><span class="linenos">64</span></a>    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+</span><span id="L-65"><a href="#L-65"><span class="linenos">65</span></a>        <span class="k">return</span> <span class="p">{</span>
+</span><span id="L-66"><a href="#L-66"><span class="linenos">66</span></a>            <span class="s1">&#39;retc&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+</span><span id="L-67"><a href="#L-67"><span class="linenos">67</span></a>            <span class="s1">&#39;stdout&#39;</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="p">,</span>
+</span><span id="L-68"><a href="#L-68"><span class="linenos">68</span></a>            <span class="s1">&#39;stderr&#39;</span><span class="p">:</span> <span class="n">txt</span><span class="o">.</span><span class="n">exception2text</span><span class="p">(</span><span class="n">e</span><span class="p">),</span>
+</span><span id="L-69"><a href="#L-69"><span class="linenos">69</span></a>        <span class="p">}</span>
 </span></pre></div>
 
 
@@ -132,64 +144,88 @@ lib<wbr>.powershell    </h1>
     <a class="headerlink" href="#run_ps"></a>
             <div class="pdoc-code codehilite"><pre><span></span><span id="run_ps-23"><a href="#run_ps-23"><span class="linenos">23</span></a><span class="k">def</span> <span class="nf">run_ps</span><span class="p">(</span><span class="n">cmd</span><span class="p">):</span>
 </span><span id="run_ps-24"><a href="#run_ps-24"><span class="linenos">24</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="run_ps-25"><a href="#run_ps-25"><span class="linenos">25</span></a><span class="sd">    Run a PowerShell command and return the results.</span>
+</span><span id="run_ps-25"><a href="#run_ps-25"><span class="linenos">25</span></a><span class="sd">    Run a PowerShell command and return its results.</span>
 </span><span id="run_ps-26"><a href="#run_ps-26"><span class="linenos">26</span></a>
-</span><span id="run_ps-27"><a href="#run_ps-27"><span class="linenos">27</span></a><span class="sd">    This function works cross-platform as long as PowerShell is installed and Python 3.6+ is used.</span>
-</span><span id="run_ps-28"><a href="#run_ps-28"><span class="linenos">28</span></a><span class="sd">    It doesn&#39;t require any external libraries.</span>
-</span><span id="run_ps-29"><a href="#run_ps-29"><span class="linenos">29</span></a>
-</span><span id="run_ps-30"><a href="#run_ps-30"><span class="linenos">30</span></a><span class="sd">    ### Parameters</span>
-</span><span id="run_ps-31"><a href="#run_ps-31"><span class="linenos">31</span></a><span class="sd">    - **cmd** (`str`): The PowerShell command to run.</span>
-</span><span id="run_ps-32"><a href="#run_ps-32"><span class="linenos">32</span></a>
-</span><span id="run_ps-33"><a href="#run_ps-33"><span class="linenos">33</span></a><span class="sd">    ### Returns</span>
-</span><span id="run_ps-34"><a href="#run_ps-34"><span class="linenos">34</span></a><span class="sd">    - **dict**: A dictionary containing the following keys:</span>
-</span><span id="run_ps-35"><a href="#run_ps-35"><span class="linenos">35</span></a><span class="sd">      - **args** (`list`): The arguments passed to the PowerShell command.</span>
-</span><span id="run_ps-36"><a href="#run_ps-36"><span class="linenos">36</span></a><span class="sd">      - **retc** (`int`): The return code of the command. `0` indicates success.</span>
-</span><span id="run_ps-37"><a href="#run_ps-37"><span class="linenos">37</span></a><span class="sd">      - **stdout** (`str`): The standard output of the command, converted from byte to Unicode.</span>
-</span><span id="run_ps-38"><a href="#run_ps-38"><span class="linenos">38</span></a><span class="sd">      - **stderr** (`str`): The standard error of the command, converted from byte to Unicode.</span>
-</span><span id="run_ps-39"><a href="#run_ps-39"><span class="linenos">39</span></a>
-</span><span id="run_ps-40"><a href="#run_ps-40"><span class="linenos">40</span></a><span class="sd">    ### Example</span>
-</span><span id="run_ps-41"><a href="#run_ps-41"><span class="linenos">41</span></a><span class="sd">    &gt;&gt;&gt; run_ps(&#39;Get-Process&#39;)</span>
-</span><span id="run_ps-42"><a href="#run_ps-42"><span class="linenos">42</span></a><span class="sd">    {</span>
-</span><span id="run_ps-43"><a href="#run_ps-43"><span class="linenos">43</span></a><span class="sd">        &#39;args&#39;: [&#39;powershell&#39;, &#39;-Command&#39;, &#39;Get-Process&#39;],</span>
-</span><span id="run_ps-44"><a href="#run_ps-44"><span class="linenos">44</span></a><span class="sd">        &#39;retc&#39;: 0,</span>
-</span><span id="run_ps-45"><a href="#run_ps-45"><span class="linenos">45</span></a><span class="sd">        &#39;stdout&#39;: &#39;List of processes...&#39;,</span>
-</span><span id="run_ps-46"><a href="#run_ps-46"><span class="linenos">46</span></a><span class="sd">        &#39;stderr&#39;: &#39;&#39;</span>
-</span><span id="run_ps-47"><a href="#run_ps-47"><span class="linenos">47</span></a><span class="sd">    }</span>
-</span><span id="run_ps-48"><a href="#run_ps-48"><span class="linenos">48</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="run_ps-49"><a href="#run_ps-49"><span class="linenos">49</span></a>    <span class="k">try</span><span class="p">:</span>
-</span><span id="run_ps-50"><a href="#run_ps-50"><span class="linenos">50</span></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="s1">&#39;powershell&#39;</span><span class="p">,</span> <span class="s1">&#39;-Command&#39;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">],</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-</span><span id="run_ps-51"><a href="#run_ps-51"><span class="linenos">51</span></a>        <span class="k">return</span> <span class="p">{</span>
-</span><span id="run_ps-52"><a href="#run_ps-52"><span class="linenos">52</span></a>            <span class="s1">&#39;args&#39;</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">args</span><span class="p">,</span>
-</span><span id="run_ps-53"><a href="#run_ps-53"><span class="linenos">53</span></a>            <span class="s1">&#39;retc&#39;</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span><span class="p">,</span>
-</span><span id="run_ps-54"><a href="#run_ps-54"><span class="linenos">54</span></a>            <span class="s1">&#39;stdout&#39;</span><span class="p">:</span> <span class="n">txt</span><span class="o">.</span><span class="n">to_text</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="p">),</span> <span class="c1"># convert from byte to unicode</span>
-</span><span id="run_ps-55"><a href="#run_ps-55"><span class="linenos">55</span></a>            <span class="s1">&#39;stderr&#39;</span><span class="p">:</span> <span class="n">txt</span><span class="o">.</span><span class="n">to_text</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stderr</span><span class="p">),</span> <span class="c1"># convert from byte to unicode</span>
-</span><span id="run_ps-56"><a href="#run_ps-56"><span class="linenos">56</span></a>        <span class="p">}</span>
-</span><span id="run_ps-57"><a href="#run_ps-57"><span class="linenos">57</span></a>    <span class="k">except</span><span class="p">:</span>
-</span><span id="run_ps-58"><a href="#run_ps-58"><span class="linenos">58</span></a>        <span class="k">return</span> <span class="kc">None</span>
+</span><span id="run_ps-27"><a href="#run_ps-27"><span class="linenos">27</span></a><span class="sd">    This function invokes `powershell -Command &lt;cmd&gt;` via `subprocess.run`</span>
+</span><span id="run_ps-28"><a href="#run_ps-28"><span class="linenos">28</span></a><span class="sd">    and returns the return code and decoded streams. It is synchronous</span>
+</span><span id="run_ps-29"><a href="#run_ps-29"><span class="linenos">29</span></a><span class="sd">    (blocking) and relies on PowerShell being available on PATH</span>
+</span><span id="run_ps-30"><a href="#run_ps-30"><span class="linenos">30</span></a><span class="sd">    (Windows PowerShell or PowerShell 7+). No external libraries are required.</span>
+</span><span id="run_ps-31"><a href="#run_ps-31"><span class="linenos">31</span></a>
+</span><span id="run_ps-32"><a href="#run_ps-32"><span class="linenos">32</span></a><span class="sd">    ### Parameters</span>
+</span><span id="run_ps-33"><a href="#run_ps-33"><span class="linenos">33</span></a><span class="sd">    - **cmd** (`str`): The PowerShell command to execute (passed as a single string</span>
+</span><span id="run_ps-34"><a href="#run_ps-34"><span class="linenos">34</span></a><span class="sd">      to the `-Command` argument).</span>
+</span><span id="run_ps-35"><a href="#run_ps-35"><span class="linenos">35</span></a>
+</span><span id="run_ps-36"><a href="#run_ps-36"><span class="linenos">36</span></a><span class="sd">    ### Returns</span>
+</span><span id="run_ps-37"><a href="#run_ps-37"><span class="linenos">37</span></a><span class="sd">    - **dict**: A result dictionary with:</span>
+</span><span id="run_ps-38"><a href="#run_ps-38"><span class="linenos">38</span></a><span class="sd">      - `retc` (`int`): Process return code (`0` indicates success).</span>
+</span><span id="run_ps-39"><a href="#run_ps-39"><span class="linenos">39</span></a><span class="sd">      - `stdout` (`str`): Decoded standard output.</span>
+</span><span id="run_ps-40"><a href="#run_ps-40"><span class="linenos">40</span></a><span class="sd">      - `stderr` (`str`): Decoded standard error.</span>
+</span><span id="run_ps-41"><a href="#run_ps-41"><span class="linenos">41</span></a>
+</span><span id="run_ps-42"><a href="#run_ps-42"><span class="linenos">42</span></a><span class="sd">    ### Notes</span>
+</span><span id="run_ps-43"><a href="#run_ps-43"><span class="linenos">43</span></a><span class="sd">    - Output decoding is performed via `txt.to_text(...)`.</span>
+</span><span id="run_ps-44"><a href="#run_ps-44"><span class="linenos">44</span></a><span class="sd">    - Exceptions are caught and converted to a result with `retc=1`,</span>
+</span><span id="run_ps-45"><a href="#run_ps-45"><span class="linenos">45</span></a><span class="sd">      empty `stdout`, and `stderr` containing the formatted exception text.</span>
+</span><span id="run_ps-46"><a href="#run_ps-46"><span class="linenos">46</span></a><span class="sd">    - No timeout is applied; the call will block until the command exits.</span>
+</span><span id="run_ps-47"><a href="#run_ps-47"><span class="linenos">47</span></a><span class="sd">    - `stderr` is not merged into `stdout`.</span>
+</span><span id="run_ps-48"><a href="#run_ps-48"><span class="linenos">48</span></a>
+</span><span id="run_ps-49"><a href="#run_ps-49"><span class="linenos">49</span></a><span class="sd">    ### Example</span>
+</span><span id="run_ps-50"><a href="#run_ps-50"><span class="linenos">50</span></a><span class="sd">    &gt;&gt;&gt; run_ps(&#39;Get-Process&#39;)</span>
+</span><span id="run_ps-51"><a href="#run_ps-51"><span class="linenos">51</span></a><span class="sd">    {</span>
+</span><span id="run_ps-52"><a href="#run_ps-52"><span class="linenos">52</span></a><span class="sd">        &#39;retc&#39;: 0,</span>
+</span><span id="run_ps-53"><a href="#run_ps-53"><span class="linenos">53</span></a><span class="sd">        &#39;stdout&#39;: &#39;...process list...&#39;,</span>
+</span><span id="run_ps-54"><a href="#run_ps-54"><span class="linenos">54</span></a><span class="sd">        &#39;stderr&#39;: &#39;&#39;</span>
+</span><span id="run_ps-55"><a href="#run_ps-55"><span class="linenos">55</span></a><span class="sd">    }</span>
+</span><span id="run_ps-56"><a href="#run_ps-56"><span class="linenos">56</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="run_ps-57"><a href="#run_ps-57"><span class="linenos">57</span></a>    <span class="k">try</span><span class="p">:</span>
+</span><span id="run_ps-58"><a href="#run_ps-58"><span class="linenos">58</span></a>        <span class="n">result</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">([</span><span class="s1">&#39;powershell&#39;</span><span class="p">,</span> <span class="s1">&#39;-Command&#39;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">],</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="run_ps-59"><a href="#run_ps-59"><span class="linenos">59</span></a>        <span class="k">return</span> <span class="p">{</span>
+</span><span id="run_ps-60"><a href="#run_ps-60"><span class="linenos">60</span></a>            <span class="c1">#&#39;args&#39;: result.args,</span>
+</span><span id="run_ps-61"><a href="#run_ps-61"><span class="linenos">61</span></a>            <span class="s1">&#39;retc&#39;</span><span class="p">:</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span><span class="p">,</span>
+</span><span id="run_ps-62"><a href="#run_ps-62"><span class="linenos">62</span></a>            <span class="s1">&#39;stdout&#39;</span><span class="p">:</span> <span class="n">txt</span><span class="o">.</span><span class="n">to_text</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="p">),</span> <span class="c1"># convert from byte to unicode</span>
+</span><span id="run_ps-63"><a href="#run_ps-63"><span class="linenos">63</span></a>            <span class="s1">&#39;stderr&#39;</span><span class="p">:</span> <span class="n">txt</span><span class="o">.</span><span class="n">to_text</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stderr</span><span class="p">),</span> <span class="c1"># convert from byte to unicode</span>
+</span><span id="run_ps-64"><a href="#run_ps-64"><span class="linenos">64</span></a>        <span class="p">}</span>
+</span><span id="run_ps-65"><a href="#run_ps-65"><span class="linenos">65</span></a>    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+</span><span id="run_ps-66"><a href="#run_ps-66"><span class="linenos">66</span></a>        <span class="k">return</span> <span class="p">{</span>
+</span><span id="run_ps-67"><a href="#run_ps-67"><span class="linenos">67</span></a>            <span class="s1">&#39;retc&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+</span><span id="run_ps-68"><a href="#run_ps-68"><span class="linenos">68</span></a>            <span class="s1">&#39;stdout&#39;</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="p">,</span>
+</span><span id="run_ps-69"><a href="#run_ps-69"><span class="linenos">69</span></a>            <span class="s1">&#39;stderr&#39;</span><span class="p">:</span> <span class="n">txt</span><span class="o">.</span><span class="n">exception2text</span><span class="p">(</span><span class="n">e</span><span class="p">),</span>
+</span><span id="run_ps-70"><a href="#run_ps-70"><span class="linenos">70</span></a>        <span class="p">}</span>
 </span></pre></div>
 
 
-            <div class="docstring"><p>Run a PowerShell command and return the results.</p>
+            <div class="docstring"><p>Run a PowerShell command and return its results.</p>
 
-<p>This function works cross-platform as long as PowerShell is installed and Python 3.6+ is used.
-It doesn't require any external libraries.</p>
+<p>This function invokes <code>powershell -Command &lt;cmd&gt;</code> via <code>subprocess.run</code>
+and returns the return code and decoded streams. It is synchronous
+(blocking) and relies on PowerShell being available on PATH
+(Windows PowerShell or PowerShell 7+). No external libraries are required.</p>
 
 <h3 id="parameters">Parameters</h3>
 
 <ul>
-<li><strong>cmd</strong> (<code>str</code>): The PowerShell command to run.</li>
+<li><strong>cmd</strong> (<code>str</code>): The PowerShell command to execute (passed as a single string
+to the <code>-Command</code> argument).</li>
 </ul>
 
 <h3 id="returns">Returns</h3>
 
 <ul>
-<li><strong>dict</strong>: A dictionary containing the following keys:
+<li><strong>dict</strong>: A result dictionary with:
 <ul>
-<li><strong>args</strong> (<code>list</code>): The arguments passed to the PowerShell command.</li>
-<li><strong>retc</strong> (<code>int</code>): The return code of the command. <code>0</code> indicates success.</li>
-<li><strong>stdout</strong> (<code>str</code>): The standard output of the command, converted from byte to Unicode.</li>
-<li><strong>stderr</strong> (<code>str</code>): The standard error of the command, converted from byte to Unicode.</li>
+<li><code>retc</code> (<code>int</code>): Process return code (<code>0</code> indicates success).</li>
+<li><code>stdout</code> (<code>str</code>): Decoded standard output.</li>
+<li><code>stderr</code> (<code>str</code>): Decoded standard error.</li>
 </ul></li>
+</ul>
+
+<h3 id="notes">Notes</h3>
+
+<ul>
+<li>Output decoding is performed via <code>txt.to_text(...)</code>.</li>
+<li>Exceptions are caught and converted to a result with <code>retc=1</code>,
+empty <code>stdout</code>, and <code>stderr</code> containing the formatted exception text.</li>
+<li>No timeout is applied; the call will block until the command exits.</li>
+<li><code>stderr</code> is not merged into <code>stdout</code>.</li>
 </ul>
 
 <h3 id="example">Example</h3>
@@ -197,9 +233,8 @@ It doesn't require any external libraries.</p>
 <div class="pdoc-code codehilite">
 <pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">run_ps</span><span class="p">(</span><span class="s1">&#39;Get-Process&#39;</span><span class="p">)</span>
 <span class="go">{</span>
-<span class="go">    &#39;args&#39;: [&#39;powershell&#39;, &#39;-Command&#39;, &#39;Get-Process&#39;],</span>
 <span class="go">    &#39;retc&#39;: 0,</span>
-<span class="go">    &#39;stdout&#39;: &#39;List of processes...&#39;,</span>
+<span class="go">    &#39;stdout&#39;: &#39;...process list...&#39;,</span>
 <span class="go">    &#39;stderr&#39;: &#39;&#39;</span>
 <span class="go">}</span>
 </code></pre>
