@@ -20,6 +20,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * powershell.py: old shebang
 
 
+### Changed ("refactor", "chore" etc.)
+
+* powershell.py: `run_ps()` now always returns a dict
+
+
+
 ## [v2.4.0] - 2025-09-17
 
 
