@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 * disk.py: add `get_owner()`
 * nextcloud.py
+* txt.py: add `exception2text()`
 * winrm.py: make `run_cmd()` and `run_ps()` JEA-aware
 
 

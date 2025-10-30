@@ -15,7 +15,7 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025053101'
+__version__ = '2025103001'
 
 import codecs
 import re
@@ -92,6 +92,45 @@ def compile_regex(regex, key=''):
             return False, f'`{rgx}`{f" ({key})" if key else ""} contains one or more errors: {e}'
 
     return _compile(regex) if isinstance(regex, str) else [_compile(rgx) for rgx in regex]
+
+
+def exception2text(e):
+    """
+    Convert an exception into a concise, human-readable string.
+
+    Produces the format `"ExceptionType: message"`. If the exception’s `__str__`
+    is empty, it falls back to Python’s `traceback.format_exception_only()` to
+    obtain a meaningful message. As a last resort, it returns `repr(e)` to avoid
+    losing error context.
+
+    ### Parameters
+    - **e** (`Exception`): The exception instance to stringify.
+
+    ### Returns
+    - **str**: A stable, readable string such as `"ValueError: invalid literal for int() with base 10: 'x'"`.
+
+    ### Example
+    >>> try:
+    ...     int("x")
+    ... except Exception as exc:
+    ...     exception2text(exc)
+    "ValueError: invalid literal for int() with base 10: 'x'"
+
+    >>> class EmptyStrError(Exception):
+    ...     def __str__(self): return ""
+    ...
+    >>> exception2text(EmptyStrError())
+    "EmptyStrError: EmptyStrError()"
+    """
+    try:
+        msg = str(e)
+        if not msg:
+            # Some exceptions have empty __str__; use Python's formatter
+            msg = ''.join(traceback.format_exception_only(type(e), e)).strip()
+        return f"{type(e).__name__}: {msg}"
+    except Exception:
+        # Absolute fallback
+        return repr(e)
 
 
 def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
