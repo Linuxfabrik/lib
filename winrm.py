@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025103001'
+__version__ = '2025103002'
 
 try:
     import winrm
@@ -196,7 +196,6 @@ def run_ps(args, cmd):
     >>> # args must provide WINRM_* settings (hostname, creds, transport, etc.)
     >>> run_ps(args, "Get-Process | Select-Object -First 1 | Format-Table Name,Id -AutoSize")
     {'retc': 0, 'stdout': 'Name    Id\\r\\n----    --\\r\\n...\\r\\n', 'stderr': ''}
-
     """
     auth = (args.WINRM_USERNAME, args.WINRM_PASSWORD)
     if getattr(args, 'WINRM_DOMAIN', None):
