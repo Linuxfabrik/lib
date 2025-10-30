@@ -14,6 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * winrm.py: make `run_cmd()` and `run_ps()` JEA-aware
 
 
+### Fixed ("fix")
+
+* powershell.py: old shebang
+
+
 ## [v2.4.0] - 2025-09-17
 
 
