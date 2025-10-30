@@ -2,12 +2,17 @@
 # python3.9 -m pip install --user --upgrade pip
 # python3.9 -m pip install --user pip-tools
 # python3.9 -m piptools compile --generate-hashes requirements.in
+#
+# If you get `AttributeError: 'function' object has no attribute 'cache_clear':
+# if you get `AttributeError: 'InstallRequirement' object has no attribute 'use_pep517'`
+#   python3.9 -m pip install 'pip<25.1'
 
 beautifulsoup4
 lxml --only-binary=lxml
 netifaces
 psutil
 pymysql
+pypsrp
 PySmbClient
 smbprotocol
 xmltodict
