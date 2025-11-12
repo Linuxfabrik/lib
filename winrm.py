@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025103002'
+__version__ = '2025111201'
 
 try:
     import winrm
@@ -41,8 +41,11 @@ def run_cmd(args, cmd, params=None):
     ### Parameters
     - **args**: An object (e.g., `argparse.Namespace`) that provides at least:
         - `WINRM_HOSTNAME` (`str`): Target host or IP.
-        - `WINRM_USERNAME` (`str`): Username.
-        - `WINRM_PASSWORD` (`str`): Password.
+        - `WINRM_USERNAME` (`str`, optional): Username. If `None` or empty when using
+          Kerberos transport, will use existing Kerberos credentials from credential cache
+          (e.g., obtained via `kinit`).
+        - `WINRM_PASSWORD` (`str`, optional): Password. If `None` or empty when using
+          Kerberos transport, will use existing Kerberos credentials from credential cache.
         - `WINRM_TRANSPORT` (`str`, optional): Transport (e.g., `'negotiate'`, `'kerberos'`,
           `'ntlm'`, `'credssp'`, `'basic'`, `'ssl'`). Defaults to `'negotiate'` if unset.
         - `WINRM_DOMAIN` (`str`, optional): If set, username is sent as `user@domain`.
@@ -64,18 +67,38 @@ def run_cmd(args, cmd, params=None):
       via `Client.execute_cmd()`.
     - If pypsrp is unavailable but **pywinrm** is installed, executes via
       `Session.run_cmd()`.
+    - For Kerberos authentication: if `WINRM_USERNAME` and `WINRM_PASSWORD` are not provided
+      (or are empty/None), the function will attempt to use existing Kerberos credentials
+      from the credential cache (obtained via `kinit`).
     - On any exception, returns `{'retc': 1, 'stdout': '', 'stderr': <exception text>}`.
     - If neither backend is present, returns an error indicating that no compatible
       remoting library is available.
 
     ### Example
-    >>> # args provides WINRM_* settings (hostname, creds, transport, etc.)
+    >>> # With explicit credentials:
+    >>> run_cmd(args, "ipconfig", ["/all"])
+    {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
+    >>> # With Kerberos using kinit credentials (username/password can be None):
     >>> run_cmd(args, "ipconfig", ["/all"])
     {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
     """
-    auth = (args.WINRM_USERNAME, args.WINRM_PASSWORD)
-    if getattr(args, 'WINRM_DOMAIN', None):
-        auth = (f'{args.WINRM_USERNAME}@{args.WINRM_DOMAIN}', args.WINRM_PASSWORD)
+    # Determine authentication credentials
+    # For Kerberos, allow using existing credentials from kinit
+    username = getattr(args, 'WINRM_USERNAME', None)
+    password = getattr(args, 'WINRM_PASSWORD', None)
+
+    # Check if we should use Kerberos with existing credentials
+    _transport = (getattr(args, 'WINRM_TRANSPORT', None) or '').lower()
+    use_kerberos_cache = (_transport in ['kerberos', 'negotiate']) and (not username or not password)
+
+    if use_kerberos_cache:
+        # Use None for username/password to let Kerberos use credential cache
+        auth = (None, None)
+    else:
+        # Use provided credentials
+        auth = (username, password)
+        if getattr(args, 'WINRM_DOMAIN', None):
+            auth = (f'{username}@{args.WINRM_DOMAIN}', password)
 
     if params is None:
         params = []
@@ -83,7 +106,6 @@ def run_cmd(args, cmd, params=None):
     if HAVE_JEA:
         try:
             # translate pywinrm transport -> pypsrp auth/ssl/port
-            _transport = (args.WINRM_TRANSPORT or '').lower()
             _auth_map = {
                 'kerberos': 'kerberos',
                 'negotiate': 'negotiate',
@@ -164,8 +186,11 @@ def run_ps(args, cmd):
     ### Parameters
     - **args**: An object (e.g., `argparse.Namespace`) that provides at least:
         - `WINRM_HOSTNAME` (`str`): Target host or IP.
-        - `WINRM_USERNAME` (`str`): Username.
-        - `WINRM_PASSWORD` (`str`): Password.
+        - `WINRM_USERNAME` (`str`, optional): Username. If `None` or empty when using
+          Kerberos transport, will use existing Kerberos credentials from credential cache
+          (e.g., obtained via `kinit`).
+        - `WINRM_PASSWORD` (`str`, optional): Password. If `None` or empty when using
+          Kerberos transport, will use existing Kerberos credentials from credential cache.
         - `WINRM_TRANSPORT` (`str`, optional): Transport (`'negotiate'`, `'kerberos'`,
           `'ntlm'`, `'credssp'`, `'basic'`, `'ssl'`, etc.). Defaults to `'negotiate'`
           if unset.
@@ -188,23 +213,42 @@ def run_ps(args, cmd):
       and decides SSL/port (5986 for SSL, 5985 otherwise) when using **pypsrp**,
       then executes via `Client.execute_ps()`.
     - Falls back to **pywinrm** and executes via `Session.run_ps()` if pypsrp is not available.
+    - For Kerberos authentication: if `WINRM_USERNAME` and `WINRM_PASSWORD` are not provided
+      (or are empty/None), the function will attempt to use existing Kerberos credentials
+      from the credential cache (obtained via `kinit`).
     - On any exception, returns `{'retc': 1, 'stdout': '', 'stderr': <exception text>}`.
     - If neither backend is installed, returns an error indicating that no compatible
       remoting library is available.
 
     ### Example
-    >>> # args must provide WINRM_* settings (hostname, creds, transport, etc.)
+    >>> # With explicit credentials:
+    >>> run_ps(args, "Get-Process | Select-Object -First 1 | Format-Table Name,Id -AutoSize")
+    {'retc': 0, 'stdout': 'Name    Id\\r\\n----    --\\r\\n...\\r\\n', 'stderr': ''}
+    >>> # With Kerberos using kinit credentials (username/password can be None):
     >>> run_ps(args, "Get-Process | Select-Object -First 1 | Format-Table Name,Id -AutoSize")
     {'retc': 0, 'stdout': 'Name    Id\\r\\n----    --\\r\\n...\\r\\n', 'stderr': ''}
     """
-    auth = (args.WINRM_USERNAME, args.WINRM_PASSWORD)
-    if getattr(args, 'WINRM_DOMAIN', None):
-        auth = (f'{args.WINRM_USERNAME}@{args.WINRM_DOMAIN}', args.WINRM_PASSWORD)
+    # Determine authentication credentials
+    # For Kerberos, allow using existing credentials from kinit
+    username = getattr(args, 'WINRM_USERNAME', None)
+    password = getattr(args, 'WINRM_PASSWORD', None)
+
+    # Check if we should use Kerberos with existing credentials
+    _transport = (getattr(args, 'WINRM_TRANSPORT', None) or '').lower()
+    use_kerberos_cache = (_transport in ['kerberos', 'negotiate']) and (not username or not password)
+
+    if use_kerberos_cache:
+        # Use None for username/password to let Kerberos use credential cache
+        auth = (None, None)
+    else:
+        # Use provided credentials
+        auth = (username, password)
+        if getattr(args, 'WINRM_DOMAIN', None):
+            auth = (f'{username}@{args.WINRM_DOMAIN}', password)
 
     if HAVE_JEA:
         try:
             # translate pywinrm transport -> pypsrp auth/ssl/port
-            _transport = (args.WINRM_TRANSPORT or '').lower()
             _auth_map = {
                 'kerberos': 'kerberos',
                 'negotiate': 'negotiate',

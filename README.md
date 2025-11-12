@@ -168,7 +168,7 @@ Provides functions for handling software versions.
 This library collects some WildFly/JBoss related functions that are needed by more than one WildFly/JBoss plugin.
 
 * winrm.py:  
-This library collects some Microsoft WinRM related functions.
+This library collects some Microsoft WinRM related functions. On RHEL and compatible, if you want to use Kerberos WinRM transport, you need to `sudo dnf -y install krb5-devel` (needed by `pykerberos`) and `pip install --user gssapi krb5 pykerberos `.
 
 
 ## Tips & Tricks
