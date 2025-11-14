@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025111401'
+__version__ = '2025111402'
 
 
 import shlex
@@ -198,6 +198,9 @@ def run_ps(args, cmd):
           `'ntlm'`, `'credssp'`, `'basic'`, `'ssl'`, etc.). Defaults to `'negotiate'`
           if unset.
         - `WINRM_DOMAIN` (`str`, optional): If set, username is sent as `user@domain`.
+        - `WINRM_CONFIGURATION_NAME` (`str`, optional): PowerShell session configuration
+          name (JEA endpoint). Defaults to `'Microsoft.PowerShell'` if unset.
+          Only supported with **pypsrp**.
       (Additional attributes may be honored by the underlying libraries if present.)
     - **cmd** (`str`): PowerShell scriptblock/string to execute remotely.
 
@@ -230,6 +233,10 @@ def run_ps(args, cmd):
     >>> # With Kerberos using kinit credentials (username/password can be None):
     >>> run_ps(args, "Get-Process | Select-Object -First 1 | Format-Table Name,Id -AutoSize")
     {'retc': 0, 'stdout': 'Name    Id\\r\\n----    --\\r\\n...\\r\\n', 'stderr': ''}
+    >>> # With custom configuration name (JEA endpoint):
+    >>> args.WINRM_CONFIGURATION_NAME = 'MyJEAEndpoint'
+    >>> run_ps(args, "Get-Service", [])
+    {'retc': 0, 'stdout': '...','stderr': ''}
     """
     # Determine authentication credentials
     # For Kerberos, allow using existing credentials from kinit
@@ -277,7 +284,11 @@ def run_ps(args, cmd):
             )
 
             # run PowerShell
-            stdout, streams, had_errors = session.execute_ps(cmd)
+            _configuration_name = getattr(args, 'WINRM_CONFIGURATION_NAME', None)
+            if _configuration_name:
+                stdout, streams, had_errors = session.execute_ps(cmd, configuration_name=_configuration_name)
+            else:
+                stdout, streams, had_errors = session.execute_ps(cmd)
 
             # stdout is already a string; stderr from PSRP error stream(s)
             stderr_lines = []

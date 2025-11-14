@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 * txt.py: add `exception2text()`
 * winrm.py: make `run_cmd()` and `run_ps()` JEA-aware
 * winrm.py: make `run_cmd()` and `run_ps()` Kerberos-aware
+* winrm.py: add `WINRM_CONFIGURATION_NAME` option to `run_ps()`
 
 
 ### Fixed ("fix")
