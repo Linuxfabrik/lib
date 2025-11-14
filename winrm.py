@@ -12,7 +12,10 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025111201'
+__version__ = '2025111401'
+
+
+import shlex
 
 try:
     import winrm
@@ -130,8 +133,8 @@ def run_cmd(args, cmd, params=None):
                 cert_validation=True,
             )
 
-            # run native command (not PowerShell script)
-            stdout, stderr, rc = session.execute_cmd(cmd, params)
+            full_command = shlex.join([cmd] + params)
+            stdout, stderr, rc = session.execute_cmd(full_command)
 
             return {
                 'retc': rc,

@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ### Fixed ("fix")
 
 * powershell.py: old shebang
+* winrm.py: `run_cmd()` pass parameters correctly when using the pypsrp library
 
 
 ### Changed ("refactor", "chore" etc.)
