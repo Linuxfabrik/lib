@@ -649,13 +649,13 @@ def get_tables(conn):
     >>>     print(tables)
     """
     sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
-    success, result = select(conn, sql)
+    success, result = select(conn, sql, as_dict=False)
 
     if not success:
         return success, result
 
-    # Extract just the table names
-    table_names = [row['name'] for row in result]
+    # Extract just the table names (first column from each row)
+    table_names = [row[0] for row in result]
     return True, table_names
 
 
