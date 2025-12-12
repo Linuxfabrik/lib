@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025070401'
+__version__ = '2025121201'
 
 import collections
 import numbers
@@ -277,33 +277,33 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
     if header:
         data.insert(0, dict(zip(cols, header)))
 
-    column_widths = collections.OrderedDict()
-    for idx, row in enumerate(data):
+    # Process values and calculate column widths in a single pass
+    processed_rows = []
+    column_widths = {}
+
+    for row in data:
+        processed_row = {}
         for col in cols:
             if col not in row:
                 return f'Unknown column "{col}"'
             value = str(row[col])
             if strip:
                 value = value.strip()
-            data[idx][col] = value
+            processed_row[col] = value
             column_widths[col] = max(column_widths.get(col, 0), len(value))
+        processed_rows.append(processed_row)
 
     if header:
         divider = {col: '-' * width for col, width in column_widths.items()}
-        data.insert(1, divider)
+        processed_rows.insert(1, divider)
 
-    def generate_lines():
-        for idx, row in enumerate(data):
-            parts = []
-            for col, width in column_widths.items():
-                fmt = f'{{:<{width}}}'
-                value = row[col]
-                if idx == 1:
-                    value = value.replace(' ', '-')
-                parts.append(fmt.format(value))
-            yield '-+-'.join(parts) if idx == 1 else ' ! '.join(parts)
+    # Generate output lines
+    lines = []
+    for idx, row in enumerate(processed_rows):
+        parts = [f'{row[col]:<{column_widths[col]}}' for col in column_widths]
+        lines.append(('-+-' if idx == 1 else ' ! ').join(parts))
 
-    return '\n'.join(generate_lines()) + '\n'
+    return '\n'.join(lines) + '\n'
 
 
 def get_worst(state1, state2):
