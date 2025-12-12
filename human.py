@@ -13,9 +13,145 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2025121201'
 
 import math
+
+# Pre-computed thresholds for bits2human (descending order)
+_BITS_THRESHOLDS = (
+    ('YiB', 9671406556917033397649408),
+    ('ZiB', 9444732965739290427392),
+    ('EiB', 9223372036854775808),
+    ('PiB', 9007199254740992),
+    ('TiB', 8796093022208),
+    ('GiB', 8589934592),
+    ('MiB', 8388608),
+    ('KiB', 8192),
+    ('B', 8),
+)
+
+# Pre-computed thresholds for bps2human (descending order)
+_BPS_THRESHOLDS = (
+    ('Ybps', 1000000000000000000000000),
+    ('Zbps', 1000000000000000000000),
+    ('Ebps', 1000000000000000000),
+    ('Pbps', 1000000000000000),
+    ('Tbps', 1000000000000),
+    ('Gbps', 1000000000),
+    ('Mbps', 1000000),
+    ('Kbps', 1000),
+    ('bps', 1),
+)
+
+# Pre-computed thresholds for bytes2human (descending order)
+_BYTES_THRESHOLDS = (
+    ('YiB', 1208925819614629174706176),
+    ('ZiB', 1180591620717411303424),
+    ('EiB', 1152921504606846976),
+    ('PiB', 1125899906842624),
+    ('TiB', 1099511627776),
+    ('GiB', 1073741824),
+    ('MiB', 1048576),
+    ('KiB', 1024),
+    ('B', 1),
+)
+
+# Pre-computed multipliers for human2bytes (binary units always 1024-based)
+_BINARY_MULTIPLIERS = (
+    ('yib', 1208925819614629174706176),
+    ('zib', 1180591620717411303424),
+    ('eib', 1152921504606846976),
+    ('pib', 1125899906842624),
+    ('tib', 1099511627776),
+    ('gib', 1073741824),
+    ('mib', 1048576),
+    ('kib', 1024),
+)
+
+# Pre-computed multipliers for human2bytes (decimal, base 1024)
+_DECIMAL_1024_MULTIPLIERS = (
+    ('yb', 1208925819614629174706176),
+    ('y', 1208925819614629174706176),
+    ('zb', 1180591620717411303424),
+    ('z', 1180591620717411303424),
+    ('eb', 1152921504606846976),
+    ('e', 1152921504606846976),
+    ('pb', 1125899906842624),
+    ('p', 1125899906842624),
+    ('tb', 1099511627776),
+    ('t', 1099511627776),
+    ('gb', 1073741824),
+    ('g', 1073741824),
+    ('mb', 1048576),
+    ('m', 1048576),
+    ('kb', 1024),
+    ('k', 1024),
+)
+
+# Pre-computed multipliers for human2bytes (decimal, base 1000)
+_DECIMAL_1000_MULTIPLIERS = (
+    ('yb', 1000000000000000000000000),
+    ('y', 1000000000000000000000000),
+    ('zb', 1000000000000000000000),
+    ('z', 1000000000000000000000),
+    ('eb', 1000000000000000000),
+    ('e', 1000000000000000000),
+    ('pb', 1000000000000000),
+    ('p', 1000000000000000),
+    ('tb', 1000000000000),
+    ('t', 1000000000000),
+    ('gb', 1000000000),
+    ('g', 1000000000),
+    ('mb', 1000000),
+    ('m', 1000000),
+    ('kb', 1000),
+    ('k', 1000),
+)
+
+# Pre-computed unit to seconds mapping for human2seconds
+_UNIT_TO_SECONDS = {
+    's': 1,
+    'm': 60,
+    'h': 3600,
+    'D': 86400,
+    'W': 604800,
+    'M': 2592000,
+    'Y': 31536000,
+}
+
+# Pre-computed SI prefixes for number2human
+_SI_PREFIXES = ('', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y')
+_SI_PREFIXES_MAX_IDX = 8  # len(_SI_PREFIXES) - 1
+
+# Pre-computed time units for seconds2human (full names)
+_TIME_UNITS_FULL = (
+    ('years', 31536000),
+    ('months', 2592000),
+    ('weeks', 604800),
+    ('days', 86400),
+    ('hours', 3600),
+    ('minutes', 60),
+    ('seconds', 1),
+    ('millisecs', 1e-3),
+    ('microsecs', 1e-6),
+    ('nanosecs', 1e-9),
+    ('picosecs', 1e-12),
+)
+
+# Pre-computed time units for seconds2human (short names)
+_TIME_UNITS_SHORT = (
+    ('Y', 31536000),
+    ('M', 2592000),
+    ('W', 604800),
+    ('D', 86400),
+    ('h', 3600),
+    ('m', 60),
+    ('s', 1),
+    ('ms', 1e-3),
+    ('us', 1e-6),
+    ('ns', 1e-9),
+    ('ps', 1e-12),
+)
 
 
 def bits2human(n, decimals=1, space=False):
@@ -44,19 +180,14 @@ def bits2human(n, decimals=1, space=False):
     >>> bits2human(8192, decimals=3, space=True)
     '1.000 KiB'
     """
-    symbols = ('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB')
-    prefix = {'B': 8}
-    for i, symbol in enumerate(symbols[1:], 1):
-        prefix[symbol] = 1024 ** i * 8
+    sep = ' ' if space else ''
 
-    for symbol in reversed(symbols):
-        if n >= prefix[symbol]:
-            value = float(n) / prefix[symbol]
-            sep = ' ' if space else ''
+    for symbol, threshold in _BITS_THRESHOLDS:
+        if n >= threshold:
+            value = float(n) / threshold
             return f'{value:.{decimals}f}{sep}{symbol}'
 
-    sep = ' ' if space else ''
-    return f'{n:.{decimals}f}{sep}{symbols[0]}'
+    return f'{n:.{decimals}f}{sep}B'
 
 
 def bps2human(n, decimals=1, space=False):
@@ -87,17 +218,14 @@ def bps2human(n, decimals=1, space=False):
     >>> bps2human(72000000, decimals=2, space=True)
     '72.00 Mbps'
     """
-    symbols = ('bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps', 'Pbps', 'Ebps', 'Zbps', 'Ybps')
-    prefix = {symbol: 1000 ** i for i, symbol in enumerate(symbols)}
+    sep = ' ' if space else ''
 
-    for symbol in reversed(symbols[1:]):
-        if n >= prefix[symbol]:
-            value = float(n) / prefix[symbol]
-            sep = ' ' if space else ''
+    for symbol, threshold in _BPS_THRESHOLDS:
+        if n >= threshold:
+            value = float(n) / threshold
             return f'{value:.{decimals}f}{sep}{symbol}'
 
-    sep = ' ' if space else ''
-    return f'{n:.{decimals}f}{sep}{symbols[0]}'
+    return f'{n:.{decimals}f}{sep}bps'
 
 
 def bytes2human(n, decimals=1, space=False):
@@ -131,17 +259,14 @@ def bytes2human(n, decimals=1, space=False):
     >>> bytes2human(1048576, decimals=1, space=True)
     '1.0 MiB'
     """
-    symbols = ('B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB')
-    prefix = {symbol: 1 << (i + 1) * 10 for i, symbol in enumerate(symbols[1:])}
+    sep = ' ' if space else ''
 
-    for symbol in reversed(symbols[1:]):
-        if n >= prefix[symbol]:
-            value = float(n) / prefix[symbol]
-            sep = ' ' if space else ''
+    for symbol, threshold in _BYTES_THRESHOLDS:
+        if n >= threshold:
+            value = float(n) / threshold
             return f'{value:.{decimals}f}{sep}{symbol}'
 
-    sep = ' ' if space else ''
-    return f'{n:.{decimals}f}{sep}{symbols[0]}'
+    return f'{n:.{decimals}f}{sep}B'
 
 
 def extract_hrnumbers(s, boundaries=None):
@@ -191,7 +316,7 @@ def human2bytes(string, binary=True):
     """
     Converts a human-readable string to the equivalent number of bytes.
 
-    This function converts a string representation of a file size, such as '3.072GiB' or '3.072GB', 
+    This function converts a string representation of a file size, such as '3.072GiB' or '3.072GB',
     into the corresponding number of bytes. It supports both binary (base 1024) and decimal
     (base 1000) units.
 
@@ -212,43 +337,23 @@ def human2bytes(string, binary=True):
     3072000000
     """
     try:
-        string = string.lower()
-        if 'kib' in string:
-            return int(float(string.replace('kib', '').strip()) * 1024)
-        if 'mib' in string:
-            return int(float(string.replace('mib', '').strip()) * 1024**2)
-        if 'gib' in string:
-            return int(float(string.replace('gib', '').strip()) * 1024**3)
-        if 'tib' in string:
-            return int(float(string.replace('tib', '').strip()) * 1024**4)
-        if 'pib' in string:
-            return int(float(string.replace('pib', '').strip()) * 1024**5)
-        if 'eib' in string:
-            return int(float(string.replace('eib', '').strip()) * 1024**6)
-        if 'zib' in string:
-            return int(float(string.replace('zib', '').strip()) * 1024**7)
-        if 'yib' in string:
-            return int(float(string.replace('yib', '').strip()) * 1024**8)
+        string_lower = string.lower()
 
-        base = 1024 if binary else 1000
-        if 'k' in string:  # matches "kb" or "k"
-            return int(float(string.replace('kb', '').replace('k', '').strip()) * base)
-        if 'm' in string:
-            return int(float(string.replace('mb', '').replace('m', '').strip()) * base**2)
-        if 'g' in string:
-            return int(float(string.replace('gb', '').replace('g', '').strip()) * base**3)
-        if 't' in string:
-            return int(float(string.replace('tb', '').replace('t', '').strip()) * base**4)
-        if 'p' in string:
-            return int(float(string.replace('pb', '').replace('p', '').strip()) * base**5)
-        if 'e' in string:
-            return int(float(string.replace('eb', '').replace('e', '').strip()) * base**6)
-        if 'z' in string:
-            return int(float(string.replace('zb', '').replace('z', '').strip()) * base**7)
-        if 'y' in string:
-            return int(float(string.replace('yb', '').replace('y', '').strip()) * base**8)
-        if 'b' in string:
-            return int(float(string.replace('b', '').strip()))
+        # Check binary units first (always 1024-based)
+        for unit, multiplier in _BINARY_MULTIPLIERS:
+            if unit in string_lower:
+                return int(float(string_lower.replace(unit, '').strip()) * multiplier)
+
+        # Check decimal units (base depends on binary parameter)
+        multipliers = _DECIMAL_1024_MULTIPLIERS if binary else _DECIMAL_1000_MULTIPLIERS
+        for unit, multiplier in multipliers:
+            if unit in string_lower:
+                return int(float(string_lower.replace(unit, '').strip()) * multiplier)
+
+        # Check for plain 'b' (bytes)
+        if 'b' in string_lower:
+            return int(float(string_lower.replace('b', '').strip()))
+
         return 0
     except Exception:
         return 0
@@ -307,16 +412,6 @@ def human2seconds(string):
     >>> human2seconds('invalid')
     0
     """
-    unit_to_seconds = {
-        's': 1,
-        'm': 60,
-        'h': 3600,
-        'D': 86400,
-        'W': 604800,
-        'M': 2592000,
-        'Y': 31536000,
-    }
-
     string = string.strip()
     if not string or len(string) < 2:
         return 0
@@ -324,7 +419,7 @@ def human2seconds(string):
     unit = string[-1]
     value_str = string[:-1]
 
-    if unit not in unit_to_seconds:
+    if unit not in _UNIT_TO_SECONDS:
         return 0
 
     try:
@@ -332,7 +427,7 @@ def human2seconds(string):
     except (ValueError, TypeError):
         return 0
 
-    return int(value * unit_to_seconds[unit])
+    return int(value * _UNIT_TO_SECONDS[unit])
 
 
 def humanduration2seconds(text):
@@ -457,7 +552,6 @@ def number2human(number):
     >>> number2human(9223372036854775808)
     '9.2E'
     """
-    millnames = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y']
     try:
         number = float(number)
     except Exception:
@@ -468,9 +562,9 @@ def number2human(number):
     else:
         millidx = int(math.floor(math.log10(abs(number)) / 3))
 
-    millidx = max(0, min(len(millnames) - 1, millidx))
+    millidx = max(0, min(_SI_PREFIXES_MAX_IDX, millidx))
     scaled = number / 10**(3 * millidx)
-    return f'{scaled:.1f}{millnames[millidx]}'
+    return f'{scaled:.1f}{_SI_PREFIXES[millidx]}'
 
 
 def seconds2human(seconds, keep_short=True, full_name=False):
@@ -521,31 +615,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
     """
     seconds = float(seconds)
 
-    units = (
-        ('years', 60 * 60 * 24 * 365),
-        ('months', 60 * 60 * 24 * 30),
-        ('weeks', 60 * 60 * 24 * 7),
-        ('days', 60 * 60 * 24),
-        ('hours', 60 * 60),
-        ('minutes', 60),
-        ('seconds', 1),
-        ('millisecs', 1e-3),
-        ('microsecs', 1e-6),
-        ('nanosecs', 1e-9),
-        ('picosecs', 1e-12),
-    ) if full_name else (
-        ('Y', 60 * 60 * 24 * 365),
-        ('M', 60 * 60 * 24 * 30),
-        ('W', 60 * 60 * 24 * 7),
-        ('D', 60 * 60 * 24),
-        ('h', 60 * 60),
-        ('m', 60),
-        ('s', 1),
-        ('ms', 1e-3),
-        ('us', 1e-6),
-        ('ns', 1e-9),
-        ('ps', 1e-12),
-    )
+    units = _TIME_UNITS_FULL if full_name else _TIME_UNITS_SHORT
 
     result = []
     for name, count in units:
