@@ -499,9 +499,9 @@ requests==2.32.5 \
     --hash=sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6 \
     --hash=sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf
     # via pypsrp
-smbprotocol==1.15.0 \
-    --hash=sha256:1fbfe19be3afca25a27e3bccc0de54614c6a8d3443b1fac829763b4901fb1c06 \
-    --hash=sha256:3c892f4c22ab147d0576a3a8d34279831b26ab4695b7df911a334bc41f6d652a
+smbprotocol==1.16.0 \
+    --hash=sha256:65427e30114d420f5f5ae878d93aa1f256d686105af898ab2f8f2485c9c7989a \
+    --hash=sha256:babeb6fa825ba57939f9637c49a34548ddca348386d34de0796d1f87882c0bda
     # via -r requirements.in
 soupsieve==2.8 \
     --hash=sha256:0cc76456a30e20f5d7f2e14a98a4ae2ee4e5abdc7c5ea0aafe795f344bc7984c \
