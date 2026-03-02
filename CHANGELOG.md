@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* winrm.py: execute ps in `run_ps()` directly without Invoke-Expression wrapping
 * disk.py: add `get_owner()`
 * nextcloud.py: new library
 * txt.py: add `exception2text()`
