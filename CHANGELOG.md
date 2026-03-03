@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * txt.py: improve `filter_mltext()` performance (avoid O(n²) string concatenation)
 * txt.py: improve readability of `extract_str()` fallback logic
 * txt.py: remove unused Python 2 type aliases and outdated comments
+* txt.py: simplify `to_text()` and `to_bytes()` for Python 3 only (remove dead Python 2 codepaths)
 * human.py: pre-compute mappings as module constants
 * powershell.py: `run_ps()` now always returns a dict
 * winrm.py: make `run_cmd()` and `run_ps()` JEA-aware

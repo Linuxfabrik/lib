@@ -10,29 +10,24 @@
 
 """A collection of text functions.
 
-The functions "to_text()" and "to_bytes()" are copied from
-/usr/lib/python3.10/site-packages/ansible/module_utils/_text.py (BSD license).
+The functions "to_text()" and "to_bytes()" were originally copied
+from Ansible's module_utils/_text.py (BSD license), then simplified
+for Python 3 only.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026030301'
 
-import codecs
+import operator
 import re
 import traceback
-try:
-    codecs.lookup_error('surrogateescape')
-    HAS_SURROGATEESCAPE = True
-except LookupError:
-    HAS_SURROGATEESCAPE = False
-import operator
 
-text_type = str
-binary_type = bytes
-
-_COMPOSED_ERROR_HANDLERS = frozenset((None, 'surrogate_or_replace',
-                                      'surrogate_or_strict',
-                                      'surrogate_then_replace'))
+_SURROGATE_ERRORS = frozenset((
+    None,
+    'surrogate_or_replace',
+    'surrogate_or_strict',
+    'surrogate_then_replace',
+))
 
 SENSITIVE_FIELDS_PATTERN = re.compile(
     r'(?i)(\b(?:password|pass|token|key|secret|api[_-]?key|access[_-]?token)\b\s*=\s*|sshpass\s+-p\s*)[^\s&]+'
@@ -433,38 +428,35 @@ def sanitize_sensitive_data(msg, replacement='******'):
     return SENSITIVE_FIELDS_PATTERN.sub(rf'\1{replacement}', msg)
 
 
-# from /usr/lib/python3.10/site-packages/ansible/module_utils/_text.py
-def to_bytes(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
+def to_bytes(obj, encoding='utf-8', errors=None,
+             nonstring='simplerepr'):
     """
-    Make sure that a string is a byte string.
+    Convert an object to a byte string.
 
-    This function ensures the given object is converted into a byte string, handling encoding errors
-    and non-string types according to provided options.
+    If `obj` is already `bytes`, it is returned unchanged. If it
+    is a `str`, it is encoded. Otherwise the `nonstring` strategy
+    decides what happens.
 
     ### Parameters
-    - **obj** (`any`): The object to convert to a byte string. Typically a text or byte string.
-    - **encoding** (`str`, optional): Encoding to use for conversion. Defaults to `'utf-8'`.
-    - **errors** (`str`, optional): Error handling strategy during encoding.  
-      Supports standard codecs handlers and special strategies:  
-      - `surrogate_or_strict`
-      - `surrogate_or_replace`
-      - `surrogate_then_replace` (default in Ansible 2.3+).
-    - **nonstring** (`str`, optional): Strategy if `obj` is not a string.  
-      Options:
-      - `simplerepr`: `str(obj)` and convert.
-      - `empty`: Return an empty byte string.
+    - **obj** (`any`): The object to convert.
+    - **encoding** (`str`, optional): Encoding to use.
+      Defaults to `'utf-8'`.
+    - **errors** (`str`, optional): Error handler for encoding.
+      Surrogate-related strategies (`surrogate_or_strict`,
+      `surrogate_or_replace`, `surrogate_then_replace`, or
+      `None`) are mapped to `'surrogateescape'`.
+      Defaults to `None`.
+    - **nonstring** (`str`, optional): Strategy for non-string
+      objects:
+      - `simplerepr`: Convert via `str(obj)`, then encode.
+      - `empty`: Return `b''`.
       - `passthru`: Return `obj` unchanged.
-      - `strict`: Raise a `TypeError`.  
+      - `strict`: Raise a `TypeError`.
       Defaults to `'simplerepr'`.
 
     ### Returns
-    - **bytes** or **other type**: Typically a byte string. For non-strings, behavior depends on
-      `nonstring` setting.
-
-    ### Notes
-    - If passed a byte string, no re-encoding is performed.
-    - On encoding error with `surrogate_then_replace`, the function will fallback gracefully.
-    - To ensure a byte string is in a specific encoding, re-encode using `to_bytes(to_text(...))`.
+    - **bytes** or **other type**: A byte string, or the
+      original object if `nonstring='passthru'`.
 
     ### Example
     >>> to_bytes('hello')
@@ -479,92 +471,68 @@ def to_bytes(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     >>> to_bytes(None, nonstring='empty')
     b''
     """
-    if isinstance(obj, binary_type):
+    if isinstance(obj, bytes):
         return obj
 
-    # We're given a text string
-    # If it has surrogates, we know because it will decode
     original_errors = errors
-    if errors in _COMPOSED_ERROR_HANDLERS:
-        if HAS_SURROGATEESCAPE:
-            errors = 'surrogateescape'
-        elif errors == 'surrogate_or_strict':
-            errors = 'strict'
-        else:
-            errors = 'replace'
+    if errors in _SURROGATE_ERRORS:
+        errors = 'surrogateescape'
 
-    if isinstance(obj, text_type):
+    if isinstance(obj, str):
         try:
-            # Try this first as it's the fastest
             return obj.encode(encoding, errors)
         except UnicodeEncodeError:
             if original_errors in (None, 'surrogate_then_replace'):
-                # We should only reach this if encoding was non-utf8 original_errors was
-                # surrogate_then_escape and errors was surrogateescape
-
-                # Slow but works
-                return_string = obj.encode('utf-8', 'surrogateescape')
-                return_string = return_string.decode('utf-8', 'replace')
-                return return_string.encode(encoding, 'replace')
+                return obj.encode(
+                    'utf-8', 'surrogateescape',
+                ).decode(
+                    'utf-8', 'replace',
+                ).encode(encoding, 'replace')
             raise
 
-    # Note: We do these last even though we have to call to_bytes again on the
-    # value because we're optimizing the common case
     if nonstring == 'simplerepr':
-        try:
-            value = str(obj)
-        except UnicodeError:
-            try:
-                value = repr(obj)
-            except UnicodeError:
-                # Giving up
-                return to_bytes('')
-    elif nonstring == 'passthru':
+        return str(obj).encode(encoding, errors)
+    if nonstring == 'passthru':
         return obj
-    elif nonstring == 'empty':
+    if nonstring == 'empty':
         return b''
-    elif nonstring == 'strict':
+    if nonstring == 'strict':
         raise TypeError('obj must be a string type')
-    else:
-        raise TypeError(f'Invalid value {nonstring!r} for to_bytes\' nonstring parameter')
+    raise TypeError(
+        f'Invalid value {nonstring!r} for to_bytes\''
+        ' nonstring parameter'
+    )
 
-    return to_bytes(value, encoding, errors)
 
-
-# from /usr/lib/python3.10/site-packages/ansible/module_utils/_text.py
-def to_text(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
+def to_text(obj, encoding='utf-8', errors=None,
+            nonstring='simplerepr'):
     """
-    Make sure that a string is a text string.
+    Convert an object to a text (unicode) string.
 
-    This function ensures the given object is converted into a Unicode text string,
-    handling decoding errors and non-string types according to the provided options.
+    If `obj` is already a `str`, it is returned unchanged. If it
+    is `bytes`, it is decoded. Otherwise the `nonstring` strategy
+    decides what happens.
 
     ### Parameters
-    - **obj** (`any`): The object to convert to a text string. Typically a byte or text string.
-    - **encoding** (`str`, optional): Encoding to use when decoding byte strings. Defaults to
-      `'utf-8'`.
-    - **errors** (`str`, optional): Error handling strategy during decoding.  
-      Supports standard codecs handlers and special strategies:
-      - `surrogate_or_strict`
-      - `surrogate_or_replace`
-      - `surrogate_then_replace` (default in Ansible 2.3+).
-    - **nonstring** (`str`, optional): Strategy for handling non-string types:
-      - `simplerepr`: Default; uses `str(obj)` and converts.
-      - `empty`: Return an empty text string.
-      - `passthru`: Return the original object.
-      - `strict`: Raise a `TypeError`.  
+    - **obj** (`any`): The object to convert.
+    - **encoding** (`str`, optional): Encoding to use when
+      decoding byte strings. Defaults to `'utf-8'`.
+    - **errors** (`str`, optional): Error handler for decoding.
+      Surrogate-related strategies (`surrogate_or_strict`,
+      `surrogate_or_replace`, `surrogate_then_replace`, or
+      `None`) are mapped to `'surrogateescape'`.
+      Defaults to `None`.
+    - **nonstring** (`str`, optional): Strategy for non-string
+      objects:
+      - `simplerepr`: Convert via `str(obj)`.
+      - `empty`: Return `''`.
+      - `passthru`: Return `obj` unchanged.
+      - `strict`: Raise a `TypeError`.
       Defaults to `'simplerepr'`.
 
     ### Returns
-    - **str** or **other type**:  
-      - Typically returns a text string.
-      - May return other types depending on `nonstring` strategy.  
-      - Never returns a byte string.
-
-    ### Notes
-    - If passed a text string, returns it unchanged.
-    - On decoding error with `surrogate_then_replace`, fallback gracefully.
-    - From Ansible 2.3 onwards, the default error handler is `surrogate_then_replace`.
+    - **str** or **other type**: A text string, or the original
+      object if `nonstring='passthru'`.
 
     ### Example
     >>> to_text(b'hello')
@@ -579,44 +547,27 @@ def to_text(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     >>> to_text(None, nonstring='empty')
     ''
     """
-    if isinstance(obj, text_type):
+    if isinstance(obj, str):
         return obj
 
-    if errors in _COMPOSED_ERROR_HANDLERS:
-        if HAS_SURROGATEESCAPE:
-            errors = 'surrogateescape'
-        elif errors == 'surrogate_or_strict':
-            errors = 'strict'
-        else:
-            errors = 'replace'
+    if errors in _SURROGATE_ERRORS:
+        errors = 'surrogateescape'
 
-    if isinstance(obj, binary_type):
-        # Note: We don't need special handling for surrogate_then_replace
-        # because all bytes will either be made into surrogates or are valid
-        # to decode.
+    if isinstance(obj, bytes):
         return obj.decode(encoding, errors)
 
-    # Note: We do these last even though we have to call to_text again on the
-    # value because we're optimizing the common case
     if nonstring == 'simplerepr':
-        try:
-            value = str(obj)
-        except UnicodeError:
-            try:
-                value = repr(obj)
-            except UnicodeError:
-                # Giving up
-                return ''
-    elif nonstring == 'passthru':
+        return str(obj)
+    if nonstring == 'passthru':
         return obj
-    elif nonstring == 'empty':
+    if nonstring == 'empty':
         return ''
-    elif nonstring == 'strict':
+    if nonstring == 'strict':
         raise TypeError('obj must be a string type')
-    else:
-        raise TypeError(f'Invalid value {nonstring!r} for to_text\'s nonstring parameter')
-
-    return to_text(value, encoding, errors)
+    raise TypeError(
+        f'Invalid value {nonstring!r} for to_text\'s'
+        ' nonstring parameter'
+    )
 
 
 def uniq(string):
