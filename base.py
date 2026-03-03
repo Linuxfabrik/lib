@@ -12,9 +12,8 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025121201'
+__version__ = '2026030301'
 
-import collections
 import numbers
 import operator
 import os
@@ -29,6 +28,22 @@ from . import txt
 WINDOWS = os.name == "nt"
 LINUX = sys.platform.startswith("linux")
 X86_64 = sys.maxsize > 2**32
+
+_OPS = {
+    'ge': operator.ge,
+    'gt': operator.gt,
+    'le': operator.le,
+    'lt': operator.lt,
+    'eq': operator.eq,
+    'ne': operator.ne,
+}
+
+_STATE_NAMES = {
+    STATE_OK: '[OK]',
+    STATE_WARN: '[WARNING]',
+    STATE_CRIT: '[CRITICAL]',
+    STATE_UNKNOWN: '[UNKNOWN]',
+}
 
 
 def coe(result, state=STATE_UNKNOWN):
@@ -141,7 +156,7 @@ def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=N
     msg += f'{crit};' if crit is not None else ';'
     msg += f'{_min};' if _min is not None else ';'
     msg += f'{_max}' if _max is not None else ''
-    return msg + ' '
+    return msg.rstrip(';') + ' '
 
 
 def get_state(value, warn, crit, _operator='ge'):
@@ -174,70 +189,23 @@ def get_state(value, warn, crit, _operator='ge'):
     """
     # make sure to use float comparison
     value = float(value)
-    if _operator == 'ge':
-        if crit is not None:
-            if value >= float(crit):
-                return STATE_CRIT
-        if warn is not None:
-            if value >= float(warn):
-                return STATE_WARN
-        return STATE_OK
-
-    if _operator == 'gt':
-        if crit is not None:
-            if value > float(crit):
-                return STATE_CRIT
-        if warn is not None:
-            if value > float(warn):
-                return STATE_WARN
-        return STATE_OK
-
-    if _operator == 'le':
-        if crit is not None:
-            if value <= float(crit):
-                return STATE_CRIT
-        if warn is not None:
-            if value <= float(warn):
-                return STATE_WARN
-        return STATE_OK
-
-    if _operator == 'lt':
-        if crit is not None:
-            if value < float(crit):
-                return STATE_CRIT
-        if warn is not None:
-            if value < float(warn):
-                return STATE_WARN
-        return STATE_OK
-
-    if _operator == 'eq':
-        if crit is not None:
-            if value == float(crit):
-                return STATE_CRIT
-        if warn is not None:
-            if value == float(warn):
-                return STATE_WARN
-        return STATE_OK
-
-    if _operator == 'ne':
-        if crit is not None:
-            if value != float(crit):
-                return STATE_CRIT
-        if warn is not None:
-            if value != float(warn):
-                return STATE_WARN
-        return STATE_OK
 
     if _operator == 'range':
-        if crit is not None:
-            if not coe(match_range(value, crit)):
-                return STATE_CRIT
-        if warn is not None:
-            if not coe(match_range(value, warn)):
-                return STATE_WARN
+        if crit is not None and not coe(match_range(value, crit)):
+            return STATE_CRIT
+        if warn is not None and not coe(match_range(value, warn)):
+            return STATE_WARN
         return STATE_OK
 
-    return STATE_UNKNOWN
+    op = _OPS.get(_operator)
+    if op is None:
+        return STATE_UNKNOWN
+
+    if crit is not None and op(value, float(crit)):
+        return STATE_CRIT
+    if warn is not None and op(value, float(warn)):
+        return STATE_WARN
+    return STATE_OK
 
 
 def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_reverse=False):
@@ -301,7 +269,7 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
     lines = []
     for idx, row in enumerate(processed_rows):
         parts = [f'{row[col]:<{column_widths[col]}}' for col in column_widths]
-        lines.append(('-+-' if idx == 1 else ' ! ').join(parts))
+        lines.append(('-+-' if header and idx == 1 else ' ! ').join(parts))
 
     return '\n'.join(lines) + '\n'
 
@@ -384,12 +352,12 @@ def guess_type(v, consumer='python'):
         return None if consumer == 'python' else 'text'
 
     try:
-        int(v)
-        return int(v) if consumer == 'python' else 'integer'
+        result = int(v)
+        return result if consumer == 'python' else 'integer'
     except (ValueError, TypeError):
         try:
-            float(v)
-            return float(v) if consumer == 'python' else 'real'
+            result = float(v)
+            return result if consumer == 'python' else 'real'
         except (ValueError, TypeError):
             return str(v) if consumer == 'python' else 'text'
 
@@ -470,18 +438,82 @@ def lookup_lod(haystack, key, needle):
     return -1, None
 
 
+def _parse_range_atom(atom, default):
+    if not atom:
+        return default
+    return float(atom) if '.' in atom else int(atom)
+
+
+def _parse_range(spec_):
+    """
+    Inspired by
+    https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
+
+    +--------+-------------------+-------------------+----------------+
+    | -w, -c | OK if result is   | WARN/CRIT if      | returns        |
+    +--------+-------------------+-------------------+----------------+
+    | 10     | in (0..10)        | not in (0..10)    | (0, 10, False) |
+    +--------+-------------------+-------------------+----------------+
+    | -10    | in (-10..0)       | not in (-10..0)   | (0, -10, False)|
+    +--------+-------------------+-------------------+----------------+
+    | 10:    | in (10..inf)      | not in (10..inf)  | (10, inf, F)   |
+    +--------+-------------------+-------------------+----------------+
+    | :      | in (0..inf)       | not in (0..inf)   | (0, inf, False)|
+    +--------+-------------------+-------------------+----------------+
+    | ~:10   | in (-inf..10)     | not in (-inf..10) | (-inf, 10, F)  |
+    +--------+-------------------+-------------------+----------------+
+    | 10:20  | in (10..20)       | not in (10..20)   | (10, 20, False)|
+    +--------+-------------------+-------------------+----------------+
+    | @10:20 | not in (10..20)   | in 10..20         | (10, 20, True) |
+    +--------+-------------------+-------------------+----------------+
+    | @~:20  | not in (-inf..20) | in (-inf..20)     | (-inf, 20, T)  |
+    +--------+-------------------+-------------------+----------------+
+    | @      | not in (0..inf)   | in (0..inf)       | (0, inf, True) |
+    +--------+-------------------+-------------------+----------------+
+    """
+    if spec_ is None or str(spec_).lower() == 'none':
+        return True, None
+
+    if not isinstance(spec_, str):
+        spec_ = str(spec_)
+
+    invert = spec_.startswith('@')
+    if invert:
+        spec_ = spec_[1:]
+
+    if ':' in spec_:
+        try:
+            start, end = spec_.split(':')
+        except ValueError:
+            return False, 'Not using range definition correctly'
+    else:
+        start, end = '', spec_
+
+    start = float('-inf') if start == '~' \
+        else _parse_range_atom(start, 0)
+    end = _parse_range_atom(end, float('inf'))
+
+    if start > end:
+        return (
+            False,
+            f'Start {start} must not be greater than end {end}',
+        )
+    return True, (start, end, invert)
+
+
 def match_range(value, spec):
     """
-    Decides if `value` is inside or outside the Nagios threshold specification.
+    Decides if `value` is inside or outside the Nagios threshold
+    specification.
 
     ### Parameters
     - **value** (`int` or `float`): The numeric value to check.
     - **spec** (`str`): The Nagios range specification string.
 
     ### Returns
-    - **bool**: 
-      - True if `value` is inside the bounds for a non-inverted `spec`, or outside the bounds for an
-        inverted `spec`.
+    - **bool**:
+      - True if `value` is inside the bounds for a non-inverted
+        `spec`, or outside the bounds for an inverted `spec`.
       - Otherwise, False.
 
     ### Example
@@ -512,69 +544,13 @@ def match_range(value, spec):
     >>> match_range(15, '@')
     0 inf True
     """
-    def parse_range(spec_):
-        """
-        Inspired by https://github.com/mpounsett/nagiosplugin/blob/master/nagiosplugin/range.py
-
-        +--------+-------------------+-------------------+--------------------------------+
-        | -w, -c | OK if result is   | WARN/CRIT if      | lib.base.parse_range() returns |
-        +--------+-------------------+-------------------+--------------------------------+
-        | 10     | in (0..10)        | not in (0..10)    | (0, 10, False)                 |
-        +--------+-------------------+-------------------+--------------------------------+
-        | -10    | in (-10..0)       | not in (-10..0)   | (0, -10, False)                |
-        +--------+-------------------+-------------------+--------------------------------+
-        | 10:    | in (10..inf)      | not in (10..inf)  | (10, inf, False)               |
-        +--------+-------------------+-------------------+--------------------------------+
-        | :      | in (0..inf)       | not in (0..inf)   | (0, inf, False)                |
-        +--------+-------------------+-------------------+--------------------------------+
-        | ~:10   | in (-inf..10)     | not in (-inf..10) | (-inf, 10, False)              |
-        +--------+-------------------+-------------------+--------------------------------+
-        | 10:20  | in (10..20)       | not in (10..20)   | (10, 20, False)                |
-        +--------+-------------------+-------------------+--------------------------------+
-        | @10:20 | not in (10..20)   | in 10..20         | (10, 20, True)                 |
-        +--------+-------------------+-------------------+--------------------------------+
-        | @~:20  | not in (-inf..20) | in (-inf..20)     | (-inf, 20, True)               |
-        +--------+-------------------+-------------------+--------------------------------+
-        | @      | not in (0..inf)   | in (0..inf)       | (0, inf, True)                 |
-        +--------+-------------------+-------------------+--------------------------------+
-        """
-        def parse_atom(atom, default):
-            if not atom:
-                return default
-            return float(atom) if '.' in atom else int(atom)
-
-        if spec_ is None or str(spec_).lower() == 'none':
-            return True, None
-
-        if not isinstance(spec_, str):
-            spec_ = str(spec_)
-
-        invert = spec_.startswith('@')
-        if invert:
-            spec_ = spec_[1:]
-
-        if ':' in spec_:
-            try:
-                start, end = spec_.split(':')
-            except ValueError:
-                return False, 'Not using range definition correctly'
-        else:
-            start, end = '', spec_
-
-        start = float('-inf') if start == '~' else parse_atom(start, 0)
-        end = parse_atom(end, float('inf'))
-
-        if start > end:
-            return False, f'Start {start} must not be greater than end {end}'
-        return True, (start, end, invert)
-
     if isinstance(spec, str):
         spec = spec.lstrip('\\')
 
     if spec is None or str(spec).lower() == 'none':
         return True, True
 
-    success, result = parse_range(spec)
+    success, result = _parse_range(spec)
     if not success:
         return success, result
 
@@ -750,12 +726,7 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
     ' ([OK])'
     """
     state = int(state)
-    text = {
-        STATE_OK: '[OK]',
-        STATE_WARN: '[WARNING]',
-        STATE_CRIT: '[CRITICAL]',
-        STATE_UNKNOWN: '[UNKNOWN]',
-    }.get(state, str(state))
+    text = _STATE_NAMES.get(state, str(state))
 
     if state == STATE_OK and empty_ok:
         return ''
@@ -872,14 +843,7 @@ def sum_dict(dict1, dict2):
     >>> sum_dict({'in': 100, 'out': 10}, {'in': 50, 'error': 5, 'uuid': '1234-xyz'})
     {'in': 150, 'out': 10, 'error': 5}
     """
-    total = {}
-
-    for d in (dict1, dict2):
-        for key, value in d.items():
-            if is_numeric(value):
-                total[key] = total.get(key, 0) + value
-
-    return total
+    return sum_lod([dict1, dict2])
 
 
 def sum_lod(mylist):

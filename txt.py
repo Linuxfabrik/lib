@@ -15,7 +15,7 @@ The functions "to_text()" and "to_bytes()" are copied from
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025103001'
+__version__ = '2026030301'
 
 import codecs
 import re
@@ -37,12 +37,12 @@ _COMPOSED_ERROR_HANDLERS = frozenset((None, 'surrogate_or_replace',
                                       'surrogate_then_replace'))
 
 SENSITIVE_FIELDS_PATTERN = re.compile(
-    r'(?i)(?:\b(?:password|pass|token|key|secret|api[_-]?key|access[_-]?token)\b\s*=\s*|sshpass\s+-p\s*)([^\s&]+)'
+    r'(?i)(\b(?:password|pass|token|key|secret|api[_-]?key|access[_-]?token)\b\s*=\s*|sshpass\s+-p\s*)[^\s&]+'
 )
 # Explanation:
 # (?i)                      # Case-insensitive mode
-# (?:                       # ┌ Non-capturing group for the two prefix patterns
-#   \b                      # │ Word boundary: ensure we match a whole word
+# (                         # ┌ Capture group 1: the prefix (key=)
+#   \b                      # │ Word boundary
 #   (?:password|pass|token|key|secret|api[_-]?key|access[_-]?token)
 #                           # │   One of the sensitive names:
 #                           # │   – password
@@ -51,13 +51,12 @@ SENSITIVE_FIELDS_PATTERN = re.compile(
 #                           # │   – key
 #                           # │   – secret
 #                           # │   – api_key or api-key
-#                           #   – access_token or access-token
-#   \b\s*=\s*               # │ Word boundary, optional whitespace, '=', optional whitespace
-#  |                        # └ OR
-#   sshpass\s+-p\s*         #   Literal "sshpass -p" (with at least one space before -p)
-# )                         # End of the non-capturing group
-# ([^\s&]+)                 # Capture group 1: one or more characters that are NOT
-#                           # whitespace or '&' (i.e. the secret value)
+#                           # │   – access_token or access-token
+#   \b\s*=\s*               # │ Word boundary, optional ws, '=', optional ws
+#  |                        # ├ OR
+#   sshpass\s+-p\s*         # │ Literal "sshpass -p" (1+ space before -p)
+# )                         # └ End of capture group 1
+# [^\s&]+                   # The secret value (not captured, will be replaced)
 
 
 def compile_regex(regex, key=''):
@@ -429,7 +428,7 @@ def sanitize_sensitive_data(msg, replacement='******'):
     """
     if not isinstance(msg, str):
         return msg
-    return SENSITIVE_FIELDS_PATTERN.sub(rf'\1={replacement}', msg)
+    return SENSITIVE_FIELDS_PATTERN.sub(rf'\1{replacement}', msg)
 
 
 # from /usr/lib/python3.10/site-packages/ansible/module_utils/_text.py

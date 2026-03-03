@@ -18,7 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* base.py: deduplicate `get_state()` operator logic using `operator` module
+* base.py: deduplicate `sum_dict()` by delegating to `sum_lod()`
 * base.py: improve `get_table()` performance for large tables
+* base.py: move `parse_range()` and state name mapping to module level
+* base.py: remove unused `collections` import
+* base.py: strip trailing semicolons in `get_perfdata()` output
 * db_sqlite.py: reduce unnecessary dictionary object creation
 * human.py: pre-compute mappings as module constants
 * powershell.py: `run_ps()` now always returns a dict
@@ -27,7 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* base.py: fix `get_table()` using wrong separator for the second data row when called without a header
 * powershell.py: fix outdated shebang line
+* txt.py: fix `sanitize_sensitive_data()` replacing the key name instead of the secret value
 * winrm.py: pass parameters correctly in `run_cmd()` when using pypsrp
 
 
