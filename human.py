@@ -13,7 +13,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025121201'
+__version__ = '2026030301'
 
 import math
 
@@ -154,15 +154,24 @@ _TIME_UNITS_SHORT = (
 )
 
 
+def _to_human(n, thresholds, fallback_unit, decimals=1, space=False):
+    sep = ' ' if space else ''
+    for symbol, threshold in thresholds:
+        if n >= threshold:
+            return f'{float(n) / threshold:.{decimals}f}{sep}{symbol}'
+    return f'{n:.{decimals}f}{sep}{fallback_unit}'
+
+
 def bits2human(n, decimals=1, space=False):
     """
-    Converts a given number of bits to a human-readable string, with f-string formatting.
+    Converts a given number of bits to a human-readable string.
 
     ### Parameters
     - **n** (`int` or `float`): The number of bits to convert.
-    - **decimals** (`int`, optional): Number of decimal places. Defaults to 1.
-    - **space** (`bool`, optional): If True, adds a space between the value and unit.
-      Defaults to False.
+    - **decimals** (`int`, optional): Number of decimal places.
+      Defaults to 1.
+    - **space** (`bool`, optional): If True, adds a space between
+      the value and unit. Defaults to False.
 
     ### Returns
     - **str**: A string like '1.0KiB' or '1.0 KiB'.
@@ -180,33 +189,25 @@ def bits2human(n, decimals=1, space=False):
     >>> bits2human(8192, decimals=3, space=True)
     '1.000 KiB'
     """
-    sep = ' ' if space else ''
-
-    for symbol, threshold in _BITS_THRESHOLDS:
-        if n >= threshold:
-            value = float(n) / threshold
-            return f'{value:.{decimals}f}{sep}{symbol}'
-
-    return f'{n:.{decimals}f}{sep}B'
+    return _to_human(n, _BITS_THRESHOLDS, 'B', decimals, space)
 
 
 def bps2human(n, decimals=1, space=False):
     """
-    Converts a given number of bits per second to a human-readable format (e.g., bps, Kbps, Mbps,
-    etc.).
-
-    This function takes an integer number of bits per second and converts it to a more readable
-    format, using appropriate units like bits per second, kilobits per second, megabits per second,
-    etc., depending on the size of the input.
+    Converts a given number of bits per second to a
+    human-readable format (e.g., bps, Kbps, Mbps, etc.).
 
     ### Parameters
-    - **n** (`int` or `float`): The number of bits per second to convert.
-    - **decimals** (`int`, optional): Number of decimal places. Defaults to 1.
-    - **space** (`bool`, optional): If True, adds a space between the value and unit. Defaults to False.
+    - **n** (`int` or `float`): The number of bits per second
+      to convert.
+    - **decimals** (`int`, optional): Number of decimal places.
+      Defaults to 1.
+    - **space** (`bool`, optional): If True, adds a space between
+      the value and unit. Defaults to False.
 
     ### Returns
-    - **str**: The human-readable representation of the input bits per second with the appropriate
-      unit (e.g., '72Mbps').
+    - **str**: The human-readable representation of the input
+      bits per second with the appropriate unit (e.g., '72Mbps').
 
     ### Example
     >>> bps2human(72000000)
@@ -218,33 +219,24 @@ def bps2human(n, decimals=1, space=False):
     >>> bps2human(72000000, decimals=2, space=True)
     '72.00 Mbps'
     """
-    sep = ' ' if space else ''
-
-    for symbol, threshold in _BPS_THRESHOLDS:
-        if n >= threshold:
-            value = float(n) / threshold
-            return f'{value:.{decimals}f}{sep}{symbol}'
-
-    return f'{n:.{decimals}f}{sep}bps'
+    return _to_human(n, _BPS_THRESHOLDS, 'bps', decimals, space)
 
 
 def bytes2human(n, decimals=1, space=False):
     """
-    Converts a given number of bytes to a human-readable format (e.g., B, KiB, MiB, etc.).
-
-    This function converts an integer number of bytes into a more readable format, using
-    appropriate units such as bytes, kilobytes, megabytes, gigabytes, etc., depending on the size
-    of the input.
+    Converts a given number of bytes to a human-readable format
+    (e.g., B, KiB, MiB, etc.).
 
     ### Parameters
     - **n** (`int` or `float`): The number of bytes to convert.
-    - **decimals** (`int`, optional): Number of decimal places. Defaults to 1.
-    - **space** (`bool`, optional): Whether to add a space between value and unit.
-      Defaults to False.
+    - **decimals** (`int`, optional): Number of decimal places.
+      Defaults to 1.
+    - **space** (`bool`, optional): Whether to add a space between
+      value and unit. Defaults to False.
 
     ### Returns
-    - **str**: The human-readable representation of the input bytes with the appropriate unit
-      (e.g., '1.0KiB').
+    - **str**: The human-readable representation of the input
+      bytes with the appropriate unit (e.g., '1.0KiB').
 
     ### Example
     >>> bytes2human(1023)
@@ -259,14 +251,7 @@ def bytes2human(n, decimals=1, space=False):
     >>> bytes2human(1048576, decimals=1, space=True)
     '1.0 MiB'
     """
-    sep = ' ' if space else ''
-
-    for symbol, threshold in _BYTES_THRESHOLDS:
-        if n >= threshold:
-            value = float(n) / threshold
-            return f'{value:.{decimals}f}{sep}{symbol}'
-
-    return f'{n:.{decimals}f}{sep}B'
+    return _to_human(n, _BYTES_THRESHOLDS, 'B', decimals, space)
 
 
 def extract_hrnumbers(s, boundaries=None):
@@ -455,36 +440,13 @@ def humanduration2seconds(text):
     return sum(human2seconds(duration) for duration in extract_hrnumbers(text))
 
 
-def humanrange2bytes(text):
-    """
-    Converts a Nagios range (e.g., `@4K:5 MiB`) into a range in bytes, where the base is always
-    1024.
-
-    This function processes a Nagios-style range string that may contain units such as 'K', 'M',
-    'B', etc., and converts each part into bytes using the `human2bytes` function. The result is
-    a string with the range values expressed in bytes.
-
-    ### Parameters
-    - **text** (`str`): A Nagios-style range string, such as '@4K:5 MiB', where units like K, M,
-      or B are used.
-
-    ### Returns
-    - **str**: The range with each value converted into bytes, using 1024 as the base for 
-      conversions.
-
-    ### Example
-    >>> text = '@4K:5 MiB'
-    >>> humanrange2bytes(text)
-    '@4096:5242880'
-    """
+def _convert_range(text, convert_fn):
     parts = []
     for part in text.split(':'):
         if not part:
             continue
-        size = part.replace('-', '').replace('~', '').replace('@', '')
-        size_bytes = human2bytes(size)
-        parts.append(part.replace(size, str(size_bytes)))
-
+        raw = part.replace('-', '').replace('~', '').replace('@', '')
+        parts.append(part.replace(raw, str(convert_fn(raw))))
     result = ':'.join(parts)
     if text.startswith(':'):
         result = ':' + result
@@ -493,17 +455,35 @@ def humanrange2bytes(text):
     return result
 
 
-def humanrange2seconds(string):
+def humanrange2bytes(text):
     """
-    Converts a Nagios range to seconds by interpreting the duration components and summing them.
-
-    This function processes a Nagios-style range string (e.g., `@10m:1Y1D`) and converts each part
-    into seconds using the `humanduration2seconds` function. The result is a string with the range
-    values expressed in seconds.
+    Converts a Nagios range (e.g., `@4K:5 MiB`) into a range
+    in bytes, where the base is always 1024.
 
     ### Parameters
-    - **string** (`str`): A Nagios-style range string, such as '@10m:1Y1D', where units like 'm',
-      'Y', 'D' are used.
+    - **text** (`str`): A Nagios-style range string, such as
+      '@4K:5 MiB', where units like K, M, or B are used.
+
+    ### Returns
+    - **str**: The range with each value converted into bytes,
+      using 1024 as the base for conversions.
+
+    ### Example
+    >>> text = '@4K:5 MiB'
+    >>> humanrange2bytes(text)
+    '@4096:5242880'
+    """
+    return _convert_range(text, human2bytes)
+
+
+def humanrange2seconds(string):
+    """
+    Converts a Nagios range to seconds by interpreting the
+    duration components and summing them.
+
+    ### Parameters
+    - **string** (`str`): A Nagios-style range string, such as
+      '@10m:1Y1D', where units like 'm', 'Y', 'D' are used.
 
     ### Returns
     - **str**: The range with each value converted into seconds.
@@ -513,19 +493,7 @@ def humanrange2seconds(string):
     >>> humanrange2seconds(string)
     '@600:31622400'
     """
-    result = []
-    for part in string.split(':'):
-        if not part:
-            continue
-        duration = part.replace('-', '').replace('~', '').replace('@', '')
-        seconds = humanduration2seconds(duration)
-        result.append(part.replace(duration, f'{seconds}'))
-
-    if string.startswith(':'):
-        return ':' + ':'.join(result)
-    if string.endswith(':'):
-        return ':'.join(result) + ':'
-    return ':'.join(result)
+    return _convert_range(string, humanduration2seconds)
 
 
 def number2human(number):
@@ -587,7 +555,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
 
     ### Example
     >>> seconds2human(0.125)
-    '0.12s'
+    '124ms 1000us'
 
     >>> seconds2human(1)
     '1s'

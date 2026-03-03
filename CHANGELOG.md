@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * txt.py: improve readability of `extract_str()` fallback logic
 * txt.py: remove unused Python 2 type aliases and outdated comments
 * txt.py: simplify `to_text()` and `to_bytes()` for Python 3 only (remove dead Python 2 codepaths)
+* human.py: deduplicate `bits2human()`/`bps2human()`/`bytes2human()` via shared `_to_human()` helper
+* human.py: deduplicate `humanrange2bytes()`/`humanrange2seconds()` via shared `_convert_range()` helper
 * human.py: pre-compute mappings as module constants
 * powershell.py: `run_ps()` now always returns a dict
 * winrm.py: make `run_cmd()` and `run_ps()` JEA-aware
@@ -37,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * base.py: fix `get_table()` using wrong separator for the second data row when called without a header
+* human.py: fix incorrect `seconds2human()` docstring example for sub-second values
 * powershell.py: fix outdated shebang line
 * txt.py: fix `exception2text()` missing `traceback` import (fallback path was dead code)
 * txt.py: fix `sanitize_sensitive_data()` replacing the key name instead of the secret value
