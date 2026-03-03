@@ -19,6 +19,7 @@ __version__ = '2026030301'
 
 import codecs
 import re
+import traceback
 try:
     codecs.lookup_error('surrogateescape')
     HAS_SURROGATEESCAPE = True
@@ -26,9 +27,6 @@ except LookupError:
     HAS_SURROGATEESCAPE = False
 import operator
 
-string_types = str
-integer_types = int
-class_types = type
 text_type = str
 binary_type = bytes
 
@@ -196,7 +194,11 @@ def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
     if pos2 != -1:
         end = pos2 + len(to_txt) if include_fromto else pos2
         return s[start:end]
-    return s[pos1:] if be_tolerant and include_fromto else s[pos1 + len(from_txt):] if be_tolerant else ''
+    if not be_tolerant:
+        return ''
+    if include_fromto:
+        return s[pos1:]
+    return s[pos1 + len(from_txt):]
 
 
 def filter_mltext(_input, ignore):
@@ -238,11 +240,11 @@ def filter_mltext(_input, ignore):
     >>> filter_mltext(s, ['ipsum'])
     ''
     """
-    filtered_input = ''
-    for line in _input.splitlines():
-        if not any(i_line in line for i_line in ignore):
-            filtered_input += line + '\n'
-    return filtered_input
+    lines = [
+        line for line in _input.splitlines()
+        if not any(i_line in line for i_line in ignore)
+    ]
+    return '\n'.join(lines) + '\n' if lines else ''
 
 
 def match_regex(regex, string, key=''):
@@ -520,8 +522,7 @@ def to_bytes(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     elif nonstring == 'passthru':
         return obj
     elif nonstring == 'empty':
-        # python2.4 doesn't have b''
-        return to_bytes('')
+        return b''
     elif nonstring == 'strict':
         raise TypeError('obj must be a string type')
     else:
@@ -640,4 +641,3 @@ def uniq(string):
 
 
 to_native = to_text
-# PY2: to_native = to_bytes

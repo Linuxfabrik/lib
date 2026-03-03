@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * base.py: remove unused `collections` import
 * base.py: strip trailing semicolons in `get_perfdata()` output
 * db_sqlite.py: reduce unnecessary dictionary object creation
+* txt.py: improve `filter_mltext()` performance (avoid O(n²) string concatenation)
+* txt.py: improve readability of `extract_str()` fallback logic
+* txt.py: remove unused Python 2 type aliases and outdated comments
 * human.py: pre-compute mappings as module constants
 * powershell.py: `run_ps()` now always returns a dict
 * winrm.py: make `run_cmd()` and `run_ps()` JEA-aware
@@ -34,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * base.py: fix `get_table()` using wrong separator for the second data row when called without a header
 * powershell.py: fix outdated shebang line
+* txt.py: fix `exception2text()` missing `traceback` import (fallback path was dead code)
 * txt.py: fix `sanitize_sensitive_data()` replacing the key name instead of the secret value
 * winrm.py: pass parameters correctly in `run_cmd()` when using pypsrp
 
