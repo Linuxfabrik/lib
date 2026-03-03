@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026022501'
+__version__ = '2026030301'
 
 try:
     import winrm
@@ -27,6 +27,68 @@ except ImportError:
     HAVE_JEA = False
 
 from . import txt
+
+_AUTH_MAP = {
+    'kerberos': 'kerberos',
+    'negotiate': 'negotiate',
+    'ntlm': 'ntlm',
+    'credssp': 'credssp',
+    'basic': 'basic',
+    'plaintext': 'basic',
+    'ssl': 'basic',
+}
+
+
+def _build_auth(args):
+    """
+    Build a `(username, password)` tuple from `args`.
+
+    For Kerberos/negotiate transports with missing credentials,
+    returns `(None, None)` so the library falls back to the
+    Kerberos credential cache (`kinit`). Otherwise prepends
+    `WINRM_DOMAIN` to the username when set.
+
+    ### Parameters
+    - **args**: Object with `WINRM_USERNAME`,
+      `WINRM_PASSWORD`, `WINRM_TRANSPORT`, and optionally
+      `WINRM_DOMAIN`.
+
+    ### Returns
+    - **tuple**: `(username, password)` suitable for
+      pypsrp or pywinrm.
+    """
+    username = getattr(args, 'WINRM_USERNAME', None)
+    password = getattr(args, 'WINRM_PASSWORD', None)
+    transport = (
+        getattr(args, 'WINRM_TRANSPORT', None) or ''
+    ).lower()
+    if transport in ('kerberos', 'negotiate') and (
+        not username or not password
+    ):
+        return (None, None)
+    if getattr(args, 'WINRM_DOMAIN', None):
+        return (f'{username}@{args.WINRM_DOMAIN}', password)
+    return (username, password)
+
+
+def _map_transport(args):
+    """
+    Derive PSRP auth method, SSL flag, and port from `args`.
+
+    ### Parameters
+    - **args**: Object with `WINRM_TRANSPORT`.
+
+    ### Returns
+    - **tuple**: `(psrp_auth, use_ssl, port)`.
+    """
+    transport = (
+        getattr(args, 'WINRM_TRANSPORT', None) or ''
+    ).lower()
+    psrp_auth = _AUTH_MAP.get(transport, 'negotiate')
+    use_ssl = (transport == 'ssl')
+    port = 5986 if use_ssl else 5985
+    return (psrp_auth, use_ssl, port)
+
 
 def run_cmd(args, cmd, params=None):
     """
@@ -81,44 +143,13 @@ def run_cmd(args, cmd, params=None):
     >>> run_cmd(args, "ipconfig", ["/all"])
     {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
     """
-    # Determine authentication credentials
-    # For Kerberos, allow using existing credentials from kinit
-    username = getattr(args, 'WINRM_USERNAME', None)
-    password = getattr(args, 'WINRM_PASSWORD', None)
-
-    # Check if we should use Kerberos with existing credentials
-    _transport = (getattr(args, 'WINRM_TRANSPORT', None) or '').lower()
-    use_kerberos_cache = (_transport in ['kerberos', 'negotiate']) and (not username or not password)
-
-    if use_kerberos_cache:
-        # Use None for username/password to let Kerberos use credential cache
-        auth = (None, None)
-    else:
-        # Use provided credentials
-        auth = (username, password)
-        if getattr(args, 'WINRM_DOMAIN', None):
-            auth = (f'{username}@{args.WINRM_DOMAIN}', password)
-
+    auth = _build_auth(args)
     if params is None:
         params = []
 
     if HAVE_JEA:
         try:
-            # translate pywinrm transport -> pypsrp auth/ssl/port
-            _auth_map = {
-                'kerberos': 'kerberos',
-                'negotiate': 'negotiate',
-                'ntlm': 'negotiate',   # NTLM is negotiated under "negotiate"
-                'credssp': 'credssp',
-                'basic': 'basic',
-                'plaintext': 'basic',  # basic over HTTP
-                'ssl': 'basic',        # basic over HTTPS
-            }
-            _psrp_auth = _auth_map.get(_transport, 'negotiate')
-            _use_ssl = (_transport == 'ssl')
-            _port = 5986 if _use_ssl else 5985
-
-            # create PSRP client
+            _psrp_auth, _use_ssl, _port = _map_transport(args)
             session = Client(
                 server=args.WINRM_HOSTNAME,
                 username=auth[0],
@@ -129,7 +160,10 @@ def run_cmd(args, cmd, params=None):
                 cert_validation=True,
             )
 
-            stdout, stderr, rc = session.execute_cmd(cmd, args=params)
+            stdout, stderr, rc = session.execute_cmd(
+                cmd,
+                args=params,
+            )
             return {
                 'retc': rc,
                 'stdout': txt.to_text(stdout),
@@ -163,128 +197,119 @@ def run_cmd(args, cmd, params=None):
                 'stderr': txt.exception2text(e),
             }
 
-    # Neither pypsrp nor pywinrm is available
     return {
         'retc': 1,
         'stdout': '',
-        'stderr': 'No compatible remoting library available (pypsrp or pywinrm).',
+        'stderr': 'No compatible remoting library available '
+                 '(pypsrp or pywinrm).',
     }
+
+
+def _quote_ps_value(value):
+    """Escape a value for use in a PowerShell command string.
+
+    Single-quotes the value, doubling any embedded single
+    quotes (`'` becomes `''`).
+
+    ### Parameters
+    - **value**: The value to quote (converted to `str`).
+
+    ### Returns
+    - **str**: A safely quoted PowerShell string literal.
+    """
+    return "'{}'".format(str(value).replace("'", "''"))
 
 
 def run_ps(args, cmd, params=None):
     """
-    Run a PowerShell cmdlet on a remote Windows host via WinRM/PSRP and
-    return a normalized result dictionary.
+    Run PowerShell on a remote Windows host via WinRM/PSRP
+    and return a normalized result dictionary.
 
-    Prefers **pypsrp (PSRP)** if available (best for JEA/PowerShell Remoting);
-    otherwise falls back to **pywinrm**. Authentication, transport, and SSL/port
-    are derived from the provided `args`.
+    Prefers **pypsrp (PSRP)** if available (best for
+    JEA/PowerShell Remoting); otherwise falls back to
+    **pywinrm**.
 
     ### Parameters
-    - **args**: An object (e.g., `argparse.Namespace`) that provides at least:
+    - **args**: Object (e.g. `argparse.Namespace`) with:
         - `WINRM_HOSTNAME` (`str`): Target host or IP.
-        - `WINRM_USERNAME` (`str`, optional): Username. If `None` or empty when using
-          Kerberos transport, will use existing Kerberos credentials from credential cache
-          (e.g., obtained via `kinit`).
-        - `WINRM_PASSWORD` (`str`, optional): Password. If `None` or empty when using
-          Kerberos transport, will use existing Kerberos credentials from credential cache.
-        - `WINRM_TRANSPORT` (`str`, optional): Transport (`'negotiate'`, `'kerberos'`,
-          `'ntlm'`, `'credssp'`, `'basic'`, `'ssl'`, etc.). Defaults to `'negotiate'`
-          if unset.
-        - `WINRM_DOMAIN` (`str`, optional): If set, username is sent as `user@domain`.
-        - `WINRM_CONFIGURATION_NAME` (`str`, optional): PowerShell session configuration
-          name (JEA endpoint). Defaults to `'Microsoft.PowerShell'` if unset.
-          Only supported with **pypsrp**.
-      (Additional attributes may be honored by the underlying libraries if present.)
-    - **cmd** (`str`): PowerShell cmdlet name to execute remotely (e.g. `'Get-Service'`).
-      When using pypsrp, this is passed directly as a cmdlet to the pipeline so JEA
-      can properly allow/deny it. When falling back to pywinrm, it is passed as a
-      scriptblock string.
-    - **params** (`list[str]`, optional): Positional arguments passed to the cmdlet.
-      Only used with pypsrp. Defaults to `[]`.
+        - `WINRM_USERNAME` (`str`, optional): Username.
+          If empty with Kerberos transport, the credential
+          cache (`kinit`) is used.
+        - `WINRM_PASSWORD` (`str`, optional): Password.
+          Same Kerberos fallback as username.
+        - `WINRM_TRANSPORT` (`str`, optional): Transport
+          (e.g. `'negotiate'`, `'kerberos'`, `'ntlm'`,
+          `'credssp'`, `'basic'`, `'ssl'`).
+          Defaults to `'negotiate'`.
+        - `WINRM_DOMAIN` (`str`, optional): If set,
+          username is sent as `user@domain`.
+        - `WINRM_CONFIGURATION_NAME` (`str`, optional):
+          JEA endpoint name. Defaults to
+          `'Microsoft.PowerShell'`. Only with **pypsrp**.
+    - **cmd** (`str`): What to execute remotely. Meaning
+      depends on `params`:
+        - `params is None` — `cmd` is an arbitrary
+          PowerShell script (pipelines, expressions, etc.)
+          executed via `add_script()`.
+        - `params` given (`list` or `dict`) — `cmd` is a
+          single cmdlet name executed via `add_cmdlet()`
+          (optimal for JEA allow/deny).
+    - **params** (`list[str]`, `dict`, or `None`):
+        - `None` (default) — no params; `cmd` is run as a
+          script.
+        - `list[str]` — positional arguments added via
+          `add_argument()`.
+        - `dict` — named parameters added via
+          `add_parameter(name, value)`.
 
     ### Returns
-    - **dict**: A normalized result with:
-        - `retc` (`int`): Return code (`0` if no PowerShell errors were reported).
-        - `stdout` (`str`): Captured standard output/text from the script.
-        - `stderr` (`str`): Aggregated error/diagnostic output.
-          - For **PSRP**: collects entries from the PowerShell *Error* stream
-            (human-readable via `to_string()` when available).
-          - For **pywinrm**: uses `std_err`; if `retc == 0` and stderr begins with
-            `#< CLIXML`, it is suppressed as benign progress noise.
-
-    ### Behavior
-    - Maps `WINRM_TRANSPORT` to PSRP auth (`kerberos`, `negotiate`, `credssp`, `basic`)
-      and decides SSL/port (5986 for SSL, 5985 otherwise) when using **pypsrp**,
-      then executes via a direct PSRP pipeline (RunspacePool + PowerShell) to avoid
-      Invoke-Expression wrapping, ensuring JEA can enforce allow/deny on the cmdlet name.
-    - Falls back to **pywinrm** and executes via `Session.run_ps()` if pypsrp is not available.
-    - For Kerberos authentication: if `WINRM_USERNAME` and `WINRM_PASSWORD` are not provided
-      (or are empty/None), the function will attempt to use existing Kerberos credentials
-      from the credential cache (obtained via `kinit`).
-    - On any exception, returns `{'retc': 1, 'stdout': '', 'stderr': <exception text>}`.
-    - If neither backend is installed, returns an error indicating that no compatible
-      remoting library is available.
+    - **dict**: Normalized result with:
+        - `retc` (`int`): `0` if no errors.
+        - `stdout` (`str`): Captured output.
+        - `stderr` (`str`): Error/diagnostic output.
+          For **pywinrm**: CLIXML progress noise is
+          suppressed when `retc == 0`.
 
     ### Example
-    >>> # With explicit credentials:
-    >>> run_ps(args, "Get-Process | Select-Object -First 1 | Format-Table Name,Id -AutoSize")
-    {'retc': 0, 'stdout': 'Name    Id\\r\\n----    --\\r\\n...\\r\\n', 'stderr': ''}
-    >>> # With Kerberos using kinit credentials (username/password can be None):
-    >>> run_ps(args, "Get-Process | Select-Object -First 1 | Format-Table Name,Id -AutoSize")
-    {'retc': 0, 'stdout': 'Name    Id\\r\\n----    --\\r\\n...\\r\\n', 'stderr': ''}
-    >>> # With custom configuration name (JEA endpoint):
-    >>> args.WINRM_CONFIGURATION_NAME = 'MyJEAEndpoint'
-    >>> run_ps(args, "Get-Service", ["servicename"])
-    {'retc': 0, 'stdout': '...','stderr': ''}
+    Pipeline (params=None, uses add_script):
+    >>> run_ps(args, "Get-Process | Select -First 1")
+
+    Positional params (uses add_cmdlet + add_argument):
+    >>> run_ps(args, "Get-Service", ["WinRM"])
+
+    Named params (uses add_cmdlet + add_parameter):
+    >>> run_ps(
+    ...     args,
+    ...     "Get-WmiObject",
+    ...     {"Class": "Win32_OperatingSystem"},
+    ... )
     """
-    # Determine authentication credentials
-    # For Kerberos, allow using existing credentials from kinit
-    username = getattr(args, 'WINRM_USERNAME', None)
-    password = getattr(args, 'WINRM_PASSWORD', None)
+    auth = _build_auth(args)
 
-    # Check if we should use Kerberos with existing credentials
-    _transport = (getattr(args, 'WINRM_TRANSPORT', None) or '').lower()
-    use_kerberos_cache = (_transport in ['kerberos', 'negotiate']) and (not username or not password)
-
-    if use_kerberos_cache:
-        # Use None for username/password to let Kerberos use credential cache
-        auth = (None, None)
-    else:
-        # Use provided credentials
-        auth = (username, password)
-        if getattr(args, 'WINRM_DOMAIN', None):
-            auth = (f'{username}@{args.WINRM_DOMAIN}', password)
-
-    if params is None:
-        params = []
-
-    configuration_name = getattr(args, 'WINRM_CONFIGURATION_NAME', None)
+    configuration_name = getattr(
+        args, 'WINRM_CONFIGURATION_NAME', None,
+    )
     if configuration_name and not HAVE_JEA:
         return {
             'retc': 1,
             'stdout': '',
-            'stderr': 'WINRM_CONFIGURATION_NAME requires pypsrp (JEA). Install pypsrp or unset --winrm-configuration-name.',
+            'stderr': 'WINRM_CONFIGURATION_NAME requires '
+                     'pypsrp (JEA). Install pypsrp or '
+                     'unset '
+                     '--winrm-configuration-name.',
         }
 
     if HAVE_JEA:
         try:
-            from pypsrp.powershell import PowerShell, RunspacePool
+            from pypsrp.powershell import (
+                PowerShell,
+                RunspacePool,
+            )
             from pypsrp.wsman import WSMan
 
-            # translate pywinrm transport -> pypsrp auth/ssl/port
-            _auth_map = {
-                'kerberos': 'kerberos',
-                'negotiate': 'negotiate',
-                'ntlm': 'negotiate',   # NTLM is negotiated under "negotiate"
-                'credssp': 'credssp',
-                'basic': 'basic',
-                'plaintext': 'basic',  # basic over HTTP
-                'ssl': 'basic',        # basic over HTTPS
-            }
-            _psrp_auth = _auth_map.get(_transport, 'negotiate')
-            _use_ssl = (_transport == 'ssl')
-            _port = 5986 if _use_ssl else 5985
+            _psrp_auth, _use_ssl, _port = (
+                _map_transport(args)
+            )
 
             wsman = WSMan(
                 server=args.WINRM_HOSTNAME,
@@ -296,40 +321,49 @@ def run_ps(args, cmd, params=None):
                 cert_validation=True,
             )
 
-            if not params:  
-                parts = cmd.split()
-                cmd = parts[0]
-                params = parts[1:]
-
-            # Use RunspacePool + PowerShell directly to avoid Invoke-Expression wrapping, so JEA can properly allow/deny
-            # the cmdlet by name rather than seeing a raw string blob.
-            with RunspacePool(wsman, configuration_name=configuration_name or 'Microsoft.PowerShell') as pool:
+            with RunspacePool(
+                wsman,
+                configuration_name=(
+                    configuration_name
+                    or 'Microsoft.PowerShell'
+                ),
+            ) as pool:
                 ps = PowerShell(pool)
-                ps.add_cmdlet(cmd)
-                for param in params:
-                    ps.add_argument(param)
+                if params is not None:
+                    ps.add_cmdlet(cmd)
+                    if isinstance(params, dict):
+                        for name, value in params.items():
+                            ps.add_parameter(name, value)
+                    else:
+                        for param in params:
+                            ps.add_argument(param)
+                else:
+                    ps.add_script(cmd)
                 output = ps.invoke()
 
-            stdout = '\n'.join([str(o) for o in output])
+            stdout = '\n'.join(
+                str(o) for o in output
+            )
 
-            # stderr from PSRP error stream(s)
             stderr_lines = []
             for err in ps.streams.error:
-                # err.to_string() gives a readable message with category/position if available
                 try:
-                    stderr_lines.append(err.to_string())
+                    stderr_lines.append(
+                        err.to_string(),
+                    )
                 except Exception:
-                    # fallback to message text
-                    msg = getattr(err, 'message', None) or str(err)
+                    msg = (
+                        getattr(err, 'message', None)
+                        or str(err)
+                    )
                     stderr_lines.append(str(msg))
             stderr = '\n'.join(stderr_lines)
 
-            result = {
+            return {
                 'retc': 0 if not ps.had_errors else 1,
                 'stdout': txt.to_text(stdout),
                 'stderr': txt.to_text(stderr),
             }
-            return result
         except Exception as e:
             return {
                 'retc': 1,
@@ -345,17 +379,38 @@ def run_ps(args, cmd, params=None):
                 transport=args.WINRM_TRANSPORT,
             )
 
-            # run PowerShell
-            result = session.run_ps(cmd)
+            if params is not None:
+                if isinstance(params, dict):
+                    param_str = ' '.join(
+                        '-{} {}'.format(
+                            k, _quote_ps_value(v),
+                        )
+                        for k, v in params.items()
+                    )
+                    ps_cmd = '{} {}'.format(
+                        cmd, param_str,
+                    )
+                else:
+                    ps_cmd = '{} {}'.format(
+                        cmd,
+                        ' '.join(str(p) for p in params),
+                    ) if params else cmd
+            else:
+                ps_cmd = cmd
+
+            result = session.run_ps(ps_cmd)
 
             result = {
                 'retc': result.status_code,
                 'stdout': txt.to_text(result.std_out),
                 'stderr': txt.to_text(result.std_err),
             }
-            # if `result.status_code == 0`, ignore stderr that starts with `#< CLIXML`
-            # (it's just progress noise)
-            if result['retc'] == 0 and result['stderr'].startswith('#< CLIXML'):
+            if (
+                result['retc'] == 0
+                and result['stderr'].startswith(
+                    '#< CLIXML',
+                )
+            ):
                 result['stderr'] = ''
             return result
         except Exception as e:
@@ -365,9 +420,9 @@ def run_ps(args, cmd, params=None):
                 'stderr': txt.exception2text(e),
             }
 
-    # Neither pypsrp nor pywinrm is available
     return {
         'retc': 1,
         'stdout': '',
-        'stderr': 'No compatible remoting library available (pypsrp or pywinrm).',
+        'stderr': 'No compatible remoting library '
+                 'available (pypsrp or pywinrm).',
     }
