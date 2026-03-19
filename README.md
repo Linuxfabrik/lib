@@ -1,177 +1,173 @@
+<h1 align="center">
+  Linuxfabrik's Python Libraries
+</h1>
+<p align="center">
+  Python 3.6+ modules for Linuxfabrik projects: DB access, SQLite KVS caching, WinRM, SMB, shell execution, 15+ API integrations (Icinga2, Veeam, Nextcloud, ...). Available on PyPI.
+  <span>&#8226;</span>
+  <b>made by <a href="https://linuxfabrik.ch/">Linuxfabrik</a></b>
+</p>
+<div align="center">
+
+![GitHub Stars](https://img.shields.io/github/stars/linuxfabrik/lib)
+![License](https://img.shields.io/github/license/linuxfabrik/lib)
+![Version](https://img.shields.io/github/v/release/linuxfabrik/lib?sort=semver)
+[![PyPI](https://img.shields.io/pypi/v/linuxfabrik-lib)](https://pypi.org/project/linuxfabrik-lib/)
+![Python](https://img.shields.io/badge/Python-3.6+-3776ab)
+![GitHub Issues](https://img.shields.io/github/issues/linuxfabrik/lib)
+[![GitHubSponsors](https://img.shields.io/github/sponsors/Linuxfabrik?label=GitHub%20Sponsors)](https://github.com/sponsors/Linuxfabrik)
+[![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=7AW3VVX62TR4A&source=url)
+
+</div>
+
+<br />
+
+
 # Linuxfabrik's Python Libraries
 
-These Python libraries are used in several Linuxfabrik projects, including the [Linuxfabrik Monitoring Plugins project](https://github.com/Linuxfabrik/monitoring-plugins). Requires Python 3.6+ (default Python version on RHEL 8).
+A mature, production-grade Python library collection providing 35+ modules with 300+ functions for system administration, monitoring, and infrastructure automation. These libraries are used across several Linuxfabrik projects -- most prominently the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins) (Nagios/Icinga check plugins), but also in [ChecklistFabrik](https://github.com/Linuxfabrik/checklistfabrik) and other tools.
+
+The library requires Python 3.6+ (the default Python version on RHEL 8) and runs on every platform.
 
 
 ## Installation
 
-`pip install linuxfabrik-lib`
+```bash
+pip install linuxfabrik-lib
+```
 
 
 ## Documentation
 
-[API Documentation](https://linuxfabrik.github.io/lib/) (hosted on GitHub Pages).
+Full API documentation is available at [linuxfabrik.github.io/lib](https://linuxfabrik.github.io/lib/) (generated with [pdoc](https://pdoc.dev/)).
 
-The HTML documentation is created using [https://pdoc.dev/](https://pdoc.dev/):
 
-```
-pip install pdoc
-pdoc --output-dir docs \
-    args.py \
-    base.py \
-    cache.py \
-    db_mysql.py \
-    db_sqlite.py \
-    disk.py \
-    distro.py \
-    dmidecode.py \
-    feedparser.py \
-    globals.py \
-    grassfish.py \
-    huawei.py \
-    human.py \
-    icinga.py \
-    infomaniak.py \
-    jitsi.py \
-    keycloak.py \
-    lftest.py \
-    librenms.py \
-    net.py \
-    nextcloud.py \
-    nodebb.py \
-    powershell.py \
-    psutil.py \
-    qts.py \
-    redfish.py \
-    rocket.py \
-    shell.py \
-    smb.py \
-    time.py \
-    txt.py \
-    uptimerobot.py \
-    url.py \
-    veeam.py \
-    version.py \
-    wildfly.py \
-    winrm.py
-```
+## Design Principles
+
+These libraries are built with a clear set of priorities:
+
+* **Broad compatibility.** Python 3.6+ is the minimum, ensuring the libraries work on RHEL 8 and every major distribution without requiring newer runtimes.
+* **Cross-platform.** Core functions behave identically on Linux, Windows, and macOS. Platform-specific code (WinRM, PowerShell, SMB) is cleanly separated.
+* **Minimal dependencies.** We avoid pulling in large dependency trees. External packages are used only when the alternative would be unreliable or significantly more complex.
+* **Consistent error handling.** Most functions return `(success, result)` tuples. The caller decides whether to continue or exit -- the library never exits on its own. The `base.coe()` ("Continue or Exit") helper makes this pattern concise.
+* **Automatic redaction.** Sensitive data (passwords, tokens, API keys) in error messages is automatically sanitized before output.
+* **Nagios/Icinga conventions.** State constants, threshold evaluation, performance data formatting, and range parsing follow the [Monitoring Plugins Development Guidelines](https://www.monitoring-plugins.org/doc/guidelines.html).
+* **Defensive defaults.** Functions use sensible timeouts, safe SSL settings, and locked-down defaults so that plugins work out of the box without extensive configuration.
 
 
 ## Library Index
 
-* args.py:  
-Extends argparse by new input argument data types on demand.
 
-* base.py:  
-Provides very common every-day functions.
+### Core Utilities
 
-* cache.py:  
-Simple Cache in the form of a Key-Value Store (KVS) like Redis, based on SQLite, optionally supporting expiration of keys. No detailed error handling here. If the cache does not work, we (currently) don't report the reason and simply return `False`.
+| Module | Description | Key Functions |
+|--------|-------------|---------------|
+| **args.py** | Extends `argparse` with custom input types for monitoring thresholds and common parameters. | `csv()`, `float_or_none()`, `int_or_none()`, `number_unit_method()` |
+| **base.py** | The central library for plugin development. Provides state evaluation, threshold comparison, performance data formatting, ASCII table output, and the `coe()` error-handling pattern. | `coe()`, `get_perfdata()`, `get_state()`, `get_table()`, `get_worst()`, `match_range()`, `oao()`, `state2str()` |
+| **globals.py** | Defines the four Nagios/Icinga plugin states: `STATE_OK` (0), `STATE_WARN` (1), `STATE_CRIT` (2), `STATE_UNKNOWN` (3). | -- |
+| **human.py** | Converts raw numbers and durations to human-readable representations and back. Supports binary/SI prefixes and Nagios range syntax with units. | `bytes2human()`, `human2bytes()`, `seconds2human()`, `human2seconds()`, `number2human()` |
+| **lftest.py** | Test harness for running plugin unit tests against expected STDOUT/STDERR output files. | `test()` |
+| **time.py** | Date/time conversions between UNIX epochs, ISO strings, datetime objects, and weekday names. Timezone-aware. | `epoch2iso()`, `now()`, `timestr2epoch()`, `timestrdiff()`, `utc_offset()` |
+| **txt.py** | Text processing: encoding conversion, regex compilation, substring extraction, multi-line parsing, sensitive data redaction, and pluralization. | `sanitize_sensitive_data()`, `extract_str()`, `mltext2array()`, `to_text()`, `to_bytes()` |
+| **version.py** | Software version parsing, comparison, and End-of-Life checking against [endoflife.date](https://endoflife.date). | `check_eol()`, `version()`, `version2float()` |
 
-* db_mysql.py:  
-Library for accessing MySQL/MariaDB servers.
 
-* db_sqlite.py:  
-Library for accessing SQLite databases.
+### Data Access & Caching
 
-* disk.py:  
-Offers file and disk related functions, like getting a list of partitions, grepping a file, etc.
+| Module | Description | Key Functions |
+|--------|-------------|---------------|
+| **cache.py** | A simple SQLite-based key-value store with optional key expiration. Used for persisting state between plugin runs. | `get()`, `set()` |
+| **db_mysql.py** | MySQL/MariaDB client with connection management, query execution, and privilege checking. | `connect()`, `select()`, `check_select_privileges()` |
+| **db_sqlite.py** | Full SQLite interface: table/index creation, CRUD operations, CSV import, regex support, and automatic load computation for time-series data. | `connect()`, `select()`, `insert()`, `create_table()`, `compute_load()`, `import_csv()` |
 
-* distro.py:  
-Provides information about the Linux distribution it runs on, such as a reliable machine-readable distro ID and "os_family" (known from Ansible).
 
-* dmidecode.py:  
-Library for parsing information from dmidecode. Have a look at `man dmidecode` for details about dmidecode.
+### System & OS
 
-* endoflifedate.py:  
-This library stores information from https://endoflife.date/api/ for offline usage and therefore needs to be updated periodically when version checks don't have access to the Internet.
+| Module | Description | Key Functions |
+|--------|-------------|---------------|
+| **disk.py** | File I/O, directory walking, CSV/environment file parsing, partition listing, device-mapper resolution, and file ownership lookup. | `read_file()`, `walk_directory()`, `grep_file()`, `read_csv()`, `get_real_disks()` |
+| **distro.py** | Linux distribution detection. Returns normalized facts including distribution name, version, and Ansible-compatible `os_family`. | `get_distribution_facts()` |
+| **dmidecode.py** | Parses `dmidecode` output into structured data. Extracts CPU, RAM, firmware, serial number, manufacturer, and model information. | `get_data()`, `cpu_type()`, `ram()`, `manufacturer()`, `model()`, `serno()` |
+| **endoflifedate.py** | Bundled End-of-Life data from [endoflife.date](https://endoflife.date) for offline version checks when internet access is unavailable. | -- |
+| **psutil.py** | Wrapper around `psutil` for retrieving mounted disk partitions with device, mount point, and filesystem type. | `get_partitions()` |
+| **shell.py** | Subprocess execution with pipeline support, regex filtering, configurable locale, and timeout handling. Works on Linux and Windows. | `shell_exec()`, `get_command_output()` |
 
-* feedparser.py:  
-Parse Atom and RSS feeds in Python.
 
-* globals.py:  
-This library defines the global plugin states, based on the POSIX spec of returning a positive value and just like in `monitoring-plugins/plugins-scripts/utils.sh.in`, except that we do not make use of `STATE_DEPENDENT`.
+### Networking & HTTP
 
-* grassfish.py:  
-Provides functions using the Grassfish REST-API.
+| Module | Description | Key Functions |
+|--------|-------------|---------------|
+| **feedparser.py** | Parses Atom and RSS feeds from URLs using BeautifulSoup. | `parse()` |
+| **net.py** | Low-level networking: TCP/UDP sockets, SSL connections, Unix domain sockets, public IP lookup, hostname validation, and CIDR conversion. | `fetch()`, `fetch_ssl()`, `fetch_socket()`, `get_public_ip()`, `is_valid_hostname()` |
+| **url.py** | HTTP client for fetching HTML, JSON, or raw data. Supports GET/POST, Basic/Digest authentication, SSL/TLS options, custom headers, and proxy control. | `fetch()`, `fetch_json()`, `get_latest_version_from_github()`, `strip_tags()` |
 
-* huawei.py:  
-This library collects some Huawei related functions that are needed by Huawei check plugins.
 
-* human.py:  
-Functions to convert raw numbers, times etc. to a human readable representation (and sometimes back).
+### Windows Integration
 
-* icinga.py:  
-This module tries to make accessing the Icinga2 API easier.
+| Module | Description | Key Functions |
+|--------|-------------|---------------|
+| **powershell.py** | Executes PowerShell commands locally (on Windows hosts). | `run_ps()` |
+| **smb.py** | Native SMB/CIFS file access: list, glob, and open files on remote shares with encryption support. | `glob()`, `open_file()` |
+| **winrm.py** | Executes commands and PowerShell scripts on remote Windows hosts via WinRM. Supports Kerberos, NTLM, CredSSP, and JEA (Just Enough Administration). | `run_cmd()`, `run_ps()` |
 
-* infomaniak.py:  
-Provides functions using the Infomanik REST-API.
 
-* jitsi.py:  
-This library collects some Jitsi related functions that are needed by more than one Jitsi plugin.
+### API Integrations
 
-* keycloak.py:  
-This library collects some Keycloak related functions that are needed by more than one Keycloak plugin.
+| Module | Description | Key Functions |
+|--------|-------------|---------------|
+| **grassfish.py** | [Grassfish](https://www.grassfish.com/) digital signage REST API. | `fetch_json()` |
+| **huawei.py** | Huawei storage system status parsing (controller models, health, LED status). | `get_controller_model()` |
+| **icinga.py** | Icinga2 REST API client for querying services, setting acknowledgements, and managing downtimes. | `get_service()`, `set_ack()`, `set_downtime()`, `remove_downtime()` |
+| **infomaniak.py** | [Infomaniak](https://www.infomaniak.com/) Swiss Backup REST API for events and backup products. | `get_events()`, `get_swiss_backup_products()` |
+| **jitsi.py** | [Jitsi Meet](https://jitsi.org/) server statistics API. | `get_data()` |
+| **keycloak.py** | [Keycloak](https://www.keycloak.org/) identity provider API with OIDC discovery and admin token management. | `discover_oidc_endpoints()`, `obtain_admin_token()`, `get_data()` |
+| **librenms.py** | [LibreNMS](https://www.librenms.org/) monitoring API with state conversion. | `get_data()` |
+| **nextcloud.py** | [Nextcloud](https://nextcloud.com/) OCC command execution. | `run_occ()` |
+| **nodebb.py** | [NodeBB](https://nodebb.org/) forum API. | `get_data()` |
+| **qts.py** | [QNAP QTS](https://www.qnap.com/) NAS API with authentication. | `get_auth_sid()` |
+| **redfish.py** | [Redfish](https://www.dmtf.org/standards/redfish) BMC API for chassis, thermal, power, and storage monitoring. | `get_chassis()`, `get_thermal()`, `get_power()` |
+| **rocket.py** | [Rocket.Chat](https://www.rocket.chat/) API for statistics, room management, and webhooks. | `get_token()`, `get_stats()`, `send2webhook()` |
+| **uptimerobot.py** | [UptimeRobot](https://uptimerobot.com/) API for monitor and alert management. | `get_monitors()`, `new_monitor()`, `get_account_details()` |
+| **veeam.py** | [Veeam](https://www.veeam.com/) Backup & Replication Enterprise Manager API. | `get_token()` |
+| **wildfly.py** | [WildFly/JBoss](https://www.wildfly.org/) application server management API (standalone and domain mode). | `get_data()` |
 
-* lftest.py:  
-Provides test functions for unit tests.
 
-* librenms.py:  
-This library collects some LibreNMS related functions that are needed by LibreNMS check plugins.
+## Usage Example
 
-* net.py:  
-Provides network related functions and variables.
+A typical monitoring plugin using these libraries:
 
-* nextcloud.py:  
-This library collects some Nextcloud related functions.
+```python
+import lib.args
+import lib.base
+import lib.url
+from lib.globals import (STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN)
 
-* nodebb.py:  
-This library collects some NodeBB related functions that are needed by more than one NodeBB plugin.
+def main():
+    # Parse arguments with custom threshold types
+    parser = lib.args.ArgumentParser()
+    parser.add_argument('--url', required=True)
+    parser.add_argument('--warning', type=lib.args.float_or_none, default=80)
+    parser.add_argument('--critical', type=lib.args.float_or_none, default=90)
+    args = parser.parse_args()
 
-* powershell.py:  
-This library collects some Microsoft PowerShell related functions.
+    # Fetch data (coe = "Continue or Exit")
+    result = lib.base.coe(lib.url.fetch_json(args.url))
 
-* psutil.py:  
-Wrapper library for functions from psutil.
+    # Evaluate thresholds
+    state = lib.base.get_state(result['usage'], args.warning, args.critical)
+    perfdata = lib.base.get_perfdata('usage', result['usage'], '%', args.warning, args.critical, 0, 100)
 
-* redfish.py:  
-This library parses data returned from the Redfish API.
+    # Output and exit
+    lib.base.oao('Usage is {}%'.format(result['usage']), state, perfdata)
 
-* rocket.py:  
-This library collects some Rocket.Chat related functions that are needed by more than one Rocket.Chat plugin.
-
-* shell.py:  
-Communicates with the Shell.
-
-* smb.py:  
-Provides functions to establish native SMB connections.
-
-* time.py:  
-Provides datetime functions.
-
-* txt.py:  
-A collection of text functions.
-
-* uptimerobot.py:  
-Interacts with the UptimeRobot API.
-
-* url.py:  
-Get for example HTML or JSON from an URL.
-
-* veeam.py:  
-This library interacts with the Veeam Enterprise Manager API.
-
-* version.py:  
-Provides functions for handling software versions.
-
-* wildfly.py:  
-This library collects some WildFly/JBoss related functions that are needed by more than one WildFly/JBoss plugin.
-
-* winrm.py:  
-This library collects some Microsoft WinRM related functions. On RHEL and compatible, if you want to use Kerberos WinRM transport, you need to `sudo dnf -y install krb5-devel` (needed by `pykerberos`) and `pip install --user gssapi krb5 pykerberos `.
+if __name__ == '__main__':
+    main()
+```
 
 
 ## Tips & Tricks
 
-* Counts the function calls to any "lib" library in your project and sorts the results by frequency in descending order:  
-  `grep -rhoP '\Wlib\.[a-zA-Z0-9_\.]+' * | sed 's/^[^a-zA-Z0-9]*//' | sort | uniq -c | sort -nr`
+Count the function calls to any "lib" library in your project and sort by frequency:
+
+```bash
+grep -rhoP '\Wlib\.[a-zA-Z0-9_\.]+' * | sed 's/^[^a-zA-Z0-9]*//' | sort | uniq -c | sort -nr
+```
