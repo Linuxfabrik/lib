@@ -1,5 +1,5 @@
 <h1 align="center">
-  Linuxfabrik's Python Libraries
+  Linuxfabrik Python Libraries
 </h1>
 <p align="center">
   Python 3.6+ modules for Linuxfabrik projects: DB access, SQLite KVS caching, WinRM, SMB, shell execution, 15+ API integrations (Icinga2, Veeam, Nextcloud, ...). Available on PyPI.
@@ -22,7 +22,7 @@
 <br />
 
 
-# Linuxfabrik's Python Libraries
+# Linuxfabrik Python Libraries
 
 A mature, production-grade Python library collection providing 35+ modules with 300+ functions for system administration, monitoring, and infrastructure automation. These libraries are used across several Linuxfabrik projects -- most prominently the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins) (Nagios/Icinga check plugins), but also in [ChecklistFabrik](https://github.com/Linuxfabrik/checklistfabrik) and other tools.
 
