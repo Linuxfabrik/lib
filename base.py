@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026030301'
+__version__ = '2026032101'
 
 import numbers
 import operator
@@ -120,7 +120,7 @@ def cu(msg=None):
     has_traceback = tb and 'NoneType: None' not in tb
 
     if msg is not None:
-        msg = txt.sanitize_sensitive_data(msg).strip()
+        msg = txt.sanitize_sensitive_data(msg).strip().replace('<', "'").replace('>', "'")
         print(msg, end='')
         print(' (Traceback for debugging purposes attached)\n' if has_traceback else '\n')
 
@@ -151,6 +151,7 @@ def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=N
     >>> get_perfdata('load1', 0.42, '', 1.0, 5.0, 0, 10)
     "'load1'=0.42;1.0;5.0;0;10 "
     """
+    label = str(label).replace("'", '').replace('=', '_')
     msg = f"'{label}'={value}{uom or ''};"
     msg += f'{warn};' if warn is not None else ';'
     msg += f'{crit};' if crit is not None else ';'
@@ -191,10 +192,18 @@ def get_state(value, warn, crit, _operator='ge'):
     value = float(value)
 
     if _operator == 'range':
-        if crit is not None and not coe(match_range(value, crit)):
-            return STATE_CRIT
-        if warn is not None and not coe(match_range(value, warn)):
-            return STATE_WARN
+        if crit is not None:
+            success, result = match_range(value, crit)
+            if not success:
+                return STATE_UNKNOWN
+            if not result:
+                return STATE_CRIT
+        if warn is not None:
+            success, result = match_range(value, warn)
+            if not success:
+                return STATE_UNKNOWN
+            if not result:
+                return STATE_WARN
         return STATE_OK
 
     op = _OPS.get(_operator)
@@ -602,7 +611,7 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     (and exits with code 2)
 
     """
-    msg = txt.sanitize_sensitive_data(msg.strip()).replace('|', '!')
+    msg = txt.sanitize_sensitive_data(msg.strip()).replace('|', '!').replace('<', "'").replace('>', "'")
     if always_ok and msg:
         # Instead of splitlines(), we just split('\n', 1), so only first line is touched.
         parts = msg.split('\n', 1)

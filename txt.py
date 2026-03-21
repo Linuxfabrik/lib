@@ -16,7 +16,7 @@ for Python 3 only.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026030301'
+__version__ = '2026032101'
 
 import operator
 import re
@@ -50,6 +50,23 @@ SENSITIVE_FIELDS_PATTERN = re.compile(
 #   sshpass\s+-p\s*         # │ Literal "sshpass -p" (1+ space before -p)
 # )                         # └ End of capture group 1
 # [^\s&]+                   # The secret value (not captured, will be replaced)
+
+SENSITIVE_JSON_PATTERN = re.compile(
+    r'(?i)("(?:password|pass|token|key|secret|api[_-]?key|access[_-]?token)"\s*:\s*")[^"]*(")'
+)
+# Matches JSON-style sensitive fields like:
+#   "password": "secret123"
+#   "api_key" : "abc"
+# Captures the prefix (group 1) and the closing quote (group 2),
+# replacing only the secret value between them.
+
+SENSITIVE_AUTH_PATTERN = re.compile(
+    r'(?i)(Authorization:\s*(?:Bearer|Basic|Digest|Token)\s+)\S+'
+)
+# Matches HTTP Authorization headers like:
+#   Authorization: Bearer abc123
+#   Authorization: Basic dXNlcjpwYXNz
+# Captures the prefix (group 1), replacing the credential value.
 
 
 def compile_regex(regex, key=''):
@@ -425,7 +442,10 @@ def sanitize_sensitive_data(msg, replacement='******'):
     """
     if not isinstance(msg, str):
         return msg
-    return SENSITIVE_FIELDS_PATTERN.sub(rf'\1{replacement}', msg)
+    msg = SENSITIVE_FIELDS_PATTERN.sub(rf'\1{replacement}', msg)
+    msg = SENSITIVE_JSON_PATTERN.sub(rf'\1{replacement}\2', msg)
+    msg = SENSITIVE_AUTH_PATTERN.sub(rf'\1{replacement}', msg)
+    return msg
 
 
 def to_bytes(obj, encoding='utf-8', errors=None,
