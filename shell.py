@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025060401'
+__version__ = '2026032101'
 
 
 import os
@@ -161,7 +161,15 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None, lc_
         except (OSError, ValueError, Exception) as e:
             return False, f'Error "{e}" while calling command "{cmd}"'
 
-        stdout, stderr = p.communicate(input=txt.to_bytes(stdin) if stdin else None)
+        try:
+            stdout, stderr = p.communicate(
+                input=txt.to_bytes(stdin) if stdin else None,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.communicate()
+            return False, f'Timeout after {timeout} seconds.'
         retc = p.returncode
         stdout = txt.to_text(stdout).replace('Active code page: 65001\r\n', '')
         stderr = txt.to_text(stderr)

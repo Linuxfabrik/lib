@@ -39,13 +39,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* base.py: `cu()` now detects active exceptions via `sys.exc_info()` instead of string-matching the traceback
 * base.py: `cu()` now also escapes HTML characters in the error message, not just in the traceback
 * base.py: `get_state()` no longer calls `sys.exit()` on malformed range specs, returns UNKNOWN instead
 * base.py: `oao()` now escapes HTML characters in the output message to prevent injection in web UIs
 * base.py: fix `get_table()` using wrong separator for the second data row when called without a header
 * human.py: fix incorrect `seconds2human()` docstring example for sub-second values
 * powershell.py: fix outdated shebang line
+* shell.py: `shell_exec()` now applies timeout to the `shell=True` path (was previously ignored)
 * txt.py: fix `exception2text()` missing `traceback` import (fallback path was dead code)
+* txt.py: fix `pluralize()` not stripping whitespace from comma-separated suffix parts
 * txt.py: `sanitize_sensitive_data()` now also redacts JSON-style fields and HTTP Authorization headers
 * txt.py: fix `sanitize_sensitive_data()` replacing the key name instead of the secret value
 * winrm.py: pass parameters correctly in `run_cmd()` when using pypsrp

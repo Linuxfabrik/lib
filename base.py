@@ -116,8 +116,8 @@ def cu(msg=None):
 
     >>> cu()
     """
-    tb = format_exc()
-    has_traceback = tb and 'NoneType: None' not in tb
+    has_traceback = sys.exc_info()[0] is not None
+    tb = format_exc() if has_traceback else None
 
     if msg is not None:
         msg = txt.sanitize_sensitive_data(msg).strip().replace('<', "'").replace('>', "'")

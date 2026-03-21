@@ -401,9 +401,10 @@ def pluralize(noun, value, suffix='s'):
     >>> pluralize('', 2, 'is,are')
     'are'
     """
-    if int(value) == 1:
-        return f'{noun}{suffix.split(",")[0]}' if ',' in suffix else noun
-    return f'{noun}{suffix.split(",")[1]}' if ',' in suffix else f'{noun}{suffix}'
+    if ',' in suffix:
+        singular, plural = (s.strip() for s in suffix.split(',', 1))
+        return f'{noun}{singular}' if int(value) == 1 else f'{noun}{plural}'
+    return noun if int(value) == 1 else f'{noun}{suffix}'
 
 
 def sanitize_sensitive_data(msg, replacement='******'):
