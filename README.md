@@ -45,6 +45,7 @@ Full API documentation is available at [linuxfabrik.github.io/lib](https://linux
 
 These libraries are built with a clear set of priorities:
 
+* **Procedural by design.** The libraries deliberately use a procedural/functional style rather than object-oriented programming. Pure functions with explicit inputs and outputs are easier to read, test, and reason about. This is especially true for the most prominent use case -- monitoring plugins -- which are short-lived, linear processes with no complex state to manage over time, where unnecessary abstraction layers would add overhead without tangible benefit.
 * **Broad compatibility.** Python 3.6+ is the minimum, ensuring the libraries work on RHEL 8 and every major distribution without requiring newer runtimes.
 * **Cross-platform.** Core functions behave identically on Linux, Windows, and macOS. Platform-specific code (WinRM, PowerShell, SMB) is cleanly separated.
 * **Minimal dependencies.** We avoid pulling in large dependency trees. External packages are used only when the alternative would be unreliable or significantly more complex.
