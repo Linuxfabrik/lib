@@ -31,6 +31,14 @@ The library requires Python 3.6+ (the default Python version on RHEL 8) and runs
 
 ## Installation
 
+Using [uv](https://docs.astral.sh/uv/) (recommended):
+
+```bash
+uv pip install linuxfabrik-lib
+```
+
+Using pip:
+
 ```bash
 pip install linuxfabrik-lib
 ```
