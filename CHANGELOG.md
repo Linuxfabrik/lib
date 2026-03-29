@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Add CONTRIBUTING
+* Add GitHub Actions workflow to automatically build and deploy API documentation to GitHub Pages
 * disk.py: add `get_owner()`
 * nextcloud.py: new library
 * txt.py: add `exception2text()`
@@ -17,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * winrm.py: execute ps in `run_ps()` directly without Invoke-Expression wrapping
 
 ### Changed
+
+* Remove pre-built documentation from the repository (now auto-deployed via GitHub Actions)
 
 * base.py: `get_perfdata()` now sanitizes labels by stripping single quotes and replacing `=` with `_`
 * base.py: deduplicate `get_state()` operator logic using `operator` module
@@ -39,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* base.py: fix invalid `-10` range example in `_parse_range()` docstring (correct syntax is `-10:0`)
 * base.py: `cu()` now detects active exceptions via `sys.exc_info()` instead of string-matching the traceback
 * base.py: `cu()` now also escapes HTML characters in the error message, not just in the traceback
 * base.py: `get_state()` no longer calls `sys.exit()` on malformed range specs, returns UNKNOWN instead

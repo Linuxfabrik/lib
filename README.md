@@ -40,7 +40,7 @@ pip install --user linuxfabrik-lib
 
 ## Documentation
 
-Full API documentation is available at [linuxfabrik.github.io/lib](https://linuxfabrik.github.io/lib/) (generated with [pdoc](https://pdoc.dev/)).
+Full API documentation is available at [linuxfabrik.github.io/lib](https://linuxfabrik.github.io/lib/). It is automatically built and deployed on every push to `main`.
 
 
 ## Design Principles
