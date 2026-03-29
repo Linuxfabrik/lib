@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Add CONTRIBUTING
 * Add GitHub Actions workflow to automatically build and deploy API documentation to GitHub Pages
+* Add pre-commit hooks
 * disk.py: add `get_owner()`
 * nextcloud.py: new library
 * txt.py: add `exception2text()`
