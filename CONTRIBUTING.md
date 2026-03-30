@@ -104,7 +104,7 @@ See [PyLint's message codes](http://pylint-messages.wikidot.com/all-codes) for r
 Use the library module name as commit scope:
 
 ```
-fix(base): handle empty input in coe()
+fix(base.py): handle empty input in coe()
 ```
 
 For the first commit of a new library, use `Add <library-name>`.
