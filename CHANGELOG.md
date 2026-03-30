@@ -21,8 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* Remove pre-built documentation from the repository (now auto-deployed via GitHub Actions)
-
 * base.py: `get_perfdata()` now sanitizes labels by stripping single quotes and replacing `=` with `_`
 * base.py: deduplicate `get_state()` operator logic using `operator` module
 * base.py: deduplicate `sum_dict()` by delegating to `sum_lod()`
@@ -31,31 +29,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * base.py: remove unused `collections` import
 * base.py: strip trailing semicolons in `get_perfdata()` output
 * db_sqlite.py: reduce unnecessary dictionary object creation
-* txt.py: improve `filter_mltext()` performance (avoid O(n²) string concatenation)
-* txt.py: improve readability of `extract_str()` fallback logic
-* txt.py: remove unused Python 2 type aliases and outdated comments
-* txt.py: simplify `to_text()` and `to_bytes()` for Python 3 only (remove dead Python 2 codepaths)
 * human.py: deduplicate `bits2human()`/`bps2human()`/`bytes2human()` via shared `_to_human()` helper
 * human.py: deduplicate `humanrange2bytes()`/`humanrange2seconds()` via shared `_convert_range()` helper
 * human.py: pre-compute mappings as module constants
 * powershell.py: `run_ps()` now always returns a dict
+* Remove pre-built documentation from the repository (now auto-deployed via GitHub Actions)
+* txt.py: improve `filter_mltext()` performance (avoid O(n²) string concatenation)
+* txt.py: improve readability of `extract_str()` fallback logic
+* txt.py: remove unused Python 2 type aliases and outdated comments
+* txt.py: simplify `to_text()` and `to_bytes()` for Python 3 only (remove dead Python 2 codepaths)
 * winrm.py: make `run_cmd()` and `run_ps()` JEA-aware
 * winrm.py: make `run_cmd()` and `run_ps()` Kerberos-aware
 
 ### Fixed
 
-* base.py: fix invalid `-10` range example in `_parse_range()` docstring (correct syntax is `-10:0`)
-* base.py: `cu()` now detects active exceptions via `sys.exc_info()` instead of string-matching the traceback
 * base.py: `cu()` now also escapes HTML characters in the error message, not just in the traceback
+* base.py: `cu()` now detects active exceptions via `sys.exc_info()` instead of string-matching the traceback
 * base.py: `get_state()` no longer calls `sys.exit()` on malformed range specs, returns UNKNOWN instead
 * base.py: `oao()` now escapes HTML characters in the output message to prevent injection in web UIs
 * base.py: fix `get_table()` using wrong separator for the second data row when called without a header
+* base.py: fix invalid `-10` range example in `_parse_range()` docstring (correct syntax is `-10:0`)
 * human.py: fix incorrect `seconds2human()` docstring example for sub-second values
 * powershell.py: fix outdated shebang line
 * shell.py: `shell_exec()` now applies timeout to the `shell=True` path (was previously ignored)
+* txt.py: `sanitize_sensitive_data()` now also redacts JSON-style fields and HTTP Authorization headers
 * txt.py: fix `exception2text()` missing `traceback` import (fallback path was dead code)
 * txt.py: fix `pluralize()` not stripping whitespace from comma-separated suffix parts
-* txt.py: `sanitize_sensitive_data()` now also redacts JSON-style fields and HTTP Authorization headers
 * txt.py: fix `sanitize_sensitive_data()` replacing the key name instead of the secret value
 * winrm.py: pass parameters correctly in `run_cmd()` when using pypsrp
 
@@ -184,8 +183,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
-* Switch from [calendar versioning](https://calver.org/) to [semantic versioning](https://semver.org/) due to [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) and Windows MSI requirements.
 * Rename test.py to lftest.py due to `nuitka` compilation error on Windows.
+* Switch from [calendar versioning](https://calver.org/) to [semantic versioning](https://semver.org/) due to [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) and Windows MSI requirements.
 
 ### Added
 
@@ -250,9 +249,9 @@ Minor improvements, barely any changes.
 ### Added
 
 * endoflifedate.py: new auto-built library for end-of-life date tracking
+* [Published on PyPI](https://pypi.org/project/linuxfabrik-lib/), installable via `pip install linuxfabrik-lib`
 * qts.py: new library for the QNAP QTS API
 * tools/update-endoflifedate: tool to update endoflifedate.py
-* [Published on PyPI](https://pypi.org/project/linuxfabrik-lib/), installable via `pip install linuxfabrik-lib`
 
 ### Changed
 
@@ -266,8 +265,8 @@ Minor improvements, barely any changes.
 
 ### Breaking Changes
 
-* Remove all Python 2 based plugins and libraries, and remove the "3" suffix from all Python 3 based libraries ([#589](https://github.com/Linuxfabrik/monitoring-plugins/issues/589))
 * db_mysql.py: change from username/password to option file authentication in `connect()`
+* Remove all Python 2 based plugins and libraries, and remove the "3" suffix from all Python 3 based libraries ([#589](https://github.com/Linuxfabrik/monitoring-plugins/issues/589))
 
 ### Added
 
@@ -336,18 +335,18 @@ Minor improvements, barely any changes.
 
 ### Changed
 
-* base3: move `x2human` and `human2x` functions to new human.py library ([#49](https://github.com/Linuxfabrik/lib/issues/49))
-* base3: move date/time functions to new time3.py library ([#55](https://github.com/Linuxfabrik/lib/issues/55))
 * base3: move `filter_str()` to db_sqlite3.py ([#52](https://github.com/Linuxfabrik/lib/issues/52))
 * base3: move `get_owner()` to nextcloud-version3 ([#53](https://github.com/Linuxfabrik/lib/issues/53))
 * base3: move `sha1sum()` to db_sqlite3.py ([#50](https://github.com/Linuxfabrik/lib/issues/50))
+* base3: move `x2human` and `human2x` functions to new human.py library ([#49](https://github.com/Linuxfabrik/lib/issues/49))
+* base3: move date/time functions to new time3.py library ([#55](https://github.com/Linuxfabrik/lib/issues/55))
 * base3: move shell functions to new shell3.py library ([#56](https://github.com/Linuxfabrik/lib/issues/56))
 * base3: move text functions to new txt3.py library ([#51](https://github.com/Linuxfabrik/lib/issues/51))
+* Lint all libraries ([#57](https://github.com/Linuxfabrik/lib/issues/57))
+* Standardize try-except import statements ([#60](https://github.com/Linuxfabrik/lib/issues/60))
 * txt3: handle all encoding and decoding ([#59](https://github.com/Linuxfabrik/lib/issues/59))
 * url3.py: extend `fetch_json()` to make `fetch_json_ext()` obsolete
 * veeam: use new `fetch_json()` instead of `fetch_json_ext()` ([#42](https://github.com/Linuxfabrik/lib/issues/42))
-* Standardize try-except import statements ([#60](https://github.com/Linuxfabrik/lib/issues/60))
-* Lint all libraries ([#57](https://github.com/Linuxfabrik/lib/issues/57))
 
 ### Removed
 
@@ -355,40 +354,40 @@ Minor improvements, barely any changes.
 
 ### Fixed
 
-* base: fix tuple item assignment error ([#43](https://github.com/Linuxfabrik/lib/issues/43))
 * base: fix `hashlib.md5()` on FIPS-compliant systems ([#30](https://github.com/Linuxfabrik/lib/issues/30))
+* base: fix tuple item assignment error ([#43](https://github.com/Linuxfabrik/lib/issues/43))
 * librenms-alerts2: `--lengthy` causes error ([#61](https://github.com/Linuxfabrik/lib/issues/61))
 * nginx-status: `TypeError`: a bytes-like object is required, not 'str' ([#47](https://github.com/Linuxfabrik/lib/issues/47))
 * url3.py: `AttributeError`: 'str' object has no attribute 'to_bytes' ([#62](https://github.com/Linuxfabrik/lib/issues/62))
 * url3: `TypeError`: a bytes-like object is required, not str ([#44](https://github.com/Linuxfabrik/lib/issues/44))
+* Various fixes after linting
 * veeam.py: `ValueError`: need more than 2 values to unpack ([#45](https://github.com/Linuxfabrik/lib/issues/45))
 * veeam3.py, huawei3.py: `getheader()` should be `get()` in Python 3 ([#46](https://github.com/Linuxfabrik/lib/issues/46))
-* Various fixes after linting
 
 
 ## [2021101401] - 2021-10-14
 
 ### Added
 
+* base: add `utc_offset()` function ([#35](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/35))
+* db_sqlite: add REGEXP function ([#36](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/36))
 * jitsi.py: new library
 * nodebb.py: new library
 * test.py: new library for unit testing
 * veeam.py: new library
-* base: add `utc_offset()` function ([#35](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/35))
-* db_sqlite: add REGEXP function ([#36](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/36))
 
 ### Changed
 
 * base2: improve Unicode, UTF-8, and ASCII handling
 * base: `get_state()` can now evaluate against a range ([#34](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/34))
+* base: `version2float()` now strips everything except numbers and decimal points ([#26](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/26))
 * base: improve line drawing in `get_table()` ([#7](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/7))
 * base: make `version()` more robust ([#28](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/28))
-* base: `version2float()` now strips everything except numbers and decimal points ([#26](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/26))
 * cache: make filename for cache configurable ([#21](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/21))
 * db_sqlite: support `LIKE` statements using a regexp
 * get_table(): use ASCII characters only for broadest terminal compatibility ([#33](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/33))
-* url: identify as Linuxfabrik Monitoring Plugin ([#24](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/24))
 * url: `fetch()` and `fetch_json()` can now also return HTTP status code and response headers ([#32](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/32))
+* url: identify as Linuxfabrik Monitoring Plugin ([#24](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/24))
 
 ### Fixed
 
@@ -399,8 +398,8 @@ Minor improvements, barely any changes.
 * db_sqlite: 8-bit bytestrings error with text_factory ([#20](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/20))
 * disk: problems with `read_csv()` ([#25](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/25))
 * librenms3.py: fix error ([#27](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/27))
-* net: socket `recv()` timeout ([#23](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/23))
 * net: `fetch()` port and timeout must be integers ([#22](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/22))
+* net: socket `recv()` timeout ([#23](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/23))
 
 
 ## [2020052801] - 2020-05-28
