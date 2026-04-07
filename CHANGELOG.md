@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* Bump minimum Python version from 3.6 to 3.9
 * base.py: `get_perfdata()` now sanitizes labels by stripping single quotes and replacing `=` with `_`
 * base.py: deduplicate `get_state()` operator logic using `operator` module
 * base.py: deduplicate `sum_dict()` by delegating to `sum_lod()`
