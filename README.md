@@ -2,7 +2,7 @@
   Linuxfabrik Python Libraries
 </h1>
 <p align="center">
-  Python 3.6+ modules for Linuxfabrik projects: DB access, SQLite KVS caching, WinRM, SMB, shell execution, 15+ API integrations (Icinga2, Veeam, Nextcloud, ...). Available on PyPI.
+  Python 3.9+ modules for Linuxfabrik projects: DB access, SQLite KVS caching, WinRM, SMB, shell execution, 15+ API integrations (Icinga2, Veeam, Nextcloud, ...). Available on PyPI.
   <span>&#8226;</span>
   <b>made by <a href="https://linuxfabrik.ch/">Linuxfabrik</a></b>
 </p>
@@ -12,7 +12,7 @@
 ![License](https://img.shields.io/github/license/linuxfabrik/lib)
 ![Version](https://img.shields.io/github/v/release/linuxfabrik/lib?sort=semver)
 [![PyPI](https://img.shields.io/pypi/v/linuxfabrik-lib)](https://pypi.org/project/linuxfabrik-lib/)
-![Python](https://img.shields.io/badge/Python-3.6+-3776ab)
+![Python](https://img.shields.io/badge/Python-3.9+-3776ab)
 ![GitHub Issues](https://img.shields.io/github/issues/linuxfabrik/lib)
 [![GitHubSponsors](https://img.shields.io/github/sponsors/Linuxfabrik?label=GitHub%20Sponsors)](https://github.com/sponsors/Linuxfabrik)
 [![PayPal](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=7AW3VVX62TR4A&source=url)
@@ -26,7 +26,7 @@
 
 A mature, production-grade Python library collection providing 35+ modules with 300+ functions for system administration, monitoring, and infrastructure automation. These libraries are used across several Linuxfabrik projects -- most prominently the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins) (Nagios/Icinga check plugins), but also in [ChecklistFabrik](https://github.com/Linuxfabrik/checklistfabrik) and other tools.
 
-The library requires Python 3.6+ (the default Python version on RHEL 8) and runs on every platform.
+The library requires Python 3.9+ and runs on every platform.
 
 
 ## Installation
@@ -48,7 +48,7 @@ Full API documentation is available at [linuxfabrik.github.io/lib](https://linux
 These libraries are built with a clear set of priorities:
 
 * **Procedural by design.** The libraries deliberately use a procedural/functional style rather than object-oriented programming. Pure functions with explicit inputs and outputs are easier to read, test, and reason about. This is especially true for the most prominent use case -- monitoring plugins -- which are short-lived, linear processes with no complex state to manage over time, where unnecessary abstraction layers would add overhead without tangible benefit.
-* **Broad compatibility.** Python 3.6+ is the minimum, ensuring the libraries work on RHEL 8 and every major distribution without requiring newer runtimes.
+* **Broad compatibility.** Python 3.9+ is the minimum, ensuring the libraries work on RHEL 8 and every major distribution without requiring newer runtimes.
 * **Cross-platform.** Core functions behave identically on Linux, Windows, and macOS. Platform-specific code (WinRM, PowerShell, SMB) is cleanly separated.
 * **Minimal dependencies.** We avoid pulling in large dependency trees. External packages are used only when the alternative would be unreliable or significantly more complex.
 * **Consistent error handling.** Most functions return `(success, result)` tuples. The caller decides whether to continue or exit -- the library never exits on its own. The `base.coe()` ("Continue or Exit") helper makes this pattern concise.
