@@ -12,9 +12,10 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026032101'
+__version__ = '2026040801'
 
 
+import locale
 import os
 import re
 import shlex
@@ -143,9 +144,19 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None, lc_
     env = {**os.environ.copy(), **(env or {})}
     env['LC_ALL'] = lc_all
 
+    # On Windows, subprocess pipes deliver output in the system's ANSI codepage
+    # (e.g. CP1252, CP437), NOT in UTF-8, even if "chcp 65001" was run beforehand.
+    # This is because pipes are not console devices (see PEP 528 and Python docs
+    # on sys.stdout). We therefore decode with the system's preferred encoding
+    # and fall back to 'replace' to avoid UnicodeDecodeError on unexpected bytes.
+    # See: https://github.com/Linuxfabrik/monitoring-plugins/issues/681
     if os.name == 'nt':
-        cmd = f'chcp 65001 && {cmd}'
+        _encoding = locale.getpreferredencoding(False)
+        _errors = 'replace'
         shell = True
+    else:
+        _encoding = 'utf-8'
+        _errors = 'surrogateescape'
 
     if shell or stdin:
         try:
@@ -171,8 +182,8 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None, lc_
             p.communicate()
             return False, f'Timeout after {timeout} seconds.'
         retc = p.returncode
-        stdout = txt.to_text(stdout).replace('Active code page: 65001\r\n', '')
-        stderr = txt.to_text(stderr)
+        stdout = txt.to_text(stdout, encoding=_encoding, errors=_errors)
+        stderr = txt.to_text(stderr, encoding=_encoding, errors=_errors)
         return True, (stdout, stderr, retc)
 
     cmds = cmd.split('|')
@@ -199,4 +210,8 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None, lc_
         p.communicate()
         return False, f'Timeout after {timeout} seconds.'
 
-    return True, (txt.to_text(stdout), txt.to_text(stderr), p.returncode)
+    return True, (
+        txt.to_text(stdout, encoding=_encoding, errors=_errors),
+        txt.to_text(stderr, encoding=_encoding, errors=_errors),
+        p.returncode,
+    )
