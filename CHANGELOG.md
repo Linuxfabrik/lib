@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * base.py: `get_perfdata()` now sanitizes labels by stripping single quotes and replacing `=` with `_`
 * base.py: deduplicate `get_state()` operator logic using `operator` module
 * base.py: deduplicate `sum_dict()` by delegating to `sum_lod()`
+* base.py: `get_table()`: document why pure ASCII delimiters are used instead of Unicode box-drawing characters
 * base.py: improve `get_table()` performance for large tables
 * base.py: move `parse_range()` and state name mapping to module level
 * base.py: remove unused `collections` import

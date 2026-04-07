@@ -12,7 +12,7 @@
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026032101'
+__version__ = '2026040801'
 
 import numbers
 import operator
@@ -219,7 +219,11 @@ def get_state(value, warn, crit, _operator='ge'):
 
 def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_reverse=False):
     """
-    Format a list of dictionaries into a simple ASCII table (generator version).
+    Format a list of dictionaries into a simple ASCII table.
+
+    Uses pure ASCII delimiters (`!`, `+`, `-`) instead of Unicode box-drawing characters
+    (like `│`, `┼`, `─`) to guarantee correct rendering on any platform, locale, terminal,
+    and transport layer regardless of encoding.
 
     Each dictionary must contain the specified columns (`cols`). Optionally supports a custom
     header, sorting by a given key, and stripping whitespace from values.
