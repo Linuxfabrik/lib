@@ -45,7 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* shell.py: fix `UnicodeDecodeError` on Windows when command output contains non-ASCII characters (e.g. usernames with umlauts) by decoding with the system's ANSI codepage instead of assuming UTF-8
 * base.py: `cu()` now also escapes HTML characters in the error message, not just in the traceback
 * base.py: `cu()` now detects active exceptions via `sys.exc_info()` instead of string-matching the traceback
 * base.py: `get_state()` no longer calls `sys.exit()` on malformed range specs, returns UNKNOWN instead
