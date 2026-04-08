@@ -1,4 +1,4 @@
-name: 'Deploy API Documentation'
+name: 'Linuxfabrik: Deploy API Documentation'
 
 on:
   push:
