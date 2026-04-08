@@ -29,7 +29,7 @@ jobs:
       - name: 'Install dependencies'
         run: |
           pip install --editable .
-          pip install --require-hashes --requirement /dev/stdin <<< "pdoc==16.0.0 --hash=sha256:070b51de2743b9b1a4e0ab193a06c9e6c12cf4151cf9137656eebb16e8556628"
+          pip install pdoc==16.0.0
 
       - name: 'Build documentation'
         run: 'pdoc --output-directory docs lib'

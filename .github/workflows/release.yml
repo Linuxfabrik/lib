@@ -22,7 +22,7 @@ jobs:
           python-version: '3.12'
 
       - name: 'Install build tools'
-        run: 'pip install --require-hashes --requirement /dev/stdin <<< "build==1.4.2 --hash=sha256:7a4d8651ea877cb2a89458b1b198f2e69f536c95e89129dbf5d448045d60db88"'
+        run: 'pip install build==1.4.2'
 
       - name: 'Build package'
         run: 'python -m build'
