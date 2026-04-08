@@ -4,6 +4,8 @@ on:
   branch_protection_rule: {}
   schedule:
     - cron: '22 14 * * 4'
+  workflow_dispatch: {}
+  workflow_dispatch: {}
 
 permissions: 'read-all'
 
