@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Add GitHub Actions workflow to automatically build and deploy API documentation to GitHub Pages
 * Add pre-commit hooks
 * disk.py: add `get_owner()`
+* lftest.py: add `run()` function for declarative, data-driven unit tests using `subTest()`
 * nextcloud.py: new library
 * txt.py: add `exception2text()`
 * winrm.py: add `WINRM_CONFIGURATION_NAME` option to `run_ps()`
