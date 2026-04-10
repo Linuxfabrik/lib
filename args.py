@@ -60,6 +60,7 @@ HELP_TEXTS = {
     ),
     '--ignore-pattern': (
         'Any item containing this pattern will be ignored. '
+        'Case-insensitive. '
         'Can be specified multiple times. '
         'Example: `boot` matches both `/boot` and `/boot/efi`.'
     ),
