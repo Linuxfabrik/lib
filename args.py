@@ -17,23 +17,19 @@ __version__ = '2026041002'
 HELP_TEXTS = {
     '--always-ok': 'Always returns OK.',
     '--count': (
-        'Number of times the value must exceed specified thresholds before alerting. '
+        'Number of consecutive checks the threshold must be exceeded before alerting. '
         'Default: %(default)s'
     ),
     '--critical': (
-        'Set the CRIT threshold as a percentage. '
-        'Supports Nagios ranges. '
-        'Default: >= %(default)s'
+        'CRIT threshold in percent. Supports Nagios ranges. Default: >= %(default)s'
     ),
     '--critical-count': (
-        'Set the CRIT threshold for the number of matching items. '
+        'CRIT threshold for the number of matching items. '
         'Supports Nagios ranges. '
         'Default: %(default)s'
     ),
     '--critical-seconds': (
-        'Set the CRIT threshold in seconds. '
-        'Supports Nagios ranges. '
-        'Default: %(default)s'
+        'CRIT threshold in seconds. Supports Nagios ranges. Default: %(default)s'
     ),
     '--hostname': 'Hostname or IP address. Default: %(default)s',
     '--ignore': (
@@ -85,19 +81,15 @@ HELP_TEXTS = {
         'Useful for debugging and seeing what is going on under the hood.'
     ),
     '--warning': (
-        'Set the WARN threshold as a percentage. '
-        'Supports Nagios ranges. '
-        'Default: >= %(default)s'
+        'WARN threshold in percent. Supports Nagios ranges. Default: >= %(default)s'
     ),
     '--warning-count': (
-        'Set the WARN threshold for the number of matching items. '
+        'WARN threshold for the number of matching items. '
         'Supports Nagios ranges. '
         'Default: %(default)s'
     ),
     '--warning-seconds': (
-        'Set the WARN threshold in seconds. '
-        'Supports Nagios ranges. '
-        'Default: %(default)s'
+        'WARN threshold in seconds. Supports Nagios ranges. Default: %(default)s'
     ),
 }
 
