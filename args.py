@@ -11,7 +11,7 @@
 """Extends argparse by new input argument data types on demand."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041001'
+__version__ = '2026041002'
 
 
 HELP_TEXTS = {
@@ -43,29 +43,23 @@ HELP_TEXTS = {
     ),
     '--ignore-pattern': (
         'Any item containing this pattern will be ignored. '
-        'Case-insensitive. '
         'Can be specified multiple times. '
         'Example: `boot` matches both `/boot` and `/boot/efi`.'
     ),
     '--ignore-regex': (
         'Any item matching this Python regex will be ignored. '
-        'Uses Python regular expressions. '
-        'Case-insensitive. '
         'Can be specified multiple times. '
-        'Example: `(?i)linuxfabrik`'
+        'Example: `(?i)linuxfabrik` for a case-insensitive match.'
     ),
     '--insecure': 'This option explicitly allows insecure SSL connections.',
     '--lengthy': 'Extended reporting.',
     '--match': (
-        'Uses Python regular expressions without any external flags like `re.IGNORECASE`. '
-        'The regular expression is applied to each line of the output. '
+        'Filter by this Python regular expression. '
         'Case-sensitive by default; use `(?i)` for case-insensitive matching. '
         'Can be specified multiple times. '
         'Examples: '
-        '`(?i)example` to match the word "example" in a case-insensitive manner. '
+        '`(?i)example` to match "example" regardless of case. '
         '`^(?!.*example).*$` to match any string except "example" (negative lookahead). '
-        '`(?: ... )*` is a non-capturing group that matches any sequence of characters '
-        'that satisfy the condition inside it, zero or more times. '
         'Default: %(default)s'
     ),
     '--no-proxy': 'Do not use a proxy.',
@@ -88,8 +82,7 @@ HELP_TEXTS = {
     '--username': 'Username. Default: %(default)s',
     '--verbose': (
         'Makes this plugin verbose during the operation. '
-        'Useful for debugging and seeing what is going on under the hood. '
-        'Default: %(default)s'
+        'Useful for debugging and seeing what is going on under the hood.'
     ),
     '--warning': (
         'Set the WARN threshold as a percentage. '
