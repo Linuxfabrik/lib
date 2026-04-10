@@ -46,7 +46,13 @@ HELP_TEXTS = {
         'CRIT threshold for the number of matching items. Supports Nagios ranges.'
     ),
     '--critical-seconds': 'CRIT threshold in seconds. Supports Nagios ranges.',
+    '--defaults-file': (
+        'Specifies a cnf file to read parameters like user, host and password from '
+        '(for MySQL/MariaDB cnf-style files).'
+    ),
+    '--defaults-group': 'Group/section to read from in the cnf file.',
     '--hostname': 'Hostname or IP address.',
+    '--ipv6': 'Use IPv6.',
     '--ignore': (
         'Any item matching this string will be ignored. '
         'Case-sensitive. '
@@ -79,6 +85,7 @@ HELP_TEXTS = {
     '--password': 'Password.',
     '--path': 'Local path to the installation.',
     '--port': 'Port number.',
+    '--severity': 'Severity for alerting.',
     '--stratum': (
         'Warns if the determined stratum of the time server is greater than or equal '
         'to this value. '
