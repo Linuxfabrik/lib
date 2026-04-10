@@ -11,27 +11,42 @@
 """Extends argparse by new input argument data types on demand."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041002'
+__version__ = '2026041003'
 
 
+# Help text descriptions only - no "Default:" here.
+# Plugins append their own default info, e.g.:
+#   help=lib.args.help('--timeout') + ' Default: %(default)s (seconds)',
+# Switches (store_true/store_false) don't need a default.
 HELP_TEXTS = {
     '--always-ok': 'Always returns OK.',
+    '--cache-expire': (
+        'The amount of time after which the credential/data cache expires, in minutes.'
+    ),
+    '--check-major': (
+        'Alert when a new major release is available, even if the current version is '
+        'not yet EOL. '
+        'Example: running v26 (not yet EOL) and v27 is available.'
+    ),
+    '--check-minor': (
+        'Alert when a new major.minor release is available, even if the current version '
+        'is not yet EOL. '
+        'Example: running v26.2 (not yet EOL) and v26.3 is available.'
+    ),
+    '--check-patch': (
+        'Alert when a new major.minor.patch release is available, even if the current '
+        'version is not yet EOL. '
+        'Example: running v26.2.7 (not yet EOL) and v26.2.8 is available.'
+    ),
     '--count': (
-        'Number of consecutive checks the threshold must be exceeded before alerting. '
-        'Default: %(default)s'
+        'Number of consecutive checks the threshold must be exceeded before alerting.'
     ),
-    '--critical': (
-        'CRIT threshold in percent. Supports Nagios ranges. Default: >= %(default)s'
-    ),
+    '--critical': 'CRIT threshold in percent. Supports Nagios ranges.',
     '--critical-count': (
-        'CRIT threshold for the number of matching items. '
-        'Supports Nagios ranges. '
-        'Default: %(default)s'
+        'CRIT threshold for the number of matching items. Supports Nagios ranges.'
     ),
-    '--critical-seconds': (
-        'CRIT threshold in seconds. Supports Nagios ranges. Default: %(default)s'
-    ),
-    '--hostname': 'Hostname or IP address. Default: %(default)s',
+    '--critical-seconds': 'CRIT threshold in seconds. Supports Nagios ranges.',
+    '--hostname': 'Hostname or IP address.',
     '--ignore': (
         'Any item matching this string will be ignored. '
         'Case-sensitive. '
@@ -55,42 +70,38 @@ HELP_TEXTS = {
         'Can be specified multiple times. '
         'Examples: '
         '`(?i)example` to match "example" regardless of case. '
-        '`^(?!.*example).*$` to match any string except "example" (negative lookahead). '
-        'Default: %(default)s'
+        '`^(?!.*example).*$` to match any string except "example" (negative lookahead).'
     ),
     '--no-proxy': 'Do not use a proxy.',
+    '--offset-eol': (
+        'Alert n days before ("-30") or after an EOL date ("30" or "+30").'
+    ),
     '--password': 'Password.',
-    '--port': 'Port number. Default: %(default)s',
+    '--path': 'Local path to the installation.',
+    '--port': 'Port number.',
     '--stratum': (
         'Warns if the determined stratum of the time server is greater than or equal '
         'to this value. '
         'Stratum 1 indicates a computer with a locally attached reference clock. '
         'A computer that is synchronised to a stratum 1 computer is at stratum 2. '
         'A computer that is synchronised to a stratum 2 computer is at stratum 3, '
-        'and so on. '
-        'Default: %(default)s'
+        'and so on.'
     ),
     '--test': (
         'For unit tests. Needs "path-to-stdout-file,path-to-stderr-file,expected-retc".'
     ),
-    '--timeout': 'Network timeout in seconds. Default: %(default)s (seconds)',
-    '--url': 'URL to the endpoint. Default: %(default)s',
-    '--username': 'Username. Default: %(default)s',
+    '--timeout': 'Network timeout in seconds.',
+    '--url': 'URL to the endpoint.',
+    '--username': 'Username.',
     '--verbose': (
         'Makes this plugin verbose during the operation. '
         'Useful for debugging and seeing what is going on under the hood.'
     ),
-    '--warning': (
-        'WARN threshold in percent. Supports Nagios ranges. Default: >= %(default)s'
-    ),
+    '--warning': 'WARN threshold in percent. Supports Nagios ranges.',
     '--warning-count': (
-        'WARN threshold for the number of matching items. '
-        'Supports Nagios ranges. '
-        'Default: %(default)s'
+        'WARN threshold for the number of matching items. Supports Nagios ranges.'
     ),
-    '--warning-seconds': (
-        'WARN threshold in seconds. Supports Nagios ranges. Default: %(default)s'
-    ),
+    '--warning-seconds': 'WARN threshold in seconds. Supports Nagios ranges.',
 }
 
 
@@ -141,6 +152,10 @@ def float_or_none(arg):
 def help(param):
     """Retrieves the global help text for a given parameter.
 
+    Returns only the description, without "Default:" suffix.
+    The plugin appends the default info as needed, e.g.:
+        help=lib.args.help('--timeout') + ' Default: %(default)s (seconds)',
+
     ### Parameters
     - **param** (`str`): The parameter name (e.g. '--timeout').
 
@@ -149,7 +164,7 @@ def help(param):
 
     ### Example
     >>> help('--timeout')
-    'Network timeout in seconds. Default: %(default)s (seconds)'
+    'Network timeout in seconds.'
     """
     return HELP_TEXTS.get(param, '')
 
