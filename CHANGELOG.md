@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Add ruff linter and formatter to pre-commit hooks ([#117](https://github.com/Linuxfabrik/lib/issues/117))
 * Add pre-commit hooks
 * disk.py: add `get_owner()`
+* args.py: expand `HELP_TEXTS` with standard help texts for all common parameters (always-ok, critical, warning, insecure, no-proxy, timeout, url, ignore-regex, match, lengthy, count, test, etc.)
 * lftest.py: add `run()` function for declarative, data-driven unit tests using `subTest()`
 * nextcloud.py: new library
 * txt.py: add `exception2text()`
