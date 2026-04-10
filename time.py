@@ -8,8 +8,7 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Provides datetime functions.
-"""
+"""Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025052801'
@@ -17,6 +16,7 @@ __version__ = '2025052801'
 import datetime
 import sys
 import time
+
 if sys.version_info >= (3, 9):
     import zoneinfo  # available in python 3.9+
 
@@ -59,9 +59,9 @@ def get_timezone(tz_name):
     - **ZoneInfo**: A `zoneinfo.ZoneInfo` object for the requested zone, or UTC if not found.
 
     ### Example
-    >>> get_timezone("Europe/London").key
+    >>> get_timezone('Europe/London').key
     'Europe/London'
-    >>> get_timezone("Invalid/Zone").key
+    >>> get_timezone('Invalid/Zone').key
     'Etc/UTC'
     """
     try:
@@ -141,15 +141,15 @@ def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
 
     ### Parameters
     - **timestr** (`str`): A string representing the date and time.
-    - **pattern** (`str`, optional): The format string corresponding to the structure of `timestr`.  
-      Defaults to '%Y-%m-%d %H:%M:%S'. For more details on format codes, see:  
+    - **pattern** (`str`, optional): The format string corresponding to the structure of `timestr`.
+      Defaults to '%Y-%m-%d %H:%M:%S'. For more details on format codes, see:
       https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
 
     ### Returns
     - **datetime.datetime**: A datetime object corresponding to the parsed date and time.
 
     ### Example
-    >>> timestr2datetime("2021-05-08 09:32:09")
+    >>> timestr2datetime('2021-05-08 09:32:09')
     datetime.datetime(2021, 5, 8, 9, 32, 9)
     """
     return datetime.datetime.strptime(timestr, pattern)
@@ -162,8 +162,8 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
     ### Parameters
     - **timestr** (`str`): The time string to convert.
     - **pattern** (`str`): The format of the time string (default is '%Y-%m-%d %H:%M:%S').
-    - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.  
-      If provided, the parsed datetime is set to this timezone.  
+    - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.
+      If provided, the parsed datetime is set to this timezone.
       If None, the time is assumed to be local time.
 
     ### Returns
@@ -188,7 +188,9 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
     return dt.timestamp()
 
 
-def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%m-%d %H:%M:%S'):
+def timestrdiff(
+    timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%m-%d %H:%M:%S'
+):
     """
     Computes the absolute difference in seconds between two datetime strings.
 
@@ -200,15 +202,15 @@ def timestrdiff(timestr1, timestr2, pattern1='%Y-%m-%d %H:%M:%S', pattern2='%Y-%
     - **timestr1** (`str`): The first datetime string.
     - **timestr2** (`str`): The second datetime string.
     - **pattern1** (`str`, optional): The format pattern for `timestr1`. Defaults to '%Y-%m-%d %H:%M:%S'.
-    - **pattern2** (`str`, optional): The format pattern for `timestr2`. Defaults to '%Y-%m-%d %H:%M:%S'.  
-      For more information on format codes, refer to:  
+    - **pattern2** (`str`, optional): The format pattern for `timestr2`. Defaults to '%Y-%m-%d %H:%M:%S'.
+      For more information on format codes, refer to:
       https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
 
     ### Returns
     - **float**: The absolute difference between the two timestamps in seconds.
 
     ### Example
-    >>> timestrdiff("2021-05-08 09:32:09", "2021-05-08 09:30:00")
+    >>> timestrdiff('2021-05-08 09:32:09', '2021-05-08 09:30:00')
     129.0
     """
     dt1 = timestr2datetime(timestr1, pattern1)
@@ -231,4 +233,4 @@ def utc_offset():
     >>> utc_offset()
     '+0200'
     """
-    return time.strftime("%z")
+    return time.strftime('%z')

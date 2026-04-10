@@ -8,8 +8,7 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Provides very common every-day functions.
-"""
+"""Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026040801'
@@ -18,15 +17,13 @@ import numbers
 import operator
 import os
 import sys
-
 from traceback import format_exc
 
-from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 from . import txt
+from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
-
-WINDOWS = os.name == "nt"
-LINUX = sys.platform.startswith("linux")
+WINDOWS = os.name == 'nt'
+LINUX = sys.platform.startswith('linux')
 X86_64 = sys.maxsize > 2**32
 
 _OPS = {
@@ -112,7 +109,7 @@ def cu(msg=None):
     - If no traceback is present, only the optional message (if any) is printed.
 
     ### Example
-    >>> cu("Unable to connect to server")
+    >>> cu('Unable to connect to server')
 
     >>> cu()
     """
@@ -120,9 +117,13 @@ def cu(msg=None):
     tb = format_exc() if has_traceback else None
 
     if msg is not None:
-        msg = txt.sanitize_sensitive_data(msg).strip().replace('<', "'").replace('>', "'")
+        msg = (
+            txt.sanitize_sensitive_data(msg).strip().replace('<', "'").replace('>', "'")
+        )
         print(msg, end='')
-        print(' (Traceback for debugging purposes attached)\n' if has_traceback else '\n')
+        print(
+            ' (Traceback for debugging purposes attached)\n' if has_traceback else '\n'
+        )
 
     if has_traceback:
         print(tb.replace('<', "'").replace('>', "'"))
@@ -132,7 +133,7 @@ def cu(msg=None):
 
 def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=None):
     """
-    Returns a Nagios performance data string in the format:  
+    Returns a Nagios performance data string in the format:
     `'label'=value[UOM];[warn];[crit];[min];[max]`
 
     ### Parameters
@@ -169,13 +170,13 @@ def get_state(value, warn, crit, _operator='ge'):
     - **value** (`float`): Numeric value to evaluate.
     - **warn** (`float`): Numeric warning threshold.
     - **crit** (`float`): Numeric critical threshold.
-    - **_operator** (`str`): Comparison operator to use:  
-      - `eq`: equal to  
-      - `ge`: greater or equal  
-      - `gt`: greater than  
-      - `le`: less or equal  
-      - `lt`: less than  
-      - `ne`: not equal to  
+    - **_operator** (`str`): Comparison operator to use:
+      - `eq`: equal to
+      - `ge`: greater or equal
+      - `gt`: greater than
+      - `le`: less or equal
+      - `lt`: less than
+      - `ne`: not equal to
       - `range`: match Nagios range definition
 
     ### Returns
@@ -217,7 +218,9 @@ def get_state(value, warn, crit, _operator='ge'):
     return STATE_OK
 
 
-def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_reverse=False):
+def get_table(
+    data, cols, header=None, strip=True, sort_by_key=None, sort_order_reverse=False
+):
     """
     Format a list of dictionaries into a simple ASCII table.
 
@@ -253,7 +256,9 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
     data = data.copy()  # data has been passed by-reference - kick the reference
 
     if sort_by_key:
-        data = sorted(data, key=operator.itemgetter(sort_by_key), reverse=sort_order_reverse)
+        data = sorted(
+            data, key=operator.itemgetter(sort_by_key), reverse=sort_order_reverse
+        )
 
     if header:
         data.insert(0, dict(zip(cols, header)))
@@ -289,8 +294,8 @@ def get_table(data, cols, header=None, strip=True, sort_by_key=None, sort_order_
 
 def get_worst(state1, state2):
     """
-    Compares `state1` to `state2` and returns the worse state based on the following priority:  
-    STATE_OK < STATE_UNKNOWN < STATE_WARNING < STATE_CRITICAL  
+    Compares `state1` to `state2` and returns the worse state based on the following priority:
+    STATE_OK < STATE_UNKNOWN < STATE_WARNING < STATE_CRITICAL
     It will prioritize any non-OK state.
 
     Note that numerically the priority order does not match their integer values.
@@ -334,7 +339,7 @@ def guess_type(v, consumer='python'):
       'python'.
 
     ### Returns
-    - **any**: 
+    - **any**:
       - If `consumer='python'`, returns `None`, `int`, `float`, or `str`.
       - If `consumer='sqlite'`, returns `'integer'`, `'real'`, or `'text'`.
 
@@ -428,16 +433,16 @@ def lookup_lod(haystack, key, needle):
     - **needle** (`any`): The value to match against the specified key.
 
     ### Returns
-    - **tuple**: 
+    - **tuple**:
         - If found: (index, dictionary item).
         - If not found: (-1, None).
 
     ### Example
     >>> haystack = [
-    ...     {"name": "Tom", "age": 10},
-    ...     {"name": "Mark", "age": 5},
-    ...     {"name": "Pam", "age": 7},
-    ...     {"name": "Dick", "age": 12}
+    ...     {'name': 'Tom', 'age': 10},
+    ...     {'name': 'Mark', 'age': 5},
+    ...     {'name': 'Pam', 'age': 7},
+    ...     {'name': 'Dick', 'age': 12},
     ... ]
     >>> lookup_lod(haystack, 'name', 'Pam')
     (2, {'name': 'Pam', 'age': 7})
@@ -502,8 +507,7 @@ def _parse_range(spec_):
     else:
         start, end = '', spec_
 
-    start = float('-inf') if start == '~' \
-        else _parse_range_atom(start, 0)
+    start = float('-inf') if start == '~' else _parse_range_atom(start, 0)
     end = _parse_range_atom(end, float('inf'))
 
     if start > end:
@@ -591,7 +595,7 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     ### Parameters
     - **msg** (`str`): The plugin message to print. Will be stripped, sanitized, and processed.
     - **state** (`int`, optional): The exit code to use. Defaults to `STATE_OK`.
-    - **perfdata** (`str`, optional): Performance data to append after a `|` separator.  
+    - **perfdata** (`str`, optional): Performance data to append after a `|` separator.
       Defaults to an empty string (no performance data).
     - **always_ok** (`bool`, optional): If `True`, forces the exit code to `STATE_OK` regardless
       of the specified `state`. Defaults to `False`.
@@ -606,16 +610,21 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     - `perfdata`, if provided, must follow monitoring plugin standards for performance metrics.
 
     ### Example
-    >>> oao("Service is healthy", STATE_OK, "load=0.12;1.00;5.00", always_ok=False)
+    >>> oao('Service is healthy', STATE_OK, 'load=0.12;1.00;5.00', always_ok=False)
     Service is healthy|load=0.12;1.00;5.00
     (and exits with code 0)
 
-    >>> oao("password=secret123 found!", STATE_CRITICAL)
+    >>> oao('password=secret123 found!', STATE_CRITICAL)
     password=****** found!
     (and exits with code 2)
 
     """
-    msg = txt.sanitize_sensitive_data(msg.strip()).replace('|', '!').replace('<', "'").replace('>', "'")
+    msg = (
+        txt.sanitize_sensitive_data(msg.strip())
+        .replace('|', '!')
+        .replace('<', "'")
+        .replace('>', "'")
+    )
     if always_ok and msg:
         # Instead of splitlines(), we just split('\n', 1), so only first line is touched.
         parts = msg.split('\n', 1)
@@ -634,7 +643,7 @@ def smartcast(value):
     - **value** (`any`): The value to attempt to cast.
 
     ### Returns
-    - **float**, **str**, or **any**: 
+    - **float**, **str**, or **any**:
       - If convertible to `float`, returns a `float`.
       - If not, tries to convert to `str`.
       - If neither succeeds, returns the original value unchanged.
@@ -671,7 +680,7 @@ def sort(array, reverse=True, sort_by_key=False):
       - If `sort_by_key` is False (default), the dictionary items are sorted by their values.
       - If `sort_by_key` is True, the items are sorted by their keys (compared case-insensitively).
 
-    The sort order is descending by default (`reverse=True`).  
+    The sort order is descending by default (`reverse=True`).
     If the input is not a dictionary, the original input is returned unmodified.
 
     ### Parameters
@@ -758,25 +767,25 @@ def str2bool(s):
       otherwise False.
 
     ### Example
-    >>> str2bool("")
+    >>> str2bool('')
     False
 
-    >>> str2bool("false")
+    >>> str2bool('false')
     False
 
-    >>> str2bool("FalSE")
+    >>> str2bool('FalSE')
     False
 
-    >>> str2bool("true")
+    >>> str2bool('true')
     True
 
-    >>> str2bool("Linuxfabrik")
+    >>> str2bool('Linuxfabrik')
     True
 
-    >>> str2bool("0")
+    >>> str2bool('0')
     True
 
-    >>> str2bool("1")
+    >>> str2bool('1')
     True
     """
     return bool(s) and s.lower() != 'false'
@@ -790,11 +799,11 @@ def str2state(string, ignore_error=True):
 
     ### Parameters
     - **string** (`str`): The input string to match against known states.
-    - **ignore_error** (`bool`, optional): If True, unrecognized strings return `STATE_UNKNOWN`.  
+    - **ignore_error** (`bool`, optional): If True, unrecognized strings return `STATE_UNKNOWN`.
       If False, unrecognized strings return None. Defaults to True.
 
     ### Returns
-    - **int** or **None**: 
+    - **int** or **None**:
       - The numeric state code (`STATE_OK`, `STATE_WARN`, `STATE_CRIT`, `STATE_UNKNOWN`) if
         recognized.
       - Otherwise, `STATE_UNKNOWN` or None, depending on `ignore_error`.
@@ -872,7 +881,13 @@ def sum_lod(mylist):
     - **dict**: A dictionary with summed numeric values by key.
 
     ### Example
-    >>> sum_lod([{'in': 100, 'out': 10}, {'in': 50, 'out': 20}, {'error': 5, 'uuid': '1234-xyz'}])
+    >>> sum_lod(
+    ...     [
+    ...         {'in': 100, 'out': 10},
+    ...         {'in': 50, 'out': 20},
+    ...         {'error': 5, 'uuid': '1234-xyz'},
+    ...     ]
+    ... )
     {'in': 150, 'out': 30, 'error': 5}
     """
     total = {}

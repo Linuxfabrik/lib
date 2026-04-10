@@ -14,7 +14,7 @@ needed by more than one Jitsi plugin."""
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042001'
 
-import base64 # pylint: disable=C0413
+import base64  # pylint: disable=C0413
 
 from . import url
 
@@ -50,8 +50,8 @@ def get_data(args, _type='json'):
     """
     headers = {}
     if args.USERNAME:
-        auth = f"{args.USERNAME}:{args.PASSWORD}"
-        headers['Authorization'] = f"Basic {base64.b64encode(auth.encode()).decode()}"
+        auth = f'{args.USERNAME}:{args.PASSWORD}'
+        headers['Authorization'] = f'Basic {base64.b64encode(auth.encode()).decode()}'
 
     fetch_func = url.fetch_json if _type == 'json' else url.fetch
     success, result = fetch_func(

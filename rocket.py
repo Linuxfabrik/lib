@@ -14,23 +14,27 @@ needed by more than one Rocket.Chat plugin.
 Typical use-case:
 
 ```python
-credentials = lib.base.coe(lib.rocket.get_token(
-    args.URL,
-    args.USERNAME,
-    args.PASSWORD,
-    insecure=args.INSECURE,
-    no_proxy=args.NO_PROXY,
-    timeout=args.TIMEOUT,
-))
+credentials = lib.base.coe(
+    lib.rocket.get_token(
+        args.URL,
+        args.USERNAME,
+        args.PASSWORD,
+        insecure=args.INSECURE,
+        no_proxy=args.NO_PROXY,
+        timeout=args.TIMEOUT,
+    )
+)
 auth_token, user_id = credentials.split(':')
-result = lib.base.coe(lib.rocket.get_stats(
-    args.URL,
-    auth_token,
-    user_id,
-    insecure=args.INSECURE,
-    no_proxy=args.NO_PROXY,
-    timeout=args.TIMEOUT,
-))
+result = lib.base.coe(
+    lib.rocket.get_stats(
+        args.URL,
+        auth_token,
+        user_id,
+        insecure=args.INSECURE,
+        no_proxy=args.NO_PROXY,
+        timeout=args.TIMEOUT,
+    )
+)
 ```
 """
 
@@ -64,7 +68,7 @@ def _flatten_params(params):
     ...     'key3': {
     ...         'subkey1': 'subvalue1',
     ...         'subkey2': 'subvalue2',
-    ...     }
+    ...     },
     ... }
     >>> _flatten_params(params)
     'key1=value1&key2=value2&key3={subkey1=subvalue1&subkey2=subvalue2}'
@@ -73,16 +77,21 @@ def _flatten_params(params):
     for key, val in params.items():
         if isinstance(val, dict):
             inner = _flatten_params(val)
-            parts.append(f"{key}={{{inner}}}")
+            parts.append(f'{key}={{{inner}}}')
         else:
-            parts.append(f"{key}={val}")
+            parts.append(f'{key}={val}')
     return '&'.join(parts)
 
 
 def get_groups_history(
-    rc_url, auth_token, user_id,
-    room_id=None, params={},
-    insecure=False, no_proxy=False, timeout=3
+    rc_url,
+    auth_token,
+    user_id,
+    room_id=None,
+    params={},
+    insecure=False,
+    no_proxy=False,
+    timeout=3,
 ):
     """
     Retrieve message history for a private group via Rocket.Chat's `groups.history` API.
@@ -160,7 +169,9 @@ def get_groups_history(
     return True, result
 
 
-def get_rooms_get(rc_url, auth_token, user_id, insecure=False, no_proxy=False, timeout=3):
+def get_rooms_get(
+    rc_url, auth_token, user_id, insecure=False, no_proxy=False, timeout=3
+):
     """
     Retrieve the list of chat rooms accessible to the authenticated user via Rocket.Chat's
     `rooms.get` API.
@@ -225,9 +236,14 @@ def get_rooms_get(rc_url, auth_token, user_id, insecure=False, no_proxy=False, t
 
 
 def get_rooms_info(
-    rc_url, auth_token, user_id,
-    room_id=None, room_name=None,
-    insecure=False, no_proxy=False, timeout=3
+    rc_url,
+    auth_token,
+    user_id,
+    room_id=None,
+    room_name=None,
+    insecure=False,
+    no_proxy=False,
+    timeout=3,
 ):
     """
     Retrieve detailed information about a specific Rocket.Chat room via the `rooms.info` API.
@@ -361,7 +377,7 @@ def get_token(rc_url, user, password, insecure=False, no_proxy=False, timeout=3)
     """
     Retrieve an API token from Rocket.Chat using user credentials.
 
-    This function authenticates against a Rocket.Chat instance and retrieves an `authToken` and 
+    This function authenticates against a Rocket.Chat instance and retrieves an `authToken` and
     `userId` for future authenticated API calls.
 
     Equivalent to:

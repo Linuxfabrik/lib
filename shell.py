@@ -8,8 +8,7 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Communicates with the Shell on Linux and Windows.
-"""
+"""Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026032101'
@@ -21,7 +20,6 @@ import shlex
 import subprocess
 
 from . import txt
-
 
 RETC_SSHPASS = {
     1: 'Invalid command line argument',
@@ -54,7 +52,7 @@ def get_command_output(cmd, regex=None):
       extract specific output. Defaults to None.
 
     ### Returns
-    - **str**: The processed command output, or the extracted substring if regex is provided; 
+    - **str**: The processed command output, or the extracted substring if regex is provided;
       returns an empty string if execution fails or no match is found.
 
     ### Example
@@ -84,7 +82,9 @@ def get_command_output(cmd, regex=None):
     return output
 
 
-def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None, lc_all='C'):
+def shell_exec(
+    cmd, env=None, shell=False, stdin='', cwd=None, timeout=None, lc_all='C'
+):
     """
     Execute a command in a subprocess with flexible options for shell execution, environment
     variables, piping, standard input, working directory, and a timeout.
@@ -93,35 +93,35 @@ def shell_exec(cmd, env=None, shell=False, stdin='', cwd=None, timeout=None, lc_
     handled in UTF-8.
 
     ### Parameters
-    - **cmd** (`str`):  
+    - **cmd** (`str`):
       The command string to execute. If using pipes (`|`), individual commands will be run
       in a pipeline when `shell=False`. If `shell=True`, the entire string is passed to the shell.
-    - **env** (`dict`, optional):  
+    - **env** (`dict`, optional):
       A dictionary of environment variables to merge with the current OS environment.
       Defaults to the current environment.
-    - **shell** (`bool`, optional):  
+    - **shell** (`bool`, optional):
       If True, execute the command through the shell. Required when using shell features
       (e.g., redirection, globbing) or when providing `stdin`. Defaults to False.
-    - **stdin** (`str`, optional):  
+    - **stdin** (`str`, optional):
       A string to pass as standard input to the command. If non‐empty, `shell` will be set
       to True on Windows. Defaults to an empty string.
-    - **cwd** (`str`, optional):  
+    - **cwd** (`str`, optional):
       Working directory in which to execute the command. Defaults to None (current directory).
-    - **timeout** (`int` or `float`, optional):  
+    - **timeout** (`int` or `float`, optional):
       Maximum time (in seconds) to allow the command to run. If exceeded, the process is
       terminated. Defaults to None (no timeout).
-    - **lc_all** (`str`, optional):  
+    - **lc_all** (`str`, optional):
       Value to set for the `LC_ALL` environment variable, forcing command output locale.
       Defaults to `'C'` (POSIX "C" locale, i.e., English).
 
     ### Returns
-    - **tuple**:  
-      - On success:  
-        `(True, (stdout, stderr, return_code))`  
-        - **stdout** (`str`): Standard output of the command (decoded to text).  
-        - **stderr** (`str`): Standard error of the command (decoded to text).  
-        - **return_code** (`int`): Exit status of the command.  
-      - On failure:  
+    - **tuple**:
+      - On success:
+        `(True, (stdout, stderr, return_code))`
+        - **stdout** (`str`): Standard output of the command (decoded to text).
+        - **stderr** (`str`): Standard error of the command (decoded to text).
+        - **return_code** (`int`): Exit status of the command.
+      - On failure:
         `(False, error_message)` — a string describing the error.
 
     ### Notes

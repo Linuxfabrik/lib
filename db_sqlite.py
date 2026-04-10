@@ -14,10 +14,10 @@ This is one typical use case of this library (taken from `disk-io`):
 
 >>> conn = lib.base.coe(lib.db_sqlite.connect(filename='disk-io.db'))
 >>> lib.base.coe(lib.db_sqlite.create_table(conn, definition, drop_table_first=False))
->>> lib.base.coe(lib.db_sqlite.create_index(conn, 'name'))   # optional
+>>> lib.base.coe(lib.db_sqlite.create_index(conn, 'name'))  # optional
 
 >>> lib.base.coe(lib.db_sqlite.insert(conn, data))
->>> lib.base.coe(lib.db_sqlite.cut(conn, max=args.COUNT*len(disks)))
+>>> lib.base.coe(lib.db_sqlite.cut(conn, max=args.COUNT * len(disks)))
 >>> lib.base.coe(lib.db_sqlite.commit(conn))
 
 >>> result = lib.base.coe(lib.db_sqlite.select(conn,
@@ -36,8 +36,7 @@ import os
 import re
 import sqlite3
 
-from . import disk
-from . import txt
+from . import disk, txt
 
 
 def __filter_str(s, charclass='a-zA-Z0-9_'):
@@ -209,7 +208,13 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
 
     ### Example
     Calculate loads for `tx_bytes` and `rx_bytes` over 5 intervals:
-    >>> compute_load(conn, sensorcol='interface', datacols=['tx_bytes', 'rx_bytes'], count=5, table='perfdata')
+    >>> compute_load(
+    ...     conn,
+    ...     sensorcol='interface',
+    ...     datacols=['tx_bytes', 'rx_bytes'],
+    ...     count=5,
+    ...     table='perfdata',
+    ... )
 
     Example output:
 
@@ -240,7 +245,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
         success, perfdata = select(
             conn,
             f'SELECT * FROM {table} WHERE {sensorcol} = :{sensorcol} ORDER BY timestamp DESC;',
-            data={sensorcol: sensor_name}
+            data={sensorcol: sensor_name},
         )
         if not success:
             return False, perfdata
@@ -248,13 +253,21 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
             return True, False
 
         load1_delta = perfdata[0]['timestamp'] - perfdata[1]['timestamp']
-        loadn_delta = perfdata[0]['timestamp'] - perfdata[count-1]['timestamp']
+        loadn_delta = perfdata[0]['timestamp'] - perfdata[count - 1]['timestamp']
 
         tmp = {sensorcol: sensor_name}
         for key in datacols:
             if key in perfdata[0]:
-                tmp[f'{key}1'] = (perfdata[0][key] - perfdata[1][key]) / load1_delta if load1_delta else 0
-                tmp[f'{key}n'] = (perfdata[0][key] - perfdata[count-1][key]) / loadn_delta if loadn_delta else 0
+                tmp[f'{key}1'] = (
+                    (perfdata[0][key] - perfdata[1][key]) / load1_delta
+                    if load1_delta
+                    else 0
+                )
+                tmp[f'{key}n'] = (
+                    (perfdata[0][key] - perfdata[count - 1][key]) / loadn_delta
+                    if loadn_delta
+                    else 0
+                )
         load.append(tmp)
 
     return True, load
@@ -292,11 +305,12 @@ def connect(path='', filename=''):
     ### Example
     >>> success, conn = connect()
     >>> if success:
-    >>>     # Use conn
+    >>> # Use conn
     >>>     pass
     >>> else:
     >>>     print(conn)
     """
+
     def get_filename(path='', filename=''):
         """Helper to build the absolute path to the SQLite database file."""
         if not path:
@@ -317,7 +331,13 @@ def connect(path='', filename=''):
         return False, f'Connecting to DB {db} failed, Error: {e}'
 
 
-def create_index(conn, column_list, table='perfdata', unique=False, delete_db_on_operational_error=True):
+def create_index(
+    conn,
+    column_list,
+    table='perfdata',
+    unique=False,
+    delete_db_on_operational_error=True,
+):
     """
     Create an index on one or more columns in a SQLite table.
 
@@ -359,7 +379,7 @@ def create_index(conn, column_list, table='perfdata', unique=False, delete_db_on
     (True, True)
     """
     table = __filter_str(table)
-    index_name = f"idx_{__sha1sum(table + column_list)}"
+    index_name = f'idx_{__sha1sum(table + column_list)}'
     if unique:
         sql = f'CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON "{table}" ({column_list});'
     else:
@@ -461,7 +481,7 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     ### Notes
     - The function relies on the implicit `rowid` column for ordering.
     - The table name is sanitized to allow only safe characters.
-    - If an `OperationalError` occurs (e.g., due to schema mismatch), the database file can 
+    - If an `OperationalError` occurs (e.g., due to schema mismatch), the database file can
       be deleted automatically.
     - Uses `LIMIT -1 OFFSET :_max` to delete everything after the most recent `_max` records.
 
@@ -471,14 +491,14 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     """
     table = __filter_str(table)
 
-    sql = f'''
+    sql = f"""
         DELETE FROM {table}
         WHERE rowid IN (
             SELECT rowid FROM {table}
             ORDER BY rowid DESC
             LIMIT -1 OFFSET :_max
         );
-    '''
+    """
 
     c = conn.cursor()
     try:
@@ -659,7 +679,17 @@ def get_tables(conn):
     return True, table_names
 
 
-def import_csv(conn, filename, table='data', fieldnames=None, skip_header=False, delimiter=',', quotechar='"', newline='', chunksize=1000):
+def import_csv(
+    conn,
+    filename,
+    table='data',
+    fieldnames=None,
+    skip_header=False,
+    delimiter=',',
+    quotechar='"',
+    newline='',
+    chunksize=1000,
+):
     """
     Import a CSV file into a SQLite table.
 
@@ -748,7 +778,7 @@ def import_csv(conn, filename, table='data', fieldnames=None, skip_header=False,
 
     except csv.Error as e:
         return False, f'CSV error in file {filename}, line {reader.line_num}: {e}'
-    except IOError as e:
+    except OSError as e:
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}:\n{e}'
@@ -788,7 +818,11 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
       be deleted automatically.
 
     ### Example
-    >>> insert(conn, {'hostname': 'server1', 'service': 'http', 'status': 0}, table='status')
+    >>> insert(
+    ...     conn,
+    ...     {'hostname': 'server1', 'service': 'http', 'status': 0},
+    ...     table='status',
+    ... )
     (True, True)
     """
     table = __filter_str(table)
@@ -881,7 +915,11 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
     - Table names are sanitized to allow only safe characters.
 
     ### Example
-    >>> replace(conn, {'hostname': 'server1', 'service': 'http', 'status': 0}, table='status')
+    >>> replace(
+    ...     conn,
+    ...     {'hostname': 'server1', 'service': 'http', 'status': 0},
+    ...     table='status',
+    ... )
     (True, True)
     """
     table = __filter_str(table)
@@ -935,7 +973,14 @@ def rm_db(conn):
     return True
 
 
-def select(conn, sql, data=None, fetchone=False, as_dict=True, delete_db_on_operational_error=True):
+def select(
+    conn,
+    sql,
+    data=None,
+    fetchone=False,
+    as_dict=True,
+    delete_db_on_operational_error=True,
+):
     """
     Execute a SELECT query against a SQLite database.
 

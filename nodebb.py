@@ -13,8 +13,7 @@
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042001'
 
-from . import base
-from . import url
+from . import base, url
 
 
 def get_data(args, uri=''):
@@ -25,7 +24,7 @@ def get_data(args, uri=''):
     JSON response.
 
     ### Parameters
-    - **args** (`object`): An object containing the URL (`args.URL`), token (`args.TOKEN`), and 
+    - **args** (`object`): An object containing the URL (`args.URL`), token (`args.TOKEN`), and
       other options (e.g., `INSECURE`, `NO_PROXY`, `TIMEOUT`).
     - **uri** (`str`, optional): The specific URI to append to the base URL. Defaults to an
       empty string.
@@ -33,7 +32,7 @@ def get_data(args, uri=''):
     ### Returns
     - **tuple**:
       - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`): 
+      - **result** (`dict` or `str`):
         - A dictionary containing the API response if successful.
         - An error message string if the API call failed.
 
@@ -41,13 +40,15 @@ def get_data(args, uri=''):
     >>> get_data(args, uri='/api/v1/posts')
     (True, {'posts': [...], 'total': 100})
     """
-    return base.coe(url.fetch_json(
-        f'{args.URL.rstrip("/")}{uri}',
-        header={
-            'Accept': 'application/json',
-            'Authorization': f'Bearer {args.TOKEN}',
-        },
-        insecure=args.INSECURE,
-        no_proxy=args.NO_PROXY,
-        timeout=args.TIMEOUT,
-    ))
+    return base.coe(
+        url.fetch_json(
+            f'{args.URL.rstrip("/")}{uri}',
+            header={
+                'Accept': 'application/json',
+                'Authorization': f'Bearer {args.TOKEN}',
+            },
+            insecure=args.INSECURE,
+            no_proxy=args.NO_PROXY,
+            timeout=args.TIMEOUT,
+        )
+    )

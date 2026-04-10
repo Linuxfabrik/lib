@@ -14,11 +14,12 @@ needed by LibreNMS check plugins."""
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042001'
 
+from . import (
+    base,  # pylint: disable=C0413
+    txt,  # pylint: disable=C0413
+    url,  # pylint: disable=C0413
+)
 from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
-
-from . import base # pylint: disable=C0413
-from . import txt # pylint: disable=C0413
-from . import url # pylint: disable=C0413
 
 
 def get_data(args, uri=''):
@@ -59,13 +60,15 @@ def get_data(args, uri=''):
     full_url = f'{url_base}{endpoint}'
     headers = {'X-Auth-Token': args.TOKEN}
 
-    result = base.coe(url.fetch_json(
-        full_url,
-        header=headers,
-        insecure=args.INSECURE,
-        no_proxy=args.NO_PROXY,
-        timeout=args.TIMEOUT,
-    ))
+    result = base.coe(
+        url.fetch_json(
+            full_url,
+            header=headers,
+            insecure=args.INSECURE,
+            no_proxy=args.NO_PROXY,
+            timeout=args.TIMEOUT,
+        )
+    )
 
     if result.get('status', '').lower() != 'ok':
         base.oao(
@@ -86,11 +89,11 @@ def get_prop(obj, prop, mytype='str'):
     it returns `None`.
 
     ### Parameters
-    - **obj** (`dict`): 
+    - **obj** (`dict`):
       The dictionary object to query.
-    - **prop** (`str`): 
+    - **prop** (`str`):
       The property name to retrieve.
-    - **mytype** (`str`, optional): 
+    - **mytype** (`str`, optional):
       Expected type of the property. `'str'` ensures text formatting. Defaults to `'str'`.
 
     ### Returns
@@ -113,7 +116,7 @@ def get_prop(obj, prop, mytype='str'):
 
     if mytype == 'str':
         return txt.to_text(value) if value is not None else ''
-    
+
     return value if value is not None else None
 
 
@@ -156,4 +159,3 @@ def get_state(librestate, severity='crit'):
     if librestate != 1:
         return STATE_OK
     return STATE_CRIT if severity == 'crit' else STATE_WARN
-

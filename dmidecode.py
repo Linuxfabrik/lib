@@ -17,10 +17,8 @@ __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025090901'
 
 import re
-import subprocess
 
 from . import shell
-
 
 HANDLE_RE = re.compile('^Handle\\s+(.+),\\s+DMI\\s+type\\s+(\\d+),\\s+(\\d+)\\s+bytes$')
 IN_BLOCK_RE = re.compile('^\\t\\t(.+)$')
@@ -74,7 +72,7 @@ TYPE2STR = {
 }
 
 
-# ('0x0400', '4', '48'): {'dminame': 'Processor Information', 'dmisize': 48, 'dmitype': 4, 'Socket Designation': 'CPU 1', 'Type': 'Central Processor', 'Family': 'Core i7', 'Manufacturer': 'Intel(R) Corporation', 'ID': 'C1 06 08 00 FF FB EB BF', 'Signature': 'Type 0, Family 6, Model 140, Stepping 1', 'Version': '11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz', 'Voltage': '0.8 V', 'External Clock': '100 MHz', 'Max Speed': '3000 MHz', 'Current Speed': '3000 MHz', 'Status': 'Populated, Enabled', 'Upgrade': 'Other', 'L1 Cache Handle': '0x0701', 'L2 Cache Handle': '0x0702', 'L3 Cache Handle': '0x0703', 'Serial Number': ' ', 'Asset Tag': ' ', 'Part Number': ' ', 'Core Count': '4', 'Core Enabled': '4', 'Thread Count': '8'}, 
+# ('0x0400', '4', '48'): {'dminame': 'Processor Information', 'dmisize': 48, 'dmitype': 4, 'Socket Designation': 'CPU 1', 'Type': 'Central Processor', 'Family': 'Core i7', 'Manufacturer': 'Intel(R) Corporation', 'ID': 'C1 06 08 00 FF FB EB BF', 'Signature': 'Type 0, Family 6, Model 140, Stepping 1', 'Version': '11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz', 'Voltage': '0.8 V', 'External Clock': '100 MHz', 'Max Speed': '3000 MHz', 'Current Speed': '3000 MHz', 'Status': 'Populated, Enabled', 'Upgrade': 'Other', 'L1 Cache Handle': '0x0701', 'L2 Cache Handle': '0x0702', 'L3 Cache Handle': '0x0703', 'Serial Number': ' ', 'Asset Tag': ' ', 'Part Number': ' ', 'Core Count': '4', 'Core Enabled': '4', 'Thread Count': '8'},
 
 
 def cpu_cores(dmi):
@@ -210,7 +208,9 @@ def cpu_type(dmi):
     """
     for cpu in dmiget(dmi, 'Processor'):
         if int(cpu.get('Core Enabled', 0)) > 0:
-            cpu_version = cpu.get('Version', '').replace('(R)', '').replace('(TM)', '').strip()
+            cpu_version = (
+                cpu.get('Version', '').replace('(R)', '').replace('(TM)', '').strip()
+            )
             if 'NotSpecified' in cpu_version or not cpu_version:
                 return 'n/a'
             return cpu_version
@@ -267,15 +267,25 @@ def dmidecode_parse(output):
     # Fields to ignore by DMI type when constructing fingerprints (order-independent)
     IGNORE_BY_TYPE = {
         4: {  # Processor Information
-            'Socket Designation', 'ID',
-            'L1 Cache Handle', 'L2 Cache Handle', 'L3 Cache Handle',
-            'Serial Number', 'Asset Tag', 'Part Number',
-            'Core Count', 'Core Enabled',  # often bogus or per-core
+            'Socket Designation',
+            'ID',
+            'L1 Cache Handle',
+            'L2 Cache Handle',
+            'L3 Cache Handle',
+            'Serial Number',
+            'Asset Tag',
+            'Part Number',
+            'Core Count',
+            'Core Enabled',  # often bogus or per-core
         },
         17: {  # Memory Device
-            'Locator', 'Bank Locator', 'Device Locator',
-            'Memory Array Mapped Address Handle', 'Mem Array Error Info Handle',
-            'Total Width', 'Data Width',  # width can vary by board reporting; not essential
+            'Locator',
+            'Bank Locator',
+            'Device Locator',
+            'Memory Array Mapped Address Handle',
+            'Mem Array Error Info Handle',
+            'Total Width',
+            'Data Width',  # width can vary by board reporting; not essential
             'Serial Number',  # sometimes blank; can differ even for identical sticks
         },
     }
@@ -419,8 +429,12 @@ def dmiget(dmi, type_id):
     """
     if isinstance(type_id, str):
         type_id = next(
-            (type_num for type_num, type_str in TYPE2STR.items() if type_str == type_id),
-            None
+            (
+                type_num
+                for type_num, type_str in TYPE2STR.items()
+                if type_str == type_id
+            ),
+            None,
         )
         if type_id is None:
             return []

@@ -17,10 +17,12 @@ __version__ = '2025042001'
 
 from . import url
 
-
 # curl --header 'Accept: application/json' --header 'X-ApiKey: token' 'https://$host:$port/$uri'
 
-def fetch_json(token, host, port, uri, version, func, insecure=False, no_proxy=False, timeout=8):
+
+def fetch_json(
+    token, host, port, uri, version, func, insecure=False, no_proxy=False, timeout=8
+):
     """
     Fetch JSON data from a Grassfish API endpoint.
 
@@ -63,7 +65,7 @@ def fetch_json(token, host, port, uri, version, func, insecure=False, no_proxy=F
     ...     port=443,
     ...     uri='/api',
     ...     version=1,
-    ...     func='devices'
+    ...     func='devices',
     ... )
     (True, {...})
     """
@@ -112,8 +114,13 @@ def match(item, _filter):
 
     ### Example
     >>> match(
-    ...     {'BoxState': 'Active', 'CustomId': '1234', 'IsInstalled': True, 'IsLicensed': True},
-    ...     my_filter
+    ...     {
+    ...         'BoxState': 'Active',
+    ...         'CustomId': '1234',
+    ...         'IsInstalled': True,
+    ...         'IsLicensed': True,
+    ...     },
+    ...     my_filter,
     ... )
     False
     """

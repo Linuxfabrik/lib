@@ -8,8 +8,7 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Extends argparse by new input argument data types on demand.
-"""
+"""Extends argparse by new input argument data types on demand."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025091501'
@@ -34,7 +33,7 @@ HELP_TEXTS = {
     ),
     '--verbose': (
         'Makes this plugin verbose during the operation. Useful for debugging and seeing '
-        'what\'s going on under the hood.'
+        "what's going on under the hood."
     ),
 }
 
@@ -58,10 +57,10 @@ def csv(arg):
     - **list**: A list of strings, each representing an element from the CSV input string.
 
     ### Example
-    >>> csv("apple, orange, banana, grape")
+    >>> csv('apple, orange, banana, grape')
     ['apple', 'orange', 'banana', 'grape']
-    
-    >>> csv(" one, two, three , four ")
+
+    >>> csv(' one, two, three , four ')
     ['one', 'two', 'three', 'four']
     """
     return [x.strip() for x in arg.split(',')]

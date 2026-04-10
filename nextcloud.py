@@ -16,8 +16,7 @@ __version__ = '2025100301'
 import json
 import os
 
-from . import disk
-from . import shell
+from . import disk, shell
 
 
 def run_occ(path, cmd, _format='json'):
@@ -60,7 +59,9 @@ def run_occ(path, cmd, _format='json'):
     >>> isinstance(result, dict)
     True
 
-    >>> ok, err = run_occ('/var/www/nextcloud', 'user:list --output=json', _format='json')
+    >>> ok, err = run_occ(
+    ...     '/var/www/nextcloud', 'user:list --output=json', _format='json'
+    ... )
     >>> ok in (True, False)
     True
     """
@@ -82,11 +83,17 @@ def run_occ(path, cmd, _format='json'):
     if str(_format).lower() == 'json':
         try:
             # If bytes, decode first; json.loads also accepts bytes, but being explicit helps
-            data = json.loads(stdout.decode() if isinstance(stdout, (bytes, bytearray)) else stdout)
+            data = json.loads(
+                stdout.decode() if isinstance(stdout, (bytes, bytearray)) else stdout
+            )
             return True, data
         except json.JSONDecodeError as e:
             # Fall back to text with a clear error
             return False, f'JSON decode error: {e}\nRaw stdout:\n{stdout}'
     else:
-        text = stdout.decode().strip() if isinstance(stdout, (bytes, bytearray)) else stdout.strip()
+        text = (
+            stdout.decode().strip()
+            if isinstance(stdout, (bytes, bytearray))
+            else stdout.strip()
+        )
         return True, text

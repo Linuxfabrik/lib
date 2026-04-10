@@ -9,8 +9,7 @@
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
 
-"""Provides network related functions and variables.
-"""
+"""Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025053001'
@@ -19,20 +18,23 @@ import random
 import re
 import socket
 import ssl
+
 try:
     import netifaces
+
     HAVE_NETIFACES = True
 except ImportError:
     HAVE_NETIFACES = False
 
-from . import txt # pylint: disable=C0413
-from . import url # pylint: disable=C0413
-
+from . import (
+    txt,  # pylint: disable=C0413
+    url,  # pylint: disable=C0413
+)
 
 # address family
-AF_INET = socket.AF_INET                             # 2
-AF_INET6 = getattr(socket, 'AF_INET6', object())     # 10
-AF_UNSPEC = socket.AF_UNSPEC                         # any kind of connection
+AF_INET = socket.AF_INET  # 2
+AF_INET6 = getattr(socket, 'AF_INET6', object())  # 10
+AF_UNSPEC = socket.AF_UNSPEC  # any kind of connection
 try:
     AF_UNIX = socket.AF_UNIX
 except AttributeError:
@@ -43,7 +45,7 @@ FAMILIYSTR = {
     # as defined in Python's socketmodule.c
     0: 'unspec',
     1: 'unix',
-    2: '4',              # inet
+    2: '4',  # inet
     3: 'ax25',
     4: 'ipx',
     5: 'appletalk',
@@ -51,7 +53,7 @@ FAMILIYSTR = {
     7: 'bridge',
     8: 'atmpvc',
     9: 'x25',
-    10: '6',             # inet6
+    10: '6',  # inet6
     11: 'rose',
     12: 'decnet',
     13: 'netbeui',
@@ -72,19 +74,19 @@ FAMILIYSTR = {
 }
 
 FQDN_REGEX = re.compile(
-        r"^((?!-)[-A-Z\d]{1,63}(?<!-)\.)+(?!-)[-A-Z\d]{1,63}(?<!-)\.?$", re.IGNORECASE
+    r'^((?!-)[-A-Z\d]{1,63}(?<!-)\.)+(?!-)[-A-Z\d]{1,63}(?<!-)\.?$', re.IGNORECASE
 )
 
 # protocol type
-PROTO_TCP = socket.IPPROTO_TCP                       # 6
-PROTO_UDP = socket.IPPROTO_UDP                       # 17
-PROTO_IP = socket.IPPROTO_IP                         # 0
+PROTO_TCP = socket.IPPROTO_TCP  # 6
+PROTO_UDP = socket.IPPROTO_UDP  # 17
+PROTO_IP = socket.IPPROTO_IP  # 0
 
 PROTO_MAP = {
     # address family, socket type: proto
     (AF_INET, socket.SOCK_STREAM): 'tcp',
-    (AF_INET, socket.SOCK_DGRAM):  'udp',
-    (AF_INET6, socket.SOCK_DGRAM):  'udp6',
+    (AF_INET, socket.SOCK_DGRAM): 'udp',
+    (AF_INET6, socket.SOCK_DGRAM): 'udp6',
     (AF_INET6, socket.SOCK_STREAM): 'tcp6',
 }
 
@@ -111,21 +113,23 @@ PROTOSTR = {
 }
 
 # socket type
-SOCK_TCP = socket.SOCK_STREAM                        # 1
-SOCK_UDP = socket.SOCK_DGRAM                         # 2
+SOCK_TCP = socket.SOCK_STREAM  # 1
+SOCK_UDP = socket.SOCK_DGRAM  # 2
 SOCK_RAW = socket.SOCK_RAW
 
 SOCKETSTR = {
     # as defined in Python's socketmodule.c
-    1: 'tcp',        # stream
-    2: 'udp',        # dgram
+    1: 'tcp',  # stream
+    2: 'udp',  # dgram
     3: 'raw',
     4: 'rdm',
     5: 'seqpacket',
 }
 
 
-def _socket_fetch(open_socket_func, connect_args, payload=None, timeout=3, socket_name="socket"):
+def _socket_fetch(
+    open_socket_func, connect_args, payload=None, timeout=3, socket_name='socket'
+):
     """
     Fetch data via an open socket connection.
 
@@ -157,7 +161,9 @@ def _socket_fetch(open_socket_func, connect_args, payload=None, timeout=3, socke
       functions.
 
     ### Example
-    >>> success, response = _socket_fetch(open_socket_func, connect_args, payload=b'ping')
+    >>> success, response = _socket_fetch(
+    ...     open_socket_func, connect_args, payload=b'ping'
+    ... )
     """
     try:
         with open_socket_func() as s:
@@ -184,7 +190,7 @@ def _socket_fetch(open_socket_func, connect_args, payload=None, timeout=3, socke
                     fragments.append(chunk.decode('utf-8', errors='replace'))
                 except socket.timeout:
                     return False, f'{socket_name} timed out.'
-                except socket.error as e:
+                except OSError as e:
                     return False, f'Cannot fetch data from {socket_name}: {e}'
 
             return True, ''.join(fragments)
@@ -225,6 +231,7 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
     ### Example
     >>> success, response = fetch('example.com', 80)
     """
+
     def open_tcp_socket():
         family = AF_INET6 if ipv6 else AF_INET
         return socket.socket(family, SOCK_TCP)
@@ -271,6 +278,7 @@ def fetch_socket(sock_file, cmd):
     ### Example
     >>> success, response = fetch_socket('/var/run/haproxy.sock', b'show stat\\n')
     """
+
     def open_unix_socket():
         return socket.socket(socket.AF_UNIX, SOCK_TCP)
 
@@ -324,8 +332,11 @@ def fetch_ssl(host, port, msg=None, timeout=3):
     - Uses `server_hostname` to support Server Name Indication (SNI).
 
     ### Example
-    >>> success, response = fetch_ssl('example.com', 443, b'GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n')
+    >>> success, response = fetch_ssl(
+    ...     'example.com', 443, b'GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n'
+    ... )
     """
+
     def open_ssl_socket():
         # PROTOCOL_TLS_CLIENT automatically disables SSLv2/3 and
         # TLSv1.0/1.1 on recent OpenSSL builds
@@ -333,13 +344,17 @@ def fetch_ssl(host, port, msg=None, timeout=3):
 
         # context.check_hostname = True
         # context.verify_mode = ssl.CERT_REQUIRED
-        context.minimum_version = ssl.TLSVersion.TLSv1_2  # enforce at least TLS 1.2 just to be sure
+        context.minimum_version = (
+            ssl.TLSVersion.TLSv1_2
+        )  # enforce at least TLS 1.2 just to be sure
 
         raw_sock = socket.socket(socket.AF_INET, SOCK_TCP)
         return context.wrap_socket(raw_sock, server_hostname=host)
 
     try:
-        return _socket_fetch(open_ssl_socket, (host, int(port)), payload=msg, timeout=timeout)
+        return _socket_fetch(
+            open_ssl_socket, (host, int(port)), payload=msg, timeout=timeout
+        )
 
     except Exception as e:
         return False, f'Could not open SSL socket: {e}'
@@ -421,7 +436,9 @@ def get_public_ip(services, insecure=False, no_proxy=False, timeout=2):
       - `False` and `None` if no IP could be retrieved.
 
     ### Example
-    >>> get_public_ip('https://ipv4.icanhazip.com,https://ipecho.net/plain,https://ipinfo.io/ip')
+    >>> get_public_ip(
+    ...     'https://ipv4.icanhazip.com,https://ipecho.net/plain,https://ipinfo.io/ip'
+    ... )
     (True, '1.2.3.4')
     """
     if not services:
@@ -506,7 +523,7 @@ def is_valid_hostname(hostname):
     if not isinstance(hostname, str):
         return False
 
-    normalized = hostname.rstrip(".")
+    normalized = hostname.rstrip('.')
     if len(normalized) > 253:
         return False
 

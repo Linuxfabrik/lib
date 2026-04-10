@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Add CONTRIBUTING
 * Add GitHub Actions workflow to automatically build and deploy API documentation to GitHub Pages
+* Add ruff linter and formatter to pre-commit hooks ([#117](https://github.com/Linuxfabrik/lib/issues/117))
 * Add pre-commit hooks
 * disk.py: add `get_owner()`
 * lftest.py: add `run()` function for declarative, data-driven unit tests using `subTest()`

@@ -8,15 +8,12 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Provides functions to establish native SMB connections.
-"""
+"""Provides functions to establish native SMB connections."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042001'
 
-import sys
 
-from .globals import STATE_UNKNOWN
 import smbclient
 import smbprotocol.exceptions
 
@@ -57,18 +54,23 @@ def glob(filename, username, password, timeout, pattern='*', encrypt=True):
         if file_entry.is_file():
             return True, [file_entry]
 
-        files = list(smbclient.scandir(
-            filename,
-            mode='rb',
-            username=username,
-            password=password,
-            connection_timeout=timeout,
-            search_pattern=pattern,
-            encrypt=encrypt,
-        ))
+        files = list(
+            smbclient.scandir(
+                filename,
+                mode='rb',
+                username=username,
+                password=password,
+                connection_timeout=timeout,
+                search_pattern=pattern,
+                encrypt=encrypt,
+            )
+        )
         return True, files
 
-    except (smbprotocol.exceptions.SMBAuthenticationError, smbprotocol.exceptions.LogonFailure):
+    except (
+        smbprotocol.exceptions.SMBAuthenticationError,
+        smbprotocol.exceptions.LogonFailure,
+    ):
         return False, 'Login failed'
     except smbprotocol.exceptions.SMBOSError as e:
         context = getattr(e, '__context__', None)
@@ -76,9 +78,9 @@ def glob(filename, username, password, timeout, pattern='*', encrypt=True):
             return False, 'No such file or directory on the SMB server.'
         if e.strerror == 'No such file or directory':
             return True, []
-        return False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename)
+        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
-        return False, 'Unknown error opening or reading {}:\n{}'.format(filename, e)
+        return False, f'Unknown error opening or reading {filename}:\n{e}'
 
 
 def open_file(filename, username, password, timeout, encrypt=True):
@@ -117,13 +119,20 @@ def open_file(filename, username, password, timeout, encrypt=True):
             encrypt=encrypt,
         )
         return True, file_obj
-    except (smbprotocol.exceptions.SMBAuthenticationError, smbprotocol.exceptions.LogonFailure) as e:
+    except (
+        smbprotocol.exceptions.SMBAuthenticationError,
+        smbprotocol.exceptions.LogonFailure,
+    ) as e:
         return False, str(e)
     except smbprotocol.exceptions.SMBOSError as e:
-        if isinstance(getattr(e, '__context__', None), smbprotocol.exceptions.FileIsADirectory):
+        if isinstance(
+            getattr(e, '__context__', None), smbprotocol.exceptions.FileIsADirectory
+        ):
             return False, 'The file specified is a directory, expected a file.'
-        if isinstance(getattr(e, '__context__', None), smbprotocol.exceptions.ObjectNameNotFound):
+        if isinstance(
+            getattr(e, '__context__', None), smbprotocol.exceptions.ObjectNameNotFound
+        ):
             return False, 'No such file or directory on the SMB server.'
-        return False, 'I/O error "{}" while opening or reading {}'.format(e.strerror, filename)
+        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
-        return False, 'Unknown error opening or reading {}:\n{}'.format(filename, e)
+        return False, f'Unknown error opening or reading {filename}:\n{e}'

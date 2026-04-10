@@ -8,8 +8,7 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""This module tries to make accessing the Icinga2 API easier.
-"""
+"""This module tries to make accessing the Icinga2 API easier."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042002'
@@ -17,16 +16,23 @@ __version__ = '2025042002'
 import base64
 import time
 
-from . import txt
-from . import url
+from . import txt, url
 
 # Take care of Icinga and throttle the amount of requests, don't overload it
 # with too fast subsequent api-calls.
 DEFAULT_SLEEP = 1.0
 
 
-def api_post(uri, username, password, data=None, method_override='',
-             insecure=False, no_proxy=False, timeout=3):
+def api_post(
+    uri,
+    username,
+    password,
+    data=None,
+    method_override='',
+    insecure=False,
+    no_proxy=False,
+    timeout=3,
+):
     """
     Send a low-level POST request to the Icinga API.
 
@@ -75,7 +81,7 @@ def api_post(uri, username, password, data=None, method_override='',
     uri = uri.replace('//v1', '/v1').replace('//v2', '/v2')
     headers = {
         'Accept': 'application/json',
-        'Authorization': f"Basic {txt.to_text(base64.b64encode(txt.to_bytes(f'{username}:{password}')))}"
+        'Authorization': f'Basic {txt.to_text(base64.b64encode(txt.to_bytes(f"{username}:{password}")))}',
     }
     if method_override:
         headers['X-HTTP-Method-Override'] = method_override
@@ -93,8 +99,16 @@ def api_post(uri, username, password, data=None, method_override='',
     return result
 
 
-def get_service(uri, username, password, servicename, attrs='state',
-                insecure=False, no_proxy=False, timeout=3):
+def get_service(
+    uri,
+    username,
+    password,
+    servicename,
+    attrs='state',
+    insecure=False,
+    no_proxy=False,
+    timeout=3,
+):
     """
     Query a service object from the Icinga API.
 
@@ -140,7 +154,7 @@ def get_service(uri, username, password, servicename, attrs='state',
     >>> )
     >>> print(result['result'][0]['attrs'])
     """
-    uri = f"{uri.rstrip('/')}/v1/objects/services"
+    uri = f'{uri.rstrip("/")}/v1/objects/services'
     data = {
         'filter': f'match("{servicename}", service.__name)',
         'attrs': ['name'] + attrs.split(','),
@@ -157,8 +171,16 @@ def get_service(uri, username, password, servicename, attrs='state',
     )
 
 
-def remove_ack(uri, username, password, objectname, _type='service',
-               insecure=False, no_proxy=False, timeout=3):
+def remove_ack(
+    uri,
+    username,
+    password,
+    objectname,
+    _type='service',
+    insecure=False,
+    no_proxy=False,
+    timeout=3,
+):
     """
     Remove an acknowledgement for a host or service in Icinga.
 
@@ -196,7 +218,7 @@ def remove_ack(uri, username, password, objectname, _type='service',
     >>>     uri, username, password, objectname='hostname!special-service'
     >>> )
     """
-    uri = f"{uri.rstrip('/')}/v1/actions/remove-acknowledgement"
+    uri = f'{uri.rstrip("/")}/v1/actions/remove-acknowledgement'
     data = {
         'type': _type.capitalize(),
         'filter': f'match("{objectname}", {_type.lower()}.__name)',
@@ -212,8 +234,9 @@ def remove_ack(uri, username, password, objectname, _type='service',
     )
 
 
-def remove_downtime(uri, username, password, downtime,
-                    insecure=False, no_proxy=False, timeout=3):
+def remove_downtime(
+    uri, username, password, downtime, insecure=False, no_proxy=False, timeout=3
+):
     """
     Remove a downtime in Icinga by its name.
 
@@ -265,8 +288,17 @@ def remove_downtime(uri, username, password, downtime,
     )
 
 
-def set_ack(uri, username, password, objectname, _type='service', author='Linuxfabrik lib.icinga',
-            insecure=False, no_proxy=False, timeout=3):
+def set_ack(
+    uri,
+    username,
+    password,
+    objectname,
+    _type='service',
+    author='Linuxfabrik lib.icinga',
+    insecure=False,
+    no_proxy=False,
+    timeout=3,
+):
     """
     Acknowledge a problem for a host or service in Icinga.
 
@@ -308,7 +340,7 @@ def set_ack(uri, username, password, objectname, _type='service', author='Linuxf
     >>>     uri, username, password, 'hostname!special-service', _type='service'
     >>> )
     """
-    uri = f"{uri.rstrip('/')}/v1/actions/acknowledge-problem"
+    uri = f'{uri.rstrip("/")}/v1/actions/acknowledge-problem'
     data = {
         'type': _type.capitalize(),
         'filter': f'match("{objectname}", {_type.lower()}.__name)',
@@ -327,9 +359,19 @@ def set_ack(uri, username, password, objectname, _type='service', author='Linuxf
     )
 
 
-def set_downtime(uri, username, password, objectname, _type='service',
-                 starttime=None, endtime=None, author='Linuxfabrik lib.icinga',
-                 insecure=False, no_proxy=False, timeout=3):
+def set_downtime(
+    uri,
+    username,
+    password,
+    objectname,
+    _type='service',
+    starttime=None,
+    endtime=None,
+    author='Linuxfabrik lib.icinga',
+    insecure=False,
+    no_proxy=False,
+    timeout=3,
+):
     """
     Schedule a downtime for a host or service in Icinga.
 
@@ -379,7 +421,7 @@ def set_downtime(uri, username, password, objectname, _type='service',
     starttime = starttime if starttime is not None else now
     endtime = endtime if endtime is not None else now + 3600
 
-    uri = f"{uri.rstrip('/')}/v1/actions/schedule-downtime"
+    uri = f'{uri.rstrip("/")}/v1/actions/schedule-downtime'
     data = {
         'type': _type.capitalize(),
         'filter': f'match("{objectname}", {_type.lower()}.__name)',
@@ -401,5 +443,3 @@ def set_downtime(uri, username, password, objectname, _type='service',
     if success and result['results'][0].get('code') == 200:
         return True, result['results'][0]['name']
     return False, result
-
-

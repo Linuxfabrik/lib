@@ -8,14 +8,12 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Provides functions using the Infomanik REST-API.
-"""
+"""Provides functions using the Infomanik REST-API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042001'
 
 from . import url
-
 
 BASE_URL = 'https://api.infomaniak.com'
 
@@ -70,7 +68,9 @@ def get_events(token, insecure=False, no_proxy=False, timeout=8):
     return True, events
 
 
-def get_swiss_backup_products(account_id, token, insecure=False, no_proxy=False, timeout=8):
+def get_swiss_backup_products(
+    account_id, token, insecure=False, no_proxy=False, timeout=8
+):
     """
     Get all Infomaniak Swiss Backup products.
 
@@ -122,7 +122,9 @@ def get_swiss_backup_products(account_id, token, insecure=False, no_proxy=False,
     return True, products
 
 
-def get_swiss_backup_slots(account_id, token, insecure=False, no_proxy=False, timeout=8):
+def get_swiss_backup_slots(
+    account_id, token, insecure=False, no_proxy=False, timeout=8
+):
     """
     Get all devices/slots for each Infomaniak Swiss Backup product.
 

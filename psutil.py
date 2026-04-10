@@ -8,8 +8,7 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Wrapper library for functions from psutil.
-"""
+"""Wrapper library for functions from psutil."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042001'
@@ -17,16 +16,17 @@ __version__ = '2025042001'
 import sys
 
 from .globals import STATE_UNKNOWN
+
 try:
     import psutil
-except ImportError as e:
+except ImportError:
     print('Python module "psutil" is not installed.')
     sys.exit(STATE_UNKNOWN)
 
 
 def get_partitions(ignore=None):
     """
-    Return all mounted disk partitions as a list of named tuples, including device, mount point, 
+    Return all mounted disk partitions as a list of named tuples, including device, mount point,
     and filesystem type, similar to the `df` command on UNIX.
 
     ### Parameters
@@ -49,6 +49,7 @@ def get_partitions(ignore=None):
     ignore = list(filter(None, ignore))
 
     return [
-        part for part in psutil.disk_partitions(all=False)
+        part
+        for part in psutil.disk_partitions(all=False)
         if not any(item in part.mountpoint for item in ignore)
     ]

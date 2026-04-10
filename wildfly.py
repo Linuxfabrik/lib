@@ -14,8 +14,7 @@ needed by more than one WildFly/JBoss plugin."""
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042001'
 
-from . import base
-from . import url
+from . import base, url
 from .globals import STATE_UNKNOWN
 
 
@@ -47,17 +46,19 @@ def get_data(args, data, uri=''):
 
     header = {'Content-Type': 'application/json'}
 
-    result = base.coe(url.fetch_json(
-        uri,
-        data=data,
-        digest_auth_password=args.PASSWORD,
-        digest_auth_user=args.USERNAME,
-        encoding='serialized-json',
-        header=header,
-        insecure=args.INSECURE,
-        no_proxy=args.NO_PROXY,
-        timeout=args.TIMEOUT,
-    ))
+    result = base.coe(
+        url.fetch_json(
+            uri,
+            data=data,
+            digest_auth_password=args.PASSWORD,
+            digest_auth_user=args.USERNAME,
+            encoding='serialized-json',
+            header=header,
+            insecure=args.INSECURE,
+            no_proxy=args.NO_PROXY,
+            timeout=args.TIMEOUT,
+        )
+    )
 
     if result.get('outcome') != 'success':
         base.oao(

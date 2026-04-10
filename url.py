@@ -8,8 +8,7 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Get for example HTML or JSON from an URL.
-"""
+"""Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042001'
@@ -24,10 +23,19 @@ import urllib.request
 from . import txt
 
 
-def fetch(url, insecure=False, no_proxy=False, timeout=8,
-          header={}, data={}, encoding='urlencode',
-          digest_auth_user=None, digest_auth_password=None,
-          extended=False, to_text=True):
+def fetch(
+    url,
+    insecure=False,
+    no_proxy=False,
+    timeout=8,
+    header={},
+    data={},
+    encoding='urlencode',
+    digest_auth_user=None,
+    digest_auth_password=None,
+    extended=False,
+    to_text=True,
+):
     """
     Fetch any URL with optional POST, basic authentication, and SSL/TLS handling.
 
@@ -96,13 +104,17 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     ### Returns
     - **tuple**:
       - **success** (`bool`): True if the request was successful, False otherwise.
-      - **result** (`dict` or `str`): 
+      - **result** (`dict` or `str`):
         - If successful, the response body (as a string or raw data).
         - If `extended=True`, the result includes the response, status code, and response headers.
         - An error message string if the request failed.
 
     ### Example
-    >>> result = fetch('https://api.example.com', timeout=10, header={'Authorization': 'Bearer token'})
+    >>> result = fetch(
+    ...     'https://api.example.com',
+    ...     timeout=10,
+    ...     header={'Authorization': 'Bearer token'},
+    ... )
 
     >>> result = fetch('https://api.example.com', data={'key': 'value'}, extended=True)
     """
@@ -147,7 +159,12 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
                 context=None if digest_auth_user else ctx,
             )
 
-    except (urllib.request.HTTPError, urllib.request.URLError, TypeError, Exception) as e:
+    except (
+        urllib.request.HTTPError,
+        urllib.request.URLError,
+        TypeError,
+        Exception,
+    ) as e:
         url_safe = re.sub(r'(token|password)=([^&]+)', r'\1=********', url)
         if isinstance(e, urllib.request.HTTPError):
             return False, f'HTTP error "{e.code} {e.reason}" while fetching {url_safe}'
@@ -160,10 +177,14 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
     try:
         charset = response.headers.get_content_charset() or 'UTF-8'
         if not extended:
-            return True, txt.to_text(response.read(), encoding=charset) if to_text else response.read()
+            return True, txt.to_text(
+                response.read(), encoding=charset
+            ) if to_text else response.read()
 
         result = {
-            'response': txt.to_text(response.read(), encoding=charset) if to_text else response.read(),
+            'response': txt.to_text(response.read(), encoding=charset)
+            if to_text
+            else response.read(),
             'status_code': response.getcode(),
             'response_header': response.info(),
         }
@@ -172,10 +193,18 @@ def fetch(url, insecure=False, no_proxy=False, timeout=8,
         return False, f'{e} while fetching {url}'
 
 
-def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
-               header={}, data={}, encoding='urlencode',
-               digest_auth_user=None, digest_auth_password=None,
-               extended=False):
+def fetch_json(
+    url,
+    insecure=False,
+    no_proxy=False,
+    timeout=8,
+    header={},
+    data={},
+    encoding='urlencode',
+    digest_auth_user=None,
+    digest_auth_password=None,
+    extended=False,
+):
     """
     Fetch JSON from a URL with optional POST, authentication, and SSL/TLS handling.
 
@@ -206,7 +235,7 @@ def fetch_json(url, insecure=False, no_proxy=False, timeout=8,
     ### Returns
     - **tuple**:
       - **success** (`bool`): True if the JSON was successfully fetched and parsed, False otherwise.
-      - **result** (`dict` or `str`): 
+      - **result** (`dict` or `str`):
         - The parsed JSON object if successful.
         - An error message string if the request failed or JSON decoding failed.
 
@@ -252,7 +281,7 @@ def get_latest_version_from_github(user, repo, key='tag_name'):
     ### Returns
     - **tuple**:
       - **success** (`bool`): True if the latest version was successfully fetched, False otherwise.
-      - **result** (`str` or `bool`): 
+      - **result** (`str` or `bool`):
         - The value of the specified key (e.g., the latest release tag) if successful.
         - `False` if no result was found or the GitHub API did not return any data.
 

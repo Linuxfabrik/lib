@@ -55,6 +55,35 @@ Source = "https://github.com/Linuxfabrik/lib"
 Tracker = "https://github.com/Linuxfabrik/lib/issues"
 Download = "https://github.com/Linuxfabrik/lib/releases"
 
+[tool.ruff]
+target-version = 'py39'
+
+[tool.ruff.lint]
+select = [
+    'B',    # flake8-bugbear (potential bugs)
+    'C4',   # flake8-comprehensions
+    'E',    # pycodestyle errors
+    'F',    # pyflakes (logic errors)
+    'I',    # isort (import sorting)
+    'RUF',  # Ruff-specific rules
+    'SIM',  # flake8-simplify
+    'UP',   # pyupgrade (modernize syntax for py39+)
+    'W',    # pycodestyle warnings
+]
+ignore = [
+    'E501',    # line too long (handled by code review, not auto-enforcement)
+    'RUF002',  # ambiguous Unicode in docstrings (typographic quotes from docs)
+    'RUF003',  # ambiguous Unicode in comments (en dashes in ASCII art)
+    'SIM102',  # nested if statements (sometimes clearer than combined conditions)
+    'SIM105',  # contextlib.suppress (try/except/pass is more explicit)
+    'UP009',   # UTF-8 encoding declaration (we keep our standard file header)
+    'UP015',   # redundant open() mode (we keep explicit modes for clarity)
+]
+
+[tool.ruff.format]
+quote-style = 'single'
+docstring-code-format = true
+
 [tool.setuptools]
 # packages are not in the root of the repository or do not correspond exactly to
 # the directory structure, so we need to configure package_dir

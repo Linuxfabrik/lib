@@ -22,12 +22,14 @@ import operator
 import re
 import traceback
 
-_SURROGATE_ERRORS = frozenset((
-    None,
-    'surrogate_or_replace',
-    'surrogate_or_strict',
-    'surrogate_then_replace',
-))
+_SURROGATE_ERRORS = frozenset(
+    (
+        None,
+        'surrogate_or_replace',
+        'surrogate_or_strict',
+        'surrogate_then_replace',
+    )
+)
 
 SENSITIVE_FIELDS_PATTERN = re.compile(
     r'(?i)(\b(?:password|pass|token|key|secret|api[_-]?key|access[_-]?token)\b\s*=\s*|sshpass\s+-p\s*)[^\s&]+'
@@ -80,10 +82,10 @@ def compile_regex(regex, key=''):
     - **key** (`str`, optional): A label or identifier string for better error messages. Defaults to ''.
 
     ### Returns
-    - **tuple** or **list of tuples**:  
-      - For a single regex string:  
+    - **tuple** or **list of tuples**:
+      - For a single regex string:
         `(True, compiled_regex)` on success, or `(False, error_message)` on failure.
-      - For a list of regex strings:  
+      - For a list of regex strings:
         A list of such (success, result) tuples.
 
     ### Example
@@ -98,9 +100,14 @@ def compile_regex(regex, key=''):
         try:
             return True, re.compile(rgx)
         except re.error as e:
-            return False, f'`{rgx}`{f" ({key})" if key else ""} contains one or more errors: {e}'
+            return (
+                False,
+                f'`{rgx}`{f" ({key})" if key else ""} contains one or more errors: {e}',
+            )
 
-    return _compile(regex) if isinstance(regex, str) else [_compile(rgx) for rgx in regex]
+    return (
+        _compile(regex) if isinstance(regex, str) else [_compile(rgx) for rgx in regex]
+    )
 
 
 def exception2text(e):
@@ -120,14 +127,14 @@ def exception2text(e):
 
     ### Example
     >>> try:
-    ...     int("x")
+    ...     int('x')
     ... except Exception as exc:
     ...     exception2text(exc)
     "ValueError: invalid literal for int() with base 10: 'x'"
 
     >>> class EmptyStrError(Exception):
-    ...     def __str__(self): return ""
-    ...
+    ...     def __str__(self):
+    ...         return ''
     >>> exception2text(EmptyStrError())
     "EmptyStrError: EmptyStrError()"
     """
@@ -136,7 +143,7 @@ def exception2text(e):
         if not msg:
             # Some exceptions have empty __str__; use Python's formatter
             msg = ''.join(traceback.format_exception_only(type(e), e)).strip()
-        return f"{type(e).__name__}: {msg}"
+        return f'{type(e).__name__}: {msg}'
     except Exception:
         # Absolute fallback
         return repr(e)
@@ -210,7 +217,7 @@ def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
         return ''
     if include_fromto:
         return s[pos1:]
-    return s[pos1 + len(from_txt):]
+    return s[pos1 + len(from_txt) :]
 
 
 def filter_mltext(_input, ignore):
@@ -253,7 +260,8 @@ def filter_mltext(_input, ignore):
     ''
     """
     lines = [
-        line for line in _input.splitlines()
+        line
+        for line in _input.splitlines()
         if not any(i_line in line for i_line in ignore)
     ]
     return '\n'.join(lines) + '\n' if lines else ''
@@ -272,7 +280,7 @@ def match_regex(regex, string, key=''):
       Defaults to ''.
 
     ### Returns
-    - **tuple**: 
+    - **tuple**:
       - On success: (True, match_object)
       - On regex error: (False, error_message)
 
@@ -348,13 +356,13 @@ def pluralize(noun, value, suffix='s'):
     """
     Returns a plural suffix if the value is not 1. By default, 's' is used as the suffix.
 
-    Based on:  
+    Based on:
     https://kite.com/python/docs/django.template.defaultfilters.pluralize
 
     ### Parameters
     - **noun** (`str`): The base noun to pluralize.
     - **value** (`int`): The numeric value to determine singular or plural form.
-    - **suffix** (`str`, optional): 
+    - **suffix** (`str`, optional):
       - If a simple string (e.g., `'s'` or `'es'`), it is appended when plural.
       - If a comma-separated string (e.g., `'y,ies'`), the first part is used for singular, the
         second for plural.
@@ -416,7 +424,7 @@ def sanitize_sensitive_data(msg, replacement='******'):
     accidental exposure.
 
     ### Parameters
-    - **msg** (`str` or `any`): The input message that may contain sensitive data.  
+    - **msg** (`str` or `any`): The input message that may contain sensitive data.
       If not a string, it is returned unchanged.
     - **replacement** (`str`, optional): The string to replace sensitive values with.
       Defaults to '******'.
@@ -435,7 +443,9 @@ def sanitize_sensitive_data(msg, replacement='******'):
     >>> sanitize_sensitive_data('user=admin&password=secret123')
     'user=admin&password=******'
 
-    >>> sanitize_sensitive_data('Authorization token=abcde12345', replacement='REDACTED')
+    >>> sanitize_sensitive_data(
+    ...     'Authorization token=abcde12345', replacement='REDACTED'
+    ... )
     'Authorization token=REDACTED'
 
     >>> sanitize_sensitive_data('api_key = xyz987')
@@ -449,8 +459,7 @@ def sanitize_sensitive_data(msg, replacement='******'):
     return msg
 
 
-def to_bytes(obj, encoding='utf-8', errors=None,
-             nonstring='simplerepr'):
+def to_bytes(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     """
     Convert an object to a byte string.
 
@@ -504,11 +513,17 @@ def to_bytes(obj, encoding='utf-8', errors=None,
             return obj.encode(encoding, errors)
         except UnicodeEncodeError:
             if original_errors in (None, 'surrogate_then_replace'):
-                return obj.encode(
-                    'utf-8', 'surrogateescape',
-                ).decode(
-                    'utf-8', 'replace',
-                ).encode(encoding, 'replace')
+                return (
+                    obj.encode(
+                        'utf-8',
+                        'surrogateescape',
+                    )
+                    .decode(
+                        'utf-8',
+                        'replace',
+                    )
+                    .encode(encoding, 'replace')
+                )
             raise
 
     if nonstring == 'simplerepr':
@@ -519,14 +534,10 @@ def to_bytes(obj, encoding='utf-8', errors=None,
         return b''
     if nonstring == 'strict':
         raise TypeError('obj must be a string type')
-    raise TypeError(
-        f'Invalid value {nonstring!r} for to_bytes\''
-        ' nonstring parameter'
-    )
+    raise TypeError(f"Invalid value {nonstring!r} for to_bytes' nonstring parameter")
 
 
-def to_text(obj, encoding='utf-8', errors=None,
-            nonstring='simplerepr'):
+def to_text(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     """
     Convert an object to a text (unicode) string.
 
@@ -585,10 +596,7 @@ def to_text(obj, encoding='utf-8', errors=None,
         return ''
     if nonstring == 'strict':
         raise TypeError('obj must be a string type')
-    raise TypeError(
-        f'Invalid value {nonstring!r} for to_text\'s'
-        ' nonstring parameter'
-    )
+    raise TypeError(f"Invalid value {nonstring!r} for to_text's nonstring parameter")
 
 
 def uniq(string):

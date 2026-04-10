@@ -8,10 +8,10 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Library for accessing MySQL/MariaDB servers.
-"""
+"""Library for accessing MySQL/MariaDB servers."""
 
 import warnings
+
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
@@ -20,9 +20,10 @@ __version__ = '2025042001'
 import sys
 
 from .globals import STATE_UNKNOWN
+
 try:
     import pymysql.cursors
-except ImportError as e:
+except ImportError:
     print('Python module "pymysql" is not installed.')
     sys.exit(STATE_UNKNOWN)
 
@@ -59,7 +60,10 @@ def check_select_privileges(conn):
     success, result = select(conn, 'SELECT VERSION() AS version;', fetchone=True)
     if success and result:
         return True, result
-    return False, 'You probably do not have sufficient privileges to run SELECT statements.'
+    return (
+        False,
+        'You probably do not have sufficient privileges to run SELECT statements.',
+    )
 
 
 def close(conn):
@@ -168,7 +172,7 @@ def connect(mysql_connection, **kwargs):
     >>> }
     >>> success, conn = connect(mysql_connection)
     >>> if success:
-    >>>     # Use conn
+    >>> # Use conn
     >>>     pass
     >>> else:
     >>>     print(conn)
@@ -236,7 +240,9 @@ def get_engines(conn):
         elif engine == 'berkeleydb':
             engine = 'bdb'
 
-        engines[f'have_{engine}'] = 'YES' if line['Support'] == 'DEFAULT' else line['Support']
+        engines[f'have_{engine}'] = (
+            'YES' if line['Support'] == 'DEFAULT' else line['Support']
+        )
 
     return engines
 
@@ -265,7 +271,9 @@ def lod2dict(lod):
     - Later keys will overwrite earlier ones if duplicate keys exist.
 
     ### Example
-    >>> lod2dict([{'Variable_name': 'a', 'Value': 'b'}, {'Variable_name': 'c', 'Value': 'd'}])
+    >>> lod2dict(
+    ...     [{'Variable_name': 'a', 'Value': 'b'}, {'Variable_name': 'c', 'Value': 'd'}]
+    ... )
     {'a': 'b', 'c': 'd'}
 
     >>> lod2dict([{'key1': 'value1'}, {'key2': 'value2'}])

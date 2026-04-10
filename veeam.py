@@ -16,8 +16,7 @@ __version__ = '2025042001'
 
 import base64
 
-from . import txt
-from . import url
+from . import txt, url
 
 
 def get_token(args):
@@ -52,12 +51,12 @@ def get_token(args):
     (True, {'X-RestSvcSessionId': 'zwiw....'})
     """
 
-    uri = f"{args.URL.rstrip('/')}/api/sessionMngr/?v=latest"
-    auth = f"{args.USERNAME}:{args.PASSWORD}"
+    uri = f'{args.URL.rstrip("/")}/api/sessionMngr/?v=latest'
+    auth = f'{args.USERNAME}:{args.PASSWORD}'
     encoded_auth = txt.to_text(base64.b64encode(txt.to_bytes(auth)))
 
     headers = {
-        'Authorization': f"Basic {encoded_auth}",
+        'Authorization': f'Basic {encoded_auth}',
         'Accept': 'application/json',
         'Content-Length': '0',
     }

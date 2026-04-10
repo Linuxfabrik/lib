@@ -57,7 +57,7 @@ def discover_oidc_endpoints(args):
     >>> success, endpoints = discover_oidc_endpoints(args)
     """
     url_base = args.URL.rstrip('/')
-    uri = f"{url_base}/realms/{args.REALM}/.well-known/openid-configuration"
+    uri = f'{url_base}/realms/{args.REALM}/.well-known/openid-configuration'
     return url.fetch_json(
         uri,
         insecure=args.INSECURE,
@@ -98,9 +98,7 @@ def get_data(args, token_data, uri):
     """
     url_base = args.URL.rstrip('/')
     full_url = f'{url_base}{uri}'
-    headers = {
-        'Authorization': f'Bearer {token_data.get("access_token", "")}'
-    }
+    headers = {'Authorization': f'Bearer {token_data.get("access_token", "")}'}
     return url.fetch_json(
         full_url,
         header=headers,

@@ -8,21 +8,28 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""This library parses data returned from the Redfish API.
-"""
+"""This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025062601'
 
-from . import base
-from . import human
-from .globals import STATE_OK, STATE_WARN, STATE_CRIT
-
+from . import base, human
+from .globals import STATE_CRIT, STATE_OK, STATE_WARN
 
 CHASSIS_FAN_KEYS = (
-    'FanName', 'HotPluggable', 'LowerThresholdCritical', 'LowerThresholdFatal',
-    'LowerThresholdNonCritical', 'Name', 'PhysicalContext', 'Reading', 'ReadingUnits',
-    'SensorNumber', 'UpperThresholdCritical', 'UpperThresholdFatal', 'UpperThresholdNonCritical',
+    'FanName',
+    'HotPluggable',
+    'LowerThresholdCritical',
+    'LowerThresholdFatal',
+    'LowerThresholdNonCritical',
+    'Name',
+    'PhysicalContext',
+    'Reading',
+    'ReadingUnits',
+    'SensorNumber',
+    'UpperThresholdCritical',
+    'UpperThresholdFatal',
+    'UpperThresholdNonCritical',
 )
 
 CHASSIS_FAN_NESTED_KEYS = {
@@ -31,8 +38,16 @@ CHASSIS_FAN_NESTED_KEYS = {
 }
 
 CHASSIS_KEYS = (
-    'AssetTag', 'ChassisType', 'Id', 'IndicatorLED', 'Manufacturer', 'Model', 'PartNumber',
-    'PowerState', 'SerialNumber', 'SKU',
+    'AssetTag',
+    'ChassisType',
+    'Id',
+    'IndicatorLED',
+    'Manufacturer',
+    'Model',
+    'PartNumber',
+    'PowerState',
+    'SerialNumber',
+    'SKU',
 )
 
 CHASSIS_NESTED_KEYS = {
@@ -43,9 +58,17 @@ CHASSIS_NESTED_KEYS = {
 }
 
 CHASSIS_POWER_KEYS = (
-    'FirmwareVersion', 'LastPowerOutputWatts', 'LineInputVoltage', 'LineInputVoltageType',
-    'Manufacturer', 'Model', 'PartNumber', 'PowerCapacityWatts', 'PowerSupplyType',
-    'SerialNumber', 'SparePartNumber',
+    'FirmwareVersion',
+    'LastPowerOutputWatts',
+    'LineInputVoltage',
+    'LineInputVoltageType',
+    'Manufacturer',
+    'Model',
+    'PartNumber',
+    'PowerCapacityWatts',
+    'PowerSupplyType',
+    'SerialNumber',
+    'SparePartNumber',
 )
 
 CHASSIS_POWER_NESTED_KEYS = {
@@ -54,8 +77,13 @@ CHASSIS_POWER_NESTED_KEYS = {
 }
 
 CHASSIS_SENSOR_KEYS = (
-    'Id', 'Name', 'PhysicalContext', 'Reading', 'ReadingRangeMax',
-    'ReadingRangeMin', 'ReadingUnits',
+    'Id',
+    'Name',
+    'PhysicalContext',
+    'Reading',
+    'ReadingRangeMax',
+    'ReadingRangeMin',
+    'ReadingUnits',
 )
 
 CHASSIS_SENSOR_NESTED_KEYS = {
@@ -80,9 +108,15 @@ CHASSIS_THERMAL_REDUNDANCY_NESTED_KEYS = {
 }
 
 CHASSIS_THERMAL_TEMP_KEYS = (
-    'LowerThresholdCritical', 'LowerThresholdFatal', 'LowerThresholdNonCritical', 'Name',
-    'PhysicalContext', 'ReadingCelsius', 'UpperThresholdCritical', 'UpperThresholdFatal',
-    'UpperThresholdNonCritical'
+    'LowerThresholdCritical',
+    'LowerThresholdFatal',
+    'LowerThresholdNonCritical',
+    'Name',
+    'PhysicalContext',
+    'ReadingCelsius',
+    'UpperThresholdCritical',
+    'UpperThresholdFatal',
+    'UpperThresholdNonCritical',
 )
 
 CHASSIS_THERMAL_TEMP_NESTED_KEYS = {
@@ -91,9 +125,15 @@ CHASSIS_THERMAL_TEMP_NESTED_KEYS = {
 }
 
 CHASSIS_VOLTAGE_KEYS = (
-    'LowerThresholdCritical', 'LowerThresholdFatal', 'LowerThresholdNonCritical',
-    'Name', 'PhysicalContext', 'ReadingVolts',
-    'UpperThresholdCritical', 'UpperThresholdFatal', 'UpperThresholdNonCritical',
+    'LowerThresholdCritical',
+    'LowerThresholdFatal',
+    'LowerThresholdNonCritical',
+    'Name',
+    'PhysicalContext',
+    'ReadingVolts',
+    'UpperThresholdCritical',
+    'UpperThresholdFatal',
+    'UpperThresholdNonCritical',
 )
 
 CHASSIS_VOLTAGE_NESTED_KEYS = {
@@ -107,13 +147,23 @@ SEVERITY_TO_STATE = {
 }
 
 SYSTEMS_KEYS = (
-    'BiosVersion', 'HostName', 'Id', 'IndicatorLED',
-    'Manufacturer', 'Model', 'PowerState', 'SerialNumber', 'SKU'
+    'BiosVersion',
+    'HostName',
+    'Id',
+    'IndicatorLED',
+    'Manufacturer',
+    'Model',
+    'PowerState',
+    'SerialNumber',
+    'SKU',
 )
 
 SYSTEMS_NESTED_KEYS = {
     'ProcessorSummary_Count': ('ProcessorSummary', 'Count'),
-    'ProcessorSummary_LogicalProcessorCount': ('ProcessorSummary', 'LogicalProcessorCount'),
+    'ProcessorSummary_LogicalProcessorCount': (
+        'ProcessorSummary',
+        'LogicalProcessorCount',
+    ),
     'ProcessorSummary_Model': ('ProcessorSummary', 'Model'),
     'Storage_@odata.id': ('Storage', '@odata.id'),
     'Status_State': ('Status', 'State'),
@@ -122,10 +172,26 @@ SYSTEMS_NESTED_KEYS = {
 }
 
 SYSTEMS_STORAGE_DRIVES_KEYS = (
-    'BlockSizeBytes', 'CapableSpeedGbs', 'Description', 'EncryptionAbility', 'EncryptionStatus',
-    'FailurePredicted', 'HotspareType', 'Id', 'Manufacturer', 'MediaType', 'Model', 'Name',
-    'NegotiatedSpeedGbs', 'PartNumber', 'PredictedMediaLifeLeftPercent', 'Protocol', 'Revision',
-    'RotationSpeedRPM', 'SerialNumber', 'WriteCacheEnabled'
+    'BlockSizeBytes',
+    'CapableSpeedGbs',
+    'Description',
+    'EncryptionAbility',
+    'EncryptionStatus',
+    'FailurePredicted',
+    'HotspareType',
+    'Id',
+    'Manufacturer',
+    'MediaType',
+    'Model',
+    'Name',
+    'NegotiatedSpeedGbs',
+    'PartNumber',
+    'PredictedMediaLifeLeftPercent',
+    'Protocol',
+    'Revision',
+    'RotationSpeedRPM',
+    'SerialNumber',
+    'WriteCacheEnabled',
 )
 
 SYSTEMS_STORAGE_DRIVES_NESTED_KEYS = {
@@ -134,9 +200,7 @@ SYSTEMS_STORAGE_DRIVES_NESTED_KEYS = {
     'Status_HealthRollup': ('Status', 'HealthRollup'),
 }
 
-SYSTEMS_STORAGE_KEYS = (
-    'Description', 'Drives@odata.count', 'Id', 'Name'
-)
+SYSTEMS_STORAGE_KEYS = ('Description', 'Drives@odata.count', 'Id', 'Name')
 
 SYSTEMS_STORAGE_NESTED_KEYS = {
     'Status_State': ('Status', 'State'),
@@ -205,7 +269,12 @@ def get_chassis(redfish):
       - **Status_HealthRollup** (`str`): The health rollup status of the chassis (e.g., "OK").
 
     ### Example
-    >>> redfish_data = {'AssetTag': '12345', 'ChassisType': 'Rackmount', 'Id': '1', 'PowerState': 'On'}
+    >>> redfish_data = {
+    ...     'AssetTag': '12345',
+    ...     'ChassisType': 'Rackmount',
+    ...     'Id': '1',
+    ...     'PowerState': 'On',
+    ... }
     >>> get_chassis(redfish_data)
     {'AssetTag': '12345', 'ChassisType': 'Rackmount', 'Id': '1', 'PowerState': 'On', ...}
     """
@@ -242,7 +311,11 @@ def get_chassis_power_powersupplies(redfish):
       - **Status_Health** (`str`): The health status of the power supply (e.g., "OK").
 
     ### Example
-    >>> redfish_data = {'FirmwareVersion': '1.0', 'LastPowerOutputWatts': 200, 'PowerCapacityWatts': 500}
+    >>> redfish_data = {
+    ...     'FirmwareVersion': '1.0',
+    ...     'LastPowerOutputWatts': 200,
+    ...     'PowerCapacityWatts': 500,
+    ... }
     >>> get_chassis_power_powersupplies(redfish_data)
     {'FirmwareVersion': '1.0', 'LastPowerOutputWatts': 200, 'PowerCapacityWatts': 500, ...}
     """
@@ -281,7 +354,11 @@ def get_chassis_power_voltages(redfish):
       - **Status_Health** (`str`): The health status of the voltage (e.g., "OK").
 
     ### Example
-    >>> redfish_data = {'LowerThresholdCritical': 10, 'ReadingVolts': 12, 'UpperThresholdCritical': 15}
+    >>> redfish_data = {
+    ...     'LowerThresholdCritical': 10,
+    ...     'ReadingVolts': 12,
+    ...     'UpperThresholdCritical': 15,
+    ... }
     >>> get_chassis_power_voltages(redfish_data)
     {'LowerThresholdCritical': 10, 'ReadingVolts': 12, 'UpperThresholdCritical': 15, ...}
     """
@@ -321,7 +398,12 @@ def get_chassis_sensors(redfish):
       - **Status_HealthRollup** (`str`): The health rollup status of the sensor (e.g., "OK").
 
     ### Example
-    >>> redfish_data = {'Id': 'sensor1', 'Reading': 75, 'ReadingRangeMax': 100, 'Thresholds_LowerCaution': 30}
+    >>> redfish_data = {
+    ...     'Id': 'sensor1',
+    ...     'Reading': 75,
+    ...     'ReadingRangeMax': 100,
+    ...     'Thresholds_LowerCaution': 30,
+    ... }
     >>> get_chassis_sensors(redfish_data)
     {'Id': 'sensor1', 'Reading': 75, 'ReadingRangeMax': 100, 'Thresholds_LowerCaution': 30, ...}
     """
@@ -400,7 +482,11 @@ def get_chassis_thermal_redundancy(redfish):
       - **Status_Health** (`str`): The health status of the thermal redundancy (e.g., "OK").
 
     ### Example
-    >>> redfish_data = {'Mode': 'Active', 'Name': 'Thermal Redundancy', 'Status': {'State': 'Enabled', 'Health': 'OK'}}
+    >>> redfish_data = {
+    ...     'Mode': 'Active',
+    ...     'Name': 'Thermal Redundancy',
+    ...     'Status': {'State': 'Enabled', 'Health': 'OK'},
+    ... }
     >>> get_chassis_thermal_redundancy(redfish_data)
     {'Mode': 'Active', 'Name': 'Thermal Redundancy', 'Status_State': 'Enabled', 'Status_Health': 'OK'}
     """
@@ -440,7 +526,14 @@ def get_chassis_thermal_temperatures(redfish):
       - **Status_Health** (`str`): The health status of the thermal sensor (e.g., "OK").
 
     ### Example
-    >>> redfish_data = {'LowerThresholdCritical': '10', 'LowerThresholdFatal': '5', 'LowerThresholdNonCritical': '15', 'Name': 'Thermal Sensor', 'ReadingCelsius': '22', 'Status': {'State': 'Enabled', 'Health': 'OK'}}
+    >>> redfish_data = {
+    ...     'LowerThresholdCritical': '10',
+    ...     'LowerThresholdFatal': '5',
+    ...     'LowerThresholdNonCritical': '15',
+    ...     'Name': 'Thermal Sensor',
+    ...     'ReadingCelsius': '22',
+    ...     'Status': {'State': 'Enabled', 'Health': 'OK'},
+    ... }
     >>> get_chassis_thermal_temperatures(redfish_data)
     {'LowerThresholdCritical': '10', 'LowerThresholdFatal': '5', 'LowerThresholdNonCritical': '15', 'Name': 'Thermal Sensor', 'ReadingCelsius': '22', 'Status_State': 'Enabled', 'Status_Health': 'OK'}
     """
@@ -479,8 +572,16 @@ def get_manager_logservices_sel_entries(redfish):
     ### Example
     >>> redfish_data = {
     ...     'Members': [
-    ...         {'Created': '2021-08-01', 'Message': 'Temperature is high', 'Severity': 'Critical'},
-    ...         {'Created': '2021-08-02', 'Message': 'Fan speed normal', 'Severity': 'OK'}
+    ...         {
+    ...             'Created': '2021-08-01',
+    ...             'Message': 'Temperature is high',
+    ...             'Severity': 'Critical',
+    ...         },
+    ...         {
+    ...             'Created': '2021-08-02',
+    ...             'Message': 'Fan speed normal',
+    ...             'Severity': 'OK',
+    ...         },
     ...     ]
     ... }
     >>> get_manager_logservices_sel_entries(redfish_data)
@@ -497,7 +598,7 @@ def get_manager_logservices_sel_entries(redfish):
             '* {}: {}{}'.format(
                 entry.get('Created', ''),
                 entry.get('Message', ''),
-                base.state2str(msg_state, prefix=' ')
+                base.state2str(msg_state, prefix=' '),
             )
         )
         state = base.get_worst(state, msg_state)
@@ -557,22 +658,22 @@ def get_sensor_state(data, key='Reading'):
 
     This function evaluates the sensor reading in the following order:
 
-    1. **Status_State**  
+    1. **Status_State**
        If `data['Status_State']` is not `'Enabled'` or `'Quiesced'`, the sensor is considered OK.
-    2. **Status_HealthRollup / Status_Health**  
-       - Returns STATE_CRIT if either is `'Critical'`.  
+    2. **Status_HealthRollup / Status_Health**
+       - Returns STATE_CRIT if either is `'Critical'`.
        - Returns STATE_WARN if either is `'Warning'`.
-    3. **Thresholds** (with user-defined overrides)  
+    3. **Thresholds** (with user-defined overrides)
        Checks in this sequence for any defined thresholds:
        - **User-defined critical** (`Thresholds_LowerCriticalUser`, `Thresholds_UpperCriticalUser`) → STATE_CRIT
        - **Default critical**      (`Thresholds_LowerCritical`,     `Thresholds_UpperCritical`)     → STATE_CRIT
        - **User-defined caution**  (`Thresholds_LowerCautionUser`,  `Thresholds_UpperCautionUser`)  → STATE_WARN
        - **Default caution**       (`Thresholds_LowerCaution`,      `Thresholds_UpperCaution`)      → STATE_WARN
        Otherwise, if any thresholds were present but none breached, returns STATE_OK.
-    4. **ReadingRange** (last-resort sanity check)  
+    4. **ReadingRange** (last-resort sanity check)
        If both `ReadingRangeMin` and `ReadingRangeMax` are defined, returns STATE_WARN if the
        reading lies outside that range; otherwise STATE_OK.
-    5. **Default**  
+    5. **Default**
        If no other checks apply, returns STATE_OK.
 
     ### Parameters
@@ -608,6 +709,7 @@ def get_sensor_state(data, key='Reading'):
     >>> get_sensor_state(sample)
     2  # STATE_CRIT (reading > user-defined upper critical)
     """
+
     # helper to parse floats, treating '', None, or bad strings as None
     def _parse(val):
         if val in (None, ''):
@@ -638,37 +740,51 @@ def get_sensor_state(data, key='Reading'):
                 return STATE_WARN
 
     # parse thresholds
-    low_caut  = _parse(data.get('Thresholds_LowerCaution'))
-    low_caut_usr  = _parse(data.get('Thresholds_LowerCautionUser'))
-    low_crit  = _parse(data.get('Thresholds_LowerCritical'))
-    low_crit_usr  = _parse(data.get('Thresholds_LowerCriticalUser'))
+    low_caut = _parse(data.get('Thresholds_LowerCaution'))
+    low_caut_usr = _parse(data.get('Thresholds_LowerCautionUser'))
+    low_crit = _parse(data.get('Thresholds_LowerCritical'))
+    low_crit_usr = _parse(data.get('Thresholds_LowerCriticalUser'))
     up_caut = _parse(data.get('Thresholds_UpperCaution'))
     up_caut_usr = _parse(data.get('Thresholds_UpperCautionUser'))
     up_crit = _parse(data.get('Thresholds_UpperCritical'))
     up_crit_usr = _parse(data.get('Thresholds_UpperCriticalUser'))
 
     # if *any* thresholds are defined, use threshold logic
-    if any(t is not None for t in (
-        low_caut, low_caut_usr, low_crit, low_crit_usr, up_caut, up_caut_usr, up_crit, up_crit_usr
-    )):
+    if any(
+        t is not None
+        for t in (
+            low_caut,
+            low_caut_usr,
+            low_crit,
+            low_crit_usr,
+            up_caut,
+            up_caut_usr,
+            up_crit,
+            up_crit_usr,
+        )
+    ):
         # critical bounds first
         # (user-defined thresholds exist too and should normally override the default
         # thresholds if present)
-        if ((low_crit_usr is not None  and reading < low_crit_usr) or
-            (up_crit_usr is not None and reading > up_crit_usr)):
+        if (low_crit_usr is not None and reading < low_crit_usr) or (
+            up_crit_usr is not None and reading > up_crit_usr
+        ):
             return STATE_CRIT
 
-        if ((low_crit is not None  and reading < low_crit) or
-            (up_crit is not None and reading > up_crit)):
+        if (low_crit is not None and reading < low_crit) or (
+            up_crit is not None and reading > up_crit
+        ):
             return STATE_CRIT
 
         # then caution bounds
-        if ((low_caut_usr is not None  and reading < low_caut_usr) or
-            (up_caut_usr is not None and reading > up_caut_usr)):
+        if (low_caut_usr is not None and reading < low_caut_usr) or (
+            up_caut_usr is not None and reading > up_caut_usr
+        ):
             return STATE_WARN
 
-        if ((low_caut is not None  and reading < low_caut) or
-            (up_caut is not None and reading > up_caut)):
+        if (low_caut is not None and reading < low_caut) or (
+            up_caut is not None and reading > up_caut
+        ):
             return STATE_WARN
 
         # otherwise we're inside all defined thresholds
@@ -766,7 +882,11 @@ def get_systems(redfish):
     ...     'HostName': 'System1',
     ...     'Id': '12345',
     ...     'Status': {'State': 'Enabled', 'Health': 'OK', 'HealthRollup': 'OK'},
-    ...     'ProcessorSummary': {'Count': 2, 'LogicalProcessorCount': 4, 'Model': 'Intel Xeon'},
+    ...     'ProcessorSummary': {
+    ...         'Count': 2,
+    ...         'LogicalProcessorCount': 4,
+    ...         'Model': 'Intel Xeon',
+    ...     },
     ...     'PowerState': 'On',
     ... }
     >>> get_systems(redfish_data)
@@ -855,7 +975,7 @@ def get_systems_storage_drives(redfish):
     """
     Retrieves storage drive details from the Redfish API response.
 
-    This function processes the Redfish API response to extract information about storage drives, 
+    This function processes the Redfish API response to extract information about storage drives,
     including attributes such as capacity, encryption status, failure prediction, speed, and other
     properties.
 

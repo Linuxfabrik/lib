@@ -25,7 +25,7 @@ import platform
 import re
 
 from . import shell
- 
+
 # --- Static mappings ---
 
 OSDIST_LIST = (
@@ -50,8 +50,29 @@ SEARCH_STRING = {
 }
 
 OS_FAMILY_MAP = {
-    'RedHat': ['RedHat', 'RHEL', 'CentOS', 'Scientific', 'OracleLinux', 'Fedora', 'AlmaLinux', 'Rocky'],
-    'Debian': ['Debian', 'Debian GNU/Linux', 'Ubuntu', 'Raspbian', 'Pop!_OS', 'Kali', 'Parrot', 'Devuan', 'Devuan GNU/Linux', 'Deepin', 'Mint'],
+    'RedHat': [
+        'RedHat',
+        'RHEL',
+        'CentOS',
+        'Scientific',
+        'OracleLinux',
+        'Fedora',
+        'AlmaLinux',
+        'Rocky',
+    ],
+    'Debian': [
+        'Debian',
+        'Debian GNU/Linux',
+        'Ubuntu',
+        'Raspbian',
+        'Pop!_OS',
+        'Kali',
+        'Parrot',
+        'Devuan',
+        'Devuan GNU/Linux',
+        'Deepin',
+        'Mint',
+    ],
     'Suse': ['SUSE', 'openSUSE', 'SLES', 'SLED'],
     'Archlinux': ['Archlinux', 'Manjaro', 'Antergos'],
     'Gentoo': ['Gentoo', 'Funtoo'],
@@ -144,7 +165,9 @@ def _guess_linux_distribution():
         'distribution': system if system else 'NA',
         'distribution_version': platform.version() if system else 'NA',
         'distribution_release': platform.release() if system else 'NA',
-        'distribution_major_version': platform.version().split('.')[0] if '.' in platform.version() else 'NA',
+        'distribution_major_version': platform.version().split('.')[0]
+        if '.' in platform.version()
+        else 'NA',
     }
 
 
@@ -317,22 +340,26 @@ def _process_dist_files():
             continue
 
         if allow_empty:
-            facts.update({
-                'distribution': name,
-                'distribution_file_path': path,
-                'distribution_file_variety': name,
-            })
+            facts.update(
+                {
+                    'distribution': name,
+                    'distribution_file_path': path,
+                    'distribution_file_variety': name,
+                }
+            )
             break
 
         parsed, parsed_facts = _parse_distribution_file(name, data)
 
         if parsed:
-            facts.update({
-                'distribution': name,
-                'distribution_file_path': path,
-                'distribution_file_variety': name,
-                'distribution_file_parsed': True,
-            })
+            facts.update(
+                {
+                    'distribution': name,
+                    'distribution_file_path': path,
+                    'distribution_file_variety': name,
+                    'distribution_file_parsed': True,
+                }
+            )
             facts.update(parsed_facts)
             break
 
@@ -409,6 +436,8 @@ def get_distribution_facts():
         return facts
 
     stdout, _, _ = result
-    facts['os_info'] = stdout.strip()  # returns 'Fedora Linux 41 (Workstation Edition)', for example
+    facts['os_info'] = (
+        stdout.strip()
+    )  # returns 'Fedora Linux 41 (Workstation Edition)', for example
 
     return facts

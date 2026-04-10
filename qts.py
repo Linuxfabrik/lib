@@ -17,14 +17,13 @@ __version__ = '2025042001'
 
 import base64
 
-from . import base
-from . import txt
-from . import url
+from . import txt, url
 
 try:
     import xmltodict
+
     LIB_XMLTODICT_FOUND = True
-except ImportError as e:
+except ImportError:
     LIB_XMLTODICT_FOUND = False
 
 
@@ -81,7 +80,7 @@ def get_auth_sid(args):
     except Exception as e:
         return False, f'Failed to parse XML: {e}'
 
-    if auth_result.get('authPassed') == "0":
+    if auth_result.get('authPassed') == '0':
         return False, 'Failed to authenticate.'
 
     return True, auth_result.get('authSid')

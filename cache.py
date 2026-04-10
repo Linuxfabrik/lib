@@ -27,11 +27,12 @@ False
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042001'
 
-from . import time
-from . import db_sqlite
+from . import db_sqlite, time
 
 
-def get(key, as_dict=False, path='', filename='linuxfabrik-monitoring-plugins-cache.db'):
+def get(
+    key, as_dict=False, path='', filename='linuxfabrik-monitoring-plugins-cache.db'
+):
     """
     Retrieve a value from the cache database by key.
 
@@ -41,8 +42,8 @@ def get(key, as_dict=False, path='', filename='linuxfabrik-monitoring-plugins-ca
 
     ### Parameters
     - **key** (`str`): The search key to look up in the cache.
-    - **as_dict** (`bool`, optional): If `True`, return the full database record as a dictionary  
-      (`key`, `value`, and `timestamp`).  
+    - **as_dict** (`bool`, optional): If `True`, return the full database record as a dictionary
+      (`key`, `value`, and `timestamp`).
       If `False`, return only the `value`. Defaults to `False`.
     - **path** (`str`, optional): Path to the directory containing the cache database.
       Defaults to an empty string (current directory).
@@ -50,13 +51,13 @@ def get(key, as_dict=False, path='', filename='linuxfabrik-monitoring-plugins-ca
       Defaults to `'linuxfabrik-monitoring-plugins-cache.db'`.
 
     ### Returns
-    - **str**, **dict**, or **bool**: 
+    - **str**, **dict**, or **bool**:
       - If `as_dict=False` (default): returns the cached `value` (`str`).
       - If `as_dict=True`: returns the full record (`dict`).
       - Returns `False` if the key is not found, expired, or on failure.
 
     ### Notes
-    - If the key exists but has expired (based on its `timestamp`), it is deleted and `False` 
+    - If the key exists but has expired (based on its `timestamp`), it is deleted and `False`
       is returned.
     - All expired keys are cleaned up on lookup when an expired key is found.
     - On database connection or query failure, `False` is returned.
@@ -80,7 +81,7 @@ def get(key, as_dict=False, path='', filename='linuxfabrik-monitoring-plugins-ca
             conn,
             sql='SELECT key, value, timestamp FROM cache WHERE key = :key;',
             data={'key': key},
-            fetchone=True
+            fetchone=True,
         )
         if not success or not result:
             return False
@@ -92,7 +93,7 @@ def get(key, as_dict=False, path='', filename='linuxfabrik-monitoring-plugins-ca
             db_sqlite.delete(
                 conn,
                 sql='DELETE FROM cache WHERE timestamp <= :now;',
-                data={'now': now}
+                data={'now': now},
             )
             db_sqlite.commit(conn)
             return False
@@ -103,7 +104,9 @@ def get(key, as_dict=False, path='', filename='linuxfabrik-monitoring-plugins-ca
         db_sqlite.close(conn)
 
 
-def set(key, value, expire=0, path='', filename='linuxfabrik-monitoring-plugins-cache.db'):  # pylint: disable=W0622
+def set(
+    key, value, expire=0, path='', filename='linuxfabrik-monitoring-plugins-cache.db'
+):  # pylint: disable=W0622
     """
     Set a key-value pair in the cache database, optionally with an expiration timestamp.
 
@@ -145,16 +148,18 @@ def set(key, value, expire=0, path='', filename='linuxfabrik-monitoring-plugins-
 
     try:
         # Ensure the cache table and unique index exist
-        table_definition = '''
+        table_definition = """
             key         TEXT NOT NULL,
             value       TEXT NOT NULL,
             timestamp   INT NOT NULL
-        '''
+        """
         success, _ = db_sqlite.create_table(conn, table_definition, table='cache')
         if not success:
             return False
 
-        success, _ = db_sqlite.create_index(conn, column_list='key', table='cache', unique=True)
+        success, _ = db_sqlite.create_index(
+            conn, column_list='key', table='cache', unique=True
+        )
         if not success:
             return False
 

@@ -17,10 +17,7 @@ __version__ = '2025042001'
 
 import time as _time
 
-from . import base
-from . import cache
-from . import time
-from . import url
+from . import base, cache, time, url
 
 
 def get_controller_model(cm):
@@ -149,16 +146,18 @@ def get_creds(args):
         'password': args.PASSWORD,
         'scope': args.SCOPE,
     }
-    result = base.coe(url.fetch_json(
-        uri,
-        data=data,
-        encoding='serialized-json',
-        extended=True,
-        header=header,
-        insecure=args.INSECURE,
-        no_proxy=args.NO_PROXY,
-        timeout=args.TIMEOUT,
-    ))
+    result = base.coe(
+        url.fetch_json(
+            uri,
+            data=data,
+            encoding='serialized-json',
+            extended=True,
+            header=header,
+            insecure=args.INSECURE,
+            no_proxy=args.NO_PROXY,
+            timeout=args.TIMEOUT,
+        )
+    )
 
     ibasetoken = result.get('response_json', {}).get('data', {}).get('iBaseToken')
     cookie = result.get('response_header', {}).get('Set-Cookie')
@@ -220,13 +219,15 @@ def get_data(endpoint, args, params=''):
     counter = 0
 
     for attempt in range(1, max_retries + 1):
-        result = base.coe(url.fetch_json(
-            uri,
-            header=header,
-            insecure=args.INSECURE,
-            no_proxy=args.NO_PROXY,
-            timeout=args.TIMEOUT,
-        ))
+        result = base.coe(
+            url.fetch_json(
+                uri,
+                header=header,
+                insecure=args.INSECURE,
+                no_proxy=args.NO_PROXY,
+                timeout=args.TIMEOUT,
+            )
+        )
         counter = attempt
         if result.get('error', {}).get('code') == 0:
             break
@@ -249,7 +250,7 @@ def get_enclosure_model(em):
 
     ### Returns
     - **str**:
-      A human-readable description of the enclosure model.  
+      A human-readable description of the enclosure model.
       Returns `'Unknown'` if the code is not recognized.
 
     ### Example

@@ -8,20 +8,21 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""This library collects some Microsoft WinRM related functions.
-"""
+"""This library collects some Microsoft WinRM related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026030301'
 
 try:
     import winrm
+
     HAVE_WINRM = True
 except ImportError:
     HAVE_WINRM = False
 
 try:
     from pypsrp.client import Client
+
     HAVE_JEA = True
 except ImportError:
     HAVE_JEA = False
@@ -59,12 +60,8 @@ def _build_auth(args):
     """
     username = getattr(args, 'WINRM_USERNAME', None)
     password = getattr(args, 'WINRM_PASSWORD', None)
-    transport = (
-        getattr(args, 'WINRM_TRANSPORT', None) or ''
-    ).lower()
-    if transport in ('kerberos', 'negotiate') and (
-        not username or not password
-    ):
+    transport = (getattr(args, 'WINRM_TRANSPORT', None) or '').lower()
+    if transport in ('kerberos', 'negotiate') and (not username or not password):
         return (None, None)
     if getattr(args, 'WINRM_DOMAIN', None):
         return (f'{username}@{args.WINRM_DOMAIN}', password)
@@ -81,11 +78,9 @@ def _map_transport(args):
     ### Returns
     - **tuple**: `(psrp_auth, use_ssl, port)`.
     """
-    transport = (
-        getattr(args, 'WINRM_TRANSPORT', None) or ''
-    ).lower()
+    transport = (getattr(args, 'WINRM_TRANSPORT', None) or '').lower()
     psrp_auth = _AUTH_MAP.get(transport, 'negotiate')
-    use_ssl = (transport == 'ssl')
+    use_ssl = transport == 'ssl'
     port = 5986 if use_ssl else 5985
     return (psrp_auth, use_ssl, port)
 
@@ -137,10 +132,10 @@ def run_cmd(args, cmd, params=None):
 
     ### Example
     >>> # With explicit credentials:
-    >>> run_cmd(args, "ipconfig", ["/all"])
+    >>> run_cmd(args, 'ipconfig', ['/all'])
     {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
     >>> # With Kerberos using kinit credentials (username/password can be None):
-    >>> run_cmd(args, "ipconfig", ["/all"])
+    >>> run_cmd(args, 'ipconfig', ['/all'])
     {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
     """
     auth = _build_auth(args)
@@ -200,8 +195,7 @@ def run_cmd(args, cmd, params=None):
     return {
         'retc': 1,
         'stdout': '',
-        'stderr': 'No compatible remoting library available '
-                 '(pypsrp or pywinrm).',
+        'stderr': 'No compatible remoting library available (pypsrp or pywinrm).',
     }
 
 
@@ -272,31 +266,33 @@ def run_ps(args, cmd, params=None):
 
     ### Example
     Pipeline (params=None, uses add_script):
-    >>> run_ps(args, "Get-Process | Select -First 1")
+    >>> run_ps(args, 'Get-Process | Select -First 1')
 
     Positional params (uses add_cmdlet + add_argument):
-    >>> run_ps(args, "Get-Service", ["WinRM"])
+    >>> run_ps(args, 'Get-Service', ['WinRM'])
 
     Named params (uses add_cmdlet + add_parameter):
     >>> run_ps(
     ...     args,
-    ...     "Get-WmiObject",
-    ...     {"Class": "Win32_OperatingSystem"},
+    ...     'Get-WmiObject',
+    ...     {'Class': 'Win32_OperatingSystem'},
     ... )
     """
     auth = _build_auth(args)
 
     configuration_name = getattr(
-        args, 'WINRM_CONFIGURATION_NAME', None,
+        args,
+        'WINRM_CONFIGURATION_NAME',
+        None,
     )
     if configuration_name and not HAVE_JEA:
         return {
             'retc': 1,
             'stdout': '',
             'stderr': 'WINRM_CONFIGURATION_NAME requires '
-                     'pypsrp (JEA). Install pypsrp or '
-                     'unset '
-                     '--winrm-configuration-name.',
+            'pypsrp (JEA). Install pypsrp or '
+            'unset '
+            '--winrm-configuration-name.',
         }
 
     if HAVE_JEA:
@@ -307,9 +303,7 @@ def run_ps(args, cmd, params=None):
             )
             from pypsrp.wsman import WSMan
 
-            _psrp_auth, _use_ssl, _port = (
-                _map_transport(args)
-            )
+            _psrp_auth, _use_ssl, _port = _map_transport(args)
 
             wsman = WSMan(
                 server=args.WINRM_HOSTNAME,
@@ -323,10 +317,7 @@ def run_ps(args, cmd, params=None):
 
             with RunspacePool(
                 wsman,
-                configuration_name=(
-                    configuration_name
-                    or 'Microsoft.PowerShell'
-                ),
+                configuration_name=(configuration_name or 'Microsoft.PowerShell'),
             ) as pool:
                 ps = PowerShell(pool)
                 if params is not None:
@@ -341,9 +332,7 @@ def run_ps(args, cmd, params=None):
                     ps.add_script(cmd)
                 output = ps.invoke()
 
-            stdout = '\n'.join(
-                str(o) for o in output
-            )
+            stdout = '\n'.join(str(o) for o in output)
 
             stderr_lines = []
             for err in ps.streams.error:
@@ -352,10 +341,7 @@ def run_ps(args, cmd, params=None):
                         err.to_string(),
                     )
                 except Exception:
-                    msg = (
-                        getattr(err, 'message', None)
-                        or str(err)
-                    )
+                    msg = getattr(err, 'message', None) or str(err)
                     stderr_lines.append(str(msg))
             stderr = '\n'.join(stderr_lines)
 
@@ -382,19 +368,18 @@ def run_ps(args, cmd, params=None):
             if params is not None:
                 if isinstance(params, dict):
                     param_str = ' '.join(
-                        '-{} {}'.format(
-                            k, _quote_ps_value(v),
-                        )
-                        for k, v in params.items()
+                        f'-{k} {_quote_ps_value(v)}' for k, v in params.items()
                     )
-                    ps_cmd = '{} {}'.format(
-                        cmd, param_str,
-                    )
+                    ps_cmd = f'{cmd} {param_str}'
                 else:
-                    ps_cmd = '{} {}'.format(
-                        cmd,
-                        ' '.join(str(p) for p in params),
-                    ) if params else cmd
+                    ps_cmd = (
+                        '{} {}'.format(
+                            cmd,
+                            ' '.join(str(p) for p in params),
+                        )
+                        if params
+                        else cmd
+                    )
             else:
                 ps_cmd = cmd
 
@@ -405,11 +390,8 @@ def run_ps(args, cmd, params=None):
                 'stdout': txt.to_text(result.std_out),
                 'stderr': txt.to_text(result.std_err),
             }
-            if (
-                result['retc'] == 0
-                and result['stderr'].startswith(
-                    '#< CLIXML',
-                )
+            if result['retc'] == 0 and result['stderr'].startswith(
+                '#< CLIXML',
             ):
                 result['stderr'] = ''
             return result
@@ -423,6 +405,5 @@ def run_ps(args, cmd, params=None):
     return {
         'retc': 1,
         'stdout': '',
-        'stderr': 'No compatible remoting library '
-                 'available (pypsrp or pywinrm).',
+        'stderr': 'No compatible remoting library available (pypsrp or pywinrm).',
     }

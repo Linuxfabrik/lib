@@ -8,8 +8,7 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""This library collects some Microsoft PowerShell related functions.
-"""
+"""This library collects some Microsoft PowerShell related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025103002'
@@ -58,8 +57,8 @@ def run_ps(cmd):
         return {
             #'args': result.args,
             'retc': result.returncode,
-            'stdout': txt.to_text(result.stdout), # convert from byte to unicode
-            'stderr': txt.to_text(result.stderr), # convert from byte to unicode
+            'stdout': txt.to_text(result.stdout),  # convert from byte to unicode
+            'stderr': txt.to_text(result.stderr),  # convert from byte to unicode
         }
     except Exception as e:
         return {

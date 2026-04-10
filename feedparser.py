@@ -19,14 +19,14 @@ __version__ = '2025042001'
 import sys
 
 from .globals import STATE_UNKNOWN
+
 try:
     from bs4 import BeautifulSoup
-except ImportError as e:
+except ImportError:
     print('Python module "BeautifulSoup4" is not installed.')
     sys.exit(STATE_UNKNOWN)
 
-from . import time
-from . import url
+from . import time, url
 
 
 def parse(feed_url, insecure=False, no_proxy=False, timeout=5, encoding='urlencode'):
@@ -193,7 +193,11 @@ def parse_rss(soup):
     }
     """
     result = {}
-    result['title'] = soup.rss.channel.title.string if soup.rss and soup.rss.channel and soup.rss.channel.title else 'n/a'
+    result['title'] = (
+        soup.rss.channel.title.string
+        if soup.rss and soup.rss.channel and soup.rss.channel.title
+        else 'n/a'
+    )
 
     updated = None
     try:
@@ -216,7 +220,9 @@ def parse_rss(soup):
         tmp = {
             'title': entry.title.string if entry.title else 'n/a',
             'id': entry.guid.string if entry.guid else 'n/a',
-            'updated': entry.pubDate.string if entry.pubDate else 'Wed, 01 Jan 1970 00:00:00',
+            'updated': entry.pubDate.string
+            if entry.pubDate
+            else 'Wed, 01 Jan 1970 00:00:00',
         }
         tmp['updated_parsed'] = time.timestr2datetime(
             tmp['updated'][:25],

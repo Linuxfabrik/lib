@@ -8,8 +8,7 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""Provides functions for handling software versions.
-"""
+"""Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025042101'
@@ -18,18 +17,23 @@ import datetime
 import json
 import re
 
+from . import base, cache, shell, time, url
 from .globals import STATE_OK, STATE_UNKNOWN, STATE_WARN
-from . import base
-from . import cache
-from . import shell
-from . import time
-from . import url
 
 
-def check_eol(product, version_string, offset_eol=-30,
-              check_major=False, check_minor=False, check_patch=False,
-              pattern='%Y-%m-%d', extended_support=False,
-              insecure=False, no_proxy=False, timeout=8):
+def check_eol(
+    product,
+    version_string,
+    offset_eol=-30,
+    check_major=False,
+    check_minor=False,
+    check_patch=False,
+    pattern='%Y-%m-%d',
+    extended_support=False,
+    insecure=False,
+    no_proxy=False,
+    timeout=8,
+):
     """
     Check if a software version is End of Life (EOL) by comparing it to endoflife.date data.
 
@@ -69,15 +73,22 @@ def check_eol(product, version_string, offset_eol=-30,
         eol = None
 
     if not eol:
-        success, eol = url.fetch_json(product, insecure=insecure, no_proxy=no_proxy, timeout=timeout)
+        success, eol = url.fetch_json(
+            product, insecure=insecure, no_proxy=no_proxy, timeout=timeout
+        )
         if not success or not eol:
             try:
                 from . import endoflifedate
+
                 eol = endoflifedate.ENDOFLIFE_DATE[product]
             except (ImportError, KeyError):
                 return STATE_UNKNOWN, f'product {product} unknown'
-        cache.set(product, json.dumps(eol), expire=time.now() + 86400,
-                  filename='linuxfabrik-lib-version.db')
+        cache.set(
+            product,
+            json.dumps(eol),
+            expire=time.now() + 86400,
+            filename='linuxfabrik-lib-version.db',
+        )
 
     installed = version(version_string)
 
@@ -99,7 +110,11 @@ def check_eol(product, version_string, offset_eol=-30,
         if now > time.timestr2datetime(support, pattern=pattern):
             msg.append(f'full support ended on {support}; ')
 
-    eol_key = 'extendedSupport' if extended_support and cycles_eoldate.get('extendedSupport') else 'eol'
+    eol_key = (
+        'extendedSupport'
+        if extended_support and cycles_eoldate.get('extendedSupport')
+        else 'eol'
+    )
     eol_date = cycles_eoldate.get(eol_key)
 
     if eol_date:
@@ -160,7 +175,7 @@ def get_os_info():
     success, result = shell.shell_exec(cmd, shell=True)
     if not success:
         return ''
-    
+
     stdout, _, _ = result
     return stdout.strip()
 

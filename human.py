@@ -9,7 +9,7 @@
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
 """Functions to convert raw numbers, times etc. to a human readable representation (and sometimes
-   back).
+back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
@@ -289,7 +289,7 @@ def extract_hrnumbers(s, boundaries=None):
         if char.isdigit() and start_idx is None:
             start_idx = idx
         elif char in boundaries and start_idx is not None:
-            extracted.append(s[start_idx:idx + 1])
+            extracted.append(s[start_idx : idx + 1])
             start_idx = None
         elif not char.isdigit():
             start_idx = None
@@ -531,7 +531,7 @@ def number2human(number):
         millidx = int(math.floor(math.log10(abs(number)) / 3))
 
     millidx = max(0, min(_SI_PREFIXES_MAX_IDX, millidx))
-    scaled = number / 10**(3 * millidx)
+    scaled = number / 10 ** (3 * millidx)
     return f'{scaled:.1f}{_SI_PREFIXES[millidx]}'
 
 

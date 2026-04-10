@@ -71,11 +71,11 @@ def file_exists(path, allow_empty=False):
       True if the file exists (and is non-empty unless `allow_empty` is True), otherwise False.
 
     ### Example
-    >>> file_exists("/path/to/file")
+    >>> file_exists('/path/to/file')
     True
-    >>> file_exists("/path/to/empty_file", allow_empty=False)
+    >>> file_exists('/path/to/empty_file', allow_empty=False)
     False
-    >>> file_exists("/path/to/empty_file", allow_empty=True)
+    >>> file_exists('/path/to/empty_file', allow_empty=True)
     True
     """
     if not os.path.isfile(path):
@@ -104,7 +104,7 @@ def get_cwd():
     """
     try:
         return os.getcwd()
-    except OSError as e:
+    except OSError:
         # Optional: handle rare cases where the cwd is invalid (e.g., directory was deleted)
         return ''
 
@@ -251,7 +251,7 @@ def grep_file(filename, pattern):
     try:
         with open(filename, 'r', encoding='utf-8') as f:
             data = f.read()
-    except IOError as e:
+    except OSError as e:
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
@@ -262,7 +262,14 @@ def grep_file(filename, pattern):
     return True, ''
 
 
-def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, skip_empty_rows=False):
+def read_csv(
+    filename,
+    delimiter=',',
+    quotechar='"',
+    newline='',
+    as_dict=False,
+    skip_empty_rows=False,
+):
     """
     Read a CSV file and return its content as a list or dictionary.
 
@@ -280,7 +287,7 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
     ### Returns
     - **tuple**:
         - tuple[0] (**bool**): True if reading succeeded, otherwise False.
-        - tuple[1] (**list or str**): 
+        - tuple[1] (**list or str**):
           - If successful, a list of rows (as lists or dicts depending on `as_dict`).
           - If unsuccessful, an error message string.
 
@@ -291,16 +298,27 @@ def read_csv(filename, delimiter=',', quotechar='"', newline='', as_dict=False, 
     reader = None
     try:
         with open(filename, 'r', newline=newline, encoding='utf-8') as csvfile:
-            reader = csv.DictReader(csvfile, delimiter=delimiter, quotechar=quotechar) if as_dict else csv.reader(csvfile, delimiter=delimiter, quotechar=quotechar)
+            reader = (
+                csv.DictReader(csvfile, delimiter=delimiter, quotechar=quotechar)
+                if as_dict
+                else csv.reader(csvfile, delimiter=delimiter, quotechar=quotechar)
+            )
             data = [
-                row for row in reader
-                if not (skip_empty_rows and all(not str(v).strip() for v in (row.values() if isinstance(row, dict) else row)))
+                row
+                for row in reader
+                if not (
+                    skip_empty_rows
+                    and all(
+                        not str(v).strip()
+                        for v in (row.values() if isinstance(row, dict) else row)
+                    )
+                )
             ]
         return True, data
     except csv.Error as e:
         line_num = getattr(reader, 'line_num', 'unknown')
         return False, f'CSV error in file {filename}, line {line_num}: {e}'
-    except IOError as e:
+    except OSError as e:
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
@@ -323,7 +341,7 @@ def read_env(filename, delimiter='='):
     ### Returns
     - **tuple**:
         - tuple[0] (**bool**): True if reading succeeded, otherwise False.
-        - tuple[1] (**dict or str**): 
+        - tuple[1] (**dict or str**):
           - If successful, a dictionary of environment variable names and values.
           - If unsuccessful, an error message string.
 
@@ -354,7 +372,7 @@ def read_env(filename, delimiter='='):
                 key, value = line.split(delimiter, 1)
                 data[key.strip()] = value.strip().strip('\'"')
         return True, data
-    except IOError as e:
+    except OSError as e:
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
@@ -370,7 +388,7 @@ def read_file(filename):
     ### Returns
     - **tuple**:
         - tuple[0] (**bool**): True if reading succeeded, otherwise False.
-        - tuple[1] (**str**): 
+        - tuple[1] (**str**):
           - If successful, the contents of the file as a string.
           - If unsuccessful, an error message string.
 
@@ -380,7 +398,7 @@ def read_file(filename):
     try:
         with open(filename, mode='r', encoding='utf-8') as f:
             return True, f.read()
-    except IOError as e:
+    except OSError as e:
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
@@ -396,7 +414,7 @@ def rm_file(filename):
     ### Returns
     - **tuple**:
         - tuple[0] (**bool**): True if deletion succeeded, otherwise False.
-        - tuple[1] (**None or str**): 
+        - tuple[1] (**None or str**):
           - None if the file was successfully deleted.
           - An error message string if unsuccessful.
 
@@ -417,7 +435,7 @@ def udevadm(device, _property):
     """
     Run `udevadm info` and extract a specific property manually.
 
-    To support older systems, the function does not use the `--property=` option 
+    To support older systems, the function does not use the `--property=` option
     and instead parses all properties manually to find the desired one.
 
     ### Parameters
@@ -437,9 +455,7 @@ def udevadm(device, _property):
     >>> udevadm('/dev/linuxfabrik', 'DEVNAME')
     ''
     """
-    success, result = shell.shell_exec(
-        f'udevadm info --query=property --name={device}'
-    )
+    success, result = shell.shell_exec(f'udevadm info --query=property --name={device}')
     if not success:
         return ''
     stdout, _, _ = result
@@ -506,13 +522,13 @@ def write_file(filename, content, append=False):
     ### Parameters
     - **filename** (`str`): Path to the file to write to.
     - **content** (`str`): The string content to write into the file.
-    - **append** (`bool`, optional): If True, append to the file; if False, overwrite the file. 
+    - **append** (`bool`, optional): If True, append to the file; if False, overwrite the file.
       Defaults to False.
 
     ### Returns
     - **tuple**:
         - tuple[0] (**bool**): True if writing succeeded, otherwise False.
-        - tuple[1] (**None or str**): 
+        - tuple[1] (**None or str**):
           - None if the file was written successfully.
           - An error message string if unsuccessful.
 
@@ -525,7 +541,7 @@ def write_file(filename, content, append=False):
         with open(filename, mode, encoding='utf-8') as f:
             f.write(content)
         return True, None
-    except IOError as e:
+    except OSError as e:
         return False, f'I/O error "{e.strerror}" while writing {filename}'
     except Exception as e:
         return False, f'Unknown error writing {filename}: {e}'

@@ -8,15 +8,11 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
 
-"""Provides test functions for unit tests.
-"""
+"""Provides test functions for unit tests."""
 
 import os
 
-from . import base
-from . import disk
-from . import shell
-
+from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026040901'
@@ -64,6 +60,7 @@ def run(test_instance, plugin, testcase):
     ...         'assert-regex': r'90.0%.*\\[CRITICAL\\]',
     ...     },
     ... ]
+    ...
     ...
     ... class TestCheck(unittest.TestCase):
     ...     check = '../my-plugin'
