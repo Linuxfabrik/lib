@@ -54,10 +54,8 @@ HELP_TEXTS = {
         'Can be specified multiple times. '
         'Example: `(?i)linuxfabrik`'
     ),
-    '--insecure': (
-        'This option explicitly allows insecure SSL connections. Default: %(default)s'
-    ),
-    '--lengthy': 'Extended reporting. Default: %(default)s',
+    '--insecure': 'This option explicitly allows insecure SSL connections.',
+    '--lengthy': 'Extended reporting.',
     '--match': (
         'Uses Python regular expressions without any external flags like `re.IGNORECASE`. '
         'The regular expression is applied to each line of the output. '
@@ -70,7 +68,7 @@ HELP_TEXTS = {
         'that satisfy the condition inside it, zero or more times. '
         'Default: %(default)s'
     ),
-    '--no-proxy': 'Do not use a proxy. Default: %(default)s',
+    '--no-proxy': 'Do not use a proxy.',
     '--password': 'Password.',
     '--port': 'Port number. Default: %(default)s',
     '--stratum': (
