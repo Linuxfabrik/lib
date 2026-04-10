@@ -41,11 +41,9 @@ HELP_TEXTS = {
     '--count': (
         'Number of consecutive checks the threshold must be exceeded before alerting.'
     ),
-    '--critical': 'CRIT threshold in percent. Supports Nagios ranges.',
-    '--critical-count': (
-        'CRIT threshold for the number of matching items. Supports Nagios ranges.'
-    ),
-    '--critical-seconds': 'CRIT threshold in seconds. Supports Nagios ranges.',
+    '--critical': 'CRIT threshold in percent.',
+    '--critical-count': 'CRIT threshold for the number of matching items.',
+    '--critical-seconds': 'CRIT threshold in seconds.',
     '--defaults-file': (
         'Specifies a cnf file to read parameters like user, host and password from '
         '(for MySQL/MariaDB cnf-style files).'
@@ -105,11 +103,9 @@ HELP_TEXTS = {
         'Makes this plugin verbose during the operation. '
         'Useful for debugging and seeing what is going on under the hood.'
     ),
-    '--warning': 'WARN threshold in percent. Supports Nagios ranges.',
-    '--warning-count': (
-        'WARN threshold for the number of matching items. Supports Nagios ranges.'
-    ),
-    '--warning-seconds': 'WARN threshold in seconds. Supports Nagios ranges.',
+    '--warning': 'WARN threshold in percent.',
+    '--warning-count': 'WARN threshold for the number of matching items.',
+    '--warning-seconds': 'WARN threshold in seconds.',
 }
 
 
