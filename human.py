@@ -13,7 +13,7 @@ back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026030301'
+__version__ = '2026041201'
 
 import math
 
@@ -155,9 +155,13 @@ _TIME_UNITS_SHORT = (
 
 
 def _to_human(n, thresholds, fallback_unit, decimals=1, space=False):
+    # compare against the absolute value so negative deltas (counter resets,
+    # memory reclaimed, bandwidth swings) still get scaled to a unit that
+    # matches their magnitude. e.g. -1048576 bytes reads as '-1.0MiB'.
     sep = ' ' if space else ''
+    abs_n = abs(n)
     for symbol, threshold in thresholds:
-        if n >= threshold:
+        if abs_n >= threshold:
             return f'{float(n) / threshold:.{decimals}f}{sep}{symbol}'
     return f'{n:.{decimals}f}{sep}{fallback_unit}'
 

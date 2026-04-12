@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026032101'
+__version__ = '2026041201'
 
 
 import os
@@ -178,21 +178,28 @@ def shell_exec(
         return True, (stdout, stderr, retc)
 
     # non-shell pipeline: cmd string is split on '|' and each segment runs with
-    # shell=False; args come from the caller's cmd string via shlex.split
+    # shell=False; args come from the caller's cmd string via shlex.split.
+    # after connecting a stage's stdout to the next stage's stdin, we close it
+    # in the parent so only the downstream child holds the read end. Without
+    # this, the upstream child never sees EOF / SIGPIPE when the downstream
+    # exits early, and we leak a file descriptor per pipeline stage.
     cmds = cmd.split('|')
     p = None
     for part in cmds:
         try:
             args = shlex.split(part.strip())
+            prev = p
             p = subprocess.Popen(  # nosec B603
                 args,
-                stdin=p.stdout if p else subprocess.PIPE,
+                stdin=prev.stdout if prev else subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
                 shell=False,
                 cwd=cwd,
             )
+            if prev is not None:
+                prev.stdout.close()
         except (OSError, ValueError, Exception) as e:
             return False, f'Error "{e}" while calling command "{part}"'
 

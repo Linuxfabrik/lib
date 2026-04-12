@@ -25,7 +25,7 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026041201'
 
 from . import db_sqlite, time
 
@@ -86,13 +86,17 @@ def get(
         if not success or not result:
             return False
 
-        # Check if the key has expired
+        # Check if the key has expired. `timestamp` is the "expires at" Unix
+        # epoch set via `set(expire=...)`. We treat the entry as valid up to
+        # and including that timestamp (strict-less-than), so a key with
+        # expire=now+5 is still served at now+5 and first becomes expired at
+        # now+6. This matches HTTP Cache-Control max-age and Redis EXPIRE.
         now = time.now()
-        if result['timestamp'] != 0 and result['timestamp'] <= now:
+        if result['timestamp'] != 0 and result['timestamp'] < now:
             # Clean up all expired entries
             db_sqlite.delete(
                 conn,
-                sql='DELETE FROM cache WHERE timestamp <= :now;',
+                sql='DELETE FROM cache WHERE timestamp < :now;',
                 data={'now': now},
             )
             db_sqlite.commit(conn)

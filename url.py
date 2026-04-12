@@ -159,9 +159,11 @@ def fetch(
             )
             response = opener.open(request)  # nosec B310
         else:
+            # when digest auth is active the opener installed further up
+            # already carries its own context, so we must not pass one here
             response = urllib.request.urlopen(  # nosec B310
                 request,
-                timeout=timeout if digest_auth_user else timeout,
+                timeout=timeout,
                 context=None if digest_auth_user else ctx,
             )
 

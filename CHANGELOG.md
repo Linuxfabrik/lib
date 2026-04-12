@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * Fix `--require-hashes` pip installs in CI workflows by using pinned versions instead
+* cache.py: treat a cache entry as valid up to and including its `expire` timestamp instead of expiring it one second early (`<` instead of `<=`). A key set with `expire=now+5` is now still served at `now+5` and first becomes unavailable at `now+6`, matching HTTP Cache-Control max-age and Redis EXPIRE semantics. Callers that relied on the old one-second-early expiry see their cached value live one second longer ([#120](https://github.com/Linuxfabrik/lib/issues/120))
+* human.py: `bits2human()`, `bytes2human()` and `bps2human()` now scale negative values to a unit that matches their magnitude. Before, `bytes2human(-1048576)` returned `-1048576.0B`, now it returns `-1.0MiB`. This matters for counter deltas that can legitimately be negative (counter resets, reclaimed memory, bandwidth drops) ([#120](https://github.com/Linuxfabrik/lib/issues/120))
+* shell.py: close the upstream process's `stdout` after connecting it to the next pipeline stage. Without this, the upstream process never received EOF/SIGPIPE when the downstream stage exited early, and each pipeline stage leaked a file descriptor until garbage collection caught up ([#120](https://github.com/Linuxfabrik/lib/issues/120))
+* url.py: drop the dead `timeout=timeout if digest_auth_user else timeout` ternary in `fetch()`; both branches evaluated to `timeout`, so behavior is unchanged ([#120](https://github.com/Linuxfabrik/lib/issues/120))
 * db_sqlite.py: pass `usedforsecurity=False` to `hashlib.sha1()` so bandit no longer flags a non-security SHA1 use as a weak hash (the hash is only used to derive sanitized SQL identifiers)
 * db_sqlite.py: rename unused loop variable in `rm_db()` to silence ruff B007
 * grassfish.py: remove unused `match()` helper that referenced undefined names (`re` and `compiled_custom_id_regex`); the function was never called and would have raised `NameError` at runtime
