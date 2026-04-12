@@ -10,12 +10,13 @@
 
 """Provides test functions for unit tests."""
 
+import contextlib
 import os
 
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026040901'
+__version__ = '2026041201'
 
 
 def run(test_instance, plugin, testcase):
@@ -91,6 +92,99 @@ def run(test_instance, plugin, testcase):
 
     if 'assert-regex' in testcase:
         test_instance.assertRegex(stdout, testcase['assert-regex'])
+
+
+@contextlib.contextmanager
+def run_container(
+    image,
+    *,
+    env=None,
+    ports=None,
+    command=None,
+    wait_log=None,
+    wait_log_timeout=120,
+):
+    """Start a testcontainers-python managed container and yield it.
+
+    A thin wrapper around `testcontainers.core.container.DockerContainer`
+    that handles the boilerplate most Linuxfabrik container-based unit
+    tests need: set env vars, expose a port, wait for a log marker,
+    tear down on exit.
+
+    Compatible with both Docker and rootless Podman. For Podman, the
+    caller must export `DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock`
+    and disable the Ryuk cleanup container via
+    `TESTCONTAINERS_RYUK_DISABLED=true` (Ryuk hangs on Podman).
+    The helper itself is daemon-agnostic.
+
+    ### Parameters
+    - **image** (`str`): The image reference to pull and run, e.g.
+      `'quay.io/keycloak/keycloak:25.0.4'`.
+    - **env** (`dict`, optional): Environment variables to pass into
+      the container (e.g. `{'KEYCLOAK_ADMIN': 'admin'}`).
+    - **ports** (`list` of `int`, optional): Container ports to
+      expose to the host. Use `container.get_exposed_port(port)` to
+      get the ephemeral host port after start.
+    - **command** (`str`, optional): Command to run instead of the
+      image's default ENTRYPOINT/CMD (e.g. `'start-dev'`).
+    - **wait_log** (`str`, optional): Substring to wait for in the
+      container's logs before yielding control. Most services write
+      a "ready" marker line like "Listening on:" or "ready for
+      connections". If `None`, the helper yields as soon as the
+      container is running.
+    - **wait_log_timeout** (`int`, optional): Maximum time to wait
+      for the log marker, in seconds. Defaults to `120`.
+
+    ### Yields
+    - **DockerContainer**: The running container, with
+      `get_container_host_ip()` / `get_exposed_port(port)` usable for
+      building a host-side URL.
+
+    ### Example
+    >>> with lib.lftest.run_container(
+    ...     'quay.io/keycloak/keycloak:25.0.4',
+    ...     env={'KEYCLOAK_ADMIN': 'admin', 'KEYCLOAK_ADMIN_PASSWORD': 'admin'},
+    ...     ports=[8080],
+    ...     command='start-dev',
+    ...     wait_log='Listening on:',
+    ... ) as container:
+    ...     url = 'http://{}:{}'.format(
+    ...         container.get_container_host_ip(),
+    ...         container.get_exposed_port(8080),
+    ...     )
+    ...     # point the plugin at this url
+    """
+    try:
+        from datetime import timedelta
+
+        from testcontainers.core.container import DockerContainer
+        from testcontainers.core.wait_strategies import LogMessageWaitStrategy
+    except ImportError as e:
+        raise RuntimeError(
+            'testcontainers is not installed; run '
+            "`pip install testcontainers`"
+        ) from e
+
+    c = DockerContainer(image)
+    if env:
+        for key, value in env.items():
+            c.with_env(key, value)
+    if ports:
+        for port in ports:
+            c.with_exposed_ports(port)
+    if command:
+        c.with_command(command)
+    if wait_log:
+        c.waiting_for(
+            LogMessageWaitStrategy(wait_log).with_startup_timeout(
+                timedelta(seconds=wait_log_timeout)
+            )
+        )
+    c.start()
+    try:
+        yield c
+    finally:
+        c.stop()
 
 
 def test(args):
