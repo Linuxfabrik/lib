@@ -11,11 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * Fix `--require-hashes` pip installs in CI workflows by using pinned versions instead
+* db_sqlite.py: pass `usedforsecurity=False` to `hashlib.sha1()` so bandit no longer flags a non-security SHA1 use as a weak hash (the hash is only used to derive sanitized SQL identifiers)
+* db_sqlite.py: rename unused loop variable in `rm_db()` to silence ruff B007
+* grassfish.py: remove unused `match()` helper that referenced undefined names (`re` and `compiled_custom_id_regex`); the function was never called and would have raised `NameError` at runtime
+* net.py: fix `get_netinfo()` which called a non-existent `get_ip_public()` and swallowed the resulting `NameError` by returning `[]`; the function now leaves `public_address` as `None` and callers that need the public IP must use `get_public_ip()` directly
+* rocket.py: `get_groups_history()` no longer mutates a shared default `params={}` dict (B006) and properly defaults `params` to `None`
+* url.py: `fetch()` and `fetch_json()` no longer use mutable default arguments for `header` and `data` (B006); defaults are now `None` with initialization inside the function
+
+### Security
+
+* Annotate all remaining bandit low/medium findings with `# nosec BXXX` comments and a short justification (subprocess helpers with `shell=True` by design, admin-controlled URLs passed to `urlopen`, SQL built from sanitized identifiers in `db_sqlite`). Bandit now runs clean at `--severity-level=low --confidence-level=low` over the whole lib
 
 ### Added
 
 * Add CONTRIBUTING
 * Add GitHub Actions workflow to automatically build and deploy API documentation to GitHub Pages
+* Add bandit and vulture to `.pre-commit-config.yaml` for security and dead-code checks on every commit
 * Add ruff linter and formatter to pre-commit hooks ([#117](https://github.com/Linuxfabrik/lib/issues/117))
 * Add pre-commit hooks
 * disk.py: add `get_owner()`

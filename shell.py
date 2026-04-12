@@ -17,7 +17,7 @@ __version__ = '2026032101'
 import os
 import re
 import shlex
-import subprocess
+import subprocess  # nosec B404 - this library is the subprocess helper
 
 from . import txt
 
@@ -148,8 +148,10 @@ def shell_exec(
         shell = True
 
     if shell or stdin:
+        # shell=True is opt-in via the `shell` parameter; this helper's purpose
+        # is to abstract shell-pipeline execution for callers that need it
         try:
-            p = subprocess.Popen(
+            p = subprocess.Popen(  # nosec B602
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -175,12 +177,14 @@ def shell_exec(
         stderr = txt.to_text(stderr)
         return True, (stdout, stderr, retc)
 
+    # non-shell pipeline: cmd string is split on '|' and each segment runs with
+    # shell=False; args come from the caller's cmd string via shlex.split
     cmds = cmd.split('|')
     p = None
     for part in cmds:
         try:
             args = shlex.split(part.strip())
-            p = subprocess.Popen(
+            p = subprocess.Popen(  # nosec B603
                 args,
                 stdin=p.stdout if p else subprocess.PIPE,
                 stdout=subprocess.PIPE,

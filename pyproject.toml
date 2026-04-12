@@ -84,6 +84,12 @@ ignore = [
 quote-style = 'single'
 docstring-code-format = true
 
+[tool.bandit]
+# B110 (try/except/pass) and B112 (try/except/continue): intentional patterns
+# in lib for graceful degradation - cleanup errors must not crash callers.
+# B311 (pseudo-random): lib uses `random` for non-cryptographic purposes only.
+skips = ['B110', 'B112', 'B311']
+
 [tool.setuptools]
 # packages are not in the root of the repository or do not correspond exactly to
 # the directory structure, so we need to configure package_dir

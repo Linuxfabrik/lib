@@ -13,7 +13,7 @@
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2025103002'
 
-import subprocess
+import subprocess  # nosec B404 - required to run PowerShell on Windows targets
 
 from . import txt
 
@@ -53,7 +53,11 @@ def run_ps(cmd):
     }
     """
     try:
-        result = subprocess.run(['powershell', '-Command', cmd], capture_output=True)
+        # cmd is admin-provided from the Icinga check config; PATH-based powershell
+        # lookup is intentional so the hook works across Windows installs
+        result = subprocess.run(  # nosec B603 B607
+            ['powershell', '-Command', cmd], capture_output=True
+        )
         return {
             #'args': result.args,
             'retc': result.returncode,

@@ -430,8 +430,9 @@ def get_distribution_facts():
     distro = facts.get('distribution_file_variety', 'distribution')
     facts['os_family'] = _map_os_family(distro)  # returns 'RedHat', for example
 
+    # hardcoded command, no user input; shell=True needed to source the file
     cmd = '. /etc/os-release && echo "$NAME $VERSION"'
-    success, result = shell.shell_exec(cmd, shell=True)
+    success, result = shell.shell_exec(cmd, shell=True)  # nosec B604
     if not success:
         return facts
 

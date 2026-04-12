@@ -225,7 +225,7 @@ def get_tmpdir():
     except Exception:
         pass
 
-    return tmpdir or '/tmp'
+    return tmpdir or '/tmp'  # nosec B108 - fallback when tempfile.gettempdir() fails
 
 
 def grep_file(filename, pattern):

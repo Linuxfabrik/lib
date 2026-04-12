@@ -39,7 +39,7 @@ result = lib.base.coe(
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025070901'
+__version__ = '2026041201'
 
 from . import url
 
@@ -88,7 +88,7 @@ def get_groups_history(
     auth_token,
     user_id,
     room_id=None,
-    params={},
+    params=None,
     insecure=False,
     no_proxy=False,
     timeout=3,
@@ -146,7 +146,9 @@ def get_groups_history(
     if not rc_url.endswith('/groups.history'):
         rc_url = rc_url.rstrip('/') + '/groups.history'
 
-    params.update({'roomId': room_id})  # add the required room_id to the parameter list
+    if params is None:
+        params = {}
+    params['roomId'] = room_id  # add the required room_id to the parameter list
     query = _flatten_params(params)
     rc_url = rc_url + f'{"?" + query if query else ""}'
 

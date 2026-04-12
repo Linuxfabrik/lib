@@ -171,8 +171,9 @@ def get_os_info():
     >>> get_os_info()
     'Ubuntu 22.04.1 LTS'
     """
+    # hardcoded command, no user input; shell=True needed to source the file
     cmd = '. /etc/os-release && echo "$NAME $VERSION"'
-    success, result = shell.shell_exec(cmd, shell=True)
+    success, result = shell.shell_exec(cmd, shell=True)  # nosec B604
     if not success:
         return ''
 

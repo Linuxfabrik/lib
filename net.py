@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025053001'
+__version__ = '2026041201'
 
 import random
 import re
@@ -382,7 +382,8 @@ def get_netinfo():
     ### Notes
     - If fetching any required information fails, an empty list is returned.
     - Requires `netifaces` and `ip_to_cidr()` helper.
-    - Public IP is fetched via `get_ip_public()`.
+    - The `public_address` field is always `None`; callers that want the public
+      IP must call `get_public_ip()` separately with a list of lookup services.
 
     ### Example
     >>> netinfo = get_netinfo()
@@ -397,20 +398,13 @@ def get_netinfo():
         iface = default_gateway[1]
         iface_addrs = netifaces.ifaddresses(iface)[netifaces.AF_INET][0]
 
-        stats = {
+        return {
             'address': iface_addrs.get('addr'),
             'mask': iface_addrs.get('netmask'),
             'mask_cidr': ip_to_cidr(iface_addrs.get('netmask')),
             'gateway': default_gateway[0],
             'public_address': None,
         }
-
-        try:
-            stats['public_address'] = get_ip_public()
-        except Exception:
-            return []
-
-        return stats
 
     except (KeyError, AttributeError, IndexError):
         return []

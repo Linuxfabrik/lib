@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042102'
+__version__ = '2026041201'
 
 import csv
 import hashlib
@@ -98,7 +98,7 @@ def __sha1sum(string):
     >>> __sha1sum('linuxfabrik')
     '74301e766db4a4006ec1fbd6e031760e7e322223'
     """
-    return hashlib.sha1(txt.to_bytes(string)).hexdigest()
+    return hashlib.sha1(txt.to_bytes(string), usedforsecurity=False).hexdigest()
 
 
 def close(conn):
@@ -231,7 +231,8 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     """
     table = __filter_str(table)
 
-    sql = f'SELECT DISTINCT {sensorcol} FROM {table} ORDER BY {sensorcol} ASC;'
+    # table and sensorcol are sanitized via __filter_str() above / by callers
+    sql = f'SELECT DISTINCT {sensorcol} FROM {table} ORDER BY {sensorcol} ASC;'  # nosec B608
     success, sensors = select(conn, sql)
     if not success:
         return False, sensors
@@ -244,7 +245,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
         sensor_name = sensor[sensorcol]
         success, perfdata = select(
             conn,
-            f'SELECT * FROM {table} WHERE {sensorcol} = :{sensorcol} ORDER BY timestamp DESC;',
+            f'SELECT * FROM {table} WHERE {sensorcol} = :{sensorcol} ORDER BY timestamp DESC;',  # nosec B608
             data={sensorcol: sensor_name},
         )
         if not success:
@@ -491,6 +492,7 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     """
     table = __filter_str(table)
 
+    # table is sanitized via __filter_str() above
     sql = f"""
         DELETE FROM {table}
         WHERE rowid IN (
@@ -498,7 +500,7 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
             ORDER BY rowid DESC
             LIMIT -1 OFFSET :_max
         );
-    """
+    """  # nosec B608
 
     c = conn.cursor()
     try:
@@ -827,9 +829,11 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
     """
     table = __filter_str(table)
 
+    # table is sanitized via __filter_str() above; keys come from the caller's
+    # data dict (column names, not values); VALUES use parameterized binds
     keys = ','.join(data.keys())
     binds = ','.join(f':{key}' for key in data.keys())
-    sql = f'INSERT INTO "{table}" ({keys}) VALUES ({binds});'
+    sql = f'INSERT INTO "{table}" ({keys}) VALUES ({binds});'  # nosec B608
 
     c = conn.cursor()
     try:
@@ -965,7 +969,7 @@ def rm_db(conn):
     >>> rm_db(conn)
     True
     """
-    for id_, name, filename in conn.execute('PRAGMA database_list'):
+    for _, name, filename in conn.execute('PRAGMA database_list'):
         if name == 'main' and filename:
             close(conn)
             disk.rm_file(filename)

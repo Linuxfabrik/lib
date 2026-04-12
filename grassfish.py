@@ -13,7 +13,7 @@ https://ds.example.com/gv2/webservices/API/swagger/ui/index
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026041201'
 
 from . import url
 
@@ -84,65 +84,6 @@ def fetch_json(
         return False, f'There was no result from {full_uri}.'
 
     return True, result
-
-
-def match(item, _filter):
-    """
-    Check if an item matches given filter criteria.
-
-    This function applies multiple filtering rules (box state, custom ID, installation status,
-    licensing status) to an item dictionary, based on the fields defined in a `_filter` object.
-
-    ### Parameters
-    - **item** (`dict`):
-      The item (e.g., device or resource) to check against filter conditions.
-    - **_filter** (object):
-      An object containing filter criteria attributes:
-        - `BOX_STATE`
-        - `CUSTOM_ID`
-        - `IS_INSTALLED`
-        - `IS_LICENSED`
-
-    ### Returns
-    - **bool**:
-      `True` if the item matches all filter criteria, otherwise `False`.
-
-    ### Notes
-    - `BOX_STATE` and other attributes are expected to be iterable (e.g., lists or sets).
-    - Matching on `CustomId` uses a compiled regex (`compiled_custom_id_regex` must be defined).
-    - All checks are case-insensitive where applicable.
-
-    ### Example
-    >>> match(
-    ...     {
-    ...         'BoxState': 'Active',
-    ...         'CustomId': '1234',
-    ...         'IsInstalled': True,
-    ...         'IsLicensed': True,
-    ...     },
-    ...     my_filter,
-    ... )
-    False
-    """
-    if _filter.BOX_STATE and item['BoxState'].lower() not in _filter.BOX_STATE:
-        return False
-    if _filter.CUSTOM_ID:
-        if 'CustomId' not in item:
-            return False
-        if not re.search(compiled_custom_id_regex, item['CustomId']):
-            return False
-    if _filter.IS_INSTALLED:
-        if item['IsInstalled'] and 'yes' not in _filter.IS_INSTALLED:
-            return False
-        if not item['IsInstalled'] and 'no' not in _filter.IS_INSTALLED:
-            return False
-    if _filter.IS_LICENSED:
-        if item['IsLicensed'] and 'yes' not in _filter.IS_LICENSED:
-            return False
-        if not item['IsLicensed'] and 'no' not in _filter.IS_LICENSED:
-            return False
-
-    return True
 
 
 def set_player_defaults(item):

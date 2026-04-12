@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026041201'
 
 import json
 import re
@@ -28,8 +28,8 @@ def fetch(
     insecure=False,
     no_proxy=False,
     timeout=8,
-    header={},
-    data={},
+    header=None,
+    data=None,
     encoding='urlencode',
     digest_auth_user=None,
     digest_auth_password=None,
@@ -118,6 +118,10 @@ def fetch(
 
     >>> result = fetch('https://api.example.com', data={'key': 'value'}, extended=True)
     """
+    if header is None:
+        header = {}
+    if data is None:
+        data = {}
     try:
         if digest_auth_user and digest_auth_password:
             passmgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
@@ -145,15 +149,17 @@ def fetch(
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
 
+        # URL comes from the admin-controlled Icinga check config, never from
+        # untrusted input; bandit B310 flags any urlopen on dynamic URLs
         if no_proxy:
             proxy_handler = urllib.request.ProxyHandler({})
             opener = urllib.request.build_opener(
                 proxy_handler,
                 urllib.request.HTTPSHandler(context=ctx),
             )
-            response = opener.open(request)
+            response = opener.open(request)  # nosec B310
         else:
-            response = urllib.request.urlopen(
+            response = urllib.request.urlopen(  # nosec B310
                 request,
                 timeout=timeout if digest_auth_user else timeout,
                 context=None if digest_auth_user else ctx,
@@ -198,8 +204,8 @@ def fetch_json(
     insecure=False,
     no_proxy=False,
     timeout=8,
-    header={},
-    data={},
+    header=None,
+    data=None,
     encoding='urlencode',
     digest_auth_user=None,
     digest_auth_password=None,
