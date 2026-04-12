@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026040801'
+__version__ = '2026041201'
 
 import numbers
 import operator
@@ -292,17 +292,17 @@ def get_table(
     return '\n'.join(lines) + '\n'
 
 
-def get_worst(state1, state2):
+def get_worst(*states):
     """
-    Compares `state1` to `state2` and returns the worse state based on the following priority:
-    STATE_OK < STATE_UNKNOWN < STATE_WARNING < STATE_CRITICAL
-    It will prioritize any non-OK state.
+    Returns the worst state among any number of input states, using the
+    following priority: STATE_OK < STATE_UNKNOWN < STATE_WARNING < STATE_CRITICAL.
+    Any non-OK state is prioritized over STATE_OK.
 
-    Note that numerically the priority order does not match their integer values.
+    Note that numerically the priority order does not match their integer
+    values. Calling with no arguments returns `STATE_OK`.
 
     ### Parameters
-    - **state1** (`int`): The first state to compare.
-    - **state2** (`int`): The second state to compare.
+    - ***states** (`int`): One or more states to compare.
 
     ### Returns
     - **int**: The worse state according to the priority order.
@@ -313,14 +313,16 @@ def get_worst(state1, state2):
 
     >>> get_worst(STATE_UNKNOWN, STATE_CRITICAL)
     STATE_CRITICAL
+
+    >>> get_worst(STATE_OK, STATE_WARNING, STATE_CRITICAL)
+    STATE_CRITICAL
     """
-    state1 = int(state1)
-    state2 = int(state2)
-    if STATE_CRIT in (state1, state2):
+    states = [int(s) for s in states]
+    if STATE_CRIT in states:
         return STATE_CRIT
-    if STATE_WARN in (state1, state2):
+    if STATE_WARN in states:
         return STATE_WARN
-    if STATE_UNKNOWN in (state1, state2):
+    if STATE_UNKNOWN in states:
         return STATE_UNKNOWN
     return STATE_OK
 
