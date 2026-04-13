@@ -16,7 +16,7 @@ import os
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041201'
+__version__ = '2026041301'
 
 
 def run(test_instance, plugin, testcase):
@@ -192,11 +192,16 @@ def test(args):
     Returns the content of two files and the provided return code. The first file represents STDOUT,
     and the second represents STDERR. This function is useful for enabling unit tests.
 
+    Only the STDOUT entry is required. STDERR and the return code default to
+    the empty string and 0, so callers can pass `--test=path/to/stdout`
+    without trailing commas.
+
     ### Parameters
     - **args** (`list`): A list containing:
       - The path to the file representing STDOUT or the string to be used as STDOUT.
-      - The path to the file representing STDERR or the string to be used as STDERR.
-      - The return code (integer or string). Defaults to 0 if not provided.
+      - Optional: the path to the file representing STDERR or the string to be used
+        as STDERR. Defaults to the empty string if not provided.
+      - Optional: the return code (integer or string). Defaults to 0 if not provided.
 
     ### Returns
     - **tuple**:
@@ -205,11 +210,13 @@ def test(args):
       - **retc** (`int`): The return code, either from the provided value or defaulted to 0.
 
     ### Example
-    >>> test('path/to/stdout.txt', 'path/to/stderr.txt', 128)
+    >>> test(['path/to/stdout.txt', 'path/to/stderr.txt', 128])
     ('This is stdout content', 'This is stderr content', 128)
+    >>> test(['path/to/stdout.txt'])
+    ('This is stdout content', '', 0)
     """
-    stdout = args[0]
-    stderr = args[1]
+    stdout = args[0] if len(args) > 0 else ''
+    stderr = args[1] if len(args) > 1 else ''
     retc = int(args[2]) if len(args) > 2 and args[2] != '' else 0
 
     if stdout and os.path.isfile(stdout):
