@@ -55,9 +55,42 @@ def bd2dmd(device):
     return mapped_device if os.path.islink(mapped_device) else ''
 
 
+def dir_exists(path):
+    """
+    Check if a directory exists at the given path.
+
+    Use this when you specifically want a directory check. `file_exists()`
+    only returns `True` for regular files (it is `os.path.isfile()` under
+    the hood), so passing a directory to it always returns `False`.
+
+    ### Parameters
+    - **path** (`str`):
+      The path to the directory to check.
+
+    ### Returns
+    - **bool**:
+      `True` if the path exists and is a directory (or a symlink to one),
+      `False` otherwise.
+
+    ### Example
+    >>> dir_exists('/etc')
+    True
+    >>> dir_exists('/etc/passwd')
+    False
+    >>> dir_exists('/path/that/does/not/exist')
+    False
+    """
+    return os.path.isdir(path)
+
+
 def file_exists(path, allow_empty=False):
     """
-    Check if a file exists at the given path, optionally allowing empty files.
+    Check if a regular file exists at the given path, optionally allowing
+    empty files.
+
+    This wraps `os.path.isfile()`, so it only matches regular files and
+    symlinks pointing at regular files. Directories return `False`; use
+    `dir_exists()` for directory checks.
 
     ### Parameters
     - **path** (`str`):
