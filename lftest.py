@@ -17,7 +17,7 @@ import re
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041302'
+__version__ = '2026041303'
 
 
 def run(test_instance, plugin, testcase):
@@ -159,6 +159,71 @@ def attach_tests(test_class, tests, plugin_attr='check'):
             return _method
 
         setattr(test_class, method_name, _make(testcase))
+
+
+def attach_each(test_class, items, action, id_func=str):
+    """Attach one ``test_<id>`` method per item to a ``unittest.TestCase``
+    subclass.
+
+    Sister of :func:`attach_tests`. Where ``attach_tests`` works on a
+    TESTS list of dicts that ``run()`` knows how to execute,
+    ``attach_each`` accepts an arbitrary iterable plus a callable that
+    decides what to do with each item. Useful for container-image
+    matrices, file-based fixtures with stateful per-item setup, and
+    any other pattern that doesn't fit the TESTS-dict shape.
+
+    Like ``attach_tests``, this materialises one real test method per
+    item so unittest counts and names them individually instead of
+    collapsing the whole loop into a single ``test`` method.
+
+    ### Parameters
+    - **test_class** (`type`): a ``unittest.TestCase`` subclass.
+    - **items** (`iterable`): the things to iterate over (image
+      tuples, fixture paths, scenario dicts, ...).
+    - **action** (`callable`): a function ``action(self, item)``
+      that the generated test method calls with the captured item.
+      ``self`` is the ``unittest.TestCase`` instance and may be
+      used to issue assertions.
+    - **id_func** (`callable`, optional): a function that turns one
+      item into a short, human-readable string used as the test
+      method name. Defaults to ``str``, which is fine for plain
+      strings; pass ``lambda it: it[1]`` (or similar) for tuples
+      and dicts.
+
+    ### Example
+    >>> IMAGES = [
+    ...     ('quay.io/keycloak/keycloak:25.0.6', 'v25'),
+    ...     ('quay.io/keycloak/keycloak:26.6', 'v26'),
+    ... ]
+    >>>
+    >>> def _check(test, image_pair):
+    ...     image, version_tag = image_pair
+    ...     with lib.lftest.run_container(image, ...) as container:
+    ...         # ... run plugin, assert ...
+    ...         pass
+    >>>
+    >>> class TestCheck(unittest.TestCase):
+    ...     pass
+    >>>
+    >>> attach_each(TestCheck, IMAGES, _check, id_func=lambda it: it[1])
+    """
+    seen = set()
+    for item in items:
+        raw_id = id_func(item)
+        method_name = 'test_' + re.sub(r'\W+', '_', str(raw_id)).strip('_')
+        if method_name in seen:
+            raise ValueError(
+                f'attach_each: duplicate id "{raw_id}" '
+                f'maps to method name "{method_name}"'
+            )
+        seen.add(method_name)
+
+        def _make(captured_item):
+            def _method(self):
+                action(self, captured_item)
+            return _method
+
+        setattr(test_class, method_name, _make(item))
 
 
 @contextlib.contextmanager
