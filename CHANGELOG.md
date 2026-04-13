@@ -8,38 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+tbd
 
-* base.py: `get_worst()` now accepts any number of state arguments (`*states`). Existing two-argument callers keep working unchanged, but plugins that need to combine three or more states in one call no longer have to nest the call - e.g. `get_worst(state, used_state, committed_state)` instead of `get_worst(state, get_worst(used_state, committed_state))`
-* lftest.py: `test()` now accepts `args` with fewer than three elements. Plugins can be invoked as `--test=path/to/fixture` without the trailing `,,0`; stderr defaults to the empty string and the return code to `0`
 
-### Fixed
-
-* Fix `--require-hashes` pip installs in CI workflows by using pinned versions instead
-* cache.py: treat a cache entry as valid up to and including its `expire` timestamp instead of expiring it one second early (`<` instead of `<=`). A key set with `expire=now+5` is now still served at `now+5` and first becomes unavailable at `now+6`, matching HTTP Cache-Control max-age and Redis EXPIRE semantics. Callers that relied on the old one-second-early expiry see their cached value live one second longer ([#120](https://github.com/Linuxfabrik/lib/issues/120))
-* human.py: `bits2human()`, `bytes2human()` and `bps2human()` now scale negative values to a unit that matches their magnitude. Before, `bytes2human(-1048576)` returned `-1048576.0B`, now it returns `-1.0MiB`. This matters for counter deltas that can legitimately be negative (counter resets, reclaimed memory, bandwidth drops) ([#120](https://github.com/Linuxfabrik/lib/issues/120))
-* shell.py: close the upstream process's `stdout` after connecting it to the next pipeline stage. Without this, the upstream process never received EOF/SIGPIPE when the downstream stage exited early, and each pipeline stage leaked a file descriptor until garbage collection caught up ([#120](https://github.com/Linuxfabrik/lib/issues/120))
-* url.py: drop the dead `timeout=timeout if digest_auth_user else timeout` ternary in `fetch()`; both branches evaluated to `timeout`, so behavior is unchanged ([#120](https://github.com/Linuxfabrik/lib/issues/120))
-* db_sqlite.py: pass `usedforsecurity=False` to `hashlib.sha1()` so bandit no longer flags a non-security SHA1 use as a weak hash (the hash is only used to derive sanitized SQL identifiers)
-* db_sqlite.py: rename unused loop variable in `rm_db()` to silence ruff B007
-* grassfish.py: remove unused `match()` helper that referenced undefined names (`re` and `compiled_custom_id_regex`); the function was never called and would have raised `NameError` at runtime
-* net.py: fix `get_netinfo()` which called a non-existent `get_ip_public()` and swallowed the resulting `NameError` by returning `[]`; the function now leaves `public_address` as `None` and callers that need the public IP must use `get_public_ip()` directly
-* rocket.py: `get_groups_history()` no longer mutates a shared default `params={}` dict (B006) and properly defaults `params` to `None`
-* url.py: `fetch()` and `fetch_json()` no longer use mutable default arguments for `header` and `data` (B006); defaults are now `None` with initialization inside the function
-
-### Security
-
-* Annotate all remaining bandit low/medium findings with `# nosec BXXX` comments and a short justification (subprocess helpers with `shell=True` by design, admin-controlled URLs passed to `urlopen`, SQL built from sanitized identifiers in `db_sqlite`). Bandit now runs clean at `--severity-level=low --confidence-level=low` over the whole lib
+## [v3.0.0] - 2026-04-13
 
 ### Added
 
-* Add CONTRIBUTING
 * Add GitHub Actions workflow to automatically build and deploy API documentation to GitHub Pages
 * Add bandit and vulture to `.pre-commit-config.yaml` for security and dead-code checks on every commit
-* Add ruff linter and formatter to pre-commit hooks ([#117](https://github.com/Linuxfabrik/lib/issues/117))
 * Add pre-commit hooks
-* disk.py: add `get_owner()`
+* Add ruff linter and formatter to pre-commit hooks ([#117](https://github.com/Linuxfabrik/lib/issues/117))
 * args.py: expand `HELP_TEXTS` with standard help texts for all common parameters (always-ok, critical, warning, insecure, no-proxy, timeout, url, ignore-regex, match, lengthy, count, test, etc.)
+* disk.py: add `get_owner()`
 * lftest.py: add `run()` function for declarative, data-driven unit tests using `subTest()`
 * nextcloud.py: new library
 * txt.py: add `exception2text()`
@@ -48,19 +29,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* Bump minimum Python version from 3.6 to 3.9
 * base.py: `get_perfdata()` now sanitizes labels by stripping single quotes and replacing `=` with `_`
+* base.py: `get_perfdata()` output no longer has trailing semicolons
+* base.py: `get_table()`: document why pure ASCII delimiters are used instead of Unicode box-drawing characters
+* base.py: `get_worst()` now accepts any number of state arguments (`*states`). Existing two-argument callers keep working unchanged, but plugins that need to combine three or more states in one call no longer have to nest the call - e.g. `get_worst(state, used_state, committed_state)` instead of `get_worst(state, get_worst(used_state, committed_state))`
 * base.py: deduplicate `get_state()` operator logic using `operator` module
 * base.py: deduplicate `sum_dict()` by delegating to `sum_lod()`
-* base.py: `get_table()`: document why pure ASCII delimiters are used instead of Unicode box-drawing characters
 * base.py: improve `get_table()` performance for large tables
 * base.py: move `parse_range()` and state name mapping to module level
 * base.py: remove unused `collections` import
-* base.py: strip trailing semicolons in `get_perfdata()` output
 * db_sqlite.py: reduce unnecessary dictionary object creation
 * human.py: deduplicate `bits2human()`/`bps2human()`/`bytes2human()` via shared `_to_human()` helper
 * human.py: deduplicate `humanrange2bytes()`/`humanrange2seconds()` via shared `_convert_range()` helper
 * human.py: pre-compute mappings as module constants
+* lftest.py: `test()` now accepts `args` with fewer than three elements. Plugins can be invoked as `--test=path/to/fixture` without the trailing `,,0`; stderr defaults to the empty string and the return code to `0`
 * powershell.py: `run_ps()` now always returns a dict
 * Remove pre-built documentation from the repository (now auto-deployed via GitHub Actions)
 * txt.py: improve `filter_mltext()` performance (avoid O(n²) string concatenation)
@@ -70,22 +52,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * winrm.py: make `run_cmd()` and `run_ps()` JEA-aware
 * winrm.py: make `run_cmd()` and `run_ps()` Kerberos-aware
 
+### Removed
+
+* Drop support for Python older than 3.9. The lib now requires Python 3.9 or newer; this matches the oldest still-supported enterprise Linux (RHEL 8) and lets the codebase use modern syntax and standard-library features
+
 ### Fixed
 
 * base.py: `cu()` now also escapes HTML characters in the error message, not just in the traceback
 * base.py: `cu()` now detects active exceptions via `sys.exc_info()` instead of string-matching the traceback
 * base.py: `get_state()` no longer calls `sys.exit()` on malformed range specs, returns UNKNOWN instead
+* base.py: `get_table()` no longer uses the wrong separator for the second data row when called without a header
 * base.py: `oao()` now escapes HTML characters in the output message to prevent injection in web UIs
-* base.py: fix `get_table()` using wrong separator for the second data row when called without a header
 * base.py: fix invalid `-10` range example in `_parse_range()` docstring (correct syntax is `-10:0`)
+* cache.py: treat a cache entry as valid up to and including its `expire` timestamp instead of expiring it one second early (`<` instead of `<=`). A key set with `expire=now+5` is now still served at `now+5` and first becomes unavailable at `now+6`, matching HTTP Cache-Control max-age and Redis EXPIRE semantics. Callers that relied on the old one-second-early expiry see their cached value live one second longer ([#120](https://github.com/Linuxfabrik/lib/issues/120))
+* db_sqlite.py: pass `usedforsecurity=False` to `hashlib.sha1()` so bandit no longer flags a non-security SHA1 use as a weak hash (the hash is only used to derive sanitized SQL identifiers)
+* db_sqlite.py: rename unused loop variable in `rm_db()` to silence ruff B007
+* Fix `--require-hashes` pip installs in CI workflows by using pinned versions instead
+* grassfish.py: remove unused `match()` helper that referenced undefined names (`re` and `compiled_custom_id_regex`); the function was never called and would have raised `NameError` at runtime
+* human.py: `bits2human()`, `bytes2human()` and `bps2human()` now scale negative values to a unit that matches their magnitude. Before, `bytes2human(-1048576)` returned `-1048576.0B`, now it returns `-1.0MiB`. This matters for counter deltas that can legitimately be negative (counter resets, reclaimed memory, bandwidth drops) ([#120](https://github.com/Linuxfabrik/lib/issues/120))
 * human.py: fix incorrect `seconds2human()` docstring example for sub-second values
+* net.py: fix `get_netinfo()` which called a non-existent `get_ip_public()` and swallowed the resulting `NameError` by returning `[]`; the function now leaves `public_address` as `None` and callers that need the public IP must use `get_public_ip()` directly
 * powershell.py: fix outdated shebang line
+* rocket.py: `get_groups_history()` no longer mutates a shared default `params={}` dict (B006) and properly defaults `params` to `None`
 * shell.py: `shell_exec()` now applies timeout to the `shell=True` path (was previously ignored)
+* shell.py: close the upstream process's `stdout` after connecting it to the next pipeline stage. Without this, the upstream process never received EOF/SIGPIPE when the downstream stage exited early, and each pipeline stage leaked a file descriptor until garbage collection caught up ([#120](https://github.com/Linuxfabrik/lib/issues/120))
 * txt.py: `sanitize_sensitive_data()` now also redacts JSON-style fields and HTTP Authorization headers
 * txt.py: fix `exception2text()` missing `traceback` import (fallback path was dead code)
 * txt.py: fix `pluralize()` not stripping whitespace from comma-separated suffix parts
 * txt.py: fix `sanitize_sensitive_data()` replacing the key name instead of the secret value
+* url.py: `fetch()` and `fetch_json()` no longer use mutable default arguments for `header` and `data` (B006); defaults are now `None` with initialization inside the function
+* url.py: drop the dead `timeout=timeout if digest_auth_user else timeout` ternary in `fetch()`; both branches evaluated to `timeout`, so behavior is unchanged ([#120](https://github.com/Linuxfabrik/lib/issues/120))
 * winrm.py: pass parameters correctly in `run_cmd()` when using pypsrp
+
+### Security
+
+* Annotate all remaining bandit low/medium findings with `# nosec BXXX` comments and a short justification (subprocess helpers with `shell=True` by design, admin-controlled URLs passed to `urlopen`, SQL built from sanitized identifiers in `db_sqlite`). Bandit now runs clean at `--severity-level=low --confidence-level=low` over the whole lib
 
 
 ## [v2.4.0] - 2025-09-17
@@ -468,7 +469,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.0.0...HEAD
+[v3.0.0]: https://github.com/Linuxfabrik/lib/compare/v2.4.0...v3.0.0
 [v2.4.0]: https://github.com/Linuxfabrik/lib/compare/v2.3.0...v2.4.0
 [v2.3.0]: https://github.com/Linuxfabrik/lib/compare/v2.2.1...v2.3.0
 [v2.2.1]: https://github.com/Linuxfabrik/lib/compare/v2.2.0...v2.2.1
