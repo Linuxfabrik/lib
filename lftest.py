@@ -12,11 +12,12 @@
 
 import contextlib
 import os
+import re
 
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041301'
+__version__ = '2026041302'
 
 
 def run(test_instance, plugin, testcase):
@@ -92,6 +93,72 @@ def run(test_instance, plugin, testcase):
 
     if 'assert-regex' in testcase:
         test_instance.assertRegex(stdout, testcase['assert-regex'])
+
+
+def attach_tests(test_class, tests, plugin_attr='check'):
+    """Dynamically attach one ``test_<id>`` method per testcase to a
+    ``unittest.TestCase`` subclass, so that every entry in the TESTS
+    list shows up as an individual test in the unittest discovery
+    output instead of being collapsed into a single ``test`` method
+    with sub-tests.
+
+    ### Why
+    The naive approach is::
+
+        class TestCheck(unittest.TestCase):
+            def test(self):
+                for t in TESTS:
+                    with self.subTest(id=t['id']):
+                        lib.lftest.run(self, self.check, t)
+
+    That works, but unittest counts the whole loop as **one** test, so
+    the user sees ``Ran 1 test`` regardless of how many fixtures the
+    file actually exercises. Failures still surface (sub-tests print
+    their `id`), but the test count is misleading and `./run -v` does
+    not list each scenario. ``attach_tests()`` materialises one real
+    test method per testcase so the count is accurate and verbose
+    output names every scenario.
+
+    ### Parameters
+    - **test_class** (`type`): a ``unittest.TestCase`` subclass with a
+      ``check`` (or other ``plugin_attr``-named) attribute pointing at
+      the plugin executable.
+    - **tests** (`list[dict]`): a TESTS list of testcase dicts, each
+      shaped as ``run()`` expects, with a unique ``id`` field.
+    - **plugin_attr** (`str`, optional): the attribute name on
+      ``test_class`` that holds the plugin path. Defaults to
+      ``'check'``.
+
+    ### Example
+    >>> class TestCheck(unittest.TestCase):
+    ...     check = '../my-plugin'
+    ...
+    >>> attach_tests(TestCheck, TESTS)
+    >>>
+    >>> if __name__ == '__main__':
+    ...     unittest.main()
+
+    The resulting class has a ``test_<sanitised id>`` method per
+    entry in ``TESTS``. Running ``./run -v`` then lists every test
+    by name and ``./run`` reports the real test count.
+    """
+    seen = set()
+    for testcase in tests:
+        raw_id = testcase['id']
+        method_name = 'test_' + re.sub(r'\W+', '_', raw_id).strip('_')
+        if method_name in seen:
+            raise ValueError(
+                f'attach_tests: duplicate test id "{raw_id}" '
+                f'maps to method name "{method_name}"'
+            )
+        seen.add(method_name)
+
+        def _make(captured_testcase):
+            def _method(self):
+                run(self, getattr(self, plugin_attr), captured_testcase)
+            return _method
+
+        setattr(test_class, method_name, _make(testcase))
 
 
 @contextlib.contextmanager
