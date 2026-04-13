@@ -13,11 +13,33 @@
 import contextlib
 import os
 import re
+import tempfile
 
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041303'
+__version__ = '2026041305'
+
+
+# Shared IMAGES matrix for mysql-* container tests. Covers the
+# currently supported MariaDB LTS releases across the Red Hat family
+# (sclorg quay.io images) and the upstream Debian-based image:
+#
+# - 10.6: oldest still-supported LTS (EOL 2026-07), upstream only
+# - 10.11: current workhorse LTS (EOL 2028-02), sclorg c10s
+# - 11.4: newer LTS (EOL 2029-05), upstream only - sclorg does not
+#   publish a 11.4 image
+# - 11.8: newest LTS (EOL 2030-06), sclorg c10s
+#
+# All 16 mysql-* container tests in the repo iterate over this list
+# so adding a new LTS release (or retiring one that reaches EOL) is
+# a single-line change across the whole test suite.
+MARIADB_LTS_IMAGES = [
+    ('docker.io/library/mariadb:10.6', 'MariaDB 10.6'),
+    ('quay.io/sclorg/mariadb-1011-c10s', 'MariaDB 10.11 sclorg'),
+    ('docker.io/library/mariadb:11.4', 'MariaDB 11.4'),
+    ('quay.io/sclorg/mariadb-118-c10s', 'MariaDB 11.8 sclorg'),
+]
 
 
 def run(test_instance, plugin, testcase):
@@ -317,6 +339,121 @@ def run_container(
         yield c
     finally:
         c.stop()
+
+
+@contextlib.contextmanager
+def run_mariadb(image, *, extra_args=None, seed=None):
+    """Start a MariaDB container and yield (container, defaults_file).
+
+    Thin convenience wrapper around :func:`run_container` for the
+    Linuxfabrik mysql-* check plugins. Hides the image-family
+    boilerplate (env vars, TCP port exposure, start command, log
+    marker to wait on) and writes a temporary `[client]` `.cnf` file
+    pointing at the exposed host port so the caller can run a plugin
+    with `--defaults-file=...` without manual tempfile management.
+
+    Supports two image families:
+
+    - **Red Hat family via sclorg** (`quay.io/sclorg/mariadb-*`).
+      The sclorg entrypoint disables the TCP listener by default and
+      binds only the unix socket, so the helper forces
+      `run-mysqld --port=3306`.
+    - **Upstream** (`docker.io/library/mariadb:*`). Uses the default
+      `docker-entrypoint.sh` which already enables TCP on 3306; the
+      helper only overrides the command when `extra_args` are given,
+      in which case it appends them to `mariadbd`.
+
+    The `MYSQL_*` env var names work for both families (the upstream
+    image accepts them as aliases for `MARIADB_*`). The log marker
+    `port: 3306` appears in both startup banners once the TCP listener
+    is bound, so the same wait works for both.
+
+    ### Parameters
+    - **image** (`str`): MariaDB image reference, e.g.
+      `'quay.io/sclorg/mariadb-1011-c10s'` or
+      `'docker.io/library/mariadb:11.8'`.
+    - **extra_args** (`str`, optional): Extra `mariadbd` flags appended
+      to the startup command, e.g.
+      `'--innodb-buffer-pool-size=33554432'` to pin the buffer pool to
+      a deterministic size.
+    - **seed** (`str`, optional): SQL statement executed once via
+      `container.exec` right after the container is ready. Used to
+      seed happy-path state (e.g. creating an empty InnoDB table so
+      storage-engine checks see the engine "in use"). The helper
+      auto-detects whether the image ships the `mariadb` client (11.x
+      upstream dropped the `mysql` alias) or only `mysql` (older
+      sclorg images) and picks whichever is available.
+
+    ### Yields
+    - **tuple** (`DockerContainer`, `str`):
+      - The running container (so callers can still reach
+        `container.exec()`, `get_container_host_ip()` etc.).
+      - Absolute path to a temporary `[client]` `.cnf` file that is
+        deleted when the context manager exits.
+
+    ### Example
+    >>> with lib.lftest.run_mariadb(
+    ...     'docker.io/library/mariadb:11.8',
+    ...     extra_args='--innodb-buffer-pool-size=33554432',
+    ... ) as (container, defaults_file):
+    ...     result = subprocess.run(
+    ...         ['python3', '../mysql-traffic', f'--defaults-file={defaults_file}'],
+    ...         capture_output=True, text=True,
+    ...     )
+    """
+    is_sclorg = 'sclorg/' in image
+
+    if is_sclorg:
+        cmd = 'run-mysqld --port=3306'
+        if extra_args:
+            cmd = f'{cmd} {extra_args}'
+    else:
+        cmd = f'mariadbd {extra_args}' if extra_args else None
+
+    with run_container(
+        image,
+        env={
+            'MYSQL_ROOT_PASSWORD': 'test',
+            'MYSQL_USER': 'test',
+            'MYSQL_PASSWORD': 'test',
+            'MYSQL_DATABASE': 'test',
+        },
+        ports=[3306],
+        command=cmd,
+        wait_log='port: 3306',
+        wait_log_timeout=180,
+    ) as container:
+        if seed:
+            # 11.x upstream dropped the `mysql` client symlink in favor
+            # of `mariadb`; sclorg c10s ships both. Prefer `mariadb`,
+            # fall back to `mysql` so both families work.
+            container.exec([
+                'sh', '-c',
+                'if command -v mariadb >/dev/null 2>&1; then CLIENT=mariadb; '
+                'else CLIENT=mysql; fi; '
+                f'"$CLIENT" -utest -ptest test -e "{seed}"',
+            ])
+
+        host = container.get_container_host_ip()
+        port = container.get_exposed_port(3306)
+
+        fd, defaults_file = tempfile.mkstemp(suffix='.cnf')
+        try:
+            with os.fdopen(fd, 'w') as f:
+                f.write(
+                    f'[client]\n'
+                    f'host={host}\n'
+                    f'port={port}\n'
+                    f'user=test\n'
+                    f'password=test\n'
+                    f'database=test\n'
+                )
+            yield container, defaults_file
+        finally:
+            try:
+                os.unlink(defaults_file)
+            except OSError:
+                pass
 
 
 def test(args):
