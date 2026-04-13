@@ -8,9 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v3.1.0] - 2026-04-13
+
 ### Added
 
 * disk.py: add `dir_exists()` as the directory-only counterpart to `file_exists()`. The existing `file_exists()` wraps `os.path.isfile()` and therefore returns `False` for directories, which is easy to miss; callers that want to check for a directory should now use `dir_exists()`
+* lftest.py: add `attach_each()` helper for iterating over arbitrary lists (e.g. container image matrices, file-based fixtures) with a caller-supplied action, complementing `attach_tests()` which only works on the `TESTS` dict shape
+* lftest.py: add `attach_tests()` helper that attaches one `test_*` method per entry in a plugin's `TESTS` list, so that test discovery and reporting show the actual number of fixtures instead of a single aggregate test
+* lftest.py: add `run_mariadb()` context manager and `MARIADB_LTS_IMAGES` constant for container-based MariaDB integration tests. Starts a sclorg or upstream MariaDB container, waits for the TCP listener, yields a temporary client option file, and cleans up on exit. `MARIADB_LTS_IMAGES` lists the currently supported MariaDB LTS releases (10.6, 10.11, 11.4, 11.8) so the mysql-* monitoring plugins can iterate over a single canonical matrix
 
 
 ## [v3.0.0] - 2026-04-13
@@ -471,7 +479,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.1.0...HEAD
+[v3.1.0]: https://github.com/Linuxfabrik/lib/compare/v3.0.0...v3.1.0
 [v3.0.0]: https://github.com/Linuxfabrik/lib/compare/v2.4.0...v3.0.0
 [v2.4.0]: https://github.com/Linuxfabrik/lib/compare/v2.3.0...v2.4.0
 [v2.3.0]: https://github.com/Linuxfabrik/lib/compare/v2.2.1...v2.3.0
