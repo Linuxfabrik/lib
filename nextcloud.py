@@ -11,10 +11,11 @@
 """This library collects some Nextcloud related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025100301'
+__version__ = '2026041401'
 
 import json
 import os
+import shutil
 
 from . import disk, shell
 
@@ -23,9 +24,11 @@ def run_occ(path, cmd, _format='json'):
     """
     Run a Nextcloud `occ` command as the owner of `config/config.php`.
 
-    The function determines the UID owning `config/config.php` inside the given
-    Nextcloud installation, then executes `occ` via `sudo -u` using that UID.
-    By default it parses JSON output if requested.
+    The function locates the PHP interpreter on the system and invokes `occ` explicitly as
+    `php <occ> <cmd>`, running via `sudo -u` under the numeric UID that owns
+    `config/config.php`. Calling PHP directly avoids relying on `occ` being marked executable
+    or on its shebang resolving to a working interpreter, which is not always the case on
+    hardened or SCL-based installations.
 
     ### Parameters
     - **path** *(str | os.PathLike)*:
@@ -45,6 +48,8 @@ def run_occ(path, cmd, _format='json'):
         message.
 
     ### Notes
+    - PHP is resolved via `shutil.which('php')`. If no `php` binary is found in `PATH`, the
+      call fails with a descriptive error.
     - Requires passwordless or otherwise configured `sudo` permissions for `sudo -u <uid>` to
       succeed.
     - The command runs as the numeric UID of `config/config.php`’s owner, not by username.
@@ -65,12 +70,19 @@ def run_occ(path, cmd, _format='json'):
     >>> ok in (True, False)
     True
     """
+    php = shutil.which('php')
+    if not php:
+        return False, (
+            'Could not find a `php` interpreter in PATH. Install PHP or make sure it is '
+            'reachable for the user running the plugin.'
+        )
+
     # get the owner of config.php
     user = disk.get_owner(os.path.join(path, 'config/config.php'))
     occ = os.path.join(path, 'occ')
     # When running a command as a UID, many shells require
     # that the `#` be escaped with a backslash (`\`).
-    sudo_cmd = f'sudo -u \\#{user} {occ} {cmd}'
+    sudo_cmd = f'sudo -u \\#{user} {php} {occ} {cmd}'
 
     success, result = shell.shell_exec(sudo_cmd)
     stdout, stderr, rc = result
