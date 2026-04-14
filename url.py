@@ -11,8 +11,9 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041201'
+__version__ = '2026041403'
 
+import base64
 import json
 import re
 import ssl
@@ -306,6 +307,44 @@ def get_latest_version_from_github(user, repo, key='tag_name'):
         return True, False
 
     return True, result.get(key, False)
+
+
+def split_basic_auth(url):
+    """Extract userinfo from `url` and return a `(url, headers)` tuple.
+
+    The returned URL has any `user[:password]@` prefix stripped from
+    its netloc so the credentials never reach the request line or
+    any proxy log. If userinfo is present, `headers` contains the
+    matching `Authorization: Basic ...` entry; otherwise it is an
+    empty dict.
+
+    Pass the returned `url` and `headers` to `lib.url.fetch()` /
+    `lib.url.fetch_json()` so plugins can accept HTTP basic auth via
+    the URL (e.g. `https://user:secret@host/path`) instead of
+    exposing separate `--username` / `--password` arguments.
+
+    >>> split_basic_auth('https://example.com/path')
+    ('https://example.com/path', {})
+    >>> u, h = split_basic_auth('https://alice:secret@example.com/path')
+    >>> u
+    'https://example.com/path'
+    >>> h
+    {'Authorization': 'Basic YWxpY2U6c2VjcmV0'}
+    """
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.username:
+        return url, {}
+
+    user = urllib.parse.unquote(parsed.username)
+    password = urllib.parse.unquote(parsed.password or '')
+    token = txt.to_text(base64.b64encode(txt.to_bytes(f'{user}:{password}')))
+
+    netloc = parsed.hostname or ''
+    if parsed.port is not None:
+        netloc = f'{netloc}:{parsed.port}'
+    stripped = urllib.parse.urlunparse(parsed._replace(netloc=netloc))
+
+    return stripped, {'Authorization': f'Basic {token}'}
 
 
 def strip_tags(html):
