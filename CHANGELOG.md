@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* human.py: `human2seconds()` and `humanduration2seconds()` now accept the Unix-style lowercase day/week markers `d` and `w` in addition to the canonical Linuxfabrik uppercase `D` and `W`. This lets callers parse duration strings from third-party tools that follow the Unix convention (exim `mailq` age literals, `sleep 3d`, systemd timers, etc.) without having to normalize the input first. Uppercase `D`/`W` continue to work exactly as before, so no existing caller breaks
 * nextcloud.py: `run_occ()` no longer relies on the Nextcloud `occ` script being marked executable. It now locates `php` via `shutil.which('php')` and invokes `sudo -u \#<uid> php <occ> <cmd>`, which also works on installations where `occ` lacks the execute bit or its shebang does not resolve to a working PHP interpreter. If no `php` is found in `PATH`, the call returns a descriptive error instead of silently failing
 
 

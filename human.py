@@ -13,7 +13,7 @@ back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041201'
+__version__ = '2026041402'
 
 import math
 
@@ -108,12 +108,18 @@ _DECIMAL_1000_MULTIPLIERS = (
     ('k', 1000),
 )
 
-# Pre-computed unit to seconds mapping for human2seconds
+# Pre-computed unit to seconds mapping for human2seconds.
+# `D`/`W` are the canonical Linuxfabrik markers for day/week, and
+# `d`/`w` are accepted as aliases so third-party tools that use the
+# Unix convention (exim `mailq`, systemd timers, `sleep 3d`, etc.)
+# can be parsed without a normalization wrapper in every caller.
 _UNIT_TO_SECONDS = {
     's': 1,
     'm': 60,
     'h': 3600,
+    'd': 86400,
     'D': 86400,
+    'w': 604800,
     'W': 604800,
     'M': 2592000,
     'Y': 31536000,
@@ -284,7 +290,9 @@ def extract_hrnumbers(s, boundaries=None):
     ['17G', '3M', '4B']
     """
     if boundaries is None:
-        boundaries = ['s', 'm', 'h', 'D', 'W', 'M', 'Y']
+        # `d`/`w` are lowercase aliases for the canonical `D`/`W`
+        # markers; see the note on `_UNIT_TO_SECONDS` above.
+        boundaries = ['s', 'm', 'h', 'd', 'D', 'w', 'W', 'M', 'Y']
 
     extracted = []
     start_idx = None
