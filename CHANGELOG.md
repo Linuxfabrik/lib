@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v3.1.1] - 2026-04-14
+
 ### Changed
 
 * human.py: `human2seconds()` and `humanduration2seconds()` now accept the Unix-style lowercase day/week markers `d` and `w` in addition to the canonical Linuxfabrik uppercase `D` and `W`. This lets callers parse duration strings from third-party tools that follow the Unix convention (exim `mailq` age literals, `sleep 3d`, systemd timers, etc.) without having to normalize the input first. Uppercase `D`/`W` continue to work exactly as before, so no existing caller breaks
@@ -487,7 +492,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.1.1...HEAD
+[v3.1.1]: https://github.com/Linuxfabrik/lib/compare/v3.1.0...v3.1.1
 [v3.1.0]: https://github.com/Linuxfabrik/lib/compare/v3.0.0...v3.1.0
 [v3.0.0]: https://github.com/Linuxfabrik/lib/compare/v2.4.0...v3.0.0
 [v2.4.0]: https://github.com/Linuxfabrik/lib/compare/v2.3.0...v2.4.0
