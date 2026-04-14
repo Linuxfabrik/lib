@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v3.2.0] - 2026-04-14
+
 ### Added
 
 * url.py: add `split_basic_auth(url)` helper that extracts userinfo from a URL like `https://user:secret@host/path`, returns the URL with the userinfo stripped from the netloc, plus a headers dict carrying the matching `Authorization: Basic ...` entry. Pass both into `lib.url.fetch()` / `lib.url.fetch_json()`. This lets apps accept HTTP basic auth via the URL itself instead of exposing separate `--username` / `--password` arguments, which keeps the credentials out of `ps` listings, out of the request line, and out of any proxy access log
@@ -494,7 +499,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.1.1...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.2.0...HEAD
+[v3.2.0]: https://github.com/Linuxfabrik/lib/compare/v3.1.1...v3.2.0
 [v3.1.1]: https://github.com/Linuxfabrik/lib/compare/v3.1.0...v3.1.1
 [v3.1.0]: https://github.com/Linuxfabrik/lib/compare/v3.0.0...v3.1.0
 [v3.0.0]: https://github.com/Linuxfabrik/lib/compare/v2.4.0...v3.0.0
