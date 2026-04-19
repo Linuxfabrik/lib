@@ -11,7 +11,7 @@
 """Extends argparse by new input argument data types on demand."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041003'
+__version__ = '2026041901'
 
 
 # Help text descriptions only - no "Default:" here.
@@ -37,6 +37,13 @@ HELP_TEXTS = {
         'Alert when a new major.minor.patch release is available, even if the current '
         'version is not yet EOL. '
         'Example: running v26.2.7 (not yet EOL) and v26.2.8 is available.'
+    ),
+    '--check-security': (
+        'Alert when the vendor version-check service reports a security-relevant update '
+        'for the currently installed version (security severity, critical vulnerability '
+        'or similar). '
+        'Requires online access to the vendor service. '
+        'Has no effect on plugins that do not implement an upstream security check.'
     ),
     '--count': (
         'Number of consecutive checks the threshold must be exceeded before alerting.'

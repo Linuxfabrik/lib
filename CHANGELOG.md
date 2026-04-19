@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Added
+
+* args.py: add a generic `--check-security` help text so version-style plugins can offer an upstream security-update check with a uniform parameter description
 
 
 ## [v3.2.0] - 2026-04-14
