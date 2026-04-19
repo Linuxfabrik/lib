@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v3.3.0] - 2026-04-19
+
 ### Added
 
 * args.py: add a generic `--check-security` help text so version-style plugins can offer an upstream security-update check with a uniform parameter description
@@ -501,7 +506,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.3.0...HEAD
+[v3.3.0]: https://github.com/Linuxfabrik/lib/compare/v3.2.0...v3.3.0
 [v3.2.0]: https://github.com/Linuxfabrik/lib/compare/v3.1.1...v3.2.0
 [v3.1.1]: https://github.com/Linuxfabrik/lib/compare/v3.1.0...v3.1.1
 [v3.1.0]: https://github.com/Linuxfabrik/lib/compare/v3.0.0...v3.1.0
