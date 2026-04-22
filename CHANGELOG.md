@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v3.4.0] - 2026-04-22
+
 ### Added
 
 * time.py: add `macro2timestr(s, format='')` to expand time macros in a string. Supports `{today}`, `{yesterday}` (rendered with the given format, default ISO 8601) and single strftime components (`{%Y}`, `{%y}`, `{%m}`, `{%d}`, `{%H}`, `{%M}`, `{%S}`). Unknown `{...}` tokens pass through unchanged
@@ -508,7 +513,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.4.0...HEAD
+[v3.4.0]: https://github.com/Linuxfabrik/lib/compare/v3.3.0...v3.4.0
 [v3.3.0]: https://github.com/Linuxfabrik/lib/compare/v3.2.0...v3.3.0
 [v3.2.0]: https://github.com/Linuxfabrik/lib/compare/v3.1.1...v3.2.0
 [v3.1.1]: https://github.com/Linuxfabrik/lib/compare/v3.1.0...v3.1.1
