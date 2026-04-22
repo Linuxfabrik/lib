@@ -11,9 +11,10 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025052801'
+__version__ = '2026042201'
 
 import datetime
+import re
 import sys
 import time
 
@@ -94,6 +95,60 @@ def get_weekday(epoch):
     """
     _WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
     return _WEEKDAYS[time.localtime(epoch).tm_wday]
+
+
+_MACRO_COMPONENT = re.compile(r'\{%([YymdHMS])\}')
+
+
+def macro2timestr(s, format=''):
+    """
+    Expand time macros in a string.
+
+    Supported macros (case-sensitive, strftime-faithful):
+
+    - `{today}`     → current date, formatted with `format` (default `%Y-%m-%d`).
+    - `{yesterday}` → current date minus one day, formatted with `format`.
+    - `{%Y}` / `{%y}` → 4-digit / 2-digit year of `now`.
+    - `{%m}`        → month of `now` (01-12).
+    - `{%d}`        → day of `now` (01-31).
+    - `{%H}`        → hour of `now` (00-23).
+    - `{%M}`        → minute of `now` (00-59).
+    - `{%S}`        → second of `now` (00-59).
+
+    Unknown tokens are passed through unchanged.
+
+    ### Parameters
+    - **s** (`str`): Template string.
+    - **format** (`str`, optional): strftime pattern used for `{today}`
+      and `{yesterday}`. Defaults to ISO 8601 date `%Y-%m-%d`.
+
+    ### Returns
+    - **str**: `s` with all recognised macros replaced.
+
+    ### Example
+    >>> # Assuming today is 2026-04-22:
+    >>> macro2timestr('/var/log/laravel/laravel-{today}.log')
+    '/var/log/laravel/laravel-2026-04-22.log'
+    >>> macro2timestr('C:\\\\logs\\\\{%Y}{%m}{%d}.log')
+    'C:\\\\logs\\\\20260422.log'
+    >>> macro2timestr('{today}', format='%Y%m%d')
+    '20260422'
+    >>> macro2timestr('{yesterday}', format='%d.%m.%Y')
+    '21.04.2026'
+    """
+    default_format = format or '%Y-%m-%d'
+    base = now(as_type='datetime')
+
+    result = s.replace('{today}', base.strftime(default_format))
+    result = result.replace(
+        '{yesterday}',
+        (base - datetime.timedelta(days=1)).strftime(default_format),
+    )
+
+    return _MACRO_COMPONENT.sub(
+        lambda match: base.strftime('%' + match.group(1)),
+        result,
+    )
 
 
 def now(as_type=''):
