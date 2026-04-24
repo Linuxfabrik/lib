@@ -12,7 +12,7 @@
 needed by LibreNMS check plugins."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026042401'
 
 from . import (
     base,  # pylint: disable=C0413
@@ -124,12 +124,17 @@ def get_state(librestate, severity='crit'):
     """
     Translate LibreNMS service state to a Nagios-compatible state.
 
-    LibreNMS returns a custom service state where:
-      - 0 = OK
-      - 1 = Alert
-      - 2 = Acknowledged
+    LibreNMS encodes the alert lifecycle in `alerts.state` (see
+    `LibreNMS/Enum/AlertState.php`):
+      - 0 = CLEAR / RECOVERED
+      - 1 = ACTIVE
+      - 2 = ACKNOWLEDGED
+      - 3 = WORSE
+      - 4 = BETTER
+      - 5 = CHANGED
 
-    This function maps these LibreNMS states to Nagios exit codes.
+    ACTIVE, WORSE, BETTER and CHANGED all represent an open, notifiable
+    alert, so they map to WARN/CRIT. ACKNOWLEDGED and CLEAR map to OK.
 
     ### Parameters
     - **librestate** (`int`):
@@ -154,8 +159,10 @@ def get_state(librestate, severity='crit'):
     1
     >>> get_state(1, severity='crit')
     2
+    >>> get_state(3, severity='crit')
+    2
     """
 
-    if librestate != 1:
+    if librestate not in (1, 3, 4, 5):
         return STATE_OK
     return STATE_CRIT if severity == 'crit' else STATE_WARN

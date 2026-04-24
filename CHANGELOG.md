@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Fixed
+
+* librenms.py: `get_state()` now also maps the LibreNMS alert states `WORSE` (3), `BETTER` (4) and `CHANGED` (5) to WARN/CRIT. Previously only `ACTIVE` (1) was treated as an alerting state, so open alerts in any of those three states were silently reported as OK. `WORSE` and `BETTER` exist in LibreNMS since 1.54 (July 2019); `CHANGED` was added in LibreNMS 25.2.0 (February 2025) and is now triggered whenever the alert `diff` detects a change
 
 
 ## [v3.4.0] - 2026-04-22
