@@ -29,6 +29,11 @@ A mature, production-grade Python library collection providing 35+ modules with 
 The library requires Python 3.9+ and runs on every platform.
 
 
+## Documentation
+
+Full documentation is available at [linuxfabrik.github.io/lib](https://linuxfabrik.github.io/lib/). It is automatically built and deployed on every push to `main`.
+
+
 ## Installation
 
 Add `linuxfabrik-lib` as a dependency to your project, or install it manually:
@@ -36,11 +41,6 @@ Add `linuxfabrik-lib` as a dependency to your project, or install it manually:
 ```bash
 pip install --user linuxfabrik-lib
 ```
-
-
-## Documentation
-
-Full API documentation is available at [linuxfabrik.github.io/lib](https://linuxfabrik.github.io/lib/). It is automatically built and deployed on every push to `main`.
 
 
 ## Design Principles
