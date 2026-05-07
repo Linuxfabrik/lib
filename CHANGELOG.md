@@ -8,13 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
+tbd
 
-* **ci**: Scope `GITHUB_TOKEN` permissions in the dependabot-auto-merge workflow to the job level, with top-level now `read-all`. Matches the pattern used by the other Linuxfabrik workflows and addresses the OpenSSF Scorecard `Token-Permissions` finding.
+
+## [v3.4.1] - 2026-05-07
 
 ### Fixed
 
 * librenms.py: `get_state()` now also maps the LibreNMS alert states `WORSE` (3), `BETTER` (4) and `CHANGED` (5) to WARN/CRIT. Previously only `ACTIVE` (1) was treated as an alerting state, so open alerts in any of those three states were silently reported as OK. `WORSE` and `BETTER` exist in LibreNMS since 1.54 (July 2019); `CHANGED` was added in LibreNMS 25.2.0 (February 2025) and is now triggered whenever the alert `diff` detects a change
+
+### Security
+
+* **ci**: Scope `GITHUB_TOKEN` permissions in the dependabot-auto-merge workflow to the job level, with top-level now `read-all`. Matches the pattern used by the other Linuxfabrik workflows and addresses the OpenSSF Scorecard `Token-Permissions` finding.
 
 
 ## [v3.4.0] - 2026-04-22
@@ -519,7 +524,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.4.1...HEAD
+[v3.4.1]: https://github.com/Linuxfabrik/lib/compare/v3.4.0...v3.4.1
 [v3.4.0]: https://github.com/Linuxfabrik/lib/compare/v3.3.0...v3.4.0
 [v3.3.0]: https://github.com/Linuxfabrik/lib/compare/v3.2.0...v3.3.0
 [v3.2.0]: https://github.com/Linuxfabrik/lib/compare/v3.1.1...v3.2.0
