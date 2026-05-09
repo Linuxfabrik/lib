@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041201'
+__version__ = '2026050901'
 
 import random
 import re
@@ -128,14 +128,15 @@ SOCKETSTR = {
 
 
 def _socket_fetch(
-    open_socket_func, connect_args, payload=None, timeout=3, socket_name='socket'
+    open_socket_func, connect_args, payload=None, dialog=None, timeout=3,
+    socket_name='socket',
 ):
     """
     Fetch data via an open socket connection.
 
-    This internal helper function opens a socket using a provided callable, optionally sends a
-    payload, and returns the received response. It supports both TCP/IP and Unix domain sockets
-    transparently.
+    This internal helper function opens a socket using a provided callable and runs either a
+    single send-receive roundtrip (banner mode) or a multi-step request-response conversation
+    (dialog mode). It supports both TCP/IP and Unix domain sockets transparently.
 
     ### Parameters
     - **open_socket_func** (`callable`):
@@ -143,20 +144,29 @@ def _socket_fetch(
     - **connect_args** (`tuple` or `str`):
       Arguments passed to the socket's `connect()` method.
     - **payload** (`bytes`, optional):
-      A payload to send after connecting. If `None`, no payload is sent.
+      Banner mode only. A payload to send after connecting. If `None`, no payload is sent.
+      Mutually exclusive with `dialog`.
+    - **dialog** (`list` of `(bytes_or_None, str_or_None)` tuples, optional):
+      Dialog mode. Each step is `(send, expect)`:
+        * `send` (`bytes` or `None`): payload to write. `None` skips the send.
+        * `expect` (`str` or `None`): regex matched against the cumulative recv buffer for the
+          step. `None` records an empty response and continues to the next step.
+      No half-close is performed, so the server can keep reading further sends. Mutually
+      exclusive with `payload`.
     - **timeout** (`int`, optional):
       Socket timeout in seconds. Defaults to `3`.
     - **socket_name** (`str`, optional):
       A human-readable name used in error messages for context. Defaults to `"socket"`.
 
     ### Returns
-    - **tuple** (`bool`, `str`):
-      - `True`, followed by the received response text if successful.
-      - `False`, followed by an error message if failed.
+    - **tuple** (`bool`, `str` or `list`):
+      - Banner mode: `(True, response_str)` on success.
+      - Dialog mode: `(True, [response_str, ...])` with one entry per step, in order.
+      - `(False, error_message)` on failure.
 
     ### Notes
     - Timeout and socket errors are handled gracefully.
-    - Response is decoded into UTF-8 text with replacement for decode errors.
+    - Responses are decoded into UTF-8 text with replacement for decode errors.
     - This is an internal function intended for use by `fetch()`, `fetch_socket()`, and similar
       functions.
 
@@ -165,10 +175,50 @@ def _socket_fetch(
     ...     open_socket_func, connect_args, payload=b'ping'
     ... )
     """
+    if payload is not None and dialog is not None:
+        return False, f'{socket_name}: payload and dialog are mutually exclusive.'
+
     try:
         with open_socket_func() as s:
             s.settimeout(timeout)
             s.connect(connect_args)
+
+            if dialog is not None:
+                # Multi-step conversation: send + read-until-pattern per step. No half-close,
+                # so subsequent sends still reach the server.
+                results = []
+                for send_bytes, expect in dialog:
+                    if send_bytes is not None:
+                        try:
+                            s.sendall(send_bytes)
+                        except Exception as e:
+                            return False, f'Could not send payload on {socket_name}: {e}'
+
+                    if expect is None:
+                        results.append('')
+                        continue
+
+                    pattern = re.compile(expect, re.MULTILINE)
+                    buffer = ''
+                    while True:
+                        try:
+                            chunk = s.recv(1024)
+                        except socket.timeout:
+                            return False, (
+                                f'{socket_name} timed out waiting for pattern {expect!r}.'
+                            )
+                        except OSError as e:
+                            return False, f'Cannot fetch data from {socket_name}: {e}'
+                        if not chunk:
+                            return False, (
+                                f'{socket_name} closed before pattern {expect!r} matched.'
+                            )
+                        buffer += chunk.decode('utf-8', errors='replace')
+                        if pattern.search(buffer):
+                            results.append(buffer)
+                            break
+
+                return True, results
 
             if payload is not None:
                 try:
@@ -199,12 +249,13 @@ def _socket_fetch(
         return False, f'Error using {socket_name}: {e}'
 
 
-def fetch(host, port, msg=None, timeout=3, ipv6=False):
+def fetch(host, port, msg=None, dialog=None, timeout=3, ipv6=False, tls=False):
     """
     Fetch data via a TCP/IP socket connection.
 
-    This function opens a socket connection to a given host and port, optionally sends a message,
-    and returns the received response. Supports both IPv4 and IPv6 connections.
+    This function opens a socket connection to a given host and port and runs either a single
+    send-receive roundtrip (banner mode, via `msg`) or a multi-step conversation (dialog mode,
+    via `dialog`). Supports IPv4, IPv6, and TLS-wrapped sockets.
 
     ### Parameters
     - **host** (`str`):
@@ -212,35 +263,62 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
     - **port** (`int`):
       Target TCP port number.
     - **msg** (`bytes`, optional):
-      A message to send after connecting. If `None`, no message is sent.
+      Banner mode. A message sent once after connecting. The function then half-closes the
+      write side and reads until EOF. Mutually exclusive with `dialog`.
+    - **dialog** (`list` of `(bytes_or_None, str_or_None)` tuples, optional):
+      Dialog mode. A list of `(send, expect)` steps walked in order. `expect` is a regex
+      matched against the per-step recv buffer; `None` skips reading. No half-close is
+      performed, so multi-step protocols (SMTP, NUT, IMAP, POP3, FTP, ...) work. Mutually
+      exclusive with `msg`. See `_socket_fetch` for details.
     - **timeout** (`int`, optional):
       Socket timeout in seconds. Defaults to `3`.
     - **ipv6** (`bool`, optional):
-      Whether to use an IPv6 connection instead of IPv4. Defaults to `False`.
+      Use an IPv6 connection instead of IPv4. Defaults to `False`.
+    - **tls** (`bool`, optional):
+      Wrap the socket in a TLS 1.2+ context with SNI. Defaults to `False`. The legacy
+      `fetch_ssl()` helper is equivalent to `fetch(..., tls=True)` and remains available for
+      backward compatibility.
 
     ### Returns
-    - **tuple** (`bool`, `str`):
-      - `True`, followed by the received response text if successful.
-      - `False`, followed by an error message if failed.
+    - **tuple** (`bool`, `str` or `list`):
+      - Banner mode: `(True, response_str)` on success.
+      - Dialog mode: `(True, [response_str, ...])` with one entry per step.
+      - `(False, error_message)` on failure.
 
     ### Notes
     - Timeout and socket errors are handled gracefully.
-    - Response is decoded into text.
+    - Responses are decoded into text.
     - IPv6 addresses are supported when `ipv6=True`.
 
     ### Example
     >>> success, response = fetch('example.com', 80)
+    >>> ok, [hello, vars_block, _] = fetch(
+    ...     '127.0.0.1', 3493,
+    ...     dialog=[
+    ...         (None, r'^OK\\b|^ERR\\b'),
+    ...         (b'LIST VAR myups\\n', r'END LIST VAR myups'),
+    ...         (b'LOGOUT\\n', r'OK Goodbye'),
+    ...     ],
+    ... )
     """
 
     def open_tcp_socket():
         family = AF_INET6 if ipv6 else AF_INET
-        return socket.socket(family, SOCK_TCP)
+        raw_sock = socket.socket(family, SOCK_TCP)
+        if not tls:
+            return raw_sock
+        # PROTOCOL_TLS_CLIENT automatically disables SSLv2/3 and TLSv1.0/1.1 on recent
+        # OpenSSL builds; minimum_version then enforces TLS 1.2+ across all builds.
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        return context.wrap_socket(raw_sock, server_hostname=host)
 
     try:
         return _socket_fetch(
             open_tcp_socket,
             (host, int(port)),
             payload=msg,
+            dialog=dialog,
             timeout=timeout,
             socket_name=f'TCP socket {host}:{port}',
         )
@@ -249,30 +327,33 @@ def fetch(host, port, msg=None, timeout=3, ipv6=False):
         return False, f'Could not open TCP socket {host}:{port}: {e}'
 
 
-def fetch_socket(sock_file, cmd):
+def fetch_socket(sock_file, cmd=None, dialog=None, timeout=3):
     """
     Fetch data via a Unix domain socket connection.
 
-    This function opens a connection to a Unix socket file, optionally sends a command,
-    and returns the received response. It is similar to `fetch()` but operates over local
-    filesystem sockets.
+    This function opens a connection to a Unix socket file and runs either a single
+    send-receive roundtrip (`cmd`) or a multi-step conversation (`dialog`). It is similar to
+    `fetch()` but operates over local filesystem sockets.
 
     ### Parameters
     - **sock_file** (`str`):
       Path to the Unix domain socket file.
     - **cmd** (`bytes`, optional):
-      A command to send after connecting. If `None`, no command is sent.
+      Banner mode. A command sent once after connecting. Mutually exclusive with `dialog`.
+    - **dialog** (`list` of `(bytes_or_None, str_or_None)` tuples, optional):
+      Dialog mode. See `fetch()` for the step format. Mutually exclusive with `cmd`.
     - **timeout** (`int`, optional):
       Socket timeout in seconds. Defaults to `3`.
 
     ### Returns
-    - **tuple** (`bool`, `str`):
-      - `True`, followed by the received response text if successful.
-      - `False`, followed by an error message if failed.
+    - **tuple** (`bool`, `str` or `list`):
+      - Banner mode: `(True, response_str)` on success.
+      - Dialog mode: `(True, [response_str, ...])` with one entry per step.
+      - `(False, error_message)` on failure.
 
     ### Notes
     - Timeout and socket errors are handled gracefully.
-    - Response is decoded into text.
+    - Responses are decoded into text.
     - Unix domain sockets must exist and have appropriate permissions.
 
     ### Example
@@ -287,6 +368,8 @@ def fetch_socket(sock_file, cmd):
             open_unix_socket,
             sock_file,
             payload=cmd,
+            dialog=dialog,
+            timeout=timeout,
             socket_name=f'Unix socket "{sock_file}"',
         )
 
@@ -305,6 +388,11 @@ def fetch_socket(sock_file, cmd):
 def fetch_ssl(host, port, msg=None, timeout=3):
     """
     Fetch data via an SSL/TLS encrypted TCP socket connection.
+
+    .. deprecated:: 2026050901
+        Use `fetch(host, port, msg=..., tls=True)` instead. `fetch()` covers banner mode,
+        dialog mode, IPv4/IPv6 and TLS in a single entry point. `fetch_ssl()` might be removed
+        in a future major release and is unmaintained.
 
     This function opens a secure SSL/TLS socket connection to a given host and port, optionally
     sends a message, and returns the received response. It uses the system's default trusted CA
@@ -326,6 +414,8 @@ def fetch_ssl(host, port, msg=None, timeout=3):
       - `False`, followed by an error message if failed.
 
     ### Notes
+    - Deprecated wrapper kept for backward compatibility. Prefer `fetch(..., tls=True)` in new
+      code; both call paths share the same TLS context.
     - Timeout, SSL, and socket errors are handled gracefully.
     - Response is decoded into UTF-8 text.
     - SSL certificate validation is performed automatically based on the system's trusted CAs.

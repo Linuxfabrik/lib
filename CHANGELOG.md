@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Added
+
+* net.py: `fetch()` and `fetch_socket()` gain an optional `dialog` parameter for multi-step request/response conversations (regex-driven, no half-close). Enables clean implementations of plugins for protocols like NUT, SMTP, POP3, IMAP and FTP without re-implementing socket handling per plugin
+* net.py: `fetch()` gains a `tls=True` switch that wraps the socket in a TLS 1.2+ context with SNI, equivalent to calling `fetch_ssl()`. The legacy `fetch_ssl()` helper stays for backward compatibility but is now marked deprecated in its docstring
 
 
 ## [v3.4.1] - 2026-05-07
