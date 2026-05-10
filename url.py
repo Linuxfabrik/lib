@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051001'
+__version__ = '2026051002'
 
 import base64
 import json
@@ -19,7 +19,12 @@ import re
 import ssl
 import urllib.parse
 
-import httpx
+# httpx is imported lazily inside fetch() so unrelated plugins that pull `lib.url` only
+# transitively (e.g. via `lib.net`) keep working on hosts where httpx is not installed yet
+try:
+    import httpx
+except ImportError:
+    httpx = None
 
 from . import txt
 
@@ -215,6 +220,13 @@ def fetch(
         header = {}
     if data is None:
         data = {}
+
+    if httpx is None:
+        return False, (
+            'Python module "httpx" is not installed. '
+            'Install it with `pip install \'httpx[http2]\'` or '
+            '`dnf install python3-httpx python3-h2`.'
+        )
 
     if http_version == '3':
         return False, f'HTTP/3 not implemented yet, while fetching {_redact_url(url)}'
