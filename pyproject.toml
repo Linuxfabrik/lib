@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "linuxfabrik-lib"
-version = "3.4.1"
+version = "3.5.0"
 description = "Python libraries used in various Linuxfabrik projects, including the 'Linuxfabrik Monitoring Plugins' project."
 readme = "README.md"
 authors = [
@@ -38,6 +38,7 @@ classifiers = [
 keywords = ["lib", "libs", "monitoring", "monitoring plugins", "icinga", "nagios"]
 dependencies = [
     "beautifulsoup4",
+    "httpx[http2]",
     "lxml",
     "netifaces",
     "psutil",

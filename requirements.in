@@ -8,6 +8,7 @@
 #   python3.9 -m pip install 'pip<25.1'
 
 beautifulsoup4
+httpx[http2]
 lxml --only-binary=lxml
 netifaces
 psutil
