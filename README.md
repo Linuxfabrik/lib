@@ -79,7 +79,7 @@ These libraries are built with a clear set of priorities:
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
 | **cache.py** | A simple SQLite-based key-value store with optional key expiration. Used for persisting state between plugin runs. | `get()`, `set()` |
-| **db_mysql.py** | MySQL/MariaDB client with connection management, query execution, and privilege checking. | `connect()`, `select()`, `check_select_privileges()` |
+| **db_mysql.py** | MySQL/MariaDB client with connection management, query execution, and privilege checking. | `connect()`, `select()`, `check_privileges()` |
 | **db_sqlite.py** | Full SQLite interface: table/index creation, CRUD operations, CSV import, regex support, and automatic load computation for time-series data. | `connect()`, `select()`, `insert()`, `create_table()`, `compute_load()`, `import_csv()` |
 
 

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* db_mysql.py: `check_privileges(conn, *required)` replaces the old `check_select_privileges()`. Without arguments it keeps the previous functional smoke test (`SELECT VERSION()`, works with `GRANT USAGE` alone). With arguments it parses `SHOW GRANTS FOR CURRENT_USER()` and reports any privilege that is missing for the current user, with `ALL PRIVILEGES` and `SUPER` short-circuiting to success. Enables plugins to declare their actual privilege requirements (for example `REPLICATION CLIENT`, `SLAVE MONITOR`, `SELECT`)
 * net.py: `fetch()` and `fetch_socket()` gain an optional `dialog` parameter for multi-step request/response conversations (regex-driven, no half-close). Enables clean implementations of plugins for protocols like NUT, SMTP, POP3, IMAP and FTP without re-implementing socket handling per plugin
 * net.py: `fetch()` gains a `tls=True` switch that wraps the socket in a TLS 1.2+ context with SNI, equivalent to calling `fetch_ssl()`. The legacy `fetch_ssl()` helper stays for backward compatibility but is now marked deprecated in its docstring
 * url.py: `fetch()` and `fetch_json()` now speak HTTP/1.0, HTTP/1.1 and HTTP/2 via `httpx`, with new `http_version`, `tls_min` and `tls_max` parameters for protocol pinning. `extended=True` now also returns the negotiated TLS version, ALPN protocol, total request time and the server certificate in DER form, ready for downstream certificate inspection. `http_version='3'` is reserved and currently returns a clear error until QUIC support lands. Existing callers and parameters are unchanged
@@ -22,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * url.py: `fetch()` with HTTP digest authentication and `insecure=True` now actually disables certificate verification. Previously the digest auth path silently lost the SSL context
 * url.py: `fetch()` with `no_proxy=True` now applies the `timeout` parameter. Previously the no-proxy path called `opener.open(request)` without a timeout, so hangs were only caught by the outer plugin wrapper
+
+### Removed
+
+* db_mysql.py: `check_select_privileges()` was removed. Use `check_privileges(conn)` for the same smoke test, or `check_privileges(conn, 'SELECT', ...)` for an explicit grant check. Breaking change for any downstream consumer that called it directly
 
 
 ## [v3.4.1] - 2026-05-07

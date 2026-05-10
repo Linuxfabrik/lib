@@ -15,8 +15,9 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026051001'
 
+import re
 import sys
 
 from .globals import STATE_UNKNOWN
@@ -28,42 +29,75 @@ except ImportError:
     sys.exit(STATE_UNKNOWN)
 
 
-def check_select_privileges(conn):
+def check_privileges(conn, *required):
     """
-    Verify if the database connection has sufficient privileges to run SELECT statements.
+    Verify the connected MySQL/MariaDB user has the required privileges.
 
-    This function attempts a simple `SELECT version()` query against the connected database.
-    If the query succeeds and returns results, SELECT privileges are assumed to be granted.
-    Otherwise, it indicates insufficient permissions.
+    Without arguments, runs a functional smoke test (`SELECT VERSION()`), which succeeds with
+    `GRANT USAGE` alone. This is sufficient for plugins that only call `SHOW GLOBAL VARIABLES`
+    or `SHOW GLOBAL STATUS`, which do not need `SELECT` on any table.
+
+    With arguments (e.g. `'SELECT'`, `'REPLICATION CLIENT'`, `'SLAVE MONITOR'`, `'PROCESS'`),
+    parses `SHOW GRANTS FOR CURRENT_USER()` and verifies that every requested privilege is
+    granted (case-insensitive, word-boundary match). The pseudo-grants `ALL PRIVILEGES` and
+    `SUPER` short-circuit to success.
 
     ### Parameters
-    - **conn** (`mysql.connector.connection.MySQLConnection` or similar):
+    - **conn** (`Connection`):
       An active database connection object.
+    - **\\*required** (`str`):
+      Zero or more privilege names to verify.
 
     ### Returns
     - **tuple** (`bool`, `any`):
-      - First element (`bool`): `True` if SELECT succeeded, `False` otherwise.
-      - Second element (`any`): Query result if successful, or an error message string if failed.
+      - On success: `(True, <smoke-test row or list of grant rows>)`.
+      - On failure: `(False, <error message string>)`.
 
-    ### Notes
-    - A failure usually indicates missing `SELECT` privileges on the connected database user.
-    - The actual result returned on success is the database server's version string inside a
-      dictionary.
+    Compatible with `lib.base.coe()`.
 
     ### Example
-    >>> success, version = check_select_privileges(conn)
-    >>> if success:
-    >>>     print(f"Connected to MySQL version: {version['version']}")
-    >>> else:
-    >>>     print(version)
+    Smoke test (login + USAGE):
+    >>> success, _ = check_privileges(conn)
+
+    Explicit privilege check:
+    >>> success, _ = check_privileges(conn, 'REPLICATION CLIENT')
+    >>> success, _ = check_privileges(conn, 'SELECT', 'PROCESS')
     """
-    success, result = select(conn, 'SELECT VERSION() AS version;', fetchone=True)
-    if success and result:
-        return True, result
-    return (
-        False,
-        'You probably do not have sufficient privileges to run SELECT statements.',
+    if not required:
+        success, result = select(conn, 'SELECT VERSION() AS version;', fetchone=True)
+        if success and result:
+            return True, result
+        return (
+            False,
+            'You probably do not have sufficient privileges to connect to the database '
+            '(USAGE) or to run SELECT statements.',
+        )
+
+    success, rows = select(conn, 'SHOW GRANTS FOR CURRENT_USER();')
+    if not success:
+        return False, rows
+    grants_text = ' '.join(
+        ' '.join(str(v) for v in row.values()) for row in rows or []
     )
+    if re.search(r'\bALL PRIVILEGES\b', grants_text, re.IGNORECASE) or re.search(
+        r'\bSUPER\b', grants_text, re.IGNORECASE
+    ):
+        return True, rows
+    missing = [
+        priv
+        for priv in required
+        if not re.search(
+            r'\b' + re.escape(priv) + r'\b', grants_text, re.IGNORECASE
+        )
+    ]
+    if missing:
+        return (
+            False,
+            'The connected user is missing the following privileges: '
+            + ', '.join(missing)
+            + '.',
+        )
+    return True, rows
 
 
 def close(conn):
