@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051001'
+__version__ = '2026051002'
 
 import re
 import sys
@@ -37,16 +37,26 @@ def check_privileges(conn, *required):
     `GRANT USAGE` alone. This is sufficient for plugins that only call `SHOW GLOBAL VARIABLES`
     or `SHOW GLOBAL STATUS`, which do not need `SELECT` on any table.
 
-    With arguments (e.g. `'SELECT'`, `'REPLICATION CLIENT'`, `'SLAVE MONITOR'`, `'PROCESS'`),
-    parses `SHOW GRANTS FOR CURRENT_USER()` and verifies that every requested privilege is
-    granted (case-insensitive, word-boundary match). The pseudo-grants `ALL PRIVILEGES` and
-    `SUPER` short-circuit to success.
+    With arguments, parses `SHOW GRANTS FOR CURRENT_USER()` and verifies that every requested
+    privilege is granted (case-insensitive, word-boundary match). Each positional argument is
+    either:
+
+    - a `str` like `'SELECT'`, `'REPLICATION CLIENT'`, `'PROCESS'`: that exact privilege must
+      be present.
+    - a `list` or `tuple` of strings: any-of semantics; at least one of the listed privileges
+      must be present. Useful for cross-version aliases (e.g. MariaDB 10.5+ split
+      `REPLICATION CLIENT` into `BINLOG MONITOR` / `SLAVE MONITOR`, and MariaDB 11+ aliased
+      `SLAVE MONITOR` to `REPLICA MONITOR`).
+
+    The pseudo-grants `ALL PRIVILEGES` and `SUPER` short-circuit to success regardless of the
+    requested set.
 
     ### Parameters
     - **conn** (`Connection`):
       An active database connection object.
-    - **\\*required** (`str`):
-      Zero or more privilege names to verify.
+    - **\\*required** (`str` or `list[str]` or `tuple[str, ...]`):
+      Zero or more privilege requirements. Strings are AND-ed together; a list/tuple denotes
+      an any-of group within that AND chain.
 
     ### Returns
     - **tuple** (`bool`, `any`):
@@ -59,9 +69,24 @@ def check_privileges(conn, *required):
     Smoke test (login + USAGE):
     >>> success, _ = check_privileges(conn)
 
-    Explicit privilege check:
-    >>> success, _ = check_privileges(conn, 'REPLICATION CLIENT')
+    Single privilege:
+    >>> success, _ = check_privileges(conn, 'SELECT')
+
+    Multiple privileges (AND):
     >>> success, _ = check_privileges(conn, 'SELECT', 'PROCESS')
+
+    Cross-version aliases (any-of):
+    >>> success, _ = check_privileges(
+    ...     conn,
+    ...     ['REPLICATION CLIENT', 'SLAVE MONITOR', 'REPLICA MONITOR'],
+    ... )
+
+    Combined:
+    >>> success, _ = check_privileges(
+    ...     conn,
+    ...     'SELECT',
+    ...     ['REPLICATION CLIENT', 'SLAVE MONITOR'],
+    ... )
     """
     if not required:
         success, result = select(conn, 'SELECT VERSION() AS version;', fetchone=True)
@@ -83,13 +108,19 @@ def check_privileges(conn, *required):
         r'\bSUPER\b', grants_text, re.IGNORECASE
     ):
         return True, rows
-    missing = [
-        priv
-        for priv in required
-        if not re.search(
-            r'\b' + re.escape(priv) + r'\b', grants_text, re.IGNORECASE
+
+    def _has(privilege):
+        return bool(
+            re.search(r'\b' + re.escape(privilege) + r'\b', grants_text, re.IGNORECASE)
         )
-    ]
+
+    missing = []
+    for req in required:
+        if isinstance(req, (list, tuple)):
+            if not any(_has(p) for p in req):
+                missing.append(' or '.join(req))
+        elif not _has(req):
+            missing.append(req)
     if missing:
         return (
             False,
