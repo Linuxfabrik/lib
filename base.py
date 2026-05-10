@@ -11,8 +11,9 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051001'
+__version__ = '2026051002'
 
+import html
 import numbers
 import operator
 import os
@@ -609,6 +610,11 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     ### Notes
     - Any `|` characters inside the message are replaced with `!` to avoid breaking Nagios plugin
       output format.
+    - The characters `&`, `<` and `>` are HTML-escaped (`&amp;`, `&lt;`, `&gt;`) so the plugin
+      output is safe to render in HTML-based web UIs (Icinga Web, Naemon-Adagios, etc.) without
+      destroying the source characters: thresholds like `<= 10` and shell snippets like
+      `echo 1 > /proc/sys/...` survive intact and the web UI decodes the entities back to the
+      original characters when rendering.
     - Sensitive information like passwords, tokens, and keys is automatically redacted.
     - `perfdata`, if provided, must follow monitoring plugin standards for performance metrics.
 
@@ -622,12 +628,10 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     (and exits with code 2)
 
     """
-    msg = (
-        txt.sanitize_sensitive_data(msg.strip())
-        .replace('|', '!')
-        .replace('<', "'")
-        .replace('>', "'")
-    )
+    msg = html.escape(
+        txt.sanitize_sensitive_data(msg.strip()),
+        quote=False,
+    ).replace('|', '!')
     if always_ok and msg:
         # Instead of splitlines(), we just split('\n', 1), so only first line is touched.
         parts = msg.split('\n', 1)
