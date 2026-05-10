@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051002'
+__version__ = '2026051003'
 
 import re
 import sys
@@ -129,6 +129,17 @@ def check_privileges(conn, *required):
             + '.',
         )
     return True, rows
+
+
+def check_select_privileges(conn):
+    """
+    Deprecated. Backwards-compatible shim for already-deployed plugins that still call
+    `check_select_privileges()` against an upgraded lib. Equivalent to
+    `check_privileges(conn)` (the functional `SELECT VERSION()` smoke test). Will be
+    removed once a plugin re-deployment cycle has propagated everywhere; new code
+    should call `check_privileges()` directly.
+    """
+    return check_privileges(conn)
 
 
 def close(conn):

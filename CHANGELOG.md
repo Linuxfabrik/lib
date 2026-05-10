@@ -25,9 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * url.py: `fetch()` with HTTP digest authentication and `insecure=True` now actually disables certificate verification. Previously the digest auth path silently lost the SSL context
 * url.py: `fetch()` with `no_proxy=True` now applies the `timeout` parameter. Previously the no-proxy path called `opener.open(request)` without a timeout, so hangs were only caught by the outer plugin wrapper
 
-### Removed
+### Deprecated
 
-* db_mysql.py: `check_select_privileges()` was removed. Use `check_privileges(conn)` for the same smoke test, or `check_privileges(conn, 'SELECT', ...)` for an explicit grant check. Breaking change for any downstream consumer that called it directly
+* db_mysql.py: `check_select_privileges()` is deprecated and now a thin backwards-compatible shim that delegates to `check_privileges(conn)`. New code should call `check_privileges()` directly. The shim exists to keep already-deployed plugins working when the lib is upgraded ahead of the plugin set; it will be removed in a future major release
 
 
 ## [v3.4.1] - 2026-05-07
