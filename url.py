@@ -11,12 +11,14 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051002'
+__version__ = '2026051003'
 
 import base64
 import json
 import re
+import socket
 import ssl
+import time
 import urllib.parse
 
 # httpx is imported lazily inside fetch() so unrelated plugins that pull `lib.url` only
@@ -25,6 +27,10 @@ try:
     import httpx
 except ImportError:
     httpx = None
+try:
+    import httpcore
+except ImportError:
+    httpcore = None
 
 from . import txt
 
@@ -94,6 +100,145 @@ def _capture_tls_info(response):
         )
     except (AttributeError, TypeError, ValueError):
         return None, None, None
+
+
+# Phase-by-phase timing instrumentation for `extended=True`. We swap httpcore's default
+# network backend with a custom one that records the wall-clock time spent on DNS resolution,
+# TCP connect, TLS handshake, TTFB (request-write to first response byte) and transfer
+# (first response byte to last). The custom backend is opt-in: `fetch(extended=False)`
+# takes the default fast path with zero instrumentation overhead.
+def _build_timing_classes():
+    """Build the timing-aware NetworkBackend / NetworkStream subclasses tied to the runtime
+    httpcore module. Returns `(backend_cls, stream_cls)` or `(None, None)` when httpcore
+    does not expose the public `NetworkBackend` / `NetworkStream` base classes (very old
+    httpcore where the API was still private).
+    """
+    if httpcore is None or not hasattr(httpcore, 'NetworkBackend'):
+        return None, None
+
+    class _TimingNetworkStream(httpcore.NetworkStream):
+        """Wraps an existing httpcore NetworkStream and times TLS handshake, TTFB and
+        transfer. The underlying stream still does the I/O; we only record timestamps.
+        """
+
+        def __init__(self, inner, timings):
+            self._inner = inner
+            self._timings = timings
+            self._request_sent_at = None
+            self._first_byte_at = None
+
+        def read(self, max_bytes, timeout=None):
+            data = self._inner.read(max_bytes, timeout)
+            now = time.monotonic()
+            if data:
+                if self._first_byte_at is None and self._request_sent_at is not None:
+                    self._first_byte_at = now
+                    self._timings['ttfb'] = now - self._request_sent_at
+                if self._first_byte_at is not None:
+                    self._timings['transfer'] = now - self._first_byte_at
+            return data
+
+        def write(self, buffer, timeout=None):
+            self._inner.write(buffer, timeout)
+            self._request_sent_at = time.monotonic()
+
+        def close(self):
+            return self._inner.close()
+
+        def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+            t = time.monotonic()
+            wrapped = self._inner.start_tls(
+                ssl_context, server_hostname=server_hostname, timeout=timeout,
+            )
+            self._timings['tls'] = time.monotonic() - t
+            return _TimingNetworkStream(wrapped, self._timings)
+
+        def get_extra_info(self, info):
+            return self._inner.get_extra_info(info)
+
+    class _TimingBackend(httpcore.NetworkBackend):
+        """NetworkBackend that resolves DNS and opens the TCP socket itself so DNS and
+        connect can be timed separately. Falls back to a plain httpcore default backend
+        for unix sockets (not used by HTTP(S) checks).
+        """
+
+        def __init__(self):
+            self.timings = {}
+            # The default sync backend is used as a fallback for connect_unix_socket.
+            # Importing it lazily so a missing private path doesn't crash the lib import.
+            try:
+                from httpcore._backends.sync import SyncBackend
+                self._default = SyncBackend()
+            except Exception:
+                self._default = None
+
+        def connect_tcp(
+            self, host, port, timeout=None, local_address=None, socket_options=None,
+        ):
+            t = time.monotonic()
+            try:
+                addrs = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            except socket.gaierror as e:
+                raise httpcore.ConnectError(str(e)) from e
+            self.timings['dns'] = time.monotonic() - t
+
+            family, socktype, proto, _, sockaddr = addrs[0]
+            sock = socket.socket(family, socktype, proto)
+            if local_address is not None:
+                sock.bind((local_address, 0))
+            if socket_options is not None:
+                for opt in socket_options:
+                    sock.setsockopt(*opt)
+            sock.settimeout(timeout)
+
+            t = time.monotonic()
+            try:
+                sock.connect(sockaddr)
+            except (OSError, socket.timeout) as e:
+                sock.close()
+                raise httpcore.ConnectError(str(e)) from e
+            self.timings['connect'] = time.monotonic() - t
+
+            # Wrap the raw socket in httpcore's standard sync stream so that read/write
+            # semantics match httpcore's expectations, then wrap again in our timing
+            # stream to capture TLS / TTFB / transfer.
+            from httpcore._backends.sync import SyncStream
+            inner = SyncStream(sock)
+            return _TimingNetworkStream(inner, self.timings)
+
+        def connect_unix_socket(self, path, timeout=None, socket_options=None):
+            if self._default is None:
+                raise httpcore.ConnectError('unix sockets unsupported in this backend')
+            return self._default.connect_unix_socket(
+                path, timeout=timeout, socket_options=socket_options,
+            )
+
+        def sleep(self, seconds):
+            time.sleep(seconds)
+
+    return _TimingBackend, _TimingNetworkStream
+
+
+def _build_timing_transport(ssl_context, http1, http2, trust_env):
+    """Construct an httpx.HTTPTransport whose underlying connection pool uses our timing
+    backend. Returns (transport, backend) or (None, None) if the runtime httpcore API
+    does not expose the hooks we need; the caller falls back to default httpx behaviour
+    and reports only `total` in the timings dict.
+    """
+    backend_cls, _ = _build_timing_classes()
+    if backend_cls is None:
+        return None, None
+    backend = backend_cls()
+    transport = httpx.HTTPTransport(
+        verify=ssl_context, http1=http1, http2=http2, trust_env=trust_env,
+    )
+    transport._pool = httpcore.ConnectionPool(
+        ssl_context=ssl_context,
+        http1=http1,
+        http2=http2,
+        network_backend=backend,
+    )
+    return transport, backend
 
 
 def fetch(
@@ -270,16 +415,30 @@ def fetch(
     if digest_auth_user and digest_auth_password:
         auth = httpx.DigestAuth(digest_auth_user, digest_auth_password)
 
-    try:
-        client = httpx.Client(
-            verify=ctx,
-            http1=http_version in ('1.0', '1.1'),
-            http2=http_version == '2',
-            timeout=timeout,
-            trust_env=not no_proxy,
-            auth=auth,
-            follow_redirects=True,
+    # Phase-by-phase timings are only collected when the caller asks for the extended
+    # response. The default fast path uses httpx's built-in transport with no
+    # instrumentation overhead.
+    timing_transport = None
+    timing_backend = None
+    if extended:
+        timing_transport, timing_backend = _build_timing_transport(
+            ctx, http_version in ('1.0', '1.1'), http_version == '2', not no_proxy,
         )
+
+    try:
+        client_kwargs = {
+            'timeout': timeout,
+            'trust_env': not no_proxy,
+            'auth': auth,
+            'follow_redirects': True,
+        }
+        if timing_transport is not None:
+            client_kwargs['transport'] = timing_transport
+        else:
+            client_kwargs['verify'] = ctx
+            client_kwargs['http1'] = http_version in ('1.0', '1.1')
+            client_kwargs['http2'] = http_version == '2'
+        client = httpx.Client(**client_kwargs)
     except Exception as e:
         return False, f'{e} while fetching {url_safe}'
 
@@ -322,11 +481,14 @@ def fetch(
         if not extended:
             return True, body_decoded
 
+        timings = {'total': elapsed_seconds}
+        if timing_backend is not None:
+            timings.update(timing_backend.timings)
         return True, {
             'response': body_decoded,
             'status_code': status_code,
             'response_header': response_headers,
-            'timings': {'total': elapsed_seconds},
+            'timings': timings,
             'tls_version': tls_version,
             'alpn': alpn,
             'peer_cert_der': peer_cert_der,
