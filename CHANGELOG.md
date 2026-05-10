@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* base.py: rename module-level constant `X86_64` to `IS_64BIT`. The old name was misleading because it suggested Intel/AMD 64-bit only, while the underlying check (`sys.maxsize > 2**32`) is True on any 64-bit Python build (aarch64, ppc64le, s390x, riscv64, …). Logic unchanged. Breaking rename for downstream consumers; in-tree plugins are migrated in a follow-up commit
 * url.py: `fetch()` switched its underlying engine from stdlib `urllib` to `httpx`. Behaviour for existing callers is preserved (parameters, return-tuple shape, redirect-following, default `Connection: close` and `User-Agent` headers, automatic `application/x-www-form-urlencoded` for POST without explicit Content-Type). `response_header` in the extended dict is now a plain dict instead of `http.client.HTTPMessage`; existing consumers only relied on `.get()` access
 
 ### Fixed

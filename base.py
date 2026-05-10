@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041201'
+__version__ = '2026051001'
 
 import numbers
 import operator
@@ -24,7 +24,8 @@ from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 WINDOWS = os.name == 'nt'
 LINUX = sys.platform.startswith('linux')
-X86_64 = sys.maxsize > 2**32
+# True on any 64-bit Python (x86_64, aarch64, ppc64*, s390x, riscv64, ...).
+IS_64BIT = sys.maxsize > 2**32
 
 _OPS = {
     'ge': operator.ge,
