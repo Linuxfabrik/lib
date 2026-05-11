@@ -21,27 +21,6 @@ __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026051101'
 
 
-# Shared IMAGES matrix for mysql-* container tests. Covers the
-# currently supported MariaDB LTS releases across the Red Hat family
-# (sclorg quay.io images) and the upstream Debian-based image:
-#
-# - 10.6: oldest still-supported LTS (EOL 2026-07), upstream only
-# - 10.11: current workhorse LTS (EOL 2028-02), sclorg c10s
-# - 11.4: newer LTS (EOL 2029-05), upstream only - sclorg does not
-#   publish a 11.4 image
-# - 11.8: newest LTS (EOL 2030-06), sclorg c10s
-#
-# All 16 mysql-* container tests in the repo iterate over this list
-# so adding a new LTS release (or retiring one that reaches EOL) is
-# a single-line change across the whole test suite.
-MARIADB_LTS_IMAGES = [
-    ('docker.io/library/mariadb:10.6', 'MariaDB 10.6'),
-    ('quay.io/sclorg/mariadb-1011-c10s', 'MariaDB 10.11 sclorg'),
-    ('docker.io/library/mariadb:11.4', 'MariaDB 11.4'),
-    ('quay.io/sclorg/mariadb-118-c10s', 'MariaDB 11.8 sclorg'),
-]
-
-
 def run(test_instance, plugin, testcase):
     """Run a single testcase against a plugin and assert the results.
 
