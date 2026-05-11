@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051101'
+__version__ = '2026051102'
 
 import csv
 import hashlib
@@ -921,7 +921,11 @@ def per_second_deltas(filename, name, counters):
 
     row = {'name': name, 'timestamp': time.now()}
     row.update(counters)
-    ok, _ = insert(conn, row)
+    # Pass `delete_db_on_operational_error=False` so a schema mismatch leaves
+    # the connection open. We then drop+recreate the table ourselves below;
+    # the default `True` would `rm_db(conn)` (close + delete) and break the
+    # subsequent drop_table() with "Cannot operate on a closed database".
+    ok, _ = insert(conn, row, delete_db_on_operational_error=False)
     if not ok:
         # Schema mismatch from a previous plugin version (different counter
         # columns or NOT NULL constraints). Rebuild the table from the
@@ -933,7 +937,7 @@ def per_second_deltas(filename, name, counters):
             close(conn)
             return None
         create_index(conn, 'name')
-        ok, _ = insert(conn, row)
+        ok, _ = insert(conn, row, delete_db_on_operational_error=False)
         if not ok:
             close(conn)
             return None
