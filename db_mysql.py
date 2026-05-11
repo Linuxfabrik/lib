@@ -15,11 +15,12 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051003'
+__version__ = '2026051101'
 
 import re
 import sys
 
+from . import base
 from .globals import STATE_UNKNOWN
 
 try:
@@ -101,9 +102,7 @@ def check_privileges(conn, *required):
     success, rows = select(conn, 'SHOW GRANTS FOR CURRENT_USER();')
     if not success:
         return False, rows
-    grants_text = ' '.join(
-        ' '.join(str(v) for v in row.values()) for row in rows or []
-    )
+    grants_text = ' '.join(' '.join(str(v) for v in row.values()) for row in rows or [])
     if re.search(r'\bALL PRIVILEGES\b', grants_text, re.IGNORECASE) or re.search(
         r'\bSUPER\b', grants_text, re.IGNORECASE
     ):
@@ -266,6 +265,54 @@ def connect(mysql_connection, **kwargs):
         return False, f'Connecting to DB failed: {e}'
 
 
+def get_all_status(conn):
+    """
+    Fetch the complete output of `SHOW GLOBAL STATUS` as a dictionary.
+
+    The result is what `lod2dict()` produces against the rows of
+    `SHOW GLOBAL STATUS`. Keys are MySQL/MariaDB status variable names, values
+    are the raw string values returned by the server. One round trip; cheaper
+    than issuing many `SHOW GLOBAL STATUS LIKE '...'` queries when a plugin
+    needs more than a handful of values.
+
+    ### Parameters
+    - **conn** (`Connection`): An active database connection.
+
+    ### Returns
+    - **dict** (`str: str`): All status variables. On error returns the same
+      `(False, errormessage)` tuple as `select()` via `lib.base.coe()` in the
+      caller.
+
+    ### Example
+    >>> mystat = get_all_status(conn)
+    >>> int(mystat['Uptime'])
+    3600
+    """
+    return lod2dict(base.coe(select(conn, 'SHOW GLOBAL STATUS')))
+
+
+def get_all_variables(conn):
+    """
+    Fetch the complete output of `SHOW GLOBAL VARIABLES` as a dictionary.
+
+    Same shape as `get_all_status()`, but for server variables instead of
+    status counters. Use when a plugin needs more than a handful of variables
+    and wants to avoid the per-`LIKE` query overhead.
+
+    ### Parameters
+    - **conn** (`Connection`): An active database connection.
+
+    ### Returns
+    - **dict** (`str: str`): All system variables.
+
+    ### Example
+    >>> myvar = get_all_variables(conn)
+    >>> int(myvar['max_connections'])
+    151
+    """
+    return lod2dict(base.coe(select(conn, 'SHOW GLOBAL VARIABLES')))
+
+
 def get_engines(conn):
     """
     Retrieve the available storage engines from the database.
@@ -321,6 +368,60 @@ def get_engines(conn):
         )
 
     return engines
+
+
+def get_replica_status(conn):
+    """
+    Return the first row of `SHOW REPLICA STATUS` (or the legacy
+    `SHOW SLAVE STATUS`), or `None` if the server is not configured as a
+    replica.
+
+    `SHOW REPLICA STATUS` is the MariaDB 10.5+ / MySQL 8.0.22+ wording;
+    older servers only know `SHOW SLAVE STATUS`. This helper tries the newer
+    form first and silently falls back, so plugins do not have to know which
+    server flavour they are talking to.
+
+    ### Parameters
+    - **conn** (`Connection`): An active database connection.
+
+    ### Returns
+    - **dict** or **None**: First row of the result, or `None` when neither
+      command returns rows (server is not a replica).
+    """
+    success, rows = select(conn, 'SHOW REPLICA STATUS')
+    if not success:
+        success, rows = select(conn, 'SHOW SLAVE STATUS')
+    if not success or not rows:
+        return None
+    return rows[0]
+
+
+def has_is_role_column(conn):
+    """
+    Return `True` if `mysql.user.IS_ROLE` exists (MariaDB 10.0.5+ roles).
+
+    When the column exists, role rows in `mysql.user` carry `IS_ROLE = 'Y'`
+    and should typically be excluded from anonymous-user / empty-password /
+    username-as-password checks (a role legitimately has no password and an
+    empty `host` column). Plugins use the return value to gate `IS_ROLE = 'N'`
+    fragments in their `WHERE` clauses.
+
+    ### Parameters
+    - **conn** (`Connection`): An active database connection.
+
+    ### Returns
+    - **bool**: `True` if the column exists, `False` otherwise.
+    """
+    sql = """
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.columns
+        WHERE TABLE_SCHEMA = 'mysql'
+            AND TABLE_NAME = 'user'
+            AND COLUMN_NAME = 'IS_ROLE'
+        ;
+    """
+    row = base.coe(select(conn, sql, fetchone=True))
+    return int(row['cnt']) > 0
 
 
 def lod2dict(lod):
