@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041201'
+__version__ = '2026051101'
 
 import csv
 import hashlib
@@ -36,7 +36,7 @@ import os
 import re
 import sqlite3
 
-from . import disk, txt
+from . import disk, time, txt
 
 
 def __filter_str(s, charclass='a-zA-Z0-9_'):
@@ -845,6 +845,128 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
         return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
+
+
+def per_second_deltas(filename, name, counters):
+    """
+    Persist cumulative counters in a local SQLite cache and return their
+    per-second deltas vs. the previous run.
+
+    Generic helper for the "delta of cumulative counters between runs"
+    pattern. Works for any cumulative counter that needs to be reported as
+    a per-second rate: /proc and /sys byte counters (disk I/O, network
+    traffic, file descriptors), database status counters, application
+    metrics. Lets a check plugin emit per-second rates as perfdata instead
+    of `uom='c'` continuous counters (per CONTRIBUTING.md), so Grafana
+    panels do not need their own `non_negative_difference()` workaround.
+
+    The cache table schema is derived from the keys of `counters`: each
+    key becomes an `INT NOT NULL` column alongside the bookkeeping columns
+    `name TEXT NOT NULL` and `timestamp INT NOT NULL`. The table is kept
+    to the two most recent rows. If the schema changes between releases
+    (the caller adds or removes a counter), the helper drops and rebuilds
+    the table once; the previous baseline is lost but the next run
+    produces a valid delta again.
+
+    ### Parameters
+    - **filename** (`str`):
+      SQLite cache filename, e.g. `'linuxfabrik-monitoring-plugins-<plugin>.db'`.
+      Lives under `$TEMP`. Pick a per-plugin name so caches do not collide.
+    - **name** (`str`):
+      Sample identifier stored in the `name` column (e.g. the plugin
+      name). Lets multiple checks share a single cache file when
+      convenient, but typically one name per filename.
+    - **counters** (`dict[str, int]`):
+      Mapping from column name to cumulative counter value. Column names
+      must match `[a-zA-Z0-9_]+`; other characters get stripped by
+      `__filter_str()`.
+
+    ### Returns
+    - **dict[str, float]**: `{column_name: per_second_rate}` on success.
+    - **None**: fewer than 2 samples recorded yet (fresh install or
+      cache wiped), counter reset detected (delta < 0; happens on
+      restart of the monitored service or any `FLUSH`-style reset),
+      zero or negative time delta, or any SQLite operation failed.
+
+    ### Example
+    Network traffic rates from `/proc/net/dev`:
+
+    >>> rates = lib.db_sqlite.per_second_deltas(
+    ...     'linuxfabrik-monitoring-plugins-net.db',
+    ...     'eth0',
+    ...     {'rx_bytes': 1_073_741_824, 'tx_bytes': 524_288_000},
+    ... )
+    >>> if rates is not None:
+    ...     perfdata += lib.base.get_perfdata(
+    ...         'rx_bytes_per_second', rates['rx_bytes'], uom='B', _min=0,
+    ...     )
+    ...     perfdata += lib.base.get_perfdata(
+    ...         'tx_bytes_per_second', rates['tx_bytes'], uom='B', _min=0,
+    ...     )
+    """
+    ok, conn = connect(filename=filename)
+    if not ok:
+        return None
+
+    col_defs = ['name TEXT NOT NULL', 'timestamp INT NOT NULL']
+    for col in counters:
+        col_defs.append(f'{__filter_str(col)} INT NOT NULL')
+    definition = ', '.join(col_defs)
+
+    ok, _ = create_table(conn, definition, drop_table_first=False)
+    if not ok:
+        close(conn)
+        return None
+    create_index(conn, 'name')
+
+    row = {'name': name, 'timestamp': time.now()}
+    row.update(counters)
+    ok, _ = insert(conn, row)
+    if not ok:
+        # Schema mismatch from a previous plugin version (different counter
+        # columns or NOT NULL constraints). Rebuild the table from the
+        # current schema; we lose the previous baseline but auto-recover on
+        # the next run.
+        drop_table(conn)
+        ok, _ = create_table(conn, definition, drop_table_first=False)
+        if not ok:
+            close(conn)
+            return None
+        create_index(conn, 'name')
+        ok, _ = insert(conn, row)
+        if not ok:
+            close(conn)
+            return None
+
+    cut(conn, _max=2)
+    commit(conn)
+
+    ok, rows = select(
+        conn,
+        """
+        SELECT *
+        FROM perfdata
+        WHERE name = :name
+        ORDER BY timestamp DESC
+        """,
+        {'name': name},
+    )
+    close(conn)
+    if not ok or len(rows) < 2:
+        return None
+
+    timestamp_diff = rows[0]['timestamp'] - rows[1]['timestamp']
+    if timestamp_diff <= 0:
+        return None
+
+    rates = {}
+    for col in counters:
+        delta = rows[0][col] - rows[1][col]
+        if delta < 0:
+            # counter reset (server restart, FLUSH STATUS)
+            return None
+        rates[col] = delta / timestamp_diff
+    return rates
 
 
 def regexp(expr, item):
