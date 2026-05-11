@@ -18,7 +18,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041305'
+__version__ = '2026051101'
 
 
 # Shared IMAGES matrix for mysql-* container tests. Covers the
@@ -341,77 +341,56 @@ def run_container(
         c.stop()
 
 
-@contextlib.contextmanager
-def run_mariadb(image, *, extra_args=None, seed=None):
-    """Start a MariaDB container and yield (container, defaults_file).
+def _mariadb_startup_command(image_ref, extra_args):
+    """Pick the right startup command for the MariaDB family the image
+    belongs to.
 
-    Thin convenience wrapper around :func:`run_container` for the
-    Linuxfabrik mysql-* check plugins. Hides the image-family
-    boilerplate (env vars, TCP port exposure, start command, log
-    marker to wait on) and writes a temporary `[client]` `.cnf` file
-    pointing at the exposed host port so the caller can run a plugin
-    with `--defaults-file=...` without manual tempfile management.
-
-    Supports two image families:
-
-    - **Red Hat family via sclorg** (`quay.io/sclorg/mariadb-*`).
-      The sclorg entrypoint disables the TCP listener by default and
-      binds only the unix socket, so the helper forces
-      `run-mysqld --port=3306`.
-    - **Upstream** (`docker.io/library/mariadb:*`). Uses the default
-      `docker-entrypoint.sh` which already enables TCP on 3306; the
-      helper only overrides the command when `extra_args` are given,
-      in which case it appends them to `mariadbd`.
-
-    The `MYSQL_*` env var names work for both families (the upstream
-    image accepts them as aliases for `MARIADB_*`). The log marker
-    `port: 3306` appears in both startup banners once the TCP listener
-    is bound, so the same wait works for both.
-
-    ### Parameters
-    - **image** (`str`): MariaDB image reference, e.g.
-      `'quay.io/sclorg/mariadb-1011-c10s'` or
-      `'docker.io/library/mariadb:11.8'`.
-    - **extra_args** (`str`, optional): Extra `mariadbd` flags appended
-      to the startup command, e.g.
-      `'--innodb-buffer-pool-size=33554432'` to pin the buffer pool to
-      a deterministic size.
-    - **seed** (`str`, optional): SQL statement executed once via
-      `container.exec` right after the container is ready. Used to
-      seed happy-path state (e.g. creating an empty InnoDB table so
-      storage-engine checks see the engine "in use"). The helper
-      auto-detects whether the image ships the `mariadb` client (11.x
-      upstream dropped the `mysql` alias) or only `mysql` (older
-      sclorg images) and picks whichever is available.
-
-    ### Yields
-    - **tuple** (`DockerContainer`, `str`):
-      - The running container (so callers can still reach
-        `container.exec()`, `get_container_host_ip()` etc.).
-      - Absolute path to a temporary `[client]` `.cnf` file that is
-        deleted when the context manager exits.
-
-    ### Example
-    >>> with lib.lftest.run_mariadb(
-    ...     'docker.io/library/mariadb:11.8',
-    ...     extra_args='--innodb-buffer-pool-size=33554432',
-    ... ) as (container, defaults_file):
-    ...     result = subprocess.run(
-    ...         ['python3', '../mysql-traffic', f'--defaults-file={defaults_file}'],
-    ...         capture_output=True, text=True,
-    ...     )
+    - **Red Hat family via sclorg** (`quay.io/sclorg/mariadb-*`):
+      sclorg's entrypoint binds only the unix socket by default, so the
+      helper forces `run-mysqld --port=3306`.
+    - **Upstream** (`docker.io/library/mariadb:*`): the default
+      `docker-entrypoint.sh` already enables TCP on 3306; the helper
+      only overrides the command when `extra_args` are given, in which
+      case it appends them to `mariadbd`.
     """
-    is_sclorg = 'sclorg/' in image
-
+    is_sclorg = 'sclorg/' in image_ref
     if is_sclorg:
         cmd = 'run-mysqld --port=3306'
         if extra_args:
             cmd = f'{cmd} {extra_args}'
-    else:
-        cmd = f'mariadbd {extra_args}' if extra_args else None
+        return cmd
+    return f'mariadbd {extra_args}' if extra_args else None
 
+
+def _dockerfile_from_image(containerfile_path):
+    """Return the image reference from the first `FROM` line of a
+    Containerfile/Dockerfile, e.g. `quay.io/sclorg/mariadb-1108-c10s`
+    or `docker.io/library/mariadb:11.4`. Strips any `AS <alias>` suffix.
+    """
+    with open(containerfile_path, encoding='utf-8') as fh:
+        for line in fh:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            if stripped.upper().startswith('FROM '):
+                # `FROM image[:tag][@digest] [AS alias]`
+                ref = stripped.split(None, 1)[1].split(None, 1)[0]
+                return ref
+    raise RuntimeError(f'No FROM line found in {containerfile_path}')
+
+
+@contextlib.contextmanager
+def _run_mariadb_resolved(image_ref, command, seed):
+    """Run an already-resolved MariaDB image and yield
+    `(container, defaults_file)` with the usual MYSQL_* env vars, TCP
+    port 3306, a `port: 3306` log-wait and an optional seed SQL statement.
+
+    The `defaults_file` is a temporary `[client]` `.cnf` deleted on
+    context exit so callers can invoke plugins with `--defaults-file=...`
+    without manual tempfile bookkeeping.
+    """
     with run_container(
-        image,
+        image_ref,
         env={
             'MYSQL_ROOT_PASSWORD': 'test',
             'MYSQL_USER': 'test',
@@ -419,7 +398,7 @@ def run_mariadb(image, *, extra_args=None, seed=None):
             'MYSQL_DATABASE': 'test',
         },
         ports=[3306],
-        command=cmd,
+        command=command,
         wait_log='port: 3306',
         wait_log_timeout=180,
     ) as container:
@@ -454,6 +433,119 @@ def run_mariadb(image, *, extra_args=None, seed=None):
                 os.unlink(defaults_file)
             except OSError:
                 pass
+
+
+@contextlib.contextmanager
+def run_mariadb(image, *, extra_args=None, seed=None):
+    """Start a MariaDB container and yield (container, defaults_file).
+
+    Thin convenience wrapper around :func:`run_container` for the
+    Linuxfabrik mysql-* check plugins. Hides the image-family
+    boilerplate (env vars, TCP port exposure, start command, log
+    marker to wait on) and writes a temporary `[client]` `.cnf` file
+    pointing at the exposed host port so the caller can run a plugin
+    with `--defaults-file=...` without manual tempfile management.
+
+    For the canonical convention (per-plugin Containerfile under
+    `unit-test/containerfiles/`), prefer
+    :func:`run_mariadb_from_containerfile`. This entry point is kept
+    for the legacy path that hard-codes an image reference.
+
+    Supports two image families (`quay.io/sclorg/mariadb-*` and
+    `docker.io/library/mariadb:*`); see :func:`_mariadb_startup_command`
+    for the family-specific differences.
+
+    The `MYSQL_*` env var names work for both families (the upstream
+    image accepts them as aliases for `MARIADB_*`). The log marker
+    `port: 3306` appears in both startup banners once the TCP listener
+    is bound, so the same wait works for both.
+
+    ### Parameters
+    - **image** (`str`): MariaDB image reference, e.g.
+      `'quay.io/sclorg/mariadb-1011-c10s'` or
+      `'docker.io/library/mariadb:11.8'`.
+    - **extra_args** (`str`, optional): Extra `mariadbd` flags appended
+      to the startup command, e.g.
+      `'--innodb-buffer-pool-size=33554432'` to pin the buffer pool to
+      a deterministic size.
+    - **seed** (`str`, optional): SQL statement executed once via
+      `container.exec` right after the container is ready. Used to
+      seed happy-path state (e.g. creating an empty InnoDB table so
+      storage-engine checks see the engine "in use").
+
+    ### Yields
+    - **tuple** (`DockerContainer`, `str`):
+      - The running container (so callers can still reach
+        `container.exec()`, `get_container_host_ip()` etc.).
+      - Absolute path to a temporary `[client]` `.cnf` file that is
+        deleted when the context manager exits.
+    """
+    command = _mariadb_startup_command(image, extra_args)
+    with _run_mariadb_resolved(image, command, seed) as result:
+        yield result
+
+
+@contextlib.contextmanager
+def run_mariadb_from_containerfile(containerfile_path, *, extra_args=None, seed=None):
+    """Build a MariaDB image from a per-plugin Containerfile, start it
+    and yield `(container, defaults_file)` exactly like
+    :func:`run_mariadb`.
+
+    The canonical layout for a Linuxfabrik mysql-* plugin places one
+    Containerfile per LTS release under
+    `<plugin>/unit-test/containerfiles/` (e.g. `mariadb-v118`,
+    `mariadb-v1011`). Each file is typically a one-liner
+    (`FROM <upstream-or-sclorg-image>`) but can be extended with
+    plugin-specific layers if a test needs custom server config or
+    pre-seeded state.
+
+    The MariaDB family (sclorg vs upstream) is detected from the
+    Containerfile's `FROM` line so the right startup command is used.
+    The built image is tagged `lfmp-mariadb-<filename>` and kept
+    around (`clean_up=False`) so subsequent runs reuse the cached
+    layers.
+
+    ### Parameters
+    - **containerfile_path** (`str`): Path to the Containerfile, e.g.
+      `os.path.join(HERE, 'containerfiles', 'mariadb-v118')`.
+    - **extra_args** (`str`, optional): same as :func:`run_mariadb`.
+    - **seed** (`str`, optional): same as :func:`run_mariadb`.
+
+    ### Yields
+    - **tuple** (`DockerContainer`, `str`): same as :func:`run_mariadb`.
+
+    ### Example
+    >>> with lib.lftest.run_mariadb_from_containerfile(
+    ...     os.path.join(HERE, 'containerfiles', 'mariadb-v118'),
+    ... ) as (container, defaults_file):
+    ...     result = subprocess.run(
+    ...         ['python3', '../mysql-traffic', f'--defaults-file={defaults_file}'],
+    ...         capture_output=True, text=True,
+    ...     )
+    """
+    try:
+        from testcontainers.core.image import DockerImage
+    except ImportError as e:
+        raise RuntimeError(
+            'testcontainers is not installed; run `pip install testcontainers`'
+        ) from e
+
+    abspath = os.path.abspath(containerfile_path)
+    from_image = _dockerfile_from_image(abspath)
+    command = _mariadb_startup_command(from_image, extra_args)
+
+    build_dir = os.path.dirname(abspath)
+    dockerfile_name = os.path.basename(abspath)
+    tag = f'lfmp-mariadb-{dockerfile_name}'.lower().replace('_', '-')
+
+    with DockerImage(
+        path=build_dir,
+        dockerfile_path=dockerfile_name,
+        tag=tag,
+        clean_up=False,
+    ) as image:
+        with _run_mariadb_resolved(str(image.tag), command, seed) as result:
+            yield result
 
 
 def test(args):
