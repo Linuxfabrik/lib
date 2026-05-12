@@ -9,7 +9,30 @@ updates:
       timezone: 'Etc/UTC'
 
   - package-ecosystem: 'pip'
-    directory: '/'
+    directory: '/.github/pre-commit'
+    schedule:
+      interval: 'weekly'
+      day: 'friday'
+      time: '05:00'
+      timezone: 'Etc/UTC'
+
+  # One pip entry per Python-LTS lockfile. Each `lockfiles/pyXX/`
+  # subdirectory is an isolated Dependabot watchpoint, so version
+  # ignores apply only to that interpreter. urllib3 2.7.0 dropped
+  # Python 3.9; that constraint is pinned permanently on py39 below.
+  - package-ecosystem: 'pip'
+    directory: '/lockfiles/py39'
+    schedule:
+      interval: 'weekly'
+      day: 'friday'
+      time: '05:00'
+      timezone: 'Etc/UTC'
+    ignore:
+      - dependency-name: 'urllib3'
+        versions: ['>=2.7.0']
+
+  - package-ecosystem: 'pip'
+    directory: '/lockfiles/py310'
     schedule:
       interval: 'weekly'
       day: 'friday'
@@ -17,7 +40,31 @@ updates:
       timezone: 'Etc/UTC'
 
   - package-ecosystem: 'pip'
-    directory: '/.github/pre-commit'
+    directory: '/lockfiles/py311'
+    schedule:
+      interval: 'weekly'
+      day: 'friday'
+      time: '05:00'
+      timezone: 'Etc/UTC'
+
+  - package-ecosystem: 'pip'
+    directory: '/lockfiles/py312'
+    schedule:
+      interval: 'weekly'
+      day: 'friday'
+      time: '05:00'
+      timezone: 'Etc/UTC'
+
+  - package-ecosystem: 'pip'
+    directory: '/lockfiles/py313'
+    schedule:
+      interval: 'weekly'
+      day: 'friday'
+      time: '05:00'
+      timezone: 'Etc/UTC'
+
+  - package-ecosystem: 'pip'
+    directory: '/lockfiles/py314'
     schedule:
       interval: 'weekly'
       day: 'friday'

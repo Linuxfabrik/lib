@@ -1,11 +1,20 @@
-# sudo dnf -y install python39-pip
-# python3.9 -m pip install --user --upgrade pip
-# python3.9 -m pip install --user pip-tools
-# python3.9 -m piptools compile --generate-hashes requirements.in
+# One hash-pinned lockfile per supported Python LTS lives under
+# `lockfiles/pyXX/requirements.txt` (`py39` ... `py314`). Pick the
+# one that matches the local Python version when reproducing a CI run
+# or vendoring downstream. Each subdirectory under `lockfiles/` is a
+# separate Dependabot watchpoint, so the py39 entry can carry a
+# permanent `ignore: urllib3 >= 2.7.0` rule (urllib3 2.7.0 requires
+# Python >= 3.10) without affecting the other interpreters.
 #
-# If you get `AttributeError: 'function' object has no attribute 'cache_clear':
-# if you get `AttributeError: 'InstallRequirement' object has no attribute 'use_pep517'`
-#   python3.9 -m pip install 'pip<25.1'
+# To regenerate all of them:
+#
+#   for v in 3.9 3.10 3.11 3.12 3.13 3.14; do
+#     python${v} -m venv .venv-py${v//.}
+#     ./.venv-py${v//.}/bin/python -m pip install 'pip<25.1' pip-tools
+#     mkdir -p lockfiles/py${v//.}
+#     ./.venv-py${v//.}/bin/python -m piptools compile --generate-hashes \
+#         --output-file=lockfiles/py${v//.}/requirements.txt requirements.in
+#   done
 
 beautifulsoup4
 httpx[http2]
@@ -15,5 +24,6 @@ psutil
 pymysql
 pypsrp
 PySmbClient
+pywinrm
 smbprotocol
 xmltodict
