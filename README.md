@@ -9,6 +9,7 @@
 <div align="center">
 
 ![GitHub Stars](https://img.shields.io/github/stars/linuxfabrik/lib)
+[![Star History Chart](https://api.star-history.com/svg?repos=Linuxfabrik/lib&type=Date)](https://star-history.com/#Linuxfabrik/lib&Date)
 ![License](https://img.shields.io/github/license/linuxfabrik/lib)
 ![Version](https://img.shields.io/github/v/release/linuxfabrik/lib?sort=semver)
 [![PyPI](https://img.shields.io/pypi/v/linuxfabrik-lib)](https://pypi.org/project/linuxfabrik-lib/)
@@ -25,6 +26,8 @@
 # Linuxfabrik Python Libraries
 
 A mature, production-grade Python library collection providing 35+ modules with 300+ functions for system administration, monitoring, and infrastructure automation. These libraries are used across several Linuxfabrik projects -- most prominently the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins) (Nagios/Icinga check plugins), but also in [ChecklistFabrik](https://github.com/Linuxfabrik/checklistfabrik) and other tools.
+
+> If these libraries help you developing your own monitoring plugins, system tools or infrastructure automation, please give it a star.
 
 The library requires Python 3.9+ and runs on every platform.
 
