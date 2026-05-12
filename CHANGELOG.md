@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* pyproject.toml: declare `pypsrp` and `pywinrm` as direct dependencies. `lib.winrm` imports both at module load time (wrapped in `try/except ImportError` only so a non-WinRM consumer still loads); previously they had to be pinned in every downstream project that consumed `lib.winrm` (e.g. monitoring-plugins for `dhcp-scope-usage` on Windows). Same convention as `psutil`, `smbprotocol` etc., which `lib.psutil` / `lib.smb` import conditionally but which are declared as hard deps because they are part of lib's published surface
+
+
 ### Added
 
 * db_mysql.py: `check_privileges(conn, *required)` replaces the old `check_select_privileges()`. Without arguments it keeps the previous functional smoke test (`SELECT VERSION()`, works with `GRANT USAGE` alone). With arguments it parses `SHOW GRANTS FOR CURRENT_USER()` and reports any privilege that is missing for the current user, with `ALL PRIVILEGES` and `SUPER` short-circuiting to success. Each positional argument can be a string (single privilege required) or a list/tuple of strings (any-of group, useful for cross-version aliases like `REPLICATION CLIENT` / `SLAVE MONITOR` / `REPLICA MONITOR` introduced by MariaDB 10.5+). Enables plugins to declare their actual privilege requirements precisely
