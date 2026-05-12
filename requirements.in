@@ -2,9 +2,11 @@
 # `lockfiles/pyXX/requirements.txt` (`py39` ... `py314`). Pick the
 # one that matches the local Python version when reproducing a CI run
 # or vendoring downstream. Each subdirectory under `lockfiles/` is a
-# separate Dependabot watchpoint, so the py39 entry can carry a
-# permanent `ignore: urllib3 >= 2.7.0` rule (urllib3 2.7.0 requires
-# Python >= 3.10) without affecting the other interpreters.
+# separate Dependabot watchpoint, except `lockfiles/py39/` which is
+# excluded from Dependabot (most upstream packages dropped Python
+# 3.9 over 2025/2026; Dependabot does not honour `requires_python`
+# when proposing bumps, so every PR against py39 would break RHEL 8
+# / Debian 11). The py39 lockfile is regenerated manually as needed.
 #
 # To regenerate all of them:
 #

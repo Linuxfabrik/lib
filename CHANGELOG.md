@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * pyproject.toml: declare `pypsrp` and `pywinrm` as direct dependencies. `lib.winrm` imports both at module load time (wrapped in `try/except ImportError` only so a non-WinRM consumer still loads); previously they had to be pinned in every downstream project that consumed `lib.winrm` (e.g. monitoring-plugins for `dhcp-scope-usage` on Windows). Same convention as `psutil`, `smbprotocol` etc., which `lib.psutil` / `lib.smb` import conditionally but which are declared as hard deps because they are part of lib's published surface
-* requirements: one hash-pinned lockfile per supported Python LTS, each in its own `lockfiles/pyXX/` subdirectory (`py39` to `py314`). Replaces the single `requirements.txt`. Dependabot now watches each subdirectory separately, so the py39 entry can carry a permanent `ignore: urllib3 >= 2.7.0` rule (urllib3 2.7.0 requires Python 3.10+) without holding back the other interpreters
+* requirements: one hash-pinned lockfile per supported Python LTS, each in its own `lockfiles/pyXX/` subdirectory (`py39` to `py314`). Replaces the single `requirements.txt`. Dependabot watches each subdirectory separately, except `lockfiles/py39/` which is excluded: most upstream packages dropped Python 3.9 over 2025/2026, so automated bumps would break `pip install --require-hashes` on RHEL 8 / Debian 11. The py39 lockfile is regenerated manually as needed
 
 
 ### Added
