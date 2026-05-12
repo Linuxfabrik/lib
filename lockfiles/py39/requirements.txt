@@ -526,9 +526,9 @@ pymysql==1.1.3 \
     --hash=sha256:8164ba62c552f6105f3b11753352d0f16b90d1703ba67d81923d5a8a5d1c5289 \
     --hash=sha256:e70ebf2047a4edf6138cf79c68ad418ef620af65900aa585c5e8bfc95044d43a
     # via -r requirements.in
-pypsrp==0.8.1 \
-    --hash=sha256:0101345ceb415896fed9b056e7b77d65312089ddc73c4286247ccf1859d4bc4d \
-    --hash=sha256:f5500acd11dfe742d51b7fbb61321ba721038a300d67763dc52babe709db65e7
+pypsrp==0.9.1 \
+    --hash=sha256:1217b03397589f8e77c98dc9d2a4af2abc34a89ccc15efd4b6758ec76eb1bb7d \
+    --hash=sha256:3ad41285739d5f8107dd8277ae00e86ee44153aae5e82fb578ac8048307e0d12
     # via -r requirements.in
 pysmbclient==0.1.5 \
     --hash=sha256:dc528959ffe3fae5cdd2053c0d68b6dfca706d8f4ea78b9b3e741daedc87aed4
