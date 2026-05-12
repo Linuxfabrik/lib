@@ -11,7 +11,7 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026042201'
+__version__ = '2026051201'
 
 import datetime
 import re
@@ -158,12 +158,18 @@ def now(as_type=''):
     Depending on `as_type`, this returns:
     - Integer UNIX epoch (default)
     - Floating-point UNIX epoch ('float')
-    - datetime.datetime object ('datetime')
-    - ISO string 'YYYY-MM-DD HH:MM:SS' ('iso')
+    - datetime.datetime object in local time ('datetime')
+    - datetime.datetime object in UTC, naive ('utc')
+    - ISO string 'YYYY-MM-DD HH:MM:SS' in local time ('iso')
+
+    Use 'utc' for fields that are defined as UTC by spec (x509
+    `notBefore` / `notAfter`, HTTP `Date`, RFC 3339 timestamps, ...).
+    Returned as naive (no tzinfo) so it drops in wherever the
+    callee expects a naive datetime.
 
     ### Parameters
     - **as_type** (`str`, optional):
-      '', 'epoch', 'float', 'datetime', or 'iso'. Defaults to ''.
+      '', 'epoch', 'float', 'datetime', 'utc' or 'iso'. Defaults to ''.
 
     ### Returns
     - **int**, **float**, **datetime.datetime**, or **str**: Current time in the requested format.
@@ -175,11 +181,15 @@ def now(as_type=''):
     1586422786.1521912
     >>> now(as_type='datetime')
     datetime.datetime(2020, 4, 9, 11, 1, 41, 228752)
+    >>> now(as_type='utc')
+    datetime.datetime(2020, 4, 9, 9, 1, 41, 228752)
     >>> now(as_type='iso')
     '2020-04-09 11:31:24'
     """
     if as_type == 'datetime':
         return datetime.datetime.now()
+    if as_type == 'utc':
+        return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     if as_type == 'iso':
         return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     if as_type == 'float':
