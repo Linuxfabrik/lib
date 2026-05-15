@@ -8,11 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+tbd
 
-* pyproject.toml: declare `pypsrp` and `pywinrm` as direct dependencies. `lib.winrm` imports both at module load time (wrapped in `try/except ImportError` only so a non-WinRM consumer still loads); previously they had to be pinned in every downstream project that consumed `lib.winrm` (e.g. monitoring-plugins for `dhcp-scope-usage` on Windows). Same convention as `psutil`, `smbprotocol` etc., which `lib.psutil` / `lib.smb` import conditionally but which are declared as hard deps because they are part of lib's published surface
-* requirements: one hash-pinned lockfile per supported Python LTS, each in its own `lockfiles/pyXX/` subdirectory (`py39` to `py314`). Replaces the single `requirements.txt`. Dependabot watches each subdirectory separately, except `lockfiles/py39/` which is excluded from both version bumps and security PRs: most upstream packages dropped Python 3.9 over 2025/2026, so automated bumps would break `pip install --require-hashes` on RHEL 8 / Debian 11. The py39 lockfile is regenerated manually as needed
 
+## [v4.0.0] - 2026-05-15
+
+### Breaking Changes
+
+* base.py: rename module-level constant `X86_64` to `IS_64BIT`. The old name was misleading because it suggested Intel/AMD 64-bit only, while the underlying check (`sys.maxsize > 2**32`) is True on any 64-bit Python build (aarch64, ppc64le, s390x, riscv64, …). Logic unchanged. Downstream consumers must update imports
 
 ### Added
 
@@ -28,20 +31,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* base.py: rename module-level constant `X86_64` to `IS_64BIT`. The old name was misleading because it suggested Intel/AMD 64-bit only, while the underlying check (`sys.maxsize > 2**32`) is True on any 64-bit Python build (aarch64, ppc64le, s390x, riscv64, …). Logic unchanged. Breaking rename for downstream consumers; in-tree plugins are migrated in a follow-up commit
+* pyproject.toml: declare `pypsrp` and `pywinrm` as direct dependencies. `lib.winrm` imports both at module load time (wrapped in `try/except ImportError` only so a non-WinRM consumer still loads); previously they had to be pinned in every downstream project that consumed `lib.winrm` (e.g. monitoring-plugins for `dhcp-scope-usage` on Windows). Same convention as `psutil`, `smbprotocol` etc., which `lib.psutil` / `lib.smb` import conditionally but which are declared as hard deps because they are part of lib's published surface
+* requirements: one hash-pinned lockfile per supported Python LTS, each in its own `lockfiles/pyXX/` subdirectory (`py39` to `py314`). Replaces the single `requirements.txt`. Dependabot watches each subdirectory separately, except `lockfiles/py39/` which is excluded from both version bumps and security PRs: most upstream packages dropped Python 3.9 over 2025/2026, so automated bumps would break `pip install --require-hashes` on RHEL 8 / Debian 11. The py39 lockfile is regenerated manually as needed
 * url.py: `fetch()` switched its underlying engine from stdlib `urllib` to `httpx`. Behaviour for existing callers is preserved (parameters, return-tuple shape, redirect-following, default `Connection: close` and `User-Agent` headers, automatic `application/x-www-form-urlencoded` for POST without explicit Content-Type). `response_header` in the extended dict is now a plain dict instead of `http.client.HTTPMessage`; existing consumers only relied on `.get()` access
-
-### Fixed
-
-* db_sqlite.py: `per_second_deltas()` no longer crashes with `sqlite3.ProgrammingError: Cannot operate on a closed database` when the cache table schema mismatches an earlier plugin version. The internal `insert()` call now uses `delete_db_on_operational_error=False` so the connection survives the schema-mismatch error; the explicit drop/recreate path below operates on a live connection as intended
-* base.py: `oao()` now properly HTML-escapes `&`, `<` and `>` into `&amp;`, `&lt;` and `&gt;` instead of replacing `<` and `>` with apostrophes. The previous implementation destroyed legitimate threshold descriptions like `<= 10` and shell snippets like `echo 1 > /proc/sys/...`, turning them into `'= 10` and `echo 1 ' /proc/sys/...` in plugin output. HTML-based web UIs (Icinga Web, Naemon-Adagios) render the entities back to the original characters; terminal viewers see the literal entities, which preserves the information. The XSS-protection goal of the original change is still met
-* url.py: `fetch()` with HTTP digest authentication and `insecure=True` now actually disables certificate verification. Previously the digest auth path silently lost the SSL context
-* url.py: `fetch()` with `no_proxy=True` now applies the `timeout` parameter. Previously the no-proxy path called `opener.open(request)` without a timeout, so hangs were only caught by the outer plugin wrapper
-* url.py: `import lib.url` no longer fails on hosts where `httpx` is not installed; the import is now lazy and `fetch()` returns a clear "httpx not installed" error message instead of crashing on import. Plugins that pull `lib.url` only transitively (for example via `lib.net`) keep working without `httpx`. Hosts that actually use `fetch()` still need `httpx[http2]` installed via `pip` or `dnf install python3-httpx python3-h2`
 
 ### Deprecated
 
 * db_mysql.py: `check_select_privileges()` is deprecated and now a thin backwards-compatible shim that delegates to `check_privileges(conn)`. New code should call `check_privileges()` directly. The shim exists to keep already-deployed plugins working when the lib is upgraded ahead of the plugin set; it will be removed in a future major release
+
+### Fixed
+
+* base.py: `oao()` now properly HTML-escapes `&`, `<` and `>` into `&amp;`, `&lt;` and `&gt;` instead of replacing `<` and `>` with apostrophes. The previous implementation destroyed legitimate threshold descriptions like `<= 10` and shell snippets like `echo 1 > /proc/sys/...`, turning them into `'= 10` and `echo 1 ' /proc/sys/...` in plugin output. HTML-based web UIs (Icinga Web, Naemon-Adagios) render the entities back to the original characters; terminal viewers see the literal entities, which preserves the information. The XSS-protection goal of the original change is still met
+* db_sqlite.py: `per_second_deltas()` no longer crashes with `sqlite3.ProgrammingError: Cannot operate on a closed database` when the cache table schema mismatches an earlier plugin version. The internal `insert()` call now uses `delete_db_on_operational_error=False` so the connection survives the schema-mismatch error; the explicit drop/recreate path below operates on a live connection as intended
+* url.py: `fetch()` with HTTP digest authentication and `insecure=True` now actually disables certificate verification. Previously the digest auth path silently lost the SSL context
+* url.py: `fetch()` with `no_proxy=True` now applies the `timeout` parameter. Previously the no-proxy path called `opener.open(request)` without a timeout, so hangs were only caught by the outer plugin wrapper
+* url.py: `import lib.url` no longer fails on hosts where `httpx` is not installed; the import is now lazy and `fetch()` returns a clear "httpx not installed" error message instead of crashing on import. Plugins that pull `lib.url` only transitively (for example via `lib.net`) keep working without `httpx`. Hosts that actually use `fetch()` still need `httpx[http2]` installed via `pip` or `dnf install python3-httpx python3-h2`
 
 
 ## [v3.4.1] - 2026-05-07
@@ -557,7 +561,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v3.4.1...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.0.0...HEAD
+[v4.0.0]: https://github.com/Linuxfabrik/lib/compare/v3.4.1...v4.0.0
 [v3.4.1]: https://github.com/Linuxfabrik/lib/compare/v3.4.0...v3.4.1
 [v3.4.0]: https://github.com/Linuxfabrik/lib/compare/v3.3.0...v3.4.0
 [v3.3.0]: https://github.com/Linuxfabrik/lib/compare/v3.2.0...v3.3.0
