@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 tbd
 
 
+## [v4.0.2] - 2026-05-18
+
+### Fixed
+
+* url.py: `import lib.url` no longer aborts with `AttributeError: module 'ssl' has no attribute 'TLSVersion'` on Python interpreters below 3.7 (e.g. RHEL 8's default `python3` = 3.6). The TLS version mapping is now built only when `ssl.TLSVersion` is available; any plugin that doesn't use TLS version pinning keeps importing. Callers that pass `tls_min` / `tls_max` get a clear `RuntimeError` naming the missing requirement instead of the cryptic `AttributeError`. Note: the lib's supported minimum is still Python 3.9; this only makes one specific import path resilient
+
+
 ## [v4.0.1] - 2026-05-18
 
 ### Fixed
@@ -568,7 +575,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.0.1...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.0.2...HEAD
+[v4.0.2]: https://github.com/Linuxfabrik/lib/compare/v4.0.1...v4.0.2
 [v4.0.1]: https://github.com/Linuxfabrik/lib/compare/v4.0.0...v4.0.1
 [v4.0.0]: https://github.com/Linuxfabrik/lib/compare/v3.4.1...v4.0.0
 [v3.4.1]: https://github.com/Linuxfabrik/lib/compare/v3.4.0...v3.4.1
