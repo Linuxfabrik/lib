@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051801'
+__version__ = '2026051802'
 
 import re
 import sys
@@ -414,6 +414,47 @@ def get_engines(conn):
         )
 
     return engines
+
+
+def get_flavor():
+    """
+    Probe the installed MySQL/MariaDB server binary to distinguish the two
+    flavors. Does not require a database connection.
+
+    Probes the server binary first (`mysqld`, `mariadbd`) and falls back to
+    the client (`mariadb`, `mysql`). MariaDB 11.4 dropped the `mysqld`
+    symlink and renamed the client to `mariadb`, so all four names matter
+    across supported versions. The `-MariaDB` suffix in the version banner
+    is the canonical flavor marker.
+
+    Useful where the systemd-based distinction is unreliable, for example
+    on Fedora and RHEL where `mysql.service` is aliased to
+    `mariadb.service` and `systemctl is-enabled mysql.service` reports
+    `alias` rather than the underlying flavor.
+
+    ### Returns
+    - **str | None**: `'mariadb'`, `'mysql'`, or `None` when no binary
+      responds.
+
+    ### Example
+    >>> get_flavor()
+    'mariadb'
+    """
+    from . import shell  # local import to keep db_mysql usable without shell at module load
+    for command in (
+        'mysqld --version',
+        'mariadbd --version',
+        'mariadb --version',
+        'mysql --version',
+    ):
+        success, result = shell.shell_exec(command)
+        if not success:
+            continue
+        stdout, _, _ = result
+        if not stdout:
+            continue
+        return 'mariadb' if 'MariaDB' in stdout else 'mysql'
+    return None
 
 
 def get_replica_status(conn):
