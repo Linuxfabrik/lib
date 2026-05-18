@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v4.0.1] - 2026-05-18
+
 ### Fixed
 
 * db_mysql.py: `connect()` aligns the session's character set and collation with the `mysql` system schema right after the connection is up. Stops queries against `mysql.user` and `mysql.global_priv` from aborting with ER 1267 ("Illegal mix of collations") when the server's connection-collation default differs from the system tables' column collations. MariaDB 10.4+ exposes `mysql.user` as a view over `mysql.global_priv` with JSON-derived columns whose results carry COERCIBLE coercibility, which makes plain `col = 'literal'` compares trip whenever `collation_connection` and the column collation don't match. Lookup uses `information_schema.schemata` so the right collation is picked across MySQL/MariaDB versions and locale-specific installs. Best-effort: on any error the connection stays usable. Fixes all `mysql-*` plugins ([linuxfabrik/monitoring-plugins#1139](https://github.com/Linuxfabrik/monitoring-plugins/issues/1139))
@@ -563,7 +568,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.0.1...HEAD
+[v4.0.1]: https://github.com/Linuxfabrik/lib/compare/v4.0.0...v4.0.1
 [v4.0.0]: https://github.com/Linuxfabrik/lib/compare/v3.4.1...v4.0.0
 [v3.4.1]: https://github.com/Linuxfabrik/lib/compare/v3.4.0...v3.4.1
 [v3.4.0]: https://github.com/Linuxfabrik/lib/compare/v3.3.0...v3.4.0
