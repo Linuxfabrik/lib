@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* db_mysql.py: `get_flavor()` returns whether the installed MySQL/MariaDB binary is MariaDB or MySQL. Works without a database connection - probes `mysqld --version`, `mariadbd --version`, `mariadb --version`, `mysql --version` in order and checks for the `-MariaDB` suffix. Useful where systemd-based detection is unreliable (e.g. Fedora aliases `mysql.service` to `mariadb.service`)
+* db_mysql.py: `get_server_info()` returns `{flavor, version}` for the installed MySQL/MariaDB server, probing `mysqld`, `mariadbd`, `mariadb`, `mysql` and parsing the --version banner with regexes that cover all known output formats (legacy `Distrib` banner, modern `from` banner, server-binary banner, MariaDB-suffixed and plain). Accepts a pre-collected banner string to support unit-test fixtures without shelling out. Works without a database connection
+* db_mysql.py: `get_flavor()` returns whether the installed binary is MariaDB or MySQL (thin wrapper around `get_server_info()`). Useful where systemd-based detection is unreliable (e.g. Fedora aliases `mysql.service` to `mariadb.service`)
 
 
 ## [v4.0.2] - 2026-05-18

@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051802'
+__version__ = '2026051803'
 
 import re
 import sys
@@ -418,19 +418,10 @@ def get_engines(conn):
 
 def get_flavor():
     """
-    Probe the installed MySQL/MariaDB server binary to distinguish the two
-    flavors. Does not require a database connection.
+    Return the installed MySQL/MariaDB flavor.
 
-    Probes the server binary first (`mysqld`, `mariadbd`) and falls back to
-    the client (`mariadb`, `mysql`). MariaDB 11.4 dropped the `mysqld`
-    symlink and renamed the client to `mariadb`, so all four names matter
-    across supported versions. The `-MariaDB` suffix in the version banner
-    is the canonical flavor marker.
-
-    Useful where the systemd-based distinction is unreliable, for example
-    on Fedora and RHEL where `mysql.service` is aliased to
-    `mariadb.service` and `systemctl is-enabled mysql.service` reports
-    `alias` rather than the underlying flavor.
+    Thin wrapper around `get_server_info()` for callers that only care
+    about the flavor.
 
     ### Returns
     - **str | None**: `'mariadb'`, `'mysql'`, or `None` when no binary
@@ -440,21 +431,8 @@ def get_flavor():
     >>> get_flavor()
     'mariadb'
     """
-    from . import shell  # local import to keep db_mysql usable without shell at module load
-    for command in (
-        'mysqld --version',
-        'mariadbd --version',
-        'mariadb --version',
-        'mysql --version',
-    ):
-        success, result = shell.shell_exec(command)
-        if not success:
-            continue
-        stdout, _, _ = result
-        if not stdout:
-            continue
-        return 'mariadb' if 'MariaDB' in stdout else 'mysql'
-    return None
+    info = get_server_info()
+    return info['flavor'] if info else None
 
 
 def get_replica_status(conn):
@@ -481,6 +459,102 @@ def get_replica_status(conn):
     if not success or not rows:
         return None
     return rows[0]
+
+
+# Output formats handled by the regex parser:
+#
+#   mysqld  Ver 8.0.45 for Linux on x86_64 (Source distribution)
+#   mysqld  Ver 10.11.15-MariaDB for Linux on x86_64 (MariaDB Server)
+#   mysql  Ver 14.14 Distrib 5.7.44, for Linux (x86_64) using EditLine wrapper
+#   mariadb  Ver 15.1 Distrib 10.5.x-MariaDB, for Linux on x86_64
+#   mariadb from 11.4.10-MariaDB, client 15.2 for debian-linux-gnu (x86_64) using EditLine wrapper
+#
+# MariaDB 11.4 dropped the `mysqld` symlink and renamed the client
+# version banner from "Distrib X.Y.Z" to "from X.Y.Z", so the parser
+# probes both server and client binaries and accepts both prefixes.
+_VERSION_REGEXES = (
+    # `mysqld  Ver X.Y.Z[-MariaDB] for ...` (any distro suffix like
+    # `-1~trusty` is stripped further down)
+    r'Ver (\d+\.\d+\.\d+(?:-MariaDB)?)',
+    # `mysql  Ver 14.14 Distrib X.Y.Z[-MariaDB], for ...`
+    # `mariadb  Ver 15.1 Distrib 10.5.x-MariaDB, for ...`
+    r'Distrib (\S+?),',
+    # `mariadb from X.Y.Z[-MariaDB], client ...`  (MariaDB 11.4+)
+    r'from (\d+\.\d+\.\d+(?:-MariaDB)?),',
+)
+
+
+def _parse_version_banner(banner):
+    """Extract `(flavor, version)` from a `mysqld`/`mariadbd`/`mariadb`/
+    `mysql` --version banner. Returns `(None, None)` if no regex matches.
+    """
+    for regex in _VERSION_REGEXES:
+        m = re.search(regex, banner)
+        if not m:
+            continue
+        raw = m.group(1).strip()
+        flavor = 'mariadb' if '-MariaDB' in raw else 'mysql'
+        version = raw.replace('-MariaDB', '')
+        return flavor, version
+    return None, None
+
+
+def get_server_info(banner=None):
+    """
+    Determine the installed MySQL/MariaDB flavor and version. Does not
+    require a database connection.
+
+    Returns a dict like `{'flavor': 'mariadb', 'version': '10.11.16'}`,
+    or `None` when nothing matches.
+
+    If `banner` is `None`, probe `mysqld`, `mariadbd`, `mariadb`, `mysql`
+    in order and parse the first responding --version banner. Server
+    binaries are tried first; the client fallback exists because MariaDB
+    11.4 dropped the `mysqld` symlink and renamed the client.
+
+    Pass a banner string directly (for example a unit-test fixture) to
+    skip the shell probe entirely.
+
+    Useful where the systemd-based distinction is unreliable: on Fedora
+    and RHEL `mysql.service` is aliased to `mariadb.service`, so
+    `systemctl is-enabled mysql.service` reports `alias` rather than the
+    underlying flavor.
+
+    ### Parameters
+    - **banner** (`str | None`): Optional pre-collected --version banner
+      to parse instead of probing.
+
+    ### Returns
+    - **dict | None**: `{'flavor': 'mariadb'|'mysql', 'version': str}`
+      or `None`.
+
+    ### Example
+    >>> get_server_info()
+    {'flavor': 'mariadb', 'version': '10.11.16'}
+    """
+    if banner is not None:
+        flavor, version = _parse_version_banner(banner)
+        if version:
+            return {'flavor': flavor, 'version': version}
+        return None
+
+    from . import shell  # local import to keep db_mysql usable without shell at module load
+    for command in (
+        'mysqld --version',
+        'mariadbd --version',
+        'mariadb --version',
+        'mysql --version',
+    ):
+        success, result = shell.shell_exec(command)
+        if not success:
+            continue
+        stdout, _, _ = result
+        if not stdout:
+            continue
+        flavor, version = _parse_version_banner(stdout.strip())
+        if version:
+            return {'flavor': flavor, 'version': version}
+    return None
 
 
 def has_is_role_column(conn):
