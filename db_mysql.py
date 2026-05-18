@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051101'
+__version__ = '2026051801'
 
 import re
 import sys
@@ -238,6 +238,14 @@ def connect(mysql_connection, **kwargs):
     - If connection fails, the error message contains the reason for failure.
     - `pymysql`'s `read_default_file` and `read_default_group` allow connection settings from a
       `.cnf` file.
+    - After the connection is up, the function aligns the session's character set and collation
+      with the `mysql` system schema (`SET NAMES ... COLLATE ...`). This stops queries against
+      system tables like `mysql.user` and `mysql.global_priv` from aborting with ER 1267
+      ("Illegal mix of collations") when the server's connection-collation default differs from
+      the column collations. On MariaDB 10.4+, `mysql.user` is a view over `mysql.global_priv`
+      whose JSON-derived columns return COERCIBLE results, so a plain `col = 'literal'` compare
+      breaks the moment `collation_connection` and the column collation differ. The alignment
+      is best-effort: on any error the connection stays usable with the server's defaults.
 
     ### Example
     >>> mysql_connection = {
@@ -260,9 +268,47 @@ def connect(mysql_connection, **kwargs):
             connect_timeout=mysql_connection.get('timeout', 3),
             **kwargs,
         )
-        return True, conn
     except Exception as e:
         return False, f'Connecting to DB failed: {e}'
+
+    _align_session_collation(conn)
+    return True, conn
+
+
+def _align_session_collation(conn):
+    """Match `collation_connection` to the `mysql` system schema's default collation.
+
+    Without this, queries that compare a JSON-derived column from the `mysql.user`
+    view (e.g. `IS_ROLE = 'N'`, `plugin = 'mysql_native_password'`) abort with
+    ER 1267 ("Illegal mix of collations") when the server's connection collation
+    default doesn't match the schema's column collation. Looking up the schema's
+    own defaults from `information_schema.schemata` keeps this working across
+    MySQL/MariaDB versions and locale-specific installs (utf8mb3 on older
+    servers, utf8mb4_general_ci on most current ones, utf8mb4_uca1400_ai_ci on
+    MariaDB 10.10+). Best-effort: on any error the connection stays usable.
+    """
+    try:
+        with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+            cursor.execute(
+                'select default_character_set_name as cs, '
+                'default_collation_name as coll '
+                'from information_schema.schemata '
+                "where schema_name = 'mysql'"
+            )
+            row = cursor.fetchone()
+        if not row:
+            return
+        cs = (row.get('cs') or '').strip()
+        coll = (row.get('coll') or '').strip()
+        # Whitelist identifiers to keep the formatted `SET NAMES` safe from
+        # any caller-controlled value (the row comes from a system view, but
+        # defence in depth doesn't cost anything).
+        if not (re.match(r'^[A-Za-z0-9_]+$', cs) and re.match(r'^[A-Za-z0-9_]+$', coll)):
+            return
+        with conn.cursor() as cursor:
+            cursor.execute(f'set names {cs} collate {coll}')
+    except Exception:
+        pass
 
 
 def get_all_status(conn):
