@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051003'
+__version__ = '2026051802'
 
 import base64
 import json
@@ -35,13 +35,20 @@ except ImportError:
 from . import txt
 
 
-# stdlib ssl version names; '1.0' first because it is the most permissive minimum
-_TLS_VERSIONS = {
-    '1.0': ssl.TLSVersion.TLSv1,
-    '1.1': ssl.TLSVersion.TLSv1_1,
-    '1.2': ssl.TLSVersion.TLSv1_2,
-    '1.3': ssl.TLSVersion.TLSv1_3,
-}
+# stdlib ssl version names; '1.0' first because it is the most permissive minimum.
+# `ssl.TLSVersion` was added in Python 3.7. Build the dict only when available so
+# `import lib.url` still works on older interpreters (e.g. RHEL 8's default `python3`
+# = 3.6) - any plugin that doesn't actually use TLS version pinning then continues
+# to work. Callers that pass `tls_min` / `tls_max` get a clearer RuntimeError in
+# `_build_ssl_context()` instead of an AttributeError at import time.
+_TLS_VERSIONS = {}
+if hasattr(ssl, 'TLSVersion'):
+    _TLS_VERSIONS = {
+        '1.0': ssl.TLSVersion.TLSv1,
+        '1.1': ssl.TLSVersion.TLSv1_1,
+        '1.2': ssl.TLSVersion.TLSv1_2,
+        '1.3': ssl.TLSVersion.TLSv1_3,
+    }
 
 
 def _redact_url(url):
@@ -59,6 +66,12 @@ def _build_ssl_context(insecure, tls_min, tls_max):
     if insecure:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
+    if tls_min is not None or tls_max is not None:
+        if not _TLS_VERSIONS:
+            raise RuntimeError(
+                'TLS version pinning (`tls_min` / `tls_max`) requires Python 3.7+ '
+                '(`ssl.TLSVersion`); this interpreter is too old.'
+            )
     if tls_min is not None:
         if tls_min not in _TLS_VERSIONS:
             raise ValueError(
