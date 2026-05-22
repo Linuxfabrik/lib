@@ -318,6 +318,15 @@ def connect(path='', filename=''):
             path = disk.get_tmpdir()
         if not filename:
             filename = 'linuxfabrik-monitoring-plugins-sqlite.db'
+        # Isolate the cache db per user by embedding the UID into the filename. On a shared
+        # /tmp the first runner creates a 0644-owned file that other users can read but not
+        # write, so the next run under a different user (e.g. created as root, scheduled as
+        # the monitoring agent's user) aborts with "attempt to write a readonly database".
+        # os.getuid() is absent on Windows, where multi-user /tmp collisions are not a
+        # concern, so the suffix is skipped there.
+        if hasattr(os, 'getuid'):
+            stem, ext = os.path.splitext(filename)
+            filename = f'{stem}-uid{os.getuid()}{ext}'
         return os.path.join(path, filename)
 
     db = get_filename(path, filename)

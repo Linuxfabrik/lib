@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_mysql.py: `get_server_info()` returns `{flavor, version}` for the installed MySQL/MariaDB server, probing `mysqld`, `mariadbd`, `mariadb`, `mysql` and parsing the --version banner with regexes that cover all known output formats (legacy `Distrib` banner, modern `from` banner, server-binary banner, MariaDB-suffixed and plain). Accepts a pre-collected banner string to support unit-test fixtures without shelling out. Works without a database connection
 * db_mysql.py: `get_flavor()` returns whether the installed binary is MariaDB or MySQL (thin wrapper around `get_server_info()`). Useful where systemd-based detection is unreliable (e.g. Fedora aliases `mysql.service` to `mariadb.service`)
 
+### Fixed
+
+* db_sqlite.py: plugins that cache trend data in `/tmp` no longer fail with "attempt to write a readonly database" when first run as one user (e.g. root) and later scheduled under another. Each user now gets its own cache file ([#181](https://github.com/Linuxfabrik/lib/issues/181))
+
 
 ## [v4.0.2] - 2026-05-18
 
