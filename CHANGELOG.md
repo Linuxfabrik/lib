@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * db_sqlite.py: plugins that cache trend data in `/tmp` no longer fail with "attempt to write a readonly database" when first run as one user (e.g. root) and later scheduled under another. Each user now gets its own cache file ([#181](https://github.com/Linuxfabrik/lib/issues/181))
 
+### Security
+
+* Bump `idna` to 3.16 in the Python 3.9 lockfile, closing a moderate vulnerability where crafted input to `idna.encode()` could bypass the CVE-2024-3651 fix
+
 
 ## [v4.0.2] - 2026-05-18
 
