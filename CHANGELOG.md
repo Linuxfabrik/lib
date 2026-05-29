@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v4.1.0] - 2026-05-29
+
 ### Added
 
 * db_mysql.py: `get_server_info()` returns `{flavor, version}` for the installed MySQL/MariaDB server, probing `mysqld`, `mariadbd`, `mariadb`, `mysql` and parsing the --version banner with regexes that cover all known output formats (legacy `Distrib` banner, modern `from` banner, server-binary banner, MariaDB-suffixed and plain). Accepts a pre-collected banner string to support unit-test fixtures without shelling out. Works without a database connection
@@ -586,7 +591,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.0.2...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.1.0...HEAD
+[v4.1.0]: https://github.com/Linuxfabrik/lib/compare/v4.0.2...v4.1.0
 [v4.0.2]: https://github.com/Linuxfabrik/lib/compare/v4.0.1...v4.0.2
 [v4.0.1]: https://github.com/Linuxfabrik/lib/compare/v4.0.0...v4.0.1
 [v4.0.0]: https://github.com/Linuxfabrik/lib/compare/v3.4.1...v4.0.0
