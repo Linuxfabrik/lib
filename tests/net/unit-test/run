@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.net pure helpers.
+
+The fetch* / get_public_ip functions talk to the network and are covered
+by the mock/container batch, not here.
+"""
+
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.net as net
+
+
+class TestNetmaskToCidr(unittest.TestCase):
+    def test_examples(self):
+        self.assertEqual(net.netmask_to_cidr('255.255.255.0'), 24)
+        self.assertEqual(net.netmask_to_cidr('255.255.0.0'), 16)
+
+
+class TestIpToCidr(unittest.TestCase):
+    def test_counts_mask_bits(self):
+        self.assertEqual(net.ip_to_cidr('255.255.255.0'), 24)
+
+
+class TestHostnameValidation(unittest.TestCase):
+    def test_is_valid_hostname(self):
+        self.assertTrue(net.is_valid_hostname('example.com'))
+        self.assertFalse(net.is_valid_hostname('-bad-'))
+
+    def test_absolute_means_no_trailing_dot(self):
+        self.assertTrue(net.is_valid_absolute_hostname('example.com'))
+        self.assertFalse(net.is_valid_absolute_hostname('example.com.'))
+
+    def test_relative_means_trailing_dot(self):
+        self.assertTrue(net.is_valid_relative_hostname('example.com.'))
+        self.assertFalse(net.is_valid_relative_hostname('example.com'))
+
+
+if __name__ == '__main__':
+    unittest.main()

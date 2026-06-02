@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.cache (SQLite-backed key-value store).
+
+Each test uses a throwaway directory via the `path=` argument so the real
+per-user cache is never touched and tests stay isolated.
+"""
+
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.cache as cache
+import lib.time as lftime
+
+
+class TestCache(unittest.TestCase):
+    def setUp(self):
+        self.path = tempfile.mkdtemp(prefix='lftest-cache-')
+
+    def test_set_get_roundtrip(self):
+        self.assertTrue(cache.set('k', 'v', path=self.path))
+        self.assertEqual(cache.get('k', path=self.path), 'v')
+
+    def test_get_as_dict(self):
+        cache.set('k', 'v', path=self.path)
+        self.assertEqual(
+            cache.get('k', path=self.path, as_dict=True),
+            {'key': 'k', 'value': 'v', 'timestamp': 0},
+        )
+
+    def test_overwrite(self):
+        cache.set('k', 'v', path=self.path)
+        cache.set('k', 'v2', path=self.path)
+        self.assertEqual(cache.get('k', path=self.path), 'v2')
+
+    def test_missing_key_returns_false(self):
+        self.assertFalse(cache.get('missing', path=self.path))
+
+    def test_expired_key_returns_false(self):
+        cache.set('e', 'x', expire=lftime.now() - 10, path=self.path)
+        self.assertFalse(cache.get('e', path=self.path))
+
+    def test_unexpired_key_still_served(self):
+        cache.set('e', 'x', expire=lftime.now() + 3600, path=self.path)
+        self.assertEqual(cache.get('e', path=self.path), 'x')
+
+
+if __name__ == '__main__':
+    unittest.main()

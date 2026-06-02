@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.disk file helpers, driven by throwaway temp files.
+
+Host-inspecting helpers (get_real_disks, bd2dmd, udevadm) need real block
+devices and belong to the container batch; get_block_devices is checked
+only for its return shape here.
+"""
+
+import os
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.disk as disk
+
+
+class TestFileHelpers(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix='lftest-disk-')
+        self.file = os.path.join(self.dir, 'x.txt')
+
+    def test_write_read_roundtrip(self):
+        self.assertEqual(disk.write_file(self.file, 'hello'), (True, None))
+        self.assertEqual(disk.read_file(self.file), (True, 'hello'))
+
+    def test_write_append(self):
+        disk.write_file(self.file, 'a')
+        disk.write_file(self.file, 'b', append=True)
+        self.assertEqual(disk.read_file(self.file), (True, 'ab'))
+
+    def test_dir_and_file_exists(self):
+        disk.write_file(self.file, 'x')
+        self.assertTrue(disk.dir_exists(self.dir))
+        self.assertTrue(disk.file_exists(self.file))
+        self.assertFalse(disk.file_exists(os.path.join(self.dir, 'nope')))
+
+    def test_grep_file_returns_first_group(self):
+        disk.write_file(self.file, 'hello')
+        self.assertEqual(disk.grep_file(self.file, 'he(l+)o'), (True, 'll'))
+
+    def test_read_env(self):
+        envfile = os.path.join(self.dir, 'env')
+        disk.write_file(envfile, 'FOO=bar\nBAZ=qux\n')
+        self.assertEqual(disk.read_env(envfile), (True, {'FOO': 'bar', 'BAZ': 'qux'}))
+
+    def test_rm_file(self):
+        disk.write_file(self.file, 'x')
+        disk.rm_file(self.file)
+        self.assertFalse(disk.file_exists(self.file))
+
+    def test_walk_directory_finds_file(self):
+        disk.write_file(self.file, 'x')
+        found = disk.walk_directory(self.dir)
+        self.assertTrue(any('x.txt' in f for f in found))
+
+    @unittest.skipUnless(hasattr(os, 'geteuid'), 'POSIX-only ownership')
+    def test_get_owner(self):
+        disk.write_file(self.file, 'x')
+        self.assertEqual(disk.get_owner(self.file), os.geteuid())
+
+
+class TestHostHelpers(unittest.TestCase):
+    def test_get_tmpdir_absolute_without_trailing_slash(self):
+        tmp = disk.get_tmpdir()
+        self.assertTrue(os.path.isabs(tmp))
+        self.assertFalse(tmp.endswith('/'))
+
+    def test_get_cwd_returns_path(self):
+        self.assertTrue(os.path.isdir(disk.get_cwd()))
+
+    def test_get_block_devices_returns_list(self):
+        self.assertIsInstance(disk.get_block_devices(), list)
+
+
+if __name__ == '__main__':
+    unittest.main()

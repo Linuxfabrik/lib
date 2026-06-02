@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.txt. Pure functions, no fixtures or containers."""
+
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.txt as txt
+
+
+class TestCompileRegex(unittest.TestCase):
+    def test_single_pattern(self):
+        ok, pattern = txt.compile_regex(r'^[a-z]+$')
+        self.assertTrue(ok)
+        self.assertIsNotNone(pattern.match('abc'))
+        self.assertIsNone(pattern.match('ABC'))
+
+    def test_list_of_patterns(self):
+        result = txt.compile_regex([r'^[a-z]+$', r'\d+'])
+        self.assertEqual(len(result), 2)
+        self.assertTrue(all(ok for ok, _ in result))
+
+    def test_invalid_pattern_returns_error(self):
+        ok, msg = txt.compile_regex(r'[')
+        self.assertFalse(ok)
+        self.assertIn('errors', msg)
+
+
+class TestExceptionToText(unittest.TestCase):
+    def test_formats_type_and_message(self):
+        self.assertEqual(txt.exception2text(ValueError('boom')), 'ValueError: boom')
+
+
+class TestExtractStr(unittest.TestCase):
+    def test_marker_not_found_is_empty(self):
+        self.assertEqual(txt.extract_str('abcde', 'x', 'y'), '')
+
+    def test_from_to_excluded_by_default(self):
+        self.assertEqual(txt.extract_str('abcde', 'b', 'x'), 'cde')
+        self.assertEqual(txt.extract_str('abcde', 'b', 'd'), 'c')
+
+    def test_include_fromto(self):
+        self.assertEqual(txt.extract_str('abcde', 'b', 'x', include_fromto=True), 'bcde')
+        self.assertEqual(txt.extract_str('abcde', 'b', 'd', include_fromto=True), 'bcd')
+
+
+class TestFilterMltext(unittest.TestCase):
+    def setUp(self):
+        self.s = 'Lorem ipsum\n\ndolor sit amet\n\nconsectetur adipisicing'
+
+    def test_drops_paragraphs_matching_any_pattern(self):
+        self.assertEqual(
+            txt.filter_mltext(self.s, ['ipsum']),
+            '\ndolor sit amet\n\nconsectetur adipisicing\n',
+        )
+
+    def test_substring_match(self):
+        self.assertEqual(txt.filter_mltext(self.s, ['d']), 'Lorem ipsum\n\n\n')
+
+
+class TestMatchRegex(unittest.TestCase):
+    def test_match(self):
+        ok, m = txt.match_regex(r'^abc$', 'abc')
+        self.assertTrue(ok)
+        self.assertIsNotNone(m)
+
+    def test_no_match_is_none(self):
+        ok, m = txt.match_regex(r'^abc$', 'xyz')
+        self.assertTrue(ok)
+        self.assertIsNone(m)
+
+    def test_invalid_pattern(self):
+        ok, msg = txt.match_regex(r'[', 'text', key='ex')
+        self.assertFalse(ok)
+        self.assertIn('ex', msg)
+
+
+class TestMltext2Array(unittest.TestCase):
+    def test_sorts_by_column(self):
+        s = '1662130953 timedatex\n1662130757 python3-pip-wheel\n1662130975 python3-dateutil'
+        self.assertEqual(
+            txt.mltext2array(s, sort_key=0),
+            [
+                ['1662130757', 'python3-pip-wheel'],
+                ['1662130953', 'timedatex'],
+                ['1662130975', 'python3-dateutil'],
+            ],
+        )
+
+
+class TestMultiReplace(unittest.TestCase):
+    def test_applies_all_replacements(self):
+        self.assertEqual(
+            txt.multi_replace('Hello World!', {'Hello': 'Hi', 'World': 'Universe'}),
+            'Hi Universe!',
+        )
+
+    def test_empty_map_returns_input(self):
+        self.assertEqual(txt.multi_replace('abc', {}), 'abc')
+
+
+class TestPluralize(unittest.TestCase):
+    def test_default_suffix(self):
+        self.assertEqual(txt.pluralize('vote', 0), 'votes')
+        self.assertEqual(txt.pluralize('vote', 1), 'vote')
+        self.assertEqual(txt.pluralize('vote', 2), 'votes')
+
+    def test_custom_suffix(self):
+        self.assertEqual(txt.pluralize('class', 2, 'es'), 'classes')
+
+    def test_singular_plural_pair(self):
+        self.assertEqual(txt.pluralize('cand', 1, 'y,ies'), 'candy')
+        self.assertEqual(txt.pluralize('cand', 2, 'y,ies'), 'candies')
+        self.assertEqual(txt.pluralize('', 1, 'is,are'), 'is')
+        self.assertEqual(txt.pluralize('', 2, 'is,are'), 'are')
+
+
+class TestSanitizeSensitiveData(unittest.TestCase):
+    def test_redacts_password(self):
+        self.assertEqual(
+            txt.sanitize_sensitive_data('user=admin&password=secret123'),
+            'user=admin&password=******',
+        )
+
+    def test_custom_replacement(self):
+        out = txt.sanitize_sensitive_data('api_key = xyz987', replacement='X')
+        self.assertNotIn('xyz987', out)
+
+
+class TestToBytes(unittest.TestCase):
+    def test_str_and_int(self):
+        self.assertEqual(txt.to_bytes('hello'), b'hello')
+        self.assertEqual(txt.to_bytes(1234), b'1234')
+
+    def test_encoding(self):
+        self.assertEqual(txt.to_bytes('abc', encoding='latin-1'), b'abc')
+
+    def test_none_empty(self):
+        self.assertEqual(txt.to_bytes(None, nonstring='empty'), b'')
+
+
+class TestToText(unittest.TestCase):
+    def test_bytes_and_str(self):
+        self.assertEqual(txt.to_text(b'hello'), 'hello')
+        self.assertEqual(txt.to_text('already text'), 'already text')
+
+
+class TestUniq(unittest.TestCase):
+    def test_dedups_tokens_preserving_order(self):
+        self.assertEqual(txt.uniq('a a b a'), 'a b')
+        self.assertEqual(
+            txt.uniq('This is a test. This is a second test. And this is a third test.'),
+            'This is a test. second And this third',
+        )
+
+    def test_empty_input(self):
+        self.assertEqual(txt.uniq(''), '')
+
+
+if __name__ == '__main__':
+    unittest.main()

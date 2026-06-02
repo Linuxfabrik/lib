@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.human. Pure functions, no fixtures or containers.
+
+Covers the documented examples plus edge cases: zero, unit boundaries,
+very large and negative values, and wrong input types.
+"""
+
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.human as human
+
+
+class TestBytes2Human(unittest.TestCase):
+    def test_examples(self):
+        self.assertEqual(human.bytes2human(1024), '1.0KiB')
+        self.assertEqual(human.bytes2human(1500000), '1.4MiB')
+        self.assertEqual(human.bytes2human(1024, space=True), '1.0 KiB')
+
+    def test_zero_and_small(self):
+        self.assertEqual(human.bytes2human(0), '0.0B')
+        self.assertEqual(human.bytes2human(1), '1.0B')
+
+    def test_unit_boundaries(self):
+        self.assertEqual(human.bytes2human(1023), '1023.0B')
+        self.assertEqual(human.bytes2human(1025), '1.0KiB')
+        self.assertEqual(human.bytes2human(1536), '1.5KiB')
+
+    def test_very_large(self):
+        self.assertEqual(human.bytes2human(10**15), '909.5TiB')
+
+    def test_negative(self):
+        self.assertEqual(human.bytes2human(-1024), '-1.0KiB')
+
+    def test_wrong_type_raises(self):
+        with self.assertRaises(TypeError):
+            human.bytes2human('abc')
+        with self.assertRaises(TypeError):
+            human.bytes2human(None)
+
+
+class TestBitsAndBps(unittest.TestCase):
+    def test_bits2human(self):
+        self.assertEqual(human.bits2human(1000), '125.0B')
+        self.assertEqual(human.bits2human(0), '0.0B')
+
+    def test_bps2human(self):
+        self.assertEqual(human.bps2human(1000000), '1.0Mbps')
+
+
+class TestNumber2Human(unittest.TestCase):
+    def test_examples_and_edges(self):
+        self.assertEqual(human.number2human(1234567), '1.2M')
+        self.assertEqual(human.number2human(999), '999.0')
+        self.assertEqual(human.number2human(0), '0.0')
+        self.assertEqual(human.number2human(10**12), '1.0T')
+        self.assertEqual(human.number2human(-5), '-5.0')
+
+
+class TestSeconds2Human(unittest.TestCase):
+    def test_examples(self):
+        self.assertEqual(human.seconds2human(3661), '1h 1m')
+        self.assertEqual(human.seconds2human(90), '1m 30s')
+        self.assertEqual(human.seconds2human(3661, full_name=True), '1hour 1minute')
+
+    def test_zero_is_empty(self):
+        self.assertEqual(human.seconds2human(0), '')
+
+    def test_very_large(self):
+        self.assertEqual(human.seconds2human(10**8), '3Y 2M')
+
+
+class TestHuman2Bytes(unittest.TestCase):
+    def test_examples(self):
+        self.assertEqual(human.human2bytes('1K'), 1024)
+        self.assertEqual(human.human2bytes('1KB', binary=True), 1024)
+        self.assertEqual(human.human2bytes('1k', binary=False), 1000)
+
+    def test_zero_and_large_unit(self):
+        self.assertEqual(human.human2bytes('0'), 0)
+        self.assertEqual(human.human2bytes('5PB'), 5629499534213120)
+
+    def test_garbage_and_wrong_type_return_zero(self):
+        # Documented graceful behaviour: unparseable input yields 0.
+        self.assertEqual(human.human2bytes('xyz'), 0)
+        self.assertEqual(human.human2bytes(123), 0)
+
+
+class TestHuman2Seconds(unittest.TestCase):
+    def test_units(self):
+        self.assertEqual(human.human2seconds('1h'), 3600)
+        self.assertEqual(human.human2seconds('1d'), 86400)
+        self.assertEqual(human.human2seconds('0s'), 0)
+
+    def test_garbage_returns_zero(self):
+        self.assertEqual(human.human2seconds('xyz'), 0)
+
+
+class TestHumanDuration2Seconds(unittest.TestCase):
+    def test_compound(self):
+        self.assertEqual(human.humanduration2seconds('1h 30m'), 5400)
+        self.assertEqual(human.humanduration2seconds('2h'), 7200)
+
+
+class TestHumanRange(unittest.TestCase):
+    def test_humanrange2bytes(self):
+        self.assertEqual(human.humanrange2bytes('1K:2K'), '1024:2048')
+
+    def test_humanrange2seconds(self):
+        self.assertEqual(human.humanrange2seconds('1m:2m'), '60:120')
+
+
+class TestExtractHrNumbers(unittest.TestCase):
+    def test_extracts_integer_with_unit(self):
+        self.assertEqual(human.extract_hrnumbers('cpu 1.5K mem 2M'), ['2M'])
+
+
+if __name__ == '__main__':
+    unittest.main()

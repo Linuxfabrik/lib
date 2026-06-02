@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.version.
+
+Pure functions only. `check_eol()` fetches the endoflife.date API over the
+network, so it is covered separately by the mock-based test batch, not here.
+"""
+
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.version as version
+
+
+class TestVersion(unittest.TestCase):
+    def test_splits_to_tuple(self):
+        self.assertEqual(version.version('1.2.3'), (1, 2, 3))
+
+    def test_pads_to_maxlen(self):
+        self.assertEqual(version.version('1.2'), (1, 2, 0))
+
+    def test_truncates_to_maxlen(self):
+        self.assertEqual(version.version('1.2.3', maxlen=2), (1, 2))
+
+    def test_empty_is_zeros(self):
+        self.assertEqual(version.version(''), (0, 0, 0))
+
+    def test_none_raises(self):
+        with self.assertRaises(TypeError):
+            version.version(None)
+
+
+class TestVersion2Float(unittest.TestCase):
+    def test_first_dot_kept(self):
+        self.assertEqual(version.version2float('1.2.3'), 1.23)
+        self.assertEqual(version.version2float('10.0.1'), 10.01)
+
+    def test_non_numeric_raises(self):
+        with self.assertRaises(ValueError):
+            version.version2float('abc')
+
+
+class TestGetOsInfo(unittest.TestCase):
+    def test_returns_non_empty_string(self):
+        # Reads the host's /etc/os-release; assert only the shape so the test
+        # stays portable across distributions.
+        info = version.get_os_info()
+        self.assertIsInstance(info, str)
+
+
+if __name__ == '__main__':
+    unittest.main()

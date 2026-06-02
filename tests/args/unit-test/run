@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.args (argparse type/validator helpers)."""
+
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.args as args
+
+
+class TestCsv(unittest.TestCase):
+    def test_splits_on_comma(self):
+        self.assertEqual(args.csv('a,b,c'), ['a', 'b', 'c'])
+
+    def test_empty_yields_single_empty_field(self):
+        self.assertEqual(args.csv(''), [''])
+
+    def test_strips_whitespace(self):
+        self.assertEqual(args.csv(' a , b '), ['a', 'b'])
+
+
+class TestOrNone(unittest.TestCase):
+    def test_float_or_none(self):
+        self.assertEqual(args.float_or_none('1.5'), 1.5)
+        self.assertIsNone(args.float_or_none('none'))
+
+    def test_int_or_none(self):
+        self.assertEqual(args.int_or_none('5'), 5)
+        self.assertIsNone(args.int_or_none('none'))
+
+    def test_str_or_none(self):
+        self.assertEqual(args.str_or_none('x'), 'x')
+        self.assertIsNone(args.str_or_none('none'))
+
+    def test_range_or_none(self):
+        self.assertEqual(args.range_or_none('10'), '10')
+        self.assertIsNone(args.range_or_none('none'))
+
+
+if __name__ == '__main__':
+    unittest.main()

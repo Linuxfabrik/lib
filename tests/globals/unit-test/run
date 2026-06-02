@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.globals (Nagios state constants)."""
+
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.globals as g
+
+
+class TestStateConstants(unittest.TestCase):
+    def test_nagios_state_values(self):
+        self.assertEqual((g.STATE_OK, g.STATE_WARN, g.STATE_CRIT, g.STATE_UNKNOWN), (0, 1, 2, 3))
+
+
+if __name__ == '__main__':
+    unittest.main()
