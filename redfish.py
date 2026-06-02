@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025062601'
+__version__ = '2026060201'
 
 from . import base, human
 from .globals import STATE_CRIT, STATE_OK, STATE_WARN
@@ -671,8 +671,12 @@ def get_sensor_state(data, key='Reading'):
        - **Default caution**       (`Thresholds_LowerCaution`,      `Thresholds_UpperCaution`)      → STATE_WARN
        Otherwise, if any thresholds were present but none breached, returns STATE_OK.
     4. **ReadingRange** (last-resort sanity check)
-       If both `ReadingRangeMin` and `ReadingRangeMax` are defined, returns STATE_WARN if the
-       reading lies outside that range; otherwise STATE_OK.
+       If both `ReadingRangeMin` and `ReadingRangeMax` are defined and differ, returns STATE_WARN
+       if the reading lies outside that range; otherwise STATE_OK.
+       A range whose min equals its max has zero width and cannot describe a valid operating
+       window. Some implementations report identical min/max (often 255) as a sentinel for
+       "not available", "no limit defined" or "unsupported for this sensor type". Treating that
+       as a real range would flag every reading outside that single point, so it is ignored.
     5. **Default**
        If no other checks apply, returns STATE_OK.
 
@@ -791,10 +795,11 @@ def get_sensor_state(data, key='Reading'):
         return STATE_OK
 
     # we're using ReadingRangeMin/Max purely as a last-resort sanity check,
-    # since Redfish doesn't specify health semantics for that
+    # since Redfish doesn't specify health semantics for that. A zero-width range
+    # (min == max) is treated as "no range defined" (see docstring step 4).
     range_min = _parse(data.get('ReadingRangeMin'))
     range_max = _parse(data.get('ReadingRangeMax'))
-    if range_min is not None and range_max is not None:
+    if range_min is not None and range_max is not None and range_min != range_max:
         if reading < range_min or reading > range_max:
             return STATE_WARN
         return STATE_OK

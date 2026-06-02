@@ -726,6 +726,13 @@ class TestGetSensorState(unittest.TestCase):
         # Both bounds are required for the range fallback.
         self.assertEqual(self._state(Reading=150, ReadingRangeMin=0), STATE_OK)
 
+    def test_zero_width_range_is_ignored(self):
+        # min == max is a zero-width range, used by some implementations (often 255)
+        # as a sentinel for "not available"/"no limit". It must not flag the reading.
+        self.assertEqual(
+            self._state(Reading=1, ReadingRangeMin=255, ReadingRangeMax=255), STATE_OK
+        )
+
     def test_thresholds_take_precedence_over_range(self):
         # Any threshold present skips the range branch entirely.
         self.assertEqual(
