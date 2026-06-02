@@ -98,3 +98,8 @@ skips = ['B110', 'B112', 'B311']
 # the directory structure, so we need to configure package_dir
 # https://setuptools.pypa.io/en/latest/userguide/package_discovery.html
 package-dir = {"lib" = "."}
+# Declare the package explicitly. Without this, setuptools auto-discovery walks
+# the repository root with followlinks=True. The per-module `tests/*/lib`
+# symlinks point back to the root, so the walk recurses through them endlessly
+# and the build hangs. There is a single flat `lib` package, so list it directly.
+packages = ["lib"]
