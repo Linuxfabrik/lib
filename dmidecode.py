@@ -14,7 +14,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025090901'
+__version__ = '2026060201'
 
 import re
 
@@ -260,9 +260,7 @@ def dmidecode_parse(output):
         if 'no module installed' in size:
             return True
         # Sometimes vendors encode 0-sized entries
-        if size.startswith('0 ') or size == '0':
-            return True
-        return False
+        return bool(size.startswith('0 ') or size == '0')
 
     # Fields to ignore by DMI type when constructing fingerprints (order-independent)
     IGNORE_BY_TYPE = {
@@ -382,7 +380,7 @@ def dmidecode_parse(output):
             seen[fp] = (dmi_handle, rep)
             data[dmi_handle] = rep
         else:
-            first_handle, rep = seen[fp]
+            _, rep = seen[fp]
             rep['dedup_count'] = int(rep.get('dedup_count', 1)) + 1
             rep['dedup_handles'].append(dmi_handle[0])
             # enrich socket/slot lists
@@ -517,7 +515,7 @@ def get_data():
     if not success:
         return False
 
-    stdout, stderr, retc = result
+    stdout, _, retc = result
     if retc != 0:
         return False
 

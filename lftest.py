@@ -18,7 +18,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051102'
+__version__ = '2026060201'
 
 
 def run(test_instance, plugin, testcase):
@@ -543,16 +543,18 @@ def run_mysql_compatible_from_containerfile(
     dockerfile_name = os.path.basename(abspath)
     tag = f'lfmp-mysql-{dockerfile_name}'.lower().replace('_', '-')
 
-    with DockerImage(
-        path=build_dir,
-        dockerfile_path=dockerfile_name,
-        tag=tag,
-        clean_up=False,
-    ) as image:
-        with _run_mysql_compatible_resolved(
+    with (
+        DockerImage(
+            path=build_dir,
+            dockerfile_path=dockerfile_name,
+            tag=tag,
+            clean_up=False,
+        ) as image,
+        _run_mysql_compatible_resolved(
             str(image.tag), command, seed,
-        ) as result:
-            yield result
+        ) as result,
+    ):
+        yield result
 
 
 # Back-compat aliases for one release. Out-of-tree callers can
@@ -595,8 +597,8 @@ def test(args):
     retc = int(args[2]) if len(args) > 2 and args[2] != '' else 0
 
     if stdout and os.path.isfile(stdout):
-        success, stdout = disk.read_file(stdout)
+        _, stdout = disk.read_file(stdout)
     if stderr and os.path.isfile(stderr):
-        success, stderr = disk.read_file(stderr)
+        _, stderr = disk.read_file(stderr)
 
     return stdout, stderr, retc

@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060102'
+__version__ = '2026060201'
 
 import csv
 import hashlib
@@ -557,10 +557,7 @@ def delete(conn, sql, data=None, delete_db_on_operational_error=True):
 
     c = conn.cursor()
     try:
-        if data:
-            rowcount = c.execute(sql, data).rowcount
-        else:
-            rowcount = c.execute(sql).rowcount
+        rowcount = c.execute(sql, data).rowcount if data else c.execute(sql).rowcount
         return True, rowcount
     except sqlite3.OperationalError as e:
         if delete_db_on_operational_error:
@@ -938,7 +935,7 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
     # table is sanitized via __filter_str() above; keys come from the caller's
     # data dict (column names, not values); VALUES use parameterized binds
     keys = ','.join(data.keys())
-    binds = ','.join(f':{key}' for key in data.keys())
+    binds = ','.join(f':{key}' for key in data)
     sql = f'INSERT INTO "{table}" ({keys}) VALUES ({binds});'  # nosec B608
 
     c = conn.cursor()
@@ -1161,7 +1158,7 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
     table = __filter_str(table)
 
     keys = ','.join(data.keys())
-    binds = ','.join(f':{key}' for key in data.keys())
+    binds = ','.join(f':{key}' for key in data)
     sql = f'REPLACE INTO "{table}" ({keys}) VALUES ({binds});'
 
     c = conn.cursor()

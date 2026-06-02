@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051802'
+__version__ = '2026060201'
 
 import base64
 import json
@@ -33,7 +33,6 @@ except ImportError:
     httpcore = None
 
 from . import txt
-
 
 # stdlib ssl version names; '1.0' first because it is the most permissive minimum.
 # `ssl.TLSVersion` was added in Python 3.7. Build the dict only when available so
@@ -466,15 +465,17 @@ def fetch(
     response_charset = None
 
     try:
-        with client:
-            with client.stream(method, url, headers=headers, content=body) as response:
-                tls_version, alpn, peer_cert_der = _capture_tls_info(response)
-                response.raise_for_status()
-                body_bytes = response.read()
-                status_code = response.status_code
-                response_headers = dict(response.headers)
-                elapsed_seconds = response.elapsed.total_seconds()
-                response_charset = response.charset_encoding
+        with (
+            client,
+            client.stream(method, url, headers=headers, content=body) as response,
+        ):
+            tls_version, alpn, peer_cert_der = _capture_tls_info(response)
+            response.raise_for_status()
+            body_bytes = response.read()
+            status_code = response.status_code
+            response_headers = dict(response.headers)
+            elapsed_seconds = response.elapsed.total_seconds()
+            response_charset = response.charset_encoding
     except httpx.HTTPStatusError as e:
         return False, (
             f'HTTP error "{e.response.status_code} {e.response.reason_phrase}"'

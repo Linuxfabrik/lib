@@ -11,15 +11,12 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051201'
+__version__ = '2026060201'
 
 import datetime
 import re
-import sys
 import time
-
-if sys.version_info >= (3, 9):
-    import zoneinfo  # available in python 3.9+
+import zoneinfo
 
 
 def epoch2iso(timestamp):

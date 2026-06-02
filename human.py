@@ -13,7 +13,7 @@ back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041402'
+__version__ = '2026060201'
 
 import math
 
@@ -537,10 +537,7 @@ def number2human(number):
     except Exception:
         return number
 
-    if number == 0:
-        millidx = 0
-    else:
-        millidx = int(math.floor(math.log10(abs(number)) / 3))
+    millidx = 0 if number == 0 else math.floor(math.log10(abs(number)) / 3)
 
     millidx = max(0, min(_SI_PREFIXES_MAX_IDX, millidx))
     scaled = number / 10 ** (3 * millidx)

@@ -11,7 +11,7 @@
 """Interacts with the UptimeRobot API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025041901'
+__version__ = '2026060201'
 
 from . import txt, url
 
@@ -618,7 +618,7 @@ def get_data(uri, data, result_key):
         if item.get(result_key) is None:
             # status was ok, but response doesn't deliver the result key
             return (True, item['message'])
-        if type(item[result_key]) == list:
+        if isinstance(item[result_key], list):
             result += item[result_key]
         else:
             result = [item[result_key]]

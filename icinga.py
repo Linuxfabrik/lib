@@ -11,7 +11,7 @@
 """This module tries to make accessing the Icinga2 API easier."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042002'
+__version__ = '2026060201'
 
 import base64
 import time
@@ -157,7 +157,7 @@ def get_service(
     uri = f'{uri.rstrip("/")}/v1/objects/services'
     data = {
         'filter': f'match("{servicename}", service.__name)',
-        'attrs': ['name'] + attrs.split(','),
+        'attrs': ['name', *attrs.split(',')],
     }
     return api_post(
         uri=uri,

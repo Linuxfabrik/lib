@@ -39,7 +39,7 @@ result = lib.base.coe(
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041201'
+__version__ = '2026060201'
 
 from . import url
 
@@ -133,8 +133,8 @@ def get_groups_history(
 
     ### Example
     >>> success, history = get_groups_history(
-    ...     'https://chat.example.com', 
-    ...     'authTokenHere', 
+    ...     'https://chat.example.com',
+    ...     'authTokenHere',
     ...     'userIdHere',
     ...     room_id='ABC123',
     ...     params={'count': 50, 'offset': 0}
@@ -208,8 +208,8 @@ def get_rooms_get(
 
     ### Example
     >>> success, rooms = get_rooms_get(
-    ...     'https://chat.example.com', 
-    ...     'authTokenHere', 
+    ...     'https://chat.example.com',
+    ...     'authTokenHere',
     ...     'userIdHere'
     ... )
     >>> if success:
@@ -285,8 +285,8 @@ def get_rooms_info(
 
     ### Example
     >>> success, info = get_rooms_info(
-    ...     'https://chat.example.com', 
-    ...     'authTokenHere', 
+    ...     'https://chat.example.com',
+    ...     'authTokenHere',
     ...     'userIdHere',
     ...     room_id='GENERAL'
     ... )

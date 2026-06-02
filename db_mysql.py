@@ -10,18 +10,17 @@
 
 """Library for accessing MySQL/MariaDB servers."""
 
+import re
+import sys
 import warnings
+
+from . import base
+from .globals import STATE_UNKNOWN
 
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051803'
-
-import re
-import sys
-
-from . import base
-from .globals import STATE_UNKNOWN
+__version__ = '2026060201'
 
 try:
     import pymysql.cursors
@@ -538,7 +537,9 @@ def get_server_info(banner=None):
             return {'flavor': flavor, 'version': version}
         return None
 
-    from . import shell  # local import to keep db_mysql usable without shell at module load
+    # local import to keep db_mysql usable without shell at module load
+    from . import shell
+
     for command in (
         'mysqld --version',
         'mariadbd --version',

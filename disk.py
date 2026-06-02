@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060101'
+__version__ = '2026060201'
 
 import csv
 import os
@@ -241,7 +241,7 @@ def get_owner(file):
     """
     try:
         return os.stat(file).st_uid
-    except:
+    except OSError:
         return -1
 
 
