@@ -121,7 +121,7 @@ See [PyLint's message codes](http://pylint-messages.wikidot.com/all-codes) for r
 
 ### Unit Tests
 
-Unit tests use the standard-library [`unittest`](https://docs.python.org/3/library/unittest.html) framework (not pytest, so the suite runs across the full Python matrix, py3.6-py3.14). The setup mirrors the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins) so both projects look identical, but the library is tested independently: each test imports the local source directly, no other repository is required.
+Unit tests use the standard-library [`unittest`](https://docs.python.org/3/library/unittest.html) framework (not pytest, so the suite runs across the full Python matrix, py3.9-py3.14, matching the library's `requires-python`). The setup mirrors the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins) so both projects look identical, but the library is tested independently: each test imports the local source directly, no other repository is required.
 
 #### Test directory structure
 
@@ -161,7 +161,7 @@ tools/run-container-tests
 # everything in parallel (lint + fast + container), aggregated
 tools/run-all-tests
 
-# the full Python matrix (py3.6-py3.14)
+# the full Python matrix (py3.9-py3.14)
 tools/run-tox-tests
 ```
 
