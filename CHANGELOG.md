@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 tbd
 
 
+## [v4.3.0] - 2026-06-02
+
+### Added
+
+* disk.py: `get_block_devices()` lists all local block devices, including ones without a mounted filesystem, so callers can also work with raw or unmounted devices such as multipath SAN volumes
+
+
 ## [v4.2.0] - 2026-06-02
 
 ### Added

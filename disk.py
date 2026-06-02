@@ -120,6 +120,79 @@ def file_exists(path, allow_empty=False):
     return os.path.getsize(path) > 0
 
 
+# Block-device name prefixes that never carry meaningful I/O for monitoring
+# (loopback, RAM disks, compressed RAM, floppy and optical devices). They are
+# skipped by get_block_devices().
+_PSEUDO_DEVICE_PREFIXES = ('fd', 'loop', 'ram', 'sr', 'zram')
+
+
+def get_block_devices():
+    """
+    Return all local block devices that expose I/O counters, mounted or not.
+
+    Unlike `get_real_disks()`, which is limited to block devices that currently have a mounted
+    filesystem, this also includes devices without a mounted filesystem, for example raw devices
+    backing a database or storage layer, or unmounted multipath/SAN volumes. Devices are
+    enumerated from `/proc/diskstats`, so their names line up with the per-device I/O counters
+    exposed there.
+
+    Each device is represented as a dictionary with:
+    - 'bd' : Block device path (e.g. '/dev/sda' or '/dev/dm-7').
+    - 'dmd': Device-mapper path if the device is a device-mapper target (e.g.
+      '/dev/mapper/data'), otherwise an empty string.
+    - 'mp' : Mount point(s), space-separated if mounted in several places, or an empty string if
+      the device is not mounted.
+
+    Pseudo devices that never carry meaningful I/O are skipped by name prefix: loopback (`loop`),
+    RAM disks (`ram`), compressed RAM (`zram`), floppy (`fd`) and optical (`sr`) devices.
+
+    ### Parameters
+    - None
+
+    ### Returns
+    - **list of dict**: One entry per block device, including unmounted ones. Empty list on
+      systems without `/proc/diskstats` (e.g. non-Linux).
+
+    ### Example
+    >>> get_block_devices()
+    [{'bd': '/dev/dm-7', 'dmd': '/dev/mapper/data', 'mp': ''},
+     {'bd': '/dev/sda1', 'dmd': '', 'mp': '/boot'}]
+    """
+    success, diskstats = read_file('/proc/diskstats')
+    if not success:
+        return []
+
+    # map every mounted block-device path to its mount point(s)
+    mountpoints = {}
+    mounts_ok, mounts_content = read_file('/proc/mounts')
+    if mounts_ok:
+        for line in mounts_content.splitlines():
+            if not line.startswith('/dev/'):
+                continue
+            parts = line.split()
+            device_path, mount_point = parts[0], parts[1]
+            if device_path in mountpoints:
+                mountpoints[device_path] += f' {mount_point}'
+            else:
+                mountpoints[device_path] = mount_point
+
+    disks = []
+    for line in diskstats.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        name = parts[2]
+        if name.startswith(_PSEUDO_DEVICE_PREFIXES):
+            continue
+        bd = f'/dev/{name}'
+        dmd = bd2dmd(name)
+        # a device can be mounted under its block-device path or its device-mapper path
+        mp = mountpoints.get(bd, '') or (mountpoints.get(dmd, '') if dmd else '')
+        disks.append({'bd': bd, 'dmd': dmd, 'mp': mp})
+
+    return disks
+
+
 def get_cwd():
     """
     Get the current working directory.
