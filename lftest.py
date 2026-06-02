@@ -18,7 +18,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026060202'
 
 
 def run(test_instance, plugin, testcase):
@@ -228,6 +228,44 @@ def attach_each(test_class, items, action, id_func=str):
 
 
 @contextlib.contextmanager
+def network():
+    """Yield a testcontainers `Network`, removed on exit.
+
+    Used to wire a multi-container test together: start a backend (e.g. a
+    database) and the application container on the same network, passing the
+    network to :func:`run_container` via its `network` / `network_alias`
+    arguments so the application can reach the backend by alias.
+
+    ### Yields
+    - **Network**: a created docker/podman network.
+
+    ### Example
+    >>> with lib.lftest.network() as net:
+    ...     with lib.lftest.run_container(
+    ...         'docker.io/library/mariadb:11',
+    ...         env={'MARIADB_ROOT_PASSWORD': 'linuxfabrik'},
+    ...         network=net,
+    ...         network_alias='db',
+    ...         wait_log='ready for connections',
+    ...     ):
+    ...         pass
+    """
+    try:
+        from testcontainers.core.network import Network
+    except ImportError as e:
+        raise RuntimeError(
+            'testcontainers is not installed; run `pip install testcontainers`'
+        ) from e
+
+    net = Network()
+    net.create()
+    try:
+        yield net
+    finally:
+        net.remove()
+
+
+@contextlib.contextmanager
 def run_container(
     image,
     *,
@@ -236,6 +274,8 @@ def run_container(
     command=None,
     wait_log=None,
     wait_log_timeout=120,
+    network=None,
+    network_alias=None,
 ):
     """Start a testcontainers-python managed container and yield it.
 
@@ -267,6 +307,11 @@ def run_container(
       container is running.
     - **wait_log_timeout** (`int`, optional): Maximum time to wait
       for the log marker, in seconds. Defaults to `120`.
+    - **network** (`Network`, optional): A network from :func:`network`
+      to attach the container to, so it can reach sibling containers by
+      alias (multi-container tests).
+    - **network_alias** (`str`, optional): Hostname this container is
+      reachable under on `network` (e.g. `'db'`).
 
     ### Yields
     - **DockerContainer**: The running container, with
@@ -307,6 +352,10 @@ def run_container(
             c.with_exposed_ports(port)
     if command:
         c.with_command(command)
+    if network is not None:
+        c.with_network(network)
+        if network_alias:
+            c.with_network_aliases(network_alias)
     if wait_log:
         c.waiting_for(
             LogMessageWaitStrategy(wait_log).with_startup_timeout(
