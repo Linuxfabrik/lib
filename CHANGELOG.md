@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* disk.py: `get_block_devices()` lists all local block devices, including ones without a mounted filesystem, so callers can also work with raw or unmounted devices such as multipath SAN volumes
 * lftest.py: `network()` plus `network` / `network_alias` arguments on `run_container()` let a test wire an application container to a backing service (e.g. a database) on a shared network, for multi-container integration tests
 
 ### Fixed
@@ -19,13 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * veeam.py: authentication against the Veeam Enterprise Manager API works again
 * Installing the library from source (for example `pip install --editable .`) no longer hangs, which also unblocks the API documentation build
 * Resolve the remaining ruff lint violations across the library, including a few robustness fixes: a bare `except` in disk.py now catches only `OSError`, mutable default arguments in url.py and rocket.py are no longer shared between calls, and uptimerobot.py uses `isinstance()` instead of a `type()` comparison ([#118](https://github.com/Linuxfabrik/lib/issues/118))
-
-
-## [v4.3.0] - 2026-06-02
-
-### Added
-
-* disk.py: `get_block_devices()` lists all local block devices, including ones without a mounted filesystem, so callers can also work with raw or unmounted devices such as multipath SAN volumes
 
 
 ## [v4.2.0] - 2026-06-02
