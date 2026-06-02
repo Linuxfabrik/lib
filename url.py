@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026060202'
 
 import base64
 import json
@@ -316,7 +316,8 @@ def fetch(
     - **header** (`dict`, optional):
         Headers to include in the request. Note: `Connection: close` and the
         `User-Agent: Linuxfabrik Monitoring Plugins` header are always set after the user's
-        headers and override any user-supplied value of the same name.
+        headers and override any user-supplied value of the same name. A `Content-Length`
+        header is always dropped; the HTTP engine derives the correct value from the body.
     - **data** (`dict`, optional):
         Data to send in the request body. Truthy data triggers a POST.
     - **encoding** (`str`, optional):
@@ -410,6 +411,11 @@ def fetch(
         body = None
 
     headers = dict(header)
+    # Content-Length is transport framing owned by the HTTP engine, which derives it from the
+    # actual body. A caller-supplied value can only disagree with that body; h11 then refuses to
+    # serialize the request with "Too much data for declared Content-Length". Drop any incoming
+    # Content-Length so the correct value is always computed from the body we send.
+    headers = {k: v for k, v in headers.items() if k.lower() != 'content-length'}
     # urllib's AbstractHTTPHandler auto-sets application/x-www-form-urlencoded for any POST
     # body when the caller did not. Replicate that so consumers that relied on the implicit
     # behaviour (e.g. lib.icinga sending JSON without an explicit Content-Type) keep working.

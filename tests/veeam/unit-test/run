@@ -19,7 +19,7 @@ no httpx dependency ever.
 
 We assert the full request-building contract (URL composition with
 trailing-slash normalization, the Basic-auth header derived from
-USERNAME/PASSWORD, the fixed Accept and Content-Length headers, the POST
+USERNAME/PASSWORD, the fixed Accept header, the POST
 body marker, and pass-through of insecure / no_proxy / timeout plus the
 mandatory `extended=True`) and the response-handling contract (token
 extraction on success, transport-failure pass-through, the "no result"
@@ -175,15 +175,17 @@ class TestGetTokenRequestBuilding(unittest.TestCase):
         captured, _ = self._call()
         self.assertEqual(captured['kw']['header']['Accept'], 'application/json')
 
-    def test_content_length_header_is_zero(self):
+    def test_content_length_header_absent(self):
+        # Content-Length must not be hand-set; lib.url / the HTTP engine derives it from the
+        # body. A hand-set value disagreeing with the body makes h11 refuse to send the request.
         captured, _ = self._call()
-        self.assertEqual(captured['kw']['header']['Content-Length'], '0')
+        self.assertNotIn('Content-Length', captured['kw']['header'])
 
-    def test_header_has_exactly_three_keys(self):
+    def test_header_has_exactly_two_keys(self):
         captured, _ = self._call()
         self.assertEqual(
             set(captured['kw']['header'].keys()),
-            {'Authorization', 'Accept', 'Content-Length'},
+            {'Authorization', 'Accept'},
         )
 
     def test_post_body_marker_present(self):

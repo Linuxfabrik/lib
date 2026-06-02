@@ -12,7 +12,7 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026060201'
 
 import base64
 
@@ -58,9 +58,12 @@ def get_token(args):
     headers = {
         'Authorization': f'Basic {encoded_auth}',
         'Accept': 'application/json',
-        'Content-Length': '0',
     }
 
+    # The Veeam logon endpoint expects a POST. lib.url.fetch() selects POST over GET from a
+    # truthy body, so this minimal dummy body exists only to trigger POST mode. Content-Length
+    # is left to the HTTP engine, which derives it from the actual body; a hand-set value can
+    # disagree with the body and make the engine refuse to serialize the request.
     data = {'make-this': 'a-post-request'}
     success, result = url.fetch_json(
         uri,

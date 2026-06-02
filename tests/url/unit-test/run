@@ -413,6 +413,21 @@ class TestFetchSuccess(unittest.TestCase):
         self.assertEqual(cap['headers']['content-type'], 'application/json')
         self.assertNotIn('Content-Type', cap['headers'])
 
+    def test_caller_content_length_is_dropped(self):
+        # A hand-set Content-Length disagreeing with the body would make h11 reject the request.
+        # lib.url must strip it (case-insensitively) so the engine computes the value from the body.
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch(
+                'https://example.com',
+                data={'a': 'b'},
+                header={'Content-Length': '0', 'X-Custom': 'v'},
+            )
+        self.assertNotIn('Content-Length', cap['headers'])
+        self.assertNotIn('content-length', cap['headers'])
+        self.assertEqual(cap['headers']['X-Custom'], 'v')
+        self.assertEqual(cap['content'], b'a=b')
+
     def test_to_text_false_returns_bytes(self):
         fake, _ = make_fake_client(FakeStreamResponse(body=b'\x00\x01raw'))
         with patch_client(fake):

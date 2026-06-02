@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * redfish.py: Sensors that report an empty min/max range (identical min and max, used by some firmware as a "no limit" placeholder) no longer raise false warnings ([#1211](https://github.com/Linuxfabrik/monitoring-plugins/issues/1211))
+* url.py: a caller-supplied `Content-Length` is ignored and recomputed from the request body
+* veeam.py: authentication against the Veeam Enterprise Manager API works again
 * Resolve the remaining ruff lint violations across the library, including a few robustness fixes: a bare `except` in disk.py now catches only `OSError`, mutable default arguments in url.py and rocket.py are no longer shared between calls, and uptimerobot.py uses `isinstance()` instead of a `type()` comparison ([#118](https://github.com/Linuxfabrik/lib/issues/118))
 
 
