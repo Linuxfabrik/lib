@@ -1,0 +1,18 @@
+[
+    {
+        "Id": 1,
+        "DisplayName": "Main Screen",
+        "Number": 1,
+        "IsOn": true,
+        "Status": "Ok",
+        "Orientation": "Landscape",
+        "LastUpdate": "2026-04-12T08:30:00Z",
+        "LastStatusChange": "2026-04-12T08:00:00Z"
+    },
+    {
+        "Id": 2,
+        "DisplayName": "Side Screen",
+        "Number": 2,
+        "IsOn": false
+    }
+]

@@ -1,0 +1,24 @@
+{
+    "status": "success",
+    "data": {
+        "userId": "ew28DpvKw3R",
+        "authToken": "8h2mKAwxB3AQrFSjLVKMooJyjdCFaA7W45sWlHP8IzO",
+        "me": {
+            "_id": "ew28DpvKw3R",
+            "username": "admin",
+            "name": "Administrator",
+            "emails": [
+                {
+                    "address": "admin@example.com",
+                    "verified": true
+                }
+            ],
+            "status": "online",
+            "active": true,
+            "roles": [
+                "admin",
+                "user"
+            ]
+        }
+    }
+}

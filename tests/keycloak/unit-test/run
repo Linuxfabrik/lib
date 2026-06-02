@@ -1,0 +1,587 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.keycloak.
+
+The module is a thin client for the Keycloak OIDC discovery document and the
+Keycloak Admin REST API. Every network call goes through `lib.url.fetch_json`,
+so the suite is made fully hermetic by replacing `lib.keycloak.url.fetch_json`
+with an in-memory fake. No socket, no DNS, no TLS handshake ever happens.
+
+The tests probe three things for each public function:
+
+  * Request construction: the exact URL, headers, POST body and the
+    `insecure` / `no_proxy` / `timeout` keyword arguments handed to
+    `fetch_json`.
+  * Response parsing: the `(success, result)` tuple is returned verbatim,
+    so realistic captured-style payloads (loaded from `fixtures/`) survive
+    the round trip unchanged.
+  * Error handling: non-200 / malformed / empty-body conditions are surfaced
+    by `fetch_json` as `(False, message)` and must propagate untouched, and
+    missing keys in the caller-supplied dicts degrade gracefully.
+
+`lib.url` imports httpx lazily, but these tests never reach the real
+`fetch_json`, so httpx is not required here.
+"""
+
+import json
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.keycloak as keycloak
+
+FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures')
+
+
+def load_fixture(name):
+    """Load a captured-style JSON fixture and return the parsed document."""
+    with open(os.path.join(FIXTURE_DIR, name), encoding='utf-8') as handle:
+        return json.load(handle)
+
+
+class Args:
+    """Minimal stand-in for the argparse Namespace the functions expect.
+
+    Only the attributes each function actually reads are set per test; this
+    mirrors how the real plugins pass their parsed CLI args around.
+    """
+
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+def make_discover_args(**overrides):
+    base = {
+        'URL': 'https://kc.example.com',
+        'REALM': 'myrealm',
+        'INSECURE': False,
+        'NO_PROXY': False,
+        'TIMEOUT': 8,
+    }
+    base.update(overrides)
+    return Args(**base)
+
+
+def make_get_data_args(**overrides):
+    base = {
+        'URL': 'https://kc.example.com',
+        'INSECURE': False,
+        'NO_PROXY': False,
+        'TIMEOUT': 8,
+    }
+    base.update(overrides)
+    return Args(**base)
+
+
+def make_token_args(**overrides):
+    base = {
+        'CLIENT_ID': 'admin-cli',
+        'USERNAME': 'admin',
+        'PASSWORD': 'linuxfabrik',
+        'INSECURE': False,
+        'NO_PROXY': False,
+        'TIMEOUT': 8,
+    }
+    base.update(overrides)
+    return Args(**base)
+
+
+# -----------------------------------------------------------------------------
+# discover_oidc_endpoints
+# -----------------------------------------------------------------------------
+
+
+class TestDiscoverOidcEndpoints(unittest.TestCase):
+
+    def test_url_construction_well_known(self):
+        args = make_discover_args(URL='https://kc.example.com', REALM='myrealm')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://kc.example.com/realms/myrealm/.well-known/openid-configuration',
+        )
+
+    def test_single_trailing_slash_stripped(self):
+        args = make_discover_args(URL='https://kc.example.com/')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://kc.example.com/realms/myrealm/.well-known/openid-configuration',
+        )
+
+    def test_multiple_trailing_slashes_stripped(self):
+        # rstrip('/') removes every trailing slash, not just one.
+        args = make_discover_args(URL='https://kc.example.com///')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://kc.example.com/realms/myrealm/.well-known/openid-configuration',
+        )
+
+    def test_url_with_path_prefix(self):
+        # Reverse-proxied Keycloak under a sub-path.
+        args = make_discover_args(URL='https://example.com/auth')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://example.com/auth/realms/myrealm/.well-known/openid-configuration',
+        )
+
+    def test_realm_with_special_characters_passed_through(self):
+        # The module does not URL-encode the realm; assert the actual behaviour.
+        args = make_discover_args(REALM='my realm/x')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://kc.example.com/realms/my realm/x/.well-known/openid-configuration',
+        )
+
+    def test_no_auth_header_sent(self):
+        # Discovery is unauthenticated: no header kwarg must be passed.
+        args = make_discover_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertNotIn('header', m.call_args.kwargs)
+        self.assertNotIn('data', m.call_args.kwargs)
+
+    def test_passes_insecure_true(self):
+        args = make_discover_args(INSECURE=True)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertIs(m.call_args.kwargs['insecure'], True)
+
+    def test_passes_no_proxy_true(self):
+        args = make_discover_args(NO_PROXY=True)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertIs(m.call_args.kwargs['no_proxy'], True)
+
+    def test_passes_timeout(self):
+        args = make_discover_args(TIMEOUT=42)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertEqual(m.call_args.kwargs['timeout'], 42)
+
+    def test_all_transport_kwargs_together(self):
+        args = make_discover_args(INSECURE=True, NO_PROXY=True, TIMEOUT=15)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertEqual(
+            m.call_args.kwargs,
+            {'insecure': True, 'no_proxy': True, 'timeout': 15},
+        )
+
+    def test_success_payload_returned_verbatim(self):
+        fixture = load_fixture('openid-configuration.json')
+        args = make_discover_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, fixture)):
+            success, result = keycloak.discover_oidc_endpoints(args)
+        self.assertTrue(success)
+        self.assertEqual(result, fixture)
+        self.assertEqual(
+            result['token_endpoint'],
+            'https://kc.example.com/realms/myrealm/protocol/openid-connect/token',
+        )
+
+    def test_error_non_200_propagated(self):
+        args = make_discover_args()
+        with mock.patch.object(
+            keycloak.url, 'fetch_json', return_value=(False, 'HTTP 404: Realm not found')
+        ):
+            success, result = keycloak.discover_oidc_endpoints(args)
+        self.assertFalse(success)
+        self.assertEqual(result, 'HTTP 404: Realm not found')
+
+    def test_error_malformed_json_propagated(self):
+        # fetch_json reports JSON decode failures as (False, message).
+        args = make_discover_args()
+        with mock.patch.object(
+            keycloak.url, 'fetch_json', return_value=(False, 'ValueError: No JSON object')
+        ):
+            success, result = keycloak.discover_oidc_endpoints(args)
+        self.assertFalse(success)
+        self.assertIn('JSON', result)
+
+    def test_empty_body_returns_empty_dict(self):
+        args = make_discover_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})):
+            success, result = keycloak.discover_oidc_endpoints(args)
+        self.assertTrue(success)
+        self.assertEqual(result, {})
+
+    def test_called_exactly_once(self):
+        args = make_discover_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.discover_oidc_endpoints(args)
+        self.assertEqual(m.call_count, 1)
+
+
+# -----------------------------------------------------------------------------
+# get_data
+# -----------------------------------------------------------------------------
+
+
+class TestGetData(unittest.TestCase):
+
+    def test_url_concatenation(self):
+        args = make_get_data_args(URL='https://kc.example.com')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, '/admin/serverinfo')
+        self.assertEqual(m.call_args.args[0], 'https://kc.example.com/admin/serverinfo')
+
+    def test_trailing_slash_on_base_stripped(self):
+        args = make_get_data_args(URL='https://kc.example.com/')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, '/admin/serverinfo')
+        self.assertEqual(m.call_args.args[0], 'https://kc.example.com/admin/serverinfo')
+
+    def test_multiple_trailing_slashes_on_base_stripped(self):
+        args = make_get_data_args(URL='https://kc.example.com///')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, '/x')
+        self.assertEqual(m.call_args.args[0], 'https://kc.example.com/x')
+
+    def test_uri_without_leading_slash_concatenated_literally(self):
+        # The module does not insert a separator; document the real behaviour.
+        args = make_get_data_args(URL='https://kc.example.com')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, 'admin/serverinfo')
+        self.assertEqual(m.call_args.args[0], 'https://kc.example.comadmin/serverinfo')
+
+    def test_empty_uri(self):
+        args = make_get_data_args(URL='https://kc.example.com')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, '')
+        self.assertEqual(m.call_args.args[0], 'https://kc.example.com')
+
+    def test_bearer_header_built(self):
+        args = make_get_data_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'ABC.DEF.GHI'}, '/x')
+        self.assertEqual(
+            m.call_args.kwargs['header'],
+            {'Authorization': 'Bearer ABC.DEF.GHI'},
+        )
+
+    def test_missing_access_token_yields_empty_bearer(self):
+        # token_data without access_token -> "Bearer " (empty), no KeyError.
+        args = make_get_data_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {}, '/x')
+        self.assertEqual(m.call_args.kwargs['header'], {'Authorization': 'Bearer '})
+
+    def test_token_from_fixture(self):
+        token_data = load_fixture('token-response.json')
+        args = make_get_data_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, token_data, '/admin/serverinfo')
+        self.assertEqual(
+            m.call_args.kwargs['header']['Authorization'],
+            'Bearer ' + token_data['access_token'],
+        )
+
+    def test_token_data_none_raises_attribute_error(self):
+        # token_data.get(...) on None is an AttributeError; document it.
+        args = make_get_data_args()
+        with (
+            mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})),
+            self.assertRaises(AttributeError),
+        ):
+            keycloak.get_data(args, None, '/x')
+
+    def test_no_data_kwarg_sent(self):
+        # get_data performs a GET: no POST body must be passed.
+        args = make_get_data_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, '/x')
+        self.assertNotIn('data', m.call_args.kwargs)
+
+    def test_passes_insecure_true(self):
+        args = make_get_data_args(INSECURE=True)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, '/x')
+        self.assertIs(m.call_args.kwargs['insecure'], True)
+
+    def test_passes_no_proxy_true(self):
+        args = make_get_data_args(NO_PROXY=True)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, '/x')
+        self.assertIs(m.call_args.kwargs['no_proxy'], True)
+
+    def test_passes_timeout(self):
+        args = make_get_data_args(TIMEOUT=99)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, '/x')
+        self.assertEqual(m.call_args.kwargs['timeout'], 99)
+
+    def test_full_kwargs_shape(self):
+        args = make_get_data_args(INSECURE=True, NO_PROXY=True, TIMEOUT=20)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, '/x')
+        self.assertEqual(
+            m.call_args.kwargs,
+            {
+                'header': {'Authorization': 'Bearer TOK'},
+                'insecure': True,
+                'no_proxy': True,
+                'timeout': 20,
+            },
+        )
+
+    def test_success_payload_returned_verbatim(self):
+        fixture = load_fixture('serverinfo.json')
+        args = make_get_data_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, fixture)):
+            success, result = keycloak.get_data(args, {'access_token': 'TOK'}, '/admin/serverinfo')
+        self.assertTrue(success)
+        self.assertEqual(result, fixture)
+        self.assertEqual(result['systemInfo']['version'], '26.0.5')
+
+    def test_error_401_propagated(self):
+        args = make_get_data_args()
+        with mock.patch.object(
+            keycloak.url, 'fetch_json', return_value=(False, 'HTTP 401: Unauthorized')
+        ):
+            success, result = keycloak.get_data(args, {'access_token': 'expired'}, '/x')
+        self.assertFalse(success)
+        self.assertEqual(result, 'HTTP 401: Unauthorized')
+
+    def test_error_malformed_json_propagated(self):
+        args = make_get_data_args()
+        with mock.patch.object(
+            keycloak.url, 'fetch_json', return_value=(False, 'Expecting value: line 1')
+        ):
+            success, result = keycloak.get_data(args, {'access_token': 'TOK'}, '/x')
+        self.assertFalse(success)
+        self.assertIn('Expecting value', result)
+
+    def test_empty_list_payload(self):
+        # The Admin REST API returns JSON arrays (e.g. /users); a list survives.
+        args = make_get_data_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, [])):
+            success, result = keycloak.get_data(args, {'access_token': 'TOK'}, '/admin/realms/r/users')
+        self.assertTrue(success)
+        self.assertEqual(result, [])
+
+    def test_called_exactly_once(self):
+        args = make_get_data_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.get_data(args, {'access_token': 'TOK'}, '/x')
+        self.assertEqual(m.call_count, 1)
+
+
+# -----------------------------------------------------------------------------
+# obtain_admin_token
+# -----------------------------------------------------------------------------
+
+
+class TestObtainAdminToken(unittest.TestCase):
+
+    def test_token_endpoint_used_as_url(self):
+        args = make_token_args()
+        oidc = {'token_endpoint': 'https://kc.example.com/realms/myrealm/protocol/openid-connect/token'}
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, oidc)
+        self.assertEqual(m.call_args.args[0], oidc['token_endpoint'])
+
+    def test_missing_token_endpoint_yields_empty_url(self):
+        # oidc_config without token_endpoint -> '' (no KeyError).
+        args = make_token_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(False, 'err')) as m:
+            keycloak.obtain_admin_token(args, {})
+        self.assertEqual(m.call_args.args[0], '')
+
+    def test_endpoint_from_discovery_fixture(self):
+        oidc = load_fixture('openid-configuration.json')
+        args = make_token_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, oidc)
+        self.assertEqual(m.call_args.args[0], oidc['token_endpoint'])
+
+    def test_password_grant_body(self):
+        args = make_token_args(
+            CLIENT_ID='admin-cli',
+            USERNAME='admin',
+            PASSWORD='linuxfabrik',
+        )
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertEqual(
+            m.call_args.kwargs['data'],
+            {
+                'grant_type': 'password',
+                'client_id': 'admin-cli',
+                'username': 'admin',
+                'password': 'linuxfabrik',
+            },
+        )
+
+    def test_grant_type_is_password(self):
+        args = make_token_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertEqual(m.call_args.kwargs['data']['grant_type'], 'password')
+
+    def test_credentials_flow_through(self):
+        args = make_token_args(CLIENT_ID='my-client', USERNAME='svc', PASSWORD='s3cr3t')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        body = m.call_args.kwargs['data']
+        self.assertEqual(body['client_id'], 'my-client')
+        self.assertEqual(body['username'], 'svc')
+        self.assertEqual(body['password'], 's3cr3t')
+
+    def test_no_auth_header_sent(self):
+        # The token request authenticates via the POST body, not a header.
+        args = make_token_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertNotIn('header', m.call_args.kwargs)
+
+    def test_passes_insecure_true(self):
+        args = make_token_args(INSECURE=True)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertIs(m.call_args.kwargs['insecure'], True)
+
+    def test_passes_no_proxy_true(self):
+        args = make_token_args(NO_PROXY=True)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertIs(m.call_args.kwargs['no_proxy'], True)
+
+    def test_passes_timeout(self):
+        args = make_token_args(TIMEOUT=30)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertEqual(m.call_args.kwargs['timeout'], 30)
+
+    def test_full_kwargs_shape(self):
+        args = make_token_args(INSECURE=True, NO_PROXY=True, TIMEOUT=12)
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertEqual(
+            m.call_args.kwargs,
+            {
+                'data': {
+                    'grant_type': 'password',
+                    'client_id': 'admin-cli',
+                    'username': 'admin',
+                    'password': 'linuxfabrik',
+                },
+                'insecure': True,
+                'no_proxy': True,
+                'timeout': 12,
+            },
+        )
+
+    def test_success_token_returned_verbatim(self):
+        fixture = load_fixture('token-response.json')
+        args = make_token_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, fixture)):
+            success, result = keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertTrue(success)
+        self.assertEqual(result, fixture)
+        self.assertEqual(result['token_type'], 'Bearer')
+        self.assertIn('access_token', result)
+
+    def test_error_invalid_grant_propagated(self):
+        # Wrong password -> Keycloak returns 401 with invalid_grant.
+        args = make_token_args(PASSWORD='wrong')
+        with mock.patch.object(
+            keycloak.url,
+            'fetch_json',
+            return_value=(False, 'HTTP 401: {"error":"invalid_grant"}'),
+        ):
+            success, result = keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertFalse(success)
+        self.assertIn('invalid_grant', result)
+
+    def test_error_malformed_json_propagated(self):
+        args = make_token_args()
+        with mock.patch.object(
+            keycloak.url, 'fetch_json', return_value=(False, 'JSONDecodeError')
+        ):
+            success, result = keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertFalse(success)
+        self.assertEqual(result, 'JSONDecodeError')
+
+    def test_oidc_config_none_raises_attribute_error(self):
+        # oidc_config.get(...) on None is an AttributeError; document it.
+        args = make_token_args()
+        with (
+            mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})),
+            self.assertRaises(AttributeError),
+        ):
+            keycloak.obtain_admin_token(args, None)
+
+    def test_called_exactly_once(self):
+        args = make_token_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertEqual(m.call_count, 1)
+
+
+# -----------------------------------------------------------------------------
+# Integration-style flow: discover -> obtain -> get_data, fully mocked
+# -----------------------------------------------------------------------------
+
+
+class TestTypicalUsageFlow(unittest.TestCase):
+
+    def test_happy_path_chains_three_calls(self):
+        oidc = load_fixture('openid-configuration.json')
+        token = load_fixture('token-response.json')
+        serverinfo = load_fixture('serverinfo.json')
+
+        discover_args = make_discover_args()
+        token_args = make_token_args()
+        get_args = make_get_data_args()
+
+        with mock.patch.object(keycloak.url, 'fetch_json') as m:
+            m.side_effect = [(True, oidc), (True, token), (True, serverinfo)]
+
+            ok1, oidc_config = keycloak.discover_oidc_endpoints(discover_args)
+            ok2, token_data = keycloak.obtain_admin_token(token_args, oidc_config)
+            ok3, info = keycloak.get_data(get_args, token_data, '/admin/serverinfo')
+
+        self.assertTrue(ok1 and ok2 and ok3)
+        self.assertEqual(m.call_count, 3)
+        # obtain_admin_token must have used the endpoint discovered in step 1.
+        self.assertEqual(m.call_args_list[1].args[0], oidc['token_endpoint'])
+        # get_data must have used the access_token obtained in step 2.
+        self.assertEqual(
+            m.call_args_list[2].kwargs['header']['Authorization'],
+            'Bearer ' + token['access_token'],
+        )
+        self.assertEqual(info['systemInfo']['version'], '26.0.5')
+
+    def test_flow_aborts_when_discovery_fails(self):
+        # If discovery fails, the real plugin would stop via lib.base.coe; here
+        # we assert the failure tuple is returned and nothing else is implied.
+        discover_args = make_discover_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(False, 'unreachable')):
+            ok, result = keycloak.discover_oidc_endpoints(discover_args)
+        self.assertFalse(ok)
+        self.assertEqual(result, 'unreachable')
+
+
+if __name__ == '__main__':
+    unittest.main()

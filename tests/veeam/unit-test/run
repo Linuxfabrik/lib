@@ -1,0 +1,383 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.veeam.
+
+The module is a thin client for the Veeam Enterprise Manager REST API. Its
+single public function `get_token` authenticates with HTTP Basic auth and
+extracts the `X-RestSvcSessionId` session token from the response headers.
+All HTTP I/O is delegated to `lib.url.fetch_json`, so the suite is made
+hermetic by patching that delegate: no socket, no DNS, no TLS handshake,
+no httpx dependency ever.
+
+We assert the full request-building contract (URL composition with
+trailing-slash normalization, the Basic-auth header derived from
+USERNAME/PASSWORD, the fixed Accept and Content-Length headers, the POST
+body marker, and pass-through of insecure / no_proxy / timeout plus the
+mandatory `extended=True`) and the response-handling contract (token
+extraction on success, transport-failure pass-through, the "no result"
+error for falsy payloads, and the "unauthorized" error when the token
+header is absent or empty).
+
+A captured-style Veeam session payload is loaded from a fixture to keep
+the realistic-response assertions anchored to real API output.
+"""
+
+import base64
+import json
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.veeam as veeam
+
+FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
+
+TOKEN_HEADER = 'X-RestSvcSessionId'
+
+# Canonical URI the module must hit regardless of how the base URL is spelled.
+EXPECTED_URI = 'https://veeam.example.com:9398/api/sessionMngr/?v=latest'
+
+
+def load_fixture(name):
+    """Load a captured-style JSON fixture and return the parsed object."""
+    with open(os.path.join(FIXTURE_DIR, name), encoding='utf-8') as f:
+        return json.load(f)
+
+
+def basic_header(username, password):
+    """Independently recompute the expected Basic-auth header value."""
+    raw = f'{username}:{password}'.encode()
+    return 'Basic ' + base64.b64encode(raw).decode('ascii')
+
+
+class FakeArgs:
+    """Stand-in for the argparse Namespace the module consumes.
+
+    Defaults mirror a realistic Veeam Enterprise Manager endpoint. Any
+    field can be overridden per test via keyword arguments.
+    """
+
+    def __init__(self, **overrides):
+        self.URL = 'https://veeam.example.com:9398/'
+        self.USERNAME = 'administrator'
+        self.PASSWORD = 'linuxfabrik'
+        self.INSECURE = False
+        self.NO_PROXY = False
+        self.TIMEOUT = 8
+        for key, value in overrides.items():
+            setattr(self, key, value)
+
+
+def make_success(token='8a8b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d', extra_headers=None):
+    """Build an `extended=True` style success result with a session token."""
+    headers = {'Content-Type': 'application/json'}
+    if extra_headers:
+        headers.update(extra_headers)
+    if token is not None:
+        headers[TOKEN_HEADER] = token
+    return {
+        'response': '{}',
+        'status_code': 201,
+        'response_header': headers,
+        'response_json': {},
+        'timings': {'total': 0.01},
+        'tls_version': 'TLSv1.3',
+        'alpn': 'http/1.1',
+        'peer_cert_der': None,
+    }
+
+
+# -----------------------------------------------------------------------------
+# get_token: request building
+# -----------------------------------------------------------------------------
+
+
+class TestGetTokenRequestBuilding(unittest.TestCase):
+    """Assert how get_token composes the URI, headers and forwards kwargs."""
+
+    def _call(self, return_value=None, **arg_overrides):
+        """Patch lib.url.fetch_json, invoke get_token, capture delegate args."""
+        if return_value is None:
+            return_value = (True, make_success())
+        captured = {}
+
+        def fake_fetch_json(uri, **kw):
+            captured['uri'] = uri
+            captured['kw'] = kw
+            return return_value
+
+        args = FakeArgs(**arg_overrides)
+        with mock.patch.object(veeam.url, 'fetch_json', side_effect=fake_fetch_json):
+            result = veeam.get_token(args)
+        return captured, result
+
+    def test_uri_is_session_manager_endpoint(self):
+        captured, _ = self._call()
+        self.assertEqual(captured['uri'], EXPECTED_URI)
+
+    def test_uri_uses_https_scheme(self):
+        captured, _ = self._call()
+        self.assertTrue(captured['uri'].startswith('https://'))
+
+    def test_trailing_slash_is_stripped(self):
+        captured, _ = self._call(URL='https://veeam.example.com:9398/')
+        self.assertEqual(captured['uri'], EXPECTED_URI)
+
+    def test_no_trailing_slash_works(self):
+        captured, _ = self._call(URL='https://veeam.example.com:9398')
+        self.assertEqual(captured['uri'], EXPECTED_URI)
+
+    def test_multiple_trailing_slashes_stripped(self):
+        captured, _ = self._call(URL='https://veeam.example.com:9398///')
+        self.assertEqual(captured['uri'], EXPECTED_URI)
+
+    def test_base_url_with_path_preserved(self):
+        captured, _ = self._call(URL='https://veeam.example.com:9398/veeam/')
+        self.assertEqual(
+            captured['uri'],
+            'https://veeam.example.com:9398/veeam/api/sessionMngr/?v=latest',
+        )
+
+    def test_authorization_header_is_basic_auth(self):
+        captured, _ = self._call(USERNAME='administrator', PASSWORD='linuxfabrik')
+        self.assertEqual(
+            captured['kw']['header']['Authorization'],
+            basic_header('administrator', 'linuxfabrik'),
+        )
+
+    def test_authorization_header_known_value(self):
+        # administrator:linuxfabrik base64-encoded, pinned to catch encoder drift.
+        captured, _ = self._call(USERNAME='administrator', PASSWORD='linuxfabrik')
+        self.assertEqual(
+            captured['kw']['header']['Authorization'],
+            'Basic YWRtaW5pc3RyYXRvcjpsaW51eGZhYnJpaw==',
+        )
+
+    def test_authorization_handles_special_characters(self):
+        captured, _ = self._call(USERNAME='VEEAM\\admin', PASSWORD='p:w@rd!')
+        self.assertEqual(
+            captured['kw']['header']['Authorization'],
+            basic_header('VEEAM\\admin', 'p:w@rd!'),
+        )
+
+    def test_accept_header_is_json(self):
+        captured, _ = self._call()
+        self.assertEqual(captured['kw']['header']['Accept'], 'application/json')
+
+    def test_content_length_header_is_zero(self):
+        captured, _ = self._call()
+        self.assertEqual(captured['kw']['header']['Content-Length'], '0')
+
+    def test_header_has_exactly_three_keys(self):
+        captured, _ = self._call()
+        self.assertEqual(
+            set(captured['kw']['header'].keys()),
+            {'Authorization', 'Accept', 'Content-Length'},
+        )
+
+    def test_post_body_marker_present(self):
+        # The dummy body forces fetch() into POST mode.
+        captured, _ = self._call()
+        self.assertEqual(captured['kw']['data'], {'make-this': 'a-post-request'})
+
+    def test_extended_is_forced_true(self):
+        # Token lives in the response headers, only available with extended=True.
+        captured, _ = self._call()
+        self.assertIs(captured['kw']['extended'], True)
+
+    def test_insecure_defaults_false_forwarded(self):
+        captured, _ = self._call()
+        self.assertIs(captured['kw']['insecure'], False)
+
+    def test_insecure_true_forwarded(self):
+        captured, _ = self._call(INSECURE=True)
+        self.assertIs(captured['kw']['insecure'], True)
+
+    def test_no_proxy_defaults_false_forwarded(self):
+        captured, _ = self._call()
+        self.assertIs(captured['kw']['no_proxy'], False)
+
+    def test_no_proxy_true_forwarded(self):
+        captured, _ = self._call(NO_PROXY=True)
+        self.assertIs(captured['kw']['no_proxy'], True)
+
+    def test_timeout_default_forwarded(self):
+        captured, _ = self._call()
+        self.assertEqual(captured['kw']['timeout'], 8)
+
+    def test_timeout_custom_forwarded(self):
+        captured, _ = self._call(TIMEOUT=30)
+        self.assertEqual(captured['kw']['timeout'], 30)
+
+    def test_all_transport_kwargs_forwarded_together(self):
+        captured, _ = self._call(INSECURE=True, NO_PROXY=True, TIMEOUT=60)
+        kw = captured['kw']
+        self.assertIs(kw['insecure'], True)
+        self.assertIs(kw['no_proxy'], True)
+        self.assertEqual(kw['timeout'], 60)
+
+    def test_delegate_kwargs_are_exactly_expected(self):
+        # No leaked or surprise keyword arguments reach the transport.
+        captured, _ = self._call()
+        self.assertEqual(
+            set(captured['kw'].keys()),
+            {'header', 'data', 'extended', 'insecure', 'no_proxy', 'timeout'},
+        )
+
+    def test_uri_passed_positionally(self):
+        recorder = mock.Mock(return_value=(True, make_success()))
+        with mock.patch.object(veeam.url, 'fetch_json', recorder):
+            veeam.get_token(FakeArgs())
+        args, _ = recorder.call_args
+        self.assertEqual(args, (EXPECTED_URI,))
+
+    def test_delegate_called_once(self):
+        recorder = mock.Mock(return_value=(True, make_success()))
+        with mock.patch.object(veeam.url, 'fetch_json', recorder):
+            veeam.get_token(FakeArgs())
+        self.assertEqual(recorder.call_count, 1)
+
+
+# -----------------------------------------------------------------------------
+# get_token: response handling (success)
+# -----------------------------------------------------------------------------
+
+
+class TestGetTokenSuccess(unittest.TestCase):
+    """Assert token extraction and result shaping on successful auth."""
+
+    def _run(self, return_value, **arg_overrides):
+        with mock.patch.object(veeam.url, 'fetch_json', return_value=return_value):
+            return veeam.get_token(FakeArgs(**arg_overrides))
+
+    def test_success_returns_true(self):
+        ok, _ = self._run((True, make_success(token='TOK')))
+        self.assertTrue(ok)
+
+    def test_token_extracted_into_top_level_key(self):
+        ok, result = self._run((True, make_success(token='TOK')))
+        self.assertTrue(ok)
+        self.assertEqual(result[TOKEN_HEADER], 'TOK')
+
+    def test_result_keeps_original_payload_keys(self):
+        _ok, result = self._run((True, make_success(token='TOK')))
+        # The original extended-result keys survive alongside the added token.
+        self.assertEqual(result['status_code'], 201)
+        self.assertEqual(result['response_json'], {})
+        self.assertIn('response_header', result)
+
+    def test_returned_object_is_the_mutated_payload(self):
+        payload = make_success(token='TOK')
+        with mock.patch.object(veeam.url, 'fetch_json', return_value=(True, payload)):
+            _ok, result = veeam.get_token(FakeArgs())
+        self.assertIs(result, payload)
+
+    def test_token_read_from_response_header(self):
+        payload = make_success(token='HEADER-TOKEN')
+        _ok, result = self._run((True, payload))
+        self.assertEqual(result[TOKEN_HEADER], 'HEADER-TOKEN')
+
+    def test_token_lookup_is_case_sensitive(self):
+        # A lowercase header key is treated as missing -> unauthorized error.
+        payload = make_success(token=None, extra_headers={'x-restsvcsessionid': 'x'})
+        ok, msg = self._run((True, payload))
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Something went wrong, maybe user is unauthorized.')
+
+    def test_captured_session_payload(self):
+        # Realistic Veeam EM session response with a token header attached.
+        session = load_fixture('session.json')
+        payload = make_success(token='8a8b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d')
+        payload['response_json'] = session
+        ok, result = self._run((True, payload))
+        self.assertTrue(ok)
+        self.assertEqual(result[TOKEN_HEADER], '8a8b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d')
+        self.assertEqual(result['response_json']['UserName'], 'VEEAM\\administrator')
+
+
+# -----------------------------------------------------------------------------
+# get_token: response handling (errors)
+# -----------------------------------------------------------------------------
+
+
+class TestGetTokenErrors(unittest.TestCase):
+    """Assert transport-failure, empty-result and unauthorized handling."""
+
+    def _run(self, return_value, **arg_overrides):
+        with mock.patch.object(veeam.url, 'fetch_json', return_value=return_value):
+            return veeam.get_token(FakeArgs(**arg_overrides))
+
+    def test_transport_failure_passthrough(self):
+        self.assertEqual(
+            self._run((False, 'connection refused')),
+            (False, 'connection refused'),
+        )
+
+    def test_transport_failure_falsy_message_passthrough(self):
+        # A failure short-circuits before the empty-result check.
+        self.assertEqual(self._run((False, '')), (False, ''))
+
+    def test_transport_failure_malformed_json_message(self):
+        # fetch_json signals a JSON decode error as a (False, message) tuple.
+        msg = 'Expecting value: line 1 column 1 (char 0). No JSON object could be decoded.'
+        self.assertEqual(self._run((False, msg)), (False, msg))
+
+    def test_empty_none_result_is_error(self):
+        ok, msg = self._run((True, None))
+        self.assertFalse(ok)
+        self.assertEqual(msg, f'There was no result from {EXPECTED_URI}.')
+
+    def test_empty_dict_result_is_error(self):
+        ok, msg = self._run((True, {}))
+        self.assertFalse(ok)
+        self.assertEqual(msg, f'There was no result from {EXPECTED_URI}.')
+
+    def test_empty_result_error_contains_uri(self):
+        ok, msg = self._run(
+            (True, None),
+            URL='https://other.example.com:9398',
+        )
+        self.assertFalse(ok)
+        self.assertEqual(
+            msg,
+            'There was no result from https://other.example.com:9398/api/sessionMngr/?v=latest.',
+        )
+
+    def test_missing_token_header_is_unauthorized(self):
+        payload = make_success(token=None)
+        ok, msg = self._run((True, payload))
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Something went wrong, maybe user is unauthorized.')
+
+    def test_missing_response_header_is_unauthorized(self):
+        payload = {'response_json': {}, 'status_code': 401}
+        ok, msg = self._run((True, payload))
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Something went wrong, maybe user is unauthorized.')
+
+    def test_empty_token_value_is_unauthorized(self):
+        payload = make_success(token='')
+        ok, msg = self._run((True, payload))
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Something went wrong, maybe user is unauthorized.')
+
+    def test_non_dict_success_result_raises(self):
+        # A truthy non-dict success payload cannot satisfy the .get() lookup;
+        # the module surfaces this as an AttributeError rather than masking it.
+        with self.assertRaises(AttributeError):
+            self._run((True, 'unexpected string body'))
+
+
+if __name__ == '__main__':
+    unittest.main()

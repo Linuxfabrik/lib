@@ -1,0 +1,367 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.nodebb (NodeBB REST-API helper).
+
+All network I/O is mocked: `lib.url.fetch_json` is replaced by an in-memory
+fake so the suite is hermetic and fast. No socket, no DNS, no TLS handshake
+ever happens.
+
+The module exposes a single public function:
+
+- get_data(args, uri='')
+
+`get_data` wraps `lib.url.fetch_json` in `lib.base.coe` (Continue-or-Exit).
+That wrapper means the two outcomes look very different:
+
+- on success, `coe` returns the second tuple element, so `get_data` returns
+  the parsed JSON document directly (NOT a (success, result) tuple);
+- on failure, `coe` prints the sanitized error message to stdout and calls
+  `sys.exit(STATE_UNKNOWN)` (exit code 3). The test therefore asserts on
+  `SystemExit` and the captured stdout instead of a return value.
+
+Every test pins observed behaviour that was probed against the real module
+first (URL assembly, header construction, kwarg forwarding, rstrip handling,
+the coe exit code, and the sensitive-data redaction performed by coe).
+"""
+
+import contextlib
+import io
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.base as base
+import lib.nodebb as nodebb
+
+# -----------------------------------------------------------------------------
+# Captured-style API fixtures
+# -----------------------------------------------------------------------------
+
+# A typical NodeBB list-style payload (e.g. /api/v1/posts).
+POSTS_SUCCESS = {
+    'posts': [
+        {'pid': 1, 'content': 'Welcome to the forum', 'uid': 1},
+        {'pid': 2, 'content': 'Second post', 'uid': 2},
+    ],
+    'total': 2,
+}
+
+# A NodeBB config/info style payload (e.g. /api/config).
+CONFIG_SUCCESS = {
+    'version': '3.7.0',
+    'siteTitle': 'Linuxfabrik Forum',
+    'maintenanceMode': False,
+}
+
+# A bare list document - JSON arrays are valid top-level responses too.
+LIST_SUCCESS = [{'cid': 1, 'name': 'General'}, {'cid': 2, 'name': 'Support'}]
+
+
+# -----------------------------------------------------------------------------
+# Test args object (mimics the argparse Namespace the module expects)
+# -----------------------------------------------------------------------------
+
+class Args:
+    """Minimal stand-in for the argparse Namespace get_data() consumes."""
+
+    def __init__(
+        self,
+        url='https://forum.example.com',
+        token='linuxfabrik',
+        insecure=False,
+        no_proxy=False,
+        timeout=8,
+    ):
+        self.URL = url
+        self.TOKEN = token
+        self.INSECURE = insecure
+        self.NO_PROXY = no_proxy
+        self.TIMEOUT = timeout
+
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+def ok(payload):
+    """Build the (success, body) tuple lib.url.fetch_json returns on HTTP 200."""
+    return (True, payload)
+
+
+def fail(message):
+    """Build the (success, error) tuple lib.url.fetch_json returns on failure."""
+    return (False, message)
+
+
+class NodebbTestCase(unittest.TestCase):
+    """Base class that patches lib.url.fetch_json for every test."""
+
+    def patch_fetch(self, return_value=None, side_effect=None):
+        """Patch nodebb.url.fetch_json and return the mock.
+
+        The patch is undone automatically at test teardown.
+        """
+        if side_effect is not None:
+            m = mock.MagicMock(name='fetch_json', side_effect=side_effect)
+        else:
+            m = mock.MagicMock(name='fetch_json', return_value=return_value)
+        patcher = mock.patch.object(nodebb.url, 'fetch_json', m)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return m
+
+    def run_expecting_exit(self, args, **kwargs):
+        """Call get_data() expecting coe() to print + sys.exit().
+
+        Returns (exit_code, printed_text). Fails the test if no SystemExit
+        was raised.
+        """
+        buf = io.StringIO()
+        with (
+            contextlib.redirect_stdout(buf),
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            nodebb.get_data(args, **kwargs)
+        code = ctx.exception.code
+        return code, buf.getvalue()
+
+
+# -----------------------------------------------------------------------------
+# Module surface
+# -----------------------------------------------------------------------------
+
+class TestModuleSurface(NodebbTestCase):
+    def test_public_function_exists(self):
+        self.assertTrue(callable(getattr(nodebb, 'get_data', None)))
+
+    def test_get_data_signature_has_default_uri(self):
+        import inspect
+
+        sig = inspect.signature(nodebb.get_data)
+        self.assertEqual(list(sig.parameters), ['args', 'uri'])
+        self.assertEqual(sig.parameters['uri'].default, '')
+
+    def test_module_uses_base_and_url(self):
+        # The module is built on lib.base.coe and lib.url.fetch_json.
+        self.assertIs(nodebb.base, base)
+        self.assertTrue(hasattr(nodebb, 'url'))
+
+
+# -----------------------------------------------------------------------------
+# get_data - success path (coe returns result[1] directly)
+# -----------------------------------------------------------------------------
+
+class TestGetDataSuccess(NodebbTestCase):
+    def test_returns_payload_dict_directly(self):
+        # coe unwraps the tuple, so the dict (not a tuple) comes back.
+        self.patch_fetch(ok(POSTS_SUCCESS))
+        result = nodebb.get_data(Args(), uri='/api/v1/posts')
+        self.assertIs(result, POSTS_SUCCESS)
+
+    def test_returns_list_payload_directly(self):
+        self.patch_fetch(ok(LIST_SUCCESS))
+        result = nodebb.get_data(Args(), uri='/api/categories')
+        self.assertIs(result, LIST_SUCCESS)
+
+    def test_returns_empty_dict_without_exit(self):
+        # An empty dict is still a 'success' for coe (result[0] is True), so
+        # get_data returns {} rather than exiting.
+        self.patch_fetch(ok({}))
+        result = nodebb.get_data(Args())
+        self.assertEqual(result, {})
+
+    def test_returns_empty_list_without_exit(self):
+        self.patch_fetch(ok([]))
+        result = nodebb.get_data(Args())
+        self.assertEqual(result, [])
+
+    def test_called_exactly_once(self):
+        m = self.patch_fetch(ok(CONFIG_SUCCESS))
+        nodebb.get_data(Args(), uri='/api/config')
+        self.assertEqual(m.call_count, 1)
+
+
+# -----------------------------------------------------------------------------
+# get_data - request shape (URL, header, kwargs)
+# -----------------------------------------------------------------------------
+
+class TestGetDataRequestShape(NodebbTestCase):
+    def test_url_concatenates_base_and_uri(self):
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(Args(url='https://forum.example.com'), uri='/api/v1/posts')
+        self.assertEqual(m.call_args.args[0], 'https://forum.example.com/api/v1/posts')
+
+    def test_url_strips_single_trailing_slash(self):
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(Args(url='https://forum.example.com/'), uri='/api')
+        self.assertEqual(m.call_args.args[0], 'https://forum.example.com/api')
+
+    def test_url_strips_multiple_trailing_slashes(self):
+        # rstrip('/') removes every trailing slash, not just one.
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(Args(url='https://forum.example.com///'), uri='/api')
+        self.assertEqual(m.call_args.args[0], 'https://forum.example.com/api')
+
+    def test_url_default_uri_is_empty(self):
+        # No uri -> the base URL is used verbatim (after rstrip).
+        m = self.patch_fetch(ok({}))
+        nodebb.get_data(Args(url='https://forum.example.com'))
+        self.assertEqual(m.call_args.args[0], 'https://forum.example.com')
+
+    def test_url_default_uri_with_trailing_slash(self):
+        m = self.patch_fetch(ok({}))
+        nodebb.get_data(Args(url='https://forum.example.com/'))
+        self.assertEqual(m.call_args.args[0], 'https://forum.example.com')
+
+    def test_url_uri_without_leading_slash_is_concatenated_raw(self):
+        # The module does not insert a separator; whatever uri is given is
+        # appended directly. A uri lacking a leading slash glues onto the host.
+        m = self.patch_fetch(ok({}))
+        nodebb.get_data(Args(url='https://forum.example.com'), uri='api/config')
+        self.assertEqual(m.call_args.args[0], 'https://forum.example.comapi/config')
+
+    def test_header_accept_and_authorization(self):
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(Args(token='secret-token'), uri='/api')
+        self.assertEqual(
+            m.call_args.kwargs['header'],
+            {
+                'Accept': 'application/json',
+                'Authorization': 'Bearer secret-token',
+            },
+        )
+
+    def test_bearer_token_interpolated(self):
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(Args(token='abc123'), uri='/api')
+        self.assertEqual(
+            m.call_args.kwargs['header']['Authorization'],
+            'Bearer abc123',
+        )
+
+    def test_default_kwargs_forwarded(self):
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(Args(), uri='/api')
+        kwargs = m.call_args.kwargs
+        self.assertFalse(kwargs['insecure'])
+        self.assertFalse(kwargs['no_proxy'])
+        self.assertEqual(kwargs['timeout'], 8)
+
+    def test_custom_kwargs_forwarded(self):
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(
+            Args(insecure=True, no_proxy=True, timeout=42),
+            uri='/api',
+        )
+        kwargs = m.call_args.kwargs
+        self.assertTrue(kwargs['insecure'])
+        self.assertTrue(kwargs['no_proxy'])
+        self.assertEqual(kwargs['timeout'], 42)
+
+    def test_no_positional_data_or_auth_kwargs_passed(self):
+        # get_data only forwards header/insecure/no_proxy/timeout; it never
+        # sets data, encoding, or digest auth. Pin that surface so a future
+        # change to fetch_json defaults cannot silently alter requests.
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(Args(), uri='/api')
+        self.assertEqual(set(m.call_args.kwargs), {
+            'header', 'insecure', 'no_proxy', 'timeout',
+        })
+
+    def test_url_passed_positionally(self):
+        # The URL is the single positional argument to fetch_json.
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(Args(), uri='/api')
+        self.assertEqual(len(m.call_args.args), 1)
+
+
+# -----------------------------------------------------------------------------
+# get_data - failure path (coe prints + sys.exit)
+# -----------------------------------------------------------------------------
+
+class TestGetDataFailure(NodebbTestCase):
+    def test_transport_failure_exits_unknown(self):
+        # On (False, msg) coe exits with STATE_UNKNOWN (3).
+        self.patch_fetch(fail('HTTP 500 Internal Server Error'))
+        code, _ = self.run_expecting_exit(Args())
+        self.assertEqual(code, base.STATE_UNKNOWN)
+        self.assertEqual(code, 3)
+
+    def test_transport_failure_prints_message(self):
+        self.patch_fetch(fail('connection refused'))
+        _, printed = self.run_expecting_exit(Args())
+        self.assertEqual(printed.strip(), 'connection refused')
+
+    def test_malformed_json_error_message_propagated(self):
+        # fetch_json returns (False, '<decode error>') on bad JSON; coe prints
+        # it verbatim (after sanitization) and exits.
+        self.patch_fetch(fail('ValueError: Expecting value: line 1 column 1 (char 0)'))
+        code, printed = self.run_expecting_exit(Args())
+        self.assertEqual(code, 3)
+        self.assertIn('Expecting value', printed)
+
+    def test_empty_string_error_message(self):
+        # A falsy error string still triggers the failure branch because
+        # result[0] is False, not because the message is truthy.
+        self.patch_fetch(fail(''))
+        code, printed = self.run_expecting_exit(Args())
+        self.assertEqual(code, 3)
+        self.assertEqual(printed.strip(), '')
+
+    def test_error_message_with_token_is_sanitized(self):
+        # coe runs txt.sanitize_sensitive_data on the message before printing,
+        # so a leaked token=... value is redacted in the output.
+        self.patch_fetch(fail('auth failed with token=hunter2'))
+        _, printed = self.run_expecting_exit(Args())
+        self.assertNotIn('hunter2', printed)
+        self.assertIn('token=******', printed)
+
+    def test_error_message_with_password_is_sanitized(self):
+        self.patch_fetch(fail('login error password=supersecret'))
+        _, printed = self.run_expecting_exit(Args())
+        self.assertNotIn('supersecret', printed)
+
+    def test_failure_does_not_return(self):
+        # Sanity: the failure branch never falls through to a return value.
+        self.patch_fetch(fail('boom'))
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            nodebb.get_data(Args())
+
+
+# -----------------------------------------------------------------------------
+# get_data - integration of request shape with the failure path
+# -----------------------------------------------------------------------------
+
+class TestGetDataFailureStillBuildsRequest(NodebbTestCase):
+    def test_request_is_built_before_failure(self):
+        # Even on the failure path the request was assembled and dispatched
+        # exactly once with the expected URL/header.
+        m = self.patch_fetch(fail('down'))
+        with (
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            nodebb.get_data(Args(token='tok'), uri='/api/v1/posts')
+        self.assertEqual(m.call_count, 1)
+        self.assertEqual(m.call_args.args[0], 'https://forum.example.com/api/v1/posts')
+        self.assertEqual(
+            m.call_args.kwargs['header']['Authorization'],
+            'Bearer tok',
+        )
+
+
+if __name__ == '__main__':
+    unittest.main()

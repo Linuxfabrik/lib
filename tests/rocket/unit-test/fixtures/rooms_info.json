@@ -1,0 +1,19 @@
+{
+    "room": {
+        "_id": "ABC123",
+        "name": "ops-private",
+        "fname": "Ops Private",
+        "t": "p",
+        "msgs": 128,
+        "usersCount": 5,
+        "u": {
+            "_id": "user-0001",
+            "username": "alice"
+        },
+        "ro": false,
+        "default": false,
+        "sysMes": true,
+        "_updatedAt": "2026-05-31T12:05:00.000Z"
+    },
+    "success": true
+}

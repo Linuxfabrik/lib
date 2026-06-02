@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.qts.
+
+The module is a thin client for QNAP's QTS authentication API. Its single
+public function `get_auth_sid` delegates all HTTP I/O to `lib.url.fetch`,
+so the suite is made hermetic by patching that delegate: no socket, no
+DNS, no TLS handshake ever.
+
+We assert the full request-building contract (URL composition from the
+base URL plus the fixed `/cgi-bin/authLogin.cgi` path; the form body with
+the username and the base64-encoded password; pass-through of insecure /
+no_proxy / timeout) and the response-handling contract (the parsed
+`authSid` on success, transport-failure pass-through, the
+`authPassed == '0'` rejection, and every XML-parsing / missing-key edge
+case).
+
+The `xmltodict` dependency is guarded: if it is missing the heavy parsing
+tests are skipped, but the "module not installed" branch is still
+exercised by forcing the module-level flag off.
+
+Captured-style XML payloads modeled on real authLogin.cgi responses live
+in the fixtures directory.
+"""
+
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.qts as qts
+
+FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
+
+# The fixed API endpoint path the module always appends to the base URL.
+API_PATH = '/cgi-bin/authLogin.cgi'
+
+# Base64 of 'linuxfabrik' (our standard placeholder secret), precomputed so
+# the test asserts the actual transport value independently of base64/txt.
+PWD_LINUXFABRIK = 'linuxfabrik'
+PWD_LINUXFABRIK_B64 = 'bGludXhmYWJyaWs='
+
+# Skip predicate / reason for the parsing tests that need the real dependency.
+SKIP_NO_XMLTODICT = not qts.LIB_XMLTODICT_FOUND
+SKIP_REASON = 'xmltodict is not installed'
+
+
+def load_fixture(name):
+    """Load a captured-style XML fixture and return it as text."""
+    with open(os.path.join(FIXTURE_DIR, name), encoding='utf-8') as f:
+        return f.read()
+
+
+class FakeArgs:
+    """Minimal stand-in for the argparse Namespace the function expects.
+
+    Only the attributes `get_auth_sid` reads are provided. Defaults model a
+    typical QTS target; individual tests override what they care about.
+    """
+
+    def __init__(
+        self,
+        username='admin',
+        password=PWD_LINUXFABRIK,
+        url='https://nas.example.com:8080',
+        insecure=False,
+        no_proxy=False,
+        timeout=8,
+    ):
+        self.USERNAME = username
+        self.PASSWORD = password
+        self.URL = url
+        self.INSECURE = insecure
+        self.NO_PROXY = no_proxy
+        self.TIMEOUT = timeout
+
+
+def xml_response(auth_passed=None, auth_sid=None, root='QDocRoot', extra=''):
+    """Build a small QDocRoot XML body for response-handling tests.
+
+    Any element whose value is None is omitted, so callers can model
+    missing-key payloads. `root` lets a test produce a wrong root element.
+    """
+    parts = []
+    if auth_passed is not None:
+        parts.append(f'<authPassed>{auth_passed}</authPassed>')
+    if auth_sid is not None:
+        parts.append(f'<authSid>{auth_sid}</authSid>')
+    parts.append(extra)
+    return f'<{root}>{"".join(parts)}</{root}>'
+
+
+# -----------------------------------------------------------------------------
+# get_auth_sid: request building
+# -----------------------------------------------------------------------------
+
+
+class TestGetAuthSidRequestBuilding(unittest.TestCase):
+    """Assert how get_auth_sid composes the URL and the login form body."""
+
+    def _call(self, args=None, fetch_return=None, **arg_overrides):
+        """Patch lib.url.fetch, invoke get_auth_sid, capture the call args."""
+        if args is None:
+            args = FakeArgs(**arg_overrides)
+        if fetch_return is None:
+            fetch_return = (True, xml_response(auth_passed='1', auth_sid='SID'))
+        captured = {}
+
+        def fake_fetch(url, **kw):
+            captured['url'] = url
+            captured['kw'] = kw
+            return fetch_return
+
+        with mock.patch.object(qts.url, 'fetch', side_effect=fake_fetch):
+            result = qts.get_auth_sid(args)
+        return captured, result
+
+    def test_url_appends_fixed_cgi_path(self):
+        captured, _ = self._call(url='https://nas.example.com:8080')
+        self.assertEqual(captured['url'], 'https://nas.example.com:8080' + API_PATH)
+
+    def test_url_strips_single_trailing_slash(self):
+        captured, _ = self._call(url='https://nas.example.com:8080/')
+        self.assertEqual(captured['url'], 'https://nas.example.com:8080' + API_PATH)
+
+    def test_url_strips_multiple_trailing_slashes(self):
+        # rstrip('/') removes every trailing slash, not just one.
+        captured, _ = self._call(url='https://nas.example.com///')
+        self.assertEqual(captured['url'], 'https://nas.example.com' + API_PATH)
+
+    def test_url_without_trailing_slash_unchanged(self):
+        captured, _ = self._call(url='http://10.0.0.5')
+        self.assertEqual(captured['url'], 'http://10.0.0.5' + API_PATH)
+
+    def test_url_preserves_scheme_and_port(self):
+        captured, _ = self._call(url='https://qnap.local:443')
+        self.assertEqual(captured['url'], 'https://qnap.local:443' + API_PATH)
+
+    def test_body_contains_username(self):
+        captured, _ = self._call(username='monitoring')
+        self.assertEqual(captured['kw']['data']['user'], 'monitoring')
+
+    def test_body_password_is_base64_encoded(self):
+        captured, _ = self._call(password=PWD_LINUXFABRIK)
+        self.assertEqual(captured['kw']['data']['pwd'], PWD_LINUXFABRIK_B64)
+
+    def test_body_password_is_text_not_bytes(self):
+        # The payload must carry a str, not a bytes object.
+        captured, _ = self._call(password=PWD_LINUXFABRIK)
+        self.assertIsInstance(captured['kw']['data']['pwd'], str)
+
+    def test_body_password_non_ascii_utf8_base64(self):
+        # Non-ASCII passwords are UTF-8 encoded before base64.
+        import base64
+
+        pwd = 'pässwörd€'
+        expected = base64.b64encode(pwd.encode('utf-8')).decode('ascii')
+        captured, _ = self._call(password=pwd)
+        self.assertEqual(captured['kw']['data']['pwd'], expected)
+
+    def test_body_password_empty_string(self):
+        import base64
+
+        captured, _ = self._call(password='')
+        self.assertEqual(captured['kw']['data']['pwd'], base64.b64encode(b'').decode('ascii'))
+
+    def test_body_has_exactly_user_and_pwd(self):
+        captured, _ = self._call()
+        self.assertEqual(set(captured['kw']['data'].keys()), {'user', 'pwd'})
+
+    def test_insecure_forwarded(self):
+        captured, _ = self._call(insecure=True)
+        self.assertIs(captured['kw']['insecure'], True)
+
+    def test_insecure_default_false(self):
+        captured, _ = self._call()
+        self.assertIs(captured['kw']['insecure'], False)
+
+    def test_no_proxy_forwarded(self):
+        captured, _ = self._call(no_proxy=True)
+        self.assertIs(captured['kw']['no_proxy'], True)
+
+    def test_no_proxy_default_false(self):
+        captured, _ = self._call()
+        self.assertIs(captured['kw']['no_proxy'], False)
+
+    def test_timeout_forwarded(self):
+        captured, _ = self._call(timeout=30)
+        self.assertEqual(captured['kw']['timeout'], 30)
+
+    def test_all_transport_kwargs_together(self):
+        captured, _ = self._call(insecure=True, no_proxy=True, timeout=60)
+        kw = captured['kw']
+        self.assertIs(kw['insecure'], True)
+        self.assertIs(kw['no_proxy'], True)
+        self.assertEqual(kw['timeout'], 60)
+
+    def test_only_expected_kwargs_passed(self):
+        # The delegate must receive exactly data/insecure/no_proxy/timeout.
+        captured, _ = self._call()
+        self.assertEqual(
+            set(captured['kw'].keys()),
+            {'data', 'insecure', 'no_proxy', 'timeout'},
+        )
+
+    def test_url_passed_positionally(self):
+        # The URL is the sole positional argument to the delegate.
+        recorder = mock.Mock(return_value=(True, xml_response(auth_passed='1', auth_sid='S')))
+        with mock.patch.object(qts.url, 'fetch', recorder):
+            qts.get_auth_sid(FakeArgs(url='https://h'))
+        args, _ = recorder.call_args
+        self.assertEqual(args, ('https://h' + API_PATH,))
+
+
+# -----------------------------------------------------------------------------
+# get_auth_sid: dependency guard
+# -----------------------------------------------------------------------------
+
+
+class TestGetAuthSidDependencyGuard(unittest.TestCase):
+    """Assert the behaviour when the xmltodict dependency is unavailable."""
+
+    def test_missing_xmltodict_returns_error(self):
+        with mock.patch.object(qts, 'LIB_XMLTODICT_FOUND', False):
+            ok, msg = qts.get_auth_sid(FakeArgs())
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Python module "xmltodict" is not installed.')
+
+    def test_missing_xmltodict_does_not_call_fetch(self):
+        # The guard must short-circuit before any network attempt.
+        with (
+            mock.patch.object(qts, 'LIB_XMLTODICT_FOUND', False),
+            mock.patch.object(qts.url, 'fetch') as fetch,
+        ):
+            qts.get_auth_sid(FakeArgs())
+        fetch.assert_not_called()
+
+
+# -----------------------------------------------------------------------------
+# get_auth_sid: response handling (needs xmltodict)
+# -----------------------------------------------------------------------------
+
+
+@unittest.skipIf(SKIP_NO_XMLTODICT, SKIP_REASON)
+class TestGetAuthSidResponseHandling(unittest.TestCase):
+    """Assert success, rejection, transport-failure and XML-parsing branches."""
+
+    def _run(self, fetch_return, args=None):
+        if args is None:
+            args = FakeArgs()
+        with mock.patch.object(qts.url, 'fetch', return_value=fetch_return):
+            return qts.get_auth_sid(args)
+
+    def test_success_returns_auth_sid(self):
+        body = xml_response(auth_passed='1', auth_sid='SID123')
+        self.assertEqual(self._run((True, body)), (True, 'SID123'))
+
+    def test_success_authpassed_present_nonzero(self):
+        # Any authPassed other than the literal '0' is treated as success.
+        body = xml_response(auth_passed='1', auth_sid='abc')
+        ok, sid = self._run((True, body))
+        self.assertTrue(ok)
+        self.assertEqual(sid, 'abc')
+
+    def test_success_when_authpassed_missing(self):
+        # No authPassed element at all does not equal '0', so it passes,
+        # and the present authSid is returned.
+        body = xml_response(auth_passed=None, auth_sid='only-sid')
+        self.assertEqual(self._run((True, body)), (True, 'only-sid'))
+
+    def test_success_but_authsid_missing_returns_none(self):
+        # authPassed != '0' but no authSid element -> (True, None).
+        body = xml_response(auth_passed='1', auth_sid=None)
+        self.assertEqual(self._run((True, body)), (True, None))
+
+    def test_authpassed_zero_is_rejected(self):
+        body = xml_response(auth_passed='0', auth_sid='')
+        ok, msg = self._run((True, body))
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Failed to authenticate.')
+
+    def test_authpassed_zero_ignores_present_sid(self):
+        # Even if a SID is somehow present, authPassed '0' wins.
+        body = xml_response(auth_passed='0', auth_sid='leaked')
+        ok, msg = self._run((True, body))
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Failed to authenticate.')
+
+    def test_transport_failure_passthrough(self):
+        self.assertEqual(
+            self._run((False, 'connection refused')),
+            (False, 'connection refused'),
+        )
+
+    def test_transport_failure_with_falsy_message(self):
+        # A failure short-circuits before parsing; the falsy message survives.
+        self.assertEqual(self._run((False, '')), (False, ''))
+
+    def test_transport_failure_does_not_parse(self):
+        # On failure xmltodict.parse must never be called.
+        with (
+            mock.patch.object(qts.url, 'fetch', return_value=(False, 'boom')),
+            mock.patch.object(qts.xmltodict, 'parse') as parse,
+        ):
+            qts.get_auth_sid(FakeArgs())
+        parse.assert_not_called()
+
+    def test_malformed_xml_is_parse_error(self):
+        ok, msg = self._run((True, 'not xml <<<'))
+        self.assertFalse(ok)
+        self.assertTrue(msg.startswith('Failed to parse XML:'))
+
+    def test_empty_body_is_parse_error(self):
+        ok, msg = self._run((True, ''))
+        self.assertFalse(ok)
+        self.assertTrue(msg.startswith('Failed to parse XML:'))
+
+    def test_wrong_root_element_is_parse_error(self):
+        # KeyError on the missing 'QDocRoot' key is caught and reported.
+        body = xml_response(auth_passed='1', auth_sid='x', root='Other')
+        ok, msg = self._run((True, body))
+        self.assertFalse(ok)
+        self.assertTrue(msg.startswith('Failed to parse XML:'))
+
+    def test_realistic_success_payload(self):
+        body = load_fixture('auth_success.xml')
+        ok, sid = self._run((True, body))
+        self.assertTrue(ok)
+        self.assertEqual(sid, 'abcdef0123456789abcdef0123456789')
+
+    def test_realistic_failed_payload(self):
+        body = load_fixture('auth_failed.xml')
+        ok, msg = self._run((True, body))
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Failed to authenticate.')
+
+    def test_cdata_values_are_unwrapped(self):
+        # QTS wraps values in CDATA; xmltodict yields the inner text.
+        body = (
+            '<QDocRoot><authPassed><![CDATA[1]]></authPassed>'
+            '<authSid><![CDATA[cdata-sid]]></authSid></QDocRoot>'
+        )
+        self.assertEqual(self._run((True, body)), (True, 'cdata-sid'))
+
+
+# -----------------------------------------------------------------------------
+# get_auth_sid: end-to-end request + response (needs xmltodict)
+# -----------------------------------------------------------------------------
+
+
+@unittest.skipIf(SKIP_NO_XMLTODICT, SKIP_REASON)
+class TestGetAuthSidEndToEnd(unittest.TestCase):
+    """Hermetic round trip: built request plus parsed realistic response."""
+
+    def test_full_login_round_trip(self):
+        captured = {}
+
+        def fake_fetch(url, **kw):
+            captured['url'] = url
+            captured['kw'] = kw
+            return True, load_fixture('auth_success.xml')
+
+        args = FakeArgs(
+            username='monitoring',
+            password=PWD_LINUXFABRIK,
+            url='https://nas.example.com:8080/',
+            insecure=True,
+            no_proxy=True,
+            timeout=20,
+        )
+        with mock.patch.object(qts.url, 'fetch', side_effect=fake_fetch):
+            ok, sid = qts.get_auth_sid(args)
+
+        # Request side.
+        self.assertEqual(captured['url'], 'https://nas.example.com:8080' + API_PATH)
+        self.assertEqual(captured['kw']['data']['user'], 'monitoring')
+        self.assertEqual(captured['kw']['data']['pwd'], PWD_LINUXFABRIK_B64)
+        self.assertIs(captured['kw']['insecure'], True)
+        self.assertIs(captured['kw']['no_proxy'], True)
+        self.assertEqual(captured['kw']['timeout'], 20)
+
+        # Response side.
+        self.assertTrue(ok)
+        self.assertEqual(sid, 'abcdef0123456789abcdef0123456789')
+
+
+if __name__ == '__main__':
+    unittest.main()

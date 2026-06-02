@@ -1,0 +1,481 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.librenms.
+
+All three public functions are covered hermetically. The module only talks to
+the outside world through lib.url.fetch_json (HTTP). That single seam is mocked,
+so no network call ever happens. base.coe and base.oao exit the interpreter via
+sys.exit(); the error-path tests assert the resulting SystemExit code and the
+sanitized message printed to stdout instead of letting the process die.
+
+Public functions under test:
+
+- get_data()   -> builds the API URL + X-Auth-Token header, forwards SSL/proxy/
+                  timeout flags, returns the parsed JSON on `status == ok`, and
+                  exits (UNKNOWN, or OK with --always-ok) on any error.
+- get_prop()   -> safe dict lookup with str/non-str type handling.
+- get_state()  -> LibreNMS alert-state code -> Nagios state translation.
+
+Behaviour was probed against the real module with a mocked transport before the
+assertions were written, so the expected values below are observed, not guessed.
+"""
+
+import io
+import sys
+import unittest
+from contextlib import redirect_stdout
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.librenms as librenms
+from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
+
+URL = 'https://librenms.example.com'
+TOKEN = 'linuxfabrik'
+
+
+class Args:
+    """Minimal stand-in for the argparse Namespace get_data() consumes.
+
+    Subclasses override individual attributes to exercise the flag forwarding
+    and the --always-ok branch.
+    """
+
+    URL = URL
+    TOKEN = TOKEN
+    INSECURE = False
+    NO_PROXY = False
+    TIMEOUT = 8
+    ALWAYS_OK = False
+
+
+# A captured-style LibreNMS /api/v0/devices payload. status is lower-case 'ok'
+# exactly as the real API returns it on success.
+DEVICES_OK = {
+    'status': 'ok',
+    'count': 2,
+    'devices': [
+        {
+            'device_id': 1,
+            'hostname': 'core-sw-01.example.com',
+            'sysName': 'core-sw-01',
+            'status': 1,
+            'uptime': 3600,
+            'os': 'ios',
+            'hardware': 'C9300-48P',
+        },
+        {
+            'device_id': 2,
+            'hostname': 'edge-fw-01.example.com',
+            'sysName': 'edge-fw-01',
+            'status': 0,
+            'uptime': 0,
+            'os': 'fortios',
+            'hardware': None,
+        },
+    ],
+}
+
+# A captured-style LibreNMS error payload (e.g. bad token / unknown endpoint).
+DEVICES_ERR = {
+    'status': 'error',
+    'message': 'Bad token',
+}
+
+
+def make_fetch_json(return_value=(True, DEVICES_OK)):
+    """Return a MagicMock standing in for url.fetch_json with a canned result."""
+    return mock.MagicMock(name='fetch_json', return_value=return_value)
+
+
+class LibrenmsTestBase(unittest.TestCase):
+    """Patches url.fetch_json for every test.
+
+    self.fetch_json is the mock; the helpers expose the URL, header and kwargs
+    of the request the module crafted so the wire contract can be asserted.
+    """
+
+    def setUp(self):
+        self.fetch_json = make_fetch_json()
+        self._p_fetch = mock.patch.object(librenms.url, 'fetch_json', self.fetch_json)
+        self._p_fetch.start()
+        self.addCleanup(self._p_fetch.stop)
+
+    def last_call(self):
+        """Return (args, kwargs) of the most recent fetch_json call."""
+        self.assertTrue(self.fetch_json.called, 'fetch_json was never called')
+        return self.fetch_json.call_args
+
+    def sent_url(self):
+        """First positional arg passed to fetch_json (the full URL)."""
+        return self.last_call().args[0]
+
+    def sent_kwargs(self):
+        return self.last_call().kwargs
+
+    def sent_header(self):
+        return self.sent_kwargs()['header']
+
+
+# ---------------------------------------------------------------------------
+# get_data() - request building
+# ---------------------------------------------------------------------------
+
+class TestGetDataRequest(LibrenmsTestBase):
+
+    def test_returns_parsed_json_on_success(self):
+        self.assertEqual(librenms.get_data(Args(), uri='/api/v0/devices'), DEVICES_OK)
+
+    def test_full_url_is_base_plus_uri(self):
+        librenms.get_data(Args(), uri='/api/v0/devices')
+        self.assertEqual(self.sent_url(), f'{URL}/api/v0/devices')
+
+    def test_uri_without_leading_slash_gets_one(self):
+        librenms.get_data(Args(), uri='api/v0/devices')
+        self.assertEqual(self.sent_url(), f'{URL}/api/v0/devices')
+
+    def test_trailing_slash_on_base_url_is_stripped(self):
+        class A(Args):
+            URL = URL + '/'
+        librenms.get_data(A(), uri='/api/v0/devices')
+        self.assertEqual(self.sent_url(), f'{URL}/api/v0/devices')
+
+    def test_multiple_trailing_slashes_on_base_stripped(self):
+        class A(Args):
+            URL = URL + '///'
+        librenms.get_data(A(), uri='/api/v0/devices')
+        self.assertEqual(self.sent_url(), f'{URL}/api/v0/devices')
+
+    def test_multiple_leading_slashes_on_uri_collapsed_to_one(self):
+        librenms.get_data(Args(), uri='///api/v0/devices')
+        self.assertEqual(self.sent_url(), f'{URL}/api/v0/devices')
+
+    def test_empty_uri_defaults_to_base_with_trailing_slash(self):
+        # uri='' -> endpoint '/' -> base + '/'
+        librenms.get_data(Args())
+        self.assertEqual(self.sent_url(), f'{URL}/')
+
+    def test_auth_token_header_set(self):
+        librenms.get_data(Args(), uri='/api/v0/devices')
+        self.assertEqual(self.sent_header(), {'X-Auth-Token': TOKEN})
+
+    def test_auth_token_value_taken_from_args(self):
+        class A(Args):
+            TOKEN = 'deadbeefdeadbeef'
+        librenms.get_data(A(), uri='/x')
+        self.assertEqual(self.sent_header()['X-Auth-Token'], 'deadbeefdeadbeef')
+
+    def test_insecure_forwarded_true(self):
+        class A(Args):
+            INSECURE = True
+        librenms.get_data(A(), uri='/x')
+        self.assertTrue(self.sent_kwargs()['insecure'])
+
+    def test_insecure_forwarded_false(self):
+        librenms.get_data(Args(), uri='/x')
+        self.assertFalse(self.sent_kwargs()['insecure'])
+
+    def test_no_proxy_forwarded_true(self):
+        class A(Args):
+            NO_PROXY = True
+        librenms.get_data(A(), uri='/x')
+        self.assertTrue(self.sent_kwargs()['no_proxy'])
+
+    def test_no_proxy_forwarded_false(self):
+        librenms.get_data(Args(), uri='/x')
+        self.assertFalse(self.sent_kwargs()['no_proxy'])
+
+    def test_timeout_forwarded(self):
+        class A(Args):
+            TIMEOUT = 42
+        librenms.get_data(A(), uri='/x')
+        self.assertEqual(self.sent_kwargs()['timeout'], 42)
+
+    def test_no_data_or_method_kwargs_passed(self):
+        # get_data only ever does a GET via fetch_json; it must not smuggle a
+        # body or a method override into the call.
+        librenms.get_data(Args(), uri='/x')
+        kw = self.sent_kwargs()
+        self.assertNotIn('data', kw)
+        self.assertNotIn('header', {})  # sanity
+        self.assertEqual(set(kw), {'header', 'insecure', 'no_proxy', 'timeout'})
+
+    def test_fetch_json_called_exactly_once(self):
+        # get_data has no pagination; one endpoint hit per call.
+        librenms.get_data(Args(), uri='/x')
+        self.assertEqual(self.fetch_json.call_count, 1)
+
+
+# ---------------------------------------------------------------------------
+# get_data() - status handling
+# ---------------------------------------------------------------------------
+
+class TestGetDataStatus(LibrenmsTestBase):
+
+    def test_status_ok_lowercase_returns_payload(self):
+        self.fetch_json.return_value = (True, {'status': 'ok', 'foo': 1})
+        self.assertEqual(librenms.get_data(Args()), {'status': 'ok', 'foo': 1})
+
+    def test_status_ok_uppercase_accepted(self):
+        # comparison is case-insensitive (result.get('status').lower()).
+        self.fetch_json.return_value = (True, {'status': 'OK', 'foo': 1})
+        self.assertEqual(librenms.get_data(Args()), {'status': 'OK', 'foo': 1})
+
+    def test_status_ok_mixed_case_accepted(self):
+        self.fetch_json.return_value = (True, {'status': 'Ok'})
+        self.assertEqual(librenms.get_data(Args()), {'status': 'Ok'})
+
+    def test_status_error_exits_unknown(self):
+        self.fetch_json.return_value = (True, DEVICES_ERR)
+        with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
+            librenms.get_data(Args())
+        self.assertEqual(cm.exception.code, STATE_UNKNOWN)
+
+    def test_status_error_message_printed(self):
+        self.fetch_json.return_value = (True, DEVICES_ERR)
+        buf = io.StringIO()
+        with self.assertRaises(SystemExit), redirect_stdout(buf):
+            librenms.get_data(Args())
+        out = buf.getvalue()
+        self.assertIn('Error fetching data', out)
+        self.assertIn('Bad token', out)
+
+    def test_status_missing_exits_unknown(self):
+        # No 'status' key -> default '' -> not 'ok' -> error branch.
+        self.fetch_json.return_value = (True, {'foo': 'bar'})
+        with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
+            librenms.get_data(Args())
+        self.assertEqual(cm.exception.code, STATE_UNKNOWN)
+
+    def test_status_empty_string_exits_unknown(self):
+        self.fetch_json.return_value = (True, {'status': ''})
+        with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
+            librenms.get_data(Args())
+        self.assertEqual(cm.exception.code, STATE_UNKNOWN)
+
+    def test_status_unexpected_value_exits_unknown(self):
+        self.fetch_json.return_value = (True, {'status': 'partial'})
+        with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
+            librenms.get_data(Args())
+        self.assertEqual(cm.exception.code, STATE_UNKNOWN)
+
+    def test_always_ok_turns_error_into_exit_zero(self):
+        class A(Args):
+            ALWAYS_OK = True
+        self.fetch_json.return_value = (True, DEVICES_ERR)
+        with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
+            librenms.get_data(A())
+        self.assertEqual(cm.exception.code, STATE_OK)
+
+    def test_status_none_raises_attribute_error(self):
+        # result.get('status', '') returns None, then .lower() blows up. This
+        # pins the current (fragile) behaviour so a future hardening is noticed.
+        self.fetch_json.return_value = (True, {'status': None})
+        with self.assertRaises(AttributeError):
+            librenms.get_data(Args())
+
+    def test_non_dict_payload_raises_attribute_error(self):
+        # A list body has no .get(); current code does not guard against it.
+        self.fetch_json.return_value = (True, [1, 2, 3])
+        with self.assertRaises(AttributeError):
+            librenms.get_data(Args())
+
+
+# ---------------------------------------------------------------------------
+# get_data() - transport failure (coe path)
+# ---------------------------------------------------------------------------
+
+class TestGetDataTransportFailure(LibrenmsTestBase):
+
+    def test_fetch_failure_exits_unknown(self):
+        self.fetch_json.return_value = (False, 'connection refused')
+        with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
+            librenms.get_data(Args())
+        self.assertEqual(cm.exception.code, STATE_UNKNOWN)
+
+    def test_fetch_failure_prints_error_message(self):
+        self.fetch_json.return_value = (False, 'connection refused')
+        buf = io.StringIO()
+        with self.assertRaises(SystemExit), redirect_stdout(buf):
+            librenms.get_data(Args())
+        self.assertIn('connection refused', buf.getvalue())
+
+    def test_fetch_failure_with_always_ok_still_exits_unknown(self):
+        # coe() ignores --always-ok; only oao() honours it. So a transport
+        # failure exits UNKNOWN even with ALWAYS_OK=True.
+        class A(Args):
+            ALWAYS_OK = True
+        self.fetch_json.return_value = (False, 'boom')
+        with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
+            librenms.get_data(A())
+        self.assertEqual(cm.exception.code, STATE_UNKNOWN)
+
+
+# ---------------------------------------------------------------------------
+# get_prop()
+# ---------------------------------------------------------------------------
+
+class TestGetProp(unittest.TestCase):
+
+    # --- default mytype='str' ------------------------------------------------
+
+    def test_str_existing_string_returned_unchanged(self):
+        self.assertEqual(librenms.get_prop({'os': 'ios'}, 'os'), 'ios')
+
+    def test_str_int_value_stringified(self):
+        self.assertEqual(librenms.get_prop({'uptime': 3600}, 'uptime'), '3600')
+
+    def test_str_zero_int_stringified_not_dropped(self):
+        # 0 is falsy but present; must become '0', not ''.
+        self.assertEqual(librenms.get_prop({'uptime': 0}, 'uptime'), '0')
+
+    def test_str_false_bool_stringified(self):
+        self.assertEqual(librenms.get_prop({'flag': False}, 'flag'), 'False')
+
+    def test_str_empty_string_stays_empty(self):
+        self.assertEqual(librenms.get_prop({'x': ''}, 'x'), '')
+
+    def test_str_list_value_uses_str_repr(self):
+        self.assertEqual(librenms.get_prop({'x': [1, 2]}, 'x'), '[1, 2]')
+
+    def test_str_missing_key_returns_empty_string(self):
+        self.assertEqual(librenms.get_prop({}, 'nope'), '')
+
+    def test_str_none_value_returns_empty_string(self):
+        self.assertEqual(librenms.get_prop({'x': None}, 'x'), '')
+
+    def test_str_explicit_mytype_str(self):
+        self.assertEqual(librenms.get_prop({'os': 'ios'}, 'os', mytype='str'), 'ios')
+
+    # --- non-str mytype ------------------------------------------------------
+
+    def test_int_existing_value_returned_as_is(self):
+        self.assertEqual(librenms.get_prop({'n': 5}, 'n', mytype='int'), 5)
+        self.assertIsInstance(librenms.get_prop({'n': 5}, 'n', mytype='int'), int)
+
+    def test_int_zero_returned_not_none(self):
+        # value is 0: `value if value is not None else None` keeps the 0.
+        self.assertEqual(librenms.get_prop({'n': 0}, 'n', mytype='int'), 0)
+
+    def test_int_false_returned_not_none(self):
+        self.assertIs(librenms.get_prop({'n': False}, 'n', mytype='int'), False)
+
+    def test_int_missing_returns_none(self):
+        self.assertIsNone(librenms.get_prop({}, 'n', mytype='int'))
+
+    def test_int_none_value_returns_none(self):
+        self.assertIsNone(librenms.get_prop({'n': None}, 'n', mytype='int'))
+
+    def test_nonstr_type_does_not_stringify_int(self):
+        # any non-'str' mytype takes the passthrough branch.
+        self.assertEqual(librenms.get_prop({'n': 42}, 'n', mytype='float'), 42)
+        self.assertIsInstance(librenms.get_prop({'n': 42}, 'n', mytype='float'), int)
+
+    def test_nonstr_type_list_passed_through(self):
+        self.assertEqual(librenms.get_prop({'x': [1, 2]}, 'x', mytype='list'), [1, 2])
+
+    def test_realistic_device_dict(self):
+        dev = DEVICES_OK['devices'][1]
+        self.assertEqual(librenms.get_prop(dev, 'hostname'), 'edge-fw-01.example.com')
+        self.assertEqual(librenms.get_prop(dev, 'uptime'), '0')
+        self.assertEqual(librenms.get_prop(dev, 'hardware'), '')  # None -> ''
+        self.assertEqual(librenms.get_prop(dev, 'status', mytype='int'), 0)
+
+
+# ---------------------------------------------------------------------------
+# get_state()
+# ---------------------------------------------------------------------------
+
+class TestGetState(unittest.TestCase):
+
+    # --- the OK states (0=CLEAR, 2=ACKNOWLEDGED) -----------------------------
+
+    def test_clear_state_is_ok_crit(self):
+        self.assertEqual(librenms.get_state(0), STATE_OK)
+
+    def test_clear_state_is_ok_warn(self):
+        self.assertEqual(librenms.get_state(0, severity='warn'), STATE_OK)
+
+    def test_acknowledged_state_is_ok_crit(self):
+        self.assertEqual(librenms.get_state(2), STATE_OK)
+
+    def test_acknowledged_state_is_ok_warn(self):
+        self.assertEqual(librenms.get_state(2, severity='warn'), STATE_OK)
+
+    # --- the open/notifiable states (1,3,4,5) with default crit --------------
+
+    def test_active_state_default_crit(self):
+        self.assertEqual(librenms.get_state(1), STATE_CRIT)
+
+    def test_worse_state_default_crit(self):
+        self.assertEqual(librenms.get_state(3), STATE_CRIT)
+
+    def test_better_state_default_crit(self):
+        self.assertEqual(librenms.get_state(4), STATE_CRIT)
+
+    def test_changed_state_default_crit(self):
+        self.assertEqual(librenms.get_state(5), STATE_CRIT)
+
+    # --- the open states with severity='warn' --------------------------------
+
+    def test_active_state_warn(self):
+        self.assertEqual(librenms.get_state(1, severity='warn'), STATE_WARN)
+
+    def test_worse_state_warn(self):
+        self.assertEqual(librenms.get_state(3, severity='warn'), STATE_WARN)
+
+    def test_better_state_warn(self):
+        self.assertEqual(librenms.get_state(4, severity='warn'), STATE_WARN)
+
+    def test_changed_state_warn(self):
+        self.assertEqual(librenms.get_state(5, severity='warn'), STATE_WARN)
+
+    # --- severity is 'crit' only for the literal string 'crit' ---------------
+
+    def test_explicit_severity_crit(self):
+        self.assertEqual(librenms.get_state(1, severity='crit'), STATE_CRIT)
+
+    def test_unknown_severity_falls_back_to_warn(self):
+        # Anything that is not exactly 'crit' maps the open states to WARN.
+        self.assertEqual(librenms.get_state(1, severity='whatever'), STATE_WARN)
+
+    def test_empty_severity_falls_back_to_warn(self):
+        self.assertEqual(librenms.get_state(1, severity=''), STATE_WARN)
+
+    # --- edge / odd inputs ---------------------------------------------------
+
+    def test_unknown_high_state_code_is_ok(self):
+        # Codes outside 1,3,4,5 (e.g. 6, 99) are treated as OK.
+        self.assertEqual(librenms.get_state(6), STATE_OK)
+        self.assertEqual(librenms.get_state(99, severity='warn'), STATE_OK)
+
+    def test_negative_state_code_is_ok(self):
+        self.assertEqual(librenms.get_state(-1), STATE_OK)
+
+    def test_bool_true_equals_one_maps_to_crit(self):
+        # True == 1 in Python, so True lands in the open-state set.
+        self.assertEqual(librenms.get_state(True), STATE_CRIT)
+
+    def test_bool_false_equals_zero_maps_to_ok(self):
+        self.assertEqual(librenms.get_state(False), STATE_OK)
+
+    def test_none_state_is_ok(self):
+        # None is not in (1,3,4,5) -> OK.
+        self.assertEqual(librenms.get_state(None), STATE_OK)
+
+    def test_string_state_not_in_set_is_ok(self):
+        # '1' (str) != 1 (int), so it is not in the int set -> OK.
+        self.assertEqual(librenms.get_state('1'), STATE_OK)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,0 +1,15 @@
+{
+    "outcome": "success",
+    "result": [
+        {
+            "data-source": "ExampleDS",
+            "enabled": true,
+            "jndi-name": "java:jboss/datasources/ExampleDS"
+        },
+        {
+            "data-source": "AppDS",
+            "enabled": true,
+            "jndi-name": "java:jboss/datasources/AppDS"
+        }
+    ]
+}

@@ -1,0 +1,19 @@
+{
+    "outcome": "success",
+    "result": {
+        "heap-memory-usage": {
+            "init": 268435456,
+            "used": 187654321,
+            "committed": 257425408,
+            "max": 4294967296
+        },
+        "non-heap-memory-usage": {
+            "init": 7667712,
+            "used": 145678912,
+            "committed": 152043520,
+            "max": -1
+        },
+        "object-pending-finalization-count": 0,
+        "verbose": false
+    }
+}

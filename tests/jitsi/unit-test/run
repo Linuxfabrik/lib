@@ -1,0 +1,478 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.jitsi.
+
+lib.jitsi is a thin convenience wrapper around lib.url for the Jitsi
+plugins. Its single public function, get_data(), builds an optional Basic
+Auth header, dispatches to url.fetch_json (JSON) or url.fetch (raw), and
+normalises the return shape.
+
+All network I/O is mocked: url.fetch and url.fetch_json are replaced with
+unittest.mock so the suite is hermetic and fast. No socket, no DNS, no TLS
+handshake ever happens. Realistic Jitsi Videobridge / Colibri payloads are
+fed in as fixtures to assert exactly how get_data() forwards arguments and
+shapes its result.
+
+lib.jitsi imports lib.url, which lazily imports httpx only inside its
+network functions. Because every transport call here is mocked, httpx is
+never touched and the suite runs even when httpx is absent.
+"""
+
+import base64
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.jitsi as jitsi
+
+# -----------------------------------------------------------------------------
+# Fixtures
+# -----------------------------------------------------------------------------
+
+# A captured-style Jitsi Videobridge Colibri stats payload. With
+# extended=True, url.fetch_json wraps the parsed document under
+# 'response_json' alongside the transport metadata; get_data() returns that
+# whole dict verbatim.
+COLIBRI_STATS = {
+    'inactive_endpoints': 0,
+    'inactive_conferences': 0,
+    'total_ice_succeeded_relayed': 0,
+    'total_loss_degraded_participant_seconds': 12,
+    'bit_rate_download': 421,
+    'muc_clients_connected': 1,
+    'total_participants': 7,
+    'total_packets_received': 1234567,
+    'rtt_aggregate': 35.5,
+    'packet_rate_upload': 210,
+    'p2p_conferences': 0,
+    'total_loss_controlled_participant_seconds': 3,
+    'conferences': 2,
+    'participants': 5,
+    'largest_conference': 4,
+    'total_packets_sent': 2345678,
+    'video_channels': 5,
+    'jitter_aggregate': 1.2,
+    'total_conference_seconds': 9000,
+    'graceful_shutdown': False,
+    'threads': 64,
+    'videostreams': 5,
+    'thread_pool_size': 128,
+    'bit_rate_upload': 905,
+    'jvb_version': '2.3.x',
+}
+
+# What url.fetch_json(..., extended=True) returns on success: transport
+# envelope plus the decoded document under 'response_json'.
+FETCH_JSON_EXTENDED_OK = {
+    'response_json': COLIBRI_STATS,
+    'status_code': 200,
+    'response_header': {'content-type': 'application/json'},
+    'elapsed': 0.042,
+}
+
+# What url.fetch(..., extended=True) returns on success for raw mode: same
+# envelope but the body lives under 'response' as text.
+FETCH_RAW_EXTENDED_OK = {
+    'response': '<html><body>healthcheck OK</body></html>',
+    'status_code': 200,
+    'response_header': {'content-type': 'text/html'},
+    'elapsed': 0.011,
+}
+
+
+def make_args(
+    url='https://192.0.2.10:8080/colibri/stats',
+    username='',
+    password='',
+    timeout=8,
+    insecure=False,
+    no_proxy=False,
+):
+    """Build an argparse.Namespace-like object as get_data() expects.
+
+    The attribute names are upper-case on purpose: get_data() reads
+    args.URL, args.USERNAME, args.PASSWORD, args.TIMEOUT, args.INSECURE,
+    args.NO_PROXY.
+    """
+    ns = mock.Mock()
+    ns.URL = url
+    ns.USERNAME = username
+    ns.PASSWORD = password
+    ns.TIMEOUT = timeout
+    ns.INSECURE = insecure
+    ns.NO_PROXY = no_proxy
+    return ns
+
+
+# -----------------------------------------------------------------------------
+# Dispatch: which transport function gets called for which _type
+# -----------------------------------------------------------------------------
+
+
+class TestDispatch(unittest.TestCase):
+    """get_data() picks url.fetch_json for _type='json', url.fetch otherwise."""
+
+    def test_default_type_uses_fetch_json(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj, \
+             mock.patch.object(jitsi.url, 'fetch') as f:
+            jitsi.get_data(make_args())
+            self.assertTrue(fj.called)
+            self.assertFalse(f.called)
+
+    def test_explicit_json_uses_fetch_json(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj, \
+             mock.patch.object(jitsi.url, 'fetch') as f:
+            jitsi.get_data(make_args(), _type='json')
+            self.assertTrue(fj.called)
+            self.assertFalse(f.called)
+
+    def test_raw_type_uses_fetch(self):
+        with mock.patch.object(jitsi.url, 'fetch',
+                               return_value=(True, FETCH_RAW_EXTENDED_OK)) as f, \
+             mock.patch.object(jitsi.url, 'fetch_json') as fj:
+            jitsi.get_data(make_args(), _type='raw')
+            self.assertTrue(f.called)
+            self.assertFalse(fj.called)
+
+    def test_arbitrary_nonjson_type_uses_fetch(self):
+        # Anything that is not the exact string 'json' must route to fetch().
+        for _type in ('text', 'html', 'xml', '', 'JSON', 'Json', 'json '):
+            with (
+                self.subTest(_type=_type),
+                mock.patch.object(jitsi.url, 'fetch',
+                                  return_value=(True, FETCH_RAW_EXTENDED_OK)) as f,
+                mock.patch.object(jitsi.url, 'fetch_json') as fj,
+            ):
+                jitsi.get_data(make_args(), _type=_type)
+                self.assertTrue(f.called, f'_type={_type!r} should use fetch')
+                self.assertFalse(fj.called, f'_type={_type!r} should not use fetch_json')
+
+    def test_type_match_is_case_sensitive(self):
+        # 'json' matches, 'JSON' does not. Documents the exact == 'json' check.
+        with mock.patch.object(jitsi.url, 'fetch',
+                               return_value=(True, FETCH_RAW_EXTENDED_OK)) as f, \
+             mock.patch.object(jitsi.url, 'fetch_json') as fj:
+            jitsi.get_data(make_args(), _type='JSON')
+            self.assertTrue(f.called)
+            self.assertFalse(fj.called)
+
+
+# -----------------------------------------------------------------------------
+# Request construction: URL, headers, auth, kwargs forwarding
+# -----------------------------------------------------------------------------
+
+
+class TestRequestConstruction(unittest.TestCase):
+    """get_data() forwards the URL positionally and the rest as kwargs."""
+
+    def test_url_passed_positionally(self):
+        url_value = 'https://198.51.100.5:8080/colibri/stats'
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(make_args(url=url_value))
+            self.assertEqual(fj.call_args.args, (url_value,))
+
+    def test_extended_always_true(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(make_args())
+            self.assertIs(fj.call_args.kwargs['extended'], True)
+
+    def test_kwargs_forwarded_from_args(self):
+        # insecure / no_proxy / timeout flow straight through from args.
+        args = make_args(timeout=30, insecure=True, no_proxy=True)
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(args)
+            kwargs = fj.call_args.kwargs
+            self.assertEqual(kwargs['timeout'], 30)
+            self.assertIs(kwargs['insecure'], True)
+            self.assertIs(kwargs['no_proxy'], True)
+
+    def test_default_kwargs_forwarded(self):
+        args = make_args()  # timeout=8, insecure=False, no_proxy=False
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(args)
+            kwargs = fj.call_args.kwargs
+            self.assertEqual(kwargs['timeout'], 8)
+            self.assertIs(kwargs['insecure'], False)
+            self.assertIs(kwargs['no_proxy'], False)
+
+    def test_exact_kwarg_set(self):
+        # Lock the full kwarg contract so a future signature drift is caught.
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(make_args())
+            self.assertEqual(
+                set(fj.call_args.kwargs.keys()),
+                {'extended', 'header', 'insecure', 'no_proxy', 'timeout'},
+            )
+
+    def test_raw_mode_forwards_same_kwargs(self):
+        args = make_args(timeout=15, insecure=True, no_proxy=True)
+        with mock.patch.object(jitsi.url, 'fetch',
+                               return_value=(True, FETCH_RAW_EXTENDED_OK)) as f:
+            jitsi.get_data(args, _type='raw')
+            kwargs = f.call_args.kwargs
+            self.assertEqual(f.call_args.args, (args.URL,))
+            self.assertIs(kwargs['extended'], True)
+            self.assertEqual(kwargs['timeout'], 15)
+            self.assertIs(kwargs['insecure'], True)
+            self.assertIs(kwargs['no_proxy'], True)
+
+
+# -----------------------------------------------------------------------------
+# Basic Auth header construction
+# -----------------------------------------------------------------------------
+
+
+class TestAuthHeader(unittest.TestCase):
+    """Header carries Basic Auth only when USERNAME is truthy."""
+
+    def test_no_auth_header_without_username(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(make_args(username='', password=''))
+            self.assertEqual(fj.call_args.kwargs['header'], {})
+
+    def test_no_auth_header_with_password_but_no_username(self):
+        # The guard is on USERNAME only; a lone password yields no header.
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(make_args(username='', password='linuxfabrik'))
+            self.assertEqual(fj.call_args.kwargs['header'], {})
+
+    def test_auth_header_with_username_and_password(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(make_args(username='admin', password='linuxfabrik'))
+            header = fj.call_args.kwargs['header']
+            expected = 'Basic ' + base64.b64encode(b'admin:linuxfabrik').decode()
+            self.assertEqual(header, {'Authorization': expected})
+
+    def test_auth_header_value_is_decodable(self):
+        # Round-trip the encoded token back to the original credentials.
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(make_args(username='monitor', password='s3cr3t!'))
+            token = fj.call_args.kwargs['header']['Authorization']
+            self.assertTrue(token.startswith('Basic '))
+            decoded = base64.b64decode(token[len('Basic '):]).decode()
+            self.assertEqual(decoded, 'monitor:s3cr3t!')
+
+    def test_auth_header_with_empty_password(self):
+        # USERNAME set, PASSWORD empty -> still authenticated, "user:".
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(make_args(username='u', password=''))
+            header = fj.call_args.kwargs['header']
+            expected = 'Basic ' + base64.b64encode(b'u:').decode()
+            self.assertEqual(header, {'Authorization': expected})
+
+    def test_auth_header_handles_unicode_credentials(self):
+        # Credentials are UTF-8 encoded before base64; non-ASCII must survive.
+        user, pwd = 'tästuser', 'pässwörd'
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(make_args(username=user, password=pwd))
+            token = fj.call_args.kwargs['header']['Authorization']
+            decoded = base64.b64decode(token[len('Basic '):]).decode('utf-8')
+            self.assertEqual(decoded, f'{user}:{pwd}')
+
+    def test_auth_header_in_raw_mode(self):
+        # Auth handling is independent of _type.
+        with mock.patch.object(jitsi.url, 'fetch',
+                               return_value=(True, FETCH_RAW_EXTENDED_OK)) as f:
+            jitsi.get_data(make_args(username='admin', password='linuxfabrik'),
+                           _type='raw')
+            header = f.call_args.kwargs['header']
+            expected = 'Basic ' + base64.b64encode(b'admin:linuxfabrik').decode()
+            self.assertEqual(header, {'Authorization': expected})
+
+
+# -----------------------------------------------------------------------------
+# Return-shape contract on success
+# -----------------------------------------------------------------------------
+
+
+class TestSuccessReturn(unittest.TestCase):
+    """On success get_data() returns a 2-tuple (True, result) verbatim."""
+
+    def test_json_success_returns_two_tuple(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)):
+            result = jitsi.get_data(make_args())
+            self.assertEqual(len(result), 2)
+            success, payload = result
+            self.assertIs(success, True)
+            self.assertIs(payload, FETCH_JSON_EXTENDED_OK)
+
+    def test_json_success_payload_carries_parsed_document(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)):
+            _, payload = jitsi.get_data(make_args())
+            self.assertEqual(payload['response_json'], COLIBRI_STATS)
+            self.assertEqual(payload['response_json']['conferences'], 2)
+            self.assertEqual(payload['status_code'], 200)
+
+    def test_raw_success_returns_two_tuple(self):
+        with mock.patch.object(jitsi.url, 'fetch',
+                               return_value=(True, FETCH_RAW_EXTENDED_OK)):
+            result = jitsi.get_data(make_args(), _type='raw')
+            self.assertEqual(len(result), 2)
+            success, payload = result
+            self.assertIs(success, True)
+            self.assertIs(payload, FETCH_RAW_EXTENDED_OK)
+            self.assertIn('healthcheck OK', payload['response'])
+
+    def test_success_with_empty_dict_payload(self):
+        # An empty-but-truthy success: fetch_json returned (True, {}).
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, {})):
+            result = jitsi.get_data(make_args())
+            self.assertEqual(result, (True, {}))
+
+
+# -----------------------------------------------------------------------------
+# Error / failure handling
+# -----------------------------------------------------------------------------
+
+
+class TestFailureReturn(unittest.TestCase):
+    """On failure get_data() returns a 3-tuple (success, result, False)."""
+
+    def test_failure_returns_three_tuple(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(False, 'Connection refused')):
+            result = jitsi.get_data(make_args())
+            self.assertEqual(len(result), 3)
+            self.assertEqual(result, (False, 'Connection refused', False))
+
+    def test_failure_first_element_is_falsy(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(False, 'HTTP 500 Internal Server Error')):
+            success = jitsi.get_data(make_args())[0]
+            self.assertFalse(success)
+
+    def test_failure_third_element_is_false(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(False, 'timeout')):
+            self.assertIs(jitsi.get_data(make_args())[2], False)
+
+    def test_failure_message_propagated(self):
+        msg = 'URL https://192.0.2.10:8080/colibri/stats returned HTTP 404'
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(False, msg)):
+            self.assertEqual(jitsi.get_data(make_args())[1], msg)
+
+    def test_raw_failure_returns_three_tuple(self):
+        with mock.patch.object(jitsi.url, 'fetch',
+                               return_value=(False, 'TLS handshake failed')):
+            result = jitsi.get_data(make_args(), _type='raw')
+            self.assertEqual(result, (False, 'TLS handshake failed', False))
+
+    def test_failure_with_empty_message(self):
+        # An empty error body still trips the not-success branch.
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(False, '')):
+            self.assertEqual(jitsi.get_data(make_args()), (False, '', False))
+
+    def test_failure_with_dict_payload(self):
+        # lib.url may hand back a dict on a non-200 extended fetch; get_data
+        # only checks the success flag, so the payload passes through as-is.
+        err_payload = {'status_code': 503, 'response': 'Service Unavailable'}
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(False, err_payload)):
+            result = jitsi.get_data(make_args())
+            self.assertEqual(result, (False, err_payload, False))
+
+
+# -----------------------------------------------------------------------------
+# Truthiness edge cases of the success flag
+# -----------------------------------------------------------------------------
+
+
+class TestSuccessFlagTruthiness(unittest.TestCase):
+    """get_data() branches on the truthiness of the success flag."""
+
+    def test_truthy_nonbool_success_takes_success_path(self):
+        # A truthy non-True value (e.g. 1) routes to the 2-tuple success path
+        # and the returned flag is normalised to literal True.
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(1, FETCH_JSON_EXTENDED_OK)):
+            result = jitsi.get_data(make_args())
+            self.assertEqual(len(result), 2)
+            self.assertIs(result[0], True)
+
+    def test_falsy_nonbool_success_takes_failure_path(self):
+        # A falsy non-False value (0) routes to the 3-tuple failure path and
+        # the original flag is preserved as element 0.
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(0, 'err')):
+            result = jitsi.get_data(make_args())
+            self.assertEqual(len(result), 3)
+            self.assertEqual(result[0], 0)
+            self.assertIs(result[2], False)
+
+    def test_none_success_takes_failure_path(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(None, 'err')):
+            result = jitsi.get_data(make_args())
+            self.assertEqual(len(result), 3)
+            self.assertIsNone(result[0])
+
+
+# -----------------------------------------------------------------------------
+# Single transport call (no retries, no pagination)
+# -----------------------------------------------------------------------------
+
+
+class TestCallCount(unittest.TestCase):
+    """get_data() makes exactly one transport call; it does not paginate."""
+
+    def test_one_call_on_success(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(True, FETCH_JSON_EXTENDED_OK)) as fj:
+            jitsi.get_data(make_args())
+            self.assertEqual(fj.call_count, 1)
+
+    def test_one_call_on_failure(self):
+        with mock.patch.object(jitsi.url, 'fetch_json',
+                               return_value=(False, 'err')) as fj:
+            jitsi.get_data(make_args())
+            self.assertEqual(fj.call_count, 1)
+
+
+# -----------------------------------------------------------------------------
+# Module surface
+# -----------------------------------------------------------------------------
+
+
+class TestModuleSurface(unittest.TestCase):
+    """Sanity checks on the module's public API."""
+
+    def test_get_data_is_callable(self):
+        self.assertTrue(callable(jitsi.get_data))
+
+    def test_only_expected_public_function(self):
+        public = [n for n in dir(jitsi)
+                  if not n.startswith('_') and callable(getattr(jitsi, n))
+                  and getattr(getattr(jitsi, n), '__module__', None) == jitsi.__name__]
+        self.assertEqual(public, ['get_data'])
+
+
+if __name__ == '__main__':
+    unittest.main()

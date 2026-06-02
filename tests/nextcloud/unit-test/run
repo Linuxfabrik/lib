@@ -1,0 +1,438 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.nextcloud.
+
+The module exposes a single public function, `run_occ`, which shells out to
+Nextcloud's `occ` admin CLI as the owner of `config/config.php`. It has three
+external touch points, all of which are patched so the suite is fully
+hermetic (no PHP, no `occ`, no `sudo`, no filesystem stat, no subprocess):
+
+- `shutil.which('php')`  -> locate the PHP interpreter
+- `disk.get_owner(...)`  -> numeric UID / name owning config/config.php
+- `shell.shell_exec(...)` -> run the assembled `sudo ... php occ <cmd>` line
+
+We assert the full command-building contract (PHP lookup, owner lookup path,
+the exact `sudo -u \\#<uid> <php> <occ> <cmd>` string) and the full
+response-handling contract: JSON parsing (incl. bytes stdout and
+case-insensitive `_format`), raw-text mode (incl. stripping and bytes),
+the missing-PHP error, the return-code / success-flag failure path with its
+stderr-then-stdout fallback, and malformed / empty JSON handling.
+
+Captured-style `occ` payloads (`occ status`, `occ user:list --output=json`)
+live in fixtures and are fed through the JSON path end to end.
+"""
+
+import json
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.nextcloud as nextcloud
+
+FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
+
+# A canonical, fully-resolved install used across the suite.
+NC_PATH = '/var/www/nextcloud'
+PHP_BIN = '/usr/bin/php'
+UID = 33  # typical www-data UID on Debian-family
+
+
+def load_fixture_text(name):
+    """Return the raw textual contents of a captured-style fixture."""
+    with open(os.path.join(FIXTURE_DIR, name), encoding='utf-8') as f:
+        return f.read()
+
+
+def load_fixture(name):
+    """Return the parsed object of a captured-style JSON fixture."""
+    return json.loads(load_fixture_text(name))
+
+
+def patched(which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0))):
+    """
+    Build the three patchers that isolate run_occ from the host.
+
+    Returns a context-manager list to be entered via ExitStack, and the
+    shell_exec mock so call assertions can be made. `which=None` simulates a
+    host without PHP. `shell_ret` is the (success, (stdout, stderr, rc)) tuple
+    that shell_exec returns.
+    """
+    which_p = mock.patch.object(nextcloud.shutil, 'which', return_value=which)
+    owner_p = mock.patch.object(nextcloud.disk, 'get_owner', return_value=owner)
+    shell_mock = mock.Mock(return_value=shell_ret)
+    shell_p = mock.patch.object(nextcloud.shell, 'shell_exec', shell_mock)
+    return (which_p, owner_p, shell_p), shell_mock
+
+
+class _Base(unittest.TestCase):
+    """Shared helper to run run_occ under the three patches."""
+
+    def run_occ(self, *args, which=PHP_BIN, owner=UID,
+                shell_ret=(True, ('{}', '', 0)), **kwargs):
+        (which_p, owner_p, shell_p), shell_mock = patched(which, owner, shell_ret)
+        with which_p, owner_p, shell_p:
+            result = nextcloud.run_occ(*args, **kwargs)
+        self.shell_mock = shell_mock
+        return result
+
+
+# -----------------------------------------------------------------------------
+# Missing PHP interpreter
+# -----------------------------------------------------------------------------
+
+
+class TestMissingPhp(_Base):
+    """When shutil.which('php') returns falsy, fail before doing anything."""
+
+    def test_returns_false(self):
+        ok, _ = self.run_occ(NC_PATH, 'status', which=None)
+        self.assertFalse(ok)
+
+    def test_descriptive_message(self):
+        _ok, msg = self.run_occ(NC_PATH, 'status', which=None)
+        self.assertIn('php', msg)
+        self.assertIn('PATH', msg)
+
+    def test_php_looked_up_by_name(self):
+        with mock.patch.object(nextcloud.shutil, 'which', return_value=None) as w:
+            nextcloud.run_occ(NC_PATH, 'status')
+        w.assert_called_once_with('php')
+
+    def test_owner_not_consulted_when_no_php(self):
+        # No point statting config.php if there is no interpreter to run occ.
+        with mock.patch.object(nextcloud.shutil, 'which', return_value=None), \
+             mock.patch.object(nextcloud.disk, 'get_owner') as go, \
+             mock.patch.object(nextcloud.shell, 'shell_exec') as se:
+            nextcloud.run_occ(NC_PATH, 'status')
+        go.assert_not_called()
+        se.assert_not_called()
+
+    def test_empty_string_php_is_missing(self):
+        # shutil.which can return '' in pathological PATHs; treat as missing.
+        ok, _ = self.run_occ(NC_PATH, 'status', which='')
+        self.assertFalse(ok)
+
+
+# -----------------------------------------------------------------------------
+# Command construction
+# -----------------------------------------------------------------------------
+
+
+class TestCommandConstruction(_Base):
+    """Assert how the sudo/php/occ command string is assembled."""
+
+    def test_php_looked_up_by_name(self):
+        self.run_occ(NC_PATH, 'status')
+        self.shell_mock.assert_called_once()
+
+    def test_owner_lookup_targets_config_php(self):
+        with mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN), \
+             mock.patch.object(nextcloud.disk, 'get_owner', return_value=UID) as go, \
+             mock.patch.object(nextcloud.shell, 'shell_exec', return_value=(True, ('{}', '', 0))):
+            nextcloud.run_occ(NC_PATH, 'status')
+        go.assert_called_once_with(os.path.join(NC_PATH, 'config/config.php'))
+
+    def test_full_command_string(self):
+        self.run_occ(NC_PATH, 'status')
+        (cmd,), _ = self.shell_mock.call_args
+        self.assertEqual(
+            cmd,
+            'sudo -u \\#33 /usr/bin/php /var/www/nextcloud/occ status',
+        )
+
+    def test_command_uses_sudo_u_with_escaped_hash(self):
+        self.run_occ(NC_PATH, 'status')
+        (cmd,), _ = self.shell_mock.call_args
+        self.assertIn('sudo -u \\#33 ', cmd)
+
+    def test_command_uses_resolved_php_path(self):
+        self.run_occ(NC_PATH, 'status', which='/opt/php8/bin/php')
+        (cmd,), _ = self.shell_mock.call_args
+        self.assertIn(' /opt/php8/bin/php ', cmd)
+
+    def test_command_points_at_occ_in_path(self):
+        self.run_occ('/srv/nc', 'status')
+        (cmd,), _ = self.shell_mock.call_args
+        self.assertIn(' /srv/nc/occ ', cmd)
+
+    def test_subcommand_with_args_passed_verbatim(self):
+        self.run_occ(NC_PATH, 'user:list --output=json')
+        (cmd,), _ = self.shell_mock.call_args
+        self.assertTrue(cmd.endswith('/var/www/nextcloud/occ user:list --output=json'))
+
+    def test_owner_as_username(self):
+        # get_owner may return a name rather than a numeric UID.
+        self.run_occ(NC_PATH, 'status', owner='www-data')
+        (cmd,), _ = self.shell_mock.call_args
+        self.assertEqual(
+            cmd,
+            'sudo -u \\#www-data /usr/bin/php /var/www/nextcloud/occ status',
+        )
+
+    def test_shell_exec_called_once_positionally(self):
+        self.run_occ(NC_PATH, 'status')
+        self.shell_mock.assert_called_once()
+        _, kwargs = self.shell_mock.call_args
+        self.assertEqual(kwargs, {})
+
+
+# -----------------------------------------------------------------------------
+# JSON response handling (default _format='json')
+# -----------------------------------------------------------------------------
+
+
+class TestJsonResponse(_Base):
+    """Assert JSON parsing on the success path."""
+
+    def test_parses_object(self):
+        ok, data = self.run_occ(NC_PATH, 'status',
+                                shell_ret=(True, ('{"installed": true}', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(data, {'installed': True})
+
+    def test_parses_array(self):
+        ok, data = self.run_occ(NC_PATH, 'status',
+                                shell_ret=(True, ('[1, 2, 3]', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(data, [1, 2, 3])
+
+    def test_returns_python_types(self):
+        ok, data = self.run_occ(
+            NC_PATH, 'status',
+            shell_ret=(True, ('{"maintenance": false, "n": 7, "v": null}', '', 0)),
+        )
+        self.assertTrue(ok)
+        self.assertIs(data['maintenance'], False)
+        self.assertEqual(data['n'], 7)
+        self.assertIsNone(data['v'])
+
+    def test_default_format_is_json(self):
+        # No _format kwarg -> JSON parsing happens.
+        ok, data = self.run_occ(NC_PATH, 'status',
+                                shell_ret=(True, ('{"a": 1}', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(data, {'a': 1})
+
+    def test_bytes_stdout_decoded_and_parsed(self):
+        ok, data = self.run_occ(NC_PATH, 'status',
+                                shell_ret=(True, (b'{"a": 1}', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(data, {'a': 1})
+
+    def test_bytearray_stdout_decoded_and_parsed(self):
+        ok, data = self.run_occ(NC_PATH, 'status',
+                                shell_ret=(True, (bytearray(b'{"a": 1}'), '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(data, {'a': 1})
+
+    def test_format_json_is_case_insensitive(self):
+        ok, data = self.run_occ(NC_PATH, 'status', _format='JSON',
+                                shell_ret=(True, ('{"a": 1}', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(data, {'a': 1})
+
+    def test_format_json_mixed_case(self):
+        ok, data = self.run_occ(NC_PATH, 'status', _format='Json',
+                                shell_ret=(True, ('{"a": 1}', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(data, {'a': 1})
+
+
+# -----------------------------------------------------------------------------
+# Malformed / empty JSON
+# -----------------------------------------------------------------------------
+
+
+class TestJsonErrors(_Base):
+    """Assert behaviour when stdout is not valid JSON."""
+
+    def test_non_json_text_fails(self):
+        ok, msg = self.run_occ(NC_PATH, 'status',
+                               shell_ret=(True, ('not json at all', '', 0)))
+        self.assertFalse(ok)
+        self.assertIn('JSON decode error', msg)
+
+    def test_error_includes_raw_stdout(self):
+        ok, msg = self.run_occ(NC_PATH, 'status',
+                               shell_ret=(True, ('garbage-123', '', 0)))
+        self.assertFalse(ok)
+        self.assertIn('Raw stdout', msg)
+        self.assertIn('garbage-123', msg)
+
+    def test_empty_stdout_is_json_error(self):
+        # rc==0 but empty stdout: json.loads('') raises -> decode error.
+        ok, msg = self.run_occ(NC_PATH, 'status',
+                               shell_ret=(True, ('', '', 0)))
+        self.assertFalse(ok)
+        self.assertIn('JSON decode error', msg)
+
+    def test_truncated_json_fails(self):
+        ok, msg = self.run_occ(NC_PATH, 'status',
+                               shell_ret=(True, ('{"installed": tr', '', 0)))
+        self.assertFalse(ok)
+        self.assertIn('JSON decode error', msg)
+
+
+# -----------------------------------------------------------------------------
+# Raw text response handling (_format != 'json')
+# -----------------------------------------------------------------------------
+
+
+class TestTextResponse(_Base):
+    """Assert raw-text mode trims and returns stdout untouched otherwise."""
+
+    def test_text_format_returns_string(self):
+        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
+                                shell_ret=(True, ('Nextcloud is installed', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(text, 'Nextcloud is installed')
+
+    def test_text_is_stripped(self):
+        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
+                                shell_ret=(True, ('  hello \n', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(text, 'hello')
+
+    def test_bytes_text_decoded_and_stripped(self):
+        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
+                                shell_ret=(True, (b'  hi \n', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(text, 'hi')
+
+    def test_bytearray_text_decoded_and_stripped(self):
+        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
+                                shell_ret=(True, (bytearray(b' x '), '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(text, 'x')
+
+    def test_text_does_not_parse_json(self):
+        # In text mode JSON-looking output stays a raw string.
+        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
+                                shell_ret=(True, ('{"a": 1}', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(text, '{"a": 1}')
+
+    def test_arbitrary_non_json_format_is_text(self):
+        # Any _format other than 'json' triggers the text branch.
+        ok, text = self.run_occ(NC_PATH, 'status', _format='plain',
+                                shell_ret=(True, (' ok ', '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(text, 'ok')
+
+
+# -----------------------------------------------------------------------------
+# Failure path (return code / success flag)
+# -----------------------------------------------------------------------------
+
+
+class TestFailurePath(_Base):
+    """Assert the command-failure contract and its message composition."""
+
+    def test_nonzero_rc_is_failure(self):
+        ok, _ = self.run_occ(NC_PATH, 'status',
+                             shell_ret=(True, ('', 'boom', 1)))
+        self.assertFalse(ok)
+
+    def test_failure_message_contains_command(self):
+        _ok, msg = self.run_occ(NC_PATH, 'status',
+                               shell_ret=(True, ('', 'boom', 1)))
+        self.assertIn('sudo -u \\#33 /usr/bin/php /var/www/nextcloud/occ status', msg)
+
+    def test_failure_message_contains_rc(self):
+        _ok, msg = self.run_occ(NC_PATH, 'status',
+                               shell_ret=(True, ('', 'boom', 7)))
+        self.assertIn('rc=7', msg)
+
+    def test_failure_prefers_stderr(self):
+        _ok, msg = self.run_occ(NC_PATH, 'status',
+                               shell_ret=(True, ('some stdout', 'the stderr', 1)))
+        self.assertIn('the stderr', msg)
+
+    def test_failure_falls_back_to_stdout_when_no_stderr(self):
+        # stderr empty -> the (or-fallback) stdout is shown instead.
+        ok, msg = self.run_occ(NC_PATH, 'status',
+                               shell_ret=(True, ('the stdout', '', 5)))
+        self.assertFalse(ok)
+        self.assertIn('the stdout', msg)
+        self.assertIn('rc=5', msg)
+
+    def test_success_flag_false_is_failure(self):
+        # shell_exec itself failing (success=False) is a failure even at rc 0.
+        ok, msg = self.run_occ(NC_PATH, 'status',
+                               shell_ret=(False, ('', 'exec failed', 0)))
+        self.assertFalse(ok)
+        self.assertIn('exec failed', msg)
+
+    def test_success_flag_false_with_rc_zero_still_fails(self):
+        ok, _ = self.run_occ(NC_PATH, 'status',
+                             shell_ret=(False, ('out', '', 0)))
+        self.assertFalse(ok)
+
+    def test_failure_short_circuits_before_json_parse(self):
+        # Valid JSON in stdout must not turn an rc!=0 run into a success.
+        ok, msg = self.run_occ(NC_PATH, 'status',
+                               shell_ret=(True, ('{"a": 1}', 'err', 1)))
+        self.assertFalse(ok)
+        self.assertIn('err', msg)
+
+
+# -----------------------------------------------------------------------------
+# Captured-style payloads, end to end (still hermetic)
+# -----------------------------------------------------------------------------
+
+
+class TestCapturedPayloads(_Base):
+    """Feed real-shaped occ output through the JSON path."""
+
+    def test_occ_status_payload(self):
+        raw = load_fixture_text('status.json')
+        expected = load_fixture('status.json')
+        ok, data = self.run_occ(NC_PATH, 'status',
+                                shell_ret=(True, (raw, '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(data, expected)
+        self.assertIs(data['installed'], True)
+        self.assertIs(data['maintenance'], False)
+        self.assertEqual(data['versionstring'], '29.0.4')
+
+    def test_occ_status_payload_as_bytes(self):
+        raw = load_fixture_text('status.json').encode('utf-8')
+        expected = load_fixture('status.json')
+        ok, data = self.run_occ(NC_PATH, 'status',
+                                shell_ret=(True, (raw, '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(data, expected)
+
+    def test_occ_user_list_payload(self):
+        raw = load_fixture_text('user-list.json')
+        expected = load_fixture('user-list.json')
+        ok, data = self.run_occ(NC_PATH, 'user:list --output=json',
+                                shell_ret=(True, (raw, '', 0)))
+        self.assertTrue(ok)
+        self.assertEqual(data, expected)
+        self.assertEqual(data['alice'], 'Alice Example')
+        self.assertEqual(len(data), 3)
+
+    def test_occ_status_text_mode_returns_raw(self):
+        raw = load_fixture_text('status.json')
+        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
+                                shell_ret=(True, (raw, '', 0)))
+        self.assertTrue(ok)
+        # Text mode keeps it a string (stripped), not a dict.
+        self.assertIsInstance(text, str)
+        self.assertEqual(text, raw.strip())
+
+
+if __name__ == '__main__':
+    unittest.main()

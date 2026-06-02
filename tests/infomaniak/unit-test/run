@@ -1,0 +1,585 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.infomaniak (Infomaniak REST-API helper).
+
+All network I/O is mocked: `lib.url.fetch_json` is replaced by an in-memory
+fake so the suite is hermetic and fast. No socket, no DNS, no TLS handshake
+ever happens.
+
+The module exposes three public functions:
+
+- get_events(token, ...)
+- get_swiss_backup_products(account_id, token, ...)
+- get_swiss_backup_slots(account_id, token, ...)
+
+The fixtures below are captured-style Infomaniak API payloads. Every function
+is exercised for:
+
+- the happy path (result == 'success'),
+- the request shape it builds (URL, Authorization header, kwarg forwarding),
+- the transport-failure path (fetch_json returns (False, ...)),
+- the empty-body path (fetch_json returns (True, {})),
+- the API-error path (result != 'success', with and without an error
+  description),
+- function-specific edge cases (pagination/loop over products, missing keys).
+"""
+
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.infomaniak as infomaniak
+
+# -----------------------------------------------------------------------------
+# Captured-style API fixtures
+# -----------------------------------------------------------------------------
+
+EVENTS_SUCCESS = {
+    'result': 'success',
+    'data': [
+        {
+            'id': 4711,
+            'title': 'Scheduled maintenance',
+            'service': 'Public Cloud',
+            'excerpt': 'Network maintenance in DC4.',
+        },
+        {
+            'id': 4712,
+            'title': 'Incident resolved',
+            'service': 'Swiss Backup',
+            'excerpt': 'All systems operational.',
+        },
+    ],
+}
+
+# Infomaniak's documented error envelope.
+EVENTS_ERROR = {
+    'result': 'error',
+    'error': {
+        'code': 'not_authorized',
+        'description': 'The token is invalid or has expired',
+        'errors': [],
+    },
+}
+
+# An error envelope without a usable description (forces the fallback string).
+ERROR_NO_DESCRIPTION = {
+    'result': 'error',
+    'error': {
+        'code': 'some_code',
+    },
+}
+
+# An error envelope without any 'error' key at all.
+ERROR_NO_ERROR_KEY = {
+    'result': 'error',
+}
+
+PRODUCTS_SUCCESS = {
+    'result': 'success',
+    'data': [
+        {
+            'id': 100,
+            'customer_name': 'Acme Corp',
+            'tags': ['prod', 'critical'],
+        },
+        {
+            'id': 200,
+            'customer_name': 'Beta LLC',
+            'tags': ['staging'],
+        },
+    ],
+}
+
+PRODUCTS_EMPTY = {
+    'result': 'success',
+    'data': [],
+}
+
+# Success envelope that omits the 'data' key entirely.
+PRODUCTS_NO_DATA_KEY = {
+    'result': 'success',
+}
+
+SLOTS_SUCCESS = {
+    'result': 'success',
+    'data': [
+        {
+            'id': 1,
+            'name': 'server-a',
+            'used': 1024,
+            'quota': 4096,
+        },
+    ],
+}
+
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+def ok(payload):
+    """Build the (success, body) tuple lib.url.fetch_json returns on HTTP 200."""
+    return (True, payload)
+
+
+def fresh_slots():
+    """Return a brand-new slot success payload.
+
+    Each slot fetch must yield an independent dict, otherwise the in-place
+    enrichment (product_customer_name / product_tags) done by the module would
+    clobber a shared object and make per-product assertions meaningless.
+    """
+    return {
+        'result': 'success',
+        'data': [
+            {
+                'id': 1,
+                'name': 'server-a',
+                'used': 1024,
+                'quota': 4096,
+            },
+        ],
+    }
+
+
+def fail(message):
+    """Build the (success, error) tuple lib.url.fetch_json returns on failure."""
+    return (False, message)
+
+
+class InfomaniakTestCase(unittest.TestCase):
+    """Base class that patches lib.url.fetch_json for every test."""
+
+    def patch_fetch(self, return_value=None, side_effect=None):
+        """Patch infomaniak.url.fetch_json and return the mock.
+
+        The patch is undone automatically at test teardown.
+        """
+        if side_effect is not None:
+            m = mock.MagicMock(name='fetch_json', side_effect=side_effect)
+        else:
+            m = mock.MagicMock(name='fetch_json', return_value=return_value)
+        patcher = mock.patch.object(infomaniak.url, 'fetch_json', m)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return m
+
+
+# -----------------------------------------------------------------------------
+# Module surface / constants
+# -----------------------------------------------------------------------------
+
+class TestModuleSurface(InfomaniakTestCase):
+    def test_base_url(self):
+        self.assertEqual(infomaniak.BASE_URL, 'https://api.infomaniak.com')
+
+    def test_public_functions_exist(self):
+        for name in (
+            'get_events',
+            'get_swiss_backup_products',
+            'get_swiss_backup_slots',
+        ):
+            self.assertTrue(
+                callable(getattr(infomaniak, name, None)),
+                msg=f'missing public function {name}',
+            )
+
+
+# -----------------------------------------------------------------------------
+# get_events
+# -----------------------------------------------------------------------------
+
+class TestGetEvents(InfomaniakTestCase):
+    def test_success_returns_payload(self):
+        self.patch_fetch(ok(EVENTS_SUCCESS))
+        success, result = infomaniak.get_events('TOK')
+        self.assertTrue(success)
+        self.assertIs(result, EVENTS_SUCCESS)
+
+    def test_builds_correct_url(self):
+        m = self.patch_fetch(ok(EVENTS_SUCCESS))
+        infomaniak.get_events('TOK')
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://api.infomaniak.com/2/events?locale=en',
+        )
+
+    def test_sends_bearer_header(self):
+        m = self.patch_fetch(ok(EVENTS_SUCCESS))
+        infomaniak.get_events('my-secret-token')
+        self.assertEqual(
+            m.call_args.kwargs['header'],
+            {'Authorization': 'Bearer my-secret-token'},
+        )
+
+    def test_default_kwargs_forwarded(self):
+        m = self.patch_fetch(ok(EVENTS_SUCCESS))
+        infomaniak.get_events('TOK')
+        kwargs = m.call_args.kwargs
+        self.assertFalse(kwargs['insecure'])
+        self.assertFalse(kwargs['no_proxy'])
+        self.assertEqual(kwargs['timeout'], 8)
+
+    def test_custom_kwargs_forwarded(self):
+        m = self.patch_fetch(ok(EVENTS_SUCCESS))
+        infomaniak.get_events('TOK', insecure=True, no_proxy=True, timeout=42)
+        kwargs = m.call_args.kwargs
+        self.assertTrue(kwargs['insecure'])
+        self.assertTrue(kwargs['no_proxy'])
+        self.assertEqual(kwargs['timeout'], 42)
+
+    def test_transport_failure_propagated(self):
+        self.patch_fetch(fail('HTTP 500 Internal Server Error'))
+        success, result = infomaniak.get_events('TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'HTTP 500 Internal Server Error')
+
+    def test_empty_body(self):
+        self.patch_fetch(ok({}))
+        success, result = infomaniak.get_events('TOK')
+        self.assertFalse(success)
+        self.assertEqual(
+            result,
+            'There was no result from '
+            'https://api.infomaniak.com/2/events?locale=en.',
+        )
+
+    def test_api_error_with_description(self):
+        self.patch_fetch(ok(EVENTS_ERROR))
+        success, result = infomaniak.get_events('TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'The token is invalid or has expired')
+
+    def test_api_error_without_description(self):
+        self.patch_fetch(ok(ERROR_NO_DESCRIPTION))
+        success, result = infomaniak.get_events('TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'Unknown error')
+
+    def test_api_error_without_error_key(self):
+        self.patch_fetch(ok(ERROR_NO_ERROR_KEY))
+        success, result = infomaniak.get_events('TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'Unknown error')
+
+    def test_called_exactly_once(self):
+        m = self.patch_fetch(ok(EVENTS_SUCCESS))
+        infomaniak.get_events('TOK')
+        self.assertEqual(m.call_count, 1)
+
+
+# -----------------------------------------------------------------------------
+# get_swiss_backup_products
+# -----------------------------------------------------------------------------
+
+class TestGetSwissBackupProducts(InfomaniakTestCase):
+    def test_success_returns_payload(self):
+        self.patch_fetch(ok(PRODUCTS_SUCCESS))
+        success, result = infomaniak.get_swiss_backup_products('ACC', 'TOK')
+        self.assertTrue(success)
+        self.assertIs(result, PRODUCTS_SUCCESS)
+
+    def test_builds_correct_url_with_account_id(self):
+        m = self.patch_fetch(ok(PRODUCTS_SUCCESS))
+        infomaniak.get_swiss_backup_products('acc-123', 'TOK')
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://api.infomaniak.com/1/swiss_backups?account_id=acc-123',
+        )
+
+    def test_sends_bearer_header(self):
+        m = self.patch_fetch(ok(PRODUCTS_SUCCESS))
+        infomaniak.get_swiss_backup_products('ACC', 'tkn')
+        self.assertEqual(
+            m.call_args.kwargs['header'],
+            {'Authorization': 'Bearer tkn'},
+        )
+
+    def test_default_kwargs_forwarded(self):
+        m = self.patch_fetch(ok(PRODUCTS_SUCCESS))
+        infomaniak.get_swiss_backup_products('ACC', 'TOK')
+        kwargs = m.call_args.kwargs
+        self.assertFalse(kwargs['insecure'])
+        self.assertFalse(kwargs['no_proxy'])
+        self.assertEqual(kwargs['timeout'], 8)
+
+    def test_custom_kwargs_forwarded(self):
+        m = self.patch_fetch(ok(PRODUCTS_SUCCESS))
+        infomaniak.get_swiss_backup_products(
+            'ACC', 'TOK', insecure=True, no_proxy=True, timeout=20,
+        )
+        kwargs = m.call_args.kwargs
+        self.assertTrue(kwargs['insecure'])
+        self.assertTrue(kwargs['no_proxy'])
+        self.assertEqual(kwargs['timeout'], 20)
+
+    def test_transport_failure_propagated(self):
+        self.patch_fetch(fail('connection refused'))
+        success, result = infomaniak.get_swiss_backup_products('ACC', 'TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'connection refused')
+
+    def test_empty_body(self):
+        self.patch_fetch(ok({}))
+        success, result = infomaniak.get_swiss_backup_products('ACC', 'TOK')
+        self.assertFalse(success)
+        self.assertEqual(
+            result,
+            'There was no result from '
+            'https://api.infomaniak.com/1/swiss_backups?account_id=ACC.',
+        )
+
+    def test_api_error_with_description(self):
+        self.patch_fetch(ok(EVENTS_ERROR))
+        success, result = infomaniak.get_swiss_backup_products('ACC', 'TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'The token is invalid or has expired')
+
+    def test_api_error_without_description(self):
+        self.patch_fetch(ok(ERROR_NO_DESCRIPTION))
+        success, result = infomaniak.get_swiss_backup_products('ACC', 'TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'Unknown error')
+
+    def test_empty_data_list_is_success(self):
+        self.patch_fetch(ok(PRODUCTS_EMPTY))
+        success, result = infomaniak.get_swiss_backup_products('ACC', 'TOK')
+        self.assertTrue(success)
+        self.assertIs(result, PRODUCTS_EMPTY)
+
+
+# -----------------------------------------------------------------------------
+# get_swiss_backup_slots
+# -----------------------------------------------------------------------------
+
+class TestGetSwissBackupSlots(InfomaniakTestCase):
+    def _two_products_side_effect(self):
+        """Side effect: first call -> products, subsequent -> a fresh slot.
+
+        Every slot call returns an independent payload so the module's in-place
+        enrichment cannot bleed across products.
+        """
+        def side(uri, **kwargs):
+            if 'account_id' in uri:
+                return ok(PRODUCTS_SUCCESS)
+            return ok(fresh_slots())
+
+        return side
+
+    def test_success_returns_enriched_slot_list(self):
+        self.patch_fetch(side_effect=self._two_products_side_effect())
+        success, slots = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertTrue(success)
+        self.assertIsInstance(slots, list)
+        self.assertEqual(len(slots), 2)
+
+    def test_slot_enriched_with_product_metadata(self):
+        self.patch_fetch(side_effect=self._two_products_side_effect())
+        _, slots = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        # First product is Acme Corp, second is Beta LLC (order preserved).
+        self.assertEqual(slots[0]['product_customer_name'], 'Acme Corp')
+        self.assertEqual(slots[0]['product_tags'], ['prod', 'critical'])
+        self.assertEqual(slots[1]['product_customer_name'], 'Beta LLC')
+        self.assertEqual(slots[1]['product_tags'], ['staging'])
+
+    def test_slot_retains_original_payload(self):
+        self.patch_fetch(side_effect=self._two_products_side_effect())
+        _, slots = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertEqual(slots[0]['result'], 'success')
+        self.assertEqual(slots[0]['data'], SLOTS_SUCCESS['data'])
+
+    def test_one_products_call_plus_one_call_per_product(self):
+        m = self.patch_fetch(side_effect=self._two_products_side_effect())
+        infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        # 1 products fetch + 2 slot fetches.
+        self.assertEqual(m.call_count, 3)
+
+    def test_slot_urls_built_per_product_id(self):
+        m = self.patch_fetch(side_effect=self._two_products_side_effect())
+        infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        uris = [c.args[0] for c in m.call_args_list]
+        self.assertEqual(
+            uris,
+            [
+                'https://api.infomaniak.com/1/swiss_backups?account_id=ACC',
+                'https://api.infomaniak.com/1/swiss_backups/100/slots',
+                'https://api.infomaniak.com/1/swiss_backups/200/slots',
+            ],
+        )
+
+    def test_slot_fetch_sends_bearer_header(self):
+        m = self.patch_fetch(side_effect=self._two_products_side_effect())
+        infomaniak.get_swiss_backup_slots('ACC', 'sekret')
+        # Both products and slot calls carry the same Authorization header.
+        for call in m.call_args_list:
+            self.assertEqual(
+                call.kwargs['header'],
+                {'Authorization': 'Bearer sekret'},
+            )
+
+    def test_slot_fetch_forwards_custom_kwargs(self):
+        m = self.patch_fetch(side_effect=self._two_products_side_effect())
+        infomaniak.get_swiss_backup_slots(
+            'ACC', 'TOK', insecure=True, no_proxy=True, timeout=99,
+        )
+        # The slot fetch (2nd call onward) forwards the caller's kwargs.
+        slot_call = m.call_args_list[1]
+        self.assertTrue(slot_call.kwargs['insecure'])
+        self.assertTrue(slot_call.kwargs['no_proxy'])
+        self.assertEqual(slot_call.kwargs['timeout'], 99)
+
+    def test_inner_products_call_uses_defaults_not_caller_kwargs(self):
+        # Quirk worth pinning: get_swiss_backup_slots() calls
+        # get_swiss_backup_products() positionally, so insecure / no_proxy /
+        # timeout from the caller are NOT propagated to the products request;
+        # it always uses the function defaults.
+        m = self.patch_fetch(side_effect=self._two_products_side_effect())
+        infomaniak.get_swiss_backup_slots(
+            'ACC', 'TOK', insecure=True, no_proxy=True, timeout=99,
+        )
+        products_call = m.call_args_list[0]
+        self.assertFalse(products_call.kwargs['insecure'])
+        self.assertFalse(products_call.kwargs['no_proxy'])
+        self.assertEqual(products_call.kwargs['timeout'], 8)
+
+    def test_products_failure_propagated(self):
+        self.patch_fetch(fail('products down'))
+        success, result = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'products down')
+
+    def test_products_empty_data_returns_empty_list(self):
+        self.patch_fetch(ok(PRODUCTS_EMPTY))
+        success, slots = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertTrue(success)
+        self.assertEqual(slots, [])
+
+    def test_products_missing_data_key_returns_empty_list(self):
+        self.patch_fetch(ok(PRODUCTS_NO_DATA_KEY))
+        success, slots = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertTrue(success)
+        self.assertEqual(slots, [])
+
+    def test_products_error_result_propagated(self):
+        # If the products envelope reports an API error, the inner
+        # get_swiss_backup_products short-circuits and the description bubbles
+        # up via the success guard inside the slots function.
+        self.patch_fetch(ok(EVENTS_ERROR))
+        success, result = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'The token is invalid or has expired')
+
+    def test_slot_transport_failure_propagated(self):
+        def side(uri, **kwargs):
+            if 'account_id' in uri:
+                return ok(PRODUCTS_SUCCESS)
+            return fail('slot fetch broke')
+
+        self.patch_fetch(side_effect=side)
+        success, result = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'slot fetch broke')
+
+    def test_slot_empty_body_propagated(self):
+        def side(uri, **kwargs):
+            if 'account_id' in uri:
+                return ok(PRODUCTS_SUCCESS)
+            return ok({})
+
+        self.patch_fetch(side_effect=side)
+        success, result = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertFalse(success)
+        # Fails on the first product's slot URL (id 100).
+        self.assertEqual(
+            result,
+            'There was no result from '
+            'https://api.infomaniak.com/1/swiss_backups/100/slots.',
+        )
+
+    def test_slot_api_error_with_description(self):
+        def side(uri, **kwargs):
+            if 'account_id' in uri:
+                return ok(PRODUCTS_SUCCESS)
+            return ok(EVENTS_ERROR)
+
+        self.patch_fetch(side_effect=side)
+        success, result = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'The token is invalid or has expired')
+
+    def test_slot_api_error_without_description(self):
+        def side(uri, **kwargs):
+            if 'account_id' in uri:
+                return ok(PRODUCTS_SUCCESS)
+            return ok(ERROR_NO_DESCRIPTION)
+
+        self.patch_fetch(side_effect=side)
+        success, result = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertFalse(success)
+        self.assertEqual(result, 'Unknown error')
+
+    def test_slot_failure_short_circuits_remaining_products(self):
+        # When the first product's slot fetch fails, no further slot requests
+        # are made (the loop returns immediately).
+        def side(uri, **kwargs):
+            if 'account_id' in uri:
+                return ok(PRODUCTS_SUCCESS)
+            return fail('boom')
+
+        m = self.patch_fetch(side_effect=side)
+        infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        # 1 products call + 1 (failing) slot call, second product never tried.
+        self.assertEqual(m.call_count, 2)
+
+    def test_product_missing_id_builds_none_url(self):
+        # Defensive: a product without an 'id' key yields a literal 'None' in
+        # the slot URL (product.get('id') -> None) rather than raising.
+        products = {
+            'result': 'success',
+            'data': [{'customer_name': 'NoId Inc', 'tags': []}],
+        }
+
+        def side(uri, **kwargs):
+            if 'account_id' in uri:
+                return ok(products)
+            return ok(fresh_slots())
+
+        m = self.patch_fetch(side_effect=side)
+        success, slots = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertTrue(success)
+        self.assertEqual(
+            m.call_args_list[1].args[0],
+            'https://api.infomaniak.com/1/swiss_backups/None/slots',
+        )
+        self.assertEqual(slots[0]['product_customer_name'], 'NoId Inc')
+
+    def test_product_missing_metadata_keys_default_to_none(self):
+        products = {
+            'result': 'success',
+            'data': [{'id': 7}],  # no customer_name, no tags
+        }
+
+        def side(uri, **kwargs):
+            if 'account_id' in uri:
+                return ok(products)
+            return ok(fresh_slots())
+
+        self.patch_fetch(side_effect=side)
+        _, slots = infomaniak.get_swiss_backup_slots('ACC', 'TOK')
+        self.assertIsNone(slots[0]['product_customer_name'])
+        self.assertIsNone(slots[0]['product_tags'])
+
+
+if __name__ == '__main__':
+    unittest.main()

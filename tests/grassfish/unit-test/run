@@ -1,0 +1,458 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.grassfish.
+
+The module is a thin client for the Grassfish REST API. Its single
+network-facing function `fetch_json` delegates all HTTP I/O to
+`lib.url.fetch_json`, so the suite is made hermetic by patching that
+delegate: no socket, no DNS, no TLS handshake, no httpx dependency ever.
+
+We assert the full request-building contract (URL composition from host,
+port, uri, version and func; the `X-ApiKey` header; pass-through of
+insecure / no_proxy / timeout) and the response-handling contract
+(success pass-through, transport-failure pass-through, and the
+"empty result" error for every falsy payload).
+
+The two pure normalizers `set_player_defaults` and `set_screen_defaults`
+are exercised directly against captured-style API payloads loaded from
+fixtures, plus the empty-dict and falsy-value edge cases.
+"""
+
+import json
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.grassfish as grassfish
+
+FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
+
+
+def load_fixture(name):
+    """Load a captured-style JSON fixture and return the parsed object."""
+    with open(os.path.join(FIXTURE_DIR, name), encoding='utf-8') as f:
+        return json.load(f)
+
+
+# The complete set of fields the module guarantees to materialize. Kept
+# here as an independent source of truth so a drift in the module's lists
+# is caught instead of mirrored.
+EXPECTED_PLAYER_FIELDS = {
+    'Address',
+    'BoxId',
+    'BoxState',
+    'City',
+    'ConfigurationGroupId',
+    'Country',
+    'Created',
+    'CustomId',
+    'EditionId',
+    'Email',
+    'FaxNumber',
+    'Id',
+    'IsInstalled',
+    'IsLicensed',
+    'LastAccess',
+    'Latitude',
+    'LicenseType',
+    'LocationId',
+    'Longitude',
+    'Modified',
+    'Name',
+    'PendingTimezoneId',
+    'PhoneNumber',
+    'PostCode',
+    'ProvisioningState',
+    'RootPasswordSet',
+    'TemperatureUnit',
+    'TimezoneId',
+    'TransferStatus',
+}
+
+EXPECTED_SCREEN_FIELDS = {
+    'DisplayName',
+    'Id',
+    'IsOn',
+    'LastStatusChange',
+    'LastUpdate',
+    'Number',
+    'Orientation',
+    'PendingOrientation',
+    'Status',
+}
+
+
+# -----------------------------------------------------------------------------
+# fetch_json: request building
+# -----------------------------------------------------------------------------
+
+
+class TestFetchJsonRequestBuilding(unittest.TestCase):
+    """Assert how fetch_json composes the URL, header and forwards kwargs."""
+
+    def _call(self, return_value=(True, {'ok': 1}), **kwargs):
+        """Patch lib.url.fetch_json, invoke grassfish.fetch_json, capture args."""
+        captured = {}
+
+        def fake_fetch_json(url, **kw):
+            captured['url'] = url
+            captured['kw'] = kw
+            return return_value
+
+        defaults = {
+            'token': 'tok',
+            'host': 'ds.example.com',
+            'port': 443,
+            'uri': '/api',
+            'version': 1,
+            'func': 'devices',
+        }
+        defaults.update(kwargs)
+        with mock.patch.object(grassfish.url, 'fetch_json', side_effect=fake_fetch_json):
+            result = grassfish.fetch_json(**defaults)
+        return captured, result
+
+    def test_url_is_composed_from_parts(self):
+        captured, _ = self._call()
+        self.assertEqual(captured['url'], 'https://ds.example.com:443/api/v1/devices')
+
+    def test_url_uses_https_scheme(self):
+        captured, _ = self._call()
+        self.assertTrue(captured['url'].startswith('https://'))
+
+    def test_url_inserts_v_prefix_before_version(self):
+        captured, _ = self._call(version=2)
+        self.assertEqual(captured['url'], 'https://ds.example.com:443/api/v2/devices')
+
+    def test_version_accepts_string(self):
+        captured, _ = self._call(version='3')
+        self.assertEqual(captured['url'], 'https://ds.example.com:443/api/v3/devices')
+
+    def test_custom_port_in_url(self):
+        captured, _ = self._call(port=8443)
+        self.assertEqual(captured['url'], 'https://ds.example.com:8443/api/v1/devices')
+
+    def test_realistic_base_uri_and_func(self):
+        captured, _ = self._call(
+            host='ds.example.com',
+            port=443,
+            uri='/gv2/webservices/API',
+            version=1,
+            func='Players',
+        )
+        self.assertEqual(
+            captured['url'],
+            'https://ds.example.com:443/gv2/webservices/API/v1/Players',
+        )
+
+    def test_api_key_header_is_set(self):
+        captured, _ = self._call(token='secret-token')
+        self.assertEqual(captured['kw']['header'], {'X-ApiKey': 'secret-token'})
+
+    def test_default_kwargs_forwarded(self):
+        captured, _ = self._call()
+        kw = captured['kw']
+        self.assertIs(kw['insecure'], False)
+        self.assertIs(kw['no_proxy'], False)
+        self.assertEqual(kw['timeout'], 8)
+
+    def test_insecure_forwarded(self):
+        captured, _ = self._call(insecure=True)
+        self.assertIs(captured['kw']['insecure'], True)
+
+    def test_no_proxy_forwarded(self):
+        captured, _ = self._call(no_proxy=True)
+        self.assertIs(captured['kw']['no_proxy'], True)
+
+    def test_timeout_forwarded(self):
+        captured, _ = self._call(timeout=30)
+        self.assertEqual(captured['kw']['timeout'], 30)
+
+    def test_all_kwargs_forwarded_together(self):
+        captured, _ = self._call(insecure=True, no_proxy=True, timeout=60)
+        kw = captured['kw']
+        self.assertIs(kw['insecure'], True)
+        self.assertIs(kw['no_proxy'], True)
+        self.assertEqual(kw['timeout'], 60)
+
+    def test_only_expected_kwargs_passed(self):
+        # The delegate must receive exactly header/insecure/no_proxy/timeout,
+        # nothing more (no leaked positional/keyword surprises).
+        captured, _ = self._call()
+        self.assertEqual(
+            set(captured['kw'].keys()),
+            {'header', 'insecure', 'no_proxy', 'timeout'},
+        )
+
+    def test_url_passed_positionally(self):
+        # The delegate is called with the URL as the sole positional arg.
+        recorder = mock.Mock(return_value=(True, {'ok': 1}))
+        with mock.patch.object(grassfish.url, 'fetch_json', recorder):
+            grassfish.fetch_json('t', 'h', 443, '/api', 1, 'f')
+        args, _ = recorder.call_args
+        self.assertEqual(args, ('https://h:443/api/v1/f',))
+
+
+# -----------------------------------------------------------------------------
+# fetch_json: response handling
+# -----------------------------------------------------------------------------
+
+
+class TestFetchJsonResponseHandling(unittest.TestCase):
+    """Assert success pass-through, failure pass-through and empty handling."""
+
+    def _run(self, return_value):
+        with mock.patch.object(grassfish.url, 'fetch_json', return_value=return_value):
+            return grassfish.fetch_json('t', 'h', 443, '/api', 1, 'devices')
+
+    def test_success_dict_passthrough(self):
+        payload = {'devices': [1, 2, 3]}
+        self.assertEqual(self._run((True, payload)), (True, payload))
+
+    def test_success_returns_same_object(self):
+        payload = {'devices': [1, 2, 3]}
+        ok, result = self._run((True, payload))
+        self.assertTrue(ok)
+        self.assertIs(result, payload)
+
+    def test_success_list_payload_passthrough(self):
+        payload = [{'Id': 1}, {'Id': 2}]
+        self.assertEqual(self._run((True, payload)), (True, payload))
+
+    def test_success_nonempty_string_passthrough(self):
+        self.assertEqual(self._run((True, 'pong')), (True, 'pong'))
+
+    def test_transport_failure_passthrough(self):
+        self.assertEqual(self._run((False, 'connection refused')), (False, 'connection refused'))
+
+    def test_transport_failure_short_circuits_before_empty_check(self):
+        # A failure with a falsy message must still surface as (False, message),
+        # not as the "no result" error.
+        self.assertEqual(self._run((False, '')), (False, ''))
+
+    def test_empty_none_is_error(self):
+        ok, msg = self._run((True, None))
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'There was no result from https://h:443/api/v1/devices.')
+
+    def test_empty_dict_is_error(self):
+        ok, msg = self._run((True, {}))
+        self.assertFalse(ok)
+        self.assertIn('no result', msg)
+
+    def test_empty_list_is_error(self):
+        ok, msg = self._run((True, []))
+        self.assertFalse(ok)
+        self.assertIn('no result', msg)
+
+    def test_empty_string_is_error(self):
+        ok, msg = self._run((True, ''))
+        self.assertFalse(ok)
+        self.assertIn('no result', msg)
+
+    def test_zero_is_error(self):
+        ok, msg = self._run((True, 0))
+        self.assertFalse(ok)
+        self.assertIn('no result', msg)
+
+    def test_false_is_error(self):
+        ok, msg = self._run((True, False))
+        self.assertFalse(ok)
+        self.assertIn('no result', msg)
+
+    def test_error_message_contains_full_url(self):
+        with mock.patch.object(grassfish.url, 'fetch_json', return_value=(True, {})):
+            ok, msg = grassfish.fetch_json('t', 'ds.example.com', 8443, '/gv2', 2, 'Screens')
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'There was no result from https://ds.example.com:8443/gv2/v2/Screens.')
+
+
+# -----------------------------------------------------------------------------
+# set_player_defaults
+# -----------------------------------------------------------------------------
+
+
+class TestSetPlayerDefaults(unittest.TestCase):
+    """Assert player normalization against captured payloads and edge cases."""
+
+    def test_empty_dict_gets_all_fields(self):
+        result = grassfish.set_player_defaults({})
+        self.assertEqual(set(result.keys()), EXPECTED_PLAYER_FIELDS)
+
+    def test_empty_dict_field_count(self):
+        self.assertEqual(len(grassfish.set_player_defaults({})), len(EXPECTED_PLAYER_FIELDS))
+
+    def test_missing_fields_default_to_none(self):
+        result = grassfish.set_player_defaults({})
+        for field in EXPECTED_PLAYER_FIELDS:
+            self.assertIsNone(result[field], f'{field} should default to None')
+
+    def test_existing_values_preserved(self):
+        item = {'Name': 'Player1', 'City': 'Zurich'}
+        result = grassfish.set_player_defaults(item)
+        self.assertEqual(result['Name'], 'Player1')
+        self.assertEqual(result['City'], 'Zurich')
+
+    def test_mutates_in_place_and_returns_same_object(self):
+        item = {'Name': 'Player1'}
+        result = grassfish.set_player_defaults(item)
+        self.assertIs(result, item)
+
+    def test_falsy_existing_values_not_overwritten(self):
+        # setdefault must not clobber legitimate falsy API values with None.
+        item = {'City': '', 'IsInstalled': False, 'Latitude': 0}
+        result = grassfish.set_player_defaults(item)
+        self.assertEqual(result['City'], '')
+        self.assertIs(result['IsInstalled'], False)
+        self.assertEqual(result['Latitude'], 0)
+
+    def test_explicit_none_preserved(self):
+        item = {'Name': None}
+        result = grassfish.set_player_defaults(item)
+        self.assertIsNone(result['Name'])
+
+    def test_unknown_keys_preserved(self):
+        item = {'CustomVendorField': 'keep-me'}
+        result = grassfish.set_player_defaults(item)
+        self.assertEqual(result['CustomVendorField'], 'keep-me')
+        self.assertIsNone(result['Id'])
+
+    def test_unknown_keys_increase_count(self):
+        item = {'CustomVendorField': 'x', 'AnotherOne': 'y'}
+        result = grassfish.set_player_defaults(item)
+        self.assertEqual(len(result), len(EXPECTED_PLAYER_FIELDS) + 2)
+
+    def test_captured_payload_first_player(self):
+        players = load_fixture('players.json')
+        result = grassfish.set_player_defaults(players[0])
+        # All guaranteed fields present.
+        self.assertTrue(EXPECTED_PLAYER_FIELDS.issubset(result.keys()))
+        # Captured values untouched.
+        self.assertEqual(result['Id'], 12)
+        self.assertEqual(result['Name'], 'Player Zurich HB')
+        self.assertEqual(result['BoxState'], 'Online')
+        self.assertEqual(result['Latitude'], 47.3779)
+        # Fields absent in the capture filled with None.
+        self.assertIsNone(result['Address'])
+        self.assertIsNone(result['Email'])
+
+    def test_captured_payload_sparse_player(self):
+        players = load_fixture('players.json')
+        result = grassfish.set_player_defaults(players[1])
+        self.assertEqual(result['Id'], 13)
+        self.assertIs(result['IsInstalled'], False)
+        self.assertEqual(result['BoxState'], 'Offline')
+        self.assertIsNone(result['City'])
+        self.assertIsNone(result['IsLicensed'])
+        self.assertEqual(set(result.keys()), EXPECTED_PLAYER_FIELDS)
+
+
+# -----------------------------------------------------------------------------
+# set_screen_defaults
+# -----------------------------------------------------------------------------
+
+
+class TestSetScreenDefaults(unittest.TestCase):
+    """Assert screen normalization against captured payloads and edge cases."""
+
+    def test_empty_dict_gets_all_fields(self):
+        result = grassfish.set_screen_defaults({})
+        self.assertEqual(set(result.keys()), EXPECTED_SCREEN_FIELDS)
+
+    def test_empty_dict_field_count(self):
+        self.assertEqual(len(grassfish.set_screen_defaults({})), len(EXPECTED_SCREEN_FIELDS))
+
+    def test_missing_fields_default_to_none(self):
+        result = grassfish.set_screen_defaults({})
+        for field in EXPECTED_SCREEN_FIELDS:
+            self.assertIsNone(result[field], f'{field} should default to None')
+
+    def test_existing_values_preserved(self):
+        item = {'DisplayName': 'MainScreen'}
+        result = grassfish.set_screen_defaults(item)
+        self.assertEqual(result['DisplayName'], 'MainScreen')
+
+    def test_mutates_in_place_and_returns_same_object(self):
+        item = {'DisplayName': 'MainScreen'}
+        result = grassfish.set_screen_defaults(item)
+        self.assertIs(result, item)
+
+    def test_falsy_existing_values_not_overwritten(self):
+        item = {'IsOn': False, 'Number': 0, 'DisplayName': ''}
+        result = grassfish.set_screen_defaults(item)
+        self.assertIs(result['IsOn'], False)
+        self.assertEqual(result['Number'], 0)
+        self.assertEqual(result['DisplayName'], '')
+
+    def test_unknown_keys_preserved(self):
+        item = {'VendorExtra': 'keep-me'}
+        result = grassfish.set_screen_defaults(item)
+        self.assertEqual(result['VendorExtra'], 'keep-me')
+        self.assertIsNone(result['Status'])
+
+    def test_captured_payload_first_screen(self):
+        screens = load_fixture('screens.json')
+        result = grassfish.set_screen_defaults(screens[0])
+        self.assertTrue(EXPECTED_SCREEN_FIELDS.issubset(result.keys()))
+        self.assertEqual(result['Id'], 1)
+        self.assertEqual(result['DisplayName'], 'Main Screen')
+        self.assertIs(result['IsOn'], True)
+        self.assertEqual(result['Status'], 'Ok')
+        self.assertEqual(result['Orientation'], 'Landscape')
+        # PendingOrientation absent in the capture.
+        self.assertIsNone(result['PendingOrientation'])
+
+    def test_captured_payload_sparse_screen(self):
+        screens = load_fixture('screens.json')
+        result = grassfish.set_screen_defaults(screens[1])
+        self.assertEqual(result['Id'], 2)
+        self.assertIs(result['IsOn'], False)
+        self.assertIsNone(result['Status'])
+        self.assertIsNone(result['Orientation'])
+        self.assertEqual(set(result.keys()), EXPECTED_SCREEN_FIELDS)
+
+
+# -----------------------------------------------------------------------------
+# Integration: fetch_json output fed into the normalizers
+# -----------------------------------------------------------------------------
+
+
+class TestFetchAndNormalize(unittest.TestCase):
+    """End-to-end (still hermetic): fetched payload normalized downstream."""
+
+    def test_players_endpoint_then_normalize(self):
+        payload = load_fixture('players.json')
+        with mock.patch.object(grassfish.url, 'fetch_json', return_value=(True, payload)):
+            ok, result = grassfish.fetch_json(
+                'tok', 'ds.example.com', 443, '/gv2/webservices/API', 1, 'Players'
+            )
+        self.assertTrue(ok)
+        normalized = [grassfish.set_player_defaults(p) for p in result]
+        for player in normalized:
+            self.assertEqual(set(player.keys()), EXPECTED_PLAYER_FIELDS)
+
+    def test_screens_endpoint_then_normalize(self):
+        payload = load_fixture('screens.json')
+        with mock.patch.object(grassfish.url, 'fetch_json', return_value=(True, payload)):
+            ok, result = grassfish.fetch_json(
+                'tok', 'ds.example.com', 443, '/gv2/webservices/API', 1, 'Screens'
+            )
+        self.assertTrue(ok)
+        normalized = [grassfish.set_screen_defaults(s) for s in result]
+        for screen in normalized:
+            self.assertEqual(set(screen.keys()), EXPECTED_SCREEN_FIELDS)
+
+
+if __name__ == '__main__':
+    unittest.main()

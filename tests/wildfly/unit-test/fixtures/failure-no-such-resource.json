@@ -1,0 +1,5 @@
+{
+    "outcome": "failed",
+    "failure-description": "WFLYCTL0216: Management resource '[(\"subsystem\" => \"nope\")]' not found",
+    "rolled-back": true
+}

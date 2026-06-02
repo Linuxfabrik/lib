@@ -1,0 +1,482 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.wildfly.
+
+The module is a thin client for the WildFly/JBoss HTTP management API. It
+exposes a single public function, `get_data`, which:
+
+  * builds the management URL from `args.URL` (+ optional domain routing),
+  * POSTs a JSON operation body through `lib.url.fetch_json` using HTTP
+    digest auth and the WildFly-specific `serialized-json` encoding,
+  * unwraps the response with `lib.base.coe` (transport failures exit), and
+  * checks the WildFly `outcome` field, exiting via `lib.base.oao` on
+    anything other than `"success"`, otherwise returning `result['result']`.
+
+Every network call goes through `lib.url.fetch_json`, so the suite is made
+fully hermetic by replacing `lib.wildfly.url.fetch_json` with an in-memory
+fake. No socket, no DNS, no TLS handshake ever happens.
+
+Because `get_data` calls `lib.base.coe` and `lib.base.oao` directly (unlike
+the keycloak client, which returns the `(success, result)` tuple verbatim),
+the error paths terminate the interpreter with `sys.exit`. The tests assert
+the resulting `SystemExit` code and, where useful, the message printed to
+stdout. stdout is redirected to a buffer so the test output stays clean and
+the printed message can be inspected.
+
+`lib.url` imports httpx lazily, but these tests never reach the real
+`fetch_json`, so httpx is not required here.
+"""
+
+import contextlib
+import io
+import json
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.wildfly as wildfly
+
+FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures')
+
+
+def load_fixture(name):
+    """Load a captured-style JSON fixture and return the parsed document."""
+    with open(os.path.join(FIXTURE_DIR, name), encoding='utf-8') as handle:
+        return json.load(handle)
+
+
+class Args:
+    """Minimal stand-in for the argparse Namespace `get_data` expects.
+
+    Mirrors how the real WildFly plugins pass their parsed CLI args around.
+    """
+
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+def make_args(**overrides):
+    """Build an Args with sane standalone-mode defaults; override per test."""
+    base = {
+        'URL': 'https://wf.example.com',
+        'MODE': 'standalone',
+        'NODE': 'master',
+        'INSTANCE': 'server-one',
+        'USERNAME': 'admin',
+        'PASSWORD': 'linuxfabrik',
+        'INSECURE': False,
+        'NO_PROXY': False,
+        'TIMEOUT': 8,
+        'ALWAYS_OK': False,
+    }
+    base.update(overrides)
+    return Args(**base)
+
+
+def ok(result):
+    """A successful WildFly management response wrapping `result`."""
+    return {'outcome': 'success', 'result': result}
+
+
+def run_get_data(args, data=None, uri='', *, fetch_return):
+    """Call get_data with fetch_json mocked, capturing stdout.
+
+    Returns (return_value_or_None, systemexit_or_None, mock, stdout_text).
+    Lets a single helper drive both the happy path and the exiting paths.
+    """
+    if data is None:
+        data = {'operation': 'read-attribute', 'name': 'server-state'}
+    buf = io.StringIO()
+    raised = None
+    returned = None
+    with (
+        mock.patch.object(wildfly.url, 'fetch_json', return_value=fetch_return) as m,
+        contextlib.redirect_stdout(buf),
+    ):
+        try:
+            returned = wildfly.get_data(args, data, uri)
+        except SystemExit as exc:
+            raised = exc
+    return returned, raised, m, buf.getvalue()
+
+
+# -----------------------------------------------------------------------------
+# URL construction
+# -----------------------------------------------------------------------------
+
+
+class TestUrlConstruction(unittest.TestCase):
+
+    def test_standalone_base_plus_management(self):
+        args = make_args(URL='https://wf.example.com', MODE='standalone')
+        _, _, m, _ = run_get_data(args, uri='', fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.args[0], 'https://wf.example.com/management')
+
+    def test_standalone_with_uri_suffix(self):
+        args = make_args(MODE='standalone')
+        _, _, m, _ = run_get_data(args, uri='/host', fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.args[0], 'https://wf.example.com/management/host')
+
+    def test_single_trailing_slash_stripped(self):
+        args = make_args(URL='https://wf.example.com/')
+        _, _, m, _ = run_get_data(args, uri='', fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.args[0], 'https://wf.example.com/management')
+
+    def test_multiple_trailing_slashes_stripped(self):
+        # rstrip('/') removes every trailing slash, not just one.
+        args = make_args(URL='https://wf.example.com///')
+        _, _, m, _ = run_get_data(args, uri='', fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.args[0], 'https://wf.example.com/management')
+
+    def test_url_with_path_prefix(self):
+        # Reverse-proxied WildFly under a sub-path.
+        args = make_args(URL='https://example.com/wildfly')
+        _, _, m, _ = run_get_data(args, uri='', fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.args[0], 'https://example.com/wildfly/management')
+
+    def test_uri_without_leading_slash_concatenated_literally(self):
+        # The module does not insert a separator; document the real behaviour.
+        args = make_args()
+        _, _, m, _ = run_get_data(args, uri='subsystem', fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.args[0], 'https://wf.example.com/managementsubsystem')
+
+    def test_uri_default_is_empty(self):
+        # Calling get_data without the uri argument must behave like uri=''.
+        args = make_args()
+        buf = io.StringIO()
+        with (
+            mock.patch.object(wildfly.url, 'fetch_json', return_value=(True, ok(1))) as m,
+            contextlib.redirect_stdout(buf),
+        ):
+            wildfly.get_data(args, {'operation': 'x'})
+        self.assertEqual(m.call_args.args[0], 'https://wf.example.com/management')
+
+    def test_domain_mode_appends_host_and_server(self):
+        args = make_args(MODE='domain', NODE='master', INSTANCE='server-one')
+        _, _, m, _ = run_get_data(args, uri='', fetch_return=(True, ok(1)))
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://wf.example.com/management/host/master/server/server-one',
+        )
+
+    def test_domain_mode_with_uri_suffix_before_host(self):
+        # The uri suffix is inserted before the /host/<node>/server/<inst> part.
+        args = make_args(MODE='domain', NODE='n2', INSTANCE='i2')
+        _, _, m, _ = run_get_data(args, uri='/core-service', fetch_return=(True, ok(1)))
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://wf.example.com/management/core-service/host/n2/server/i2',
+        )
+
+    def test_domain_mode_strips_base_trailing_slash(self):
+        args = make_args(URL='https://wf.example.com/', MODE='domain', NODE='h', INSTANCE='s')
+        _, _, m, _ = run_get_data(args, uri='', fetch_return=(True, ok(1)))
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://wf.example.com/management/host/h/server/s',
+        )
+
+    def test_unknown_mode_treated_as_standalone(self):
+        # Only MODE == 'domain' triggers the extra routing; anything else is plain.
+        args = make_args(MODE='whatever')
+        _, _, m, _ = run_get_data(args, uri='/x', fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.args[0], 'https://wf.example.com/management/x')
+
+
+# -----------------------------------------------------------------------------
+# Request construction: headers, auth, body, transport kwargs
+# -----------------------------------------------------------------------------
+
+
+class TestRequestConstruction(unittest.TestCase):
+
+    def test_content_type_header(self):
+        args = make_args()
+        _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.kwargs['header'], {'Content-Type': 'application/json'})
+
+    def test_digest_auth_user_and_password(self):
+        args = make_args(USERNAME='svc', PASSWORD='s3cr3t')
+        _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.kwargs['digest_auth_user'], 'svc')
+        self.assertEqual(m.call_args.kwargs['digest_auth_password'], 's3cr3t')
+
+    def test_encoding_is_serialized_json(self):
+        # WildFly's management endpoint expects the raw JSON operation body,
+        # not urlencoded form data.
+        args = make_args()
+        _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.kwargs['encoding'], 'serialized-json')
+
+    def test_body_passed_through_verbatim(self):
+        args = make_args()
+        body = {'operation': 'read-resource', 'include-runtime': True}
+        _, _, m, _ = run_get_data(args, data=body, fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.kwargs['data'], body)
+        # Same object identity: the module does not copy or mutate the body.
+        self.assertIs(m.call_args.kwargs['data'], body)
+
+    def test_empty_body_passed_through(self):
+        args = make_args()
+        _, _, m, _ = run_get_data(args, data={}, fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.kwargs['data'], {})
+
+    def test_passes_insecure_true(self):
+        args = make_args(INSECURE=True)
+        _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
+        self.assertIs(m.call_args.kwargs['insecure'], True)
+
+    def test_passes_insecure_false(self):
+        args = make_args(INSECURE=False)
+        _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
+        self.assertIs(m.call_args.kwargs['insecure'], False)
+
+    def test_passes_no_proxy_true(self):
+        args = make_args(NO_PROXY=True)
+        _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
+        self.assertIs(m.call_args.kwargs['no_proxy'], True)
+
+    def test_passes_timeout(self):
+        args = make_args(TIMEOUT=42)
+        _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_args.kwargs['timeout'], 42)
+
+    def test_full_kwargs_shape(self):
+        # Pin the exact contract handed to fetch_json so an accidental rename or
+        # dropped argument is caught immediately.
+        args = make_args(USERNAME='admin', PASSWORD='linuxfabrik',
+                         INSECURE=True, NO_PROXY=True, TIMEOUT=20)
+        body = {'operation': 'read-attribute', 'name': 'server-state'}
+        _, _, m, _ = run_get_data(args, data=body, fetch_return=(True, ok(1)))
+        self.assertEqual(
+            m.call_args.kwargs,
+            {
+                'data': body,
+                'digest_auth_password': 'linuxfabrik',
+                'digest_auth_user': 'admin',
+                'encoding': 'serialized-json',
+                'header': {'Content-Type': 'application/json'},
+                'insecure': True,
+                'no_proxy': True,
+                'timeout': 20,
+            },
+        )
+
+    def test_url_is_positional_only_arg(self):
+        # fetch_json receives the URL positionally and everything else by keyword.
+        args = make_args()
+        _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
+        self.assertEqual(len(m.call_args.args), 1)
+
+    def test_called_exactly_once_on_success(self):
+        args = make_args()
+        _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
+        self.assertEqual(m.call_count, 1)
+
+
+# -----------------------------------------------------------------------------
+# Successful response parsing
+# -----------------------------------------------------------------------------
+
+
+class TestSuccessParsing(unittest.TestCase):
+
+    def test_returns_inner_result_scalar(self):
+        # get_data unwraps result['result'], not the whole envelope.
+        args = make_args()
+        returned, raised, _, _ = run_get_data(args, fetch_return=(True, ok('running')))
+        self.assertIsNone(raised)
+        self.assertEqual(returned, 'running')
+
+    def test_returns_inner_result_dict(self):
+        args = make_args()
+        payload = {'heap': {'used': 1}, 'enabled': True}
+        returned, _, _, _ = run_get_data(args, fetch_return=(True, ok(payload)))
+        self.assertEqual(returned, payload)
+
+    def test_returns_inner_result_list(self):
+        args = make_args()
+        returned, _, _, _ = run_get_data(args, fetch_return=(True, ok(['a', 'b'])))
+        self.assertEqual(returned, ['a', 'b'])
+
+    def test_empty_list_result(self):
+        args = make_args()
+        returned, raised, _, _ = run_get_data(args, fetch_return=(True, ok([])))
+        self.assertIsNone(raised)
+        self.assertEqual(returned, [])
+
+    def test_none_result_returned(self):
+        # outcome success with an explicit null result is valid and returned as-is.
+        args = make_args()
+        returned, raised, _, _ = run_get_data(args, fetch_return=(True, ok(None)))
+        self.assertIsNone(raised)
+        self.assertIsNone(returned)
+
+    def test_fixture_server_state(self):
+        fixture = load_fixture('read-attribute-server-state.json')
+        args = make_args()
+        returned, _, _, _ = run_get_data(args, fetch_return=(True, fixture))
+        self.assertEqual(returned, 'running')
+
+    def test_fixture_memory_resource(self):
+        fixture = load_fixture('read-resource-memory.json')
+        args = make_args()
+        returned, _, _, _ = run_get_data(args, fetch_return=(True, fixture))
+        self.assertEqual(returned['heap-memory-usage']['used'], 187654321)
+        self.assertEqual(returned['heap-memory-usage']['max'], 4294967296)
+
+    def test_fixture_datasources_list(self):
+        fixture = load_fixture('read-datasources.json')
+        args = make_args()
+        returned, _, _, _ = run_get_data(args, fetch_return=(True, fixture))
+        self.assertEqual(len(returned), 2)
+        self.assertEqual(returned[0]['data-source'], 'ExampleDS')
+
+
+# -----------------------------------------------------------------------------
+# WildFly-level error handling (outcome != success -> base.oao -> sys.exit)
+# -----------------------------------------------------------------------------
+
+
+class TestOutcomeErrorHandling(unittest.TestCase):
+
+    def test_outcome_failed_exits_unknown(self):
+        args = make_args(ALWAYS_OK=False)
+        payload = {'outcome': 'failed', 'failure-description': 'oops'}
+        returned, raised, _, out = run_get_data(args, fetch_return=(True, payload))
+        self.assertIsNone(returned)
+        self.assertIsNotNone(raised)
+        self.assertEqual(raised.code, 3)  # STATE_UNKNOWN
+        self.assertIn('Error fetching data', out)
+
+    def test_outcome_failed_message_includes_payload(self):
+        args = make_args()
+        payload = {'outcome': 'failed', 'failure-description': 'boom'}
+        _, _, _, out = run_get_data(args, fetch_return=(True, payload))
+        self.assertIn('boom', out)
+
+    def test_outcome_failed_fixture(self):
+        fixture = load_fixture('failure-no-such-resource.json')
+        args = make_args()
+        _, raised, _, out = run_get_data(args, fetch_return=(True, fixture))
+        self.assertEqual(raised.code, 3)
+        self.assertIn('WFLYCTL0216', out)
+
+    def test_missing_outcome_treated_as_failure(self):
+        # A response without an 'outcome' key is not a success -> exit.
+        args = make_args()
+        _, raised, _, _ = run_get_data(args, fetch_return=(True, {'result': 5}))
+        self.assertEqual(raised.code, 3)
+
+    def test_outcome_other_value_treated_as_failure(self):
+        args = make_args()
+        _, raised, _, _ = run_get_data(args, fetch_return=(True, {'outcome': 'error'}))
+        self.assertEqual(raised.code, 3)
+
+    def test_always_ok_forces_exit_zero(self):
+        # ALWAYS_OK=True must downgrade the UNKNOWN exit to OK (0).
+        args = make_args(ALWAYS_OK=True)
+        payload = {'outcome': 'failed', 'failure-description': 'oops'}
+        _, raised, _, out = run_get_data(args, fetch_return=(True, payload))
+        self.assertEqual(raised.code, 0)  # STATE_OK
+        self.assertIn('always ok', out)
+
+    def test_outcome_success_missing_result_raises_keyerror(self):
+        # outcome success but no 'result' key: the module indexes result['result']
+        # unconditionally, so a KeyError surfaces (documented behaviour, not a
+        # graceful exit).
+        args = make_args()
+        with mock.patch.object(
+            wildfly.url, 'fetch_json', return_value=(True, {'outcome': 'success'})
+        ), self.assertRaises(KeyError):
+            wildfly.get_data(args, {'operation': 'x'}, '')
+
+
+# -----------------------------------------------------------------------------
+# Transport-level error handling (fetch_json returns (False, msg) -> base.coe)
+# -----------------------------------------------------------------------------
+
+
+class TestTransportErrorHandling(unittest.TestCase):
+
+    def test_connection_refused_exits_unknown(self):
+        args = make_args()
+        returned, raised, _, out = run_get_data(
+            args, fetch_return=(False, 'Connection refused')
+        )
+        self.assertIsNone(returned)
+        self.assertEqual(raised.code, 3)
+        self.assertIn('Connection refused', out)
+
+    def test_http_401_exits_unknown(self):
+        args = make_args()
+        _, raised, _, out = run_get_data(
+            args, fetch_return=(False, 'HTTP 401: Unauthorized')
+        )
+        self.assertEqual(raised.code, 3)
+        self.assertIn('401', out)
+
+    def test_malformed_json_exits_unknown(self):
+        # fetch_json reports JSON decode failures as (False, message).
+        args = make_args()
+        _, raised, _, out = run_get_data(
+            args, fetch_return=(False, 'Expecting value: line 1 column 1')
+        )
+        self.assertEqual(raised.code, 3)
+        self.assertIn('Expecting value', out)
+
+    def test_empty_body_error_exits_unknown(self):
+        args = make_args()
+        _, raised, _, _ = run_get_data(args, fetch_return=(False, ''))
+        self.assertEqual(raised.code, 3)
+
+    def test_transport_error_ignores_always_ok(self):
+        # base.coe always exits with STATE_UNKNOWN; ALWAYS_OK only affects the
+        # outcome-based base.oao path, not the transport failure path.
+        args = make_args(ALWAYS_OK=True)
+        _, raised, _, _ = run_get_data(args, fetch_return=(False, 'boom'))
+        self.assertEqual(raised.code, 3)
+
+    def test_password_redacted_in_transport_error(self):
+        # base.coe runs the error message through txt.sanitize_sensitive_data, so
+        # a leaked password in the error string must not reach stdout verbatim.
+        args = make_args()
+        _, raised, _, out = run_get_data(
+            args, fetch_return=(False, 'auth failed for password=linuxfabrik')
+        )
+        self.assertEqual(raised.code, 3)
+        self.assertNotIn('linuxfabrik', out)
+
+
+# -----------------------------------------------------------------------------
+# Module-level sanity
+# -----------------------------------------------------------------------------
+
+
+class TestModuleSanity(unittest.TestCase):
+
+    def test_get_data_is_callable(self):
+        self.assertTrue(callable(wildfly.get_data))
+
+    def test_version_is_string(self):
+        self.assertIsInstance(wildfly.__version__, str)
+
+    def test_url_module_referenced(self):
+        # The module must reach the network exclusively via lib.url.
+        self.assertTrue(hasattr(wildfly, 'url'))
+
+
+if __name__ == '__main__':
+    unittest.main()

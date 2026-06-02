@@ -1,0 +1,19 @@
+{
+    "SessionId": "8a8b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d",
+    "UserName": "VEEAM\\administrator",
+    "RoleName": "Portal Administrator",
+    "Links": [
+        {
+            "Rel": "Down",
+            "Href": "https://veeam.example.com:9398/api/backupServers",
+            "Name": "BackupServers",
+            "Type": "BackupServerReferenceList"
+        },
+        {
+            "Rel": "Down",
+            "Href": "https://veeam.example.com:9398/api/jobs",
+            "Name": "Jobs",
+            "Type": "JobReferenceList"
+        }
+    ]
+}

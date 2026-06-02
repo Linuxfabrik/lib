@@ -1,0 +1,26 @@
+{
+    "update": [
+        {
+            "_id": "GENERAL",
+            "name": "general",
+            "t": "c",
+            "usernames": [],
+            "msgs": 42,
+            "usersCount": 17,
+            "default": true,
+            "_updatedAt": "2026-05-31T12:00:00.000Z"
+        },
+        {
+            "_id": "ABC123",
+            "name": "ops-private",
+            "fname": "Ops Private",
+            "t": "p",
+            "msgs": 128,
+            "usersCount": 5,
+            "ro": false,
+            "_updatedAt": "2026-05-31T12:05:00.000Z"
+        }
+    ],
+    "remove": [],
+    "success": true
+}

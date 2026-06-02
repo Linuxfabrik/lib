@@ -1,0 +1,975 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.redfish.
+
+lib.redfish is a pure parser: it never opens a socket itself. The plugins that
+use it do the HTTP talking (through lib.url) and hand the already-decoded JSON
+(a Python dict) to these functions. There is therefore no transport to mock for
+the module's own behaviour; the "HTTP layer" is the caller's concern. To keep
+the suite honest about that contract, the request-side is still asserted: a
+representative captured-style Redfish payload is decoded exactly the way a
+plugin would (json.loads on a fetched body) and fed in, and the parser output
+is pinned byte for byte.
+
+Public functions under test (14):
+
+- get_chassis()                            -> flat + nested key projection
+- get_chassis_power_powersupplies()        -> projection + PowerOutputWatts fallback
+- get_chassis_power_voltages()             -> projection
+- get_chassis_sensors()                    -> projection with 3-level threshold paths
+- get_chassis_thermal_fans()               -> projection
+- get_chassis_thermal_redundancy()         -> projection
+- get_chassis_thermal_temperatures()       -> projection
+- get_manager_logservices_sel_entries()    -> SEL formatting + worst-state rollup
+- get_perfdata()                           -> Nagios perfdata builder
+- get_sensor_state()                       -> state by status/health/thresholds/range
+- get_state()                              -> state by status/health
+- get_systems()                            -> projection
+- get_systems_storage()                    -> projection
+- get_systems_storage_drives()             -> projection + CapacityBytes humanizing
+- get_vendor()                             -> Vendor / Oem / 'generic' resolution
+
+All expected values were probed against the live module first, then pinned.
+Notably: lib.base.state2str renders [CRITICAL]/[WARNING] (not [CRIT]/[WARN]),
+lib.human.bytes2human uses binary units (465.7GiB for 5e11), a falsy-but-valid
+LastPowerOutputWatts of 0 does NOT trigger the PowerOutputWatts fallback, and
+ReadingRangeMin/Max of 0 are dropped from perfdata because of the `or None`.
+"""
+
+import json
+import sys
+import typing
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.base as base
+import lib.human as human
+import lib.redfish as redfish
+from lib.globals import STATE_CRIT, STATE_OK, STATE_WARN
+
+# ---------------------------------------------------------------------------
+# Captured-style Redfish payloads. These are decoded exactly the way a plugin
+# would after lib.url fetched the body, to assert the parser against realistic,
+# vendor-shaped JSON rather than hand-rolled minimal dicts.
+# ---------------------------------------------------------------------------
+
+CHASSIS_BODY = """
+{
+    "@odata.id": "/redfish/v1/Chassis/1",
+    "AssetTag": "LF-ASSET-001",
+    "ChassisType": "RackMount",
+    "Id": "1",
+    "IndicatorLED": "Off",
+    "Manufacturer": "Dell Inc.",
+    "Model": "PowerEdge R750",
+    "PartNumber": "0ABCDE",
+    "PowerState": "On",
+    "SerialNumber": "SN1234567",
+    "SKU": "SKU-9000",
+    "Sensors": {"@odata.id": "/redfish/v1/Chassis/1/Sensors"},
+    "Status": {"State": "Enabled", "Health": "OK", "HealthRollup": "OK"}
+}
+"""
+
+SENSOR_BODY = """
+{
+    "Id": "TempCPU1",
+    "Name": "CPU 1 Temp",
+    "PhysicalContext": "CPU",
+    "Reading": 55.0,
+    "ReadingRangeMax": 120,
+    "ReadingRangeMin": 0,
+    "ReadingUnits": "Cel",
+    "Thresholds": {
+        "LowerCaution": {"Reading": 5},
+        "LowerCritical": {"Reading": 0},
+        "UpperCaution": {"Reading": 90},
+        "UpperCritical": {"Reading": 105}
+    },
+    "Status": {"State": "Enabled", "Health": "OK", "HealthRollup": "OK"}
+}
+"""
+
+DRIVE_BODY = """
+{
+    "BlockSizeBytes": 512,
+    "CapableSpeedGbs": 12,
+    "CapacityBytes": 500000000000,
+    "Description": "Disk Drive Bay 0",
+    "EncryptionAbility": "SelfEncryptingDrive",
+    "EncryptionStatus": "Unlocked",
+    "FailurePredicted": false,
+    "HotspareType": "None",
+    "Id": "Disk.Bay.0",
+    "Manufacturer": "Samsung",
+    "MediaType": "SSD",
+    "Model": "970 EVO",
+    "Name": "SSD 0",
+    "NegotiatedSpeedGbs": 12,
+    "PartNumber": "PN-001",
+    "PredictedMediaLifeLeftPercent": 98,
+    "Protocol": "NVMe",
+    "Revision": "1B2QEXM7",
+    "RotationSpeedRPM": 0,
+    "SerialNumber": "S1234NEAB00001",
+    "WriteCacheEnabled": true,
+    "Status": {"State": "Enabled", "Health": "OK", "HealthRollup": "OK"}
+}
+"""
+
+
+def load(body):
+    """Decode a captured body the way a plugin does after lib.url fetched it."""
+    return json.loads(body)
+
+
+# ---------------------------------------------------------------------------
+# Shared expectations derived from the dependencies (probed, then pinned), so a
+# change in base/human surfaces here instead of silently passing.
+# ---------------------------------------------------------------------------
+
+CRIT_SUFFIX = base.state2str(STATE_CRIT, prefix=' ')  # ' [CRITICAL]'
+WARN_SUFFIX = base.state2str(STATE_WARN, prefix=' ')  # ' [WARNING]'
+CAP_500GB = human.bytes2human(500000000000)  # '465.7GiB'
+
+
+# ---------------------------------------------------------------------------
+# get_chassis
+# ---------------------------------------------------------------------------
+class TestGetChassis(unittest.TestCase):
+    def test_full_payload(self):
+        out = redfish.get_chassis(load(CHASSIS_BODY))
+        self.assertEqual(
+            out,
+            {
+                'AssetTag': 'LF-ASSET-001',
+                'ChassisType': 'RackMount',
+                'Id': '1',
+                'IndicatorLED': 'Off',
+                'Manufacturer': 'Dell Inc.',
+                'Model': 'PowerEdge R750',
+                'PartNumber': '0ABCDE',
+                'PowerState': 'On',
+                'SerialNumber': 'SN1234567',
+                'SKU': 'SKU-9000',
+                'Sensors_@odata.id': '/redfish/v1/Chassis/1/Sensors',
+                'Status_State': 'Enabled',
+                'Status_Health': 'OK',
+                'Status_HealthRollup': 'OK',
+            },
+        )
+
+    def test_empty_dict_all_blank(self):
+        out = redfish.get_chassis({})
+        # every flat key present and '' ...
+        for key in redfish.CHASSIS_KEYS:
+            self.assertEqual(out[key], '')
+        # ... and every nested key present and ''
+        for key in redfish.CHASSIS_NESTED_KEYS:
+            self.assertEqual(out[key], '')
+
+    def test_missing_status_subtree(self):
+        out = redfish.get_chassis({'Id': '7'})
+        self.assertEqual(out['Id'], '7')
+        self.assertEqual(out['Status_State'], '')
+        self.assertEqual(out['Status_Health'], '')
+        self.assertEqual(out['Status_HealthRollup'], '')
+        self.assertEqual(out['Sensors_@odata.id'], '')
+
+    def test_partial_nested_status(self):
+        out = redfish.get_chassis({'Status': {'Health': 'Warning'}})
+        self.assertEqual(out['Status_Health'], 'Warning')
+        self.assertEqual(out['Status_State'], '')
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_chassis({})
+        expected = set(redfish.CHASSIS_KEYS) | set(redfish.CHASSIS_NESTED_KEYS)
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_chassis_power_powersupplies
+# ---------------------------------------------------------------------------
+class TestGetChassisPowerPowersupplies(unittest.TestCase):
+    def test_full_projection(self):
+        body = {
+            'FirmwareVersion': '1.0',
+            'LastPowerOutputWatts': 200,
+            'LineInputVoltage': 230,
+            'LineInputVoltageType': 'ACHighLine',
+            'Manufacturer': 'Dell',
+            'Model': 'PSU-750',
+            'PartNumber': 'PN9',
+            'PowerCapacityWatts': 750,
+            'PowerSupplyType': 'AC',
+            'SerialNumber': 'PSU-SN',
+            'SparePartNumber': 'SPN9',
+            'Status': {'State': 'Enabled', 'Health': 'OK'},
+        }
+        out = redfish.get_chassis_power_powersupplies(body)
+        self.assertEqual(out['LastPowerOutputWatts'], 200)
+        self.assertEqual(out['PowerCapacityWatts'], 750)
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+
+    def test_fallback_to_power_output_watts_when_missing(self):
+        out = redfish.get_chassis_power_powersupplies({'PowerOutputWatts': 123})
+        self.assertEqual(out['LastPowerOutputWatts'], 123)
+
+    def test_fallback_to_power_output_watts_when_empty_string(self):
+        out = redfish.get_chassis_power_powersupplies(
+            {'LastPowerOutputWatts': '', 'PowerOutputWatts': 321}
+        )
+        self.assertEqual(out['LastPowerOutputWatts'], 321)
+
+    def test_fallback_to_power_output_watts_when_none(self):
+        out = redfish.get_chassis_power_powersupplies(
+            {'LastPowerOutputWatts': None, 'PowerOutputWatts': 50}
+        )
+        self.assertEqual(out['LastPowerOutputWatts'], 50)
+
+    def test_direct_value_wins_over_fallback(self):
+        out = redfish.get_chassis_power_powersupplies(
+            {'LastPowerOutputWatts': 99, 'PowerOutputWatts': 123}
+        )
+        self.assertEqual(out['LastPowerOutputWatts'], 99)
+
+    def test_zero_is_valid_and_does_not_trigger_fallback(self):
+        # 0 is not in ('', None), so the fallback must not kick in.
+        out = redfish.get_chassis_power_powersupplies(
+            {'LastPowerOutputWatts': 0, 'PowerOutputWatts': 123}
+        )
+        self.assertEqual(out['LastPowerOutputWatts'], 0)
+
+    def test_no_watts_at_all_stays_empty(self):
+        out = redfish.get_chassis_power_powersupplies({})
+        self.assertEqual(out['LastPowerOutputWatts'], '')
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_chassis_power_powersupplies({})
+        expected = set(redfish.CHASSIS_POWER_KEYS) | set(redfish.CHASSIS_POWER_NESTED_KEYS)
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_chassis_power_voltages
+# ---------------------------------------------------------------------------
+class TestGetChassisPowerVoltages(unittest.TestCase):
+    def test_full_projection(self):
+        body = {
+            'LowerThresholdCritical': 10,
+            'LowerThresholdFatal': 9,
+            'LowerThresholdNonCritical': 11,
+            'Name': 'VCORE',
+            'PhysicalContext': 'VoltageRegulator',
+            'ReadingVolts': 12,
+            'UpperThresholdCritical': 14,
+            'UpperThresholdFatal': 15,
+            'UpperThresholdNonCritical': 13,
+            'Status': {'State': 'Enabled', 'Health': 'OK'},
+        }
+        out = redfish.get_chassis_power_voltages(body)
+        self.assertEqual(out['ReadingVolts'], 12)
+        self.assertEqual(out['Name'], 'VCORE')
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+
+    def test_empty(self):
+        out = redfish.get_chassis_power_voltages({})
+        self.assertEqual(out['ReadingVolts'], '')
+        self.assertEqual(out['Status_State'], '')
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_chassis_power_voltages({})
+        expected = set(redfish.CHASSIS_VOLTAGE_KEYS) | set(redfish.CHASSIS_VOLTAGE_NESTED_KEYS)
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_chassis_sensors (3-level nested threshold paths + isinstance filter)
+# ---------------------------------------------------------------------------
+class TestGetChassisSensors(unittest.TestCase):
+    def test_full_payload(self):
+        out = redfish.get_chassis_sensors(load(SENSOR_BODY))
+        self.assertEqual(out['Id'], 'TempCPU1')
+        self.assertEqual(out['Name'], 'CPU 1 Temp')
+        self.assertEqual(out['PhysicalContext'], 'CPU')
+        self.assertEqual(out['Reading'], 55.0)
+        self.assertEqual(out['ReadingRangeMax'], 120)
+        self.assertEqual(out['ReadingRangeMin'], 0)
+        self.assertEqual(out['ReadingUnits'], 'Cel')
+        # 3-level paths: Thresholds.<x>.Reading
+        self.assertEqual(out['Thresholds_LowerCaution'], 5)
+        self.assertEqual(out['Thresholds_LowerCritical'], 0)
+        self.assertEqual(out['Thresholds_UpperCaution'], 90)
+        self.assertEqual(out['Thresholds_UpperCritical'], 105)
+        # absent user thresholds collapse to ''
+        self.assertEqual(out['Thresholds_LowerCautionUser'], '')
+        self.assertEqual(out['Thresholds_UpperCriticalUser'], '')
+        self.assertEqual(out['Status_State'], 'Enabled')
+
+    def test_missing_thresholds_subtree(self):
+        out = redfish.get_chassis_sensors({'Id': 's', 'Reading': 1})
+        for key in (
+            'Thresholds_LowerCaution',
+            'Thresholds_LowerCritical',
+            'Thresholds_UpperCaution',
+            'Thresholds_UpperCritical',
+        ):
+            self.assertEqual(out[key], '')
+
+    def test_non_scalar_reading_is_filtered_to_empty(self):
+        # A dict at the leaf must be replaced by '' (isinstance scalar filter).
+        body = {'Thresholds': {'LowerCaution': {'Reading': {'nested': 1}}}}
+        out = redfish.get_chassis_sensors(body)
+        self.assertEqual(out['Thresholds_LowerCaution'], '')
+
+    def test_string_scalar_passes_filter(self):
+        body = {'Thresholds': {'UpperCritical': {'Reading': '105'}}}
+        out = redfish.get_chassis_sensors(body)
+        self.assertEqual(out['Thresholds_UpperCritical'], '105')
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_chassis_sensors({})
+        expected = set(redfish.CHASSIS_SENSOR_KEYS) | set(redfish.CHASSIS_SENSOR_NESTED_KEYS)
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_chassis_thermal_fans
+# ---------------------------------------------------------------------------
+class TestGetChassisThermalFans(unittest.TestCase):
+    def test_full_projection(self):
+        body = {
+            'FanName': 'Fan1',
+            'HotPluggable': True,
+            'LowerThresholdCritical': 100,
+            'LowerThresholdFatal': 50,
+            'LowerThresholdNonCritical': 200,
+            'Name': 'System Fan 1',
+            'PhysicalContext': 'Fan',
+            'Reading': 8000,
+            'ReadingUnits': 'RPM',
+            'SensorNumber': 1,
+            'UpperThresholdCritical': 20000,
+            'UpperThresholdFatal': 22000,
+            'UpperThresholdNonCritical': 18000,
+            'Status': {'State': 'Enabled', 'Health': 'OK'},
+        }
+        out = redfish.get_chassis_thermal_fans(body)
+        self.assertEqual(out['FanName'], 'Fan1')
+        self.assertEqual(out['Reading'], 8000)
+        self.assertEqual(out['ReadingUnits'], 'RPM')
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+
+    def test_non_scalar_status_state_filtered(self):
+        out = redfish.get_chassis_thermal_fans({'Status': {'State': {'x': 1}}})
+        self.assertEqual(out['Status_State'], '')
+
+    def test_empty(self):
+        out = redfish.get_chassis_thermal_fans({})
+        self.assertEqual(out['FanName'], '')
+        self.assertEqual(out['Status_Health'], '')
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_chassis_thermal_fans({})
+        expected = set(redfish.CHASSIS_FAN_KEYS) | set(redfish.CHASSIS_FAN_NESTED_KEYS)
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_chassis_thermal_redundancy
+# ---------------------------------------------------------------------------
+class TestGetChassisThermalRedundancy(unittest.TestCase):
+    def test_full_projection(self):
+        out = redfish.get_chassis_thermal_redundancy(
+            {'Mode': 'N+1', 'Name': 'Fan Redundancy', 'Status': {'State': 'Enabled', 'Health': 'OK'}}
+        )
+        self.assertEqual(
+            out,
+            {'Mode': 'N+1', 'Name': 'Fan Redundancy', 'Status_State': 'Enabled', 'Status_Health': 'OK'},
+        )
+
+    def test_partial(self):
+        out = redfish.get_chassis_thermal_redundancy({'Mode': 'N+1', 'Status': {'Health': 'OK'}})
+        self.assertEqual(out, {'Mode': 'N+1', 'Name': '', 'Status_State': '', 'Status_Health': 'OK'})
+
+    def test_empty(self):
+        out = redfish.get_chassis_thermal_redundancy({})
+        self.assertEqual(out, {'Mode': '', 'Name': '', 'Status_State': '', 'Status_Health': ''})
+
+
+# ---------------------------------------------------------------------------
+# get_chassis_thermal_temperatures
+# ---------------------------------------------------------------------------
+class TestGetChassisThermalTemperatures(unittest.TestCase):
+    def test_full_projection(self):
+        body = {
+            'LowerThresholdCritical': 5,
+            'LowerThresholdFatal': 0,
+            'LowerThresholdNonCritical': 10,
+            'Name': 'Inlet Temp',
+            'PhysicalContext': 'Intake',
+            'ReadingCelsius': 22,
+            'UpperThresholdCritical': 75,
+            'UpperThresholdFatal': 85,
+            'UpperThresholdNonCritical': 65,
+            'Status': {'State': 'Enabled', 'Health': 'OK'},
+        }
+        out = redfish.get_chassis_thermal_temperatures(body)
+        self.assertEqual(out['ReadingCelsius'], 22)
+        self.assertEqual(out['Name'], 'Inlet Temp')
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+
+    def test_empty(self):
+        out = redfish.get_chassis_thermal_temperatures({})
+        self.assertEqual(out['ReadingCelsius'], '')
+        self.assertEqual(out['Status_State'], '')
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_chassis_thermal_temperatures({})
+        expected = set(redfish.CHASSIS_THERMAL_TEMP_KEYS) | set(
+            redfish.CHASSIS_THERMAL_TEMP_NESTED_KEYS
+        )
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_manager_logservices_sel_entries
+# ---------------------------------------------------------------------------
+class TestGetManagerLogservicesSelEntries(unittest.TestCase):
+    def test_mixed_severities_worst_state_and_format(self):
+        body = {
+            'Members': [
+                {'Created': '2021-08-01', 'Message': 'Temp high', 'Severity': 'Critical'},
+                {'Created': '2021-08-02', 'Message': 'Fan normal', 'Severity': 'OK'},
+                {'Created': '2021-08-03', 'Message': 'warn msg', 'Severity': 'Warning'},
+            ]
+        }
+        msg, state = redfish.get_manager_logservices_sel_entries(body)
+        self.assertEqual(state, STATE_CRIT)
+        self.assertEqual(
+            msg,
+            f'* 2021-08-01: Temp high{CRIT_SUFFIX}\n* 2021-08-03: warn msg{WARN_SUFFIX}\n',
+        )
+
+    def test_ok_entries_are_skipped(self):
+        body = {'Members': [{'Created': 'x', 'Message': 'm', 'Severity': 'OK'}]}
+        self.assertEqual(redfish.get_manager_logservices_sel_entries(body), ('', STATE_OK))
+
+    def test_empty_members(self):
+        self.assertEqual(redfish.get_manager_logservices_sel_entries({'Members': []}), ('', STATE_OK))
+
+    def test_missing_members_key(self):
+        self.assertEqual(redfish.get_manager_logservices_sel_entries({}), ('', STATE_OK))
+
+    def test_unknown_severity_maps_to_ok_no_suffix(self):
+        # Unknown severity -> STATE_OK -> no '[...]' suffix, no state escalation.
+        body = {'Members': [{'Created': '2021-08-04', 'Message': 'odd', 'Severity': 'Strange'}]}
+        msg, state = redfish.get_manager_logservices_sel_entries(body)
+        self.assertEqual(msg, '* 2021-08-04: odd\n')
+        self.assertEqual(state, STATE_OK)
+
+    def test_warning_only_state_is_warn(self):
+        body = {'Members': [{'Created': 'c', 'Message': 'm', 'Severity': 'Warning'}]}
+        msg, state = redfish.get_manager_logservices_sel_entries(body)
+        self.assertEqual(state, STATE_WARN)
+        self.assertEqual(msg, f'* c: m{WARN_SUFFIX}\n')
+
+    def test_severity_is_case_insensitive(self):
+        body = {'Members': [{'Created': 'c', 'Message': 'm', 'Severity': 'CRITICAL'}]}
+        _, state = redfish.get_manager_logservices_sel_entries(body)
+        self.assertEqual(state, STATE_CRIT)
+
+    def test_missing_fields_default_to_empty(self):
+        body = {'Members': [{'Severity': 'Warning'}]}
+        msg, state = redfish.get_manager_logservices_sel_entries(body)
+        self.assertEqual(msg, f'* : {WARN_SUFFIX}\n')
+        self.assertEqual(state, STATE_WARN)
+
+    def test_missing_severity_treated_as_ok(self):
+        # entry.get('Severity', '').lower() -> '' -> mapped to STATE_OK, but '' != 'ok'
+        # so it is NOT skipped; it is emitted with no suffix.
+        body = {'Members': [{'Created': 'c', 'Message': 'm'}]}
+        msg, state = redfish.get_manager_logservices_sel_entries(body)
+        self.assertEqual(msg, '* c: m\n')
+        self.assertEqual(state, STATE_OK)
+
+
+# ---------------------------------------------------------------------------
+# get_perfdata
+# ---------------------------------------------------------------------------
+class TestGetPerfdata(unittest.TestCase):
+    def test_percent_with_all_fields(self):
+        data = {
+            'Name': 'Temperature Sensor 1',
+            'PhysicalContext': 'Chassis',
+            'Reading': 75.0,
+            'ReadingUnits': '%',
+            'Thresholds_UpperCaution': 80,
+            'Thresholds_UpperCritical': 90,
+            'ReadingRangeMin': 1,
+            'ReadingRangeMax': 100,
+        }
+        # label is built as PhysicalContext_Name with spaces -> underscores
+        self.assertEqual(
+            redfish.get_perfdata(data),
+            "'Chassis_Temperature_Sensor_1'=75.0%;80;90;1;100 ",
+        )
+
+    def test_non_numeric_reading_returns_empty(self):
+        self.assertEqual(redfish.get_perfdata({'Reading': '75'}), '')
+
+    def test_missing_reading_returns_empty(self):
+        self.assertEqual(redfish.get_perfdata({'Name': 'n'}), '')
+
+    def test_none_reading_returns_empty(self):
+        self.assertEqual(redfish.get_perfdata({'Reading': None}), '')
+
+    def test_bool_reading_is_accepted_as_int(self):
+        # bool is a subclass of int; document the actual behaviour.
+        out = redfish.get_perfdata({'Reading': True, 'Name': 'x', 'PhysicalContext': 'y'})
+        self.assertEqual(out, "'y_x'=True ")
+
+    def test_non_percent_unit_dropped(self):
+        # Only '%' is forwarded as UOM; 'Cel' etc. are dropped.
+        out = redfish.get_perfdata(
+            {'Reading': 22, 'Name': 'T', 'PhysicalContext': 'C', 'ReadingUnits': 'Cel'}
+        )
+        self.assertEqual(out, "'C_T'=22 ")
+
+    def test_zero_range_bounds_dropped_via_or_none(self):
+        # ReadingRangeMin/Max == 0 are falsy, so `or None` drops them.
+        out = redfish.get_perfdata(
+            {'Reading': 5, 'Name': 'T', 'PhysicalContext': 'C', 'ReadingRangeMin': 0, 'ReadingRangeMax': 0}
+        )
+        self.assertEqual(out, "'C_T'=5 ")
+
+    def test_custom_key(self):
+        out = redfish.get_perfdata(
+            {'ReadingCelsius': 22, 'Name': 'a', 'PhysicalContext': 'b'}, key='ReadingCelsius'
+        )
+        self.assertEqual(out, "'b_a'=22 ")
+
+    def test_label_built_from_empty_name_and_context(self):
+        out = redfish.get_perfdata({'Reading': 5})
+        self.assertEqual(out, "'_'=5 ")
+
+    def test_warn_crit_forwarded(self):
+        out = redfish.get_perfdata(
+            {
+                'Reading': 50,
+                'Name': 'n',
+                'PhysicalContext': 'p',
+                'Thresholds_UpperCaution': 70,
+                'Thresholds_UpperCritical': 90,
+            }
+        )
+        self.assertEqual(out, "'p_n'=50;70;90 ")
+
+    def test_matches_base_get_perfdata_contract(self):
+        # The module is a thin wrapper around base.get_perfdata; assert they agree.
+        data = {
+            'Name': 'S 1',
+            'PhysicalContext': 'Ctx',
+            'Reading': 12.5,
+            'ReadingUnits': '%',
+            'Thresholds_UpperCaution': 80,
+            'Thresholds_UpperCritical': 90,
+            'ReadingRangeMin': 1,
+            'ReadingRangeMax': 100,
+        }
+        expected = base.get_perfdata('Ctx_S_1', 12.5, '%', 80, 90, 1, 100)
+        self.assertEqual(redfish.get_perfdata(data), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_sensor_state
+# ---------------------------------------------------------------------------
+class TestGetSensorState(unittest.TestCase):
+    BASE: typing.ClassVar = {
+        'Status_State': 'Enabled',
+        'Status_Health': '',
+        'Status_HealthRollup': '',
+    }
+
+    def _state(self, **kw):
+        data = dict(self.BASE)
+        data.update(kw)
+        return redfish.get_sensor_state(data)
+
+    # 0. reading parsing
+    def test_non_numeric_reading_is_ok(self):
+        self.assertEqual(self._state(Reading='abc'), STATE_OK)
+
+    def test_none_reading_is_ok(self):
+        self.assertEqual(self._state(Reading=None), STATE_OK)
+
+    def test_numeric_string_reading_is_parsed(self):
+        # '95' parses; with upper critical 90 -> CRIT
+        self.assertEqual(self._state(Reading='95', Thresholds_UpperCritical=90), STATE_CRIT)
+
+    # 1. Status_State gate
+    def test_disabled_state_short_circuits_ok(self):
+        self.assertEqual(
+            redfish.get_sensor_state(
+                {'Reading': 5, 'Status_State': 'Disabled', 'Status_Health': 'Critical'}
+            ),
+            STATE_OK,
+        )
+
+    def test_absent_state_is_ok(self):
+        self.assertEqual(
+            redfish.get_sensor_state({'Reading': 5, 'Status_State': 'Absent'}), STATE_OK
+        )
+
+    def test_quiesced_state_is_evaluated(self):
+        self.assertEqual(
+            redfish.get_sensor_state(
+                {'Reading': 5, 'Status_State': 'Quiesced', 'Status_Health': 'Critical'}
+            ),
+            STATE_CRIT,
+        )
+
+    # 2. health / healthrollup
+    def test_health_critical(self):
+        self.assertEqual(self._state(Reading=5, Status_Health='Critical'), STATE_CRIT)
+
+    def test_health_warning(self):
+        self.assertEqual(self._state(Reading=5, Status_Health='Warning'), STATE_WARN)
+
+    def test_healthrollup_critical(self):
+        self.assertEqual(self._state(Reading=5, Status_HealthRollup='Critical'), STATE_CRIT)
+
+    def test_healthrollup_warning(self):
+        self.assertEqual(self._state(Reading=5, Status_HealthRollup='Warning'), STATE_WARN)
+
+    def test_health_case_insensitive(self):
+        self.assertEqual(self._state(Reading=5, Status_Health='cRiTiCaL'), STATE_CRIT)
+
+    def test_healthrollup_takes_precedence_over_health(self):
+        # HealthRollup is checked first; Critical rollup wins over Warning health.
+        self.assertEqual(
+            self._state(Reading=5, Status_HealthRollup='Critical', Status_Health='Warning'),
+            STATE_CRIT,
+        )
+
+    # 3. thresholds
+    def test_user_upper_critical_breach(self):
+        self.assertEqual(
+            self._state(
+                Reading=95,
+                Thresholds_UpperCriticalUser=85,
+                Thresholds_UpperCritical=90,
+                Thresholds_UpperCaution=80,
+            ),
+            STATE_CRIT,
+        )
+
+    def test_default_upper_critical_breach(self):
+        self.assertEqual(self._state(Reading=92, Thresholds_UpperCritical=90), STATE_CRIT)
+
+    def test_lower_critical_breach(self):
+        self.assertEqual(self._state(Reading=5, Thresholds_LowerCritical=10), STATE_CRIT)
+
+    def test_user_lower_critical_breach(self):
+        self.assertEqual(self._state(Reading=5, Thresholds_LowerCriticalUser=10), STATE_CRIT)
+
+    def test_user_upper_caution_breach(self):
+        self.assertEqual(self._state(Reading=82, Thresholds_UpperCautionUser=81), STATE_WARN)
+
+    def test_default_upper_caution_breach(self):
+        self.assertEqual(self._state(Reading=82, Thresholds_UpperCaution=80), STATE_WARN)
+
+    def test_lower_caution_breach(self):
+        self.assertEqual(self._state(Reading=5, Thresholds_LowerCaution=10), STATE_WARN)
+
+    def test_within_thresholds_is_ok(self):
+        self.assertEqual(self._state(Reading=50, Thresholds_UpperCaution=80), STATE_OK)
+
+    def test_critical_checked_before_caution(self):
+        # Reading breaches both caution and critical; critical wins.
+        self.assertEqual(
+            self._state(Reading=95, Thresholds_UpperCaution=80, Thresholds_UpperCritical=90),
+            STATE_CRIT,
+        )
+
+    def test_threshold_string_values_parsed(self):
+        self.assertEqual(self._state(Reading=92, Thresholds_UpperCritical='90'), STATE_CRIT)
+
+    def test_unparseable_threshold_ignored(self):
+        # A garbage threshold parses to None and is ignored -> no thresholds -> OK.
+        self.assertEqual(self._state(Reading=92, Thresholds_UpperCritical='n/a'), STATE_OK)
+
+    # 4. reading range fallback
+    def test_range_outside_is_warn(self):
+        self.assertEqual(self._state(Reading=150, ReadingRangeMin=0, ReadingRangeMax=100), STATE_WARN)
+
+    def test_range_below_is_warn(self):
+        self.assertEqual(self._state(Reading=-5, ReadingRangeMin=0, ReadingRangeMax=100), STATE_WARN)
+
+    def test_range_inside_is_ok(self):
+        self.assertEqual(self._state(Reading=50, ReadingRangeMin=0, ReadingRangeMax=100), STATE_OK)
+
+    def test_only_range_min_no_fallback(self):
+        # Both bounds are required for the range fallback.
+        self.assertEqual(self._state(Reading=150, ReadingRangeMin=0), STATE_OK)
+
+    def test_thresholds_take_precedence_over_range(self):
+        # Any threshold present skips the range branch entirely.
+        self.assertEqual(
+            self._state(
+                Reading=50,
+                Thresholds_UpperCaution=80,
+                ReadingRangeMin=0,
+                ReadingRangeMax=10,
+            ),
+            STATE_OK,
+        )
+
+    # 5. default
+    def test_nothing_defined_is_ok(self):
+        self.assertEqual(self._state(Reading=50), STATE_OK)
+
+    def test_custom_key(self):
+        self.assertEqual(
+            redfish.get_sensor_state(
+                {'ReadingCelsius': 92, 'Status_State': 'Enabled', 'Thresholds_UpperCritical': 90},
+                key='ReadingCelsius',
+            ),
+            STATE_CRIT,
+        )
+
+
+# ---------------------------------------------------------------------------
+# get_state
+# ---------------------------------------------------------------------------
+class TestGetState(unittest.TestCase):
+    def test_healthrollup_critical(self):
+        self.assertEqual(
+            redfish.get_state({'Status_State': 'Enabled', 'Status_HealthRollup': 'Critical'}),
+            STATE_CRIT,
+        )
+
+    def test_health_warning(self):
+        self.assertEqual(
+            redfish.get_state({'Status_State': 'Enabled', 'Status_Health': 'Warning'}), STATE_WARN
+        )
+
+    def test_health_ok(self):
+        self.assertEqual(
+            redfish.get_state({'Status_State': 'Enabled', 'Status_Health': 'OK'}), STATE_OK
+        )
+
+    def test_disabled_state_short_circuits_ok(self):
+        self.assertEqual(
+            redfish.get_state({'Status_State': 'Disabled', 'Status_Health': 'Critical'}), STATE_OK
+        )
+
+    def test_absent_state_is_ok(self):
+        self.assertEqual(
+            redfish.get_state({'Status_State': 'Absent', 'Status_HealthRollup': 'Critical'}),
+            STATE_OK,
+        )
+
+    def test_quiesced_state_is_evaluated(self):
+        self.assertEqual(
+            redfish.get_state({'Status_State': 'Quiesced', 'Status_Health': 'Warning'}), STATE_WARN
+        )
+
+    def test_healthrollup_precedence(self):
+        self.assertEqual(
+            redfish.get_state(
+                {'Status_State': 'Enabled', 'Status_HealthRollup': 'Critical', 'Status_Health': 'Warning'}
+            ),
+            STATE_CRIT,
+        )
+
+    def test_case_insensitive(self):
+        self.assertEqual(
+            redfish.get_state({'Status_State': 'Enabled', 'Status_Health': 'warning'}), STATE_WARN
+        )
+
+    def test_missing_state_key_is_ok(self):
+        # No Status_State at all -> not in ('Enabled','Quiesced') -> OK.
+        self.assertEqual(redfish.get_state({'Status_Health': 'Critical'}), STATE_OK)
+
+    def test_empty_dict_is_ok(self):
+        self.assertEqual(redfish.get_state({}), STATE_OK)
+
+
+# ---------------------------------------------------------------------------
+# get_systems
+# ---------------------------------------------------------------------------
+class TestGetSystems(unittest.TestCase):
+    def test_full_payload(self):
+        body = {
+            'BiosVersion': '1.0.0',
+            'HostName': 'System1',
+            'Id': '12345',
+            'IndicatorLED': 'Off',
+            'Manufacturer': 'Dell',
+            'Model': 'R750',
+            'PowerState': 'On',
+            'SerialNumber': 'SN1',
+            'SKU': 'SKU1',
+            'ProcessorSummary': {'Count': 2, 'LogicalProcessorCount': 4, 'Model': 'Intel Xeon'},
+            'Storage': {'@odata.id': '/redfish/v1/Systems/1/Storage'},
+            'Status': {'State': 'Enabled', 'Health': 'OK', 'HealthRollup': 'OK'},
+        }
+        out = redfish.get_systems(body)
+        self.assertEqual(out['BiosVersion'], '1.0.0')
+        self.assertEqual(out['HostName'], 'System1')
+        self.assertEqual(out['ProcessorSummary_Count'], 2)
+        self.assertEqual(out['ProcessorSummary_LogicalProcessorCount'], 4)
+        self.assertEqual(out['ProcessorSummary_Model'], 'Intel Xeon')
+        self.assertEqual(out['Storage_@odata.id'], '/redfish/v1/Systems/1/Storage')
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+        self.assertEqual(out['Status_HealthRollup'], 'OK')
+
+    def test_empty(self):
+        out = redfish.get_systems({})
+        for key in redfish.SYSTEMS_KEYS:
+            self.assertEqual(out[key], '')
+        for key in redfish.SYSTEMS_NESTED_KEYS:
+            self.assertEqual(out[key], '')
+
+    def test_non_scalar_nested_filtered(self):
+        out = redfish.get_systems({'ProcessorSummary': {'Count': {'x': 1}}})
+        self.assertEqual(out['ProcessorSummary_Count'], '')
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_systems({})
+        expected = set(redfish.SYSTEMS_KEYS) | set(redfish.SYSTEMS_NESTED_KEYS)
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_systems_storage
+# ---------------------------------------------------------------------------
+class TestGetSystemsStorage(unittest.TestCase):
+    def test_full_payload(self):
+        body = {
+            'Description': 'RAID Storage',
+            'Drives@odata.count': 5,
+            'Id': '6789',
+            'Name': 'StorageSystem1',
+            'Status': {'State': 'Enabled', 'Health': 'OK', 'HealthRollup': 'OK'},
+        }
+        self.assertEqual(
+            redfish.get_systems_storage(body),
+            {
+                'Description': 'RAID Storage',
+                'Drives@odata.count': 5,
+                'Id': '6789',
+                'Name': 'StorageSystem1',
+                'Status_State': 'Enabled',
+                'Status_Health': 'OK',
+                'Status_HealthRollup': 'OK',
+            },
+        )
+
+    def test_empty(self):
+        out = redfish.get_systems_storage({})
+        for key in redfish.SYSTEMS_STORAGE_KEYS:
+            self.assertEqual(out[key], '')
+        for key in redfish.SYSTEMS_STORAGE_NESTED_KEYS:
+            self.assertEqual(out[key], '')
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_systems_storage({})
+        expected = set(redfish.SYSTEMS_STORAGE_KEYS) | set(redfish.SYSTEMS_STORAGE_NESTED_KEYS)
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_systems_storage_drives (CapacityBytes humanizing)
+# ---------------------------------------------------------------------------
+class TestGetSystemsStorageDrives(unittest.TestCase):
+    def test_full_payload(self):
+        out = redfish.get_systems_storage_drives(load(DRIVE_BODY))
+        self.assertEqual(out['BlockSizeBytes'], 512)
+        self.assertEqual(out['CapableSpeedGbs'], 12)
+        self.assertEqual(out['Description'], 'Disk Drive Bay 0')
+        self.assertEqual(out['MediaType'], 'SSD')
+        self.assertEqual(out['Model'], '970 EVO')
+        self.assertEqual(out['Protocol'], 'NVMe')
+        self.assertEqual(out['SerialNumber'], 'S1234NEAB00001')
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+        self.assertEqual(out['Status_HealthRollup'], 'OK')
+        # CapacityBytes is humanized via lib.human.bytes2human.
+        self.assertEqual(out['CapacityBytes'], CAP_500GB)
+
+    def test_capacity_matches_human_helper(self):
+        out = redfish.get_systems_storage_drives({'CapacityBytes': 500000000000})
+        self.assertEqual(out['CapacityBytes'], human.bytes2human(500000000000))
+
+    def test_capacity_missing_is_empty(self):
+        out = redfish.get_systems_storage_drives({})
+        self.assertEqual(out['CapacityBytes'], '')
+
+    def test_capacity_zero_is_empty(self):
+        # `if capacity` is falsy for 0 -> '' rather than bytes2human(0).
+        out = redfish.get_systems_storage_drives({'CapacityBytes': 0})
+        self.assertEqual(out['CapacityBytes'], '')
+
+    def test_failure_predicted_false_preserved(self):
+        out = redfish.get_systems_storage_drives({'FailurePredicted': False})
+        self.assertEqual(out['FailurePredicted'], False)
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_systems_storage_drives({})
+        # CapacityBytes is added on top of the flat + nested key sets.
+        expected = (
+            set(redfish.SYSTEMS_STORAGE_DRIVES_KEYS)
+            | set(redfish.SYSTEMS_STORAGE_DRIVES_NESTED_KEYS)
+            | {'CapacityBytes'}
+        )
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_vendor
+# ---------------------------------------------------------------------------
+class TestGetVendor(unittest.TestCase):
+    def test_explicit_vendor_lowercased(self):
+        self.assertEqual(redfish.get_vendor({'Vendor': 'DELL'}), 'dell')
+
+    def test_oem_first_key_used(self):
+        self.assertEqual(redfish.get_vendor({'Oem': {'SomeVendor': 'x'}}), 'somevendor')
+
+    def test_empty_dict_is_generic(self):
+        self.assertEqual(redfish.get_vendor({}), 'generic')
+
+    def test_empty_oem_is_generic(self):
+        self.assertEqual(redfish.get_vendor({'Oem': {}}), 'generic')
+
+    def test_vendor_none_falls_back_to_oem(self):
+        self.assertEqual(redfish.get_vendor({'Vendor': None, 'Oem': {'Hpe': 1}}), 'hpe')
+
+    def test_vendor_empty_string_falls_back_to_oem(self):
+        self.assertEqual(redfish.get_vendor({'Vendor': '', 'Oem': {'Lenovo': 1}}), 'lenovo')
+
+    def test_oem_none_is_generic(self):
+        # `redfish.get('Oem') or {}` guards an explicit None Oem.
+        self.assertEqual(redfish.get_vendor({'Oem': None}), 'generic')
+
+    def test_vendor_wins_over_oem(self):
+        self.assertEqual(redfish.get_vendor({'Vendor': 'Dell', 'Oem': {'Hpe': 1}}), 'dell')
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,0 +1,10 @@
+{
+    "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUI...ADMIN_ACCESS_TOKEN",
+    "expires_in": 60,
+    "refresh_expires_in": 1800,
+    "refresh_token": "eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUI...REFRESH_TOKEN",
+    "token_type": "Bearer",
+    "not-before-policy": 0,
+    "session_state": "8b9d1f2a-1234-4abc-9def-0123456789ab",
+    "scope": "profile email"
+}

@@ -1,0 +1,40 @@
+{
+    "_id": "stats-0001",
+    "version": "6.5.0",
+    "uniqueId": "unique-id-0001",
+    "installedAt": "2025-01-01T00:00:00.000Z",
+    "totalUsers": 120,
+    "activeUsers": 95,
+    "totalConnectedUsers": 12,
+    "totalChannels": 40,
+    "totalPrivateGroups": 18,
+    "totalDirect": 200,
+    "totalMessages": 54321,
+    "totalChannelMessages": 30000,
+    "totalPrivateGroupMessages": 12000,
+    "totalDirectMessages": 12321,
+    "uploadsTotal": 350,
+    "uploadsTotalSize": 1073741824,
+    "os": {
+        "type": "Linux",
+        "platform": "linux",
+        "arch": "x64",
+        "release": "5.14.0",
+        "uptime": 864000,
+        "totalmem": 8589934592,
+        "freemem": 2147483648,
+        "cpus": 4
+    },
+    "process": {
+        "nodeVersion": "v14.21.3",
+        "pid": 12345,
+        "uptime": 432000
+    },
+    "migration": {
+        "_id": "control",
+        "version": 295,
+        "locked": false
+    },
+    "instanceCount": 1,
+    "success": true
+}

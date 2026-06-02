@@ -1,0 +1,22 @@
+{
+    "systemInfo": {
+        "version": "26.0.5",
+        "serverTime": "Mon Jun 02 10:00:00 UTC 2026",
+        "uptimeMillis": 123456789,
+        "javaVersion": "21.0.5",
+        "javaVendor": "Eclipse Adoptium",
+        "osName": "Linux",
+        "osArchitecture": "amd64",
+        "fileEncoding": "UTF-8",
+        "userTimezone": "UTC"
+    },
+    "memoryInfo": {
+        "total": 536870912,
+        "totalFormated": "512 MB",
+        "used": 268435456,
+        "usedFormated": "256 MB",
+        "free": 268435456,
+        "freeFormated": "256 MB",
+        "freePercentage": 50
+    }
+}

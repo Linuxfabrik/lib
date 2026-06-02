@@ -1,0 +1,21 @@
+[
+    {
+        "Id": 12,
+        "Name": "Player Zurich HB",
+        "City": "Zurich",
+        "Country": "CH",
+        "IsInstalled": true,
+        "IsLicensed": true,
+        "BoxState": "Online",
+        "ProvisioningState": "Provisioned",
+        "TransferStatus": "Idle",
+        "Latitude": 47.3779,
+        "Longitude": 8.5403
+    },
+    {
+        "Id": 13,
+        "Name": "Player Bern",
+        "BoxState": "Offline",
+        "IsInstalled": false
+    }
+]
