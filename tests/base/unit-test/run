@@ -1,0 +1,625 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.base.
+
+Pure-Python functions, no fixtures or containers needed. lib.base only
+imports lib.txt and lib.globals (both stdlib-backed local modules), so there
+is nothing external (network via lib.url, subprocess via lib.shell.shell_exec,
+psutil, smb, winrm) to mock here. The three functions that terminate the
+process (coe, cu, oao) are exercised by capturing the SystemExit they raise
+and the text they print to stdout.
+"""
+
+import contextlib
+import io
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.base as base
+from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
+
+
+@contextlib.contextmanager
+def capture_exit():
+    """Run a block that calls sys.exit(), capturing stdout and the exit code.
+
+    Yields a one-element list; after the block the element holds the captured
+    stdout string and the recorded exit code is available on the context as a
+    second yielded value. We yield a mutable holder so callers can read both.
+    """
+    buf = io.StringIO()
+    holder = {'out': '', 'code': None}
+    with contextlib.redirect_stdout(buf):
+        try:
+            yield holder
+        except SystemExit as exc:
+            holder['code'] = exc.code
+        finally:
+            holder['out'] = buf.getvalue()
+
+
+class TestCoe(unittest.TestCase):
+    def test_success_returns_payload(self):
+        self.assertEqual(base.coe((True, 'payload')), 'payload')
+
+    def test_success_returns_falsey_payload_untouched(self):
+        # A successful result whose payload is falsey must still be returned.
+        self.assertEqual(base.coe((True, 0)), 0)
+        self.assertEqual(base.coe((True, '')), '')
+        self.assertIsNone(base.coe((True, None)))
+
+    def test_failure_exits_default_unknown(self):
+        with capture_exit() as h:
+            base.coe((False, 'boom'))
+        self.assertEqual(h['code'], STATE_UNKNOWN)
+        self.assertIn('boom', h['out'])
+
+    def test_failure_exits_with_given_state(self):
+        with capture_exit() as h:
+            base.coe((False, 'nope'), STATE_CRIT)
+        self.assertEqual(h['code'], STATE_CRIT)
+
+    def test_failure_sanitizes_password(self):
+        with capture_exit() as h:
+            base.coe((False, 'connect password=hunter2 failed'))
+        self.assertIn('password=******', h['out'])
+        self.assertNotIn('hunter2', h['out'])
+
+
+class TestCu(unittest.TestCase):
+    def test_no_msg_no_traceback_exits_unknown(self):
+        with capture_exit() as h:
+            base.cu()
+        self.assertEqual(h['code'], STATE_UNKNOWN)
+        self.assertEqual(h['out'], '')
+
+    def test_msg_without_traceback(self):
+        with capture_exit() as h:
+            base.cu('plain message')
+        self.assertEqual(h['code'], STATE_UNKNOWN)
+        self.assertIn('plain message', h['out'])
+        self.assertNotIn('Traceback for debugging', h['out'])
+
+    def test_msg_sanitized_and_angle_brackets_replaced(self):
+        with capture_exit() as h:
+            base.cu('token=abc <tag> here')
+        self.assertIn('token=******', h['out'])
+        self.assertNotIn('abc', h['out'])
+        self.assertNotIn('<', h['out'])
+        self.assertNotIn('>', h['out'])
+
+    def test_with_active_traceback_attaches_it(self):
+        with capture_exit() as h:
+            try:
+                raise ValueError('kaboom')
+            except ValueError:
+                base.cu('failed')
+        self.assertEqual(h['code'], STATE_UNKNOWN)
+        self.assertIn('Traceback for debugging', h['out'])
+        self.assertIn('kaboom', h['out'])
+
+    def test_traceback_without_msg_still_prints_traceback(self):
+        with capture_exit() as h:
+            try:
+                raise RuntimeError('inner')
+            except RuntimeError:
+                base.cu()
+        self.assertIn('Traceback (most recent call last)', h['out'])
+        self.assertIn('inner', h['out'])
+
+
+class TestGetPerfdata(unittest.TestCase):
+    def test_full(self):
+        self.assertEqual(
+            base.get_perfdata('load1', 0.42, '', 1.0, 5.0, 0, 10),
+            "'load1'=0.42;1.0;5.0;0;10 ",
+        )
+
+    def test_value_only(self):
+        self.assertEqual(base.get_perfdata('x', 5), "'x'=5 ")
+
+    def test_uom_only(self):
+        self.assertEqual(base.get_perfdata('mem', 80, '%'), "'mem'=80% ")
+
+    def test_warn_only_keeps_trailing_semicolon_placeholder(self):
+        # warn set, crit/min/max unset -> trailing empty fields stripped.
+        self.assertEqual(base.get_perfdata('x', 5, None, 10), "'x'=5;10 ")
+
+    def test_crit_without_warn(self):
+        self.assertEqual(base.get_perfdata('x', 5, None, None, 20), "'x'=5;;20 ")
+
+    def test_min_max_without_thresholds(self):
+        self.assertEqual(
+            base.get_perfdata('x', 5, None, None, None, 0, 100), "'x'=5;;;0;100 "
+        )
+
+    def test_label_sanitized(self):
+        # single quotes are dropped, '=' becomes '_'.
+        self.assertEqual(base.get_perfdata("a'b=c", 1), "'ab_c'=1 ")
+
+    def test_trailing_space_always_present(self):
+        self.assertTrue(base.get_perfdata('x', 1).endswith(' '))
+
+
+class TestGetState(unittest.TestCase):
+    def test_ge_warn(self):
+        self.assertEqual(base.get_state(15, 10, 20, 'ge'), STATE_WARN)
+
+    def test_ge_crit(self):
+        self.assertEqual(base.get_state(25, 10, 20, 'ge'), STATE_CRIT)
+
+    def test_ge_ok(self):
+        self.assertEqual(base.get_state(5, 10, 20, 'ge'), STATE_OK)
+
+    def test_gt_boundary_is_ok(self):
+        self.assertEqual(base.get_state(10, 10, 20, 'gt'), STATE_OK)
+
+    def test_le_lt_eq_ne(self):
+        self.assertEqual(base.get_state(5, 10, 5, 'le'), STATE_CRIT)
+        self.assertEqual(base.get_state(9, 10, 5, 'lt'), STATE_WARN)
+        self.assertEqual(base.get_state(10, 10, 99, 'eq'), STATE_WARN)
+        # crit ('ne' 99) is evaluated first: 7 != 99 -> CRIT, before warn is reached.
+        self.assertEqual(base.get_state(7, 10, 99, 'ne'), STATE_CRIT)
+        # value equal to crit with 'ne' -> not triggered, falls through to warn.
+        self.assertEqual(base.get_state(99, 10, 99, 'ne'), STATE_WARN)
+
+    def test_none_thresholds(self):
+        self.assertEqual(base.get_state(100, None, None, 'ge'), STATE_OK)
+        self.assertEqual(base.get_state(100, None, 50, 'ge'), STATE_CRIT)
+
+    def test_string_value_is_cast(self):
+        self.assertEqual(base.get_state('15', 10, 20, 'ge'), STATE_WARN)
+
+    def test_unknown_operator(self):
+        self.assertEqual(base.get_state(15, 10, 20, 'bogus'), STATE_UNKNOWN)
+
+    def test_crit_takes_precedence_over_warn(self):
+        # both warn and crit triggered -> crit wins.
+        self.assertEqual(base.get_state(100, 10, 20, 'ge'), STATE_CRIT)
+
+    def test_range_inside_is_ok(self):
+        self.assertEqual(base.get_state(5, '10', '20', 'range'), STATE_OK)
+
+    def test_range_warn_outside(self):
+        # value outside the warn range -> WARN.
+        self.assertEqual(base.get_state(15, '10', None, 'range'), STATE_WARN)
+
+    def test_range_crit_outside(self):
+        self.assertEqual(base.get_state(25, '10', '20', 'range'), STATE_CRIT)
+
+    def test_range_invalid_spec_returns_unknown(self):
+        self.assertEqual(base.get_state(5, 'a:b:c', None, 'range'), STATE_UNKNOWN)
+
+    def test_range_none_thresholds_ok(self):
+        self.assertEqual(base.get_state(5, None, None, 'range'), STATE_OK)
+
+
+class TestGetTable(unittest.TestCase):
+    def test_empty_data(self):
+        self.assertEqual(base.get_table([], ['a']), '')
+
+    def test_basic(self):
+        data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]
+        out = base.get_table(data, ['name', 'age'])
+        self.assertEqual(out, 'Alice ! 30\nBob   ! 25\n')
+
+    def test_with_header_and_divider(self):
+        data = [{'name': 'Alice', 'age': 30}]
+        out = base.get_table(data, ['name', 'age'], header=['name', 'age'])
+        lines = out.splitlines()
+        self.assertEqual(lines[0], 'name  ! age')
+        self.assertIn('-+-', lines[1])
+        # the 'age' column is widened to the header width ('age' = 3), so the
+        # data cell '30' is padded to 3 chars, leaving a trailing space.
+        self.assertEqual(lines[2], 'Alice ! 30 ')
+
+    def test_sort_by_key_ascending(self):
+        data = [{'n': 'b'}, {'n': 'a'}, {'n': 'c'}]
+        out = base.get_table(data, ['n'], sort_by_key='n')
+        self.assertEqual(out, 'a\nb\nc\n')
+
+    def test_sort_by_key_descending(self):
+        data = [{'n': 'a'}, {'n': 'c'}, {'n': 'b'}]
+        out = base.get_table(data, ['n'], sort_by_key='n', sort_order_reverse=True)
+        self.assertEqual(out, 'c\nb\na\n')
+
+    def test_strip_disabled(self):
+        data = [{'v': '  pad  '}]
+        out = base.get_table(data, ['v'], strip=False)
+        self.assertEqual(out, '  pad  \n')
+
+    def test_strip_enabled(self):
+        data = [{'v': '  pad  '}]
+        out = base.get_table(data, ['v'], strip=True)
+        self.assertEqual(out, 'pad\n')
+
+    def test_unknown_column(self):
+        out = base.get_table([{'a': 1}], ['b'])
+        self.assertEqual(out, 'Unknown column "b"')
+
+    def test_does_not_mutate_input(self):
+        data = [{'a': 1}]
+        base.get_table(data, ['a'], header=['A'])
+        self.assertEqual(data, [{'a': 1}])
+
+
+class TestGetWorst(unittest.TestCase):
+    def test_no_args_is_ok(self):
+        self.assertEqual(base.get_worst(), STATE_OK)
+
+    def test_crit_wins(self):
+        self.assertEqual(
+            base.get_worst(STATE_OK, STATE_WARN, STATE_UNKNOWN, STATE_CRIT), STATE_CRIT
+        )
+
+    def test_warn_over_unknown(self):
+        self.assertEqual(base.get_worst(STATE_UNKNOWN, STATE_WARN), STATE_WARN)
+
+    def test_unknown_over_ok(self):
+        self.assertEqual(base.get_worst(STATE_OK, STATE_UNKNOWN), STATE_UNKNOWN)
+
+    def test_all_ok(self):
+        self.assertEqual(base.get_worst(STATE_OK, STATE_OK), STATE_OK)
+
+    def test_string_states_cast(self):
+        self.assertEqual(base.get_worst('0', '2'), STATE_CRIT)
+
+
+class TestGuessType(unittest.TestCase):
+    def test_python_int(self):
+        self.assertEqual(base.guess_type('1'), 1)
+        self.assertIsInstance(base.guess_type('1'), int)
+
+    def test_python_float(self):
+        self.assertEqual(base.guess_type('1.0'), 1.0)
+        self.assertIsInstance(base.guess_type('1.0'), float)
+
+    def test_python_str(self):
+        self.assertEqual(base.guess_type('abc'), 'abc')
+
+    def test_python_none(self):
+        self.assertIsNone(base.guess_type(None))
+
+    def test_sqlite_types(self):
+        self.assertEqual(base.guess_type('1', 'sqlite'), 'integer')
+        self.assertEqual(base.guess_type('1.0', 'sqlite'), 'real')
+        self.assertEqual(base.guess_type('abc', 'sqlite'), 'text')
+        self.assertEqual(base.guess_type(None, 'sqlite'), 'text')
+
+
+class TestIsEmptyList(unittest.TestCase):
+    def test_all_empty(self):
+        self.assertTrue(base.is_empty_list(['', '   ', '']))
+
+    def test_has_content(self):
+        self.assertFalse(base.is_empty_list(['text', '']))
+
+    def test_empty_input_list(self):
+        self.assertTrue(base.is_empty_list([]))
+
+
+class TestIsNumeric(unittest.TestCase):
+    def test_numeric(self):
+        self.assertTrue(base.is_numeric(53.4))
+        self.assertTrue(base.is_numeric(-7))
+        self.assertTrue(base.is_numeric(0))
+
+    def test_non_numeric(self):
+        self.assertFalse(base.is_numeric('53.4'))
+        self.assertFalse(base.is_numeric(None))
+        self.assertFalse(base.is_numeric([1]))
+
+    def test_bool_is_numeric(self):
+        # bool is a subclass of int / numbers.Number in Python.
+        self.assertTrue(base.is_numeric(True))
+
+
+class TestLookupLod(unittest.TestCase):
+    def setUp(self):
+        self.haystack = [
+            {'name': 'Tom', 'age': 10},
+            {'name': 'Mark', 'age': 5},
+            {'name': 'Pam', 'age': 7},
+            {'name': 'Dick', 'age': 12},
+        ]
+
+    def test_found(self):
+        self.assertEqual(
+            base.lookup_lod(self.haystack, 'name', 'Pam'),
+            (2, {'name': 'Pam', 'age': 7}),
+        )
+
+    def test_first_match_wins(self):
+        hs = [{'k': 1}, {'k': 1}]
+        self.assertEqual(base.lookup_lod(hs, 'k', 1), (0, {'k': 1}))
+
+    def test_not_found(self):
+        self.assertEqual(base.lookup_lod(self.haystack, 'name', 'Pamela'), (-1, None))
+
+    def test_missing_key(self):
+        self.assertEqual(base.lookup_lod(self.haystack, 'nope', 'x'), (-1, None))
+
+    def test_non_dict_items_skipped(self):
+        hs = ['notadict', {'k': 'v'}]
+        self.assertEqual(base.lookup_lod(hs, 'k', 'v'), (1, {'k': 'v'}))
+
+    def test_empty_haystack(self):
+        self.assertEqual(base.lookup_lod([], 'k', 'v'), (-1, None))
+
+
+class TestMatchRange(unittest.TestCase):
+    def test_simple_inside(self):
+        self.assertEqual(base.match_range(5, '10'), (True, True))
+
+    def test_simple_outside(self):
+        self.assertEqual(base.match_range(15, '10'), (True, False))
+
+    def test_negative_simple_is_invalid_range(self):
+        ok, _ = base.match_range(15, '-10')
+        self.assertFalse(ok)
+
+    def test_lower_bound_open_end(self):
+        self.assertEqual(base.match_range(15, '10:'), (True, True))
+        self.assertEqual(base.match_range(5, '10:'), (True, False))
+
+    def test_colon_only(self):
+        self.assertEqual(base.match_range(15, ':'), (True, True))
+
+    def test_neg_inf_to_value(self):
+        self.assertEqual(base.match_range(5, '~:10'), (True, True))
+        self.assertEqual(base.match_range(15, '~:10'), (True, False))
+
+    def test_explicit_range(self):
+        self.assertEqual(base.match_range(15, '10:20'), (True, True))
+        self.assertEqual(base.match_range(25, '10:20'), (True, False))
+
+    def test_inverted_range(self):
+        # @10:20 -> alert when inside, so match (OK) is True only outside.
+        self.assertEqual(base.match_range(15, '@10:20'), (True, False))
+        self.assertEqual(base.match_range(25, '@10:20'), (True, True))
+
+    def test_inverted_neg_inf(self):
+        self.assertEqual(base.match_range(15, '@~:20'), (True, False))
+        self.assertEqual(base.match_range(25, '@~:20'), (True, True))
+
+    def test_inverted_at_only(self):
+        # @ -> (0, inf, invert) -> inside (0..inf) is alert.
+        self.assertEqual(base.match_range(15, '@'), (True, False))
+
+    def test_none_spec(self):
+        self.assertEqual(base.match_range(5, None), (True, True))
+        self.assertEqual(base.match_range(5, 'none'), (True, True))
+
+    def test_float_spec(self):
+        self.assertEqual(base.match_range(5.5, '10.0'), (True, True))
+
+    def test_string_value_with_percent(self):
+        self.assertEqual(base.match_range('5%', '10'), (True, True))
+
+    def test_numeric_spec_passed_as_int(self):
+        self.assertEqual(base.match_range(5, 10), (True, True))
+
+    def test_leading_backslash_stripped(self):
+        self.assertEqual(base.match_range(5, '\\10'), (True, True))
+
+    def test_start_greater_than_end(self):
+        ok, msg = base.match_range(5, '20:10')
+        self.assertFalse(ok)
+        self.assertIn('must not be greater', msg)
+
+    def test_malformed_multiple_colons(self):
+        ok, _ = base.match_range(5, '1:2:3')
+        self.assertFalse(ok)
+
+
+class TestOao(unittest.TestCase):
+    def test_basic_ok(self):
+        with capture_exit() as h:
+            base.oao('Service is healthy')
+        self.assertEqual(h['code'], STATE_OK)
+        self.assertIn('Service is healthy', h['out'])
+
+    def test_with_state_and_perfdata(self):
+        with capture_exit() as h:
+            base.oao('msg', STATE_CRIT, 'load=0.12;1.00;5.00')
+        self.assertEqual(h['code'], STATE_CRIT)
+        self.assertIn('msg|load=0.12;1.00;5.00', h['out'])
+
+    def test_pipe_replaced_in_message(self):
+        with capture_exit() as h:
+            base.oao('a|b')
+        self.assertIn('a!b', h['out'])
+
+    def test_html_escaped(self):
+        with capture_exit() as h:
+            base.oao('value <= 10 & ok > 5')
+        self.assertIn('&lt;= 10 &amp; ok &gt; 5', h['out'])
+
+    def test_sanitizes_password(self):
+        with capture_exit() as h:
+            base.oao('password=secret123 found', STATE_CRIT)
+        self.assertIn('password=******', h['out'])
+        self.assertNotIn('secret123', h['out'])
+
+    def test_always_ok_forces_exit_zero_and_marks_message(self):
+        with capture_exit() as h:
+            base.oao('something bad', STATE_CRIT, always_ok=True)
+        self.assertEqual(h['code'], STATE_OK)
+        self.assertIn('(always ok)', h['out'])
+
+    def test_always_ok_only_marks_first_line(self):
+        with capture_exit() as h:
+            base.oao('line1\nline2', STATE_CRIT, always_ok=True)
+        out = h['out']
+        self.assertIn('line1 (always ok)', out)
+        self.assertNotIn('line2 (always ok)', out)
+
+    def test_perfdata_stripped(self):
+        with capture_exit() as h:
+            base.oao('m', STATE_OK, '  p=1  ')
+        self.assertIn('m|p=1', h['out'])
+
+
+class TestSmartcast(unittest.TestCase):
+    def test_numeric_string(self):
+        self.assertEqual(base.smartcast('3.14'), 3.14)
+
+    def test_int_to_float(self):
+        self.assertEqual(base.smartcast(42), 42.0)
+        self.assertIsInstance(base.smartcast(42), float)
+
+    def test_non_numeric_string(self):
+        self.assertEqual(base.smartcast('hello'), 'hello')
+
+    def test_none_becomes_str(self):
+        # float(None) raises -> str(None) -> 'None'.
+        self.assertEqual(base.smartcast(None), 'None')
+
+
+class TestSort(unittest.TestCase):
+    def test_dict_by_value_desc(self):
+        self.assertEqual(base.sort({'a': 2, 'b': 1}), [('a', 2), ('b', 1)])
+
+    def test_dict_by_value_asc(self):
+        self.assertEqual(
+            base.sort({'a': 2, 'b': 1}, reverse=False), [('b', 1), ('a', 2)]
+        )
+
+    def test_dict_by_key_case_insensitive(self):
+        self.assertEqual(
+            base.sort({'a': 2, 'B': 1}, sort_by_key=True, reverse=True),
+            [('B', 1), ('a', 2)],
+        )
+
+    def test_list_sorted_desc_default(self):
+        self.assertEqual(base.sort([1, 3, 2]), [3, 2, 1])
+
+    def test_list_sorted_asc(self):
+        self.assertEqual(base.sort([1, 3, 2], reverse=False), [1, 2, 3])
+
+    def test_tuple_sorted(self):
+        self.assertEqual(base.sort((1, 3, 2), reverse=False), [1, 2, 3])
+
+    def test_other_type_unchanged(self):
+        self.assertEqual(base.sort('hello'), 'hello')
+        self.assertEqual(base.sort(42), 42)
+
+
+class TestState2Str(unittest.TestCase):
+    def test_crit(self):
+        self.assertEqual(base.state2str(STATE_CRIT), '[CRITICAL]')
+
+    def test_ok_empty_by_default(self):
+        self.assertEqual(base.state2str(STATE_OK), '')
+
+    def test_ok_not_empty(self):
+        self.assertEqual(base.state2str(STATE_OK, empty_ok=False), '[OK]')
+
+    def test_prefix_suffix(self):
+        self.assertEqual(
+            base.state2str(STATE_OK, empty_ok=False, prefix=' (', suffix=')'), ' ([OK])'
+        )
+
+    def test_warn_unknown(self):
+        self.assertEqual(base.state2str(STATE_WARN), '[WARNING]')
+        self.assertEqual(base.state2str(STATE_UNKNOWN), '[UNKNOWN]')
+
+    def test_unmapped_state_returns_number(self):
+        self.assertEqual(base.state2str(99), '99')
+
+    def test_string_state_cast(self):
+        self.assertEqual(base.state2str('2'), '[CRITICAL]')
+
+
+class TestStr2Bool(unittest.TestCase):
+    def test_empty(self):
+        self.assertFalse(base.str2bool(''))
+
+    def test_false_variants(self):
+        self.assertFalse(base.str2bool('false'))
+        self.assertFalse(base.str2bool('FalSE'))
+
+    def test_truthy(self):
+        self.assertTrue(base.str2bool('true'))
+        self.assertTrue(base.str2bool('Linuxfabrik'))
+        self.assertTrue(base.str2bool('0'))
+        self.assertTrue(base.str2bool('1'))
+
+
+class TestStr2State(unittest.TestCase):
+    def test_ok(self):
+        self.assertEqual(base.str2state('ok'), STATE_OK)
+
+    def test_prefix_matching_four_chars(self):
+        self.assertEqual(base.str2state('warn'), STATE_WARN)
+        self.assertEqual(base.str2state('Warnung'), STATE_WARN)
+        self.assertEqual(base.str2state('CrITical'), STATE_CRIT)
+        self.assertEqual(base.str2state('UNKNOWN'), STATE_UNKNOWN)
+
+    def test_too_short_prefix_is_unknown(self):
+        # 'war' truncated to 'war' does not match 'warn'.
+        self.assertEqual(base.str2state('war'), STATE_UNKNOWN)
+
+    def test_long_word_truncated_to_four_chars(self):
+        # Matching uses the first four characters, so 'okidoki'[:4] == 'okid'
+        # is NOT in the lookup table and resolves to UNKNOWN. (The docstring
+        # example claiming 0 here predates the four-char truncation; the code
+        # is authoritative.)
+        self.assertEqual(base.str2state('okidoki'), STATE_UNKNOWN)
+
+    def test_unrecognized_ignore_error(self):
+        self.assertEqual(base.str2state('gobbledygook'), STATE_UNKNOWN)
+
+    def test_unrecognized_no_ignore_error(self):
+        self.assertIsNone(base.str2state('gobbledygook', ignore_error=False))
+
+    def test_exact_ok_no_ignore_error(self):
+        self.assertEqual(base.str2state('ok', ignore_error=False), STATE_OK)
+
+
+class TestSumDict(unittest.TestCase):
+    def test_merge_overlapping_and_distinct(self):
+        self.assertEqual(
+            base.sum_dict(
+                {'in': 100, 'out': 10}, {'in': 50, 'error': 5, 'uuid': '1234-xyz'}
+            ),
+            {'in': 150, 'out': 10, 'error': 5},
+        )
+
+    def test_non_numeric_ignored(self):
+        self.assertEqual(base.sum_dict({'a': 'x'}, {'a': 'y'}), {})
+
+
+class TestSumLod(unittest.TestCase):
+    def test_sum(self):
+        self.assertEqual(
+            base.sum_lod(
+                [
+                    {'in': 100, 'out': 10},
+                    {'in': 50, 'out': 20},
+                    {'error': 5, 'uuid': '1234-xyz'},
+                ]
+            ),
+            {'in': 150, 'out': 30, 'error': 5},
+        )
+
+    def test_empty_list(self):
+        self.assertEqual(base.sum_lod([]), {})
+
+    def test_bool_counts_as_numeric(self):
+        # bool is numeric, so True is summed as 1.
+        self.assertEqual(base.sum_lod([{'a': True}, {'a': 1}]), {'a': 2})
+
+
+if __name__ == '__main__':
+    unittest.main()

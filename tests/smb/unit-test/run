@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.smb.
+
+Both public helpers (glob, open_file) talk to a remote SMB server through the
+third-party smbclient/smbprotocol stack. The tests stay hermetic by patching
+the module-level smbclient reference and by raising real smbprotocol exception
+instances, so every documented success and error branch is exercised without
+any network access.
+"""
+
+import sys
+import unittest
+from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, '..')
+
+# Guard the third-party dependency: smbprotocol/smbclient ship the exception
+# types the module dispatches on. If either is missing from the venv we still
+# define the full test body but skip it at runtime.
+try:
+    import lib.smb as smb
+    import smbprotocol.exceptions as smbexc
+
+    HAVE_SMB = True
+    IMPORT_ERROR = ''
+except ImportError as exc:  # pragma: no cover - depends on venv contents
+    HAVE_SMB = False
+    IMPORT_ERROR = str(exc)
+
+
+# ----------------------------------------------------------------------------
+# Helpers to build realistic smbprotocol exception instances.
+#
+# The smbprotocol exception classes use a registry metaclass; constructing them
+# with no arguments yields a default-populated, type-correct instance, which is
+# exactly what the module's isinstance()/strerror checks key off.
+# ----------------------------------------------------------------------------
+
+def make_smboserror(strerror, context=None):
+    """Return a real SMBOSError with a controlled strerror and __context__."""
+    # 0xC0000022 == STATUS_ACCESS_DENIED: any valid ntstatus works, we override
+    # strerror afterwards to drive the exact branch under test.
+    err = smbexc.SMBOSError(ntstatus=0xC0000022, filename='smb://server/share/file')
+    err.strerror = strerror
+    if context is not None:
+        err.__context__ = context
+    return err
+
+
+def make_dir_entry(is_file):
+    """Return a fake SMBDirEntry-like object with a deterministic is_file()."""
+    entry = MagicMock(name='SMBDirEntry')
+    entry.is_file.return_value = is_file
+    return entry
+
+
+@unittest.skipUnless(HAVE_SMB, 'smbclient/smbprotocol not installed: ' + IMPORT_ERROR)
+class TestGlobSuccess(unittest.TestCase):
+    """glob() happy paths: single file and directory listing."""
+
+    def test_single_file_returns_entry_list(self):
+        entry = make_dir_entry(is_file=True)
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.return_value = entry
+            ok, result = smb.glob(
+                'smb://server/share/file.txt', 'user', 'pass', timeout=5,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(result, [entry])
+        # A single file must short-circuit before scandir() is consulted.
+        cli.scandir.assert_not_called()
+
+    def test_single_file_passes_credentials_and_encrypt(self):
+        entry = make_dir_entry(is_file=True)
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.return_value = entry
+            smb.glob('smb://srv/s/f', 'alice', 'linuxfabrik', timeout=9, encrypt=False)
+        cli._os.SMBDirEntry.from_path.assert_called_once_with(
+            'smb://srv/s/f',
+            username='alice',
+            password='linuxfabrik',
+            connection_timeout=9,
+            encrypt=False,
+        )
+
+    def test_directory_returns_scandir_list(self):
+        dir_entry = make_dir_entry(is_file=False)
+        files = [make_dir_entry(True), make_dir_entry(True)]
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.return_value = dir_entry
+            cli.scandir.return_value = iter(files)
+            ok, result = smb.glob(
+                'smb://server/share/dir', 'user', 'pass', timeout=5,
+            )
+        self.assertTrue(ok)
+        self.assertEqual(result, files)
+        self.assertIsInstance(result, list)
+
+    def test_directory_passes_pattern_and_mode(self):
+        dir_entry = make_dir_entry(is_file=False)
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.return_value = dir_entry
+            cli.scandir.return_value = iter([])
+            smb.glob(
+                'smb://server/share/dir', 'user', 'pass', timeout=7,
+                pattern='*.log', encrypt=True,
+            )
+        cli.scandir.assert_called_once_with(
+            'smb://server/share/dir',
+            mode='rb',
+            username='user',
+            password='pass',
+            connection_timeout=7,
+            search_pattern='*.log',
+            encrypt=True,
+        )
+
+    def test_default_pattern_is_star(self):
+        dir_entry = make_dir_entry(is_file=False)
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.return_value = dir_entry
+            cli.scandir.return_value = iter([])
+            smb.glob('smb://server/share/dir', 'user', 'pass', timeout=5)
+        _, kwargs = cli.scandir.call_args
+        self.assertEqual(kwargs['search_pattern'], '*')
+
+    def test_default_encrypt_is_true(self):
+        entry = make_dir_entry(is_file=True)
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.return_value = entry
+            smb.glob('smb://server/share/file', 'user', 'pass', timeout=5)
+        _, kwargs = cli._os.SMBDirEntry.from_path.call_args
+        self.assertTrue(kwargs['encrypt'])
+
+
+@unittest.skipUnless(HAVE_SMB, 'smbclient/smbprotocol not installed: ' + IMPORT_ERROR)
+class TestGlobErrors(unittest.TestCase):
+    """glob() error branches."""
+
+    def test_authentication_error(self):
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.side_effect = \
+                smbexc.SMBAuthenticationError()
+            ok, msg = smb.glob('smb://s/f', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Login failed')
+
+    def test_logon_failure(self):
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.side_effect = smbexc.LogonFailure()
+            ok, msg = smb.glob('smb://s/f', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Login failed')
+
+    def test_smboserror_with_objectnamenotfound_context(self):
+        err = make_smboserror('whatever', context=smbexc.ObjectNameNotFound())
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.side_effect = err
+            ok, msg = smb.glob('smb://s/missing', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'No such file or directory on the SMB server.')
+
+    def test_smboserror_no_such_file_strerror_means_empty_dir(self):
+        # No matching context, but strerror signals "No such file or directory":
+        # glob treats this as an empty result set, not a hard error.
+        err = make_smboserror('No such file or directory')
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.side_effect = err
+            ok, result = smb.glob('smb://s/empty', 'user', 'pass', timeout=5)
+        self.assertTrue(ok)
+        self.assertEqual(result, [])
+
+    def test_smboserror_generic_io_error(self):
+        err = make_smboserror('Permission denied')
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.side_effect = err
+            ok, msg = smb.glob('smb://s/f', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertEqual(
+            msg,
+            'I/O error "Permission denied" while opening or reading smb://s/f',
+        )
+
+    def test_smboserror_raised_by_scandir(self):
+        # The error can also originate from scandir() after the directory probe.
+        dir_entry = make_dir_entry(is_file=False)
+        err = make_smboserror('Permission denied')
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.return_value = dir_entry
+            cli.scandir.side_effect = err
+            ok, msg = smb.glob('smb://s/dir', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertIn('I/O error "Permission denied"', msg)
+
+    def test_unknown_exception(self):
+        with patch.object(smb, 'smbclient') as cli:
+            cli._os.SMBDirEntry.from_path.side_effect = RuntimeError('boom')
+            ok, msg = smb.glob('smb://s/f', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertTrue(msg.startswith('Unknown error opening or reading smb://s/f:'))
+        self.assertIn('boom', msg)
+
+
+@unittest.skipUnless(HAVE_SMB, 'smbclient/smbprotocol not installed: ' + IMPORT_ERROR)
+class TestOpenFileSuccess(unittest.TestCase):
+    """open_file() happy path and argument forwarding."""
+
+    def test_returns_file_object(self):
+        fobj = MagicMock(name='file_obj')
+        with patch.object(smb, 'smbclient') as cli:
+            cli.open_file.return_value = fobj
+            ok, result = smb.open_file('smb://s/f', 'user', 'pass', timeout=5)
+        self.assertTrue(ok)
+        self.assertIs(result, fobj)
+
+    def test_forwards_arguments(self):
+        fobj = MagicMock(name='file_obj')
+        with patch.object(smb, 'smbclient') as cli:
+            cli.open_file.return_value = fobj
+            smb.open_file('smb://s/f', 'bob', 'linuxfabrik', timeout=11, encrypt=False)
+        cli.open_file.assert_called_once_with(
+            'smb://s/f',
+            mode='rb',
+            username='bob',
+            password='linuxfabrik',
+            connection_timeout=11,
+            encrypt=False,
+        )
+
+    def test_default_encrypt_is_true(self):
+        fobj = MagicMock(name='file_obj')
+        with patch.object(smb, 'smbclient') as cli:
+            cli.open_file.return_value = fobj
+            smb.open_file('smb://s/f', 'user', 'pass', timeout=5)
+        _, kwargs = cli.open_file.call_args
+        self.assertTrue(kwargs['encrypt'])
+
+
+@unittest.skipUnless(HAVE_SMB, 'smbclient/smbprotocol not installed: ' + IMPORT_ERROR)
+class TestOpenFileErrors(unittest.TestCase):
+    """open_file() error branches."""
+
+    def test_authentication_error_returns_str(self):
+        with patch.object(smb, 'smbclient') as cli:
+            cli.open_file.side_effect = \
+                smbexc.SMBAuthenticationError('bad creds')
+            ok, msg = smb.open_file('smb://s/f', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'bad creds')
+
+    def test_logon_failure_returns_str(self):
+        exc = smbexc.LogonFailure()
+        with patch.object(smb, 'smbclient') as cli:
+            cli.open_file.side_effect = exc
+            ok, msg = smb.open_file('smb://s/f', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertEqual(msg, str(exc))
+
+    def test_smboserror_file_is_a_directory_context(self):
+        err = make_smboserror('Is a directory', context=smbexc.FileIsADirectory())
+        with patch.object(smb, 'smbclient') as cli:
+            cli.open_file.side_effect = err
+            ok, msg = smb.open_file('smb://s/dir', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'The file specified is a directory, expected a file.')
+
+    def test_smboserror_objectnamenotfound_context(self):
+        err = make_smboserror('No such file', context=smbexc.ObjectNameNotFound())
+        with patch.object(smb, 'smbclient') as cli:
+            cli.open_file.side_effect = err
+            ok, msg = smb.open_file('smb://s/missing', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'No such file or directory on the SMB server.')
+
+    def test_smboserror_generic_io_error(self):
+        err = make_smboserror('Permission denied')
+        with patch.object(smb, 'smbclient') as cli:
+            cli.open_file.side_effect = err
+            ok, msg = smb.open_file('smb://s/f', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertEqual(
+            msg,
+            'I/O error "Permission denied" while opening or reading smb://s/f',
+        )
+
+    def test_smboserror_no_context_does_not_match_directory_branch(self):
+        # __context__ is None: must fall through to the generic I/O message,
+        # never to the directory- or not-found-specific strings.
+        err = make_smboserror('Some other error')
+        with patch.object(smb, 'smbclient') as cli:
+            cli.open_file.side_effect = err
+            ok, msg = smb.open_file('smb://s/f', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertIn('I/O error "Some other error"', msg)
+
+    def test_unknown_exception(self):
+        with patch.object(smb, 'smbclient') as cli:
+            cli.open_file.side_effect = ValueError('kaboom')
+            ok, msg = smb.open_file('smb://s/f', 'user', 'pass', timeout=5)
+        self.assertFalse(ok)
+        self.assertTrue(msg.startswith('Unknown error opening or reading smb://s/f:'))
+        self.assertIn('kaboom', msg)
+
+
+if __name__ == '__main__':
+    unittest.main()

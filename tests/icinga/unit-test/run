@@ -1,0 +1,517 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.icinga.
+
+All six public functions are covered hermetically. The module only talks to
+the outside world through lib.url.fetch_json (HTTP) and time.sleep (throttle),
+so both are mocked. No network call and no real sleep ever happens.
+
+Public functions under test:
+
+- api_post()         -> low-level POST, builds auth header + method override
+- get_service()      -> GET-override query on /v1/objects/services
+- remove_ack()       -> POST /v1/actions/remove-acknowledgement
+- remove_downtime()  -> POST /v1/actions/remove-downtime
+- set_ack()          -> POST /v1/actions/acknowledge-problem
+- set_downtime()     -> POST /v1/actions/schedule-downtime, parses the result
+
+Each higher-level function is asserted both end-to-end (URL + payload as seen
+by fetch_json) and via the api_post seam, so a refactor of either layer keeps
+the contract pinned.
+"""
+
+import base64
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.icinga as icinga
+
+URI = 'https://icinga-server:5665'
+USER = 'linuxfabrik'
+PASSWORD = 'linuxfabrik'
+
+# Auth header that api_post must produce for the credentials above.
+EXPECTED_AUTH = 'Basic ' + base64.b64encode(b'linuxfabrik:linuxfabrik').decode()
+
+
+def make_fetch_json(return_value=(True, {'ok': True})):
+    """Return a MagicMock standing in for url.fetch_json with a canned result."""
+    return mock.MagicMock(name='fetch_json', return_value=return_value)
+
+
+class IcingaTestBase(unittest.TestCase):
+    """Patches url.fetch_json and time.sleep for every test.
+
+    self.fetch_json is the mock; self.last_call() returns its kwargs so the
+    request crafted by the module can be asserted on.
+    """
+
+    def setUp(self):
+        self.fetch_json = make_fetch_json()
+        self._p_fetch = mock.patch.object(icinga.url, 'fetch_json', self.fetch_json)
+        # Patch the time.sleep that the module imported, so the throttle is a
+        # no-op and the suite stays fast.
+        self._p_sleep = mock.patch.object(icinga.time, 'sleep')
+        self._p_fetch.start()
+        self.sleep = self._p_sleep.start()
+        self.addCleanup(self._p_fetch.stop)
+        self.addCleanup(self._p_sleep.stop)
+
+    def last_call(self):
+        """Return (args, kwargs) of the most recent fetch_json call."""
+        self.assertTrue(self.fetch_json.called, 'fetch_json was never called')
+        return self.fetch_json.call_args
+
+    def sent_uri(self):
+        """First positional arg passed to fetch_json (the URI)."""
+        return self.last_call().args[0]
+
+    def sent_kwargs(self):
+        return self.last_call().kwargs
+
+
+# ---------------------------------------------------------------------------
+# api_post()
+# ---------------------------------------------------------------------------
+
+class TestApiPost(IcingaTestBase):
+
+    def test_returns_fetch_json_result_unchanged(self):
+        sentinel = (True, {'results': [{'code': 200}]})
+        self.fetch_json.return_value = sentinel
+        result = icinga.api_post(f'{URI}/v1/objects/services', USER, PASSWORD)
+        self.assertIs(result, sentinel)
+
+    def test_failure_result_passed_through(self):
+        self.fetch_json.return_value = (False, 'connection refused')
+        success, body = icinga.api_post(f'{URI}/v1/x', USER, PASSWORD)
+        self.assertFalse(success)
+        self.assertEqual(body, 'connection refused')
+
+    def test_auth_header_is_base64_basic(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD)
+        headers = self.sent_kwargs()['header']
+        self.assertEqual(headers['Authorization'], EXPECTED_AUTH)
+
+    def test_auth_header_decodes_to_user_colon_password(self):
+        icinga.api_post(f'{URI}/v1/x', 'alice', 's3cret')
+        token = self.sent_kwargs()['header']['Authorization'].split(' ', 1)[1]
+        self.assertEqual(base64.b64decode(token).decode(), 'alice:s3cret')
+
+    def test_accept_header_is_json(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD)
+        self.assertEqual(self.sent_kwargs()['header']['Accept'], 'application/json')
+
+    def test_method_override_header_set_when_given(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD, method_override='GET')
+        self.assertEqual(
+            self.sent_kwargs()['header']['X-HTTP-Method-Override'], 'GET'
+        )
+
+    def test_method_override_header_absent_by_default(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD)
+        self.assertNotIn('X-HTTP-Method-Override', self.sent_kwargs()['header'])
+
+    def test_empty_method_override_does_not_add_header(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD, method_override='')
+        self.assertNotIn('X-HTTP-Method-Override', self.sent_kwargs()['header'])
+
+    def test_double_slash_v1_is_normalised(self):
+        icinga.api_post(f'{URI}//v1/objects/services', USER, PASSWORD)
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/objects/services')
+
+    def test_double_slash_v2_is_normalised(self):
+        icinga.api_post(f'{URI}//v2/foo', USER, PASSWORD)
+        self.assertEqual(self.sent_uri(), f'{URI}/v2/foo')
+
+    def test_single_slash_uri_left_intact(self):
+        icinga.api_post(f'{URI}/v1/objects/services', USER, PASSWORD)
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/objects/services')
+
+    def test_data_none_becomes_empty_dict(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD, data=None)
+        self.assertEqual(self.sent_kwargs()['data'], {})
+
+    def test_data_passed_through(self):
+        payload = {'filter': 'x', 'attrs': ['name', 'state']}
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD, data=payload)
+        self.assertEqual(self.sent_kwargs()['data'], payload)
+
+    def test_encoding_is_serialized_json(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD)
+        self.assertEqual(self.sent_kwargs()['encoding'], 'serialized-json')
+
+    def test_insecure_forwarded(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD, insecure=True)
+        self.assertTrue(self.sent_kwargs()['insecure'])
+
+    def test_insecure_default_false(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD)
+        self.assertFalse(self.sent_kwargs()['insecure'])
+
+    def test_no_proxy_forwarded(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD, no_proxy=True)
+        self.assertTrue(self.sent_kwargs()['no_proxy'])
+
+    def test_timeout_forwarded(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD, timeout=42)
+        self.assertEqual(self.sent_kwargs()['timeout'], 42)
+
+    def test_timeout_default_is_three(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD)
+        self.assertEqual(self.sent_kwargs()['timeout'], 3)
+
+    def test_sleeps_default_amount_after_call(self):
+        icinga.api_post(f'{URI}/v1/x', USER, PASSWORD)
+        self.sleep.assert_called_once_with(icinga.DEFAULT_SLEEP)
+
+    def test_default_sleep_constant_value(self):
+        self.assertEqual(icinga.DEFAULT_SLEEP, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# get_service()
+# ---------------------------------------------------------------------------
+
+class TestGetService(IcingaTestBase):
+
+    def test_uri_targets_services_endpoint(self):
+        icinga.get_service(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/objects/services')
+
+    def test_trailing_slash_in_base_uri_stripped(self):
+        icinga.get_service(URI + '/', USER, PASSWORD, 'host!svc')
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/objects/services')
+
+    def test_uses_get_method_override(self):
+        icinga.get_service(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(
+            self.sent_kwargs()['header']['X-HTTP-Method-Override'], 'GET'
+        )
+
+    def test_filter_matches_service_name(self):
+        icinga.get_service(URI, USER, PASSWORD, 'host!special-service')
+        data = self.sent_kwargs()['data']
+        self.assertEqual(
+            data['filter'], 'match("host!special-service", service.__name)'
+        )
+
+    def test_default_attrs_is_name_plus_state(self):
+        icinga.get_service(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(self.sent_kwargs()['data']['attrs'], ['name', 'state'])
+
+    def test_custom_attrs_are_split_and_prefixed_with_name(self):
+        icinga.get_service(
+            URI, USER, PASSWORD, 'host!svc', attrs='state,acknowledgement'
+        )
+        self.assertEqual(
+            self.sent_kwargs()['data']['attrs'],
+            ['name', 'state', 'acknowledgement'],
+        )
+
+    def test_returns_api_post_result(self):
+        sentinel = (True, {'result': [{'attrs': {'state': 2}}]})
+        self.fetch_json.return_value = sentinel
+        self.assertIs(icinga.get_service(URI, USER, PASSWORD, 'host!svc'), sentinel)
+
+    def test_forwards_insecure_no_proxy_timeout(self):
+        icinga.get_service(
+            URI, USER, PASSWORD, 'host!svc',
+            insecure=True, no_proxy=True, timeout=9,
+        )
+        kw = self.sent_kwargs()
+        self.assertTrue(kw['insecure'])
+        self.assertTrue(kw['no_proxy'])
+        self.assertEqual(kw['timeout'], 9)
+
+
+# ---------------------------------------------------------------------------
+# remove_ack()
+# ---------------------------------------------------------------------------
+
+class TestRemoveAck(IcingaTestBase):
+
+    def test_uri_targets_remove_acknowledgement(self):
+        icinga.remove_ack(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(
+            self.sent_uri(), f'{URI}/v1/actions/remove-acknowledgement'
+        )
+
+    def test_trailing_slash_stripped(self):
+        icinga.remove_ack(URI + '/', USER, PASSWORD, 'host!svc')
+        self.assertEqual(
+            self.sent_uri(), f'{URI}/v1/actions/remove-acknowledgement'
+        )
+
+    def test_default_type_is_service_capitalised(self):
+        icinga.remove_ack(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(self.sent_kwargs()['data']['type'], 'Service')
+
+    def test_default_filter_uses_lower_service(self):
+        icinga.remove_ack(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(
+            self.sent_kwargs()['data']['filter'],
+            'match("host!svc", service.__name)',
+        )
+
+    def test_host_type_capitalised_in_type(self):
+        icinga.remove_ack(URI, USER, PASSWORD, 'host', _type='host')
+        self.assertEqual(self.sent_kwargs()['data']['type'], 'Host')
+
+    def test_host_type_lowered_in_filter(self):
+        icinga.remove_ack(URI, USER, PASSWORD, 'host', _type='host')
+        self.assertEqual(
+            self.sent_kwargs()['data']['filter'], 'match("host", host.__name)'
+        )
+
+    def test_no_method_override(self):
+        icinga.remove_ack(URI, USER, PASSWORD, 'host!svc')
+        self.assertNotIn('X-HTTP-Method-Override', self.sent_kwargs()['header'])
+
+    def test_returns_api_post_result(self):
+        sentinel = (True, {'results': [{'code': 200}]})
+        self.fetch_json.return_value = sentinel
+        self.assertIs(icinga.remove_ack(URI, USER, PASSWORD, 'host!svc'), sentinel)
+
+    def test_forwards_insecure_no_proxy_timeout(self):
+        icinga.remove_ack(
+            URI, USER, PASSWORD, 'host!svc',
+            insecure=True, no_proxy=True, timeout=11,
+        )
+        kw = self.sent_kwargs()
+        self.assertTrue(kw['insecure'])
+        self.assertTrue(kw['no_proxy'])
+        self.assertEqual(kw['timeout'], 11)
+
+
+# ---------------------------------------------------------------------------
+# remove_downtime()
+# ---------------------------------------------------------------------------
+
+class TestRemoveDowntime(IcingaTestBase):
+
+    def test_uri_targets_remove_downtime(self):
+        icinga.remove_downtime(URI, USER, PASSWORD, 'host!svc!uuid')
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/actions/remove-downtime')
+
+    def test_downtime_name_in_payload(self):
+        icinga.remove_downtime(URI, USER, PASSWORD, 'host!svc!uuid')
+        self.assertEqual(self.sent_kwargs()['data'], {'downtime': 'host!svc!uuid'})
+
+    def test_no_method_override(self):
+        icinga.remove_downtime(URI, USER, PASSWORD, 'host!svc!uuid')
+        self.assertNotIn('X-HTTP-Method-Override', self.sent_kwargs()['header'])
+
+    def test_returns_api_post_result(self):
+        sentinel = (True, {'results': [{'code': 200}]})
+        self.fetch_json.return_value = sentinel
+        self.assertIs(
+            icinga.remove_downtime(URI, USER, PASSWORD, 'host!svc!uuid'), sentinel
+        )
+
+    def test_trailing_slash_in_base_uri_normalised_by_api_post(self):
+        # remove_downtime concatenates without rstrip, producing '//v1', but
+        # api_post collapses '//v1' back to '/v1', so the trailing slash is
+        # tolerated end-to-end.
+        icinga.remove_downtime(URI + '/', USER, PASSWORD, 'dt')
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/actions/remove-downtime')
+
+    def test_forwards_insecure_no_proxy_timeout(self):
+        icinga.remove_downtime(
+            URI, USER, PASSWORD, 'dt', insecure=True, no_proxy=True, timeout=7
+        )
+        kw = self.sent_kwargs()
+        self.assertTrue(kw['insecure'])
+        self.assertTrue(kw['no_proxy'])
+        self.assertEqual(kw['timeout'], 7)
+
+
+# ---------------------------------------------------------------------------
+# set_ack()
+# ---------------------------------------------------------------------------
+
+class TestSetAck(IcingaTestBase):
+
+    def test_uri_targets_acknowledge_problem(self):
+        icinga.set_ack(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/actions/acknowledge-problem')
+
+    def test_trailing_slash_stripped(self):
+        icinga.set_ack(URI + '/', USER, PASSWORD, 'host!svc')
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/actions/acknowledge-problem')
+
+    def test_default_type_service(self):
+        icinga.set_ack(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(self.sent_kwargs()['data']['type'], 'Service')
+
+    def test_filter_built_from_objectname_and_type(self):
+        icinga.set_ack(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(
+            self.sent_kwargs()['data']['filter'],
+            'match("host!svc", service.__name)',
+        )
+
+    def test_host_type(self):
+        icinga.set_ack(URI, USER, PASSWORD, 'host', _type='host')
+        data = self.sent_kwargs()['data']
+        self.assertEqual(data['type'], 'Host')
+        self.assertEqual(data['filter'], 'match("host", host.__name)')
+
+    def test_default_author(self):
+        icinga.set_ack(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(self.sent_kwargs()['data']['author'], 'Linuxfabrik lib.icinga')
+
+    def test_custom_author(self):
+        icinga.set_ack(URI, USER, PASSWORD, 'host!svc', author='admin')
+        self.assertEqual(self.sent_kwargs()['data']['author'], 'admin')
+
+    def test_comment_and_notify_fixed(self):
+        icinga.set_ack(URI, USER, PASSWORD, 'host!svc')
+        data = self.sent_kwargs()['data']
+        self.assertEqual(data['comment'], 'automatically acknowledged')
+        self.assertFalse(data['notify'])
+
+    def test_returns_api_post_result(self):
+        sentinel = (True, {'results': [{'code': 200}]})
+        self.fetch_json.return_value = sentinel
+        self.assertIs(icinga.set_ack(URI, USER, PASSWORD, 'host!svc'), sentinel)
+
+    def test_forwards_insecure_no_proxy_timeout(self):
+        icinga.set_ack(
+            URI, USER, PASSWORD, 'host!svc',
+            insecure=True, no_proxy=True, timeout=5,
+        )
+        kw = self.sent_kwargs()
+        self.assertTrue(kw['insecure'])
+        self.assertTrue(kw['no_proxy'])
+        self.assertEqual(kw['timeout'], 5)
+
+
+# ---------------------------------------------------------------------------
+# set_downtime()
+# ---------------------------------------------------------------------------
+
+class TestSetDowntime(IcingaTestBase):
+
+    NAME = 'host!svc!3ad20784-52f9-4acc-b2df-90788667d587'
+
+    def ok_result(self, name=None):
+        return (True, {'results': [{'code': 200, 'name': name or self.NAME}]})
+
+    def test_uri_targets_schedule_downtime(self):
+        self.fetch_json.return_value = self.ok_result()
+        icinga.set_downtime(URI, USER, PASSWORD, 'host!svc')
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/actions/schedule-downtime')
+
+    def test_trailing_slash_stripped(self):
+        self.fetch_json.return_value = self.ok_result()
+        icinga.set_downtime(URI + '/', USER, PASSWORD, 'host!svc')
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/actions/schedule-downtime')
+
+    def test_success_returns_downtime_name(self):
+        self.fetch_json.return_value = self.ok_result()
+        success, name = icinga.set_downtime(URI, USER, PASSWORD, 'host!svc')
+        self.assertTrue(success)
+        self.assertEqual(name, self.NAME)
+
+    def test_non_200_code_returns_false_and_raw_result(self):
+        raw = {'results': [{'code': 500, 'status': 'boom'}]}
+        self.fetch_json.return_value = (True, raw)
+        success, result = icinga.set_downtime(URI, USER, PASSWORD, 'host!svc')
+        self.assertFalse(success)
+        self.assertEqual(result, raw)
+
+    def test_missing_code_returns_false(self):
+        raw = {'results': [{'name': self.NAME}]}
+        self.fetch_json.return_value = (True, raw)
+        success, result = icinga.set_downtime(URI, USER, PASSWORD, 'host!svc')
+        self.assertFalse(success)
+        self.assertEqual(result, raw)
+
+    def test_api_failure_returns_false_and_error(self):
+        self.fetch_json.return_value = (False, 'timeout')
+        success, result = icinga.set_downtime(URI, USER, PASSWORD, 'host!svc')
+        self.assertFalse(success)
+        self.assertEqual(result, 'timeout')
+
+    def test_default_times_use_now_and_now_plus_hour(self):
+        self.fetch_json.return_value = self.ok_result()
+        with mock.patch.object(icinga.time, 'time', return_value=1_000_000):
+            icinga.set_downtime(URI, USER, PASSWORD, 'host!svc')
+        data = self.sent_kwargs()['data']
+        self.assertEqual(data['start_time'], 1_000_000)
+        self.assertEqual(data['end_time'], 1_000_000 + 3600)
+
+    def test_explicit_start_and_end_times(self):
+        self.fetch_json.return_value = self.ok_result()
+        icinga.set_downtime(
+            URI, USER, PASSWORD, 'host!svc', starttime=100, endtime=200
+        )
+        data = self.sent_kwargs()['data']
+        self.assertEqual(data['start_time'], 100)
+        self.assertEqual(data['end_time'], 200)
+
+    def test_starttime_zero_is_respected_not_treated_as_now(self):
+        # starttime=0 is falsy but must be honoured (the code uses `is not None`).
+        self.fetch_json.return_value = self.ok_result()
+        with mock.patch.object(icinga.time, 'time', return_value=555):
+            icinga.set_downtime(URI, USER, PASSWORD, 'host!svc', starttime=0)
+        self.assertEqual(self.sent_kwargs()['data']['start_time'], 0)
+
+    def test_endtime_zero_is_respected(self):
+        self.fetch_json.return_value = self.ok_result()
+        with mock.patch.object(icinga.time, 'time', return_value=555):
+            icinga.set_downtime(URI, USER, PASSWORD, 'host!svc', endtime=0)
+        self.assertEqual(self.sent_kwargs()['data']['end_time'], 0)
+
+    def test_default_type_and_filter(self):
+        self.fetch_json.return_value = self.ok_result()
+        icinga.set_downtime(URI, USER, PASSWORD, 'host!svc')
+        data = self.sent_kwargs()['data']
+        self.assertEqual(data['type'], 'Service')
+        self.assertEqual(data['filter'], 'match("host!svc", service.__name)')
+
+    def test_host_type_and_filter(self):
+        self.fetch_json.return_value = self.ok_result()
+        icinga.set_downtime(URI, USER, PASSWORD, 'host', _type='host')
+        data = self.sent_kwargs()['data']
+        self.assertEqual(data['type'], 'Host')
+        self.assertEqual(data['filter'], 'match("host", host.__name)')
+
+    def test_default_author_and_comment(self):
+        self.fetch_json.return_value = self.ok_result()
+        icinga.set_downtime(URI, USER, PASSWORD, 'host!svc')
+        data = self.sent_kwargs()['data']
+        self.assertEqual(data['author'], 'Linuxfabrik lib.icinga')
+        self.assertEqual(data['comment'], 'automatic downtime')
+
+    def test_custom_author(self):
+        self.fetch_json.return_value = self.ok_result()
+        icinga.set_downtime(URI, USER, PASSWORD, 'host!svc', author='ops')
+        self.assertEqual(self.sent_kwargs()['data']['author'], 'ops')
+
+    def test_forwards_insecure_no_proxy_timeout(self):
+        self.fetch_json.return_value = self.ok_result()
+        icinga.set_downtime(
+            URI, USER, PASSWORD, 'host!svc',
+            insecure=True, no_proxy=True, timeout=13,
+        )
+        kw = self.sent_kwargs()
+        self.assertTrue(kw['insecure'])
+        self.assertTrue(kw['no_proxy'])
+        self.assertEqual(kw['timeout'], 13)
+
+
+if __name__ == '__main__':
+    unittest.main()

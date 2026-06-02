@@ -1,0 +1,454 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.dmidecode.
+
+Hermetic and fast: the only external interaction is `shell.shell_exec` in
+get_data(), which is mocked. All parsing/accessor functions are pure and are
+exercised against realistic `dmidecode` sample output built as fixtures.
+"""
+
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.dmidecode as dmidecode
+
+# Realistic `dmidecode` output snippets. Indentation matters: the parser keys
+# off a single leading tab for "Key: Value" records and two leading tabs for
+# in-block list items. Use literal tabs (\t) so we do not depend on the editor.
+
+BIOS_BLOCK = (
+    'Handle 0x0000, DMI type 0, 26 bytes\n'
+    'BIOS Information\n'
+    '\tVendor: Dell Inc.\n'
+    '\tVersion: 1.7.1\n'
+    '\tRelease Date: 12/06/2024\n'
+    '\tROM Size: 64 MB\n'
+    '\tFirmware Revision: 1.2.3'
+)
+
+SYSTEM_BLOCK = (
+    'Handle 0x0001, DMI type 1, 27 bytes\n'
+    'System Information\n'
+    '\tManufacturer: Dell Inc.\n'
+    '\tProduct Name: PowerEdge R640\n'
+    '\tSerial Number: 4C4C4544-0032-5A10-8050-B5C04F503632\n'
+    '\tUUID: 12345678-1234-1234-1234-1234567890ab'
+)
+
+# Two physically identical CPUs in two sockets -> deduped to one record.
+CPU_BLOCK_1 = (
+    'Handle 0x0400, DMI type 4, 48 bytes\n'
+    'Processor Information\n'
+    '\tSocket Designation: CPU1\n'
+    '\tType: Central Processor\n'
+    '\tFamily: Xeon\n'
+    '\tManufacturer: Intel(R) Corporation\n'
+    '\tVersion: Intel(R) Xeon(R) Silver 4210 CPU @ 2.20GHz\n'
+    '\tCurrent Speed: 2200 MHz\n'
+    '\tStatus: Populated, Enabled\n'
+    '\tCore Count: 10\n'
+    '\tCore Enabled: 10\n'
+    '\tThread Count: 20'
+)
+
+CPU_BLOCK_2 = (
+    'Handle 0x0401, DMI type 4, 48 bytes\n'
+    'Processor Information\n'
+    '\tSocket Designation: CPU2\n'
+    '\tType: Central Processor\n'
+    '\tFamily: Xeon\n'
+    '\tManufacturer: Intel(R) Corporation\n'
+    '\tVersion: Intel(R) Xeon(R) Silver 4210 CPU @ 2.20GHz\n'
+    '\tCurrent Speed: 2200 MHz\n'
+    '\tStatus: Populated, Enabled\n'
+    '\tCore Count: 10\n'
+    '\tCore Enabled: 10\n'
+    '\tThread Count: 20'
+)
+
+# A populated 16 GB DIMM and an empty slot (must be dropped).
+MEM_BLOCK_POPULATED = (
+    'Handle 0x1100, DMI type 17, 40 bytes\n'
+    'Memory Device\n'
+    '\tSize: 16 GB\n'
+    '\tForm Factor: DIMM\n'
+    '\tLocator: DIMM_A1\n'
+    '\tBank Locator: NODE 1\n'
+    '\tType: DDR4\n'
+    '\tSpeed: 2933 MT/s\n'
+    '\tManufacturer: Samsung\n'
+    '\tSerial Number: 00AD12CD'
+)
+
+MEM_BLOCK_POPULATED_2 = (
+    'Handle 0x1101, DMI type 17, 40 bytes\n'
+    'Memory Device\n'
+    '\tSize: 16 GB\n'
+    '\tForm Factor: DIMM\n'
+    '\tLocator: DIMM_B1\n'
+    '\tBank Locator: NODE 2\n'
+    '\tType: DDR4\n'
+    '\tSpeed: 2933 MT/s\n'
+    '\tManufacturer: Samsung\n'
+    '\tSerial Number: 00AD12CE'
+)
+
+MEM_BLOCK_EMPTY = (
+    'Handle 0x1102, DMI type 17, 40 bytes\n'
+    'Memory Device\n'
+    '\tSize: No Module Installed\n'
+    '\tForm Factor: Unknown\n'
+    '\tLocator: DIMM_A2\n'
+    '\tBank Locator: NODE 1'
+)
+
+# An in-block (multi-line) section, type 11 OEM Strings.
+OEM_BLOCK = (
+    'Handle 0x0b00, DMI type 11, 5 bytes\n'
+    'OEM Strings\n'
+    '\tString 1: Default string\n'
+    '\tString 2: SomethingElse'
+)
+
+
+def full_output(*blocks):
+    """Join record blocks the way `dmidecode` separates them (blank line)."""
+    return '\n\n'.join(blocks)
+
+
+REALISTIC_OUTPUT = full_output(
+    BIOS_BLOCK,
+    SYSTEM_BLOCK,
+    CPU_BLOCK_1,
+    CPU_BLOCK_2,
+    MEM_BLOCK_POPULATED,
+    MEM_BLOCK_POPULATED_2,
+    MEM_BLOCK_EMPTY,
+    OEM_BLOCK,
+)
+
+
+class TestDmidecodeParse(unittest.TestCase):
+    """Cover the core parser, including the type-aware dedupe logic."""
+
+    def setUp(self):
+        self.dmi = dmidecode.dmidecode_parse(REALISTIC_OUTPUT)
+
+    def test_returns_dict(self):
+        self.assertIsInstance(self.dmi, dict)
+
+    def test_handle_tuple_keys(self):
+        # Keys are the regex capture groups (handle, type, bytes), all strings.
+        for key in self.dmi:
+            self.assertIsInstance(key, tuple)
+            self.assertEqual(len(key), 3)
+            self.assertTrue(all(isinstance(p, str) for p in key))
+
+    def test_bios_record_parsed(self):
+        rec = self.dmi[('0x0000', '0', '26')]
+        self.assertEqual(rec['dminame'], 'BIOS Information')
+        self.assertEqual(rec['dmitype'], 0)
+        self.assertEqual(rec['dmisize'], 26)
+        self.assertEqual(rec['Vendor'], 'Dell Inc.')
+        self.assertEqual(rec['Firmware Revision'], '1.2.3')
+
+    def test_meta_field_types(self):
+        rec = self.dmi[('0x0000', '0', '26')]
+        self.assertIsInstance(rec['dmitype'], int)
+        self.assertIsInstance(rec['dmisize'], int)
+
+    def test_two_identical_cpus_deduped(self):
+        cpus = dmidecode.dmiget(self.dmi, 'Processor')
+        self.assertEqual(len(cpus), 1)
+        self.assertEqual(cpus[0]['dedup_count'], 2)
+        self.assertEqual(sorted(cpus[0]['dedup_sockets']), ['CPU1', 'CPU2'])
+        self.assertEqual(sorted(cpus[0]['dedup_handles']), ['0x0400', '0x0401'])
+
+    def test_two_identical_dimms_deduped(self):
+        # The two populated DIMMs differ only in ignored fields (locator/serial)
+        # so they collapse to one record with dedup_count 2.
+        mems = dmidecode.dmiget(self.dmi, 'Memory Device')
+        self.assertEqual(len(mems), 1)
+        self.assertEqual(mems[0]['dedup_count'], 2)
+        self.assertIn('DIMM_A1', mems[0]['dedup_slots'])
+        self.assertIn('DIMM_B1', mems[0]['dedup_slots'])
+
+    def test_empty_memory_slot_dropped(self):
+        # "No Module Installed" entries must not appear at all.
+        for rec in self.dmi.values():
+            if rec.get('dmitype') == 17:
+                self.assertNotIn('no module', rec.get('Size', '').lower())
+
+    def test_oem_in_block_kept(self):
+        oem = [r for r in self.dmi.values() if r.get('dmitype') == 11]
+        self.assertEqual(len(oem), 1)
+        self.assertEqual(oem[0]['String 1'], 'Default string')
+
+    def test_short_records_skipped(self):
+        # A block with fewer than 3 lines is ignored.
+        out = 'Handle 0x9999, DMI type 99, 1 bytes\nGarbage'
+        self.assertEqual(dmidecode.dmidecode_parse(out), {})
+
+    def test_record_without_handle_skipped(self):
+        out = 'No handle here\nSome Information\n\tKey: Value'
+        self.assertEqual(dmidecode.dmidecode_parse(out), {})
+
+    def test_empty_output(self):
+        self.assertEqual(dmidecode.dmidecode_parse(''), {})
+
+    def test_disabled_cpu_dropped(self):
+        disabled = (
+            'Handle 0x0402, DMI type 4, 48 bytes\n'
+            'Processor Information\n'
+            '\tSocket Designation: CPU3\n'
+            '\tStatus: Unpopulated\n'
+            '\tCurrent Speed: 2200 MHz'
+        )
+        parsed = dmidecode.dmidecode_parse(disabled)
+        self.assertEqual(dmidecode.dmiget(parsed, 'Processor'), [])
+
+    def test_multiline_block_joined_with_tabs(self):
+        # RECORD2_RE / IN_BLOCK_RE each define a single capture group, so
+        # re.findall yields plain strings and the parser indexes [0][0], i.e.
+        # the FIRST CHARACTER of the match. This is the module's actual (quirky)
+        # behavior for in-block sections; pin it so a future change is noticed.
+        block = (
+            'Handle 0x2000, DMI type 38, 18 bytes\n'
+            'IPMI Device Information\n'
+            '\tCharacteristics:\n'
+            '\t\tFirst feature\n'
+            '\t\tSecond feature'
+        )
+        parsed = dmidecode.dmidecode_parse(block)
+        rec = parsed[('0x2000', '38', '18')]
+        # block element key is the first char of 'Characteristics'
+        self.assertIn('C', rec)
+        # in-block items are reduced to their first chars, joined by '\t\t'
+        self.assertEqual(rec['C'], 'F\t\tS')
+
+
+class TestDmiget(unittest.TestCase):
+    def setUp(self):
+        self.dmi = dmidecode.dmidecode_parse(REALISTIC_OUTPUT)
+
+    def test_by_int_type(self):
+        self.assertEqual(len(dmidecode.dmiget(self.dmi, 0)), 1)
+
+    def test_by_string_type(self):
+        self.assertEqual(len(dmidecode.dmiget(self.dmi, 'BIOS')), 1)
+
+    def test_unknown_string_type_returns_empty(self):
+        self.assertEqual(dmidecode.dmiget(self.dmi, 'Does Not Exist'), [])
+
+    def test_int_type_not_present_returns_empty(self):
+        self.assertEqual(dmidecode.dmiget(self.dmi, 99), [])
+
+    def test_returns_list(self):
+        self.assertIsInstance(dmidecode.dmiget(self.dmi, 'System'), list)
+
+
+class TestCpuAccessors(unittest.TestCase):
+    def setUp(self):
+        self.dmi = dmidecode.dmidecode_parse(REALISTIC_OUTPUT)
+
+    def test_cpu_cores(self):
+        # Deduped record retains its own Core Count (10); only one record.
+        self.assertEqual(dmidecode.cpu_cores(self.dmi), 10)
+
+    def test_cpu_cores_enabled(self):
+        self.assertEqual(dmidecode.cpu_cores_enabled(self.dmi), 10)
+
+    def test_cpu_threads(self):
+        self.assertEqual(dmidecode.cpu_threads(self.dmi), 20)
+
+    def test_cpu_speed(self):
+        self.assertEqual(dmidecode.cpu_speed(self.dmi), 2200)
+
+    def test_cpu_type_strips_trademarks(self):
+        self.assertEqual(
+            dmidecode.cpu_type(self.dmi),
+            'Intel Xeon Silver 4210 CPU @ 2.20GHz',
+        )
+
+    def test_cpu_cores_missing_field_defaults_zero(self):
+        self.assertEqual(dmidecode.cpu_cores({}), 0)
+
+    def test_cpu_speed_no_processor_returns_zero(self):
+        self.assertEqual(dmidecode.cpu_speed({}), 0)
+
+    def test_cpu_speed_skips_non_mhz(self):
+        dmi = dmidecode.dmidecode_parse(
+            'Handle 0x0400, DMI type 4, 48 bytes\n'
+            'Processor Information\n'
+            '\tStatus: Populated, Enabled\n'
+            '\tCurrent Speed: Unknown\n'
+            '\tCore Enabled: 4'
+        )
+        self.assertEqual(dmidecode.cpu_speed(dmi), 0)
+
+    def test_cpu_type_no_processor_returns_na(self):
+        self.assertEqual(dmidecode.cpu_type({}), 'n/a')
+
+    def test_cpu_type_not_specified_returns_na(self):
+        dmi = dmidecode.dmidecode_parse(
+            'Handle 0x0400, DMI type 4, 48 bytes\n'
+            'Processor Information\n'
+            '\tStatus: Populated, Enabled\n'
+            '\tVersion: NotSpecified\n'
+            '\tCore Enabled: 4'
+        )
+        self.assertEqual(dmidecode.cpu_type(dmi), 'n/a')
+
+    def test_cpu_type_blank_version_returns_na(self):
+        # Version present but empty after stripping -> n/a.
+        dmi = {
+            ('h', '4', '1'): {
+                'dmitype': 4,
+                'Core Enabled': '4',
+                'Version': '   ',
+            }
+        }
+        self.assertEqual(dmidecode.cpu_type(dmi), 'n/a')
+
+    def test_cpu_type_skips_disabled_cores(self):
+        # First CPU has 0 enabled cores, second is the real one.
+        dmi = {
+            ('a', '4', '1'): {
+                'dmitype': 4,
+                'Core Enabled': '0',
+                'Version': 'Ghost CPU',
+            },
+            ('b', '4', '1'): {
+                'dmitype': 4,
+                'Core Enabled': '8',
+                'Version': 'Real CPU',
+            },
+        }
+        self.assertEqual(dmidecode.cpu_type(dmi), 'Real CPU')
+
+
+class TestSystemAccessors(unittest.TestCase):
+    def setUp(self):
+        self.dmi = dmidecode.dmidecode_parse(REALISTIC_OUTPUT)
+
+    def test_manufacturer(self):
+        self.assertEqual(dmidecode.manufacturer(self.dmi), 'Dell Inc.')
+
+    def test_model(self):
+        self.assertEqual(dmidecode.model(self.dmi), 'PowerEdge R640')
+
+    def test_serno(self):
+        self.assertEqual(
+            dmidecode.serno(self.dmi),
+            '4C4C4544-0032-5A10-8050-B5C04F503632',
+        )
+
+    def test_firmware(self):
+        self.assertEqual(dmidecode.firmware(self.dmi), '1.2.3')
+
+    def test_manufacturer_no_system_returns_na(self):
+        self.assertEqual(dmidecode.manufacturer({}), 'n/a')
+
+    def test_model_no_system_returns_na(self):
+        self.assertEqual(dmidecode.model({}), 'n/a')
+
+    def test_serno_no_system_returns_na(self):
+        self.assertEqual(dmidecode.serno({}), 'n/a')
+
+    def test_firmware_no_bios_returns_na(self):
+        self.assertEqual(dmidecode.firmware({}), 'n/a')
+
+    def test_serno_not_specified_normalized(self):
+        dmi = {
+            ('h', '1', '1'): {'dmitype': 1, 'Serial Number': 'Not Specified'},
+        }
+        self.assertEqual(dmidecode.serno(dmi), 'n/a')
+
+    def test_manufacturer_field_missing_returns_na(self):
+        dmi = {('h', '1', '1'): {'dmitype': 1}}
+        self.assertEqual(dmidecode.manufacturer(dmi), 'n/a')
+
+    def test_firmware_field_missing_returns_na(self):
+        dmi = {('h', '0', '1'): {'dmitype': 0}}
+        self.assertEqual(dmidecode.firmware(dmi), 'n/a')
+
+
+class TestRam(unittest.TestCase):
+    def setUp(self):
+        self.dmi = dmidecode.dmidecode_parse(REALISTIC_OUTPUT)
+
+    def test_total_ram_gb(self):
+        # Two identical 16 GB DIMMs dedupe to one record, so ram() sees 16 GB.
+        self.assertEqual(dmidecode.ram(self.dmi), 16 * 1024 ** 3)
+
+    def test_ram_mb_slot(self):
+        dmi = {
+            ('h', '17', '1'): {'dmitype': 17, 'Size': '512 MB'},
+        }
+        self.assertEqual(dmidecode.ram(dmi), 512 * 1024 ** 2)
+
+    def test_ram_no_modules_zero(self):
+        self.assertEqual(dmidecode.ram({}), 0)
+
+    def test_ram_ignores_non_size(self):
+        dmi = {
+            ('h', '17', '1'): {'dmitype': 17, 'Size': 'No Module Installed'},
+        }
+        self.assertEqual(dmidecode.ram(dmi), 0)
+
+    def test_ram_mixed_units(self):
+        dmi = {
+            ('a', '17', '1'): {'dmitype': 17, 'Size': '8 GB'},
+            ('b', '17', '1'): {'dmitype': 17, 'Size': '2048 MB'},
+        }
+        self.assertEqual(dmidecode.ram(dmi), 8 * 1024 ** 3 + 2048 * 1024 ** 2)
+
+
+class TestGetData(unittest.TestCase):
+    """get_data() is the only function touching the outside world."""
+
+    def test_success(self):
+        with mock.patch.object(
+            dmidecode.shell,
+            'shell_exec',
+            return_value=(True, (REALISTIC_OUTPUT, '', 0)),
+        ) as m:
+            result = dmidecode.get_data()
+        m.assert_called_once_with('sudo dmidecode')
+        self.assertIsInstance(result, dict)
+        self.assertEqual(dmidecode.manufacturer(result), 'Dell Inc.')
+
+    def test_shell_exec_failed(self):
+        with mock.patch.object(
+            dmidecode.shell, 'shell_exec', return_value=(False, 'boom')
+        ):
+            self.assertIs(dmidecode.get_data(), False)
+
+    def test_nonzero_returncode(self):
+        with mock.patch.object(
+            dmidecode.shell,
+            'shell_exec',
+            return_value=(True, ('', 'permission denied', 1)),
+        ):
+            self.assertIs(dmidecode.get_data(), False)
+
+    def test_empty_stdout_yields_empty_dict(self):
+        with mock.patch.object(
+            dmidecode.shell, 'shell_exec', return_value=(True, ('', '', 0))
+        ):
+            self.assertEqual(dmidecode.get_data(), {})
+
+
+if __name__ == '__main__':
+    unittest.main()

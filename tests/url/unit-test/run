@@ -1,0 +1,852 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.url.
+
+All network I/O is mocked: `httpx.Client` is replaced by an in-memory fake so
+the suite is hermetic and fast. No socket, no DNS, no TLS handshake ever
+happens. The pure helpers (`_redact_url`, `_build_ssl_context`,
+`_capture_tls_info`, `split_basic_auth`, `strip_tags`) are exercised directly.
+
+httpx is a hard dependency of lib.url's network functions but is imported
+lazily, so its absence is guarded: if the venv lacks httpx, the network-facing
+test classes skip while the pure-helper tests still run.
+"""
+
+import base64
+import datetime
+import ssl
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.url as url
+
+# httpx may be missing on minimal hosts; lib.url guards the import and so do we.
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
+HAS_HTTPX = httpx is not None
+skip_without_httpx = unittest.skipUnless(HAS_HTTPX, 'httpx not installed')
+
+
+# -----------------------------------------------------------------------------
+# Fakes for the httpx engine
+# -----------------------------------------------------------------------------
+
+
+class FakeStreamResponse:
+    """Stand-in for the object returned by `httpx.Client.stream(...)`.
+
+    Implements just enough of the context-manager + streaming-response surface
+    that lib.url.fetch() touches: __enter__/__exit__, raise_for_status(),
+    read(), status_code, headers, charset_encoding, elapsed, extensions.
+    """
+
+    def __init__(
+        self,
+        body=b'OK',
+        status_code=200,
+        headers=None,
+        charset_encoding=None,
+        elapsed_seconds=0.5,
+        extensions=None,
+        raise_exc=None,
+    ):
+        self._body = body
+        self.status_code = status_code
+        self.headers = httpx.Headers(headers or {'content-type': 'text/plain'})
+        self.charset_encoding = charset_encoding
+        self.elapsed = datetime.timedelta(seconds=elapsed_seconds)
+        self.extensions = extensions if extensions is not None else {}
+        self._raise_exc = raise_exc
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def raise_for_status(self):
+        if self._raise_exc is not None:
+            raise self._raise_exc
+        return None
+
+    def read(self):
+        return self._body
+
+
+def make_fake_client(response=None, captured=None, stream_exc=None, init_exc=None):
+    """Build a FakeClient class that records constructor kwargs and stream args.
+
+    - `response`: the FakeStreamResponse the (single) stream() call returns.
+    - `captured`: a dict updated in place with `init_kwargs`, `method`, `url`,
+      `headers`, `content` for assertions.
+    - `stream_exc`: if set, stream() raises it (simulates transport errors).
+    - `init_exc`: if set, the constructor raises it (simulates client build
+      failure).
+    """
+    captured = {} if captured is None else captured
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured['init_kwargs'] = kwargs
+            if init_exc is not None:
+                raise init_exc
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def stream(self, method, request_url, headers=None, content=None):
+            captured['method'] = method
+            captured['url'] = request_url
+            captured['headers'] = headers
+            captured['content'] = content
+            if stream_exc is not None:
+                raise stream_exc
+            return response if response is not None else FakeStreamResponse()
+
+    return FakeClient, captured
+
+
+def patch_client(fake_client):
+    """Patch httpx.Client used inside lib.url with `fake_client`."""
+    return mock.patch.object(url.httpx, 'Client', fake_client)
+
+
+def no_timing_transport():
+    """Force the non-instrumented fast path so extended=True does not build the
+    real httpcore timing backend (which would touch the network)."""
+    return mock.patch.object(url, '_build_timing_transport', return_value=(None, None))
+
+
+# -----------------------------------------------------------------------------
+# Pure helpers: no httpx needed
+# -----------------------------------------------------------------------------
+
+
+class TestRedactUrl(unittest.TestCase):
+    def test_redacts_token_and_password(self):
+        self.assertEqual(
+            url._redact_url('https://h/p?token=abc&x=1&password=secret'),
+            'https://h/p?token=********&x=1&password=********',
+        )
+
+    def test_leaves_clean_url_untouched(self):
+        clean = 'https://example.com/path?a=1&b=2'
+        self.assertEqual(url._redact_url(clean), clean)
+
+    def test_redacts_only_matching_param_value(self):
+        # The value is masked, the surrounding query string survives.
+        out = url._redact_url('https://h/?password=p%40ss&keep=yes')
+        self.assertIn('password=********', out)
+        self.assertIn('keep=yes', out)
+        self.assertNotIn('p%40ss', out)
+
+
+class TestStripTags(unittest.TestCase):
+    def test_removes_tags(self):
+        self.assertEqual(
+            url.strip_tags('<div>Hello, <b>world</b>!</div>'), 'Hello, world!'
+        )
+
+    def test_none_returns_empty(self):
+        self.assertEqual(url.strip_tags(None), '')
+
+    def test_empty_string(self):
+        self.assertEqual(url.strip_tags(''), '')
+
+    def test_plain_text_untouched(self):
+        self.assertEqual(url.strip_tags('no tags here'), 'no tags here')
+
+    def test_nested_and_attributes(self):
+        self.assertEqual(
+            url.strip_tags('<a href="http://x">link</a> and <img src="y"/>text'),
+            'link and text',
+        )
+
+
+class TestSplitBasicAuth(unittest.TestCase):
+    def test_no_userinfo_returns_url_and_empty_headers(self):
+        self.assertEqual(
+            url.split_basic_auth('https://example.com/path'),
+            ('https://example.com/path', {}),
+        )
+
+    def test_user_and_password(self):
+        u, h = url.split_basic_auth('https://alice:secret@example.com/path')
+        self.assertEqual(u, 'https://example.com/path')
+        self.assertEqual(h, {'Authorization': 'Basic YWxpY2U6c2VjcmV0'})
+        # Decode to verify it is really alice:secret.
+        decoded = base64.b64decode(h['Authorization'].split()[1]).decode()
+        self.assertEqual(decoded, 'alice:secret')
+
+    def test_port_is_preserved_and_query_kept(self):
+        u, h = url.split_basic_auth('https://alice:secret@example.com:8443/path?q=1')
+        self.assertEqual(u, 'https://example.com:8443/path?q=1')
+        self.assertIn('Authorization', h)
+
+    def test_user_only_no_password(self):
+        u, h = url.split_basic_auth('https://onlyuser@example.com/path')
+        self.assertEqual(u, 'https://example.com/path')
+        decoded = base64.b64decode(h['Authorization'].split()[1]).decode()
+        self.assertEqual(decoded, 'onlyuser:')
+
+    def test_percent_encoded_credentials_are_unquoted(self):
+        # 'al%20ice' -> 'al ice', 'p%40ss' -> 'p@ss'
+        u, h = url.split_basic_auth('https://al%20ice:p%40ss@example.com/path')
+        self.assertEqual(u, 'https://example.com/path')
+        decoded = base64.b64decode(h['Authorization'].split()[1]).decode()
+        self.assertEqual(decoded, 'al ice:p@ss')
+
+    def test_credentials_never_leak_into_returned_url(self):
+        u, _ = url.split_basic_auth('https://alice:secret@example.com/path')
+        self.assertNotIn('alice', u)
+        self.assertNotIn('secret', u)
+
+
+class TestBuildSslContext(unittest.TestCase):
+    def test_default_is_secure(self):
+        ctx = url._build_ssl_context(False, None, None)
+        self.assertTrue(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_insecure_disables_verification(self):
+        ctx = url._build_ssl_context(True, None, None)
+        self.assertFalse(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_NONE)
+
+    @unittest.skipUnless(
+        hasattr(ssl, 'TLSVersion'), 'TLS version pinning needs Python 3.7+'
+    )
+    def test_tls_min_max_pinning(self):
+        ctx = url._build_ssl_context(False, '1.2', '1.3')
+        self.assertEqual(ctx.minimum_version, ssl.TLSVersion.TLSv1_2)
+        self.assertEqual(ctx.maximum_version, ssl.TLSVersion.TLSv1_3)
+
+    @unittest.skipUnless(
+        hasattr(ssl, 'TLSVersion'), 'TLS version pinning needs Python 3.7+'
+    )
+    def test_invalid_tls_min_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            url._build_ssl_context(False, 'bad', None)
+
+    @unittest.skipUnless(
+        hasattr(ssl, 'TLSVersion'), 'TLS version pinning needs Python 3.7+'
+    )
+    def test_invalid_tls_max_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            url._build_ssl_context(False, None, '9.9')
+
+    def test_old_interpreter_pinning_raises_runtime_error(self):
+        # Simulate Python 3.6 (no ssl.TLSVersion): _TLS_VERSIONS is empty and a
+        # pinning request must raise RuntimeError before touching the context.
+        with (
+            mock.patch.object(url, '_TLS_VERSIONS', {}),
+            self.assertRaises(RuntimeError),
+        ):
+            url._build_ssl_context(False, '1.2', None)
+
+
+class TestCaptureTlsInfo(unittest.TestCase):
+    def _response_with_stream(self, stream):
+        resp = mock.Mock()
+        resp.extensions = {'network_stream': stream} if stream is not None else {}
+        return resp
+
+    def test_no_network_stream(self):
+        resp = self._response_with_stream(None)
+        self.assertEqual(url._capture_tls_info(resp), (None, None, None))
+
+    def test_no_ssl_object(self):
+        stream = mock.Mock()
+        stream.get_extra_info.return_value = None
+        resp = self._response_with_stream(stream)
+        self.assertEqual(url._capture_tls_info(resp), (None, None, None))
+
+    def test_extracts_version_alpn_and_cert(self):
+        ssl_obj = mock.Mock()
+        ssl_obj.version.return_value = 'TLSv1.3'
+        ssl_obj.selected_alpn_protocol.return_value = 'h2'
+        ssl_obj.getpeercert.return_value = b'DERBYTES'
+        stream = mock.Mock()
+        stream.get_extra_info.return_value = ssl_obj
+        resp = self._response_with_stream(stream)
+        self.assertEqual(url._capture_tls_info(resp), ('TLSv1.3', 'h2', b'DERBYTES'))
+
+    def test_empty_cert_becomes_none(self):
+        ssl_obj = mock.Mock()
+        ssl_obj.version.return_value = 'TLSv1.2'
+        ssl_obj.selected_alpn_protocol.return_value = None
+        ssl_obj.getpeercert.return_value = b''  # `or None` in source
+        stream = mock.Mock()
+        stream.get_extra_info.return_value = ssl_obj
+        resp = self._response_with_stream(stream)
+        self.assertEqual(url._capture_tls_info(resp), ('TLSv1.2', None, None))
+
+    def test_ssl_object_errors_are_swallowed(self):
+        ssl_obj = mock.Mock()
+        ssl_obj.version.side_effect = TypeError('boom')
+        stream = mock.Mock()
+        stream.get_extra_info.return_value = ssl_obj
+        resp = self._response_with_stream(stream)
+        self.assertEqual(url._capture_tls_info(resp), (None, None, None))
+
+
+# -----------------------------------------------------------------------------
+# fetch(): argument validation and early returns (no client built)
+# -----------------------------------------------------------------------------
+
+
+@skip_without_httpx
+class TestFetchValidation(unittest.TestCase):
+    def test_http3_not_implemented(self):
+        ok, msg = url.fetch('https://example.com', http_version='3')
+        self.assertFalse(ok)
+        self.assertIn('HTTP/3 not implemented', msg)
+
+    def test_http3_error_redacts_url(self):
+        ok, msg = url.fetch('https://h/?token=abc', http_version='3')
+        self.assertFalse(ok)
+        self.assertIn('token=********', msg)
+        self.assertNotIn('token=abc', msg)
+
+    def test_unsupported_http_version(self):
+        ok, msg = url.fetch('https://example.com', http_version='4')
+        self.assertFalse(ok)
+        self.assertIn('Unsupported http_version', msg)
+
+    def test_unknown_encoding_with_data(self):
+        ok, msg = url.fetch('https://example.com', data={'a': 'b'}, encoding='xml')
+        self.assertFalse(ok)
+        self.assertIn('Unknown encoding', msg)
+
+    def test_invalid_tls_min_returns_error_string(self):
+        # _build_ssl_context raises ValueError; fetch turns it into (False, msg).
+        ok, msg = url.fetch('https://example.com', tls_min='nope')
+        self.assertFalse(ok)
+        self.assertIn('Invalid tls_min', msg)
+
+    def test_httpx_missing_returns_install_hint(self):
+        with mock.patch.object(url, 'httpx', None):
+            ok, msg = url.fetch('https://example.com')
+        self.assertFalse(ok)
+        self.assertIn('httpx', msg)
+        self.assertIn('not installed', msg)
+
+
+# -----------------------------------------------------------------------------
+# fetch(): happy paths via the fake client
+# -----------------------------------------------------------------------------
+
+
+@skip_without_httpx
+class TestFetchSuccess(unittest.TestCase):
+    def test_simple_get_returns_text(self):
+        fake, cap = make_fake_client(FakeStreamResponse(body=b'hello'))
+        with patch_client(fake):
+            ok, res = url.fetch('https://example.com')
+        self.assertTrue(ok)
+        self.assertEqual(res, 'hello')
+        self.assertEqual(cap['method'], 'GET')
+
+    def test_forced_headers_override_user_headers(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch(
+                'https://example.com',
+                header={
+                    'Connection': 'keep-alive',
+                    'User-Agent': 'evil',
+                    'X-Custom': 'v',
+                },
+            )
+        sent = cap['headers']
+        self.assertEqual(sent['Connection'], 'close')
+        self.assertEqual(sent['User-Agent'], 'Linuxfabrik Monitoring Plugins')
+        self.assertEqual(sent['X-Custom'], 'v')
+
+    def test_post_urlencode_sets_content_type_and_body(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com', data={'a': 'b', 'c': 'd'})
+        self.assertEqual(cap['method'], 'POST')
+        self.assertEqual(cap['content'], b'a=b&c=d')
+        self.assertEqual(
+            cap['headers']['Content-Type'], 'application/x-www-form-urlencoded'
+        )
+
+    def test_post_serialized_json(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com', data={'a': 1}, encoding='serialized-json')
+        self.assertEqual(cap['content'], b'{"a": 1}')
+        # default Content-Type is still added because the caller gave none.
+        self.assertEqual(
+            cap['headers']['Content-Type'], 'application/x-www-form-urlencoded'
+        )
+
+    def test_user_content_type_is_respected_on_post(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch(
+                'https://example.com',
+                data={'a': 1},
+                encoding='serialized-json',
+                header={'content-type': 'application/json'},
+            )
+        # lib.url must not clobber a user-supplied Content-Type (case-insensitive).
+        self.assertEqual(cap['headers']['content-type'], 'application/json')
+        self.assertNotIn('Content-Type', cap['headers'])
+
+    def test_to_text_false_returns_bytes(self):
+        fake, _ = make_fake_client(FakeStreamResponse(body=b'\x00\x01raw'))
+        with patch_client(fake):
+            ok, res = url.fetch('https://example.com', to_text=False)
+        self.assertTrue(ok)
+        self.assertEqual(res, b'\x00\x01raw')
+
+    def test_charset_from_response_is_used(self):
+        body = 'café'.encode('latin-1')
+        fake, _ = make_fake_client(
+            FakeStreamResponse(body=body, charset_encoding='latin-1')
+        )
+        with patch_client(fake):
+            ok, res = url.fetch('https://example.com')
+        self.assertTrue(ok)
+        self.assertEqual(res, 'café')
+
+    def test_default_charset_is_utf8(self):
+        fake, _ = make_fake_client(FakeStreamResponse(body='über'.encode()))
+        with patch_client(fake):
+            ok, res = url.fetch('https://example.com')
+        self.assertTrue(ok)
+        self.assertEqual(res, 'über')
+
+    def test_no_proxy_disables_trust_env(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com', no_proxy=True)
+        self.assertFalse(cap['init_kwargs']['trust_env'])
+
+    def test_proxy_enabled_by_default(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com')
+        self.assertTrue(cap['init_kwargs']['trust_env'])
+
+    def test_timeout_passed_through(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com', timeout=42)
+        self.assertEqual(cap['init_kwargs']['timeout'], 42)
+
+    def test_digest_auth_built_when_both_credentials_present(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch(
+                'https://example.com',
+                digest_auth_user='admin',
+                digest_auth_password='linuxfabrik',
+            )
+        self.assertIsInstance(cap['init_kwargs']['auth'], httpx.DigestAuth)
+
+    def test_digest_auth_skipped_without_password(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com', digest_auth_user='admin')
+        self.assertIsNone(cap['init_kwargs']['auth'])
+
+    def test_follow_redirects_always_on(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com')
+        self.assertTrue(cap['init_kwargs']['follow_redirects'])
+
+    def test_http_version_2_selects_http2(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com', http_version='2')
+        self.assertFalse(cap['init_kwargs']['http1'])
+        self.assertTrue(cap['init_kwargs']['http2'])
+
+    def test_http_version_10_uses_http1_transport(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com', http_version='1.0')
+        self.assertTrue(cap['init_kwargs']['http1'])
+        self.assertFalse(cap['init_kwargs']['http2'])
+
+
+# -----------------------------------------------------------------------------
+# fetch(): extended response
+# -----------------------------------------------------------------------------
+
+
+@skip_without_httpx
+class TestFetchExtended(unittest.TestCase):
+    def _tls_extensions(self):
+        ssl_obj = mock.Mock()
+        ssl_obj.version.return_value = 'TLSv1.3'
+        ssl_obj.selected_alpn_protocol.return_value = 'h2'
+        ssl_obj.getpeercert.return_value = b'DER'
+        stream = mock.Mock()
+        stream.get_extra_info.return_value = ssl_obj
+        return {'network_stream': stream}
+
+    def test_extended_dict_shape_and_telemetry(self):
+        resp = FakeStreamResponse(
+            body=b'{"k": 1}',
+            status_code=201,
+            headers={'content-type': 'application/json', 'x-test': 'yes'},
+            elapsed_seconds=1.25,
+            extensions=self._tls_extensions(),
+        )
+        fake, _ = make_fake_client(resp)
+        with no_timing_transport(), patch_client(fake):
+            ok, res = url.fetch('https://example.com', extended=True)
+        self.assertTrue(ok)
+        self.assertEqual(
+            sorted(res.keys()),
+            [
+                'alpn',
+                'peer_cert_der',
+                'response',
+                'response_header',
+                'status_code',
+                'timings',
+                'tls_version',
+            ],
+        )
+        self.assertEqual(res['response'], '{"k": 1}')
+        self.assertEqual(res['status_code'], 201)
+        self.assertEqual(res['response_header']['x-test'], 'yes')
+        self.assertEqual(res['tls_version'], 'TLSv1.3')
+        self.assertEqual(res['alpn'], 'h2')
+        self.assertEqual(res['peer_cert_der'], b'DER')
+        self.assertEqual(res['timings'], {'total': 1.25})
+
+    def test_extended_falls_back_to_verify_when_no_timing_backend(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with no_timing_transport(), patch_client(fake):
+            url.fetch('https://example.com', extended=True)
+        # Fallback fast path: explicit verify + http1/http2, no custom transport.
+        self.assertIn('verify', cap['init_kwargs'])
+        self.assertNotIn('transport', cap['init_kwargs'])
+
+    def test_extended_uses_timing_transport_when_available(self):
+        backend = mock.Mock()
+        backend.timings = {'dns': 0.01, 'connect': 0.02, 'tls': 0.03}
+        transport = mock.Mock()
+        resp = FakeStreamResponse(elapsed_seconds=2.0)
+        fake, cap = make_fake_client(resp)
+        with (
+            mock.patch.object(
+                url,
+                '_build_timing_transport',
+                return_value=(transport, backend),
+            ),
+            patch_client(fake),
+        ):
+            ok, res = url.fetch('https://example.com', extended=True)
+        self.assertTrue(ok)
+        # transport handed to the client, no verify/http1/http2 on that path.
+        self.assertIs(cap['init_kwargs']['transport'], transport)
+        self.assertNotIn('verify', cap['init_kwargs'])
+        # phase timings merged on top of total.
+        self.assertEqual(res['timings']['total'], 2.0)
+        self.assertEqual(res['timings']['dns'], 0.01)
+        self.assertEqual(res['timings']['tls'], 0.03)
+
+    def test_extended_plain_http_has_no_tls_info(self):
+        resp = FakeStreamResponse(extensions={})  # no network_stream -> all None
+        fake, _ = make_fake_client(resp)
+        with no_timing_transport(), patch_client(fake):
+            _ok, res = url.fetch('http://example.com', extended=True)
+        self.assertIsNone(res['tls_version'])
+        self.assertIsNone(res['alpn'])
+        self.assertIsNone(res['peer_cert_der'])
+
+
+# -----------------------------------------------------------------------------
+# fetch(): error paths
+# -----------------------------------------------------------------------------
+
+
+@skip_without_httpx
+class TestFetchErrors(unittest.TestCase):
+    def _http_status_error(self, code):
+        req = httpx.Request('GET', 'https://example.com')
+        resp = httpx.Response(code, request=req)
+        return httpx.HTTPStatusError('err', request=req, response=resp)
+
+    def test_http_status_error_message(self):
+        resp = FakeStreamResponse(raise_exc=self._http_status_error(404))
+        fake, _ = make_fake_client(resp)
+        with patch_client(fake):
+            ok, msg = url.fetch('https://example.com')
+        self.assertFalse(ok)
+        self.assertIn('HTTP error', msg)
+        self.assertIn('404', msg)
+        self.assertIn('Not Found', msg)
+
+    def test_http_status_error_redacts_url(self):
+        resp = FakeStreamResponse(raise_exc=self._http_status_error(500))
+        fake, _ = make_fake_client(resp)
+        with patch_client(fake):
+            ok, msg = url.fetch('https://h/?password=secret')
+        self.assertFalse(ok)
+        self.assertIn('password=********', msg)
+        self.assertNotIn('secret', msg)
+
+    def test_generic_http_error_message(self):
+        # ConnectError is an httpx.HTTPError subclass.
+        fake, _ = make_fake_client(stream_exc=httpx.ConnectError('connection refused'))
+        with patch_client(fake):
+            ok, msg = url.fetch('https://example.com')
+        self.assertFalse(ok)
+        self.assertIn('URL error', msg)
+        self.assertIn('connection refused', msg)
+
+    def test_timeout_error_is_http_error(self):
+        fake, _ = make_fake_client(stream_exc=httpx.ConnectTimeout('timed out'))
+        with patch_client(fake):
+            ok, msg = url.fetch('https://example.com')
+        self.assertFalse(ok)
+        self.assertIn('URL error', msg)
+
+    def test_unexpected_exception_during_stream(self):
+        fake, _ = make_fake_client(stream_exc=RuntimeError('weird'))
+        with patch_client(fake):
+            ok, msg = url.fetch('https://h/?token=abc')
+        self.assertFalse(ok)
+        self.assertIn('weird', msg)
+        self.assertIn('token=********', msg)
+
+    def test_client_construction_failure(self):
+        fake, _ = make_fake_client(init_exc=RuntimeError('bad client'))
+        with patch_client(fake):
+            ok, msg = url.fetch('https://h/?token=abc')
+        self.assertFalse(ok)
+        self.assertIn('bad client', msg)
+        self.assertIn('token=********', msg)
+
+    def test_decode_error_returns_failure(self):
+        # Invalid bytes for the declared charset -> decode() raises -> (False, msg).
+        resp = FakeStreamResponse(body=b'\xff\xfe', charset_encoding='ascii')
+        fake, _ = make_fake_client(resp)
+        with patch_client(fake):
+            ok, msg = url.fetch('https://example.com')
+        self.assertFalse(ok)
+        self.assertIn('while fetching', msg)
+
+
+# -----------------------------------------------------------------------------
+# fetch_json()
+# -----------------------------------------------------------------------------
+
+
+@skip_without_httpx
+class TestFetchJson(unittest.TestCase):
+    def test_parses_json_body(self):
+        with mock.patch.object(
+            url, 'fetch', return_value=(True, '{"a": 1, "b": [2, 3]}')
+        ):
+            ok, res = url.fetch_json('https://example.com')
+        self.assertTrue(ok)
+        self.assertEqual(res, {'a': 1, 'b': [2, 3]})
+
+    def test_propagates_fetch_failure(self):
+        with mock.patch.object(url, 'fetch', return_value=(False, 'boom')):
+            ok, res = url.fetch_json('https://example.com')
+        self.assertFalse(ok)
+        self.assertEqual(res, 'boom')
+
+    def test_invalid_json_returns_error(self):
+        with mock.patch.object(url, 'fetch', return_value=(True, 'not json')):
+            ok, msg = url.fetch_json('https://example.com')
+        self.assertFalse(ok)
+        self.assertIn('No JSON object could be decoded', msg)
+
+    def test_extended_adds_response_json_key(self):
+        extended = {
+            'response': '{"x": 9}',
+            'status_code': 200,
+            'response_header': {},
+            'timings': {'total': 0.1},
+            'tls_version': None,
+            'alpn': None,
+            'peer_cert_der': None,
+        }
+        with mock.patch.object(url, 'fetch', return_value=(True, dict(extended))):
+            ok, res = url.fetch_json('https://example.com', extended=True)
+        self.assertTrue(ok)
+        self.assertEqual(res['response_json'], {'x': 9})
+        self.assertEqual(res['response'], '{"x": 9}')
+
+    def test_extended_invalid_json_returns_error(self):
+        extended = {'response': 'nope'}
+        with mock.patch.object(url, 'fetch', return_value=(True, dict(extended))):
+            ok, msg = url.fetch_json('https://example.com', extended=True)
+        self.assertFalse(ok)
+        self.assertIn('No JSON object could be decoded', msg)
+
+    def test_forwards_all_parameters_to_fetch(self):
+        with mock.patch.object(url, 'fetch', return_value=(True, '{}')) as m:
+            url.fetch_json(
+                'https://example.com',
+                insecure=True,
+                no_proxy=True,
+                timeout=11,
+                header={'X': 'y'},
+                data={'k': 'v'},
+                encoding='serialized-json',
+                digest_auth_user='admin',
+                digest_auth_password='linuxfabrik',
+                extended=False,
+                http_version='2',
+                tls_min='1.2',
+                tls_max='1.3',
+            )
+        _, kwargs = m.call_args
+        self.assertTrue(kwargs['insecure'])
+        self.assertTrue(kwargs['no_proxy'])
+        self.assertEqual(kwargs['timeout'], 11)
+        self.assertEqual(kwargs['header'], {'X': 'y'})
+        self.assertEqual(kwargs['data'], {'k': 'v'})
+        self.assertEqual(kwargs['encoding'], 'serialized-json')
+        self.assertEqual(kwargs['digest_auth_user'], 'admin')
+        self.assertEqual(kwargs['digest_auth_password'], 'linuxfabrik')
+        self.assertEqual(kwargs['http_version'], '2')
+        self.assertEqual(kwargs['tls_min'], '1.2')
+        self.assertEqual(kwargs['tls_max'], '1.3')
+
+
+# -----------------------------------------------------------------------------
+# get_latest_version_from_github()
+# -----------------------------------------------------------------------------
+
+# Realistic trimmed GitHub "latest release" API payload.
+GITHUB_RELEASE_FIXTURE = {
+    'url': 'https://api.github.com/repos/Linuxfabrik/monitoring-plugins/releases/123',
+    'tag_name': 'v1.2.3',
+    'name': 'Release 1.2.3',
+    'draft': False,
+    'prerelease': False,
+    'published_at': '2026-01-15T12:00:00Z',
+}
+
+
+class TestGetLatestVersionFromGithub(unittest.TestCase):
+    def test_returns_tag_name_by_default(self):
+        with mock.patch.object(
+            url,
+            'fetch_json',
+            return_value=(True, dict(GITHUB_RELEASE_FIXTURE)),
+        ) as m:
+            ok, res = url.get_latest_version_from_github(
+                'Linuxfabrik', 'monitoring-plugins'
+            )
+        self.assertTrue(ok)
+        self.assertEqual(res, 'v1.2.3')
+        # Verify the GitHub releases/latest endpoint is hit.
+        called_url = m.call_args[0][0]
+        self.assertEqual(
+            called_url,
+            'https://api.github.com/repos/Linuxfabrik/monitoring-plugins/releases/latest',
+        )
+
+    def test_custom_key(self):
+        with mock.patch.object(
+            url,
+            'fetch_json',
+            return_value=(True, dict(GITHUB_RELEASE_FIXTURE)),
+        ):
+            ok, res = url.get_latest_version_from_github('u', 'r', key='name')
+        self.assertTrue(ok)
+        self.assertEqual(res, 'Release 1.2.3')
+
+    def test_missing_key_returns_false(self):
+        with mock.patch.object(
+            url,
+            'fetch_json',
+            return_value=(True, dict(GITHUB_RELEASE_FIXTURE)),
+        ):
+            ok, res = url.get_latest_version_from_github('u', 'r', key='does_not_exist')
+        self.assertTrue(ok)
+        self.assertFalse(res)
+
+    def test_empty_dict_returns_false(self):
+        with mock.patch.object(url, 'fetch_json', return_value=(True, {})):
+            ok, res = url.get_latest_version_from_github('u', 'r')
+        self.assertTrue(ok)
+        self.assertFalse(res)
+
+    def test_non_dict_payload_returns_false(self):
+        with mock.patch.object(url, 'fetch_json', return_value=(True, ['unexpected'])):
+            ok, res = url.get_latest_version_from_github('u', 'r')
+        self.assertTrue(ok)
+        self.assertFalse(res)
+
+    def test_fetch_failure_is_propagated(self):
+        with mock.patch.object(url, 'fetch_json', return_value=(False, 'network down')):
+            ok, res = url.get_latest_version_from_github('u', 'r')
+        self.assertFalse(ok)
+        self.assertEqual(res, 'network down')
+
+
+# -----------------------------------------------------------------------------
+# _build_timing_classes() / _build_timing_transport(): structural coverage
+# -----------------------------------------------------------------------------
+
+
+@skip_without_httpx
+class TestTimingClasses(unittest.TestCase):
+    def test_returns_classes_when_httpcore_modern(self):
+        backend_cls, stream_cls = url._build_timing_classes()
+        if url.httpcore is None or not hasattr(url.httpcore, 'NetworkBackend'):
+            self.skipTest('httpcore too old / missing public NetworkBackend')
+        self.assertTrue(callable(backend_cls))
+        self.assertTrue(callable(stream_cls))
+
+    def test_returns_none_when_httpcore_missing(self):
+        with mock.patch.object(url, 'httpcore', None):
+            self.assertEqual(url._build_timing_classes(), (None, None))
+
+    def test_timing_stream_records_ttfb_and_transfer(self):
+        _backend_cls, stream_cls = url._build_timing_classes()
+        if stream_cls is None:
+            self.skipTest('httpcore too old / missing public NetworkStream')
+        timings = {}
+        inner = mock.Mock()
+        inner.read.return_value = b'chunk'
+        stream = stream_cls(inner, timings)
+        # write() marks the request-sent timestamp; read() then fills ttfb/transfer.
+        stream.write(b'request')
+        stream.read(1024)
+        self.assertIn('ttfb', timings)
+        self.assertIn('transfer', timings)
+
+    def test_build_timing_transport_none_when_no_backend(self):
+        with mock.patch.object(url, '_build_timing_classes', return_value=(None, None)):
+            transport, backend = url._build_timing_transport(None, True, False, True)
+        self.assertIsNone(transport)
+        self.assertIsNone(backend)
+
+
+if __name__ == '__main__':
+    unittest.main()

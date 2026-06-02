@@ -1,0 +1,384 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.feedparser.
+
+The module fetches a feed over the network via lib.url.fetch and then parses
+the XML with BeautifulSoup. The tests stay hermetic by patching the
+module-level url.fetch reference, so no socket is ever opened. parse_atom and
+parse_rss receive BeautifulSoup objects built from realistic in-line fixtures,
+covering Atom and RSS happy paths plus the documented fallbacks for missing
+fields, alternative timestamp sources and HTML-laden summaries.
+"""
+
+import datetime
+import sys
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, '..')
+
+# Guard the third-party dependency: feedparser imports BeautifulSoup at module
+# load time and sys.exit()s if it is missing. If bs4 (and the lxml/xml parsers
+# it relies on) are absent from the venv we still define the full test body but
+# skip it at runtime.
+try:
+    import lib.feedparser as feedparser
+    from bs4 import BeautifulSoup
+
+    HAVE_DEPS = True
+    IMPORT_ERROR = ''
+except (ImportError, SystemExit) as exc:  # pragma: no cover - depends on venv
+    HAVE_DEPS = False
+    IMPORT_ERROR = str(exc)
+
+
+# ----------------------------------------------------------------------------
+# Realistic feed fixtures.
+# ----------------------------------------------------------------------------
+
+ATOM_FEED = """<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Linuxfabrik Posts</title>
+  <updated>2025-04-17T11:29:00.000Z</updated>
+  <entry>
+    <title>Lorem ipsum</title>
+    <id>https://linuxfabrik.ch/post-1</id>
+    <updated>2017-04-17T11:29:00.000Z</updated>
+    <summary>A &lt;b&gt;bold&lt;/b&gt; summary &amp; more.</summary>
+  </entry>
+  <entry>
+    <title>Second post</title>
+    <id>https://linuxfabrik.ch/post-2</id>
+    <updated>2018-05-18T12:30:01.000Z</updated>
+    <content>&lt;p&gt;Body content here&lt;/p&gt;</content>
+  </entry>
+</feed>
+"""
+
+RSS_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>My RSS Feed</title>
+    <pubDate>Wed, 10 Apr 2024 06:12:00 Z</pubDate>
+    <item>
+      <title>First item</title>
+      <guid>https://example.com/item-1</guid>
+      <pubDate>Mon, 08 Apr 2024 05:11:00 Z</pubDate>
+      <description>An &lt;i&gt;italic&lt;/i&gt; description.</description>
+    </item>
+    <item>
+      <title>Second item</title>
+      <guid>https://example.com/item-2</guid>
+      <pubDate>Tue, 09 Apr 2024 07:13:00 Z</pubDate>
+      <description>Plain text description.</description>
+    </item>
+  </channel>
+</rss>
+"""
+
+NOT_A_FEED = """<?xml version="1.0"?><html><body>nope</body></html>"""
+
+
+def atom_soup(xml=ATOM_FEED):
+    return BeautifulSoup(xml, 'xml')
+
+
+def rss_soup(xml=RSS_FEED):
+    return BeautifulSoup(xml, 'xml')
+
+
+# ----------------------------------------------------------------------------
+# parse() - orchestration + dispatch. lib.url.fetch is patched out.
+# ----------------------------------------------------------------------------
+
+@unittest.skipUnless(HAVE_DEPS, 'BeautifulSoup4 not installed: ' + IMPORT_ERROR)
+class TestParse(unittest.TestCase):
+    """parse() fetch handling, format detection and dispatch."""
+
+    def test_fetch_failure_propagates(self):
+        # url.fetch returns (False, msg) -> parse must short-circuit verbatim.
+        with patch.object(feedparser.url, 'fetch', return_value=(False, 'boom')):
+            ok, result = feedparser.parse('https://x/feed')
+        self.assertFalse(ok)
+        self.assertEqual(result, 'boom')
+
+    def test_atom_is_detected_and_parsed(self):
+        with patch.object(feedparser.url, 'fetch', return_value=(True, ATOM_FEED)):
+            ok, result = feedparser.parse('https://x/atom')
+        self.assertTrue(ok)
+        self.assertEqual(result['title'], 'Linuxfabrik Posts')
+        self.assertEqual(len(result['entries']), 2)
+
+    def test_rss_is_detected_and_parsed(self):
+        with patch.object(feedparser.url, 'fetch', return_value=(True, RSS_FEED)):
+            ok, result = feedparser.parse('https://x/rss')
+        self.assertTrue(ok)
+        self.assertEqual(result['title'], 'My RSS Feed')
+        self.assertEqual(len(result['entries']), 2)
+
+    def test_unknown_format_returns_false_with_message(self):
+        with patch.object(feedparser.url, 'fetch', return_value=(True, NOT_A_FEED)):
+            ok, result = feedparser.parse('https://x/page')
+        self.assertFalse(ok)
+        self.assertIn('does not seem to be an Atom or RSS feed', result)
+        self.assertIn('https://x/page', result)
+
+    def test_dispatches_to_parse_atom(self):
+        # Format detection must route Atom payloads through parse_atom().
+        with patch.object(feedparser.url, 'fetch', return_value=(True, ATOM_FEED)), \
+                patch.object(feedparser, 'parse_atom', return_value={'k': 'atom'}) as m:
+            ok, result = feedparser.parse('https://x/atom')
+        self.assertTrue(ok)
+        self.assertEqual(result, {'k': 'atom'})
+        m.assert_called_once()
+
+    def test_dispatches_to_parse_rss(self):
+        with patch.object(feedparser.url, 'fetch', return_value=(True, RSS_FEED)), \
+                patch.object(feedparser, 'parse_rss', return_value={'k': 'rss'}) as m:
+            ok, result = feedparser.parse('https://x/rss')
+        self.assertTrue(ok)
+        self.assertEqual(result, {'k': 'rss'})
+        m.assert_called_once()
+
+    def test_forwards_fetch_arguments(self):
+        with patch.object(feedparser.url, 'fetch', return_value=(True, ATOM_FEED)) as m:
+            feedparser.parse(
+                'https://x/feed',
+                insecure=True,
+                no_proxy=True,
+                timeout=42,
+                encoding='base64',
+            )
+        m.assert_called_once_with(
+            'https://x/feed',
+            encoding='base64',
+            insecure=True,
+            no_proxy=True,
+            timeout=42,
+        )
+
+    def test_default_fetch_arguments(self):
+        with patch.object(feedparser.url, 'fetch', return_value=(True, ATOM_FEED)) as m:
+            feedparser.parse('https://x/feed')
+        _, kwargs = m.call_args
+        self.assertEqual(kwargs['encoding'], 'urlencode')
+        self.assertFalse(kwargs['insecure'])
+        self.assertFalse(kwargs['no_proxy'])
+        self.assertEqual(kwargs['timeout'], 5)
+
+
+# ----------------------------------------------------------------------------
+# parse_atom()
+# ----------------------------------------------------------------------------
+
+@unittest.skipUnless(HAVE_DEPS, 'BeautifulSoup4 not installed: ' + IMPORT_ERROR)
+class TestParseAtom(unittest.TestCase):
+    """parse_atom() metadata, entries, timestamps and summary fallbacks."""
+
+    def test_feed_metadata(self):
+        result = feedparser.parse_atom(atom_soup())
+        self.assertEqual(result['title'], 'Linuxfabrik Posts')
+        self.assertEqual(result['updated'], '2025-04-17T11:29:00.000Z')
+        self.assertEqual(
+            result['updated_parsed'],
+            datetime.datetime(2025, 4, 17, 11, 29, 0),
+        )
+
+    def test_entry_count_and_basic_fields(self):
+        result = feedparser.parse_atom(atom_soup())
+        self.assertEqual(len(result['entries']), 2)
+        first = result['entries'][0]
+        self.assertEqual(first['title'], 'Lorem ipsum')
+        self.assertEqual(first['id'], 'https://linuxfabrik.ch/post-1')
+        self.assertEqual(first['updated'], '2017-04-17T11:29:00.000Z')
+        self.assertEqual(
+            first['updated_parsed'],
+            datetime.datetime(2017, 4, 17, 11, 29, 0),
+        )
+
+    def test_summary_from_summary_tag_strips_html(self):
+        result = feedparser.parse_atom(atom_soup())
+        self.assertEqual(result['entries'][0]['summary'], 'A bold summary & more.')
+
+    def test_summary_falls_back_to_content_tag(self):
+        # Second entry has no <summary>, only <content>: the content path runs.
+        result = feedparser.parse_atom(atom_soup())
+        self.assertEqual(result['entries'][1]['summary'], 'Body content here')
+
+    def test_summary_empty_when_neither_summary_nor_content(self):
+        xml = """<?xml version="1.0"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>T</title><updated>2024-01-02T03:04:05Z</updated>
+          <entry>
+            <title>No body</title>
+            <id>id-1</id>
+            <updated>2024-01-02T03:04:05Z</updated>
+          </entry>
+        </feed>"""
+        result = feedparser.parse_atom(atom_soup(xml))
+        self.assertEqual(result['entries'][0]['summary'], '')
+
+    def test_missing_feed_title_defaults(self):
+        xml = """<?xml version="1.0"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <updated>2024-01-02T03:04:05Z</updated>
+        </feed>"""
+        result = feedparser.parse_atom(atom_soup(xml))
+        self.assertEqual(result['title'], 'n/a')
+
+    def test_missing_feed_updated_defaults_to_epoch(self):
+        xml = """<?xml version="1.0"?>
+        <feed xmlns="http://www.w3.org/2005/Atom"><title>T</title></feed>"""
+        result = feedparser.parse_atom(atom_soup(xml))
+        self.assertEqual(result['updated'], '1970-01-01T00:00:00')
+        self.assertEqual(
+            result['updated_parsed'],
+            datetime.datetime(1970, 1, 1, 0, 0, 0),
+        )
+
+    def test_entry_missing_fields_default(self):
+        xml = """<?xml version="1.0"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>T</title><updated>2024-01-02T03:04:05Z</updated>
+          <entry></entry>
+        </feed>"""
+        result = feedparser.parse_atom(atom_soup(xml))
+        entry = result['entries'][0]
+        self.assertEqual(entry['title'], 'n/a')
+        self.assertEqual(entry['id'], 'n/a')
+        self.assertEqual(entry['updated'], '1970-01-01T00:00:00')
+        self.assertEqual(
+            entry['updated_parsed'],
+            datetime.datetime(1970, 1, 1, 0, 0, 0),
+        )
+
+    def test_empty_feed_has_no_entries(self):
+        xml = """<?xml version="1.0"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>T</title><updated>2024-01-02T03:04:05Z</updated>
+        </feed>"""
+        result = feedparser.parse_atom(atom_soup(xml))
+        self.assertEqual(result['entries'], [])
+
+    def test_updated_truncated_to_19_chars(self):
+        # The fractional seconds + Z suffix must be dropped before strptime.
+        result = feedparser.parse_atom(atom_soup())
+        # No exception, and the parsed value ignores the trailing ".000Z".
+        self.assertEqual(result['updated_parsed'].second, 0)
+
+
+# ----------------------------------------------------------------------------
+# parse_rss()
+# ----------------------------------------------------------------------------
+
+@unittest.skipUnless(HAVE_DEPS, 'BeautifulSoup4 not installed: ' + IMPORT_ERROR)
+class TestParseRss(unittest.TestCase):
+    """parse_rss() metadata, items, timestamp sources and summaries."""
+
+    def test_feed_metadata(self):
+        result = feedparser.parse_rss(rss_soup())
+        self.assertEqual(result['title'], 'My RSS Feed')
+        self.assertEqual(result['updated'], 'Wed, 10 Apr 2024 06:12:00 Z')
+        self.assertEqual(
+            result['updated_parsed'],
+            datetime.datetime(2024, 4, 10, 6, 12, 0),
+        )
+
+    def test_item_count_and_basic_fields(self):
+        result = feedparser.parse_rss(rss_soup())
+        self.assertEqual(len(result['entries']), 2)
+        first = result['entries'][0]
+        self.assertEqual(first['title'], 'First item')
+        self.assertEqual(first['id'], 'https://example.com/item-1')
+        self.assertEqual(first['updated'], 'Mon, 08 Apr 2024 05:11:00 Z')
+        self.assertEqual(
+            first['updated_parsed'],
+            datetime.datetime(2024, 4, 8, 5, 11, 0),
+        )
+
+    def test_summary_strips_html(self):
+        result = feedparser.parse_rss(rss_soup())
+        self.assertEqual(result['entries'][0]['summary'], 'An italic description.')
+        self.assertEqual(result['entries'][1]['summary'], 'Plain text description.')
+
+    def test_updated_falls_back_to_lastbuilddate(self):
+        # No <pubDate> on the channel: lastBuildDate must be used instead.
+        xml = """<?xml version="1.0"?>
+        <rss version="2.0"><channel>
+          <title>Feed</title>
+          <lastBuildDate>Wed, 10 Apr 2024 06:12:00 Z</lastBuildDate>
+        </channel></rss>"""
+        result = feedparser.parse_rss(rss_soup(xml))
+        self.assertEqual(result['updated'], 'Wed, 10 Apr 2024 06:12:00 Z')
+        self.assertEqual(
+            result['updated_parsed'],
+            datetime.datetime(2024, 4, 10, 6, 12, 0),
+        )
+
+    def test_no_channel_date_omits_updated_keys(self):
+        # Neither pubDate nor lastBuildDate: updated / updated_parsed absent.
+        xml = """<?xml version="1.0"?>
+        <rss version="2.0"><channel><title>Feed</title></channel></rss>"""
+        result = feedparser.parse_rss(rss_soup(xml))
+        self.assertNotIn('updated', result)
+        self.assertNotIn('updated_parsed', result)
+        self.assertEqual(result['title'], 'Feed')
+
+    def test_missing_channel_title_defaults(self):
+        xml = """<?xml version="1.0"?>
+        <rss version="2.0"><channel></channel></rss>"""
+        result = feedparser.parse_rss(rss_soup(xml))
+        self.assertEqual(result['title'], 'n/a')
+
+    def test_item_missing_fields_default(self):
+        xml = """<?xml version="1.0"?>
+        <rss version="2.0"><channel><title>Feed</title>
+          <item></item>
+        </channel></rss>"""
+        result = feedparser.parse_rss(rss_soup(xml))
+        entry = result['entries'][0]
+        self.assertEqual(entry['title'], 'n/a')
+        self.assertEqual(entry['id'], 'n/a')
+        self.assertEqual(entry['updated'], 'Wed, 01 Jan 1970 00:00:00')
+        self.assertEqual(
+            entry['updated_parsed'],
+            datetime.datetime(1970, 1, 1, 0, 0, 0),
+        )
+
+    def test_item_missing_description_yields_empty_summary(self):
+        xml = """<?xml version="1.0"?>
+        <rss version="2.0"><channel><title>Feed</title>
+          <item>
+            <title>No desc</title>
+            <guid>g</guid>
+            <pubDate>Mon, 08 Apr 2024 05:11:00 Z</pubDate>
+          </item>
+        </channel></rss>"""
+        result = feedparser.parse_rss(rss_soup(xml))
+        self.assertEqual(result['entries'][0]['summary'], '')
+
+    def test_empty_channel_has_no_entries(self):
+        xml = """<?xml version="1.0"?>
+        <rss version="2.0"><channel>
+          <title>Feed</title>
+          <pubDate>Wed, 10 Apr 2024 06:12:00 Z</pubDate>
+        </channel></rss>"""
+        result = feedparser.parse_rss(rss_soup(xml))
+        self.assertEqual(result['entries'], [])
+
+    def test_updated_truncated_to_25_chars(self):
+        # The trailing " Z" zone marker is beyond char 25 and must be dropped.
+        result = feedparser.parse_rss(rss_soup())
+        self.assertEqual(result['updated_parsed'].year, 2024)
+
+
+if __name__ == '__main__':
+    unittest.main()

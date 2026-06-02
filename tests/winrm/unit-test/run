@@ -1,0 +1,761 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.winrm.
+
+The module talks to remote Windows hosts through two interchangeable third-party
+backends: pypsrp (PSRP, gated by the module-level HAVE_JEA flag) and pywinrm
+(gated by HAVE_WINRM). Both are mocked here so the tests are hermetic and fast:
+
+- HAVE_JEA / HAVE_WINRM are patched per test to force the desired backend
+  (or the "no backend" fallback).
+- The pypsrp entry points (Client for run_cmd, plus the lazily imported
+  PowerShell / RunspacePool / WSMan for run_ps) are replaced with MagicMocks.
+- The pywinrm Session is replaced with a MagicMock (pywinrm is not required in
+  the venv: the module imports it under try/except and we patch the reference).
+
+Every documented branch is exercised, including the auth/transport helpers,
+the Kerberos credential-cache fallback, JEA configuration handling, CLIXML
+noise suppression and the exception-to-stderr normalization.
+"""
+
+import sys
+import types
+import unittest
+from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, '..')
+
+# The module itself has no hard third-party requirement at import time (winrm and
+# pypsrp are both optional and guarded), so importing it must always succeed.
+try:
+    import lib.winrm as winrm_lib
+
+    HAVE_MODULE = True
+    IMPORT_ERROR = ''
+except ImportError as exc:  # pragma: no cover - only if the repo layout breaks
+    HAVE_MODULE = False
+    IMPORT_ERROR = str(exc)
+
+
+# ----------------------------------------------------------------------------
+# Fixtures / helpers
+# ----------------------------------------------------------------------------
+
+class Args:
+    """Minimal argparse.Namespace stand-in with the WINRM_* attributes.
+
+    Only the attributes passed in are set; the module reads everything via
+    getattr(..., default) so absent attributes exercise the default paths.
+    """
+
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+def make_args(**overrides):
+    """Return an Args with sane defaults, overridable per test."""
+    base = {
+        'WINRM_HOSTNAME': 'win.example.com',
+        'WINRM_USERNAME': 'admin',
+        'WINRM_PASSWORD': 'linuxfabrik',
+        'WINRM_TRANSPORT': 'negotiate',
+    }
+    base.update(overrides)
+    return Args(**base)
+
+
+def make_pywinrm_result(status_code=0, std_out=b'', std_err=b''):
+    """Return a fake pywinrm Response object (status_code/std_out/std_err)."""
+    result = MagicMock(name='pywinrm.Response')
+    result.status_code = status_code
+    result.std_out = std_out
+    result.std_err = std_err
+    return result
+
+
+def force_jea(have_jea=True, have_winrm=False):
+    """Context-manager bundle patching the two backend gate flags."""
+    return patch.multiple(
+        winrm_lib,
+        HAVE_JEA=have_jea,
+        HAVE_WINRM=have_winrm,
+    )
+
+
+def patch_pypsrp_powershell(pool_cm, powershell):
+    """Patch the lazily imported pypsrp.powershell + pypsrp.wsman symbols.
+
+    run_ps() does `from pypsrp.powershell import PowerShell, RunspacePool` and
+    `from pypsrp.wsman import WSMan` inside the function body, so we have to patch
+    the attributes on the real (installed) submodules. If pypsrp is not present
+    we synthesize throwaway modules so the import line still resolves.
+    """
+    ps_mod = sys.modules.get('pypsrp.powershell')
+    wsman_mod = sys.modules.get('pypsrp.wsman')
+    created = []
+    if ps_mod is None:
+        ps_mod = types.ModuleType('pypsrp.powershell')
+        sys.modules['pypsrp.powershell'] = ps_mod
+        created.append('pypsrp.powershell')
+    if wsman_mod is None:
+        wsman_mod = types.ModuleType('pypsrp.wsman')
+        sys.modules['pypsrp.wsman'] = wsman_mod
+        created.append('pypsrp.wsman')
+
+    runspace_cls = MagicMock(name='RunspacePool')
+    runspace_cls.return_value = pool_cm
+    powershell_cls = MagicMock(name='PowerShell')
+    powershell_cls.return_value = powershell
+    wsman_cls = MagicMock(name='WSMan')
+
+    patches = [
+        patch.object(ps_mod, 'PowerShell', powershell_cls, create=True),
+        patch.object(ps_mod, 'RunspacePool', runspace_cls, create=True),
+        patch.object(wsman_mod, 'WSMan', wsman_cls, create=True),
+    ]
+    return patches, runspace_cls, powershell_cls, wsman_cls, created
+
+
+def make_powershell(outputs=None, errors=None, had_errors=False):
+    """Build a fake pypsrp PowerShell pipeline object.
+
+    outputs: list of objects that invoke() returns (str()'d by the module).
+    errors:  list of fake error records exposed via .streams.error.
+    """
+    ps = MagicMock(name='PowerShell')
+    ps.invoke.return_value = outputs if outputs is not None else []
+    ps.had_errors = had_errors
+    ps.streams.error = errors if errors is not None else []
+    return ps
+
+
+def make_runspace_pool(powershell):
+    """Build a RunspacePool context manager yielding a pool MagicMock."""
+    pool = MagicMock(name='RunspacePool-instance')
+    pool.__enter__.return_value = pool
+    pool.__exit__.return_value = False
+    return pool
+
+
+def make_error_record(to_string=None, message=None, raise_on_to_string=False):
+    """Build a fake pypsrp error record for ps.streams.error."""
+    err = MagicMock(name='ErrorRecord')
+    if raise_on_to_string:
+        err.to_string.side_effect = RuntimeError('cannot stringify')
+    else:
+        err.to_string.return_value = to_string
+    if message is None:
+        # Force getattr(err, 'message', None) to be falsy so str(err) is used.
+        del err.message
+    else:
+        err.message = message
+    return err
+
+
+# ============================================================================
+# _build_auth
+# ============================================================================
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestBuildAuth(unittest.TestCase):
+
+    def test_basic_username_password(self):
+        args = make_args(WINRM_TRANSPORT='basic')
+        self.assertEqual(
+            winrm_lib._build_auth(args),
+            ('admin', 'linuxfabrik'),
+        )
+
+    def test_domain_is_prepended_as_user_at_domain(self):
+        args = make_args(WINRM_TRANSPORT='ntlm', WINRM_DOMAIN='corp.example.com')
+        self.assertEqual(
+            winrm_lib._build_auth(args),
+            ('admin@corp.example.com', 'linuxfabrik'),
+        )
+
+    def test_kerberos_with_full_creds_keeps_them(self):
+        args = make_args(WINRM_TRANSPORT='kerberos')
+        self.assertEqual(
+            winrm_lib._build_auth(args),
+            ('admin', 'linuxfabrik'),
+        )
+
+    def test_kerberos_missing_password_falls_back_to_ccache(self):
+        args = make_args(WINRM_TRANSPORT='kerberos', WINRM_PASSWORD='')
+        self.assertEqual(winrm_lib._build_auth(args), (None, None))
+
+    def test_kerberos_missing_username_falls_back_to_ccache(self):
+        args = make_args(WINRM_TRANSPORT='kerberos', WINRM_USERNAME=None)
+        self.assertEqual(winrm_lib._build_auth(args), (None, None))
+
+    def test_negotiate_missing_creds_falls_back_to_ccache(self):
+        args = make_args(WINRM_TRANSPORT='negotiate', WINRM_USERNAME='', WINRM_PASSWORD='')
+        self.assertEqual(winrm_lib._build_auth(args), (None, None))
+
+    def test_transport_case_insensitive(self):
+        args = make_args(WINRM_TRANSPORT='KERBEROS', WINRM_PASSWORD='')
+        self.assertEqual(winrm_lib._build_auth(args), (None, None))
+
+    def test_kerberos_ccache_ignores_domain(self):
+        # When falling back to the credential cache, the (None, None) tuple wins
+        # before the domain branch is ever considered.
+        args = make_args(
+            WINRM_TRANSPORT='kerberos',
+            WINRM_USERNAME=None,
+            WINRM_PASSWORD=None,
+            WINRM_DOMAIN='corp.example.com',
+        )
+        self.assertEqual(winrm_lib._build_auth(args), (None, None))
+
+    def test_missing_transport_defaults_to_empty_string(self):
+        # No WINRM_TRANSPORT attribute at all -> '' -> not kerberos/negotiate.
+        args = Args(WINRM_USERNAME='admin', WINRM_PASSWORD='linuxfabrik')
+        self.assertEqual(winrm_lib._build_auth(args), ('admin', 'linuxfabrik'))
+
+    def test_empty_domain_is_not_prepended(self):
+        args = make_args(WINRM_TRANSPORT='basic', WINRM_DOMAIN='')
+        self.assertEqual(winrm_lib._build_auth(args), ('admin', 'linuxfabrik'))
+
+
+# ============================================================================
+# _map_transport
+# ============================================================================
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestMapTransport(unittest.TestCase):
+
+    def test_ssl_uses_basic_auth_ssl_true_port_5986(self):
+        args = make_args(WINRM_TRANSPORT='ssl')
+        self.assertEqual(winrm_lib._map_transport(args), ('basic', True, 5986))
+
+    def test_plaintext_maps_to_basic_no_ssl_port_5985(self):
+        args = make_args(WINRM_TRANSPORT='plaintext')
+        self.assertEqual(winrm_lib._map_transport(args), ('basic', False, 5985))
+
+    def test_kerberos_maps_to_kerberos(self):
+        args = make_args(WINRM_TRANSPORT='kerberos')
+        self.assertEqual(winrm_lib._map_transport(args), ('kerberos', False, 5985))
+
+    def test_ntlm_maps_to_ntlm(self):
+        args = make_args(WINRM_TRANSPORT='ntlm')
+        self.assertEqual(winrm_lib._map_transport(args), ('ntlm', False, 5985))
+
+    def test_credssp_maps_to_credssp(self):
+        args = make_args(WINRM_TRANSPORT='credssp')
+        self.assertEqual(winrm_lib._map_transport(args), ('credssp', False, 5985))
+
+    def test_negotiate_maps_to_negotiate(self):
+        args = make_args(WINRM_TRANSPORT='negotiate')
+        self.assertEqual(winrm_lib._map_transport(args), ('negotiate', False, 5985))
+
+    def test_unknown_transport_defaults_to_negotiate(self):
+        args = make_args(WINRM_TRANSPORT='somethingelse')
+        self.assertEqual(winrm_lib._map_transport(args), ('negotiate', False, 5985))
+
+    def test_missing_transport_defaults_to_negotiate(self):
+        args = Args(WINRM_HOSTNAME='h')
+        self.assertEqual(winrm_lib._map_transport(args), ('negotiate', False, 5985))
+
+    def test_case_insensitive(self):
+        args = make_args(WINRM_TRANSPORT='SSL')
+        self.assertEqual(winrm_lib._map_transport(args), ('basic', True, 5986))
+
+
+# ============================================================================
+# _quote_ps_value
+# ============================================================================
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestQuotePsValue(unittest.TestCase):
+
+    def test_plain_string_is_single_quoted(self):
+        self.assertEqual(winrm_lib._quote_ps_value('WinRM'), "'WinRM'")
+
+    def test_embedded_single_quote_is_doubled(self):
+        self.assertEqual(winrm_lib._quote_ps_value("O'Brien"), "'O''Brien'")
+
+    def test_multiple_single_quotes(self):
+        self.assertEqual(winrm_lib._quote_ps_value("'a'b'"), "'''a''b'''")
+
+    def test_non_string_is_stringified(self):
+        self.assertEqual(winrm_lib._quote_ps_value(42), "'42'")
+
+    def test_empty_string(self):
+        self.assertEqual(winrm_lib._quote_ps_value(''), "''")
+
+
+# ============================================================================
+# run_cmd - pypsrp (JEA) backend
+# ============================================================================
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestRunCmdJea(unittest.TestCase):
+
+    def test_success_returns_normalized_dict(self):
+        session = MagicMock(name='Client-instance')
+        session.execute_cmd.return_value = ('out', 'err', 0)
+        client_cls = MagicMock(name='Client', return_value=session)
+        args = make_args()
+        with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
+            result = winrm_lib.run_cmd(args, 'ipconfig', ['/all'])
+        self.assertEqual(result, {'retc': 0, 'stdout': 'out', 'stderr': 'err'})
+        session.execute_cmd.assert_called_once_with('ipconfig', args=['/all'])
+
+    def test_nonzero_rc_is_propagated(self):
+        session = MagicMock()
+        session.execute_cmd.return_value = ('', 'bad', 5)
+        client_cls = MagicMock(return_value=session)
+        with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
+            result = winrm_lib.run_cmd(make_args(), 'whoami')
+        self.assertEqual(result, {'retc': 5, 'stdout': '', 'stderr': 'bad'})
+
+    def test_params_default_to_empty_list(self):
+        session = MagicMock()
+        session.execute_cmd.return_value = ('', '', 0)
+        client_cls = MagicMock(return_value=session)
+        with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
+            winrm_lib.run_cmd(make_args(), 'hostname')
+        session.execute_cmd.assert_called_once_with('hostname', args=[])
+
+    def test_client_constructed_with_mapped_transport_and_auth(self):
+        session = MagicMock()
+        session.execute_cmd.return_value = ('', '', 0)
+        client_cls = MagicMock(return_value=session)
+        args = make_args(WINRM_TRANSPORT='ssl', WINRM_DOMAIN='corp')
+        with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
+            winrm_lib.run_cmd(args, 'hostname')
+        client_cls.assert_called_once_with(
+            server='win.example.com',
+            username='admin@corp',
+            password='linuxfabrik',
+            auth='basic',
+            ssl=True,
+            port=5986,
+            cert_validation=True,
+        )
+
+    def test_kerberos_ccache_passes_none_credentials(self):
+        session = MagicMock()
+        session.execute_cmd.return_value = ('', '', 0)
+        client_cls = MagicMock(return_value=session)
+        args = make_args(WINRM_TRANSPORT='kerberos', WINRM_USERNAME='', WINRM_PASSWORD='')
+        with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
+            winrm_lib.run_cmd(args, 'hostname')
+        _, kwargs = client_cls.call_args
+        self.assertIsNone(kwargs['username'])
+        self.assertIsNone(kwargs['password'])
+        self.assertEqual(kwargs['auth'], 'kerberos')
+
+    def test_exception_is_normalized_to_retc1(self):
+        client_cls = MagicMock(side_effect=RuntimeError('connect failed'))
+        with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
+            result = winrm_lib.run_cmd(make_args(), 'hostname')
+        self.assertEqual(result['retc'], 1)
+        self.assertEqual(result['stdout'], '')
+        self.assertIn('connect failed', result['stderr'])
+        self.assertTrue(result['stderr'].startswith('RuntimeError:'))
+
+    def test_execute_cmd_exception_is_caught(self):
+        session = MagicMock()
+        session.execute_cmd.side_effect = ValueError('boom')
+        client_cls = MagicMock(return_value=session)
+        with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
+            result = winrm_lib.run_cmd(make_args(), 'hostname')
+        self.assertEqual(result['retc'], 1)
+        self.assertIn('boom', result['stderr'])
+
+    def test_bytes_output_is_decoded_to_text(self):
+        session = MagicMock()
+        session.execute_cmd.return_value = (b'hello', b'warn', 0)
+        client_cls = MagicMock(return_value=session)
+        with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
+            result = winrm_lib.run_cmd(make_args(), 'hostname')
+        self.assertEqual(result['stdout'], 'hello')
+        self.assertEqual(result['stderr'], 'warn')
+
+
+# ============================================================================
+# run_cmd - pywinrm backend
+# ============================================================================
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestRunCmdPywinrm(unittest.TestCase):
+
+    def test_success(self):
+        session = MagicMock(name='winrm.Session-instance')
+        session.run_cmd.return_value = make_pywinrm_result(0, b'out', b'')
+        winrm_mock = MagicMock(name='winrm-module')
+        winrm_mock.Session.return_value = session
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            result = winrm_lib.run_cmd(make_args(), 'ipconfig', ['/all'])
+        self.assertEqual(result, {'retc': 0, 'stdout': 'out', 'stderr': ''})
+        session.run_cmd.assert_called_once_with('ipconfig', ['/all'])
+
+    def test_session_built_with_auth_and_transport(self):
+        session = MagicMock()
+        session.run_cmd.return_value = make_pywinrm_result(0, b'', b'')
+        winrm_mock = MagicMock()
+        winrm_mock.Session.return_value = session
+        args = make_args(WINRM_TRANSPORT='ntlm', WINRM_DOMAIN='corp')
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            winrm_lib.run_cmd(args, 'hostname')
+        winrm_mock.Session.assert_called_once_with(
+            'win.example.com',
+            auth=('admin@corp', 'linuxfabrik'),
+            transport='ntlm',
+        )
+
+    def test_nonzero_status_code(self):
+        session = MagicMock()
+        session.run_cmd.return_value = make_pywinrm_result(2, b'', b'fail')
+        winrm_mock = MagicMock()
+        winrm_mock.Session.return_value = session
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            result = winrm_lib.run_cmd(make_args(), 'hostname')
+        self.assertEqual(result, {'retc': 2, 'stdout': '', 'stderr': 'fail'})
+
+    def test_exception_normalized(self):
+        winrm_mock = MagicMock()
+        winrm_mock.Session.side_effect = RuntimeError('no route to host')
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            result = winrm_lib.run_cmd(make_args(), 'hostname')
+        self.assertEqual(result['retc'], 1)
+        self.assertIn('no route to host', result['stderr'])
+
+    def test_params_default_to_empty_list(self):
+        session = MagicMock()
+        session.run_cmd.return_value = make_pywinrm_result(0, b'', b'')
+        winrm_mock = MagicMock()
+        winrm_mock.Session.return_value = session
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            winrm_lib.run_cmd(make_args(), 'hostname')
+        session.run_cmd.assert_called_once_with('hostname', [])
+
+
+# ============================================================================
+# run_cmd - no backend
+# ============================================================================
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestRunCmdNoBackend(unittest.TestCase):
+
+    def test_returns_clear_error(self):
+        with force_jea(have_jea=False, have_winrm=False):
+            result = winrm_lib.run_cmd(make_args(), 'hostname')
+        self.assertEqual(result['retc'], 1)
+        self.assertEqual(result['stdout'], '')
+        self.assertIn('No compatible remoting library available', result['stderr'])
+
+
+# ============================================================================
+# run_ps - pypsrp (JEA) backend
+# ============================================================================
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestRunPsJea(unittest.TestCase):
+
+    def _run(self, args, cmd, params, powershell):
+        """Wire up the lazily imported pypsrp symbols and call run_ps."""
+        pool = make_runspace_pool(powershell)
+        patches, runspace_cls, powershell_cls, wsman_cls, created = \
+            patch_pypsrp_powershell(pool, powershell)
+        try:
+            with force_jea():
+                for p in patches:
+                    p.start()
+                try:
+                    result = winrm_lib.run_ps(args, cmd, params)
+                finally:
+                    for p in reversed(patches):
+                        p.stop()
+        finally:
+            for name in created:
+                sys.modules.pop(name, None)
+        return result, runspace_cls, powershell_cls, wsman_cls, pool
+
+    def test_script_path_uses_add_script(self):
+        ps = make_powershell(outputs=['line1', 'line2'])
+        result, _, _, _, _ = self._run(
+            make_args(), 'Get-Process | Select -First 1', None, ps,
+        )
+        self.assertEqual(result, {'retc': 0, 'stdout': 'line1\nline2', 'stderr': ''})
+        ps.add_script.assert_called_once_with('Get-Process | Select -First 1')
+        ps.add_cmdlet.assert_not_called()
+
+    def test_positional_params_use_add_cmdlet_and_add_argument(self):
+        ps = make_powershell(outputs=['running'])
+        result, _, _, _, _ = self._run(make_args(), 'Get-Service', ['WinRM'], ps)
+        self.assertEqual(result['retc'], 0)
+        ps.add_cmdlet.assert_called_once_with('Get-Service')
+        ps.add_argument.assert_called_once_with('WinRM')
+        ps.add_parameter.assert_not_called()
+
+    def test_dict_params_use_add_parameter(self):
+        ps = make_powershell(outputs=['ok'])
+        result, _, _, _, _ = self._run(
+            make_args(), 'Get-WmiObject', {'Class': 'Win32_OperatingSystem'}, ps,
+        )
+        self.assertEqual(result['retc'], 0)
+        ps.add_cmdlet.assert_called_once_with('Get-WmiObject')
+        ps.add_parameter.assert_called_once_with('Class', 'Win32_OperatingSystem')
+        ps.add_argument.assert_not_called()
+
+    def test_empty_list_params_still_uses_cmdlet(self):
+        # params is not None (it is []), so the cmdlet branch is taken, with no
+        # arguments added.
+        ps = make_powershell(outputs=[])
+        result, _, _, _, _ = self._run(make_args(), 'Get-Date', [], ps)
+        self.assertEqual(result['retc'], 0)
+        ps.add_cmdlet.assert_called_once_with('Get-Date')
+        ps.add_argument.assert_not_called()
+
+    def test_had_errors_sets_retc_1_and_collects_stderr(self):
+        err = make_error_record(to_string='Get-Foo: not recognized')
+        ps = make_powershell(outputs=[], errors=[err], had_errors=True)
+        result, _, _, _, _ = self._run(make_args(), 'Get-Foo', None, ps)
+        self.assertEqual(result['retc'], 1)
+        self.assertEqual(result['stderr'], 'Get-Foo: not recognized')
+
+    def test_error_record_to_string_failure_falls_back_to_message(self):
+        err = make_error_record(message='fallback message', raise_on_to_string=True)
+        ps = make_powershell(outputs=[], errors=[err], had_errors=True)
+        result, _, _, _, _ = self._run(make_args(), 'Get-Foo', None, ps)
+        self.assertEqual(result['retc'], 1)
+        self.assertEqual(result['stderr'], 'fallback message')
+
+    def test_error_record_to_string_failure_no_message_falls_back_to_str(self):
+        err = make_error_record(raise_on_to_string=True)
+        err.__str__ = lambda self=err: 'str-of-record'
+        ps = make_powershell(outputs=[], errors=[err], had_errors=True)
+        result, _, _, _, _ = self._run(make_args(), 'Get-Foo', None, ps)
+        self.assertEqual(result['retc'], 1)
+        self.assertEqual(result['stderr'], 'str-of-record')
+
+    def test_multiple_error_records_joined_by_newline(self):
+        errs = [
+            make_error_record(to_string='first'),
+            make_error_record(to_string='second'),
+        ]
+        ps = make_powershell(outputs=[], errors=errs, had_errors=True)
+        result, _, _, _, _ = self._run(make_args(), 'Get-Foo', None, ps)
+        self.assertEqual(result['stderr'], 'first\nsecond')
+
+    def test_outputs_are_stringified(self):
+        ps = make_powershell(outputs=[1, 2, 3])
+        result, _, _, _, _ = self._run(make_args(), 'cmd', None, ps)
+        self.assertEqual(result['stdout'], '1\n2\n3')
+
+    def test_wsman_built_with_mapped_transport(self):
+        ps = make_powershell(outputs=[])
+        args = make_args(WINRM_TRANSPORT='ssl')
+        _, _, _, wsman_cls, _ = self._run(args, 'cmd', None, ps)
+        wsman_cls.assert_called_once_with(
+            server='win.example.com',
+            username='admin',
+            password='linuxfabrik',
+            auth='basic',
+            ssl=True,
+            port=5986,
+            cert_validation=True,
+        )
+
+    def test_default_configuration_name(self):
+        ps = make_powershell(outputs=[])
+        _, runspace_cls, _, _, _ = self._run(make_args(), 'cmd', None, ps)
+        _, kwargs = runspace_cls.call_args
+        self.assertEqual(kwargs['configuration_name'], 'Microsoft.PowerShell')
+
+    def test_custom_configuration_name_is_passed(self):
+        ps = make_powershell(outputs=[])
+        args = make_args(WINRM_CONFIGURATION_NAME='LF.JEA')
+        _, runspace_cls, _, _, _ = self._run(args, 'cmd', None, ps)
+        _, kwargs = runspace_cls.call_args
+        self.assertEqual(kwargs['configuration_name'], 'LF.JEA')
+
+    def test_exception_inside_jea_is_normalized(self):
+        # Make RunspacePool.__enter__ raise to hit the except branch.
+        ps = make_powershell(outputs=[])
+        pool = make_runspace_pool(ps)
+        pool.__enter__.side_effect = RuntimeError('pool failed')
+        patches, _, _, _, created = patch_pypsrp_powershell(pool, ps)
+        try:
+            with force_jea():
+                for p in patches:
+                    p.start()
+                try:
+                    result = winrm_lib.run_ps(make_args(), 'cmd', None)
+                finally:
+                    for p in reversed(patches):
+                        p.stop()
+        finally:
+            for name in created:
+                sys.modules.pop(name, None)
+        self.assertEqual(result['retc'], 1)
+        self.assertIn('pool failed', result['stderr'])
+
+
+# ============================================================================
+# run_ps - configuration name without pypsrp
+# ============================================================================
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestRunPsConfigurationGuard(unittest.TestCase):
+
+    def test_configuration_name_without_jea_is_rejected(self):
+        args = make_args(WINRM_CONFIGURATION_NAME='LF.JEA')
+        with force_jea(have_jea=False, have_winrm=True):
+            result = winrm_lib.run_ps(args, 'Get-Date', None)
+        self.assertEqual(result['retc'], 1)
+        self.assertEqual(result['stdout'], '')
+        self.assertIn('WINRM_CONFIGURATION_NAME requires', result['stderr'])
+        self.assertIn('pypsrp', result['stderr'])
+
+    def test_configuration_name_without_any_backend_is_rejected(self):
+        args = make_args(WINRM_CONFIGURATION_NAME='LF.JEA')
+        with force_jea(have_jea=False, have_winrm=False):
+            result = winrm_lib.run_ps(args, 'Get-Date', None)
+        self.assertEqual(result['retc'], 1)
+        self.assertIn('WINRM_CONFIGURATION_NAME requires', result['stderr'])
+
+    def test_empty_configuration_name_does_not_trigger_guard(self):
+        # Falsy configuration_name must not trip the guard; with no backend we
+        # then fall through to the generic "no backend" message.
+        args = make_args(WINRM_CONFIGURATION_NAME='')
+        with force_jea(have_jea=False, have_winrm=False):
+            result = winrm_lib.run_ps(args, 'Get-Date', None)
+        self.assertIn('No compatible remoting library available', result['stderr'])
+
+
+# ============================================================================
+# run_ps - pywinrm backend
+# ============================================================================
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestRunPsPywinrm(unittest.TestCase):
+
+    def _session(self, result):
+        session = MagicMock(name='winrm.Session-instance')
+        session.run_ps.return_value = result
+        winrm_mock = MagicMock(name='winrm-module')
+        winrm_mock.Session.return_value = session
+        return session, winrm_mock
+
+    def test_script_path_passes_cmd_verbatim(self):
+        session, winrm_mock = self._session(make_pywinrm_result(0, b'out', b''))
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
+        self.assertEqual(result, {'retc': 0, 'stdout': 'out', 'stderr': ''})
+        session.run_ps.assert_called_once_with('Get-Date')
+
+    def test_positional_params_are_appended(self):
+        session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            winrm_lib.run_ps(make_args(), 'Get-Service', ['WinRM', 'Spooler'])
+        session.run_ps.assert_called_once_with('Get-Service WinRM Spooler')
+
+    def test_empty_positional_params_keeps_bare_cmd(self):
+        session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            winrm_lib.run_ps(make_args(), 'Get-Date', [])
+        session.run_ps.assert_called_once_with('Get-Date')
+
+    def test_dict_params_are_quoted(self):
+        session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            winrm_lib.run_ps(
+                make_args(), 'Get-WmiObject', {'Class': 'Win32_OperatingSystem'},
+            )
+        session.run_ps.assert_called_once_with(
+            "Get-WmiObject -Class 'Win32_OperatingSystem'",
+        )
+
+    def test_dict_params_escape_single_quotes(self):
+        session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            winrm_lib.run_ps(make_args(), 'Get-Thing', {'Name': "O'Brien"})
+        session.run_ps.assert_called_once_with("Get-Thing -Name 'O''Brien'")
+
+    def test_clixml_noise_suppressed_on_success(self):
+        result_obj = make_pywinrm_result(0, b'data', b'#< CLIXML\r\n<Objs>...')
+        _, winrm_mock = self._session(result_obj)
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
+        self.assertEqual(result['retc'], 0)
+        self.assertEqual(result['stderr'], '')
+
+    def test_clixml_noise_kept_on_failure(self):
+        result_obj = make_pywinrm_result(1, b'', b'#< CLIXML\r\nreal error')
+        _, winrm_mock = self._session(result_obj)
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
+        self.assertEqual(result['retc'], 1)
+        self.assertTrue(result['stderr'].startswith('#< CLIXML'))
+
+    def test_non_clixml_stderr_kept_on_success(self):
+        result_obj = make_pywinrm_result(0, b'', b'plain warning')
+        _, winrm_mock = self._session(result_obj)
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
+        self.assertEqual(result['stderr'], 'plain warning')
+
+    def test_exception_is_normalized(self):
+        winrm_mock = MagicMock()
+        winrm_mock.Session.side_effect = RuntimeError('ps failed')
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
+        self.assertEqual(result['retc'], 1)
+        self.assertIn('ps failed', result['stderr'])
+
+    def test_session_built_with_auth_and_transport(self):
+        _, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
+        args = make_args(WINRM_TRANSPORT='basic')
+        with force_jea(have_jea=False, have_winrm=True), \
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+            winrm_lib.run_ps(args, 'Get-Date', None)
+        winrm_mock.Session.assert_called_once_with(
+            'win.example.com',
+            auth=('admin', 'linuxfabrik'),
+            transport='basic',
+        )
+
+
+# ============================================================================
+# run_ps - no backend
+# ============================================================================
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestRunPsNoBackend(unittest.TestCase):
+
+    def test_returns_clear_error(self):
+        with force_jea(have_jea=False, have_winrm=False):
+            result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
+        self.assertEqual(result['retc'], 1)
+        self.assertEqual(result['stdout'], '')
+        self.assertIn('No compatible remoting library available', result['stderr'])
+
+
+if __name__ == '__main__':
+    unittest.main()
