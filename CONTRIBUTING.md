@@ -119,6 +119,53 @@ pylint mylib.py
 See [PyLint's message codes](http://pylint-messages.wikidot.com/all-codes) for reference.
 
 
+### Unit Tests
+
+Unit tests use the standard-library [`unittest`](https://docs.python.org/3/library/unittest.html) framework (not pytest, so the suite runs across the full Python matrix, py3.6-py3.14). The setup mirrors the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins) so both projects look identical, but the library is tested independently: each test imports the local source directly, no other repository is required.
+
+#### Test directory structure
+
+Each module under test gets its own directory under `tests/`, mirroring the monitoring-plugins `check-plugins/<name>/unit-test/` layout:
+
+```
+tests/db_sqlite/
+├── lib                     # symlink to the repo root (../..), so `import lib.db_sqlite` resolves to the local source
+└── unit-test/
+    ├── run                 # the executable test file (unittest)
+    └── fixtures/           # sample input files (only if needed)
+```
+
+The `lib` symlink plus `sys.path.insert(0, '..')` at the top of `run` make `import lib.<module>` load the working-tree source, so tests always exercise local changes.
+
+#### Writing tests
+
+* Cover **every public function**, **all keyword-argument combinations**, and the edge cases: zero, value and unit boundaries, very large, very small, negative, empty, and wrong data types. Use `assertRaises` where the function raises and assert the real value where it degrades gracefully.
+* **Probe first, then assert.** Run the function and observe the actual output before writing the expectation; never guess.
+* **Keep fixture tests hermetic.** Mock every network call, subprocess, socket and external service with `unittest.mock` (patch `lib.url.*`, `lib.shell.shell_exec`, etc.) and drive parsers from fixtures under `unit-test/fixtures/`. These run in a fraction of a second and cover the whole `tox` matrix.
+* Only reach for **container-based tests** (via `lib.lftest` and testcontainers-python) when a function's behaviour really depends on a live service. For functions that talk to an application, use a Red Hat family container running the current LTS release of that application. Container tests are detected automatically and excluded from the fast matrix.
+
+See `tests/human/unit-test/run` (pure functions) and `tests/db_sqlite/unit-test/run` (security edge cases) as reference implementations.
+
+#### Running tests
+
+```bash
+# all fast (fixture) tests, used by tox
+tools/run-unit-tests --no-container
+
+# a single module
+tools/run-unit-tests db_sqlite
+
+# only the container tests (thin wrapper around --only-container)
+tools/run-container-tests
+
+# everything in parallel (lint + fast + container), aggregated
+tools/run-all-tests
+
+# the full Python matrix (py3.6-py3.14)
+tools/run-tox-tests
+```
+
+
 ### Commit Scopes
 
 Use the library module name as commit scope:
