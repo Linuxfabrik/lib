@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.lftest (the test-helper library itself).
+
+Covers the pure helpers (test(), attach_tests(), attach_each(), the
+mysql-image helpers) and run() with a mocked shell. The container-spawning
+helpers (run_container, run_mysql_compatible*, network) need podman and are
+exercised by the modules that use them, not here, so this stays a fast test.
+"""
+
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.lftest as lftest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+class TestTestHelper(unittest.TestCase):
+    """test(): reads the stdout/stderr fixtures and the return code."""
+
+    def setUp(self):
+        self.cwd = os.getcwd()
+        os.chdir(HERE)
+
+    def tearDown(self):
+        os.chdir(self.cwd)
+
+    def test_stdout_only_defaults(self):
+        self.assertEqual(lftest.test(['stdout/case']), ('hello world', '', 0))
+
+    def test_full_triplet(self):
+        self.assertEqual(
+            lftest.test(['stdout/case', 'stderr/case', '2']),
+            ('hello world', 'err text', 2),
+        )
+
+    def test_empty_retc_field_is_zero(self):
+        self.assertEqual(lftest.test(['stdout/case', '', '']), ('hello world', '', 0))
+
+
+class TestIsMariadbImage(unittest.TestCase):
+    def test_mariadb_images(self):
+        self.assertTrue(lftest._is_mariadb_image('docker.io/library/mariadb:11'))
+        self.assertTrue(lftest._is_mariadb_image('quay.io/sclorg/mariadb-1011-c10s'))
+
+    def test_mysql_image_is_false(self):
+        self.assertFalse(lftest._is_mariadb_image('docker.io/library/mysql:8'))
+        self.assertFalse(lftest._is_mariadb_image('quay.io/sclorg/mysql-80-c10s'))
+
+
+class TestMysqlStartupCommand(unittest.TestCase):
+    def test_no_extra_args_uses_image_default(self):
+        self.assertIsNone(
+            lftest._mysql_compatible_startup_command('docker.io/library/mariadb:11', None)
+        )
+        self.assertIsNone(
+            lftest._mysql_compatible_startup_command('docker.io/library/mysql:8', None)
+        )
+
+    def test_mariadb_daemon(self):
+        self.assertEqual(
+            lftest._mysql_compatible_startup_command('docker.io/library/mariadb:11', '--bar'),
+            'mariadbd --bar',
+        )
+
+    def test_mysql_daemon(self):
+        self.assertEqual(
+            lftest._mysql_compatible_startup_command('docker.io/library/mysql:8', '--foo'),
+            'mysqld --foo',
+        )
+
+
+class TestDockerfileFromImage(unittest.TestCase):
+    def test_extracts_from_image(self):
+        path = os.path.join(HERE, 'fixtures', 'sample-containerfile')
+        self.assertEqual(
+            lftest._dockerfile_from_image(path),
+            'quay.io/sclorg/mariadb-1011-c10s',
+        )
+
+
+class TestAttachTests(unittest.TestCase):
+    def test_materialises_one_method_per_testcase(self):
+        class Dummy(unittest.TestCase):
+            check = '../x'
+
+        lftest.attach_tests(
+            Dummy,
+            [{'id': 'ok-one', 'test': 'a'}, {'id': 'warn-two', 'test': 'b'}],
+        )
+        self.assertTrue(hasattr(Dummy, 'test_ok_one'))
+        self.assertTrue(hasattr(Dummy, 'test_warn_two'))
+
+    def test_duplicate_id_raises(self):
+        class Dummy(unittest.TestCase):
+            check = '../x'
+
+        with self.assertRaises(ValueError):
+            lftest.attach_tests(Dummy, [{'id': 'dup', 'test': 'a'}, {'id': 'dup', 'test': 'b'}])
+
+
+class TestAttachEach(unittest.TestCase):
+    def test_materialises_one_method_per_item(self):
+        class Dummy(unittest.TestCase):
+            pass
+
+        lftest.attach_each(Dummy, ['alpha', 'beta'], lambda test, item: None, id_func=str)
+        self.assertTrue(hasattr(Dummy, 'test_alpha'))
+        self.assertTrue(hasattr(Dummy, 'test_beta'))
+
+
+class TestRun(unittest.TestCase):
+    """run(): drives a plugin via shell and asserts on its output (shell mocked)."""
+
+    class _Probe(unittest.TestCase):
+        def runTest(self):
+            pass
+
+    def test_passing_testcase(self):
+        probe = self._Probe()
+        with mock.patch.object(
+            lftest.shell, 'shell_exec', return_value=(True, ('hello world', '', 0))
+        ):
+            # Must not raise: all assertions hold.
+            lftest.run(
+                probe,
+                '../plugin',
+                {
+                    'test': 'stdout/case',
+                    'assert-retc': 0,
+                    'assert-in': ['hello'],
+                    'assert-not-in': ['nope'],
+                },
+            )
+
+    def test_wrong_return_code_fails(self):
+        probe = self._Probe()
+        with mock.patch.object(
+            lftest.shell, 'shell_exec', return_value=(True, ('hello world', '', 0))
+        ), self.assertRaises(AssertionError):
+            lftest.run(probe, '../plugin', {'test': 'stdout/case', 'assert-retc': 2})
+
+    def test_missing_assert_in_fails(self):
+        probe = self._Probe()
+        with mock.patch.object(
+            lftest.shell, 'shell_exec', return_value=(True, ('hello world', '', 0))
+        ), self.assertRaises(AssertionError):
+            lftest.run(
+                probe,
+                '../plugin',
+                {'test': 'stdout/case', 'assert-retc': 0, 'assert-in': ['absent']},
+            )
+
+
+if __name__ == '__main__':
+    unittest.main()
