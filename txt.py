@@ -10,13 +10,15 @@
 
 """A collection of text functions.
 
-The functions "to_text()" and "to_bytes()" were originally copied
-from Ansible's module_utils/_text.py (BSD license), then simplified
-for Python 3 only.
+The functions "to_text()" and "to_bytes()" were originally copied from
+Ansible (BSD license), then simplified for Python 3 only. Upstream now
+lives at ansible/module_utils/common/text/converters.py (historically
+module_utils/_text.py); see the comment above to_bytes() for what we
+intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026032101'
+__version__ = '2026060201'
 
 import operator
 import re
@@ -459,6 +461,15 @@ def sanitize_sensitive_data(msg, replacement='******'):
     return msg
 
 
+# `to_bytes` and `to_text` below are an extraction of Ansible's text converters
+# with the object-oriented and typing scaffolding stripped for our Python 3.9+
+# use-case. Look here if upstream behaviour ever needs to be re-checked or synced:
+#   ansible/lib/ansible/module_utils/common/text/converters.py  (to_bytes, to_text)
+# Original under the Simplified BSD License, (c) 2016 Toshio Kuratomi / Ansible
+# project. Deliberate omissions vs. upstream: the Python 2 fallback for when the
+# `surrogateescape` error handler is unavailable (it always is on Python 3), and
+# the str() -> repr() -> empty UnicodeError guard in the `simplerepr` path
+# (irrelevant for the command output and numbers we convert).
 def to_bytes(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     """
     Convert an object to a byte string.
