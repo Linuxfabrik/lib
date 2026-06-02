@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 tbd
 
 
+## [v4.2.0] - 2026-06-02
+
+### Added
+
+* db_sqlite.py: `get_db_path()` resolves and returns the absolute path of a database without opening it, so callers that need to seed, migrate or remove a database file rely on a single source of truth instead of rebuilding the path themselves
+
+### Security
+
+* db_sqlite.py: SQLite databases are now created in a private, per-user `0700` directory under the system temporary directory instead of directly in the shared, world-writable `/tmp`. This closes a local symlink attack on the predictable database paths where an unprivileged user could redirect writes from a process running as root to arbitrary files ([GHSA-r35r-fpx2-jgr4](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-r35r-fpx2-jgr4), thanks to [OoYo0uto](https://github.com/OoYo0uto))
+
+
 ## [v4.1.0] - 2026-05-29
 
 ### Added
@@ -591,7 +602,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.1.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.2.0...HEAD
+[v4.2.0]: https://github.com/Linuxfabrik/lib/compare/v4.1.0...v4.2.0
 [v4.1.0]: https://github.com/Linuxfabrik/lib/compare/v4.0.2...v4.1.0
 [v4.0.2]: https://github.com/Linuxfabrik/lib/compare/v4.0.1...v4.0.2
 [v4.0.1]: https://github.com/Linuxfabrik/lib/compare/v4.0.0...v4.0.1
