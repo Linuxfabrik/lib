@@ -1,0 +1,5 @@
+# Official WildFly (Red Hat UBI based). Add a ManagementRealm user and bind the
+# management interface so the management API on :9990 is reachable from the host.
+FROM quay.io/wildfly/wildfly:latest
+RUN /opt/jboss/wildfly/bin/add-user.sh admin linuxfabrik --silent
+CMD ["/opt/jboss/wildfly/bin/standalone.sh", "-b", "0.0.0.0", "-bmanagement", "0.0.0.0"]

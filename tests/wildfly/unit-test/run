@@ -45,9 +45,11 @@ from unittest import mock
 
 sys.path.insert(0, '..')
 
+import lib.lftest
 import lib.wildfly as wildfly
 
 FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures')
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_fixture(name):
@@ -476,6 +478,50 @@ class TestModuleSanity(unittest.TestCase):
     def test_url_module_referenced(self):
         # The module must reach the network exclusively via lib.url.
         self.assertTrue(hasattr(wildfly, 'url'))
+
+
+class TestWildflyContainer(unittest.TestCase):
+    """Happy-path integration against a real WildFly management API.
+
+    Builds a WildFly image with a ManagementRealm user and the management
+    interface bound to 0.0.0.0, then drives get_data over digest auth.
+    Mixing this with the mocked tests classifies the module as a container
+    test (run via tools/run-container-tests).
+    """
+
+    def test_management_api(self):
+        from testcontainers.core.image import DockerImage
+
+        with (
+            DockerImage(
+                path=HERE,
+                dockerfile_path='containerfiles/wildfly-latest',
+                tag='lfmp-test-wildfly',
+                clean_up=False,
+            ) as image,
+            lib.lftest.run_container(
+                str(image),
+                ports=[9990],
+                wait_log='started in',
+                wait_log_timeout=300,
+            ) as container,
+        ):
+            base_url = (
+                f'http://{container.get_container_host_ip()}:'
+                f'{container.get_exposed_port(9990)}'
+            )
+            args = make_args(URL=base_url, NO_PROXY=True, TIMEOUT=30)
+
+            # read-attribute: a booted server reports server-state "running".
+            state = wildfly.get_data(
+                args, data={'operation': 'read-attribute', 'name': 'server-state'}
+            )
+            self.assertEqual(state, 'running')
+
+            # read-resource: the root resource exposes the product name.
+            root = wildfly.get_data(args, data={'operation': 'read-resource'})
+            self.assertIsInstance(root, dict)
+            self.assertIn('product-name', root)
 
 
 if __name__ == '__main__':
