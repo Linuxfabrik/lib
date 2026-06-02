@@ -28,13 +28,14 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051102'
+__version__ = '2026060102'
 
 import csv
 import hashlib
 import os
 import re
 import sqlite3
+import stat
 
 from . import disk, time, txt
 
@@ -299,6 +300,10 @@ def connect(path='', filename=''):
         - Error message string on failure.
 
     ### Notes
+    - On POSIX systems the database is stored in a per-user, `0700`-protected subdirectory of the
+      temporary directory (see `get_db_dir()`), not directly in the shared, world-writable `/tmp`.
+      This isolates each user's databases and prevents symlink attacks on the predictable paths
+      (CWE-377, GHSA-r35r-fpx2-jgr4).
     - The connection uses a `Row` factory, allowing rows to behave like dictionaries.
     - The connection registers a `REGEXP` SQL function for regular expression support.
     - Always check the returned success flag before using the connection.
@@ -311,25 +316,9 @@ def connect(path='', filename=''):
     >>> else:
     >>>     print(conn)
     """
-
-    def get_filename(path='', filename=''):
-        """Helper to build the absolute path to the SQLite database file."""
-        if not path:
-            path = disk.get_tmpdir()
-        if not filename:
-            filename = 'linuxfabrik-monitoring-plugins-sqlite.db'
-        # Isolate the cache db per user by embedding the UID into the filename. On a shared
-        # /tmp the first runner creates a 0644-owned file that other users can read but not
-        # write, so the next run under a different user (e.g. created as root, scheduled as
-        # the monitoring agent's user) aborts with "attempt to write a readonly database".
-        # os.getuid() is absent on Windows, where multi-user /tmp collisions are not a
-        # concern, so the suffix is skipped there.
-        if hasattr(os, 'getuid'):
-            stem, ext = os.path.splitext(filename)
-            filename = f'{stem}-uid{os.getuid()}{ext}'
-        return os.path.join(path, filename)
-
-    db = get_filename(path, filename)
+    success, db = get_db_path(path=path, filename=filename)
+    if not success:
+        return False, db
 
     try:
         conn = sqlite3.connect(db)
@@ -647,6 +636,114 @@ def get_colnames(col_definition):
     ['date', 'count', 'name']
     """
     return [col.strip().split()[0] for col in col_definition.split(',') if col.strip()]
+
+
+def get_db_dir(path):
+    """
+    Return a per-user subdirectory of `path` that is safe for storing SQLite databases,
+    creating it if necessary.
+
+    SQLite databases are stored at predictable paths under the system temporary directory so the
+    data is found again on the next run. On a shared POSIX `/tmp`, that predictable path lets a
+    local attacker pre-create a symlink there and redirect writes to an arbitrary file. For a
+    process running as root (e.g. via sudo) this turns into an arbitrary-write primitive (CWE-377,
+    GHSA-r35r-fpx2-jgr4). To prevent this, all databases are kept inside a directory owned by the
+    current user with `0700` permissions, and the directory is rejected if anything about it looks
+    tampered with.
+
+    ### Parameters
+    - **path** (`str`):
+      The base directory (typically the system temporary directory) in which to create the
+      per-user subdirectory.
+
+    ### Returns
+    - **tuple** (`bool`, `str`):
+      - First element (`bool`): `True` on success, `False` on failure.
+      - Second element (`str`):
+        - The absolute path to the secure subdirectory on success.
+        - An error message describing the failure otherwise.
+
+    ### Notes
+    - `os.geteuid()` does not exist on Windows, where the temporary directory is already per-user
+      rather than a shared, world-writable location. There the base `path` is returned unchanged.
+    - The directory is validated with `os.lstat()` so a symlink planted at its path is detected
+      instead of being followed.
+
+    ### Example
+    >>> get_db_dir('/tmp')
+    (True, '/tmp/linuxfabrik-monitoring-plugins-uid1000')
+    """
+    # On Windows the temp dir is already per-user; the shared-/tmp hardening below does not apply.
+    if not hasattr(os, 'geteuid'):
+        return True, path
+
+    euid = os.geteuid()
+    db_dir = os.path.join(path, f'linuxfabrik-monitoring-plugins-uid{euid}')
+
+    # Reject a pre-existing symlink outright: makedirs(exist_ok=True) would either follow it
+    # (when it resolves to a directory) or fail with a confusing "File exists" (when it dangles).
+    # Either way it must not be used. os.path.islink() does not follow the link.
+    if os.path.islink(db_dir):
+        return False, f'DB directory {db_dir} is a symlink, refusing to use it'
+
+    try:
+        # 0o700: only the owner may access the directory. An existing directory is fine and gets
+        # validated below; any other error (e.g. an unwritable temp dir) aborts the connection.
+        os.makedirs(db_dir, mode=0o700, exist_ok=True)
+    except OSError as e:
+        return False, f'Creating DB directory {db_dir} failed, Error: {e}'
+
+    # lstat() does not follow symlinks, so a symlink planted at db_dir is caught here instead of
+    # silently redirecting every database to the attacker's target.
+    try:
+        st = os.lstat(db_dir)
+    except OSError as e:
+        return False, f'Inspecting DB directory {db_dir} failed, Error: {e}'
+
+    if not stat.S_ISDIR(st.st_mode):
+        return False, f'DB directory {db_dir} is not a directory, refusing to use it'
+    if st.st_uid != euid:
+        return False, f'DB directory {db_dir} has the wrong owner, refusing to use it'
+    if st.st_mode & 0o077:
+        return False, f'DB directory {db_dir} is too permissive, refusing to use it'
+
+    return True, db_dir
+
+
+def get_db_path(path='', filename=''):
+    """
+    Return the absolute path of the SQLite database `filename`, resolving the same secured
+    per-user directory that `connect()` uses.
+
+    Use this whenever a caller needs the on-disk location of a database it opens through
+    `connect()` (for example to seed, migrate or remove the file), so the path is built in exactly
+    one place instead of being reconstructed by every caller.
+
+    ### Parameters
+    - **path** (`str`, optional):
+      Directory to resolve the database in. Defaults to the system temporary directory.
+    - **filename** (`str`, optional):
+      Name of the database file. Defaults to `'linuxfabrik-monitoring-plugins-sqlite.db'`.
+
+    ### Returns
+    - **tuple** (`bool`, `str`):
+      - First element (`bool`): `True` on success, `False` on failure.
+      - Second element (`str`):
+        - The absolute path to the database file on success.
+        - An error message describing the failure otherwise.
+
+    ### Example
+    >>> get_db_path(filename='example.db')
+    (True, '/tmp/linuxfabrik-monitoring-plugins-uid1000/example.db')
+    """
+    if not path:
+        path = disk.get_tmpdir()
+    if not filename:
+        filename = 'linuxfabrik-monitoring-plugins-sqlite.db'
+    success, db_dir = get_db_dir(path)
+    if not success:
+        return False, db_dir
+    return True, os.path.join(db_dir, filename)
 
 
 def get_tables(conn):
