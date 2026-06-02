@@ -32,14 +32,22 @@ on.
 import json
 import os
 import sys
+import time
 import unittest
 from unittest import mock
 
 sys.path.insert(0, '..')
 
+import lib.lftest
 import lib.rocket as rocket
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
+
+# Official images. Rocket.Chat requires MongoDB as a replica set.
+MONGO_IMAGE = 'docker.io/library/mongo:6.0'
+ROCKETCHAT_IMAGE = 'docker.io/rocketchat/rocket.chat:6.13.0'
+ADMIN_USER = 'admin'
+ADMIN_PASS = 'Linuxfabrik-Admin-1'
 
 BASE_URL = 'https://chat.example.com/api/v1'
 AUTH_TOKEN = '8h2mKAwxB3AQrFSjLVKMooJyjdCFaA7W45sWlHP8IzO'
@@ -727,6 +735,69 @@ class TestSend2Webhook(unittest.TestCase):
             success, result = rocket.send2webhook(BASE_URL, 'TOKEN', {'text': 'hi'})
         self.assertFalse(success)
         self.assertEqual(result, 'Error: {}')
+
+
+class TestRocketContainer(unittest.TestCase):
+    """Happy-path integration against a real Rocket.Chat + MongoDB.
+
+    Starts MongoDB as a single-node replica set (required by Rocket.Chat) and
+    the official Rocket.Chat image on a shared network, then drives the real
+    login + statistics API. Mixing this with the mocked tests classifies the
+    module as a container test (run via tools/run-container-tests).
+    """
+
+    def test_login_and_statistics(self):
+        with (
+            lib.lftest.network() as net,
+            lib.lftest.run_container(
+                MONGO_IMAGE,
+                command='mongod --replSet rs0 --bind_ip_all',
+                network=net,
+                network_alias='mongo',
+                wait_log='Waiting for connections',
+                wait_log_timeout=120,
+            ) as mongo,
+        ):
+            mongo.exec([
+                'mongosh', '--quiet', '--eval',
+                'rs.initiate({_id:"rs0",members:[{_id:0,host:"mongo:27017"}]})',
+            ])
+            with lib.lftest.run_container(
+                ROCKETCHAT_IMAGE,
+                env={
+                    'MONGO_URL': 'mongodb://mongo:27017/rocketchat?replicaSet=rs0',
+                    'MONGO_OPLOG_URL': 'mongodb://mongo:27017/local?replicaSet=rs0',
+                    'ROOT_URL': 'http://localhost:3000',
+                    'PORT': '3000',
+                    'ADMIN_USERNAME': ADMIN_USER,
+                    'ADMIN_PASS': ADMIN_PASS,
+                    'ADMIN_EMAIL': 'admin@example.com',
+                    'OVERWRITE_SETTING_Show_Setup_Wizard': 'completed',
+                },
+                ports=[3000],
+                network=net,
+                wait_log='SERVER RUNNING',
+                wait_log_timeout=360,
+            ) as rc:
+                api = (
+                    f'http://{rc.get_container_host_ip()}:'
+                    f'{rc.get_exposed_port(3000)}/api/v1'
+                )
+
+                # "SERVER RUNNING" is logged a moment before the HTTP API
+                # actually accepts connections; retry the login until it is up.
+                ok, creds = False, 'not attempted'
+                for _ in range(45):
+                    ok, creds = rocket.get_token(api, ADMIN_USER, ADMIN_PASS)
+                    if ok:
+                        break
+                    time.sleep(2)
+                self.assertTrue(ok, creds)
+                auth_token, user_id = creds.split(':')
+
+                ok, stats = rocket.get_stats(api, auth_token, user_id)
+                self.assertTrue(ok, stats)
+                self.assertIn('version', stats)
 
 
 if __name__ == '__main__':
