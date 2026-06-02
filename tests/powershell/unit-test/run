@@ -145,7 +145,7 @@ class TestRunPsDecoding(unittest.TestCase):
         # Prove run_ps uses txt.to_text rather than a bare .decode(), so the
         # library's decoding policy (errors handling, nonstring, etc.) applies.
         with patch_run(stdout=b'X', stderr=b'Y'), mock.patch.object(
-            powershell.txt, 'to_text', side_effect=lambda b: 'DECODED'
+            powershell.txt, 'to_text', side_effect=lambda _: 'DECODED'
         ) as m:
             result = powershell.run_ps('x')
         self.assertEqual(result['stdout'], 'DECODED')

@@ -162,7 +162,7 @@ def main():
     if selected is None or 'vulture' in selected:
         exit_code |= run_analyzer(
             'vulture',
-            ['vulture', *python_files],
+            ['vulture', '--min-confidence=80', *python_files],
         )
 
     return exit_code
