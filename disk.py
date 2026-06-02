@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025100201'
+__version__ = '2026060101'
 
 import csv
 import os
@@ -226,24 +226,31 @@ def get_real_disks():
 
 def get_tmpdir():
     """
-    Return the name of the directory used for temporary files, always without a trailing '/'.
+    Return the absolute path of the directory used for temporary files, without a trailing '/'.
 
-    Searches a standard list of directories to find one in which the calling user can create files.
-    The search order is:
+    Thin wrapper around `tempfile.gettempdir()`, which picks a usable temporary directory by
+    trying to create, write and delete a test file in each candidate and returning the first one
+    that works. The candidates are tried in this order:
 
-    - The directory named by the TMPDIR environment variable.
-    - The directory named by the TEMP environment variable.
-    - The directory named by the TMP environment variable.
-    - A platform-specific default:
-        * On Windows: C:\\TEMP, C:\\TMP, \\TEMP, \\TMP (in that order).
-        * On other systems: /tmp, /var/tmp, /usr/tmp (in that order).
+    - The directories named by the `TMPDIR`, `TEMP` and `TMP` environment variables.
+    - Platform-specific defaults: on Windows `~\\AppData\\Local\\Temp`, `%SYSTEMROOT%\\Temp`,
+      `c:\\temp`, `c:\\tmp`, `\\temp`, `\\tmp`; on other systems `/tmp`, `/var/tmp`, `/usr/tmp`.
     - As a last resort, the current working directory.
+
+    The literal `/tmp` is only returned as a fallback if `tempfile.gettempdir()` itself raises.
 
     ### Parameters
     - None
 
     ### Returns
     - **str**: The absolute path to the temporary directory.
+
+    ### Notes
+    - `tempfile.gettempdir()` computes the result once and caches it; changing `TMPDIR` and
+      friends afterwards has no effect for the rest of the process.
+    - The path is made absolute but not symlink-resolved (`os.path.abspath`, not
+      `os.path.realpath`), so a caller that needs a trusted location must validate the final path
+      itself.
 
     ### Example
     >>> get_tmpdir()
