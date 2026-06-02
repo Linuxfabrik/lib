@@ -37,6 +37,13 @@ class TestBytes2Human(unittest.TestCase):
         self.assertEqual(human.bytes2human(1025), '1.0KiB')
         self.assertEqual(human.bytes2human(1536), '1.5KiB')
 
+    def test_decimals_parameter(self):
+        self.assertEqual(human.bytes2human(1536, decimals=0), '2KiB')
+        self.assertEqual(human.bytes2human(1536, decimals=3), '1.500KiB')
+
+    def test_decimals_and_space_combined(self):
+        self.assertEqual(human.bytes2human(1536, decimals=0, space=True), '2 KiB')
+
     def test_very_large(self):
         self.assertEqual(human.bytes2human(10**15), '909.5TiB')
 
@@ -55,8 +62,14 @@ class TestBitsAndBps(unittest.TestCase):
         self.assertEqual(human.bits2human(1000), '125.0B')
         self.assertEqual(human.bits2human(0), '0.0B')
 
+    def test_bits2human_decimals(self):
+        self.assertEqual(human.bits2human(1500, decimals=0), '188B')
+
     def test_bps2human(self):
         self.assertEqual(human.bps2human(1000000), '1.0Mbps')
+
+    def test_bps2human_decimals(self):
+        self.assertEqual(human.bps2human(1500000, decimals=2), '1.50Mbps')
 
 
 class TestNumber2Human(unittest.TestCase):
@@ -73,6 +86,13 @@ class TestSeconds2Human(unittest.TestCase):
         self.assertEqual(human.seconds2human(3661), '1h 1m')
         self.assertEqual(human.seconds2human(90), '1m 30s')
         self.assertEqual(human.seconds2human(3661, full_name=True), '1hour 1minute')
+
+    def test_keep_short_false_includes_all_units(self):
+        self.assertEqual(human.seconds2human(3661, keep_short=False), '1h 1m 1s')
+        self.assertEqual(
+            human.seconds2human(3661, keep_short=False, full_name=True),
+            '1hour 1minute 1second',
+        )
 
     def test_zero_is_empty(self):
         self.assertEqual(human.seconds2human(0), '')

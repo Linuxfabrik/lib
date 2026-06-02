@@ -47,5 +47,17 @@ class TestOrNone(unittest.TestCase):
         self.assertIsNone(args.range_or_none('none'))
 
 
+class TestNumberUnitMethod(unittest.TestCase):
+    def test_defaults(self):
+        self.assertEqual(args.number_unit_method('50'), ('50', '%', 'USED'))
+
+    def test_custom_unit_and_method(self):
+        # The unit is upper-cased.
+        self.assertEqual(
+            args.number_unit_method('80', unit='GiB', method='FREE'),
+            ('80', 'GIB', 'FREE'),
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -45,6 +45,12 @@ class TestFileHelpers(unittest.TestCase):
         self.assertTrue(disk.file_exists(self.file))
         self.assertFalse(disk.file_exists(os.path.join(self.dir, 'nope')))
 
+    def test_file_exists_allow_empty_parameter(self):
+        empty = os.path.join(self.dir, 'empty')
+        disk.write_file(empty, '')
+        self.assertFalse(disk.file_exists(empty))
+        self.assertTrue(disk.file_exists(empty, allow_empty=True))
+
     def test_grep_file_returns_first_group(self):
         disk.write_file(self.file, 'hello')
         self.assertEqual(disk.grep_file(self.file, 'he(l+)o'), (True, 'll'))
