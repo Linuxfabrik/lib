@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Tests for lib.db_mysql.
+
+The version-banner parsing is pure and runs without a database. The
+connection-based helpers are exercised against a real MariaDB LTS server
+in a Red Hat family container (quay.io/sclorg) via lib.lftest, so this is
+a container test (run via tools/run-container-tests; podman required).
+"""
+
+import os
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.db_mysql as db_mysql
+import lib.lftest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CONTAINERFILES_DIR = os.path.join(HERE, 'containerfiles')
+CONTAINERFILES = sorted(
+    name
+    for name in os.listdir(CONTAINERFILES_DIR)
+    if os.path.isfile(os.path.join(CONTAINERFILES_DIR, name))
+)
+
+
+class TestVersionBanner(unittest.TestCase):
+    """Pure version-banner parsing, no database needed."""
+
+    def test_mariadb_distrib_banner(self):
+        self.assertEqual(
+            db_mysql.get_server_info(banner='mysql  Ver 15.1 Distrib 10.11.8-MariaDB, for Linux'),
+            {'flavor': 'mariadb', 'version': '10.11.8'},
+        )
+
+    def test_mysql_banner(self):
+        self.assertEqual(
+            db_mysql.get_server_info(
+                banner='mysql  Ver 8.0.36 for Linux on x86_64 (MySQL Community Server - GPL)'
+            ),
+            {'flavor': 'mysql', 'version': '8.0.36'},
+        )
+
+
+class TestLod2Dict(unittest.TestCase):
+    def test_maps_variable_name_to_value(self):
+        self.assertEqual(
+            db_mysql.lod2dict(
+                [{'Variable_name': 'a', 'Value': '1'}, {'Variable_name': 'b', 'Value': '2'}]
+            ),
+            {'a': '1', 'b': '2'},
+        )
+
+    def test_empty(self):
+        self.assertEqual(db_mysql.lod2dict([]), {})
+
+
+class TestContainer(unittest.TestCase):
+    pass
+
+
+def _check_image(test, containerfile):
+    path = os.path.join(CONTAINERFILES_DIR, containerfile)
+    print(f'\n=== Testing {containerfile} ===', flush=True)
+    with lib.lftest.run_mysql_compatible_from_containerfile(path) as (_container, defaults_file):
+        ok, conn = db_mysql.connect({'defaults_file': defaults_file})
+        test.assertTrue(ok, conn)
+        try:
+            # select(): basic round trip.
+            ok, rows = db_mysql.select(conn, 'SELECT 1 AS one')
+            test.assertTrue(ok, rows)
+            test.assertEqual(rows[0]['one'], 1)
+
+            # parameterized select (positional %s + list, per db_mysql.select).
+            ok, rows = db_mysql.select(conn, 'SELECT %s AS n', data=[42])
+            test.assertTrue(ok, rows)
+            test.assertEqual(rows[0]['n'], 42)
+
+            # get_all_status() / get_all_variables() return a dict (coe-unwrapped).
+            status = db_mysql.get_all_status(conn)
+            test.assertIsInstance(status, dict)
+            test.assertIn('Uptime', status)
+
+            variables = db_mysql.get_all_variables(conn)
+            test.assertIsInstance(variables, dict)
+            test.assertIn('version', variables)
+
+            # get_engines(): InnoDB must be present on a default MariaDB.
+            engines = db_mysql.get_engines(conn)
+            test.assertTrue(any('innodb' in str(e).lower() for e in engines), engines)
+
+            # get_replica_status(): None on a standalone server.
+            test.assertIsNone(db_mysql.get_replica_status(conn))
+
+            # has_is_role_column(): returns a definite bool against the live server
+            # (the exact value is server/version dependent).
+            test.assertIsInstance(db_mysql.has_is_role_column(conn), bool)
+
+            # root (via the defaults file) has the SELECT smoke-test privilege.
+            ok, _ = db_mysql.check_select_privileges(conn)
+            test.assertTrue(ok)
+
+            test.assertEqual(db_mysql.commit(conn), (True, None))
+        finally:
+            db_mysql.close(conn)
+
+
+lib.lftest.attach_each(TestContainer, CONTAINERFILES, _check_image)
+
+
+if __name__ == '__main__':
+    unittest.main()

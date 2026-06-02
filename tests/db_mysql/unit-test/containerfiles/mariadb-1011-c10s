@@ -1,0 +1,2 @@
+# MariaDB 10.11 LTS, Red Hat family (CentOS Stream 10 sclorg packaging).
+FROM quay.io/sclorg/mariadb-1011-c10s
