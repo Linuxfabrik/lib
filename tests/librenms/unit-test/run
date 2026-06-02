@@ -30,14 +30,23 @@ assertions were written, so the expected values below are observed, not guessed.
 
 import io
 import sys
+import time
 import unittest
 from contextlib import redirect_stdout
 from unittest import mock
 
 sys.path.insert(0, '..')
 
+import lib.lftest
 import lib.librenms as librenms
 from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
+
+# Official images. LibreNMS is all-in-one (nginx + php-fpm on :8000) and needs
+# only a MariaDB backend for the API.
+MARIADB_IMAGE = 'docker.io/library/mariadb:11'
+LIBRENMS_IMAGE = 'docker.io/librenms/librenms:latest'
+ADMIN_PW = 'Zt7qLf93xPv2wKm8nQ'  # random, passes the has-been-pwned check
+API_TOKEN = 'lf-librenms-test-token'
 
 URL = 'https://librenms.example.com'
 TOKEN = 'linuxfabrik'
@@ -475,6 +484,90 @@ class TestGetState(unittest.TestCase):
     def test_string_state_not_in_set_is_ok(self):
         # '1' (str) != 1 (int), so it is not in the int set -> OK.
         self.assertEqual(librenms.get_state('1'), STATE_OK)
+
+
+class TestLibrenmsContainer(unittest.TestCase):
+    """Happy-path integration against a real LibreNMS + MariaDB.
+
+    Boots MariaDB and the all-in-one LibreNMS image on a shared network,
+    creates an admin user and seeds an API token, then drives the real
+    get_data() against /api/v0/devices. Mixing this with the mocked tests
+    classifies the module as a container test (run-container-tests).
+    """
+
+    def test_devices_api(self):
+        with (
+            lib.lftest.network() as net,
+            lib.lftest.run_container(
+                MARIADB_IMAGE,
+                env={
+                    'MARIADB_DATABASE': 'librenms',
+                    'MARIADB_USER': 'librenms',
+                    'MARIADB_PASSWORD': 'librenmspw',
+                    'MARIADB_ROOT_PASSWORD': 'rootpw',
+                },
+                network=net,
+                network_alias='db',
+                wait_log='ready for connections',
+                wait_log_timeout=120,
+            ) as db,
+            lib.lftest.run_container(
+                LIBRENMS_IMAGE,
+                env={
+                    'DB_HOST': 'db',
+                    'DB_NAME': 'librenms',
+                    'DB_USER': 'librenms',
+                    'DB_PASSWORD': 'librenmspw',
+                },
+                ports=[8000],
+                network=net,
+                wait_log='ready to handle connections',
+                wait_log_timeout=300,
+            ) as app,
+        ):
+            base = (
+                f'http://{app.get_container_host_ip()}:'
+                f'{app.get_exposed_port(8000)}'
+            )
+            # lnms must not run as root; the image's default user is root, so su
+            # to the librenms user. Retry user-create + token-seed until the API
+            # authenticates (handles migration / propagation timing). Poll with a
+            # raw request because get_data() sys.exits on a non-ok status.
+            authed = None
+            for _ in range(40):
+                app.exec([
+                    'su', '-s', '/bin/sh', 'librenms', '-c',
+                    f'lnms user:add admin -p {ADMIN_PW} -r admin '
+                    '-e admin@example.com --no-interaction || true',
+                ])
+                db.exec([
+                    'mariadb', '-uroot', '-prootpw', 'librenms', '-e',
+                    'DELETE FROM api_tokens; '
+                    "INSERT INTO api_tokens (user_id, token_hash, description, disabled) "
+                    f"SELECT user_id, '{API_TOKEN}', 'test', 0 FROM users "
+                    "WHERE username = 'admin';",
+                ])
+                ok, res = librenms.url.fetch_json(
+                    f'{base}/api/v0/devices',
+                    header={'X-Auth-Token': API_TOKEN},
+                    no_proxy=True,
+                    timeout=10,
+                )
+                if ok and isinstance(res, dict) and res.get('status') == 'ok':
+                    authed = res
+                    break
+                time.sleep(2)
+            self.assertIsNotNone(authed, 'LibreNMS API never authenticated')
+
+            args = Args()
+            args.URL = base
+            args.TOKEN = API_TOKEN
+            args.NO_PROXY = True
+            args.TIMEOUT = 30
+
+            result = librenms.get_data(args, uri='/api/v0/devices')
+            self.assertEqual(result.get('status'), 'ok')
+            self.assertEqual(result.get('count'), 0)
 
 
 if __name__ == '__main__':
