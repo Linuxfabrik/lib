@@ -40,8 +40,12 @@ from unittest import mock
 sys.path.insert(0, '..')
 
 import lib.keycloak as keycloak
+import lib.lftest
 
 FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures')
+
+# Red Hat UBI based official image, current major.
+KEYCLOAK_IMAGE = 'quay.io/keycloak/keycloak:26.0'
 
 
 def load_fixture(name):
@@ -581,6 +585,55 @@ class TestTypicalUsageFlow(unittest.TestCase):
             ok, result = keycloak.discover_oidc_endpoints(discover_args)
         self.assertFalse(ok)
         self.assertEqual(result, 'unreachable')
+
+
+class TestKeycloakContainer(unittest.TestCase):
+    """Happy-path integration against a real Keycloak server.
+
+    Boots the official Keycloak in dev mode, then drives the full
+    discover -> obtain-token -> admin-API flow over real HTTP. Mixing this
+    container scenario with the mocked unit tests above classifies the whole
+    module as a container test (run via tools/run-container-tests).
+    """
+
+    def test_admin_rest_flow(self):
+        with lib.lftest.run_container(
+            KEYCLOAK_IMAGE,
+            env={
+                'KC_BOOTSTRAP_ADMIN_USERNAME': 'admin',
+                'KC_BOOTSTRAP_ADMIN_PASSWORD': 'linuxfabrik',
+            },
+            ports=[8080],
+            command='start-dev',
+            wait_log='Listening on',
+            wait_log_timeout=240,
+        ) as container:
+            base_url = (
+                f'http://{container.get_container_host_ip()}:'
+                f'{container.get_exposed_port(8080)}'
+            )
+            args = Args(
+                URL=base_url,
+                REALM='master',
+                CLIENT_ID='admin-cli',
+                USERNAME='admin',
+                PASSWORD='linuxfabrik',
+                INSECURE=False,
+                NO_PROXY=True,
+                TIMEOUT=30,
+            )
+
+            ok, oidc = keycloak.discover_oidc_endpoints(args)
+            self.assertTrue(ok, oidc)
+            self.assertIn('token_endpoint', oidc)
+
+            ok, token = keycloak.obtain_admin_token(args, oidc)
+            self.assertTrue(ok, token)
+            self.assertIn('access_token', token)
+
+            ok, realms = keycloak.get_data(args, token, '/admin/realms')
+            self.assertTrue(ok, realms)
+            self.assertTrue(any(r.get('realm') == 'master' for r in realms), realms)
 
 
 if __name__ == '__main__':
