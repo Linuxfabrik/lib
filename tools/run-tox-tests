@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Thin wrapper around `tox` for the multi-Python unit-test matrix.
+
+Runs the fast (non-container) unit tests across every supported Python
+version. The Python matrix lives in `tox.ini`. All arguments are passed
+through to tox.
+
+Usage:
+    tools/run-tox-tests            # run the full matrix
+    tools/run-tox-tests -e py39    # run a single environment
+"""
+
+import subprocess
+import sys
+
+import _common
+
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2026060201'
+
+
+def main():
+    argv = ['tox', '-c', str(_common.REPO_ROOT / 'tox.ini'), *sys.argv[1:]]
+    try:
+        result = subprocess.run(argv, cwd=_common.REPO_ROOT, check=False)
+    except FileNotFoundError:
+        _common.die('tox is not installed (pip install tox).')
+    return result.returncode
+
+
+if __name__ == '__main__':
+    sys.exit(main())

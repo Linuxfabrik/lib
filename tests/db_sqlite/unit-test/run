@@ -1,0 +1,277 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.db_sqlite.
+
+Fixture-based, no container required. Every database is created in a
+throwaway directory (`path=` argument to connect/get_db_path), so the
+tests never touch the real per-user temp directory and can run in
+parallel. Covers the public API, the documented docstring examples, and
+the security-relevant edge cases of the per-user database directory
+(GHSA-r35r-fpx2-jgr4).
+"""
+
+import os
+import stat
+import sys
+import tempfile
+import unittest
+
+# Run from the test's `unit-test/` directory; `..` holds a `lib` symlink to the
+# repo root (the `lib` package), so `import lib.<module>` exercises the local
+# source independently of any other repo. Mirrors the monitoring-plugins layout.
+sys.path.insert(0, '..')
+
+import lib.db_sqlite as db
+
+HAS_GETEUID = hasattr(os, 'geteuid')
+
+
+class TestGetDbDir(unittest.TestCase):
+    """get_db_dir(): the secured per-user database directory."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-dbdir-')
+
+    @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
+    def test_creates_private_0700_directory_owned_by_user(self):
+        ok, db_dir = db.get_db_dir(self.base)
+        self.assertTrue(ok, db_dir)
+        self.assertTrue(db_dir.endswith(f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}'))
+        st = os.lstat(db_dir)
+        self.assertTrue(stat.S_ISDIR(st.st_mode))
+        self.assertEqual(st.st_uid, os.geteuid())
+        self.assertEqual(st.st_mode & 0o077, 0, oct(st.st_mode))
+
+    @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
+    def test_reuses_existing_directory(self):
+        ok1, d1 = db.get_db_dir(self.base)
+        ok2, d2 = db.get_db_dir(self.base)
+        self.assertTrue(ok1 and ok2)
+        self.assertEqual(d1, d2)
+
+    @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
+    def test_rejects_symlink(self):
+        link = os.path.join(self.base, f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}')
+        os.symlink('/nonexistent/attacker/target', link)
+        ok, msg = db.get_db_dir(self.base)
+        self.assertFalse(ok)
+        self.assertIn('symlink', msg)
+
+    @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
+    def test_rejects_group_or_world_accessible_directory(self):
+        db_dir = os.path.join(self.base, f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}')
+        os.mkdir(db_dir, 0o755)
+        ok, msg = db.get_db_dir(self.base)
+        self.assertFalse(ok)
+        self.assertIn('too permissive', msg)
+
+    def test_windows_returns_base_unchanged(self):
+        # Simulate Windows (no os.geteuid): the base path is returned as-is.
+        saved = getattr(os, 'geteuid', None)
+        if saved is not None:
+            del os.geteuid
+        try:
+            ok, result = db.get_db_dir(self.base)
+        finally:
+            if saved is not None:
+                os.geteuid = saved
+        self.assertTrue(ok)
+        self.assertEqual(result, self.base)
+
+
+class TestGetDbPath(unittest.TestCase):
+    """get_db_path(): single source of truth for a database's location."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-dbpath-')
+
+    def test_resolves_inside_secured_dir(self):
+        ok, path = db.get_db_path(path=self.base, filename='example.db')
+        self.assertTrue(ok, path)
+        self.assertTrue(path.endswith('example.db'))
+        self.assertEqual(os.path.dirname(os.path.dirname(path)), self.base.rstrip('/'))
+
+    def test_default_filename(self):
+        ok, path = db.get_db_path(path=self.base)
+        self.assertTrue(ok)
+        self.assertTrue(path.endswith('linuxfabrik-monitoring-plugins-sqlite.db'))
+
+
+class TestConnect(unittest.TestCase):
+    """connect()/close()."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-connect-')
+
+    def test_connect_and_close(self):
+        ok, conn = db.connect(path=self.base, filename='t.db')
+        self.assertTrue(ok, conn)
+        _, path = db.get_db_path(path=self.base, filename='t.db')
+        self.assertTrue(os.path.isfile(path))
+        self.assertTrue(db.close(conn))
+
+    @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
+    def test_connect_refuses_symlinked_dir(self):
+        link = os.path.join(self.base, f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}')
+        os.symlink('/nonexistent', link)
+        ok, msg = db.connect(path=self.base, filename='t.db')
+        self.assertFalse(ok)
+        self.assertIn('symlink', msg)
+
+
+class TestCrud(unittest.TestCase):
+    """create_table / insert / select / replace / delete / cut / indexes."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-crud-')
+        ok, self.conn = db.connect(path=self.base, filename='crud.db')
+        self.assertTrue(ok, self.conn)
+
+    def tearDown(self):
+        db.close(self.conn)
+
+    def test_create_insert_select(self):
+        self.assertEqual(db.create_table(self.conn, 'a TEXT, b INTEGER NOT NULL', table='t'), (True, True))
+        self.assertEqual(db.insert(self.conn, {'a': 'x', 'b': 1}, table='t'), (True, True))
+        db.commit(self.conn)
+        ok, rows = db.select(self.conn, 'SELECT a, b FROM t')
+        self.assertTrue(ok)
+        self.assertEqual(rows, [{'a': 'x', 'b': 1}])
+
+    def test_select_fetchone_empty(self):
+        db.create_table(self.conn, 'a TEXT', table='t')
+        ok, row = db.select(self.conn, 'SELECT a FROM t', fetchone=True)
+        self.assertTrue(ok)
+        self.assertEqual(row, [])
+
+    def test_replace_overwrites_on_unique(self):
+        db.create_table(self.conn, 'k TEXT, v TEXT', table='t')
+        db.create_index(self.conn, 'k', table='t', unique=True)
+        db.replace(self.conn, {'k': 'h', 'v': 'one'}, table='t')
+        db.replace(self.conn, {'k': 'h', 'v': 'two'}, table='t')
+        db.commit(self.conn)
+        _, rows = db.select(self.conn, 'SELECT v FROM t WHERE k = :k', {'k': 'h'})
+        self.assertEqual(rows, [{'v': 'two'}])
+
+    def test_delete_returns_rowcount(self):
+        db.create_table(self.conn, 'n INTEGER NOT NULL', table='t')
+        for n in range(3):
+            db.insert(self.conn, {'n': n}, table='t')
+        db.commit(self.conn)
+        ok, count = db.delete(self.conn, 'DELETE FROM t WHERE n < :x', {'x': 2})
+        self.assertTrue(ok)
+        self.assertEqual(count, 2)
+
+    def test_cut_keeps_latest(self):
+        db.create_table(self.conn, 'n INTEGER NOT NULL', table='perfdata')
+        for n in range(10):
+            db.insert(self.conn, {'n': n}, table='perfdata')
+        db.commit(self.conn)
+        db.cut(self.conn, _max=3)
+        db.commit(self.conn)
+        _, rows = db.select(self.conn, 'SELECT n FROM perfdata ORDER BY n')
+        self.assertEqual([r['n'] for r in rows], [7, 8, 9])
+
+    def test_get_tables_and_drop(self):
+        db.create_table(self.conn, 'a TEXT', table='keep')
+        db.create_table(self.conn, 'a TEXT', table='gone')
+        ok, tables = db.get_tables(self.conn)
+        self.assertTrue(ok)
+        self.assertEqual(sorted(tables), ['gone', 'keep'])
+        db.drop_table(self.conn, table='gone')
+        ok, tables = db.get_tables(self.conn)
+        self.assertEqual(tables, ['keep'])
+
+
+class TestPureHelpers(unittest.TestCase):
+    """Pure functions and the documented docstring examples."""
+
+    def test_get_colnames_docstring_example(self):
+        self.assertEqual(
+            db.get_colnames('date TEXT PRIMARY KEY, count FLOAT, name TEXT'),
+            ['date', 'count', 'name'],
+        )
+
+    def test_regexp_docstring_examples(self):
+        self.assertTrue(db.regexp('^abc', 'abcdef'))
+        self.assertFalse(db.regexp('xyz$', 'abcdef'))
+        self.assertFalse(db.regexp('^abc', None))
+
+    def test_sha1sum_docstring_example(self):
+        sha1sum = getattr(db, '__sha1sum')
+        self.assertEqual(sha1sum('linuxfabrik'), '74301e766db4a4006ec1fbd6e031760e7e322223')
+
+    def test_filter_str_strips_unsafe_chars(self):
+        filter_str = getattr(db, '__filter_str')
+        self.assertEqual(filter_str('user@example.ch'), 'userexamplech')
+        self.assertEqual(filter_str('project-123', charclass='a-zA-Z0-9'), 'project123')
+
+
+class TestImportCsv(unittest.TestCase):
+    """import_csv() against a fixture."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-csv-')
+        ok, self.conn = db.connect(path=self.base, filename='csv.db')
+        self.assertTrue(ok, self.conn)
+        self.csv = os.path.join(os.path.dirname(__file__), 'fixtures', 'EXAMPLE01.csv')
+
+    def tearDown(self):
+        db.close(self.conn)
+
+    def test_import_csv_docstring_example(self):
+        ok, _ = db.import_csv(
+            self.conn,
+            self.csv,
+            table='data',
+            fieldnames='date TEXT PRIMARY KEY, count FLOAT, name TEXT',
+            skip_header=True,
+        )
+        self.assertTrue(ok)
+        ok, rows = db.select(self.conn, 'SELECT date, name FROM data ORDER BY date')
+        self.assertEqual([r['name'] for r in rows], ['alpha', 'beta', 'gamma'])
+
+
+class TestPerSecondDeltas(unittest.TestCase):
+    """per_second_deltas(): None until two samples, then per-second rates."""
+
+    def setUp(self):
+        # per_second_deltas() has no path= argument and resolves the temp dir via
+        # tempfile.gettempdir(), which caches on first use. Override the cache so
+        # each test gets an isolated, empty database directory.
+        self.tmp = tempfile.mkdtemp(prefix='lftest-psd-')
+        self.saved_tempdir = tempfile.tempdir
+        tempfile.tempdir = self.tmp
+
+    def tearDown(self):
+        tempfile.tempdir = self.saved_tempdir
+
+    def test_first_run_returns_none(self):
+        result = db.per_second_deltas('lftest-psd.db', 'eth0', {'rx_bytes': 100})
+        self.assertIsNone(result)
+
+    def test_second_run_returns_per_second_rates(self):
+        # Pin time so the two samples are exactly 10 seconds apart.
+        saved_now = db.time.now
+        ticks = iter([1000, 1010])
+        db.time.now = lambda: next(ticks)
+        try:
+            first = db.per_second_deltas('lftest-psd-rate.db', 'eth0', {'rx_bytes': 100})
+            rates = db.per_second_deltas('lftest-psd-rate.db', 'eth0', {'rx_bytes': 300})
+        finally:
+            db.time.now = saved_now
+        self.assertIsNone(first)
+        self.assertIsNotNone(rates)
+        self.assertAlmostEqual(rates['rx_bytes'], 20.0)  # (300-100) / (1010-1000)
+
+
+if __name__ == '__main__':
+    unittest.main()

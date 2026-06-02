@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Discover and run all library unit tests.
+
+Each module under test has a `tests/<module>/unit-test/run` script,
+executed from its own directory (the test files use `sys.path.insert(0,
+'..')` plus the sibling `lib` symlink to import the local source, and
+relative paths for fixtures). Mirrors the monitoring-plugins layout.
+
+Unit tests come in two shapes:
+
+- **fast tests**: pure-Python tests that use fixtures and run in well
+  under a second. Safe for the multi-Python-version tox matrix.
+- **container tests**: tests that start a podman container (building a
+  per-distro image or pulling an upstream service image) and exercise a
+  function against a live service. They take minutes and need podman.
+  They are not safe for the tox matrix and get their own runner
+  (`tools/run-container-tests`). A unit test counts as a container test
+  when its `run` file references testcontainers-python or one of the
+  lib.lftest container helpers (see `CONTAINER_TEST_SIGNATURES`).
+
+Usage:
+    tools/run-unit-tests                 # run everything
+    tools/run-unit-tests --no-container  # skip container tests
+    tools/run-unit-tests --only-container  # run only container tests
+    tools/run-unit-tests db_sqlite       # run one module
+    tools/run-unit-tests db_sqlite txt   # run specific modules
+"""
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+import _common
+
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = '2026060201'
+
+
+# Signatures that identify a real container-driven unit test. Precise
+# substring matches, mirroring the monitoring-plugins runner.
+CONTAINER_TEST_SIGNATURES = (
+    'import testcontainers',
+    'from testcontainers',
+    'lib.lftest.run_container(',
+    'lib.lftest.run_mariadb(',
+    'lib.lftest.run_mariadb_from_containerfile(',
+    'lib.lftest.run_mysql_compatible(',
+    'lib.lftest.run_mysql_compatible_from_containerfile(',
+    'DockerContainer(',
+    'DockerImage(',
+)
+
+
+def is_container_test(module_dir):
+    """Return True if the module's unit test drives a container runtime."""
+    run_file = module_dir / 'unit-test' / 'run'
+    try:
+        content = run_file.read_text(encoding='utf-8')
+    except OSError:
+        return False
+    return any(sig in content for sig in CONTAINER_TEST_SIGNATURES)
+
+
+def ensure_podman_env():
+    """Pre-flight environment setup for testcontainers under rootless podman.
+
+    Accepts `CONTAINER_HOST` or `DOCKER_HOST` and always populates
+    `DOCKER_HOST` (the only variable testcontainers-python reads). Defaults
+    to the rootless podman socket and disables the Ryuk reaper, which hangs
+    on rootless podman. Already-set values are preserved.
+    """
+    container_host = os.environ.get('CONTAINER_HOST') or os.environ.get('DOCKER_HOST')
+    if container_host is None:
+        container_host = f'unix:///run/user/{os.getuid()}/podman/podman.sock'
+    os.environ['DOCKER_HOST'] = container_host
+    if 'TESTCONTAINERS_RYUK_DISABLED' not in os.environ:
+        os.environ['TESTCONTAINERS_RYUK_DISABLED'] = 'true'
+
+
+def parse_args():
+    """Parse command line arguments using argparse."""
+    parser = argparse.ArgumentParser(
+        description=__doc__.strip().split('\n\n')[0],
+    )
+
+    parser.add_argument(
+        '-V',
+        '--version',
+        action='version',
+        version=f'%(prog)s: v{__version__} by {__author__}',
+    )
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        '--no-container',
+        action='store_true',
+        help='Skip container-based unit tests.',
+    )
+    group.add_argument(
+        '--only-container',
+        action='store_true',
+        help='Run only container-based unit tests. Used by tools/run-container-tests.',
+    )
+
+    parser.add_argument(
+        'modules',
+        nargs='*',
+        help='Optional list of module names to restrict the run to.',
+    )
+
+    return parser.parse_args()
+
+
+def discover_modules(args):
+    """Return the list of module test directories that should be executed."""
+    requested = set(args.modules) if args.modules else None
+
+    modules = []
+    for module_dir in _common.iter_test_modules():
+        if requested is not None and module_dir.name not in requested:
+            continue
+        container = is_container_test(module_dir)
+        if args.no_container and container:
+            continue
+        if args.only_container and not container:
+            continue
+        modules.append(module_dir)
+    return modules
+
+
+def main():
+    """Find and run unit tests, report results."""
+    args = parse_args()
+
+    modules = discover_modules(args)
+    if not modules:
+        print('No unit tests found.')
+        return 0
+
+    if any(is_container_test(m) for m in modules):
+        ensure_podman_env()
+
+    # Isolate temp state under a unique per-invocation directory so several
+    # tools/run-* sessions can run in parallel without trampling each other's
+    # files in the shared temp directory. Test subprocesses inherit the
+    # location through TMPDIR/TEMP/TMP.
+    run_tmpdir = tempfile.mkdtemp(prefix='lflib-unit-test-')
+    for var in ('TMPDIR', 'TEMP', 'TMP'):
+        os.environ[var] = run_tmpdir
+
+    passed = []
+    failed = []
+    total = len(modules)
+
+    try:
+        for i, module_dir in enumerate(modules, 1):
+            unit_test_dir = module_dir / 'unit-test'
+            print(f'[{i}/{total}] {module_dir.name}', flush=True)
+
+            result = subprocess.run(
+                [sys.executable, 'run'],
+                cwd=unit_test_dir,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            if result.returncode == 0:
+                passed.append(module_dir.name)
+            else:
+                failed.append(module_dir.name)
+    finally:
+        shutil.rmtree(run_tmpdir, ignore_errors=True)
+
+    print(f'\n{len(passed)} passed, {len(failed)} failed out of {total}')
+    if failed:
+        print(f'Failed: {", ".join(failed)}')
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
