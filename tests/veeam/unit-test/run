@@ -19,8 +19,8 @@ no httpx dependency ever.
 
 We assert the full request-building contract (URL composition with
 trailing-slash normalization, the Basic-auth header derived from
-USERNAME/PASSWORD, the fixed Accept header, the POST
-body marker, and pass-through of insecure / no_proxy / timeout plus the
+USERNAME/PASSWORD, the fixed Accept header, the forced bodyless
+POST method, and pass-through of insecure / no_proxy / timeout plus the
 mandatory `extended=True`) and the response-handling contract (token
 extraction on success, transport-failure pass-through, the "no result"
 error for falsy payloads, and the "unauthorized" error when the token
@@ -188,10 +188,12 @@ class TestGetTokenRequestBuilding(unittest.TestCase):
             {'Authorization', 'Accept'},
         )
 
-    def test_post_body_marker_present(self):
-        # The dummy body forces fetch() into POST mode.
+    def test_post_method_forced_without_body(self):
+        # The logon is a bodyless POST: method is forced explicitly, no data is sent.
+        # A request body would make lib.url add a Content-Type the endpoint rejects (415).
         captured, _ = self._call()
-        self.assertEqual(captured['kw']['data'], {'make-this': 'a-post-request'})
+        self.assertEqual(captured['kw']['method'], 'POST')
+        self.assertNotIn('data', captured['kw'])
 
     def test_extended_is_forced_true(self):
         # Token lives in the response headers, only available with extended=True.
@@ -234,7 +236,7 @@ class TestGetTokenRequestBuilding(unittest.TestCase):
         captured, _ = self._call()
         self.assertEqual(
             set(captured['kw'].keys()),
-            {'header', 'data', 'extended', 'insecure', 'no_proxy', 'timeout'},
+            {'header', 'method', 'extended', 'insecure', 'no_proxy', 'timeout'},
         )
 
     def test_uri_passed_positionally(self):

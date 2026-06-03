@@ -12,7 +12,7 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026060301'
 
 import base64
 
@@ -60,15 +60,14 @@ def get_token(args):
         'Accept': 'application/json',
     }
 
-    # The Veeam logon endpoint expects a POST. lib.url.fetch() selects POST over GET from a
-    # truthy body, so this minimal dummy body exists only to trigger POST mode. Content-Length
-    # is left to the HTTP engine, which derives it from the actual body; a hand-set value can
-    # disagree with the body and make the engine refuse to serialize the request.
-    data = {'make-this': 'a-post-request'}
+    # The Veeam logon endpoint expects a POST as a pure verb: no request body. Sending any body
+    # makes lib.url.fetch() add a Content-Type (e.g. application/x-www-form-urlencoded), which
+    # the endpoint rejects with "415 Unsupported Media Type". Force POST explicitly so the
+    # request stays bodyless, matching a plain `curl --request POST`.
     success, result = url.fetch_json(
         uri,
         header=headers,
-        data=data,
+        method='POST',
         extended=True,
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
