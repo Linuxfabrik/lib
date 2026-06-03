@@ -74,15 +74,13 @@ def _build_ssl_context(insecure, tls_min, tls_max):
     if tls_min is not None:
         if tls_min not in _TLS_VERSIONS:
             raise ValueError(
-                f'Invalid tls_min "{tls_min}"; expected one of '
-                f'{sorted(_TLS_VERSIONS)}'
+                f'Invalid tls_min "{tls_min}"; expected one of {sorted(_TLS_VERSIONS)}'
             )
         ctx.minimum_version = _TLS_VERSIONS[tls_min]
     if tls_max is not None:
         if tls_max not in _TLS_VERSIONS:
             raise ValueError(
-                f'Invalid tls_max "{tls_max}"; expected one of '
-                f'{sorted(_TLS_VERSIONS)}'
+                f'Invalid tls_max "{tls_max}"; expected one of {sorted(_TLS_VERSIONS)}'
             )
         ctx.maximum_version = _TLS_VERSIONS[tls_max]
     ctx.set_alpn_protocols(['h2', 'http/1.1'])
@@ -160,7 +158,9 @@ def _build_timing_classes():
         def start_tls(self, ssl_context, server_hostname=None, timeout=None):
             t = time.monotonic()
             wrapped = self._inner.start_tls(
-                ssl_context, server_hostname=server_hostname, timeout=timeout,
+                ssl_context,
+                server_hostname=server_hostname,
+                timeout=timeout,
             )
             self._timings['tls'] = time.monotonic() - t
             return _TimingNetworkStream(wrapped, self._timings)
@@ -180,12 +180,18 @@ def _build_timing_classes():
             # Importing it lazily so a missing private path doesn't crash the lib import.
             try:
                 from httpcore._backends.sync import SyncBackend
+
                 self._default = SyncBackend()
             except Exception:
                 self._default = None
 
         def connect_tcp(
-            self, host, port, timeout=None, local_address=None, socket_options=None,
+            self,
+            host,
+            port,
+            timeout=None,
+            local_address=None,
+            socket_options=None,
         ):
             t = time.monotonic()
             try:
@@ -215,6 +221,7 @@ def _build_timing_classes():
             # semantics match httpcore's expectations, then wrap again in our timing
             # stream to capture TLS / TTFB / transfer.
             from httpcore._backends.sync import SyncStream
+
             inner = SyncStream(sock)
             return _TimingNetworkStream(inner, self.timings)
 
@@ -222,7 +229,9 @@ def _build_timing_classes():
             if self._default is None:
                 raise httpcore.ConnectError('unix sockets unsupported in this backend')
             return self._default.connect_unix_socket(
-                path, timeout=timeout, socket_options=socket_options,
+                path,
+                timeout=timeout,
+                socket_options=socket_options,
             )
 
         def sleep(self, seconds):
@@ -242,7 +251,10 @@ def _build_timing_transport(ssl_context, http1, http2, trust_env):
         return None, None
     backend = backend_cls()
     transport = httpx.HTTPTransport(
-        verify=ssl_context, http1=http1, http2=http2, trust_env=trust_env,
+        verify=ssl_context,
+        http1=http1,
+        http2=http2,
+        trust_env=trust_env,
     )
     transport._pool = httpcore.ConnectionPool(
         ssl_context=ssl_context,
@@ -375,7 +387,8 @@ def fetch(
     >>> # TLS-pinned compliance check, capture peer cert DER
     >>> ok, info = fetch(
     ...     'https://api.example.com',
-    ...     tls_min='1.2', tls_max='1.3',
+    ...     tls_min='1.2',
+    ...     tls_max='1.3',
     ...     http_version='2',
     ...     extended=True,
     ... )
@@ -388,7 +401,7 @@ def fetch(
     if httpx is None:
         return False, (
             'Python module "httpx" is not installed. '
-            'Install it with `pip install \'httpx[http2]\'` or '
+            "Install it with `pip install 'httpx[http2]'` or "
             '`dnf install python3-httpx python3-h2`.'
         )
 
@@ -446,7 +459,10 @@ def fetch(
     timing_backend = None
     if extended:
         timing_transport, timing_backend = _build_timing_transport(
-            ctx, http_version in ('1.0', '1.1'), http_version == '2', not no_proxy,
+            ctx,
+            http_version in ('1.0', '1.1'),
+            http_version == '2',
+            not no_proxy,
         )
 
     try:
