@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060202'
+__version__ = '2026060301'
 
 import base64
 import json
@@ -268,6 +268,7 @@ def fetch(
     http_version='1.1',
     tls_min=None,
     tls_max=None,
+    method=None,
 ):
     """
     Fetch any URL with optional POST, basic/digest authentication and SSL/TLS handling.
@@ -320,6 +321,11 @@ def fetch(
         header is always dropped; the HTTP engine derives the correct value from the body.
     - **data** (`dict`, optional):
         Data to send in the request body. Truthy data triggers a POST.
+    - **method** (`str`, optional):
+        Force the HTTP method (e.g. `'POST'`) regardless of the body. When omitted, the
+        method is inferred from `data`: POST if a truthy body is present, GET otherwise.
+        Use this to issue a bodyless POST (some APIs require POST as a pure verb but reject
+        a request body and the Content-Type that comes with it).
     - **encoding** (`str`, optional):
         The encoding type for the request body. Defaults to `'urlencode'`. Also supports
         `'serialized-json'`.
@@ -460,7 +466,7 @@ def fetch(
     except Exception as e:
         return False, f'{e} while fetching {url_safe}'
 
-    method = 'POST' if body else 'GET'
+    method = (method or ('POST' if body else 'GET')).upper()
     tls_version = None
     alpn = None
     peer_cert_der = None
@@ -531,6 +537,7 @@ def fetch_json(
     http_version='1.1',
     tls_min=None,
     tls_max=None,
+    method=None,
 ):
     """
     Fetch JSON from a URL with optional POST, authentication and SSL/TLS handling.
@@ -566,6 +573,7 @@ def fetch_json(
         header=header,
         http_version=http_version,
         insecure=insecure,
+        method=method,
         no_proxy=no_proxy,
         timeout=timeout,
         tls_max=tls_max,

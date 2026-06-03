@@ -428,6 +428,30 @@ class TestFetchSuccess(unittest.TestCase):
         self.assertEqual(cap['headers']['X-Custom'], 'v')
         self.assertEqual(cap['content'], b'a=b')
 
+    def test_method_override_forces_bodyless_post(self):
+        # No data, but method='POST' must still issue a POST. The request stays bodyless
+        # and no Content-Type is added (the Veeam logon endpoint rejects one with 415).
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com', method='POST')
+        self.assertEqual(cap['method'], 'POST')
+        self.assertIsNone(cap['content'])
+        self.assertNotIn('Content-Type', cap['headers'])
+        self.assertNotIn('content-type', cap['headers'])
+
+    def test_method_override_is_upcased(self):
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com', method='post')
+        self.assertEqual(cap['method'], 'POST')
+
+    def test_method_inferred_from_body_when_not_forced(self):
+        # Regression guard: without an explicit method, a truthy body still maps to POST.
+        fake, cap = make_fake_client(FakeStreamResponse())
+        with patch_client(fake):
+            url.fetch('https://example.com', data={'a': 'b'})
+        self.assertEqual(cap['method'], 'POST')
+
     def test_to_text_false_returns_bytes(self):
         fake, _ = make_fake_client(FakeStreamResponse(body=b'\x00\x01raw'))
         with patch_client(fake):
@@ -736,6 +760,7 @@ class TestFetchJson(unittest.TestCase):
                 http_version='2',
                 tls_min='1.2',
                 tls_max='1.3',
+                method='POST',
             )
         _, kwargs = m.call_args
         self.assertTrue(kwargs['insecure'])
@@ -749,6 +774,7 @@ class TestFetchJson(unittest.TestCase):
         self.assertEqual(kwargs['http_version'], '2')
         self.assertEqual(kwargs['tls_min'], '1.2')
         self.assertEqual(kwargs['tls_max'], '1.3')
+        self.assertEqual(kwargs['method'], 'POST')
 
 
 # -----------------------------------------------------------------------------

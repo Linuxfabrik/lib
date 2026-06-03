@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * disk.py: `get_block_devices()` lists all local block devices, including ones without a mounted filesystem, so callers can also work with raw or unmounted devices such as multipath SAN volumes
 * lftest.py: `network()` plus `network` / `network_alias` arguments on `run_container()` let a test wire an application container to a backing service (e.g. a database) on a shared network, for multi-container integration tests
+* url.py: `fetch()` / `fetch_json()` accept a `method` argument to force the HTTP method, enabling a bodyless POST
 
 ### Fixed
 
