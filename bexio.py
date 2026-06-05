@@ -8,16 +8,15 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""This module tries to make accessing the Bexio API easier.
-"""
+"""This module tries to make accessing the Bexio API easier."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2024060601'
-
-from . import url
+__version__ = '2026060501'
 
 import urllib
 import urllib.parse
+
+from . import url
 
 # https://docs.bexio.com/
 BEXIO_API_BASE_URL = 'https://api.bexio.com'
@@ -25,15 +24,17 @@ BEXIO_API_CONTACT_TYPE_COMPANY = 1
 BEXIO_API_CONTACT_TYPE_PERSON = 2
 BEXIO_API_ACCOUNT_URL = '/2.0/accounts'
 BEXIO_API_BANK_ACCOUNT_URL = '/3.0/banking/accounts'
-BEXIO_API_BUSINESS_ACTIVITY_URL = '/2.0/client_service'  # API endpoint still uses the old name in the URL
+# API endpoint still uses an old name in the URL for "business activities"
+BEXIO_API_BUSINESS_ACTIVITY_URL = '/2.0/client_service'
 BEXIO_API_CONTACT_URL = '/2.0/contact'
 BEXIO_API_CONTACT_GROUP_URL = '/2.0/contact_group'
 BEXIO_API_CONTACT_RELATION_URL = '/2.0/contact_relation'
-BEXIO_API_CONTACT_SECTOR_URL = '/2.0/contact_branch'  # API endpoint still uses the old name in the URL
+# API endpoint still uses an old name in the URL for "contact sectors"
+BEXIO_API_CONTACT_SECTOR_URL = '/2.0/contact_branch'
 BEXIO_API_COUNTRY_URL = '/2.0/country'
 BEXIO_API_CURRENCY_URL = '/3.0/currencies'
 BEXIO_API_INVOICE_URL = '/2.0/kb_invoice'
-BEXIO_API_ITEM_URL = '/2.0/article'  # API endpoint uses different name in the URL
+BEXIO_API_ITEM_URL = '/2.0/article'  # API endpoint uses a different name in the URL
 BEXIO_API_LANGUAGE_URL = '/2.0/language'
 BEXIO_API_SALUTATION_URL = '/2.0/salutation'
 BEXIO_API_PAYMENT_TYPE_URL = '/2.0/payment_type'
@@ -50,7 +51,12 @@ BEXIO_API_UNIT_URL = '/2.0/unit'
 BEXIO_API_USER_URL = '/3.0/users'
 
 
-def call_api(api_token: str, path: str, data: dict | None = None, method: str | None = None) -> tuple[bool, list | str]:
+def call_api(
+    api_token: str,
+    path: str,
+    data: dict | None = None,
+    method: str | None = None,
+) -> tuple[bool, list | str]:
     """Makes an HTTP GET or POST call against the Bexio API
     and returns the parsed JSON.
 
@@ -77,11 +83,11 @@ def call_api(api_token: str, path: str, data: dict | None = None, method: str | 
 
     headers = {
         'Accept': 'application/json',
-        'Authorization': 'Bearer {}'.format(api_token),
+        'Authorization': f'Bearer {api_token}',
     }
 
     return url.fetch_json(
-        '{}{}'.format(BEXIO_API_BASE_URL, path),
+        f'{BEXIO_API_BASE_URL}{path}',
         data=data,
         header=headers,
         timeout=20,  # TODO: choose a sensible value. NOTE: test servers seem to be slower to respond than prod servers?
@@ -91,7 +97,11 @@ def call_api(api_token: str, path: str, data: dict | None = None, method: str | 
     )
 
 
-def get_all(api_token: str, path: str, params: dict | None = None) -> tuple[bool, list | str]:
+def get_all(
+    api_token: str,
+    path: str,
+    params: dict | None = None,
+) -> tuple[bool, list | str]:
     """A wrapper function around api_call() that handles the
     pagination of the API and returns all items.
 
@@ -119,7 +129,7 @@ def get_all(api_token: str, path: str, params: dict | None = None) -> tuple[bool
     while True:
         params['offset'] = offset
         params['limit'] = max_limit
-        current_path = '{}?{}'.format(path, urllib.parse.urlencode(params))
+        current_path = f'{path}?{urllib.parse.urlencode(params)}'
 
         success, current_result = call_api(api_token, current_path)
         if not success:
@@ -234,7 +244,11 @@ def create_contact(api_token: str, data: dict | None = None) -> tuple[bool, list
     return call_api(api_token, BEXIO_API_CONTACT_URL, data)
 
 
-def edit_contact(api_token: str, contact_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+def edit_contact(
+    api_token: str,
+    contact_id: int,
+    data: dict | None = None,
+) -> tuple[bool, list | str]:
     """Calls the Bexio API to edit a contact
     and returns the edited contact as a dictionary.
 
@@ -295,7 +309,10 @@ def fetch_contact_relations(api_token: str) -> tuple[bool, list | str]:
     return get_all(api_token, BEXIO_API_CONTACT_RELATION_URL)
 
 
-def create_contact_relation(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+def create_contact_relation(
+    api_token: str,
+    data: dict | None = None,
+) -> tuple[bool, list | str]:
     """Calls the Bexio API to create a new contact relation
     and returns the created contact relation as a dictionary.
 
@@ -316,7 +333,11 @@ def create_contact_relation(api_token: str, data: dict | None = None) -> tuple[b
     return call_api(api_token, BEXIO_API_CONTACT_RELATION_URL, data)
 
 
-def edit_contact_relation(api_token: str, contact_relation_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+def edit_contact_relation(
+    api_token: str,
+    contact_relation_id: int,
+    data: dict | None = None,
+) -> tuple[bool, list | str]:
     """Calls the Bexio API to edit a contact relation
     and returns the edited contact relation as a dictionary.
 
@@ -336,10 +357,17 @@ def edit_contact_relation(api_token: str, contact_relation_id: int, data: dict |
         a dictionary of the edited contact relation
         or the error message in case of a failure.
     """
-    return call_api(api_token, BEXIO_API_CONTACT_RELATION_URL + '/' + str(contact_relation_id), data)
+    return call_api(
+        api_token,
+        BEXIO_API_CONTACT_RELATION_URL + '/' + str(contact_relation_id),
+        data,
+    )
 
 
-def delete_contact_relation(api_token: str, contact_relation_id: int) -> tuple[bool, list | str]:
+def delete_contact_relation(
+    api_token: str,
+    contact_relation_id: int,
+) -> tuple[bool, list | str]:
     """Calls the Bexio API to delete a contact relation
     and returns the edited contact relation as a dictionary.
 
@@ -357,7 +385,11 @@ def delete_contact_relation(api_token: str, contact_relation_id: int) -> tuple[b
         a dictionary of the deletion status
         or the error message in case of a failure.
     """
-    return call_api(api_token, BEXIO_API_CONTACT_RELATION_URL + '/' + str(contact_relation_id), method='DELETE')
+    return call_api(
+        api_token,
+        BEXIO_API_CONTACT_RELATION_URL + '/' + str(contact_relation_id),
+        method='DELETE',
+    )
 
 
 def fetch_contact_sectors(api_token: str) -> tuple[bool, list | str]:
@@ -457,7 +489,11 @@ def create_invoice(api_token: str, data: dict | None = None) -> tuple[bool, list
     return call_api(api_token, BEXIO_API_INVOICE_URL, data)
 
 
-def edit_invoice(api_token: str, invoice_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+def edit_invoice(
+    api_token: str,
+    invoice_id: int,
+    data: dict | None = None,
+) -> tuple[bool, list | str]:
     """Calls the Bexio API to edit an invoice
     and returns the edited invoice as a dictionary.
 
@@ -520,7 +556,11 @@ def create_item(api_token: str, data: dict | None = None) -> tuple[bool, list | 
     return call_api(api_token, BEXIO_API_ITEM_URL, data)
 
 
-def edit_item(api_token: str, item_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+def edit_item(
+    api_token: str,
+    item_id: int,
+    data: dict | None = None,
+) -> tuple[bool, list | str]:
     """Calls the Bexio API to edit an item
     and returns the edited item as a dictionary.
 
@@ -659,7 +699,11 @@ def create_project(api_token: str, data: dict | None = None) -> tuple[bool, list
     return call_api(api_token, BEXIO_API_PROJECT_URL, data)
 
 
-def edit_project(api_token: str, project_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+def edit_project(
+    api_token: str,
+    project_id: int,
+    data: dict | None = None,
+) -> tuple[bool, list | str]:
     """Calls the Bexio API to edit a project
     and returns the edited project as a dictionary.
 
@@ -777,7 +821,10 @@ def fetch_timesheets(api_token: str) -> tuple[bool, list | str]:
     return get_all(api_token, BEXIO_API_TIMESHEET_URL)
 
 
-def create_timesheet(api_token: str, data: dict | None = None) -> tuple[bool, list | str]:
+def create_timesheet(
+    api_token: str,
+    data: dict | None = None,
+) -> tuple[bool, list | str]:
     """Calls the Bexio API to create a timesheet
     and returns the created timesheet as a dictionary.
 
@@ -798,7 +845,11 @@ def create_timesheet(api_token: str, data: dict | None = None) -> tuple[bool, li
     return call_api(api_token, BEXIO_API_TIMESHEET_URL, data)
 
 
-def edit_timesheet(api_token: str, timesheet_id: int, data: dict | None = None) -> tuple[bool, list | str]:
+def edit_timesheet(
+    api_token: str,
+    timesheet_id: int,
+    data: dict | None = None,
+) -> tuple[bool, list | str]:
     """Calls the Bexio API to edit a timesheet
     and returns the edited timesheet as a dictionary.
 
