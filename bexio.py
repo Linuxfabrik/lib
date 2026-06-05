@@ -33,6 +33,7 @@ BEXIO_API_CONTACT_RELATION_URL = '/2.0/contact_relation'
 BEXIO_API_CONTACT_SECTOR_URL = '/2.0/contact_branch'
 BEXIO_API_COUNTRY_URL = '/2.0/country'
 BEXIO_API_CURRENCY_URL = '/3.0/currencies'
+BEXIO_API_DEFAULT_API_CALL_TIMEOUT = 20
 BEXIO_API_INVOICE_URL = '/2.0/kb_invoice'
 BEXIO_API_ITEM_URL = '/2.0/article'  # API endpoint uses a different name in the URL
 BEXIO_API_LANGUAGE_URL = '/2.0/language'
@@ -90,7 +91,7 @@ def call_api(
         f'{BEXIO_API_BASE_URL}{path}',
         data=data,
         header=headers,
-        timeout=20,  # TODO: choose a sensible value. NOTE: test servers seem to be slower to respond than prod servers?
+        timeout=BEXIO_API_DEFAULT_API_CALL_TIMEOUT,
         encoding='serialized-json',
         method=method,
         response_on_error=True,
