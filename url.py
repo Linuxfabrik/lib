@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060301'
+__version__ = '2026060501'
 
 import base64
 import json
@@ -368,7 +368,7 @@ def fetch(
         - On success with `extended=True`, a dict with keys:
             - `response`: response body
             - `status_code`: int
-            - `response_header`: dict of response headers
+            - `response_header`: dict of response headers, keys lower-cased
             - `timings`: dict with at least `total` (seconds, float)
             - `tls_version`: str like `'TLSv1.3'` or None over plain HTTP
             - `alpn`: str like `'h2'` or `'http/1.1'` or None
@@ -501,7 +501,13 @@ def fetch(
             response.raise_for_status()
             body_bytes = response.read()
             status_code = response.status_code
-            response_headers = dict(response.headers)
+            # HTTP header field names are case-insensitive (RFC 9110, section 5.1).
+            # Canonicalize them to lower case so callers can look a header up
+            # deterministically regardless of how the server cased it. httpx
+            # already lower-cases, but keep it explicit and backend-independent.
+            response_headers = {
+                key.lower(): value for key, value in response.headers.items()
+            }
             elapsed_seconds = response.elapsed.total_seconds()
             response_charset = response.charset_encoding
     except httpx.HTTPStatusError as e:

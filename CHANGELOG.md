@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* huawei.py: the session cookie is read regardless of how the storage system cases the response header, preventing authentication from failing on a case-sensitive header lookup
 * redfish.py: Sensors that report an empty min/max range (identical min and max, used by some firmware as a "no limit" placeholder) no longer raise false warnings ([#1211](https://github.com/Linuxfabrik/monitoring-plugins/issues/1211))
 * url.py: a caller-supplied `Content-Length` is ignored and recomputed from the request body
-* veeam.py: authentication against the Veeam Enterprise Manager API works again
+* url.py: response header names are exposed in lower case, so callers read them reliably no matter how the server cased them
+* veeam.py: authentication against the Veeam Enterprise Manager API no longer fails with a `415 Unsupported Media Type` error or a false "unauthorized" result
 * Installing the library from source (for example `pip install --editable .`) no longer hangs, which also unblocks the API documentation build
 * Resolve the remaining ruff lint violations across the library, including a few robustness fixes: a bare `except` in disk.py now catches only `OSError`, mutable default arguments in url.py and rocket.py are no longer shared between calls, and uptimerobot.py uses `isinstance()` instead of a `type()` comparison ([#118](https://github.com/Linuxfabrik/lib/issues/118))
 

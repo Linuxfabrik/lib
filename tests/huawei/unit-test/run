@@ -93,9 +93,11 @@ LOGIN_OK = (
             },
             'error': {'code': 0, 'description': '0'},
         },
+        # lib.url lower-cases all response header names (RFC 9110, section 5.1),
+        # so the mock mirrors that canonical form.
         'response_header': {
-            'Set-Cookie': 'session=abc123def456; Path=/deviceManager; HttpOnly',
-            'Content-Type': 'application/json',
+            'set-cookie': 'session=abc123def456; Path=/deviceManager; HttpOnly',
+            'content-type': 'application/json',
         },
     },
 )

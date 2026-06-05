@@ -80,12 +80,17 @@ class FakeArgs:
 
 
 def make_success(token='8a8b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d', extra_headers=None):
-    """Build an `extended=True` style success result with a session token."""
-    headers = {'Content-Type': 'application/json'}
+    """Build an `extended=True` style success result with a session token.
+
+    `response_header` keys are lower-cased, exactly as `lib.url.fetch_json`
+    returns them (HTTP header names are case-insensitive, RFC 9110 section 5.1),
+    so the suite stays faithful to real transport behaviour.
+    """
+    headers = {'content-type': 'application/json'}
     if extra_headers:
         headers.update(extra_headers)
     if token is not None:
-        headers[TOKEN_HEADER] = token
+        headers['x-restsvcsessionid'] = token
     return {
         'response': '{}',
         'status_code': 201,
@@ -292,12 +297,14 @@ class TestGetTokenSuccess(unittest.TestCase):
         _ok, result = self._run((True, payload))
         self.assertEqual(result[TOKEN_HEADER], 'HEADER-TOKEN')
 
-    def test_token_lookup_is_case_sensitive(self):
-        # A lowercase header key is treated as missing -> unauthorized error.
-        payload = make_success(token=None, extra_headers={'x-restsvcsessionid': 'x'})
-        ok, msg = self._run((True, payload))
-        self.assertFalse(ok)
-        self.assertEqual(msg, 'Something went wrong, maybe user is unauthorized.')
+    def test_token_lookup_is_case_insensitive(self):
+        # lib.url lower-cases header names (RFC 9110, section 5.1), so a session
+        # id delivered under the canonical 'x-restsvcsessionid' key resolves
+        # regardless of how the server originally cased the header.
+        payload = make_success(token=None, extra_headers={'x-restsvcsessionid': 'low'})
+        ok, result = self._run((True, payload))
+        self.assertTrue(ok)
+        self.assertEqual(result[TOKEN_HEADER], 'low')
 
     def test_captured_session_payload(self):
         # Realistic Veeam EM session response with a token header attached.

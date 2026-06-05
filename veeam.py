@@ -12,7 +12,7 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060301'
+__version__ = '2026060501'
 
 import base64
 
@@ -80,7 +80,8 @@ def get_token(args):
     if not result:
         return False, f'There was no result from {uri}.'
 
-    token = result.get('response_header', {}).get('X-RestSvcSessionId')
+    # lib.url lower-cases all response header names (RFC 9110, section 5.1).
+    token = result.get('response_header', {}).get('x-restsvcsessionid')
     if not token:
         return False, 'Something went wrong, maybe user is unauthorized.'
 

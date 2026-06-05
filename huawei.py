@@ -13,7 +13,7 @@ needed by Huawei check plugins.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026060501'
 
 import time as _time
 
@@ -160,7 +160,8 @@ def get_creds(args):
     )
 
     ibasetoken = result.get('response_json', {}).get('data', {}).get('iBaseToken')
-    cookie = result.get('response_header', {}).get('Set-Cookie')
+    # lib.url lower-cases all response header names (RFC 9110, section 5.1).
+    cookie = result.get('response_header', {}).get('set-cookie')
 
     expire = time.now() + args.CACHE_EXPIRE * 60
     cache.set(token_key, ibasetoken, expire)
