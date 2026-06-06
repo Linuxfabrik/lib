@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v4.3.0] - 2026-06-06
+
 ### Added
 
 * disk.py: `copy_dir()` and `copy_file()` copy a directory tree / single file and report success or an error message, matching the other disk helpers
@@ -624,7 +629,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v4.3.0...HEAD
+[v4.3.0]: https://github.com/Linuxfabrik/lib/compare/v4.2.0...v4.3.0
 [v4.2.0]: https://github.com/Linuxfabrik/lib/compare/v4.1.0...v4.2.0
 [v4.1.0]: https://github.com/Linuxfabrik/lib/compare/v4.0.2...v4.1.0
 [v4.0.2]: https://github.com/Linuxfabrik/lib/compare/v4.0.1...v4.0.2
