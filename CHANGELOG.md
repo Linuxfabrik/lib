@@ -10,8 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* disk.py: `copy_dir()` and `copy_file()` copy a directory tree / single file and report success or an error message, matching the other disk helpers
 * disk.py: `get_block_devices()` lists all local block devices, including ones without a mounted filesystem, so callers can also work with raw or unmounted devices such as multipath SAN volumes
+* disk.py: `make_temp_dir()` creates a unique temporary directory (companion to `get_tmpdir()`), reporting the path or an error message
+* disk.py: `mkdir()` creates a directory (including missing parents) and reports success or an error message, matching the other disk helpers
+* disk.py: `rm_dir()` recursively deletes a directory tree (companion to `rm_file()`), reporting success or an error message
 * lftest.py: `network()` plus `network` / `network_alias` arguments on `run_container()` let a test wire an application container to a backing service (e.g. a database) on a shared network, for multi-container integration tests
+* net.py: `cidr_to_hosts()` returns the usable IPv4 or IPv6 host addresses of a network given in CIDR notation, with a configurable size limit, for callers that need to enumerate an explicit subnet
+* net.py: `get_subnet_hosts()` returns the usable IPv4 or IPv6 host addresses of an interface's subnet, for callers that need to enumerate a local network
+* shell.py: `which()` locates an executable in PATH (wrapper around `shutil.which()`), so callers detect installed tools consistently
+* ssh.py: new module to run commands (`run()`) and copy files (`scp()`, `rsync()`) over SSH, assembling and quoting the command lines from individual options (`build_options()`, `target()`), so callers no longer hand-roll ssh/scp invocations
 * url.py: `fetch()` / `fetch_json()` accept a `method` argument to force the HTTP method, enabling a bodyless POST
 
 ### Fixed
@@ -45,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* db_sqlite.py: plugins that cache trend data in `/tmp` no longer fail with "attempt to write a readonly database" when first run as one user (e.g. root) and later scheduled under another. Each user now gets its own cache file ([#181](https://github.com/Linuxfabrik/lib/issues/181))
+* db_sqlite.py: consumers that cache trend data in `/tmp` no longer fail with "attempt to write a readonly database" when first run as one user (e.g. root) and later scheduled under another. Each user now gets its own cache file ([#181](https://github.com/Linuxfabrik/lib/issues/181))
 
 ### Security
 
@@ -56,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* url.py: `import lib.url` no longer aborts with `AttributeError: module 'ssl' has no attribute 'TLSVersion'` on Python interpreters below 3.7 (e.g. RHEL 8's default `python3` = 3.6). The TLS version mapping is now built only when `ssl.TLSVersion` is available; any plugin that doesn't use TLS version pinning keeps importing. Callers that pass `tls_min` / `tls_max` get a clear `RuntimeError` naming the missing requirement instead of the cryptic `AttributeError`. Note: the lib's supported minimum is still Python 3.9; this only makes one specific import path resilient
+* url.py: `import lib.url` no longer aborts with `AttributeError: module 'ssl' has no attribute 'TLSVersion'` on Python interpreters below 3.7 (e.g. RHEL 8's default `python3` = 3.6). The TLS version mapping is now built only when `ssl.TLSVersion` is available; any consumer that doesn't use TLS version pinning keeps importing. Callers that pass `tls_min` / `tls_max` get a clear `RuntimeError` naming the missing requirement instead of the cryptic `AttributeError`. Note: the lib's supported minimum is still Python 3.9; this only makes one specific import path resilient
 
 
 ## [v4.0.1] - 2026-05-18
@@ -74,12 +82,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* db_mysql.py: `check_privileges(conn, *required)` replaces the old `check_select_privileges()`. Without arguments it keeps the previous functional smoke test (`SELECT VERSION()`, works with `GRANT USAGE` alone). With arguments it parses `SHOW GRANTS FOR CURRENT_USER()` and reports any privilege that is missing for the current user, with `ALL PRIVILEGES` and `SUPER` short-circuiting to success. Each positional argument can be a string (single privilege required) or a list/tuple of strings (any-of group, useful for cross-version aliases like `REPLICATION CLIENT` / `SLAVE MONITOR` / `REPLICA MONITOR` introduced by MariaDB 10.5+). Enables plugins to declare their actual privilege requirements precisely
-* db_mysql.py: four new helpers consolidate patterns that several check plugins implement by hand. `get_all_status(conn)` and `get_all_variables(conn)` return the complete `SHOW GLOBAL STATUS` / `SHOW GLOBAL VARIABLES` as a dict in one round trip (cheaper than many `LIKE '...'` queries when a plugin needs more than a handful of values). `get_replica_status(conn)` issues `SHOW REPLICA STATUS` and silently falls back to the legacy `SHOW SLAVE STATUS`, returning the first row or `None` when the server is not configured as a replica. `has_is_role_column(conn)` reports whether `mysql.user.IS_ROLE` exists (MariaDB 10.0.5+ roles) so plugins can gate `IS_ROLE = 'N'` clauses without each implementing the same probe
-* db_sqlite.py: `per_second_deltas(filename, name, counters)` consolidates the cross-run "delta of cumulative counters between runs" pattern that several check plugins implement by hand. Persists the counters in a local SQLite cache (schema derived from the counters dict so callers no longer have to spell out the table definition per plugin) and returns the per-second rates vs. the previous run. Useful for any cumulative counter that needs to be reported as a per-second rate: /proc and /sys byte counters (disk I/O, network traffic, file descriptors), database status counters, application metrics. Returns `None` on the first run, on counter resets and on schema changes (auto-rebuilds the cache table in that case). Lets plugins emit per-second rates as perfdata instead of `uom='c'` continuous counters, so Grafana panels do not need their own `non_negative_difference()` workaround
-* lftest.py: `run_mariadb_from_containerfile(containerfile_path, ...)` builds a per-plugin Containerfile via testcontainers' DockerImage and yields `(container, defaults_file)` like `run_mariadb()`. Plugins move their test-image matrix into `unit-test/containerfiles/<name>` so each plugin owns its supported MariaDB / MySQL LTS coverage instead of relying on a hardcoded image list in the lib. The `MARIADB_LTS_IMAGES` constant has been removed (no in-tree caller after the migration)
+* db_mysql.py: `check_privileges(conn, *required)` replaces the old `check_select_privileges()`. Without arguments it keeps the previous functional smoke test (`SELECT VERSION()`, works with `GRANT USAGE` alone). With arguments it parses `SHOW GRANTS FOR CURRENT_USER()` and reports any privilege that is missing for the current user, with `ALL PRIVILEGES` and `SUPER` short-circuiting to success. Each positional argument can be a string (single privilege required) or a list/tuple of strings (any-of group, useful for cross-version aliases like `REPLICATION CLIENT` / `SLAVE MONITOR` / `REPLICA MONITOR` introduced by MariaDB 10.5+). Enables consumers to declare their actual privilege requirements precisely
+* db_mysql.py: four new helpers consolidate patterns that several consumers implement by hand. `get_all_status(conn)` and `get_all_variables(conn)` return the complete `SHOW GLOBAL STATUS` / `SHOW GLOBAL VARIABLES` as a dict in one round trip (cheaper than many `LIKE '...'` queries when a consumer needs more than a handful of values). `get_replica_status(conn)` issues `SHOW REPLICA STATUS` and silently falls back to the legacy `SHOW SLAVE STATUS`, returning the first row or `None` when the server is not configured as a replica. `has_is_role_column(conn)` reports whether `mysql.user.IS_ROLE` exists (MariaDB 10.0.5+ roles) so consumers can gate `IS_ROLE = 'N'` clauses without each implementing the same probe
+* db_sqlite.py: `per_second_deltas(filename, name, counters)` consolidates the cross-run "delta of cumulative counters between runs" pattern that several consumers implement by hand. Persists the counters in a local SQLite cache (schema derived from the counters dict so callers no longer have to spell out the table definition per consumer) and returns the per-second rates vs. the previous run. Useful for any cumulative counter that needs to be reported as a per-second rate: /proc and /sys byte counters (disk I/O, network traffic, file descriptors), database status counters, application metrics. Returns `None` on the first run, on counter resets and on schema changes (auto-rebuilds the cache table in that case). Lets consumers emit per-second rates as perfdata instead of `uom='c'` continuous counters, so Grafana panels do not need their own `non_negative_difference()` workaround
+* lftest.py: `run_mariadb_from_containerfile(containerfile_path, ...)` builds a per-consumer Containerfile via testcontainers' DockerImage and yields `(container, defaults_file)` like `run_mariadb()`. Consumers move their test-image matrix into `unit-test/containerfiles/<name>` so each consumer owns its supported MariaDB / MySQL LTS coverage instead of relying on a hardcoded image list in the lib. The `MARIADB_LTS_IMAGES` constant has been removed (no in-tree caller after the migration)
 * lftest.py: `run_mariadb` / `run_mariadb_from_containerfile` renamed to `run_mysql_compatible` / `run_mysql_compatible_from_containerfile` to reflect that both upstream MySQL and MariaDB images are supported (`docker.io/library/mysql:*`, `docker.io/library/mariadb:*`, `quay.io/sclorg/mariadb-*`, `quay.io/sclorg/mysql-*`). Family detection picks `mariadbd` vs `mysqld` when `extra_args` is set. Old names are kept as aliases for one release
-* net.py: `fetch()` and `fetch_socket()` gain an optional `dialog` parameter for multi-step request/response conversations (regex-driven, no half-close). Enables clean implementations of plugins for protocols like NUT, SMTP, POP3, IMAP and FTP without re-implementing socket handling per plugin
+* net.py: `fetch()` and `fetch_socket()` gain an optional `dialog` parameter for multi-step request/response conversations (regex-driven, no half-close). Enables clean implementations for protocols like NUT, SMTP, POP3, IMAP and FTP without re-implementing socket handling per consumer
 * net.py: `fetch()` gains a `tls=True` switch that wraps the socket in a TLS 1.2+ context with SNI, equivalent to calling `fetch_ssl()`. The legacy `fetch_ssl()` helper stays for backward compatibility but is now marked deprecated in its docstring
 * time.py: `now()` gains `as_type='utc'` returning the current UTC time as a naive `datetime.datetime`. Useful for fields defined as UTC by spec (x509 `notBefore` / `notAfter`, HTTP `Date`, RFC 3339 timestamps), so consumers can stay on the lib helper instead of falling back to `datetime.datetime.now(datetime.timezone.utc)`
 * url.py: `fetch()` and `fetch_json()` now speak HTTP/1.0, HTTP/1.1 and HTTP/2 via `httpx`, with new `http_version`, `tls_min` and `tls_max` parameters for protocol pinning. `extended=True` now also returns the negotiated TLS version, ALPN protocol, the server certificate in DER form, and a per-phase `timings` dict with `dns`, `connect`, `tls`, `ttfb`, `transfer` and `total` (all seconds), ready for downstream certificate inspection and HTTPS-availability monitoring. `http_version='3'` is reserved and currently returns a clear error until QUIC support lands. Existing callers and parameters are unchanged
@@ -92,15 +100,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
-* db_mysql.py: `check_select_privileges()` is deprecated and now a thin backwards-compatible shim that delegates to `check_privileges(conn)`. New code should call `check_privileges()` directly. The shim exists to keep already-deployed plugins working when the lib is upgraded ahead of the plugin set; it will be removed in a future major release
+* db_mysql.py: `check_select_privileges()` is deprecated and now a thin backwards-compatible shim that delegates to `check_privileges(conn)`. New code should call `check_privileges()` directly. The shim exists to keep already-deployed consumers working when the lib is upgraded ahead of the consumer set; it will be removed in a future major release
 
 ### Fixed
 
-* base.py: `oao()` now properly HTML-escapes `&`, `<` and `>` into `&amp;`, `&lt;` and `&gt;` instead of replacing `<` and `>` with apostrophes. The previous implementation destroyed legitimate threshold descriptions like `<= 10` and shell snippets like `echo 1 > /proc/sys/...`, turning them into `'= 10` and `echo 1 ' /proc/sys/...` in plugin output. HTML-based web UIs (Icinga Web, Naemon-Adagios) render the entities back to the original characters; terminal viewers see the literal entities, which preserves the information. The XSS-protection goal of the original change is still met
-* db_sqlite.py: `per_second_deltas()` no longer crashes with `sqlite3.ProgrammingError: Cannot operate on a closed database` when the cache table schema mismatches an earlier plugin version. The internal `insert()` call now uses `delete_db_on_operational_error=False` so the connection survives the schema-mismatch error; the explicit drop/recreate path below operates on a live connection as intended
+* base.py: `oao()` now properly HTML-escapes `&`, `<` and `>` into `&amp;`, `&lt;` and `&gt;` instead of replacing `<` and `>` with apostrophes. The previous implementation destroyed legitimate threshold descriptions like `<= 10` and shell snippets like `echo 1 > /proc/sys/...`, turning them into `'= 10` and `echo 1 ' /proc/sys/...` in consumer output. HTML-based web UIs (Icinga Web, Naemon-Adagios) render the entities back to the original characters; terminal viewers see the literal entities, which preserves the information. The XSS-protection goal of the original change is still met
+* db_sqlite.py: `per_second_deltas()` no longer crashes with `sqlite3.ProgrammingError: Cannot operate on a closed database` when the cache table schema mismatches an earlier consumer version. The internal `insert()` call now uses `delete_db_on_operational_error=False` so the connection survives the schema-mismatch error; the explicit drop/recreate path below operates on a live connection as intended
 * url.py: `fetch()` with HTTP digest authentication and `insecure=True` now actually disables certificate verification. Previously the digest auth path silently lost the SSL context
-* url.py: `fetch()` with `no_proxy=True` now applies the `timeout` parameter. Previously the no-proxy path called `opener.open(request)` without a timeout, so hangs were only caught by the outer plugin wrapper
-* url.py: `import lib.url` no longer fails on hosts where `httpx` is not installed; the import is now lazy and `fetch()` returns a clear "httpx not installed" error message instead of crashing on import. Plugins that pull `lib.url` only transitively (for example via `lib.net`) keep working without `httpx`. Hosts that actually use `fetch()` still need `httpx[http2]` installed via `pip` or `dnf install python3-httpx python3-h2`
+* url.py: `fetch()` with `no_proxy=True` now applies the `timeout` parameter. Previously the no-proxy path called `opener.open(request)` without a timeout, so hangs were only caught by the outer consumer wrapper
+* url.py: `import lib.url` no longer fails on hosts where `httpx` is not installed; the import is now lazy and `fetch()` returns a clear "httpx not installed" error message instead of crashing on import. Consumers that pull `lib.url` only transitively (for example via `lib.net`) keep working without `httpx`. Hosts that actually use `fetch()` still need `httpx[http2]` installed via `pip` or `dnf install python3-httpx python3-h2`
 
 
 ## [v3.4.1] - 2026-05-07
@@ -125,7 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* args.py: add a generic `--check-security` help text so version-style plugins can offer an upstream security-update check with a uniform parameter description
+* args.py: add a generic `--check-security` help text so version-style consumers can offer an upstream security-update check with a uniform parameter description
 
 
 ## [v3.2.0] - 2026-04-14
@@ -154,7 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * disk.py: add `dir_exists()` as the directory-only counterpart to `file_exists()`. The existing `file_exists()` wraps `os.path.isfile()` and therefore returns `False` for directories, which is easy to miss; callers that want to check for a directory should now use `dir_exists()`
 * lftest.py: add `attach_each()` helper for iterating over arbitrary lists (e.g. container image matrices, file-based fixtures) with a caller-supplied action, complementing `attach_tests()` which only works on the `TESTS` dict shape
-* lftest.py: add `attach_tests()` helper that attaches one `test_*` method per entry in a plugin's `TESTS` list, so that test discovery and reporting show the actual number of fixtures instead of a single aggregate test
+* lftest.py: add `attach_tests()` helper that attaches one `test_*` method per entry in a consumer's `TESTS` list, so that test discovery and reporting show the actual number of fixtures instead of a single aggregate test
 * lftest.py: add `run_mariadb()` context manager and `MARIADB_LTS_IMAGES` constant for container-based MariaDB integration tests. Starts a sclorg or upstream MariaDB container, waits for the TCP listener, yields a temporary client option file, and cleans up on exit. `MARIADB_LTS_IMAGES` lists the currently supported MariaDB LTS releases (10.6, 10.11, 11.4, 11.8) so the mysql-* monitoring plugins can iterate over a single canonical matrix
 
 
@@ -179,7 +187,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * base.py: `get_perfdata()` now sanitizes labels by stripping single quotes and replacing `=` with `_`
 * base.py: `get_perfdata()` output no longer has trailing semicolons
 * base.py: `get_table()`: document why pure ASCII delimiters are used instead of Unicode box-drawing characters
-* base.py: `get_worst()` now accepts any number of state arguments (`*states`). Existing two-argument callers keep working unchanged, but plugins that need to combine three or more states in one call no longer have to nest the call - e.g. `get_worst(state, used_state, committed_state)` instead of `get_worst(state, get_worst(used_state, committed_state))`
+* base.py: `get_worst()` now accepts any number of state arguments (`*states`). Existing two-argument callers keep working unchanged, but consumers that need to combine three or more states in one call no longer have to nest the call - e.g. `get_worst(state, used_state, committed_state)` instead of `get_worst(state, get_worst(used_state, committed_state))`
 * base.py: deduplicate `get_state()` operator logic using `operator` module
 * base.py: deduplicate `sum_dict()` by delegating to `sum_lod()`
 * base.py: improve `get_table()` performance for large tables
@@ -189,7 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * human.py: deduplicate `bits2human()`/`bps2human()`/`bytes2human()` via shared `_to_human()` helper
 * human.py: deduplicate `humanrange2bytes()`/`humanrange2seconds()` via shared `_convert_range()` helper
 * human.py: pre-compute mappings as module constants
-* lftest.py: `test()` now accepts `args` with fewer than three elements. Plugins can be invoked as `--test=path/to/fixture` without the trailing `,,0`; stderr defaults to the empty string and the return code to `0`
+* lftest.py: `test()` now accepts `args` with fewer than three elements. Consumers can be invoked as `--test=path/to/fixture` without the trailing `,,0`; stderr defaults to the empty string and the return code to `0`
 * powershell.py: `run_ps()` now always returns a dict
 * Remove pre-built documentation from the repository (now auto-deployed via GitHub Actions)
 * txt.py: improve `filter_mltext()` performance (avoid O(n²) string concatenation)

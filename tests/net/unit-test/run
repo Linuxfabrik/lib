@@ -33,6 +33,41 @@ class TestIpToCidr(unittest.TestCase):
         self.assertEqual(net.ip_to_cidr('255.255.255.0'), 24)
 
 
+class TestCidrToHosts(unittest.TestCase):
+    def test_ipv4(self):
+        self.assertEqual(
+            net.cidr_to_hosts('10.1.1.0/30'), (True, ['10.1.1.1', '10.1.1.2'])
+        )
+
+    def test_ipv4_host_bits_tolerated(self):
+        # strict=False: host bits set in the input are accepted
+        ok, hosts = net.cidr_to_hosts('10.1.1.5/30')
+        self.assertTrue(ok)
+        self.assertEqual(hosts, ['10.1.1.5', '10.1.1.6'])
+
+    def test_ipv6(self):
+        self.assertEqual(
+            net.cidr_to_hosts('2001:db8::/126'),
+            (True, ['2001:db8::1', '2001:db8::2', '2001:db8::3']),
+        )
+
+    def test_too_large_is_rejected(self):
+        # an IPv6 /64 must not be enumerated (2^64 addresses)
+        ok, result = net.cidr_to_hosts('2001:db8::/64')
+        self.assertFalse(ok)
+        self.assertIn('too large', result)
+
+    def test_max_hosts_none_disables_limit(self):
+        ok, hosts = net.cidr_to_hosts('10.0.0.0/24', max_hosts=None)
+        self.assertTrue(ok)
+        self.assertEqual(len(hosts), 254)
+
+    def test_invalid_input(self):
+        ok, result = net.cidr_to_hosts('not-a-net')
+        self.assertFalse(ok)
+        self.assertIn('Invalid network', result)
+
+
 class TestHostnameValidation(unittest.TestCase):
     def test_is_valid_hostname(self):
         self.assertTrue(net.is_valid_hostname('example.com'))

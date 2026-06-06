@@ -11,12 +11,13 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041201'
+__version__ = '2026060601'
 
 
 import os
 import re
 import shlex
+import shutil
 import subprocess  # nosec B404 - this library is the subprocess helper
 
 from . import txt
@@ -211,3 +212,24 @@ def shell_exec(
         return False, f'Timeout after {timeout} seconds.'
 
     return True, (txt.to_text(stdout), txt.to_text(stderr), p.returncode)
+
+
+def which(name):
+    """
+    Locate an executable in the system PATH, like the `which` command.
+
+    Thin wrapper around `shutil.which()` so callers do not need to import it
+    directly and the lookup stays consistent across consumers.
+
+    ### Parameters
+    - **name** (`str`): Program name to look for (e.g. `lynis`).
+
+    ### Returns
+    - **str or None**: The absolute path to the executable, or `None` if it is
+      not found in PATH.
+
+    ### Example
+    >>> which('sh')
+    '/usr/bin/sh'
+    """
+    return shutil.which(name)

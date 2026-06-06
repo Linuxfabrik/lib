@@ -12,8 +12,9 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026050901'
+__version__ = '2026060601'
 
+import ipaddress
 import random
 import re
 import socket
@@ -128,7 +129,11 @@ SOCKETSTR = {
 
 
 def _socket_fetch(
-    open_socket_func, connect_args, payload=None, dialog=None, timeout=3,
+    open_socket_func,
+    connect_args,
+    payload=None,
+    dialog=None,
+    timeout=3,
     socket_name='socket',
 ):
     """
@@ -192,7 +197,10 @@ def _socket_fetch(
                         try:
                             s.sendall(send_bytes)
                         except Exception as e:
-                            return False, f'Could not send payload on {socket_name}: {e}'
+                            return (
+                                False,
+                                f'Could not send payload on {socket_name}: {e}',
+                            )
 
                     if expect is None:
                         results.append('')
@@ -293,7 +301,8 @@ def fetch(host, port, msg=None, dialog=None, timeout=3, ipv6=False, tls=False):
     ### Example
     >>> success, response = fetch('example.com', 80)
     >>> ok, [hello, vars_block, _] = fetch(
-    ...     '127.0.0.1', 3493,
+    ...     '127.0.0.1',
+    ...     3493,
     ...     dialog=[
     ...         (None, r'^OK\\b|^ERR\\b'),
     ...         (b'LIST VAR myups\\n', r'END LIST VAR myups'),
@@ -546,6 +555,110 @@ def get_public_ip(services, insecure=False, no_proxy=False, timeout=2):
                 return True, ip
 
     return False, None
+
+
+def cidr_to_hosts(cidr, max_hosts=65536):
+    """
+    Return the usable host IP addresses of a network in CIDR notation.
+
+    Enumerates the usable host addresses of an IPv4 or IPv6 network given as a
+    CIDR string (e.g. `10.1.1.0/24` or `2001:db8::/120`). The network and
+    broadcast address are excluded. Host bits set in the input are tolerated
+    (`strict=False`).
+
+    ### Parameters
+    - **cidr** (`str`): Network in CIDR notation, e.g. `10.1.1.0/24`.
+    - **max_hosts** (`int`, optional): Refuse to enumerate networks with more
+      addresses than this, which protects against accidentally expanding a large
+      range such as an IPv6 `/64` (2^64 addresses). Set to `None` to disable the
+      limit. Defaults to `65536` (an IPv4 `/16`).
+
+    ### Returns
+    - **tuple** (`bool`, `list` or `str`):
+      - `True` and the list of host IP address strings (IPv4 or IPv6) on success.
+      - `False` and an error message on failure.
+
+    ### Example
+    >>> cidr_to_hosts('10.1.1.0/30')
+    (True, ['10.1.1.1', '10.1.1.2'])
+    >>> cidr_to_hosts('2001:db8::/126')
+    (True, ['2001:db8::1', '2001:db8::2', '2001:db8::3'])
+    """
+    try:
+        network = ipaddress.ip_network(cidr, strict=False)
+    except ValueError as e:
+        return (False, f'Invalid network "{cidr}": {e}')
+    if max_hosts is not None and network.num_addresses > max_hosts:
+        return (
+            False,
+            f'Network "{cidr}" is too large to enumerate '
+            f'({network.num_addresses} addresses, limit {max_hosts}).',
+        )
+    return (True, [str(host) for host in network.hosts()])
+
+
+def get_subnet_hosts(interface=None, max_hosts=65536):
+    """
+    Return the usable host IP addresses of an interface's subnet.
+
+    Resolves the address and netmask of the given interface (or the default
+    interface, the one carrying the default route, if none is given), derives the
+    subnet and enumerates its usable host addresses (network and broadcast
+    address excluded). IPv4 is preferred; if an interface has no IPv4 address its
+    IPv6 subnet is used. Note that an IPv6 `/64` exceeds `max_hosts` and is
+    therefore reported as too large rather than enumerated.
+
+    ### Parameters
+    - **interface** (`str`, optional): Network interface name (e.g. `eth0`). If
+      `None`, the default interface is used.
+    - **max_hosts** (`int`, optional): Passed through to `cidr_to_hosts()` to cap
+      enumeration. Defaults to `65536`.
+
+    ### Returns
+    - **tuple** (`bool`, `list` or `str`):
+      - `True` and the list of host IP address strings on success.
+      - `False` and an error message on failure.
+
+    ### Notes
+    - Requires the `netifaces` library.
+
+    ### Example
+    >>> get_subnet_hosts('eth0')
+    (True, ['192.168.1.1', '192.168.1.2', ..., '192.168.1.254'])
+    """
+    if not HAVE_NETIFACES:
+        return (False, 'Python module "netifaces" is not installed.')
+
+    if interface is None:
+        netinfo = get_netinfo()
+        if not netinfo or not netinfo.get('address'):
+            return (False, 'Unable to determine the default interface subnet.')
+        return cidr_to_hosts(
+            f'{netinfo["address"]}/{netinfo["mask_cidr"]}', max_hosts=max_hosts
+        )
+
+    try:
+        iface_addrs = netifaces.ifaddresses(interface)
+    except ValueError:
+        return (False, f'No such interface "{interface}".')
+
+    # IPv4 first, then IPv6. netifaces stores the IPv6 netmask as
+    # "ffff:ffff:ffff:ffff::/64" and may suffix the address with a "%scope".
+    for family in (netifaces.AF_INET, netifaces.AF_INET6):
+        entries = iface_addrs.get(family)
+        if not entries:
+            continue
+        address = (entries[0].get('addr') or '').split('%')[0]
+        netmask = entries[0].get('netmask') or ''
+        if not address:
+            continue
+        if family == netifaces.AF_INET:
+            cidr = ip_to_cidr(netmask)
+        else:
+            cidr = netmask.split('/')[-1] if '/' in netmask else '128'
+        return cidr_to_hosts(f'{address}/{cidr}', max_hosts=max_hosts)
+
+    return (False, f'No IPv4 or IPv6 address found on interface "{interface}".')
 
 
 def ip_to_cidr(ip):

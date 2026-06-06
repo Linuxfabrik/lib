@@ -76,6 +76,63 @@ class TestFileHelpers(unittest.TestCase):
         self.assertEqual(disk.get_owner(self.file), os.geteuid())
 
 
+class TestMkdir(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix='lftest-disk-mkdir-')
+
+    def test_creates_nested(self):
+        target = os.path.join(self.dir, 'a', 'b', 'c')
+        self.assertEqual(disk.mkdir(target), (True, None))
+        self.assertTrue(os.path.isdir(target))
+
+    def test_idempotent_with_exist_ok(self):
+        target = os.path.join(self.dir, 'sub')
+        disk.mkdir(target)
+        self.assertEqual(disk.mkdir(target), (True, None))
+
+    def test_exist_ok_false_on_existing_is_error(self):
+        ok, err = disk.mkdir(self.dir, exist_ok=False)
+        self.assertFalse(ok)
+        self.assertIsInstance(err, str)
+
+
+class TestTreeOps(unittest.TestCase):
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-disk-tree-')
+
+    def test_make_temp_dir(self):
+        ok, path = disk.make_temp_dir(prefix='lftest-mtd-')
+        self.assertTrue(ok)
+        self.assertTrue(os.path.isdir(path))
+        disk.rm_dir(path)
+
+    def test_copy_file_copy_dir_rm_dir_roundtrip(self):
+        src = os.path.join(self.base, 'src')
+        os.makedirs(src)
+        disk.write_file(os.path.join(src, 'a.txt'), 'x')
+
+        dst_file = os.path.join(self.base, 'a-copy.txt')
+        self.assertEqual(disk.copy_file(os.path.join(src, 'a.txt'), dst_file), (True, None))
+        self.assertTrue(os.path.isfile(dst_file))
+
+        dst_dir = os.path.join(self.base, 'dst')
+        self.assertEqual(disk.copy_dir(src, dst_dir), (True, None))
+        self.assertTrue(os.path.isfile(os.path.join(dst_dir, 'a.txt')))
+
+        self.assertEqual(disk.rm_dir(dst_dir), (True, None))
+        self.assertFalse(os.path.isdir(dst_dir))
+
+    def test_copy_dir_existing_dst_is_error(self):
+        ok, err = disk.copy_dir(self.base, self.base)
+        self.assertFalse(ok)
+        self.assertIsInstance(err, str)
+
+    def test_rm_dir_missing_is_error(self):
+        ok, err = disk.rm_dir(os.path.join(self.base, 'does-not-exist'))
+        self.assertFalse(ok)
+        self.assertIsInstance(err, str)
+
+
 class TestHostHelpers(unittest.TestCase):
     def test_get_tmpdir_absolute_without_trailing_slash(self):
         tmp = disk.get_tmpdir()

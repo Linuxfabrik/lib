@@ -13,11 +13,12 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026060601'
 
 import csv
 import os
 import re
+import shutil
 import tempfile
 
 from . import shell
@@ -53,6 +54,65 @@ def bd2dmd(device):
 
     mapped_device = f'/dev/mapper/{name.strip()}'
     return mapped_device if os.path.islink(mapped_device) else ''
+
+
+def copy_dir(src, dst):
+    """
+    Recursively copy a directory tree.
+
+    Wraps `shutil.copytree()` and reports the outcome in the same
+    `(success, error)` style as the other disk helpers, so callers do not have to
+    handle exceptions themselves.
+
+    ### Parameters
+    - **src** (`str`): Source directory.
+    - **dst** (`str`): Destination directory (must not exist yet).
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**bool**): True if the copy succeeded, otherwise False.
+        - tuple[1] (**None or str**): None on success, otherwise an error message.
+
+    ### Example
+    >>> copy_dir('/usr/share/lynis', '/tmp/lynis')
+    (True, None)
+    """
+    try:
+        shutil.copytree(src, dst)
+        return True, None
+    except (OSError, shutil.Error) as e:
+        return False, f'Error copying directory {src} to {dst}: {e}'
+    except Exception as e:
+        return False, f'Unknown error copying directory {src} to {dst}: {e}'
+
+
+def copy_file(src, dst):
+    """
+    Copy a single file, preserving its metadata.
+
+    Wraps `shutil.copy2()` and reports the outcome in the same `(success, error)`
+    style as the other disk helpers.
+
+    ### Parameters
+    - **src** (`str`): Source file.
+    - **dst** (`str`): Destination file or directory.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**bool**): True if the copy succeeded, otherwise False.
+        - tuple[1] (**None or str**): None on success, otherwise an error message.
+
+    ### Example
+    >>> copy_file('/etc/lynis/default.prf', '/tmp/lynis/default.prf')
+    (True, None)
+    """
+    try:
+        shutil.copy2(src, dst)
+        return True, None
+    except OSError as e:
+        return False, f'OS error "{e.strerror}" while copying {src} to {dst}'
+    except Exception as e:
+        return False, f'Unknown error copying {src} to {dst}: {e}'
 
 
 def dir_exists(path):
@@ -375,6 +435,67 @@ def grep_file(filename, pattern):
     return True, ''
 
 
+def make_temp_dir(prefix=''):
+    """
+    Create a unique temporary directory and return its path.
+
+    Wraps `tempfile.mkdtemp()` and reports the outcome in the same
+    `(success, result)` style as the other disk helpers.
+
+    ### Parameters
+    - **prefix** (`str`, optional): Prefix for the directory name. Defaults to ''.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**bool**): True on success, otherwise False.
+        - tuple[1] (**str**): The created directory path on success, otherwise an
+          error message.
+
+    ### Example
+    >>> make_temp_dir(prefix='myapp-')
+    (True, '/tmp/myapp-abcd1234')
+    """
+    try:
+        return True, tempfile.mkdtemp(prefix=prefix)
+    except OSError as e:
+        return False, f'OS error "{e.strerror}" while creating a temporary directory'
+    except Exception as e:
+        return False, f'Unknown error creating a temporary directory: {e}'
+
+
+def mkdir(path, mode=0o755, exist_ok=True):
+    """
+    Create a directory, including any missing parent directories.
+
+    Wraps `os.makedirs()` and reports the outcome in the same `(success, error)`
+    style as the other disk helpers, so callers do not have to handle exceptions
+    themselves.
+
+    ### Parameters
+    - **path** (`str`): Directory path to create.
+    - **mode** (`int`, optional): Permission bits for newly created directories.
+      Defaults to `0o755`.
+    - **exist_ok** (`bool`, optional): If `True`, an already existing directory is
+      not an error. Defaults to `True`.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**bool**): True if the directory exists afterwards, else False.
+        - tuple[1] (**None or str**): None on success, otherwise an error message.
+
+    ### Example
+    >>> mkdir('/tmp/example/sub')
+    (True, None)
+    """
+    try:
+        os.makedirs(path, mode=mode, exist_ok=exist_ok)
+        return True, None
+    except OSError as e:
+        return False, f'OS error "{e.strerror}" while creating {path}'
+    except Exception as e:
+        return False, f'Unknown error creating {path}: {e}'
+
+
 def read_csv(
     filename,
     delimiter=',',
@@ -515,6 +636,34 @@ def read_file(filename):
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
+
+
+def rm_dir(path):
+    """
+    Recursively delete a directory tree.
+
+    Wraps `shutil.rmtree()` and reports the outcome in the same `(success, error)`
+    style as `rm_file()`.
+
+    ### Parameters
+    - **path** (`str`): Directory tree to delete.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**bool**): True if deletion succeeded, otherwise False.
+        - tuple[1] (**None or str**): None on success, otherwise an error message.
+
+    ### Example
+    >>> rm_dir('/tmp/lynis')
+    (True, None)
+    """
+    try:
+        shutil.rmtree(path)
+        return True, None
+    except OSError as e:
+        return False, f'OS error "{e.strerror}" while deleting {path}'
+    except Exception as e:
+        return False, f'Unknown error deleting {path}: {e}'
 
 
 def rm_file(filename):

@@ -504,5 +504,16 @@ class TestShellExecRealCommands(unittest.TestCase):
         self.assertEqual(out, '1.2.3')
 
 
+class TestWhich(unittest.TestCase):
+    def test_found(self):
+        with mock.patch('lib.shell.shutil.which', return_value='/usr/bin/sh') as w:
+            self.assertEqual(shell.which('sh'), '/usr/bin/sh')
+            w.assert_called_once_with('sh')
+
+    def test_not_found(self):
+        with mock.patch('lib.shell.shutil.which', return_value=None):
+            self.assertIsNone(shell.which('does-not-exist'))
+
+
 if __name__ == '__main__':
     unittest.main()
