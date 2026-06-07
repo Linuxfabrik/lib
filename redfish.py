@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060703'
+__version__ = '2026060704'
 
 import base64
 
@@ -57,6 +57,18 @@ CHASSIS_NESTED_KEYS = {
     'Status_State': ('Status', 'State'),
     'Status_Health': ('Status', 'Health'),
     'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
+CHASSIS_POWER_CONTROL_KEYS = (
+    'MemberId',
+    'Name',
+    'PowerCapacityWatts',
+    'PowerConsumedWatts',
+)
+
+CHASSIS_POWER_CONTROL_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
 }
 
 CHASSIS_POWER_KEYS = (
@@ -215,6 +227,16 @@ MEMORY_NESTED_KEYS = {
     'Status_Health': ('Status', 'Health'),
     'Status_HealthRollup': ('Status', 'HealthRollup'),
 }
+
+# Some controllers leave the standard Status.State/Health empty on memory
+# modules and report the real condition only in an OEM-specific field. These
+# tables fold those vendor operational values back onto the standard Redfish
+# vocabulary so the generic get_state() can evaluate them. Modules in an absent
+# state are skipped by the callers; healthy operational states map to "Enabled",
+# everything else is surfaced as a problem.
+MEMORY_OEM_ABSENT_STATES = ('Absent', 'EmptyOrNotInstalled', 'NotPresent')
+MEMORY_OEM_HEALTHY_HEALTH = ('enabled', 'nominal', 'ok')
+MEMORY_OEM_HEALTHY_STATES = ('Enabled', 'GoodInUse', 'Operable', 'Quiesced')
 
 PROCESSOR_KEYS = (
     'Id',
@@ -466,6 +488,46 @@ def get_chassis(redfish):
     return data
 
 
+def get_chassis_power_powercontrol(redfish):
+    """
+    Extract power control (overall power consumption) information from a Redfish API response.
+
+    The legacy Power resource exposes one or more `PowerControl` entries that report the aggregate
+    power consumption of the chassis. This function projects a single such entry into a flat
+    dictionary.
+
+    ### Parameters
+    - **redfish** (`dict`): A dictionary containing a single Redfish `PowerControl` entry.
+
+    ### Returns
+    - **dict**: A dictionary containing the following power control details:
+      - **MemberId** (`str`): The identifier of the power control entry.
+      - **Name** (`str`): The name of the power control entry.
+      - **PowerCapacityWatts** (`str`): The total power capacity in watts.
+      - **PowerConsumedWatts** (`str`): The currently consumed power in watts.
+      - **Status_State** (`str`): The state of the power control entry (e.g., "Enabled").
+      - **Status_Health** (`str`): The health status of the power control entry (e.g., "OK").
+
+    ### Example
+    >>> redfish_data = {
+    ...     'Name': 'System Power Control',
+    ...     'PowerConsumedWatts': 344,
+    ...     'Status': {'State': 'Enabled', 'Health': 'OK'},
+    ... }
+    >>> get_chassis_power_powercontrol(redfish_data)
+    {'Name': 'System Power Control', 'PowerConsumedWatts': 344, ..., 'Status_State': 'Enabled', ...}
+    """
+    data = {key: redfish.get(key, '') for key in CHASSIS_POWER_CONTROL_KEYS}
+
+    for out_key, path in CHASSIS_POWER_CONTROL_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
+    return data
+
+
 def get_chassis_power_powersupplies(redfish):
     """
     Extract power supply information from a Redfish API response.
@@ -642,6 +704,16 @@ def get_chassis_thermal_fans(redfish):
         for step in path:
             ref = ref.get(step, {})
         data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
+    # vendor quirk: Dell, Fujitsu and Huawei report fan speed in RPM under
+    # "ReadingRPM"; HP and Lenovo report a percentage. Normalize both onto
+    # Reading / ReadingUnits so get_perfdata() and the table see one shape.
+    if redfish.get('ReadingRPM') is not None or redfish.get('ReadingUnits') == 'RPM':
+        reading = redfish.get('ReadingRPM')
+        data['Reading'] = redfish.get('Reading', '') if reading is None else reading
+        data['ReadingUnits'] = 'RPM'
+    elif redfish.get('ReadingUnits') == 'Percent':
+        data['ReadingUnits'] = '%'
 
     return data
 
@@ -1275,8 +1347,55 @@ def get_systems_memory(redfish):
             ref = ref.get(step, {})
         data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
 
-    capacity = redfish.get('CapacityMiB')
-    data['CapacityMiB'] = human.bytes2human(capacity * 1024 * 1024) if capacity else ''
+    # the vendor is detected from the member's own Oem block, so the projection
+    # stays self-contained (dict in, dict out)
+    vendor = get_vendor(redfish)
+
+    # vendor quirk: some controllers report the module size as "SizeMB"; Dell
+    # iDRAC 8 even reports decimal MB instead of binary MiB, so a value that is
+    # not a clean MiB multiple is converted back to a MiB count.
+    capacity = redfish.get('SizeMB') or redfish.get('CapacityMiB')
+    if capacity:
+        capacity = int(capacity)
+        if vendor == 'dell' and capacity % 1024 != 0:
+            capacity = round(capacity * 1024**2 / 1000**2)
+        data['CapacityMiB'] = human.bytes2human(capacity * 1024 * 1024)
+    else:
+        data['CapacityMiB'] = ''
+
+    # vendor quirk: when the standard Status block is empty, fold the
+    # OEM-specific status field into Status_State / Status_Health.
+    oem = redfish.get('Oem') or {}
+    oem_block = next(iter(oem.values()), {}) if isinstance(oem, dict) else {}
+    if not isinstance(oem_block, dict):
+        oem_block = {}
+
+    oem_state = ''
+    if vendor == 'hpe':
+        oem_state = oem_block.get('DIMMStatus', '')
+    elif vendor == 'fujitsu' and oem_block.get('SignalStatus'):
+        oem_state = oem_block.get('SignalStatus', '')
+        # Fujitsu reports the health verdict separately in LegacyStatus
+        legacy = oem_block.get('LegacyStatus')
+        if legacy:
+            data['Status_Health'] = (
+                'OK' if legacy.lower() in MEMORY_OEM_HEALTHY_HEALTH else 'Critical'
+            )
+    elif redfish.get('DIMMStatus'):
+        oem_state = redfish.get('DIMMStatus', '')
+
+    if oem_state:
+        if oem_state in MEMORY_OEM_ABSENT_STATES:
+            data['Status_State'] = 'Absent'
+        elif oem_state in MEMORY_OEM_HEALTHY_STATES:
+            data['Status_State'] = 'Enabled'
+            if not data['Status_Health']:
+                data['Status_Health'] = 'OK'
+        else:
+            # an unrecognized operational value means the module needs attention
+            data['Status_State'] = 'Enabled'
+            if data['Status_Health'] in ('', 'OK'):
+                data['Status_Health'] = 'Critical'
 
     return data
 
@@ -1454,6 +1573,21 @@ def get_systems_storage_drives(redfish):
 
     capacity = redfish.get('CapacityBytes')
     data['CapacityBytes'] = human.bytes2human(capacity) if capacity else ''
+
+    # vendor quirk: drive temperature is not a standard Drive property. HPE
+    # SmartStorage exposes "CurrentTemperatureCelsius"; other vendors put it in
+    # their OEM block as TemperatureCelsius / TemperatureC. Expose it (in
+    # degrees Celsius) so it can be trended as a gauge.
+    oem = redfish.get('Oem') or {}
+    oem_block = next(iter(oem.values()), {}) if isinstance(oem, dict) else {}
+    if not isinstance(oem_block, dict):
+        oem_block = {}
+    temperature = (
+        redfish.get('CurrentTemperatureCelsius')
+        or oem_block.get('TemperatureCelsius')
+        or oem_block.get('TemperatureC')
+    )
+    data['Temperature'] = temperature if isinstance(temperature, (int, float)) else ''
 
     return data
 

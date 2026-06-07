@@ -11,17 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * redfish.py: `get_auth_header()` builds the request authentication header, reusing a cached session token to avoid creating a new controller session on every request, and falling back to HTTP Basic auth
+* redfish.py: `get_chassis_power_powercontrol()` parses a power control (overall power consumption) entry for health monitoring and reporting
 * redfish.py: `get_manager()` parses a manager (BMC) resource for health monitoring and identification
 * redfish.py: `get_systems_ethernetinterfaces()` parses an Ethernet interface resource for health monitoring and identification
-* redfish.py: `get_systems_memory()` parses a memory module (DIMM) resource for health monitoring and identification
+* redfish.py: `get_systems_memory()` parses a memory module (DIMM) resource for health monitoring and identification, applying vendor quirks (Dell module size, HPE/Fujitsu OEM module status)
 * redfish.py: `get_systems_processors()` parses a processor (CPU) resource for health monitoring and identification
 * redfish.py: `get_systems_storage_volumes()` parses a volume (logical drive) resource for health monitoring and identification
 * redfish.py: `get_updateservice_firmwareinventory()` parses a firmware inventory resource for version reporting and health monitoring
 
 ### Changed
 
+* redfish.py: `get_chassis_thermal_fans()` normalizes fan speed reported in RPM or percent onto a single shape
 * redfish.py: `get_manager_logservices_sel_entries()` can filter log entries by regular expression and age out entries older than a cutoff
-* redfish.py: `get_systems_storage_drives()` also extracts `PowerOnHours`, so consumers can report drive age
+* redfish.py: `get_systems_storage_drives()` also extracts `PowerOnHours` and the drive temperature, so consumers can report drive age and temperature
 * time.py: `timestr2epoch()` accepts `pattern='iso8601'` to parse ISO 8601 timestamps (trailing `Z`, embedded offset or date-only) without specifying the exact layout
 * url.py: `fetch_json()` accepts a `retries` argument to re-attempt a failed request or an unparseable body, for flaky endpoints
 

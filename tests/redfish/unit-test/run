@@ -19,13 +19,14 @@ representative captured-style Redfish payload is decoded exactly the way a
 plugin would (json.loads on a fetched body) and fed in, and the parser output
 is pinned byte for byte.
 
-Public functions under test (14):
+Public functions under test (16):
 
 - get_chassis()                            -> flat + nested key projection
+- get_chassis_power_powercontrol()         -> projection
 - get_chassis_power_powersupplies()        -> projection + PowerOutputWatts fallback
 - get_chassis_power_voltages()             -> projection
 - get_chassis_sensors()                    -> projection with 3-level threshold paths
-- get_chassis_thermal_fans()               -> projection
+- get_chassis_thermal_fans()               -> projection + RPM/percent quirk
 - get_chassis_thermal_redundancy()         -> projection
 - get_chassis_thermal_temperatures()       -> projection
 - get_manager_logservices_sel_entries()    -> SEL formatting + worst-state rollup
@@ -33,8 +34,9 @@ Public functions under test (14):
 - get_sensor_state()                       -> state by status/health/thresholds/range
 - get_state()                              -> state by status/health
 - get_systems()                            -> projection
+- get_systems_memory()                     -> projection + CapacityMiB + vendor quirks
 - get_systems_storage()                    -> projection
-- get_systems_storage_drives()             -> projection + CapacityBytes humanizing
+- get_systems_storage_drives()             -> projection + CapacityBytes + temperature
 - get_vendor()                             -> Vendor / Oem / 'generic' resolution
 
 All expected values were probed against the live module first, then pinned.
@@ -194,6 +196,45 @@ class TestGetChassis(unittest.TestCase):
     def test_output_key_set_is_exact(self):
         out = redfish.get_chassis({})
         expected = set(redfish.CHASSIS_KEYS) | set(redfish.CHASSIS_NESTED_KEYS)
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
+# get_chassis_power_powercontrol
+# ---------------------------------------------------------------------------
+class TestGetChassisPowerPowercontrol(unittest.TestCase):
+    def test_full_projection(self):
+        out = redfish.get_chassis_power_powercontrol(
+            {
+                'MemberId': '0',
+                'Name': 'System Power Control',
+                'PowerCapacityWatts': 800,
+                'PowerConsumedWatts': 344,
+                'Status': {'State': 'Enabled', 'Health': 'OK'},
+            }
+        )
+        self.assertEqual(
+            out,
+            {
+                'MemberId': '0',
+                'Name': 'System Power Control',
+                'PowerCapacityWatts': 800,
+                'PowerConsumedWatts': 344,
+                'Status_State': 'Enabled',
+                'Status_Health': 'OK',
+            },
+        )
+
+    def test_empty(self):
+        out = redfish.get_chassis_power_powercontrol({})
+        for value in out.values():
+            self.assertEqual(value, '')
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_chassis_power_powercontrol({})
+        expected = set(redfish.CHASSIS_POWER_CONTROL_KEYS) | set(
+            redfish.CHASSIS_POWER_CONTROL_NESTED_KEYS
+        )
         self.assertEqual(set(out), expected)
 
 
@@ -382,6 +423,29 @@ class TestGetChassisThermalFans(unittest.TestCase):
     def test_non_scalar_status_state_filtered(self):
         out = redfish.get_chassis_thermal_fans({'Status': {'State': {'x': 1}}})
         self.assertEqual(out['Status_State'], '')
+
+    def test_reading_rpm_field_used(self):
+        # vendor quirk: Dell/Fujitsu/Huawei report speed under ReadingRPM
+        out = redfish.get_chassis_thermal_fans({'ReadingRPM': 9000})
+        self.assertEqual(out['Reading'], 9000)
+        self.assertEqual(out['ReadingUnits'], 'RPM')
+
+    def test_reading_rpm_field_wins_over_reading(self):
+        out = redfish.get_chassis_thermal_fans({'ReadingRPM': 9000, 'Reading': 10})
+        self.assertEqual(out['Reading'], 9000)
+        self.assertEqual(out['ReadingUnits'], 'RPM')
+
+    def test_reading_units_rpm_keeps_reading(self):
+        # ReadingUnits == 'RPM' but the value sits in Reading (no ReadingRPM)
+        out = redfish.get_chassis_thermal_fans({'Reading': 7000, 'ReadingUnits': 'RPM'})
+        self.assertEqual(out['Reading'], 7000)
+        self.assertEqual(out['ReadingUnits'], 'RPM')
+
+    def test_percent_unit_mapped_to_symbol(self):
+        # HP/Lenovo report a percentage; 'Percent' is normalized to '%'
+        out = redfish.get_chassis_thermal_fans({'Reading': 42, 'ReadingUnits': 'Percent'})
+        self.assertEqual(out['Reading'], 42)
+        self.assertEqual(out['ReadingUnits'], '%')
 
     def test_empty(self):
         out = redfish.get_chassis_thermal_fans({})
@@ -1005,6 +1069,96 @@ class TestGetSystems(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# get_systems_memory (CapacityMiB humanizing + vendor quirks)
+# ---------------------------------------------------------------------------
+class TestGetSystemsMemory(unittest.TestCase):
+    def test_full_payload(self):
+        out = redfish.get_systems_memory(
+            {
+                'CapacityMiB': 32768,
+                'Id': 'DIMM1',
+                'MemoryDeviceType': 'DDR4',
+                'Name': 'DIMM Slot 1',
+                'Status': {'State': 'Enabled', 'Health': 'OK', 'HealthRollup': 'OK'},
+            }
+        )
+        self.assertEqual(out['CapacityMiB'], human.bytes2human(32768 * 1024 * 1024))
+        self.assertEqual(out['MemoryDeviceType'], 'DDR4')
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+
+    def test_capacity_missing_is_empty(self):
+        self.assertEqual(redfish.get_systems_memory({})['CapacityMiB'], '')
+
+    def test_capacity_size_mb_fallback(self):
+        out = redfish.get_systems_memory({'SizeMB': 8192})
+        self.assertEqual(out['CapacityMiB'], human.bytes2human(8192 * 1024 * 1024))
+
+    def test_dell_idrac8_size_division(self):
+        # vendor quirk: Dell reports decimal MB when the value is not a clean
+        # MiB multiple; 16000 -> round(16000 * 1024**2 / 1000**2) = 16777 MiB
+        out = redfish.get_systems_memory(
+            {'CapacityMiB': 16000, 'Oem': {'Dell': {}}}
+        )
+        self.assertEqual(out['CapacityMiB'], human.bytes2human(16777 * 1024 * 1024))
+
+    def test_dell_clean_multiple_unchanged(self):
+        out = redfish.get_systems_memory(
+            {'CapacityMiB': 16384, 'Oem': {'Dell': {}}}
+        )
+        self.assertEqual(out['CapacityMiB'], human.bytes2human(16384 * 1024 * 1024))
+
+    def test_non_dell_size_unchanged(self):
+        out = redfish.get_systems_memory({'CapacityMiB': 16000, 'Oem': {'Hpe': {}}})
+        self.assertEqual(out['CapacityMiB'], human.bytes2human(16000 * 1024 * 1024))
+
+    def test_hpe_dimmstatus_healthy(self):
+        # vendor quirk: HPE reports operational state in Oem.Hpe.DIMMStatus
+        out = redfish.get_systems_memory(
+            {'Oem': {'Hpe': {'DIMMStatus': 'GoodInUse'}}}
+        )
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+
+    def test_hpe_dimmstatus_bad_is_flagged(self):
+        out = redfish.get_systems_memory(
+            {'Oem': {'Hpe': {'DIMMStatus': 'DegradedInUse'}}}
+        )
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'Critical')
+        self.assertEqual(redfish.get_state(out), STATE_CRIT)
+
+    def test_hpe_dimmstatus_absent(self):
+        out = redfish.get_systems_memory({'Oem': {'Hpe': {'DIMMStatus': 'NotPresent'}}})
+        self.assertEqual(out['Status_State'], 'Absent')
+
+    def test_fujitsu_signal_legacy_status_ok(self):
+        # vendor quirk: Fujitsu uses SignalStatus (state) + LegacyStatus (health)
+        out = redfish.get_systems_memory(
+            {'Oem': {'Fujitsu': {'SignalStatus': 'Enabled', 'LegacyStatus': 'Ok'}}}
+        )
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+
+    def test_fujitsu_legacy_status_error_is_flagged(self):
+        out = redfish.get_systems_memory(
+            {'Oem': {'Fujitsu': {'SignalStatus': 'Enabled', 'LegacyStatus': 'Error'}}}
+        )
+        self.assertEqual(out['Status_Health'], 'Critical')
+        self.assertEqual(redfish.get_state(out), STATE_CRIT)
+
+    def test_generic_top_level_dimmstatus(self):
+        out = redfish.get_systems_memory({'DIMMStatus': 'GoodInUse'})
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+
+    def test_output_key_set_is_exact(self):
+        out = redfish.get_systems_memory({})
+        expected = set(redfish.MEMORY_KEYS) | set(redfish.MEMORY_NESTED_KEYS)
+        self.assertEqual(set(out), expected)
+
+
+# ---------------------------------------------------------------------------
 # get_systems_storage
 # ---------------------------------------------------------------------------
 class TestGetSystemsStorage(unittest.TestCase):
@@ -1081,13 +1235,33 @@ class TestGetSystemsStorageDrives(unittest.TestCase):
         out = redfish.get_systems_storage_drives({'FailurePredicted': False})
         self.assertEqual(out['FailurePredicted'], False)
 
+    def test_temperature_from_current_temperature_celsius(self):
+        # vendor quirk: HPE SmartStorage exposes CurrentTemperatureCelsius
+        out = redfish.get_systems_storage_drives({'CurrentTemperatureCelsius': 37})
+        self.assertEqual(out['Temperature'], 37)
+
+    def test_temperature_from_oem_temperature_celsius(self):
+        out = redfish.get_systems_storage_drives(
+            {'Oem': {'Hpe': {'TemperatureCelsius': 41}}}
+        )
+        self.assertEqual(out['Temperature'], 41)
+
+    def test_temperature_from_oem_temperature_c(self):
+        out = redfish.get_systems_storage_drives({'Oem': {'Dell': {'TemperatureC': 29}}})
+        self.assertEqual(out['Temperature'], 29)
+
+    def test_temperature_missing_is_empty(self):
+        out = redfish.get_systems_storage_drives({})
+        self.assertEqual(out['Temperature'], '')
+
     def test_output_key_set_is_exact(self):
         out = redfish.get_systems_storage_drives({})
-        # CapacityBytes is added on top of the flat + nested key sets.
+        # CapacityBytes and Temperature are added on top of the flat + nested key
+        # sets.
         expected = (
             set(redfish.SYSTEMS_STORAGE_DRIVES_KEYS)
             | set(redfish.SYSTEMS_STORAGE_DRIVES_NESTED_KEYS)
-            | {'CapacityBytes'}
+            | {'CapacityBytes', 'Temperature'}
         )
         self.assertEqual(set(out), expected)
 
