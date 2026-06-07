@@ -77,6 +77,34 @@ class TestTimezoneIndependent(unittest.TestCase):
             0.0,
         )
 
+    def test_timestr2epoch_iso8601(self):
+        # pattern='iso8601' parses a trailing 'Z', an embedded offset and a
+        # date-only value; all three below denote the same instant in UTC.
+        self.assertEqual(
+            t.timestr2epoch('2021-01-01T00:00:00Z', pattern='iso8601'), 1609459200.0
+        )
+        self.assertEqual(
+            t.timestr2epoch('2021-01-01T02:00:00+02:00', pattern='iso8601'),
+            1609459200.0,
+        )
+        self.assertEqual(
+            t.timestr2epoch(
+                '2021-01-01', pattern='iso8601', tzinfo=datetime.timezone.utc
+            ),
+            1609459200.0,
+        )
+
+    def test_timestr2epoch_iso8601_invalid_raises(self):
+        with self.assertRaises(ValueError):
+            t.timestr2epoch('not a date', pattern='iso8601')
+
+    def test_timestr2epoch_invalid_pattern_raises(self):
+        # only the exact 'iso8601' sentinel enables ISO parsing; any other
+        # pattern is treated as a strptime format, so a near-miss sentinel
+        # ('iso') does not parse an ISO string and raises.
+        with self.assertRaises(ValueError):
+            t.timestr2epoch('2021-01-01T00:00:00Z', pattern='iso')
+
     def test_get_timezone(self):
         self.assertEqual(str(t.get_timezone('UTC')), 'UTC')
 

@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060702'
+__version__ = '2026060703'
 
 import base64
 
@@ -417,7 +417,9 @@ def get_auth_header(args):
         return {'X-Auth-Token': token}
 
     # session creation failed: fall back to HTTP Basic auth
-    encoded = txt.to_text(base64.b64encode(txt.to_bytes(f'{args.USERNAME}:{args.PASSWORD}')))
+    encoded = txt.to_text(
+        base64.b64encode(txt.to_bytes(f'{args.USERNAME}:{args.PASSWORD}'))
+    )
     return {'Authorization': f'Basic {encoded}'}
 
 
@@ -772,26 +774,37 @@ def get_manager(redfish):
     return data
 
 
-def get_manager_logservices_sel_entries(redfish):
+def get_manager_logservices_sel_entries(
+    redfish, match=None, ignore=None, cutoff_epoch=0
+):
     """
     Fetch and format SEL (System Event Log) entries from the Redfish API.
 
-    This function retrieves log entries from the Redfish API, processes each entry based on its
-    severity, and formats them into a message string. It also determines the overall state of the
-    log entries (OK, WARNING, CRITICAL).
+    Processes each entry by severity and formats the non-OK ones into a message string, returning
+    the worst state across them. Entries can be filtered and aged out before they contribute:
+
+    - **ignore**: drop entries whose `Message` matches any of these compiled regular expressions.
+    - **match**: when given, keep only entries whose `Message` matches at least one of these
+      compiled regular expressions.
+    - **cutoff_epoch**: when non-zero, drop (and count) entries whose `Created` timestamp is older
+      than this Unix epoch, so a long-since resolved event no longer keeps the state non-OK.
 
     ### Parameters
     - **redfish** (`dict`): A dictionary containing the Redfish log entries under the 'Members' key.
+    - **match** (`list`, optional): Compiled regular expressions; keep only matching messages.
+    - **ignore** (`list`, optional): Compiled regular expressions; drop matching messages.
+    - **cutoff_epoch** (`int` or `float`, optional): Drop entries created before this epoch.
+      `0` (default) disables aging.
 
     ### Returns
     - **tuple**:
-      - **msg** (`str`): A formatted string containing the log entries, including the created time,
-        message, and severity state.
-      - **state** (`int`): The worst state across all log entries, which can be one of the
-        following:
-        - `STATE_OK` (0): All logs are OK.
-        - `STATE_WARN` (1): Some logs are warnings.
-        - `STATE_CRIT` (2): Some logs are critical.
+      - **msg** (`str`): A formatted string of the reported entries (created time, message, state).
+      - **state** (`int`): The worst state across the reported entries:
+        - `STATE_OK` (0): nothing to report.
+        - `STATE_WARN` (1): some entries are warnings.
+        - `STATE_CRIT` (2): some entries are critical.
+      - **aged_out** (`int`): How many non-OK entries were suppressed because they were older than
+        `cutoff_epoch`.
 
     ### Example
     >>> redfish_data = {
@@ -809,24 +822,41 @@ def get_manager_logservices_sel_entries(redfish):
     ...     ]
     ... }
     >>> get_manager_logservices_sel_entries(redfish_data)
-    ('* 2021-08-01: Temperature is high [CRITICAL]\n', 2)
+    ('* 2021-08-01: Temperature is high [CRITICAL]\n', 2, 0)
     """
     lines = []
     state = STATE_OK
+    aged_out = 0
+    utc = time.get_timezone('UTC')
     for entry in redfish.get('Members', []):
         severity = entry.get('Severity', '').lower()
         if severity == 'ok':
             continue
+        message = entry.get('Message', '')
+        # --ignore: drop entries whose message matches any ignore pattern
+        if ignore and any(p.search(message) for p in ignore):
+            continue
+        # --match: keep only entries whose message matches a match pattern
+        if match and not any(p.search(message) for p in match):
+            continue
+        created = entry.get('Created', '')
+        # aging: drop (and count) entries older than the cutoff. A naive
+        # timestamp is read as UTC, which is what controllers commonly report.
+        if cutoff_epoch and created:
+            try:
+                entry_epoch = time.timestr2epoch(created, pattern='iso8601', tzinfo=utc)
+            except ValueError:
+                # undateable entry: keep it rather than silently suppress it
+                entry_epoch = None
+            if entry_epoch is not None and entry_epoch < cutoff_epoch:
+                aged_out += 1
+                continue
         msg_state = SEVERITY_TO_STATE.get(severity, STATE_OK)
         lines.append(
-            '* {}: {}{}'.format(
-                entry.get('Created', ''),
-                entry.get('Message', ''),
-                base.state2str(msg_state, prefix=' '),
-            )
+            '* {}: {}{}'.format(created, message, base.state2str(msg_state, prefix=' '))
         )
         state = base.get_worst(state, msg_state)
-    return '\n'.join(lines) + ('\n' if lines else ''), state
+    return '\n'.join(lines) + ('\n' if lines else ''), state, aged_out
 
 
 def get_perfdata(data, key='Reading'):

@@ -45,6 +45,7 @@ ReadingRangeMin/Max of 0 are dropped from perfdata because of the `or None`.
 """
 
 import json
+import re
 import sys
 import typing
 import unittest
@@ -256,7 +257,9 @@ class TestGetChassisPowerPowersupplies(unittest.TestCase):
 
     def test_output_key_set_is_exact(self):
         out = redfish.get_chassis_power_powersupplies({})
-        expected = set(redfish.CHASSIS_POWER_KEYS) | set(redfish.CHASSIS_POWER_NESTED_KEYS)
+        expected = set(redfish.CHASSIS_POWER_KEYS) | set(
+            redfish.CHASSIS_POWER_NESTED_KEYS
+        )
         self.assertEqual(set(out), expected)
 
 
@@ -290,7 +293,9 @@ class TestGetChassisPowerVoltages(unittest.TestCase):
 
     def test_output_key_set_is_exact(self):
         out = redfish.get_chassis_power_voltages({})
-        expected = set(redfish.CHASSIS_VOLTAGE_KEYS) | set(redfish.CHASSIS_VOLTAGE_NESTED_KEYS)
+        expected = set(redfish.CHASSIS_VOLTAGE_KEYS) | set(
+            redfish.CHASSIS_VOLTAGE_NESTED_KEYS
+        )
         self.assertEqual(set(out), expected)
 
 
@@ -340,7 +345,9 @@ class TestGetChassisSensors(unittest.TestCase):
 
     def test_output_key_set_is_exact(self):
         out = redfish.get_chassis_sensors({})
-        expected = set(redfish.CHASSIS_SENSOR_KEYS) | set(redfish.CHASSIS_SENSOR_NESTED_KEYS)
+        expected = set(redfish.CHASSIS_SENSOR_KEYS) | set(
+            redfish.CHASSIS_SENSOR_NESTED_KEYS
+        )
         self.assertEqual(set(out), expected)
 
 
@@ -393,20 +400,35 @@ class TestGetChassisThermalFans(unittest.TestCase):
 class TestGetChassisThermalRedundancy(unittest.TestCase):
     def test_full_projection(self):
         out = redfish.get_chassis_thermal_redundancy(
-            {'Mode': 'N+1', 'Name': 'Fan Redundancy', 'Status': {'State': 'Enabled', 'Health': 'OK'}}
+            {
+                'Mode': 'N+1',
+                'Name': 'Fan Redundancy',
+                'Status': {'State': 'Enabled', 'Health': 'OK'},
+            }
         )
         self.assertEqual(
             out,
-            {'Mode': 'N+1', 'Name': 'Fan Redundancy', 'Status_State': 'Enabled', 'Status_Health': 'OK'},
+            {
+                'Mode': 'N+1',
+                'Name': 'Fan Redundancy',
+                'Status_State': 'Enabled',
+                'Status_Health': 'OK',
+            },
         )
 
     def test_partial(self):
-        out = redfish.get_chassis_thermal_redundancy({'Mode': 'N+1', 'Status': {'Health': 'OK'}})
-        self.assertEqual(out, {'Mode': 'N+1', 'Name': '', 'Status_State': '', 'Status_Health': 'OK'})
+        out = redfish.get_chassis_thermal_redundancy(
+            {'Mode': 'N+1', 'Status': {'Health': 'OK'}}
+        )
+        self.assertEqual(
+            out, {'Mode': 'N+1', 'Name': '', 'Status_State': '', 'Status_Health': 'OK'}
+        )
 
     def test_empty(self):
         out = redfish.get_chassis_thermal_redundancy({})
-        self.assertEqual(out, {'Mode': '', 'Name': '', 'Status_State': '', 'Status_Health': ''})
+        self.assertEqual(
+            out, {'Mode': '', 'Name': '', 'Status_State': '', 'Status_Health': ''}
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -448,17 +470,21 @@ class TestGetChassisThermalTemperatures(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # get_manager_logservices_sel_entries
 # ---------------------------------------------------------------------------
+# entries dated 2021, shared by the SEL filter/aging tests below
+SEL_MIXED_BODY = {
+    'Members': [
+        {'Created': '2021-08-01', 'Message': 'Temp high', 'Severity': 'Critical'},
+        {'Created': '2021-08-02', 'Message': 'Fan normal', 'Severity': 'OK'},
+        {'Created': '2021-08-03', 'Message': 'warn msg', 'Severity': 'Warning'},
+    ]
+}
+
+
 class TestGetManagerLogservicesSelEntries(unittest.TestCase):
     def test_mixed_severities_worst_state_and_format(self):
-        body = {
-            'Members': [
-                {'Created': '2021-08-01', 'Message': 'Temp high', 'Severity': 'Critical'},
-                {'Created': '2021-08-02', 'Message': 'Fan normal', 'Severity': 'OK'},
-                {'Created': '2021-08-03', 'Message': 'warn msg', 'Severity': 'Warning'},
-            ]
-        }
-        msg, state = redfish.get_manager_logservices_sel_entries(body)
+        msg, state, aged = redfish.get_manager_logservices_sel_entries(SEL_MIXED_BODY)
         self.assertEqual(state, STATE_CRIT)
+        self.assertEqual(aged, 0)
         self.assertEqual(
             msg,
             f'* 2021-08-01: Temp high{CRIT_SUFFIX}\n* 2021-08-03: warn msg{WARN_SUFFIX}\n',
@@ -466,35 +492,46 @@ class TestGetManagerLogservicesSelEntries(unittest.TestCase):
 
     def test_ok_entries_are_skipped(self):
         body = {'Members': [{'Created': 'x', 'Message': 'm', 'Severity': 'OK'}]}
-        self.assertEqual(redfish.get_manager_logservices_sel_entries(body), ('', STATE_OK))
+        self.assertEqual(
+            redfish.get_manager_logservices_sel_entries(body), ('', STATE_OK, 0)
+        )
 
     def test_empty_members(self):
-        self.assertEqual(redfish.get_manager_logservices_sel_entries({'Members': []}), ('', STATE_OK))
+        self.assertEqual(
+            redfish.get_manager_logservices_sel_entries({'Members': []}),
+            ('', STATE_OK, 0),
+        )
 
     def test_missing_members_key(self):
-        self.assertEqual(redfish.get_manager_logservices_sel_entries({}), ('', STATE_OK))
+        self.assertEqual(
+            redfish.get_manager_logservices_sel_entries({}), ('', STATE_OK, 0)
+        )
 
     def test_unknown_severity_maps_to_ok_no_suffix(self):
         # Unknown severity -> STATE_OK -> no '[...]' suffix, no state escalation.
-        body = {'Members': [{'Created': '2021-08-04', 'Message': 'odd', 'Severity': 'Strange'}]}
-        msg, state = redfish.get_manager_logservices_sel_entries(body)
+        body = {
+            'Members': [
+                {'Created': '2021-08-04', 'Message': 'odd', 'Severity': 'Strange'}
+            ]
+        }
+        msg, state, _ = redfish.get_manager_logservices_sel_entries(body)
         self.assertEqual(msg, '* 2021-08-04: odd\n')
         self.assertEqual(state, STATE_OK)
 
     def test_warning_only_state_is_warn(self):
         body = {'Members': [{'Created': 'c', 'Message': 'm', 'Severity': 'Warning'}]}
-        msg, state = redfish.get_manager_logservices_sel_entries(body)
+        msg, state, _ = redfish.get_manager_logservices_sel_entries(body)
         self.assertEqual(state, STATE_WARN)
         self.assertEqual(msg, f'* c: m{WARN_SUFFIX}\n')
 
     def test_severity_is_case_insensitive(self):
         body = {'Members': [{'Created': 'c', 'Message': 'm', 'Severity': 'CRITICAL'}]}
-        _, state = redfish.get_manager_logservices_sel_entries(body)
+        _, state, _ = redfish.get_manager_logservices_sel_entries(body)
         self.assertEqual(state, STATE_CRIT)
 
     def test_missing_fields_default_to_empty(self):
         body = {'Members': [{'Severity': 'Warning'}]}
-        msg, state = redfish.get_manager_logservices_sel_entries(body)
+        msg, state, _ = redfish.get_manager_logservices_sel_entries(body)
         self.assertEqual(msg, f'* : {WARN_SUFFIX}\n')
         self.assertEqual(state, STATE_WARN)
 
@@ -502,9 +539,51 @@ class TestGetManagerLogservicesSelEntries(unittest.TestCase):
         # entry.get('Severity', '').lower() -> '' -> mapped to STATE_OK, but '' != 'ok'
         # so it is NOT skipped; it is emitted with no suffix.
         body = {'Members': [{'Created': 'c', 'Message': 'm'}]}
-        msg, state = redfish.get_manager_logservices_sel_entries(body)
+        msg, state, _ = redfish.get_manager_logservices_sel_entries(body)
         self.assertEqual(msg, '* c: m\n')
         self.assertEqual(state, STATE_OK)
+
+    def test_ignore_drops_matching_message(self):
+        # --ignore drops the critical 'Temp high' entry, leaving the warning.
+        ignore = [re.compile('Temp')]
+        msg, state, aged = redfish.get_manager_logservices_sel_entries(
+            SEL_MIXED_BODY, ignore=ignore
+        )
+        self.assertEqual(state, STATE_WARN)
+        self.assertEqual(aged, 0)
+        self.assertNotIn('Temp high', msg)
+        self.assertIn('warn msg', msg)
+
+    def test_match_keeps_only_matching_message(self):
+        # --match keeps only the warning entry; the critical one is not considered.
+        match = [re.compile('warn')]
+        msg, state, _ = redfish.get_manager_logservices_sel_entries(
+            SEL_MIXED_BODY, match=match
+        )
+        self.assertEqual(state, STATE_WARN)
+        self.assertNotIn('Temp high', msg)
+        self.assertIn('warn msg', msg)
+
+    def test_cutoff_ages_out_old_entries(self):
+        # A cutoff in 2033 ages out both 2021 non-OK entries; nothing drives state.
+        msg, state, aged = redfish.get_manager_logservices_sel_entries(
+            SEL_MIXED_BODY, cutoff_epoch=2_000_000_000
+        )
+        self.assertEqual(state, STATE_OK)
+        self.assertEqual(aged, 2)
+        self.assertEqual(msg, '')
+
+    def test_undateable_entry_is_not_aged_out(self):
+        # An unparseable Created keeps the entry rather than silently dropping it.
+        body = {
+            'Members': [{'Created': 'never', 'Message': 'm', 'Severity': 'Critical'}]
+        }
+        msg, state, aged = redfish.get_manager_logservices_sel_entries(
+            body, cutoff_epoch=2_000_000_000
+        )
+        self.assertEqual(state, STATE_CRIT)
+        self.assertEqual(aged, 0)
+        self.assertIn('m', msg)
 
 
 # ---------------------------------------------------------------------------
@@ -539,7 +618,9 @@ class TestGetPerfdata(unittest.TestCase):
 
     def test_bool_reading_is_accepted_as_int(self):
         # bool is a subclass of int; document the actual behaviour.
-        out = redfish.get_perfdata({'Reading': True, 'Name': 'x', 'PhysicalContext': 'y'})
+        out = redfish.get_perfdata(
+            {'Reading': True, 'Name': 'x', 'PhysicalContext': 'y'}
+        )
         self.assertEqual(out, "'y_x'=True ")
 
     def test_non_percent_unit_dropped(self):
@@ -552,13 +633,20 @@ class TestGetPerfdata(unittest.TestCase):
     def test_zero_range_bounds_dropped_via_or_none(self):
         # ReadingRangeMin/Max == 0 are falsy, so `or None` drops them.
         out = redfish.get_perfdata(
-            {'Reading': 5, 'Name': 'T', 'PhysicalContext': 'C', 'ReadingRangeMin': 0, 'ReadingRangeMax': 0}
+            {
+                'Reading': 5,
+                'Name': 'T',
+                'PhysicalContext': 'C',
+                'ReadingRangeMin': 0,
+                'ReadingRangeMax': 0,
+            }
         )
         self.assertEqual(out, "'C_T'=5 ")
 
     def test_custom_key(self):
         out = redfish.get_perfdata(
-            {'ReadingCelsius': 22, 'Name': 'a', 'PhysicalContext': 'b'}, key='ReadingCelsius'
+            {'ReadingCelsius': 22, 'Name': 'a', 'PhysicalContext': 'b'},
+            key='ReadingCelsius',
         )
         self.assertEqual(out, "'b_a'=22 ")
 
@@ -618,7 +706,9 @@ class TestGetSensorState(unittest.TestCase):
 
     def test_numeric_string_reading_is_parsed(self):
         # '95' parses; with upper critical 90 -> CRIT
-        self.assertEqual(self._state(Reading='95', Thresholds_UpperCritical=90), STATE_CRIT)
+        self.assertEqual(
+            self._state(Reading='95', Thresholds_UpperCritical=90), STATE_CRIT
+        )
 
     # 1. Status_State gate
     def test_disabled_state_short_circuits_ok(self):
@@ -650,10 +740,14 @@ class TestGetSensorState(unittest.TestCase):
         self.assertEqual(self._state(Reading=5, Status_Health='Warning'), STATE_WARN)
 
     def test_healthrollup_critical(self):
-        self.assertEqual(self._state(Reading=5, Status_HealthRollup='Critical'), STATE_CRIT)
+        self.assertEqual(
+            self._state(Reading=5, Status_HealthRollup='Critical'), STATE_CRIT
+        )
 
     def test_healthrollup_warning(self):
-        self.assertEqual(self._state(Reading=5, Status_HealthRollup='Warning'), STATE_WARN)
+        self.assertEqual(
+            self._state(Reading=5, Status_HealthRollup='Warning'), STATE_WARN
+        )
 
     def test_health_case_insensitive(self):
         self.assertEqual(self._state(Reading=5, Status_Health='cRiTiCaL'), STATE_CRIT)
@@ -661,7 +755,9 @@ class TestGetSensorState(unittest.TestCase):
     def test_healthrollup_takes_precedence_over_health(self):
         # HealthRollup is checked first; Critical rollup wins over Warning health.
         self.assertEqual(
-            self._state(Reading=5, Status_HealthRollup='Critical', Status_Health='Warning'),
+            self._state(
+                Reading=5, Status_HealthRollup='Critical', Status_Health='Warning'
+            ),
             STATE_CRIT,
         )
 
@@ -678,19 +774,29 @@ class TestGetSensorState(unittest.TestCase):
         )
 
     def test_default_upper_critical_breach(self):
-        self.assertEqual(self._state(Reading=92, Thresholds_UpperCritical=90), STATE_CRIT)
+        self.assertEqual(
+            self._state(Reading=92, Thresholds_UpperCritical=90), STATE_CRIT
+        )
 
     def test_lower_critical_breach(self):
-        self.assertEqual(self._state(Reading=5, Thresholds_LowerCritical=10), STATE_CRIT)
+        self.assertEqual(
+            self._state(Reading=5, Thresholds_LowerCritical=10), STATE_CRIT
+        )
 
     def test_user_lower_critical_breach(self):
-        self.assertEqual(self._state(Reading=5, Thresholds_LowerCriticalUser=10), STATE_CRIT)
+        self.assertEqual(
+            self._state(Reading=5, Thresholds_LowerCriticalUser=10), STATE_CRIT
+        )
 
     def test_user_upper_caution_breach(self):
-        self.assertEqual(self._state(Reading=82, Thresholds_UpperCautionUser=81), STATE_WARN)
+        self.assertEqual(
+            self._state(Reading=82, Thresholds_UpperCautionUser=81), STATE_WARN
+        )
 
     def test_default_upper_caution_breach(self):
-        self.assertEqual(self._state(Reading=82, Thresholds_UpperCaution=80), STATE_WARN)
+        self.assertEqual(
+            self._state(Reading=82, Thresholds_UpperCaution=80), STATE_WARN
+        )
 
     def test_lower_caution_breach(self):
         self.assertEqual(self._state(Reading=5, Thresholds_LowerCaution=10), STATE_WARN)
@@ -701,26 +807,38 @@ class TestGetSensorState(unittest.TestCase):
     def test_critical_checked_before_caution(self):
         # Reading breaches both caution and critical; critical wins.
         self.assertEqual(
-            self._state(Reading=95, Thresholds_UpperCaution=80, Thresholds_UpperCritical=90),
+            self._state(
+                Reading=95, Thresholds_UpperCaution=80, Thresholds_UpperCritical=90
+            ),
             STATE_CRIT,
         )
 
     def test_threshold_string_values_parsed(self):
-        self.assertEqual(self._state(Reading=92, Thresholds_UpperCritical='90'), STATE_CRIT)
+        self.assertEqual(
+            self._state(Reading=92, Thresholds_UpperCritical='90'), STATE_CRIT
+        )
 
     def test_unparseable_threshold_ignored(self):
         # A garbage threshold parses to None and is ignored -> no thresholds -> OK.
-        self.assertEqual(self._state(Reading=92, Thresholds_UpperCritical='n/a'), STATE_OK)
+        self.assertEqual(
+            self._state(Reading=92, Thresholds_UpperCritical='n/a'), STATE_OK
+        )
 
     # 4. reading range fallback
     def test_range_outside_is_warn(self):
-        self.assertEqual(self._state(Reading=150, ReadingRangeMin=0, ReadingRangeMax=100), STATE_WARN)
+        self.assertEqual(
+            self._state(Reading=150, ReadingRangeMin=0, ReadingRangeMax=100), STATE_WARN
+        )
 
     def test_range_below_is_warn(self):
-        self.assertEqual(self._state(Reading=-5, ReadingRangeMin=0, ReadingRangeMax=100), STATE_WARN)
+        self.assertEqual(
+            self._state(Reading=-5, ReadingRangeMin=0, ReadingRangeMax=100), STATE_WARN
+        )
 
     def test_range_inside_is_ok(self):
-        self.assertEqual(self._state(Reading=50, ReadingRangeMin=0, ReadingRangeMax=100), STATE_OK)
+        self.assertEqual(
+            self._state(Reading=50, ReadingRangeMin=0, ReadingRangeMax=100), STATE_OK
+        )
 
     def test_only_range_min_no_fallback(self):
         # Both bounds are required for the range fallback.
@@ -752,7 +870,11 @@ class TestGetSensorState(unittest.TestCase):
     def test_custom_key(self):
         self.assertEqual(
             redfish.get_sensor_state(
-                {'ReadingCelsius': 92, 'Status_State': 'Enabled', 'Thresholds_UpperCritical': 90},
+                {
+                    'ReadingCelsius': 92,
+                    'Status_State': 'Enabled',
+                    'Thresholds_UpperCritical': 90,
+                },
                 key='ReadingCelsius',
             ),
             STATE_CRIT,
@@ -765,47 +887,62 @@ class TestGetSensorState(unittest.TestCase):
 class TestGetState(unittest.TestCase):
     def test_healthrollup_critical(self):
         self.assertEqual(
-            redfish.get_state({'Status_State': 'Enabled', 'Status_HealthRollup': 'Critical'}),
+            redfish.get_state(
+                {'Status_State': 'Enabled', 'Status_HealthRollup': 'Critical'}
+            ),
             STATE_CRIT,
         )
 
     def test_health_warning(self):
         self.assertEqual(
-            redfish.get_state({'Status_State': 'Enabled', 'Status_Health': 'Warning'}), STATE_WARN
+            redfish.get_state({'Status_State': 'Enabled', 'Status_Health': 'Warning'}),
+            STATE_WARN,
         )
 
     def test_health_ok(self):
         self.assertEqual(
-            redfish.get_state({'Status_State': 'Enabled', 'Status_Health': 'OK'}), STATE_OK
+            redfish.get_state({'Status_State': 'Enabled', 'Status_Health': 'OK'}),
+            STATE_OK,
         )
 
     def test_disabled_state_short_circuits_ok(self):
         self.assertEqual(
-            redfish.get_state({'Status_State': 'Disabled', 'Status_Health': 'Critical'}), STATE_OK
+            redfish.get_state(
+                {'Status_State': 'Disabled', 'Status_Health': 'Critical'}
+            ),
+            STATE_OK,
         )
 
     def test_absent_state_is_ok(self):
         self.assertEqual(
-            redfish.get_state({'Status_State': 'Absent', 'Status_HealthRollup': 'Critical'}),
+            redfish.get_state(
+                {'Status_State': 'Absent', 'Status_HealthRollup': 'Critical'}
+            ),
             STATE_OK,
         )
 
     def test_quiesced_state_is_evaluated(self):
         self.assertEqual(
-            redfish.get_state({'Status_State': 'Quiesced', 'Status_Health': 'Warning'}), STATE_WARN
+            redfish.get_state({'Status_State': 'Quiesced', 'Status_Health': 'Warning'}),
+            STATE_WARN,
         )
 
     def test_healthrollup_precedence(self):
         self.assertEqual(
             redfish.get_state(
-                {'Status_State': 'Enabled', 'Status_HealthRollup': 'Critical', 'Status_Health': 'Warning'}
+                {
+                    'Status_State': 'Enabled',
+                    'Status_HealthRollup': 'Critical',
+                    'Status_Health': 'Warning',
+                }
             ),
             STATE_CRIT,
         )
 
     def test_case_insensitive(self):
         self.assertEqual(
-            redfish.get_state({'Status_State': 'Enabled', 'Status_Health': 'warning'}), STATE_WARN
+            redfish.get_state({'Status_State': 'Enabled', 'Status_Health': 'warning'}),
+            STATE_WARN,
         )
 
     def test_missing_state_key_is_ok(self):
@@ -831,7 +968,11 @@ class TestGetSystems(unittest.TestCase):
             'PowerState': 'On',
             'SerialNumber': 'SN1',
             'SKU': 'SKU1',
-            'ProcessorSummary': {'Count': 2, 'LogicalProcessorCount': 4, 'Model': 'Intel Xeon'},
+            'ProcessorSummary': {
+                'Count': 2,
+                'LogicalProcessorCount': 4,
+                'Model': 'Intel Xeon',
+            },
             'Storage': {'@odata.id': '/redfish/v1/Systems/1/Storage'},
             'Status': {'State': 'Enabled', 'Health': 'OK', 'HealthRollup': 'OK'},
         }
@@ -882,6 +1023,7 @@ class TestGetSystemsStorage(unittest.TestCase):
                 'Drives@odata.count': 5,
                 'Id': '6789',
                 'Name': 'StorageSystem1',
+                'Volumes_@odata.id': '',
                 'Status_State': 'Enabled',
                 'Status_Health': 'OK',
                 'Status_HealthRollup': 'OK',
@@ -897,7 +1039,9 @@ class TestGetSystemsStorage(unittest.TestCase):
 
     def test_output_key_set_is_exact(self):
         out = redfish.get_systems_storage({})
-        expected = set(redfish.SYSTEMS_STORAGE_KEYS) | set(redfish.SYSTEMS_STORAGE_NESTED_KEYS)
+        expected = set(redfish.SYSTEMS_STORAGE_KEYS) | set(
+            redfish.SYSTEMS_STORAGE_NESTED_KEYS
+        )
         self.assertEqual(set(out), expected)
 
 
@@ -968,14 +1112,18 @@ class TestGetVendor(unittest.TestCase):
         self.assertEqual(redfish.get_vendor({'Vendor': None, 'Oem': {'Hpe': 1}}), 'hpe')
 
     def test_vendor_empty_string_falls_back_to_oem(self):
-        self.assertEqual(redfish.get_vendor({'Vendor': '', 'Oem': {'Lenovo': 1}}), 'lenovo')
+        self.assertEqual(
+            redfish.get_vendor({'Vendor': '', 'Oem': {'Lenovo': 1}}), 'lenovo'
+        )
 
     def test_oem_none_is_generic(self):
         # `redfish.get('Oem') or {}` guards an explicit None Oem.
         self.assertEqual(redfish.get_vendor({'Oem': None}), 'generic')
 
     def test_vendor_wins_over_oem(self):
-        self.assertEqual(redfish.get_vendor({'Vendor': 'Dell', 'Oem': {'Hpe': 1}}), 'dell')
+        self.assertEqual(
+            redfish.get_vendor({'Vendor': 'Dell', 'Oem': {'Hpe': 1}}), 'dell'
+        )
 
 
 if __name__ == '__main__':

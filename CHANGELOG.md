@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* redfish.py: `get_manager_logservices_sel_entries()` can filter log entries by regular expression and age out entries older than a cutoff
 * redfish.py: `get_systems_storage_drives()` also extracts `PowerOnHours`, so consumers can report drive age
+* time.py: `timestr2epoch()` accepts `pattern='iso8601'` to parse ISO 8601 timestamps (trailing `Z`, embedded offset or date-only) without specifying the exact layout
 
 
 ## [v4.3.0] - 2026-06-06

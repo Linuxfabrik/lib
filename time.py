@@ -11,7 +11,7 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026060701'
 
 import datetime
 import re
@@ -224,15 +224,20 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
     ### Parameters
     - **timestr** (`str`): The time string to convert.
     - **pattern** (`str`): The format of the time string (default is '%Y-%m-%d %H:%M:%S').
+      Pass the special value `'iso8601'` to parse ISO 8601 strings tolerantly, without knowing the
+      exact layout in advance: a trailing `Z` (UTC), an embedded offset (`+02:00`) and a date-only
+      value are all accepted.
     - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.
       If provided, the parsed datetime is set to this timezone.
       If None, the time is assumed to be local time.
+      A value that already carries its own offset (e.g. an ISO 8601 string) keeps it.
 
     ### Returns
     - **float**: The UNIX epoch timestamp (seconds since January 1, 1970, 00:00:00 UTC).
 
     ### Raises
-    - **ValueError**: If the time string does not match the provided format.
+    - **ValueError**: If the time string does not match the provided format (or is not ISO 8601 when
+      `pattern='iso8601'`).
 
     ### Example
         # Convert a time string in local time:
@@ -240,12 +245,26 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
 
         # Convert a time string assuming it's in UTC:
         epoch_utc = timestr2epoch("2025-03-01 12:00:00", tzinfo=datetime.timezone.utc)
-    """
-    dt = datetime.datetime.strptime(timestr, pattern)
 
-    # If a timezone is provided, make the datetime timezone-aware.
-    if tzinfo is not None:
-        dt = dt.replace(tzinfo=tzinfo)
+        # Convert an ISO 8601 string without specifying its exact layout:
+        epoch_iso = timestr2epoch("2025-03-01T12:00:00Z", pattern='iso8601')
+    """
+    if pattern == 'iso8601':
+        # fromisoformat() accepts a trailing 'Z' only from Python 3.11, so
+        # normalize it first.
+        iso = timestr.strip()
+        if iso.endswith('Z'):
+            iso = iso[:-1] + '+00:00'
+        dt = datetime.datetime.fromisoformat(iso)
+        # A value that already carries an offset keeps it; a naive value is
+        # tagged with `tzinfo` when one is given.
+        if dt.tzinfo is None and tzinfo is not None:
+            dt = dt.replace(tzinfo=tzinfo)
+    else:
+        dt = datetime.datetime.strptime(timestr, pattern)
+        # If a timezone is provided, make the datetime timezone-aware.
+        if tzinfo is not None:
+            dt = dt.replace(tzinfo=tzinfo)
 
     return dt.timestamp()
 
