@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* redfish.py: `get_auth_header()` builds the request authentication header, reusing a cached session token to avoid creating a new controller session on every request, and falling back to HTTP Basic auth
 * redfish.py: `get_manager()` parses a manager (BMC) resource for health monitoring and identification
 * redfish.py: `get_systems_ethernetinterfaces()` parses an Ethernet interface resource for health monitoring and identification
 * redfish.py: `get_systems_memory()` parses a memory module (DIMM) resource for health monitoring and identification

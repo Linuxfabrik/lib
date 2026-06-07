@@ -11,9 +11,11 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060701'
+__version__ = '2026060702'
 
-from . import base, human
+import base64
+
+from . import base, cache, human, time, txt, url
 from .globals import STATE_CRIT, STATE_OK, STATE_WARN
 
 CHASSIS_FAN_KEYS = (
@@ -353,6 +355,70 @@ VOLUME_NESTED_KEYS = {
 #   * Starting              This function or resource is starting.
 #   * UnavailableOffline    This function or resource is present but cannot be used.
 #   * Updating              The element is updating and may be unavailable or degraded.
+
+
+def get_auth_header(args):
+    """
+    Build the authentication header for Redfish API requests, reusing a cached session token.
+
+    Redfish supports two authentication schemes: HTTP Basic auth (credentials are sent on every
+    request) and session-based auth (a token is obtained once from the SessionService and then
+    presented as `X-Auth-Token`). Some management controllers create and log a new internal
+    session for every Basic-auth request, which floods their session table or audit log. To avoid
+    that, this function establishes a session once, caches the returned token via `cache`, and
+    reuses it across requests and subsequent runs until the cache entry expires.
+
+    It degrades gracefully: when a session cannot be created (e.g. the implementation does not
+    offer the SessionService) it falls back to HTTP Basic auth, and when no credentials are given
+    (e.g. against an anonymous mockup) it returns an empty header.
+
+    A cached token is reused until `CACHE_EXPIRE` minutes pass, independent of the controller's own
+    session timeout. Keep `CACHE_EXPIRE` below that timeout so the cached token does not go stale
+    before it is dropped.
+
+    ### Parameters
+    - **args** (object): must provide `URL`, `USERNAME`, `PASSWORD`, `INSECURE`, `NO_PROXY`,
+      `TIMEOUT` and `CACHE_EXPIRE` (cache lifetime in minutes).
+
+    ### Returns
+    - **dict**: a header fragment to merge into the request headers, one of
+      `{'X-Auth-Token': '...'}`, `{'Authorization': 'Basic ...'}` or `{}`.
+
+    ### Example
+    >>> header = {'Accept': 'application/json'}
+    >>> header.update(get_auth_header(args))
+    """
+    if not (args.USERNAME and args.PASSWORD):
+        return {}
+
+    token_key = f'redfish-{args.URL}-{args.USERNAME}-token'
+    token = cache.get(token_key)
+    if token:
+        return {'X-Auth-Token': token}
+
+    # no cached token: create a new session via the SessionService
+    success, result = url.fetch_json(
+        f'{args.URL}/redfish/v1/SessionService/Sessions',
+        data={'UserName': args.USERNAME, 'Password': args.PASSWORD},
+        encoding='serialized-json',
+        extended=True,
+        header={'Accept': 'application/json', 'Content-Type': 'application/json'},
+        insecure=args.INSECURE,
+        no_proxy=args.NO_PROXY,
+        timeout=args.TIMEOUT,
+        method='POST',
+    )
+    # lib.url lower-cases all response header names (RFC 9110, section 5.1).
+    token = ''
+    if success and isinstance(result, dict):
+        token = result.get('response_header', {}).get('x-auth-token', '')
+    if token:
+        cache.set(token_key, token, time.now() + args.CACHE_EXPIRE * 60)
+        return {'X-Auth-Token': token}
+
+    # session creation failed: fall back to HTTP Basic auth
+    encoded = txt.to_text(base64.b64encode(txt.to_bytes(f'{args.USERNAME}:{args.PASSWORD}')))
+    return {'Authorization': f'Basic {encoded}'}
 
 
 def get_chassis(redfish):
