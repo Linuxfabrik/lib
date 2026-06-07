@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060501'
+__version__ = '2026060701'
 
 import base64
 import json
@@ -560,6 +560,7 @@ def fetch_json(
     tls_min=None,
     tls_max=None,
     method=None,
+    retries=0,
 ):
     """
     Fetch JSON from a URL with optional POST, authentication and SSL/TLS handling.
@@ -570,6 +571,9 @@ def fetch_json(
     ### Parameters
     See `fetch()` for the shared parameters. `to_text` is forced to True because the JSON
     decoder needs a string.
+    - **retries** (`int`, optional): How many extra attempts to make if the request fails or
+      the body is not valid JSON. `0` (default) means a single attempt. Useful against flaky
+      endpoints (e.g. a slow BMC) that occasionally drop a request.
 
     ### Returns
     - **tuple**:
@@ -579,38 +583,45 @@ def fetch_json(
         - On success without `extended`: the parsed JSON document.
         - On success with `extended=True`: the same dict as `fetch()` plus a `response_json`
           key holding the parsed JSON document.
-        - On failure: an error message string.
+        - On failure (after all retries): an error message string.
 
     ### Example
     >>> fetch_json('https://192.0.2.74/api/v2/?resource=cpu')
     (True, {'cpu': {'usage': '45%', 'temperature': '50C'}})
     """
-    success, jsonst = fetch(
-        url,
-        data=data,
-        digest_auth_password=digest_auth_password,
-        digest_auth_user=digest_auth_user,
-        encoding=encoding,
-        extended=extended,
-        header=header,
-        http_version=http_version,
-        insecure=insecure,
-        method=method,
-        no_proxy=no_proxy,
-        timeout=timeout,
-        tls_max=tls_max,
-        tls_min=tls_min,
-    )
-    if not success:
-        return False, jsonst
+    attempt = 0
+    while True:
+        success, jsonst = fetch(
+            url,
+            data=data,
+            digest_auth_password=digest_auth_password,
+            digest_auth_user=digest_auth_user,
+            encoding=encoding,
+            extended=extended,
+            header=header,
+            http_version=http_version,
+            insecure=insecure,
+            method=method,
+            no_proxy=no_proxy,
+            timeout=timeout,
+            tls_max=tls_max,
+            tls_min=tls_min,
+        )
+        if success:
+            try:
+                if extended:
+                    jsonst['response_json'] = json.loads(jsonst['response'])
+                    result = (True, jsonst)
+                else:
+                    result = (True, json.loads(jsonst))
+            except Exception as e:
+                result = (False, f'{e}. No JSON object could be decoded.')
+        else:
+            result = (False, jsonst)
 
-    try:
-        if extended:
-            jsonst['response_json'] = json.loads(jsonst['response'])
-            return True, jsonst
-        return True, json.loads(jsonst)
-    except Exception as e:
-        return False, f'{e}. No JSON object could be decoded.'
+        if result[0] or attempt >= retries:
+            return result
+        attempt += 1
 
 
 def get_latest_version_from_github(user, repo, key='tag_name'):

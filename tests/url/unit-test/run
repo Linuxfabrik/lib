@@ -724,6 +724,37 @@ class TestFetchJson(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('No JSON object could be decoded', msg)
 
+    def test_retries_until_success(self):
+        # two failures then a success; with retries=2 the call succeeds.
+        side = [(False, 'boom'), (False, 'boom'), (True, '{"a": 1}')]
+        with mock.patch.object(url, 'fetch', side_effect=side) as m:
+            ok, res = url.fetch_json('https://example.com', retries=2)
+        self.assertTrue(ok)
+        self.assertEqual(res, {'a': 1})
+        self.assertEqual(m.call_count, 3)
+
+    def test_retries_exhausted_returns_failure(self):
+        with mock.patch.object(url, 'fetch', return_value=(False, 'boom')) as m:
+            ok, res = url.fetch_json('https://example.com', retries=2)
+        self.assertFalse(ok)
+        self.assertEqual(res, 'boom')
+        self.assertEqual(m.call_count, 3)  # 1 initial + 2 retries
+
+    def test_retries_on_invalid_json(self):
+        # an invalid-JSON body is also retried.
+        side = [(True, 'not json'), (True, '{"a": 1}')]
+        with mock.patch.object(url, 'fetch', side_effect=side) as m:
+            ok, res = url.fetch_json('https://example.com', retries=1)
+        self.assertTrue(ok)
+        self.assertEqual(res, {'a': 1})
+        self.assertEqual(m.call_count, 2)
+
+    def test_no_retries_by_default(self):
+        with mock.patch.object(url, 'fetch', return_value=(False, 'boom')) as m:
+            ok, _ = url.fetch_json('https://example.com')
+        self.assertFalse(ok)
+        self.assertEqual(m.call_count, 1)
+
     def test_extended_adds_response_json_key(self):
         extended = {
             'response': '{"x": 9}',
