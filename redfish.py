@@ -283,6 +283,7 @@ SYSTEMS_STORAGE_DRIVES_KEYS = (
     'Name',
     'NegotiatedSpeedGbs',
     'PartNumber',
+    'PowerOnHours',
     'PredictedMediaLifeLeftPercent',
     'Protocol',
     'Revision',
@@ -1313,6 +1314,7 @@ def get_systems_storage_drives(redfish):
       - `Name`: The name of the storage drive.
       - `NegotiatedSpeedGbs`: The negotiated speed of the drive in gigabits per second (Gbps).
       - `PartNumber`: The part number of the storage drive.
+      - `PowerOnHours`: The number of hours the drive has been powered on.
       - `PredictedMediaLifeLeftPercent`: The predicted remaining life of the storage media in
          percentage.
       - `Protocol`: The protocol used by the storage drive (e.g., SATA, NVMe).

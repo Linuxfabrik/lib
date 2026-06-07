@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * redfish.py: `get_systems_storage_volumes()` parses a volume (logical drive) resource for health monitoring and identification
 * redfish.py: `get_updateservice_firmwareinventory()` parses a firmware inventory resource for version reporting and health monitoring
 
+### Changed
+
+* redfish.py: `get_systems_storage_drives()` also extracts `PowerOnHours`, so consumers can report drive age
+
 
 ## [v4.3.0] - 2026-06-06
 
