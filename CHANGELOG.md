@@ -8,7 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Added
+
+* redfish.py: `get_manager()` parses a manager (BMC) resource for health monitoring and identification
+* redfish.py: `get_systems_ethernetinterfaces()` parses an Ethernet interface resource for health monitoring and identification
+* redfish.py: `get_systems_memory()` parses a memory module (DIMM) resource for health monitoring and identification
+* redfish.py: `get_systems_processors()` parses a processor (CPU) resource for health monitoring and identification
+* redfish.py: `get_systems_storage_volumes()` parses a volume (logical drive) resource for health monitoring and identification
+* redfish.py: `get_updateservice_firmwareinventory()` parses a firmware inventory resource for version reporting and health monitoring
 
 
 ## [v4.3.0] - 2026-06-06

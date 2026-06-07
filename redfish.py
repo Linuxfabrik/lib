@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026060701'
 
 from . import base, human
 from .globals import STATE_CRIT, STATE_OK, STATE_WARN
@@ -141,6 +141,100 @@ CHASSIS_VOLTAGE_NESTED_KEYS = {
     'Status_Health': ('Status', 'Health'),
 }
 
+ETHERNET_KEYS = (
+    'Description',
+    'FQDN',
+    'FullDuplex',
+    'HostName',
+    'Id',
+    'LinkStatus',
+    'MACAddress',
+    'Name',
+    'PermanentMACAddress',
+    'SpeedMbps',
+)
+
+ETHERNET_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
+FIRMWARE_KEYS = (
+    'Id',
+    'Manufacturer',
+    'Name',
+    'ReleaseDate',
+    'SoftwareId',
+    'Updateable',
+    'Version',
+)
+
+FIRMWARE_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
+MANAGER_KEYS = (
+    'FirmwareVersion',
+    'Id',
+    'ManagerType',
+    'Model',
+    'Name',
+    'PowerState',
+    'UUID',
+)
+
+MANAGER_NESTED_KEYS = {
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
+MEMORY_KEYS = (
+    'BaseModuleType',
+    'CapacityMiB',
+    'ErrorCorrection',
+    'Id',
+    'Manufacturer',
+    'MemoryDeviceType',
+    'MemoryType',
+    'Name',
+    'OperatingSpeedMhz',
+    'PartNumber',
+    'RankCount',
+    'SerialNumber',
+)
+
+MEMORY_NESTED_KEYS = {
+    'Location_ServiceLabel': ('Location', 'PartLocation', 'ServiceLabel'),
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
+PROCESSOR_KEYS = (
+    'Id',
+    'InstructionSet',
+    'Manufacturer',
+    'MaxSpeedMHz',
+    'Model',
+    'Name',
+    'ProcessorArchitecture',
+    'ProcessorType',
+    'Socket',
+    'TotalCores',
+    'TotalThreads',
+)
+
+PROCESSOR_NESTED_KEYS = {
+    'Location_ServiceLabel': ('Location', 'PartLocation', 'ServiceLabel'),
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
 SEVERITY_TO_STATE = {
     'critical': STATE_CRIT,
     'warning': STATE_WARN,
@@ -159,6 +253,9 @@ SYSTEMS_KEYS = (
 )
 
 SYSTEMS_NESTED_KEYS = {
+    'EthernetInterfaces_@odata.id': ('EthernetInterfaces', '@odata.id'),
+    'Memory_@odata.id': ('Memory', '@odata.id'),
+    'Processors_@odata.id': ('Processors', '@odata.id'),
     'ProcessorSummary_Count': ('ProcessorSummary', 'Count'),
     'ProcessorSummary_LogicalProcessorCount': (
         'ProcessorSummary',
@@ -203,6 +300,22 @@ SYSTEMS_STORAGE_DRIVES_NESTED_KEYS = {
 SYSTEMS_STORAGE_KEYS = ('Description', 'Drives@odata.count', 'Id', 'Name')
 
 SYSTEMS_STORAGE_NESTED_KEYS = {
+    'Volumes_@odata.id': ('Volumes', '@odata.id'),
+    'Status_State': ('Status', 'State'),
+    'Status_Health': ('Status', 'Health'),
+    'Status_HealthRollup': ('Status', 'HealthRollup'),
+}
+
+VOLUME_KEYS = (
+    'CapacityBytes',
+    'Encrypted',
+    'Id',
+    'Name',
+    'RAIDType',
+    'VolumeType',
+)
+
+VOLUME_NESTED_KEYS = {
     'Status_State': ('Status', 'State'),
     'Status_Health': ('Status', 'Health'),
     'Status_HealthRollup': ('Status', 'HealthRollup'),
@@ -540,6 +653,50 @@ def get_chassis_thermal_temperatures(redfish):
     data = {key: redfish.get(key, '') for key in CHASSIS_THERMAL_TEMP_KEYS}
 
     for out_key, path in CHASSIS_THERMAL_TEMP_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
+    return data
+
+
+def get_manager(redfish):
+    """
+    Retrieves manager (BMC) details from a Redfish API response.
+
+    This function processes a Redfish manager resource (e.g., a BMC, iLO, or iDRAC) and extracts
+    the attributes relevant for health monitoring and identification.
+
+    ### Parameters
+    - **redfish** (`dict`): A dictionary containing Redfish manager data, typically a single member
+      of the `Managers` collection.
+
+    ### Returns
+    - **dict**: A dictionary containing the following manager details:
+      - `FirmwareVersion`: The firmware version of the manager.
+      - `Id`: The unique identifier of the manager.
+      - `ManagerType`: The type of the manager (e.g., "BMC").
+      - `Model`: The model of the manager.
+      - `Name`: The name of the manager.
+      - `PowerState`: The power state of the manager (e.g., "On").
+      - `UUID`: The UUID of the manager.
+      - `Status_State`: The state of the manager (e.g., "Enabled").
+      - `Status_Health`: The health status of the manager (e.g., "OK").
+      - `Status_HealthRollup`: The rollup health status of the manager (e.g., "OK").
+
+    ### Example
+    >>> redfish_data = {
+    ...     'FirmwareVersion': '1.45',
+    ...     'ManagerType': 'BMC',
+    ...     'Status': {'State': 'Enabled', 'Health': 'OK'},
+    ... }
+    >>> get_manager(redfish_data)
+    {'FirmwareVersion': '1.45', 'ManagerType': 'BMC', ..., 'Status_State': 'Enabled', ...}
+    """
+    data = {key: redfish.get(key, '') for key in MANAGER_KEYS}
+
+    for out_key, path in MANAGER_NESTED_KEYS.items():
         ref = redfish
         for step in path:
             ref = ref.get(step, {})
@@ -925,6 +1082,157 @@ def get_systems(redfish):
     return data
 
 
+def get_systems_ethernetinterfaces(redfish):
+    """
+    Retrieves Ethernet interface details from a Redfish API response.
+
+    This function processes a Redfish Ethernet interface resource and extracts the attributes
+    relevant for health monitoring and identification, such as MAC address, link status, and speed.
+
+    ### Parameters
+    - **redfish** (`dict`): A dictionary containing Redfish Ethernet interface data, typically a
+      single member of an `EthernetInterfaces` collection.
+
+    ### Returns
+    - **dict**: A dictionary containing the following Ethernet interface details:
+      - `Description`: A description of the interface.
+      - `FQDN`: The fully qualified domain name of the interface.
+      - `FullDuplex`: Whether the interface operates in full-duplex mode.
+      - `HostName`: The host name configured on the interface.
+      - `Id`: The unique identifier of the interface.
+      - `LinkStatus`: The link status of the interface (e.g., "LinkUp").
+      - `MACAddress`: The currently configured MAC address.
+      - `Name`: The name of the interface.
+      - `PermanentMACAddress`: The permanent (factory) MAC address.
+      - `SpeedMbps`: The link speed in megabits per second.
+      - `Status_State`: The state of the interface (e.g., "Enabled").
+      - `Status_Health`: The health status of the interface (e.g., "OK").
+      - `Status_HealthRollup`: The rollup health status of the interface (e.g., "OK").
+
+    ### Example
+    >>> redfish_data = {
+    ...     'MACAddress': '12:44:6A:3B:04:11',
+    ...     'LinkStatus': 'LinkUp',
+    ...     'SpeedMbps': 1000,
+    ...     'Status': {'State': 'Enabled', 'Health': 'OK'},
+    ... }
+    >>> get_systems_ethernetinterfaces(redfish_data)
+    {'MACAddress': '12:44:6A:3B:04:11', 'LinkStatus': 'LinkUp', 'SpeedMbps': 1000, ...}
+    """
+    data = {key: redfish.get(key, '') for key in ETHERNET_KEYS}
+
+    for out_key, path in ETHERNET_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
+    return data
+
+
+def get_systems_memory(redfish):
+    """
+    Retrieves memory module (DIMM) details from a Redfish API response.
+
+    This function processes a Redfish memory resource and extracts the attributes relevant for
+    health monitoring and identification, such as capacity, type, speed, manufacturer, and status.
+
+    ### Parameters
+    - **redfish** (`dict`): A dictionary containing Redfish memory data, typically a single member
+      of the `Memory` collection.
+
+    ### Returns
+    - **dict**: A dictionary containing the following memory details:
+      - `BaseModuleType`: The form factor of the module (e.g., "RDIMM").
+      - `CapacityMiB`: The capacity in human-readable format (converted from mebibytes).
+      - `ErrorCorrection`: The error correction scheme (e.g., "MultiBitECC").
+      - `Id`: The unique identifier of the memory module.
+      - `Location_ServiceLabel`: The service label of the slot (e.g., "DIMM 1").
+      - `Manufacturer`: The manufacturer of the module.
+      - `MemoryDeviceType`: The device type (e.g., "DDR4").
+      - `MemoryType`: The memory media type (e.g., "DRAM").
+      - `Name`: The name of the module.
+      - `OperatingSpeedMhz`: The operating speed in megahertz.
+      - `PartNumber`: The part number of the module.
+      - `RankCount`: The number of ranks.
+      - `SerialNumber`: The serial number of the module.
+      - `Status_State`: The state of the module (e.g., "Enabled").
+      - `Status_Health`: The health status of the module (e.g., "OK").
+      - `Status_HealthRollup`: The rollup health status of the module (e.g., "OK").
+
+    ### Example
+    >>> redfish_data = {
+    ...     'CapacityMiB': 32768,
+    ...     'MemoryDeviceType': 'DDR4',
+    ...     'Name': 'DIMM Slot 1',
+    ...     'Status': {'State': 'Enabled', 'Health': 'OK'},
+    ... }
+    >>> get_systems_memory(redfish_data)
+    {'CapacityMiB': '32.0GiB', 'MemoryDeviceType': 'DDR4', 'Name': 'DIMM Slot 1', ...}
+    """
+    data = {key: redfish.get(key, '') for key in MEMORY_KEYS}
+
+    for out_key, path in MEMORY_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
+    capacity = redfish.get('CapacityMiB')
+    data['CapacityMiB'] = human.bytes2human(capacity * 1024 * 1024) if capacity else ''
+
+    return data
+
+
+def get_systems_processors(redfish):
+    """
+    Retrieves processor (CPU) details from a Redfish API response.
+
+    This function processes a Redfish processor resource and extracts the attributes relevant for
+    health monitoring and identification, such as model, core count, speed, and status.
+
+    ### Parameters
+    - **redfish** (`dict`): A dictionary containing Redfish processor data, typically a single
+      member of the `Processors` collection.
+
+    ### Returns
+    - **dict**: A dictionary containing the following processor details:
+      - `Id`: The unique identifier of the processor.
+      - `InstructionSet`: The instruction set (e.g., "x86-64").
+      - `Manufacturer`: The manufacturer of the processor.
+      - `MaxSpeedMHz`: The maximum clock speed in megahertz.
+      - `Model`: The model of the processor.
+      - `Name`: The name of the processor.
+      - `ProcessorArchitecture`: The architecture (e.g., "x86").
+      - `ProcessorType`: The type of processor (e.g., "CPU", "FPGA").
+      - `Socket`: The socket the processor is installed in.
+      - `TotalCores`: The number of cores.
+      - `TotalThreads`: The number of threads.
+      - `Location_ServiceLabel`: The service label of the socket (e.g., "CPU 1").
+      - `Status_State`: The state of the processor (e.g., "Enabled").
+      - `Status_Health`: The health status of the processor (e.g., "OK").
+      - `Status_HealthRollup`: The rollup health status of the processor (e.g., "OK").
+
+    ### Example
+    >>> redfish_data = {
+    ...     'Model': 'Multi-Core Intel(R) Xeon(R) processor 7xxx Series',
+    ...     'Socket': 'CPU 1',
+    ...     'Status': {'State': 'Enabled', 'Health': 'OK'},
+    ... }
+    >>> get_systems_processors(redfish_data)
+    {'Model': 'Multi-Core Intel(R) Xeon(R) processor 7xxx Series', 'Socket': 'CPU 1', ...}
+    """
+    data = {key: redfish.get(key, '') for key in PROCESSOR_KEYS}
+
+    for out_key, path in PROCESSOR_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
+    return data
+
+
 def get_systems_storage(redfish):
     """
     Retrieves storage system information from the Redfish API response.
@@ -1048,6 +1356,97 @@ def get_systems_storage_drives(redfish):
 
     capacity = redfish.get('CapacityBytes')
     data['CapacityBytes'] = human.bytes2human(capacity) if capacity else ''
+
+    return data
+
+
+def get_systems_storage_volumes(redfish):
+    """
+    Retrieves volume (logical drive) details from a Redfish API response.
+
+    This function processes a Redfish volume resource and extracts the attributes relevant for
+    health monitoring and identification, such as capacity, RAID type, and status.
+
+    ### Parameters
+    - **redfish** (`dict`): A dictionary containing Redfish volume data, typically a single member
+      of a `Volumes` collection.
+
+    ### Returns
+    - **dict**: A dictionary containing the following volume details:
+      - `CapacityBytes`: The capacity of the volume in human-readable format (converted from bytes).
+      - `Encrypted`: Whether the volume is encrypted.
+      - `Id`: The unique identifier of the volume.
+      - `Name`: The name of the volume.
+      - `RAIDType`: The RAID type of the volume (e.g., "RAID1").
+      - `VolumeType`: The volume type (deprecated in favor of `RAIDType`).
+      - `Status_State`: The state of the volume (e.g., "Enabled").
+      - `Status_Health`: The health status of the volume (e.g., "OK").
+      - `Status_HealthRollup`: The rollup health status of the volume (e.g., "OK").
+
+    ### Example
+    >>> redfish_data = {
+    ...     'CapacityBytes': 1000000000000,
+    ...     'Name': 'Virtual Disk 0',
+    ...     'RAIDType': 'RAID1',
+    ...     'Status': {'State': 'Enabled', 'Health': 'OK'},
+    ... }
+    >>> get_systems_storage_volumes(redfish_data)
+    {'CapacityBytes': '931.3GiB', 'Name': 'Virtual Disk 0', 'RAIDType': 'RAID1', ...}
+    """
+    data = {key: redfish.get(key, '') for key in VOLUME_KEYS}
+
+    for out_key, path in VOLUME_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+
+    capacity = redfish.get('CapacityBytes')
+    data['CapacityBytes'] = human.bytes2human(capacity) if capacity else ''
+
+    return data
+
+
+def get_updateservice_firmwareinventory(redfish):
+    """
+    Retrieves firmware inventory details from a Redfish API response.
+
+    This function processes a Redfish software inventory resource (a firmware component) and
+    extracts the attributes relevant for version reporting and health monitoring.
+
+    ### Parameters
+    - **redfish** (`dict`): A dictionary containing Redfish firmware data, typically a single member
+      of the `FirmwareInventory` collection.
+
+    ### Returns
+    - **dict**: A dictionary containing the following firmware details:
+      - `Id`: The unique identifier of the firmware component.
+      - `Manufacturer`: The manufacturer of the firmware component.
+      - `Name`: The name of the firmware component.
+      - `ReleaseDate`: The release date of the firmware.
+      - `SoftwareId`: The software identifier.
+      - `Updateable`: Whether the component can be updated through the update service.
+      - `Version`: The installed firmware version.
+      - `Status_State`: The state of the firmware component (e.g., "Enabled").
+      - `Status_Health`: The health status of the firmware component (e.g., "OK").
+      - `Status_HealthRollup`: The rollup health status of the firmware component (e.g., "OK").
+
+    ### Example
+    >>> redfish_data = {
+    ...     'Name': 'Contoso BIOS Firmware',
+    ...     'Version': 'P79 v1.45',
+    ...     'Status': {'State': 'Enabled', 'Health': 'OK'},
+    ... }
+    >>> get_updateservice_firmwareinventory(redfish_data)
+    {'Name': 'Contoso BIOS Firmware', 'Version': 'P79 v1.45', ..., 'Status_State': 'Enabled', ...}
+    """
+    data = {key: redfish.get(key, '') for key in FIRMWARE_KEYS}
+
+    for out_key, path in FIRMWARE_NESTED_KEYS.items():
+        ref = redfish
+        for step in path:
+            ref = ref.get(step, {})
+        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
 
     return data
 
