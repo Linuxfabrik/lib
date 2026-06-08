@@ -112,7 +112,9 @@ class TestTreeOps(unittest.TestCase):
         disk.write_file(os.path.join(src, 'a.txt'), 'x')
 
         dst_file = os.path.join(self.base, 'a-copy.txt')
-        self.assertEqual(disk.copy_file(os.path.join(src, 'a.txt'), dst_file), (True, None))
+        self.assertEqual(
+            disk.copy_file(os.path.join(src, 'a.txt'), dst_file), (True, None)
+        )
         self.assertTrue(os.path.isfile(dst_file))
 
         dst_dir = os.path.join(self.base, 'dst')
@@ -144,6 +146,35 @@ class TestHostHelpers(unittest.TestCase):
 
     def test_get_block_devices_returns_list(self):
         self.assertIsInstance(disk.get_block_devices(), list)
+
+
+class TestShortenPath(unittest.TestCase):
+    def test_abbreviates_parents_keeps_basename(self):
+        self.assertEqual(
+            disk.shorten_path('/etc/pki/tls/certs/002c0b4f.0'),
+            '/e/p/t/c/002c0b4f.0',
+        )
+        self.assertEqual(
+            disk.shorten_path('/usr/share/icingaweb2/public/index.php'),
+            '/u/s/i/p/index.php',
+        )
+
+    def test_two_segment_path(self):
+        self.assertEqual(disk.shorten_path('/srv/index.php'), '/s/index.php')
+
+    def test_top_level_file_stays(self):
+        self.assertEqual(disk.shorten_path('/index.php'), '/index.php')
+
+    def test_relative_path(self):
+        self.assertEqual(disk.shorten_path('relative/path/file'), 'r/p/file')
+
+    def test_no_slash_passthrough(self):
+        self.assertEqual(disk.shorten_path('index.php'), 'index.php')
+        self.assertEqual(disk.shorten_path('-'), '-')
+        self.assertEqual(disk.shorten_path(''), '')
+
+    def test_root_stays(self):
+        self.assertEqual(disk.shorten_path('/'), '/')
 
 
 if __name__ == '__main__':

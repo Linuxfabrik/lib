@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* disk.py: `shorten_path()` abbreviates a path for display by reducing every parent component to its first character (zsh-style), keeping the basename in full
 * redfish.py: `get_auth_header()` builds the request authentication header, reusing a cached session token to avoid creating a new controller session on every request, and falling back to HTTP Basic auth
 * redfish.py: `get_chassis_power_powercontrol()` parses a power control (overall power consumption) entry for health monitoring and reporting
 * redfish.py: `get_manager()` parses a manager (BMC) resource for health monitoring and identification

@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060601'
+__version__ = '2026060801'
 
 import csv
 import os
@@ -691,6 +691,36 @@ def rm_file(filename):
         return False, f'OS error "{e.strerror}" while deleting {filename}'
     except Exception as e:
         return False, f'Unknown error deleting {filename}: {e}'
+
+
+def shorten_path(path):
+    """
+    Shorten a path for display.
+
+    Abbreviate a slash-separated path by reducing every component except the last one to its
+    first character, the way the zsh prompt shortens a long working directory. The last
+    component is kept in full because it usually carries the identifying information. This is
+    a pure string transformation; the path is not resolved and the filesystem is not touched.
+
+    ### Parameters
+    - **path** (`str`): A slash-separated path, for example `/etc/pki/tls/certs/002c0b4f.0`.
+
+    ### Returns
+    - **str**: The abbreviated path, for example `/e/p/t/c/002c0b4f.0`. A value without a
+      slash (a bare basename, an empty string, a sentinel like `-`) is returned unchanged.
+
+    ### Example
+    >>> shorten_path('/etc/pki/tls/certs/002c0b4f.0')
+    '/e/p/t/c/002c0b4f.0'
+
+    >>> shorten_path('index.php')
+    'index.php'
+    """
+    if not path or '/' not in path:
+        return path
+    head, _, tail = path.rpartition('/')
+    abbrev = '/'.join(part[:1] for part in head.split('/'))
+    return f'{abbrev}/{tail}'
 
 
 def udevadm(device, _property):
