@@ -68,6 +68,27 @@ class TestCidrToHosts(unittest.TestCase):
         self.assertIn('Invalid network', result)
 
 
+class TestIpv6Prefixlen(unittest.TestCase):
+    def test_full_hex_mask(self):
+        # psutil reports the IPv6 netmask as a full hex mask, not a prefix length
+        self.assertEqual(net._ipv6_prefixlen('ffff:ffff:ffff:ffff::'), '64')
+        self.assertEqual(
+            net._ipv6_prefixlen('ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), '128'
+        )
+
+    def test_slash_form_and_fallback(self):
+        self.assertEqual(net._ipv6_prefixlen('ffff:ffff:ffff:ffff::/64'), '64')
+        self.assertEqual(net._ipv6_prefixlen(''), '128')
+        self.assertEqual(net._ipv6_prefixlen(None), '128')
+
+
+class TestGetSubnetHosts(unittest.TestCase):
+    def test_unknown_interface(self):
+        ok, result = net.get_subnet_hosts('does-not-exist0')
+        self.assertFalse(ok)
+        self.assertIn('No such interface', result)
+
+
 class TestHostnameValidation(unittest.TestCase):
     def test_is_valid_hostname(self):
         self.assertTrue(net.is_valid_hostname('example.com'))

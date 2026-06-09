@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060601'
+__version__ = '2026060901'
 
 import ipaddress
 import random
@@ -21,11 +21,11 @@ import socket
 import ssl
 
 try:
-    import netifaces
+    import psutil
 
-    HAVE_NETIFACES = True
+    HAVE_PSUTIL = True
 except ImportError:
-    HAVE_NETIFACES = False
+    HAVE_PSUTIL = False
 
 from . import (
     txt,  # pylint: disable=C0413
@@ -459,12 +459,98 @@ def fetch_ssl(host, port, msg=None, timeout=3):
         return False, f'Could not open SSL socket: {e}'
 
 
+def _default_route_ip(family=socket.AF_INET):
+    """
+    Return the local IP address the kernel would use for the default route, or `None`.
+
+    Opens a connected UDP socket towards an off-link address and reads back the source address the
+    routing table selects. UDP `connect` only sets the peer, so no packet is sent; this works on
+    Linux, Windows and macOS without external tools or privileges, and offline as long as a default
+    route exists.
+
+    ### Parameters
+    - **family** (`int`, optional): `socket.AF_INET` (default) or `socket.AF_INET6`.
+
+    ### Returns
+    - **str** or **None**: The selected source address, or `None` if no route is available.
+    """
+    probe = '192.0.2.1' if family == socket.AF_INET else '2001:db8::1'
+    try:
+        sock = socket.socket(family, socket.SOCK_DGRAM)
+    except OSError:
+        return None
+    try:
+        sock.connect((probe, 9))
+        return sock.getsockname()[0].split('%')[0]
+    except OSError:
+        return None
+    finally:
+        sock.close()
+
+
+def _default_gateway():
+    """
+    Return the IPv4 default gateway address, or `None` if it cannot be determined.
+
+    Reads the kernel routing table from `/proc/net/route` (Linux). On platforms without that file
+    the gateway is not available through a dependency-free, cross-platform API, so `None` is
+    returned rather than guessing.
+
+    ### Returns
+    - **str** or **None**: The default gateway IPv4 address, or `None`.
+    """
+    try:
+        with open('/proc/net/route', encoding='ascii') as routes:
+            for line in routes.read().splitlines()[1:]:
+                fields = line.split()
+                # Destination 00000000 marks the default route; flags must have RTF_GATEWAY (0x2).
+                if (
+                    len(fields) > 3
+                    and fields[1] == '00000000'
+                    and int(fields[3], 16) & 0x2
+                ):
+                    # The gateway is a little-endian hex IPv4 in column 2.
+                    return socket.inet_ntoa(bytes.fromhex(fields[2])[::-1])
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _iface_for_ip(ip):
+    """
+    Return `(interface_name, netmask)` for the interface carrying `ip`, or `(None, None)`.
+
+    Matches the address against psutil's per-interface address list, so it is platform-independent.
+
+    ### Parameters
+    - **ip** (`str`): The IPv4 or IPv6 address to look up.
+
+    ### Returns
+    - **tuple** (`str` or `None`, `str` or `None`): The interface name and its netmask.
+    """
+    try:
+        wanted = ipaddress.ip_address(ip)
+    except ValueError:
+        return (None, None)
+    for iface, addrs in psutil.net_if_addrs().items():
+        for addr in addrs:
+            if addr.family not in (socket.AF_INET, socket.AF_INET6):
+                continue
+            try:
+                if ipaddress.ip_address((addr.address or '').split('%')[0]) == wanted:
+                    return (iface, addr.netmask)
+            except ValueError:
+                continue
+    return (None, None)
+
+
 def get_netinfo():
     """
     Retrieve local and public network information.
 
     This function retrieves the system's primary IP address, netmask, CIDR mask, default gateway,
-    and public IP address. Uses the `netifaces` library if available.
+    and public IP address. Addresses come from `psutil` (platform-independent); the default gateway
+    is read from the Linux routing table and is `None` on other platforms.
 
     ### Parameters
     - None
@@ -475,12 +561,12 @@ def get_netinfo():
         - `address` (`str`): The local IP address.
         - `mask` (`str`): The subnet mask.
         - `mask_cidr` (`str`): The subnet mask as CIDR.
-        - `gateway` (`str`): The default gateway address.
+        - `gateway` (`str` or `None`): The default gateway address.
         - `public_address` (`str`): The public IP address.
 
     ### Notes
     - If fetching any required information fails, an empty list is returned.
-    - Requires `netifaces` and `ip_to_cidr()` helper.
+    - Requires `psutil` and the `ip_to_cidr()` helper.
     - The `public_address` field is always `None`; callers that want the public
       IP must call `get_public_ip()` separately with a list of lookup services.
 
@@ -489,24 +575,23 @@ def get_netinfo():
     >>> print(netinfo['address'])
     '192.168.1.10'
     """
-    if not HAVE_NETIFACES:
+    if not HAVE_PSUTIL:
         return []
 
-    try:
-        default_gateway = netifaces.gateways()['default'][netifaces.AF_INET]
-        iface = default_gateway[1]
-        iface_addrs = netifaces.ifaddresses(iface)[netifaces.AF_INET][0]
-
-        return {
-            'address': iface_addrs.get('addr'),
-            'mask': iface_addrs.get('netmask'),
-            'mask_cidr': ip_to_cidr(iface_addrs.get('netmask')),
-            'gateway': default_gateway[0],
-            'public_address': None,
-        }
-
-    except (KeyError, AttributeError, IndexError):
+    address = _default_route_ip(socket.AF_INET)
+    if not address:
         return []
+    iface, netmask = _iface_for_ip(address)
+    if not iface or not netmask:
+        return []
+
+    return {
+        'address': address,
+        'mask': netmask,
+        'mask_cidr': ip_to_cidr(netmask),
+        'gateway': _default_gateway(),
+        'public_address': None,
+    }
 
 
 def get_public_ip(services, insecure=False, no_proxy=False, timeout=2):
@@ -597,6 +682,30 @@ def cidr_to_hosts(cidr, max_hosts=65536):
     return (True, [str(host) for host in network.hosts()])
 
 
+def _ipv6_prefixlen(netmask):
+    """
+    Return the prefix length (as a string) for an IPv6 netmask reported by psutil.
+
+    psutil reports the IPv6 netmask either as a full mask ("ffff:ffff:ffff:ffff::"), as a
+    "mask/prefix" string, or as `None`. All three are normalised to a prefix length, defaulting to
+    "128" (a single host) when it cannot be derived.
+
+    ### Parameters
+    - **netmask** (`str` or `None`): The IPv6 netmask as reported by psutil.
+
+    ### Returns
+    - **str**: The prefix length, e.g. "64".
+    """
+    if not netmask:
+        return '128'
+    if '/' in netmask:
+        return netmask.split('/')[-1]
+    try:
+        return str(bin(int(ipaddress.IPv6Address(netmask))).count('1'))
+    except ipaddress.AddressValueError:
+        return '128'
+
+
 def get_subnet_hosts(interface=None, max_hosts=65536):
     """
     Return the usable host IP addresses of an interface's subnet.
@@ -620,14 +729,14 @@ def get_subnet_hosts(interface=None, max_hosts=65536):
       - `False` and an error message on failure.
 
     ### Notes
-    - Requires the `netifaces` library.
+    - Requires the `psutil` library.
 
     ### Example
     >>> get_subnet_hosts('eth0')
     (True, ['192.168.1.1', '192.168.1.2', ..., '192.168.1.254'])
     """
-    if not HAVE_NETIFACES:
-        return (False, 'Python module "netifaces" is not installed.')
+    if not HAVE_PSUTIL:
+        return (False, 'Python module "psutil" is not installed.')
 
     if interface is None:
         netinfo = get_netinfo()
@@ -637,26 +746,25 @@ def get_subnet_hosts(interface=None, max_hosts=65536):
             f'{netinfo["address"]}/{netinfo["mask_cidr"]}', max_hosts=max_hosts
         )
 
-    try:
-        iface_addrs = netifaces.ifaddresses(interface)
-    except ValueError:
+    if_addrs = psutil.net_if_addrs()
+    if interface not in if_addrs:
         return (False, f'No such interface "{interface}".')
 
-    # IPv4 first, then IPv6. netifaces stores the IPv6 netmask as
-    # "ffff:ffff:ffff:ffff::/64" and may suffix the address with a "%scope".
-    for family in (netifaces.AF_INET, netifaces.AF_INET6):
-        entries = iface_addrs.get(family)
-        if not entries:
-            continue
-        address = (entries[0].get('addr') or '').split('%')[0]
-        netmask = entries[0].get('netmask') or ''
-        if not address:
-            continue
-        if family == netifaces.AF_INET:
-            cidr = ip_to_cidr(netmask)
-        else:
-            cidr = netmask.split('/')[-1] if '/' in netmask else '128'
-        return cidr_to_hosts(f'{address}/{cidr}', max_hosts=max_hosts)
+    # IPv4 first, then IPv6. psutil may suffix the address with a "%scope" and reports the IPv6
+    # netmask as a full mask ("ffff:ffff:ffff:ffff::") rather than a prefix length.
+    for family in (socket.AF_INET, socket.AF_INET6):
+        for addr in if_addrs[interface]:
+            if addr.family != family:
+                continue
+            address = (addr.address or '').split('%')[0]
+            netmask = addr.netmask or ''
+            if not address:
+                continue
+            if family == socket.AF_INET:
+                cidr = ip_to_cidr(netmask)
+            else:
+                cidr = _ipv6_prefixlen(netmask)
+            return cidr_to_hosts(f'{address}/{cidr}', max_hosts=max_hosts)
 
     return (False, f'No IPv4 or IPv6 address found on interface "{interface}".')
 

@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* net.py: `get_netinfo()` and `get_subnet_hosts()` read interface addresses via psutil instead of the deprecated `netifaces`, and the default gateway is read from the Linux routing table. This drops the `netifaces` dependency, so the library installs from pure wheels on Python 3.10+ without a build toolchain
 * redfish.py: `get_chassis_thermal_fans()` normalizes fan speed reported in RPM or percent onto a single shape
 * redfish.py: `get_manager_logservices_sel_entries()` can filter log entries by regular expression and age out entries older than a cutoff
 * redfish.py: `get_systems_storage_drives()` also extracts `PowerOnHours` and the drive temperature, so consumers can report drive age and temperature

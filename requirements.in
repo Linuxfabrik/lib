@@ -21,7 +21,6 @@
 beautifulsoup4
 httpx[http2]
 lxml --only-binary=lxml
-netifaces
 psutil
 pymysql
 pypsrp

@@ -40,7 +40,6 @@ dependencies = [
     "beautifulsoup4",
     "httpx[http2]",
     "lxml",
-    "netifaces",
     "psutil",
     "pymysql",
     "pypsrp",
