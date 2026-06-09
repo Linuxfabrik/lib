@@ -1927,8 +1927,8 @@ ENDOFLIFE_DATE = {
     'https://endoflife.date/api/matomo.json': [
     {   'cycle': '5',
         'eol': False,
-        'latest': '5.10.1',
-        'latestReleaseDate': '2026-05-29',
+        'latest': '5.11.0',
+        'latestReleaseDate': '2026-06-09',
         'lts': False,
         'releaseDate': '2023-12-18',
         'support': True},
@@ -1964,6 +1964,12 @@ ENDOFLIFE_DATE = {
 
 
     'https://endoflife.date/api/mediawiki.json': [
+    {   'cycle': '1.46',
+        'eol': '2027-05-31',
+        'latest': '1.46.0',
+        'latestReleaseDate': '2026-05-31',
+        'lts': False,
+        'releaseDate': '2026-05-31'},
     {   'cycle': '1.45',
         'eol': '2026-12-31',
         'latest': '1.45.3',
