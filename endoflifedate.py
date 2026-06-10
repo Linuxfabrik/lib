@@ -15,11 +15,11 @@ Internet."""
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'  # adapt this if something in this script changed fundamentally
+__version__ = '2026061001'  # adapt this if something in this script changed fundamentally
 
 ENDOFLIFE_DATE = {
 
-    'https://endoflife.date/api/apache.json': [
+    'https://endoflife.date/api/apache-http-server.json': [
     {   'cycle': '2.4',
         'eol': False,
         'latest': '2.4.67',
@@ -956,7 +956,7 @@ ENDOFLIFE_DATE = {
     {   'cycle': '12.4',
         'eol': '2027-05-24',
         'latest': '12.4.4',
-        'latestReleaseDate': '2026-06-04',
+        'latestReleaseDate': '2026-06-09',
         'lts': False,
         'releaseDate': '2026-02-24',
         'support': '2026-04-17'},
@@ -2297,6 +2297,12 @@ ENDOFLIFE_DATE = {
 
 
     'https://endoflife.date/api/nextcloud.json': [
+    {   'cycle': '34',
+        'eol': '2027-06-30',
+        'latest': '34.0.0',
+        'latestReleaseDate': '2026-06-08',
+        'lts': False,
+        'releaseDate': '2026-06-09'},
     {   'cycle': '33',
         'eol': '2027-02-28',
         'latest': '33.0.5',
@@ -3273,7 +3279,7 @@ ENDOFLIFE_DATE = {
     ],
 
 
-    'https://endoflife.date/api/rocketchat.json': [
+    'https://endoflife.date/api/rocket-chat.json': [
     {   'cycle': '8.4',
         'eol': '2026-10-31',
         'latest': '8.4.3',

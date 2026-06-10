@@ -19,15 +19,15 @@ import lib.globals  # pylint: disable=C0413
 import lib.url  # pylint: disable=C0413
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'  # adapt this if something in this script changed fundamentally
+__version__ = '2026061001'  # adapt this if something in this script changed fundamentally
 
 DESCRIPTION = """Simply creates the file "endoflifedate.py" for a given list of products."""
 
 DEFAULT_FILE = 'lib/endoflifedate.py'
 
-VERSION = '2025061901' # adapt this if one of PRODUCTS was added/deleted
+VERSION = '2026061001' # adapt this if one of PRODUCTS was added/deleted
 PRODUCTS = [
-    'https://endoflife.date/api/apache.json',
+    'https://endoflife.date/api/apache-http-server.json',
     'https://endoflife.date/api/composer.json',
     'https://endoflife.date/api/fedora.json',
     'https://endoflife.date/api/fortios.json',
@@ -51,7 +51,7 @@ PRODUCTS = [
     'https://endoflife.date/api/redhat-build-of-openjdk.json',
     'https://endoflife.date/api/redis.json',
     'https://endoflife.date/api/rhel.json',
-    'https://endoflife.date/api/rocketchat.json',
+    'https://endoflife.date/api/rocket-chat.json',
     'https://endoflife.date/api/solr.json',
     'https://endoflife.date/api/valkey.json',
     'https://endoflife.date/api/wordpress.json',
@@ -106,7 +106,7 @@ Internet."""
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'  # adapt this if something in this script changed fundamentally
+__version__ = '2026061001'  # adapt this if something in this script changed fundamentally
 
 ENDOFLIFE_DATE = {
 

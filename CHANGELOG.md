@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Fixed
+
+* endoflifedate.py: the Apache httpd and Rocket.Chat offline data is keyed under their current endoflife.date URLs (`apache-http-server`, `rocket-chat`), so version checks still work when the endoflife.date API is unreachable
 
 
 ## [v4.4.0] - 2026-06-09
