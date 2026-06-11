@@ -493,10 +493,9 @@ def fetch(
     response_charset = None
 
     try:
-        with (
-            client,
-            client.stream(method, url, headers=headers, content=body) as response,
-        ):
+        # No parenthesized context managers here: they are Python 3.10+ syntax and
+        # break `import lib.url` on RHEL 8's default Python 3.6.
+        with client, client.stream(method, url, headers=headers, content=body) as response:
             tls_version, alpn, peer_cert_der = _capture_tls_info(response)
             response.raise_for_status()
             body_bytes = response.read()

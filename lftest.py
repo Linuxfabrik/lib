@@ -592,17 +592,16 @@ def run_mysql_compatible_from_containerfile(
     dockerfile_name = os.path.basename(abspath)
     tag = f'lfmp-mysql-{dockerfile_name}'.lower().replace('_', '-')
 
-    with (
-        DockerImage(
-            path=build_dir,
-            dockerfile_path=dockerfile_name,
-            tag=tag,
-            clean_up=False,
-        ) as image,
-        _run_mysql_compatible_resolved(
-            str(image.tag), command, seed,
-        ) as result,
-    ):
+    # No parenthesized context managers: they are Python 3.10+ syntax and break
+    # parsing on RHEL 8's default Python 3.6.
+    with DockerImage(
+        path=build_dir,
+        dockerfile_path=dockerfile_name,
+        tag=tag,
+        clean_up=False,
+    ) as image, _run_mysql_compatible_resolved(
+        str(image.tag), command, seed,
+    ) as result:
         yield result
 
 
