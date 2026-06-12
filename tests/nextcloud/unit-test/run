@@ -20,7 +20,7 @@ hermetic (no PHP, no `occ`, no `sudo`, no filesystem stat, no subprocess):
 - `shell.shell_exec(...)` -> run the assembled `sudo ... php occ <cmd>` line
 
 We assert the full command-building contract (PHP lookup, owner lookup path,
-the exact `sudo -u \\#<uid> <php> <occ> <cmd>` string) and the full
+the exact `['sudo', '-u', '#<uid>', <php>, <occ>, *<cmd>]` argument list) and the full
 response-handling contract: JSON parsing (incl. bytes stdout and
 case-insensitive `_format`), raw-text mode (incl. stripping and bytes),
 the missing-PHP error, the return-code / success-flag failure path with its
@@ -130,7 +130,7 @@ class TestMissingPhp(_Base):
 
 
 class TestCommandConstruction(_Base):
-    """Assert how the sudo/php/occ command string is assembled."""
+    """Assert how the sudo/php/occ argument list is assembled."""
 
     def test_php_looked_up_by_name(self):
         self.run_occ(NC_PATH, 'status')
@@ -143,33 +143,36 @@ class TestCommandConstruction(_Base):
             nextcloud.run_occ(NC_PATH, 'status')
         go.assert_called_once_with(os.path.join(NC_PATH, 'config/config.php'))
 
-    def test_full_command_string(self):
+    def test_full_command_list(self):
         self.run_occ(NC_PATH, 'status')
         (cmd,), _ = self.shell_mock.call_args
         self.assertEqual(
             cmd,
-            'sudo -u \\#33 /usr/bin/php /var/www/nextcloud/occ status',
+            ['sudo', '-u', '#33', '/usr/bin/php', '/var/www/nextcloud/occ', 'status'],
         )
 
-    def test_command_uses_sudo_u_with_escaped_hash(self):
+    def test_command_uses_sudo_u_with_uid(self):
         self.run_occ(NC_PATH, 'status')
         (cmd,), _ = self.shell_mock.call_args
-        self.assertIn('sudo -u \\#33 ', cmd)
+        self.assertEqual(cmd[:3], ['sudo', '-u', '#33'])
 
     def test_command_uses_resolved_php_path(self):
         self.run_occ(NC_PATH, 'status', which='/opt/php8/bin/php')
         (cmd,), _ = self.shell_mock.call_args
-        self.assertIn(' /opt/php8/bin/php ', cmd)
+        self.assertIn('/opt/php8/bin/php', cmd)
 
     def test_command_points_at_occ_in_path(self):
         self.run_occ('/srv/nc', 'status')
         (cmd,), _ = self.shell_mock.call_args
-        self.assertIn(' /srv/nc/occ ', cmd)
+        self.assertIn('/srv/nc/occ', cmd)
 
     def test_subcommand_with_args_passed_verbatim(self):
         self.run_occ(NC_PATH, 'user:list --output=json')
         (cmd,), _ = self.shell_mock.call_args
-        self.assertTrue(cmd.endswith('/var/www/nextcloud/occ user:list --output=json'))
+        self.assertEqual(
+            cmd[-3:],
+            ['/var/www/nextcloud/occ', 'user:list', '--output=json'],
+        )
 
     def test_owner_as_username(self):
         # get_owner may return a name rather than a numeric UID.
@@ -177,7 +180,7 @@ class TestCommandConstruction(_Base):
         (cmd,), _ = self.shell_mock.call_args
         self.assertEqual(
             cmd,
-            'sudo -u \\#www-data /usr/bin/php /var/www/nextcloud/occ status',
+            ['sudo', '-u', '#www-data', '/usr/bin/php', '/var/www/nextcloud/occ', 'status'],
         )
 
     def test_shell_exec_called_once_positionally(self):
@@ -347,7 +350,7 @@ class TestFailurePath(_Base):
     def test_failure_message_contains_command(self):
         _ok, msg = self.run_occ(NC_PATH, 'status',
                                shell_ret=(True, ('', 'boom', 1)))
-        self.assertIn('sudo -u \\#33 /usr/bin/php /var/www/nextcloud/occ status', msg)
+        self.assertIn('sudo -u #33 /usr/bin/php /var/www/nextcloud/occ status', msg)
 
     def test_failure_message_contains_rc(self):
         _ok, msg = self.run_occ(NC_PATH, 'status',

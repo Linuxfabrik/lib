@@ -12,14 +12,27 @@
 """Run commands and copy files over SSH.
 
 Builds and executes `ssh` and `scp` command lines from individual options, so
-consumers do not have to assemble (and quote) them by hand. All functions return
-the same `(success, result)` shape as `lib.shell.shell_exec()`.
+consumers do not have to assemble them by hand. Commands are built as argument
+lists (argv) and run without a local shell, so option and target values are never
+subject to local shell interpretation. All functions return the same
+`(success, result)` shape as `lib.shell.shell_exec()`.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060601'
+__version__ = '2026061201'
 
 from . import shell
+
+
+def _check_target(host, username):
+    """Reject a host or username that ssh could read as an option (leading `-`),
+    for example `-oProxyCommand=...`. Returns `(True, None)` when both are safe,
+    else `(False, error_message)`."""
+    for label, value in (('host', host), ('username', username)):
+        ok, msg = shell.safe_cli_value(value, f'ssh {label}')
+        if not ok:
+            return False, msg
+    return True, None
 
 
 def build_options(
@@ -34,7 +47,7 @@ def build_options(
     log_level=None,
 ):
     """
-    Assemble the option string shared by `ssh` and `scp`.
+    Assemble the option tokens shared by `ssh` and `scp`.
 
     The result intentionally omits the port, because `ssh` uses `-p` while `scp`
     uses `-P`; `run()` and `scp()` add the port themselves.
@@ -53,11 +66,11 @@ def build_options(
       suppress the "Permanently added to known_hosts" warning).
 
     ### Returns
-    - **str**: The assembled option string (may be empty).
+    - **list**: The assembled option tokens (may be empty).
 
     ### Example
     >>> build_options(identity=['~/.ssh/id_ed25519'], batch_mode=True)
-    "-i '~/.ssh/id_ed25519' -o BatchMode=yes"
+    ['-i', '~/.ssh/id_ed25519', '-o', 'BatchMode=yes']
     """
     parts = []
     if ipv4:
@@ -65,25 +78,25 @@ def build_options(
     if ipv6:
         parts.append('-6')
     if configfile:
-        parts.append(f"-F '{configfile}'")
+        parts += ['-F', configfile]
     for item in identity or []:
-        parts.append(f"-i '{item}'")
+        parts += ['-i', item]
     for item in ssh_option or []:
-        parts.append(f"-o '{item}'")
+        parts += ['-o', item]
     if quiet:
         parts.append('-q')
     if batch_mode:
-        parts.append('-o BatchMode=yes')
+        parts += ['-o', 'BatchMode=yes']
     if log_level:
-        parts.append(f'-o LogLevel={log_level}')
+        parts += ['-o', f'LogLevel={log_level}']
     if connect_timeout is not None:
-        parts.append(f'-o ConnectTimeout={connect_timeout}')
-    return ' '.join(parts)
+        parts += ['-o', f'ConnectTimeout={connect_timeout}']
+    return parts
 
 
 def target(host, username=None):
     """
-    Build the `user@host` (or bare `host`) token, both parts single-quoted.
+    Build the `user@host` (or bare `host`) token.
 
     Leaving `username` empty lets `ssh`/`scp` determine the user from
     `~/.ssh/config` (or fall back to the current local user), so host aliases
@@ -94,11 +107,11 @@ def target(host, username=None):
     - **username** (`str`, optional): Login user. If falsy, omitted.
 
     ### Returns
-    - **str**: e.g. `'root'@'host'` or `'host'`.
+    - **str**: e.g. `root@host` or `host`.
     """
     if username:
-        return f"'{username}'@'{host}'"
-    return f"'{host}'"
+        return f'{username}@{host}'
+    return host
 
 
 def run(
@@ -106,46 +119,46 @@ def run(
     command,
     username=None,
     port=None,
-    options='',
+    options=None,
     disable_pseudo_terminal=False,
     password=None,
     timeout=None,
-    use_shell=True,
 ):
     """
     Run `command` on `host` over SSH.
 
-    The remote command is single-quoted so the local shell does not touch it; the
-    remote shell expands `~`, `$VAR`, `&&` etc.
+    The local command line is built as an argv list and run without a local
+    shell, so `host`, `username`, `port` and `options` are passed verbatim. The
+    remote `command` is sent to the host as a single argument; the remote shell
+    expands `~`, `$VAR`, `&&`, pipes etc.
 
     ### Parameters
     - **host** (`str`): Target host (name, IP or alias).
     - **command** (`str`): Command to run on the remote host.
     - **username** (`str`, optional): Login user (see `target()`).
     - **port** (`int` or `str`, optional): Remote port (`-p`).
-    - **options** (`str`, optional): Option string from `build_options()`.
+    - **options** (`list`, optional): Option tokens from `build_options()`.
     - **disable_pseudo_terminal** (`bool`, optional): Add `-T`.
     - **password** (`str`, optional): If set, prefix with `sshpass -p` (requires
       `sshpass`; the password is visible in the process list).
     - **timeout** (`int`, optional): Overall timeout in seconds.
-    - **use_shell** (`bool`, optional): Execute the local command line through a
-      shell. Defaults to `True`, which is required for remote snippets that use
-      loops, pipes or `$`-expansions.
 
     ### Returns
     - **tuple**: `(True, (stdout, stderr, retc))` on success, else
       `(False, error_message)`. Same contract as `lib.shell.shell_exec()`.
     """
-    cmd = (
-        f'ssh {options}'
-        f' {f"-p {port}" if port else ""}'
-        f' {"-T" if disable_pseudo_terminal else ""}'
-        f" {target(host, username)} '{command}'"
-    )
-    cmd = ' '.join(cmd.split())
+    ok, msg = _check_target(host, username)
+    if not ok:
+        return False, msg
+    cmd = ['ssh', *(options or [])]
+    if port:
+        cmd += ['-p', str(port)]
+    if disable_pseudo_terminal:
+        cmd.append('-T')
+    cmd += [target(host, username), command]
     if password:
-        cmd = f'sshpass -p {password} {cmd}'
-    return shell.shell_exec(cmd, shell=use_shell, timeout=timeout)
+        cmd = ['sshpass', '-p', password, *cmd]
+    return shell.shell_exec(cmd, timeout=timeout)
 
 
 def scp(
@@ -154,10 +167,9 @@ def scp(
     remote,
     username=None,
     port=None,
-    options='',
+    options=None,
     password=None,
     timeout=None,
-    use_shell=True,
     recursive=False,
 ):
     """
@@ -172,10 +184,9 @@ def scp(
       against the login home).
     - **username** (`str`, optional): Login user (see `target()`).
     - **port** (`int` or `str`, optional): Remote port (`-P`).
-    - **options** (`str`, optional): Option string from `build_options()`.
+    - **options** (`list`, optional): Option tokens from `build_options()`.
     - **password** (`str`, optional): If set, prefix with `sshpass -p`.
     - **timeout** (`int`, optional): Overall timeout in seconds.
-    - **use_shell** (`bool`, optional): Execute through a shell. Defaults to `True`.
     - **recursive** (`bool`, optional): Copy a directory tree (`-r`), preserving
       modes (`-p`). Useful when the target lacks `tar`. Defaults to `False`.
 
@@ -183,15 +194,19 @@ def scp(
     - **tuple**: `(True, (stdout, stderr, retc))` on success, else
       `(False, error_message)`.
     """
-    cmd = (
-        f'scp {"-r -p" if recursive else ""} {options}'
-        f' {f"-P {port}" if port else ""}'
-        f" '{local}' {target(host, username)}:{remote}"
-    )
-    cmd = ' '.join(cmd.split())
+    ok, msg = _check_target(host, username)
+    if not ok:
+        return False, msg
+    cmd = ['scp']
+    if recursive:
+        cmd += ['-r', '-p']
+    cmd += options or []
+    if port:
+        cmd += ['-P', str(port)]
+    cmd += [local, f'{target(host, username)}:{remote}']
     if password:
-        cmd = f'sshpass -p {password} {cmd}'
-    return shell.shell_exec(cmd, shell=use_shell, timeout=timeout)
+        cmd = ['sshpass', '-p', password, *cmd]
+    return shell.shell_exec(cmd, timeout=timeout)
 
 
 def rsync(
@@ -200,10 +215,9 @@ def rsync(
     remote,
     username=None,
     port=None,
-    options='',
+    options=None,
     password=None,
     timeout=None,
-    use_shell=True,
     sudo=False,
 ):
     """
@@ -220,12 +234,10 @@ def rsync(
     - **remote** (`str`): Remote destination directory.
     - **username** (`str`, optional): Login user (see `target()`).
     - **port** (`int` or `str`, optional): Remote port.
-    - **options** (`str`, optional): ssh option string from `build_options()`,
+    - **options** (`list`, optional): ssh option tokens from `build_options()`,
       passed through to rsync via `--rsh`.
     - **password** (`str`, optional): If set, prefix with `sshpass -p`.
     - **timeout** (`int`, optional): Overall timeout in seconds.
-    - **use_shell** (`bool`, optional): Execute through a shell. Defaults to
-      `True`.
     - **sudo** (`bool`, optional): Run the remote rsync via `sudo`
       (`--rsync-path="sudo rsync"`), so files land root-owned and writes are
       privileged. Requires password-less sudo on the target. Defaults to `False`.
@@ -234,15 +246,15 @@ def rsync(
     - **tuple**: `(True, (stdout, stderr, retc))` on success, else
       `(False, error_message)`.
     """
-    rsh = f'ssh {options}' + (f' -p {port}' if port else '')
-    rsync_path = "--rsync-path='sudo rsync'" if sudo else ''
-    cmd = (
-        'rsync --archive'
-        f' {rsync_path}'
-        f' --rsh="{rsh}"'
-        f" '{local}/' {target(host, username)}:{remote}/"
-    )
-    cmd = ' '.join(cmd.split())
+    ok, msg = _check_target(host, username)
+    if not ok:
+        return False, msg
+    # rsync's --rsh takes the remote-shell command as a single string.
+    rsh = ' '.join(['ssh', *(options or [])]) + (f' -p {port}' if port else '')
+    cmd = ['rsync', '--archive']
+    if sudo:
+        cmd += ['--rsync-path', 'sudo rsync']
+    cmd += ['--rsh', rsh, f'{local}/', f'{target(host, username)}:{remote}/']
     if password:
-        cmd = f'sshpass -p {password} {cmd}'
-    return shell.shell_exec(cmd, shell=use_shell, timeout=timeout)
+        cmd = ['sshpass', '-p', password, *cmd]
+    return shell.shell_exec(cmd, timeout=timeout)

@@ -8,10 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* distro.py, version.py: read the OS name and version directly from `/etc/os-release` instead of sourcing it through a shell
+* shell.py: `shell_exec()` requires the command as a list of arguments (argv) and always runs with `shell=False`. It no longer accepts a command string, a `shell=` parameter, or `|` pipelines. This is a breaking change: pass `['df', '-h', path]` instead of `'df -h ' + path`
+* shell.py: new `safe_cli_value()` rejects a value that a called program could misread as an option (leading `-`), to guard positional or target arguments (such as an ssh destination or a `ping` target) against option injection
+* ssh.py: `build_options()` and `target()` return argument lists/tokens instead of pre-quoted strings; `run()`, `scp()` and `rsync()` build argument lists, drop the `use_shell` parameter, and reject an option-like host or username
+
+### Removed
+
+* shell.py: removed `get_command_output()` (it had no consumers; use `shell_exec()` directly)
+
 ### Fixed
 
+* base.py: `oao()` normalizes CRLF and stray CR in the plugin message to LF, so Windows command output is no longer rendered with doubled line breaks in web UIs that use `white-space: pre-wrap`
 * endoflifedate.py: the Apache httpd and Rocket.Chat offline data is keyed under their current endoflife.date URLs (`apache-http-server`, `rocket-chat`), so version checks still work when the endoflife.date API is unreachable
 * lftest.py: use the classic `with a, b:` form instead of parenthesized context managers (Python 3.10+ syntax), so the module parses under RHEL 8's default Python 3.6
+* shell.py: on Windows, a subprocess's piped output is decoded with the console / OEM code page instead of UTF-8, so non-ASCII characters such as umlauts in usernames are no longer mangled ([monitoring-plugins#681](https://github.com/Linuxfabrik/monitoring-plugins/issues/681))
 * url.py: use the classic `with a, b:` form instead of parenthesized context managers (Python 3.10+ syntax), so `import lib.url` no longer raises a SyntaxError under RHEL 8's default Python 3.6
 
 

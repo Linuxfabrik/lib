@@ -469,6 +469,20 @@ class TestOao(unittest.TestCase):
             base.oao('m', STATE_OK, '  p=1  ')
         self.assertIn('m|p=1', h['out'])
 
+    def test_crlf_normalized_to_lf(self):
+        # CRLF from Windows command output must not leak into the message,
+        # otherwise a pre-wrap web UI renders it as a double line break.
+        with capture_exit() as h:
+            base.oao('header\r\n\r\nline1\r\nline2', STATE_OK)
+        out = h['out']
+        self.assertNotIn('\r', out)
+        self.assertIn('header\n\nline1\nline2', out)
+
+    def test_lone_cr_normalized_to_lf(self):
+        with capture_exit() as h:
+            base.oao('a\rb', STATE_OK)
+        self.assertEqual(h['out'].strip(), 'a\nb')
+
 
 class TestSmartcast(unittest.TestCase):
     def test_numeric_string(self):

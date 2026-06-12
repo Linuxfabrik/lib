@@ -17,14 +17,12 @@ Source Code is taken, converted, shortened and modified from:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025061001'
+__version__ = '2026061201'
 
 
 import os
 import platform
 import re
-
-from . import shell
 
 # --- Static mappings ---
 
@@ -430,15 +428,22 @@ def get_distribution_facts():
     distro = facts.get('distribution_file_variety', 'distribution')
     facts['os_family'] = _map_os_family(distro)  # returns 'RedHat', for example
 
-    # hardcoded command, no user input; shell=True needed to source the file
-    cmd = '. /etc/os-release && echo "$NAME $VERSION"'
-    success, result = shell.shell_exec(cmd, shell=True)  # nosec B604
-    if not success:
+    # read NAME and VERSION from /etc/os-release
+    values = {}
+    try:
+        with open('/etc/os-release', encoding='utf-8') as os_release:
+            for line in os_release:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                values[key] = value.strip().strip('"').strip("'")
+    except OSError:
         return facts
 
-    stdout, _, _ = result
-    facts['os_info'] = (
-        stdout.strip()
-    )  # returns 'Fedora Linux 41 (Workstation Edition)', for example
+    # returns 'Fedora Linux 41 (Workstation Edition)', for example
+    facts['os_info'] = ' '.join(
+        part for part in (values.get('NAME'), values.get('VERSION')) if part
+    )
 
     return facts

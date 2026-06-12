@@ -20,7 +20,7 @@ from .globals import STATE_UNKNOWN
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026061201'
 
 try:
     import pymysql.cursors
@@ -302,7 +302,9 @@ def _align_session_collation(conn):
         # Whitelist identifiers to keep the formatted `SET NAMES` safe from
         # any caller-controlled value (the row comes from a system view, but
         # defence in depth doesn't cost anything).
-        if not (re.match(r'^[A-Za-z0-9_]+$', cs) and re.match(r'^[A-Za-z0-9_]+$', coll)):
+        if not (
+            re.match(r'^[A-Za-z0-9_]+$', cs) and re.match(r'^[A-Za-z0-9_]+$', coll)
+        ):
             return
         with conn.cursor() as cursor:
             cursor.execute(f'set names {cs} collate {coll}')
@@ -541,10 +543,10 @@ def get_server_info(banner=None):
     from . import shell
 
     for command in (
-        'mysqld --version',
-        'mariadbd --version',
-        'mariadb --version',
-        'mysql --version',
+        ['mysqld', '--version'],
+        ['mariadbd', '--version'],
+        ['mariadb', '--version'],
+        ['mysql', '--version'],
     ):
         success, result = shell.shell_exec(command)
         if not success:

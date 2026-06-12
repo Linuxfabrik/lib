@@ -11,10 +11,11 @@
 """This library collects some Nextcloud related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041401'
+__version__ = '2026061201'
 
 import json
 import os
+import shlex
 import shutil
 
 from . import disk, shell
@@ -80,16 +81,17 @@ def run_occ(path, cmd, _format='json'):
     # get the owner of config.php
     user = disk.get_owner(os.path.join(path, 'config/config.php'))
     occ = os.path.join(path, 'occ')
-    # When running a command as a UID, many shells require
-    # that the `#` be escaped with a backslash (`\`).
-    sudo_cmd = f'sudo -u \\#{user} {php} {occ} {cmd}'
+    # Run occ as the numeric UID of the config.php owner. `sudo -u '#<uid>'` selects
+    # the user by UID; the `#` only needs escaping for a shell, which we do not use.
+    sudo_cmd = ['sudo', '-u', f'#{user}', php, occ, *shlex.split(cmd)]
 
     success, result = shell.shell_exec(sudo_cmd)
     stdout, stderr, rc = result
 
     # Prefer the return code to decide success/failure, not stderr presence
     if not success or rc != 0:
-        return False, f'Error running `{sudo_cmd}`: rc={rc}\n{stderr or stdout}'
+        cmd_display = ' '.join(sudo_cmd)
+        return False, f'Error running `{cmd_display}`: rc={rc}\n{stderr or stdout}'
 
     # If we expect JSON, try to parse it; otherwise return text
     if str(_format).lower() == 'json':

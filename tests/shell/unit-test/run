@@ -10,14 +10,11 @@
 
 """Unit tests for lib.shell.
 
-Both public functions are covered hermetically:
-
-- get_command_output() is exercised by mocking lib.shell.shell_exec, so no
-  real process ever runs.
-- shell_exec() is exercised by mocking subprocess.Popen (and os.name for the
-  Windows code path), so the OS layer is fully stubbed. A small set of
-  end-to-end checks against trivial real commands (echo / true / false) is
-  guarded behind a POSIX check; the hermetic mock tests carry the contract.
+shell_exec() always runs with shell=False and requires the command as a list of
+arguments (argv). It is exercised by mocking subprocess.Popen so the OS layer is
+fully stubbed. A small set of end-to-end checks against trivial real commands
+(echo / true / false / cat) is guarded behind a POSIX check and also asserts the
+core security property: shell metacharacters in an argument stay literal.
 """
 
 import os
@@ -38,7 +35,7 @@ import lib.shell as shell
 class FakePopen:
     """Minimal stand-in for subprocess.Popen.
 
-    Records the kwargs it was constructed with so tests can assert on how
+    Records the args/kwargs it was constructed with so tests can assert on how
     shell_exec wired up the process, and returns canned communicate() output.
     """
 
@@ -47,14 +44,12 @@ class FakePopen:
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
-        # Configured by the class-level recipe before instantiation.
         recipe = type(self)._recipe
         self._stdout_bytes = recipe.get('stdout', b'')
         self._stderr_bytes = recipe.get('stderr', b'')
         self.returncode = recipe.get('returncode', 0)
         self._timeout = recipe.get('timeout', False)
         self.killed = False
-        # A readable stdout attribute, so pipeline wiring (prev.stdout) works.
         self.stdout = mock.MagicMock(name='stdout-pipe')
         type(self).instances.append(self)
 
@@ -62,7 +57,6 @@ class FakePopen:
         self.last_input = input
         self.last_timeout = timeout
         if self._timeout:
-            # Raise only on the first communicate (the real run), like stdlib.
             self._timeout = False
             raise subprocess.TimeoutExpired(cmd='x', timeout=timeout)
         return self._stdout_bytes, self._stderr_bytes
@@ -89,146 +83,81 @@ def make_popen(stdout=b'', stderr=b'', returncode=0, timeout=False):
 
 
 # ---------------------------------------------------------------------------
-# get_command_output()
+# shell_exec() - argument type guard
 # ---------------------------------------------------------------------------
 
-class TestGetCommandOutput(unittest.TestCase):
-    def test_returns_empty_string_when_shell_exec_fails(self):
-        with mock.patch.object(shell, 'shell_exec', return_value=(False, 'boom')):
-            self.assertEqual(shell.get_command_output('whatever'), '')
+class TestShellExecRequiresList(unittest.TestCase):
+    def test_string_raises_type_error(self):
+        with self.assertRaises(TypeError):
+            shell.shell_exec('ls -l')
 
-    def test_returns_stripped_stdout(self):
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, ('  hello world  \n', '', 0))
-        ):
-            self.assertEqual(shell.get_command_output('echo hi'), 'hello world')
+    def test_type_error_message_mentions_list(self):
+        with self.assertRaises(TypeError) as ctx:
+            shell.shell_exec('ls -l')
+        self.assertIn('list', str(ctx.exception))
 
-    def test_falls_back_to_stderr_when_stdout_empty(self):
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, ('   ', '  err text \n', 1))
-        ):
-            self.assertEqual(shell.get_command_output('cmd'), 'err text')
-
-    def test_stdout_wins_over_stderr_when_both_present(self):
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, ('out', 'err', 0))
-        ):
-            self.assertEqual(shell.get_command_output('cmd'), 'out')
-
-    def test_empty_output_returns_empty_string(self):
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, ('', '', 0))
-        ):
-            self.assertEqual(shell.get_command_output('cmd'), '')
-
-    def test_regex_extracts_first_group(self):
-        sample = (
-            'GNU nano, version 5.3\n'
-            '(C) 1999-2011, 2013-2020 Free Software Foundation, Inc.\n'
-        )
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, (sample, '', 0))
-        ):
-            self.assertEqual(
-                shell.get_command_output('nano --version', regex=r'version (.*)\n'),
-                '5.3',
-            )
-
-    def test_regex_group_is_stripped(self):
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, ('value =   42   x', '', 0))
-        ):
-            self.assertEqual(
-                shell.get_command_output('cmd', regex=r'=(.*)x'), '42'
-            )
-
-    def test_regex_no_match_returns_empty_string(self):
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, ('nothing here', '', 0))
-        ):
-            self.assertEqual(
-                shell.get_command_output('cmd', regex=r'version (\d+)'), ''
-            )
-
-    def test_regex_runs_against_stderr_fallback(self):
-        # stdout empty -> regex must be applied to the stderr fallback text.
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, ('', 'release: 9.4\n', 0))
-        ):
-            self.assertEqual(
-                shell.get_command_output('cmd', regex=r'release: (.+)'), '9.4'
-            )
-
-    def test_invalid_regex_returns_empty_string(self):
-        # An un-compilable pattern is swallowed by the broad except -> ''.
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, ('text', '', 0))
-        ):
-            self.assertEqual(shell.get_command_output('cmd', regex=r'('), '')
-
-    def test_regex_without_capturing_group_returns_empty_string(self):
-        # match.group(1) raises IndexError when there is no group -> ''.
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, ('abc123', '', 0))
-        ):
-            self.assertEqual(shell.get_command_output('cmd', regex=r'\d+'), '')
-
-    def test_passes_command_through_to_shell_exec(self):
-        with mock.patch.object(
-            shell, 'shell_exec', return_value=(True, ('x', '', 0))
-        ) as m:
-            shell.get_command_output('my command --flag')
-            m.assert_called_once_with('my command --flag')
+    def test_tuple_is_accepted(self):
+        Fake = make_popen(stdout=b'ok\n')
+        with mock.patch.object(shell.subprocess, 'Popen', Fake):
+            success, result = shell.shell_exec(('true',))
+        self.assertTrue(success)
+        self.assertEqual(result, ('ok\n', '', 0))
 
 
 # ---------------------------------------------------------------------------
-# shell_exec() - POSIX non-shell single command
+# shell_exec() - process wiring (mocked Popen)
 # ---------------------------------------------------------------------------
 
-class TestShellExecNonShell(unittest.TestCase):
-    def setUp(self):
-        # Force POSIX behaviour regardless of the host running the tests.
-        self.os_name_patcher = mock.patch.object(shell.os, 'name', 'posix')
-        self.os_name_patcher.start()
-        self.addCleanup(self.os_name_patcher.stop)
-
+class TestShellExec(unittest.TestCase):
     def test_single_command_success(self):
         Fake = make_popen(stdout=b'out\n', stderr=b'err\n', returncode=0)
         with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            success, result = shell.shell_exec('ls -l')
+            success, result = shell.shell_exec(['ls', '-l'])
         self.assertTrue(success)
         self.assertEqual(result, ('out\n', 'err\n', 0))
 
-    def test_uses_shlex_split_for_args(self):
-        Fake = make_popen(stdout=b'', stderr=b'', returncode=0)
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('ls -l "/tmp/a b"')
-        # Args are passed as a list via shlex.split, not a raw string.
-        self.assertEqual(Fake.instances[0].args[0], ['ls', '-l', '/tmp/a b'])
-
-    def test_non_shell_uses_shell_false(self):
+    def test_cmd_is_passed_verbatim_as_argv(self):
         Fake = make_popen()
         with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('true')
+            shell.shell_exec(['ls', '-l', '/tmp/a b'])
+        # The list is handed to Popen unchanged: no splitting, no joining.
+        self.assertEqual(Fake.instances[0].args[0], ['ls', '-l', '/tmp/a b'])
+
+    def test_always_uses_shell_false(self):
+        Fake = make_popen()
+        with mock.patch.object(shell.subprocess, 'Popen', Fake):
+            shell.shell_exec(['true'])
         self.assertFalse(Fake.instances[0].kwargs['shell'])
+
+    def test_metacharacters_stay_literal_arguments(self):
+        # An argument that looks like a shell pipeline/redirect must reach Popen
+        # as a single literal element, never split or interpreted.
+        Fake = make_popen()
+        with mock.patch.object(shell.subprocess, 'Popen', Fake):
+            shell.shell_exec(['echo', '|reboot| ; rm -rf / && evil'])
+        self.assertEqual(
+            Fake.instances[0].args[0], ['echo', '|reboot| ; rm -rf / && evil']
+        )
+        # exactly one process, no pipeline splitting
+        self.assertEqual(len(Fake.instances), 1)
 
     def test_returncode_is_propagated(self):
         Fake = make_popen(stdout=b'', stderr=b'nope\n', returncode=2)
         with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            success, result = shell.shell_exec('false')
+            success, result = shell.shell_exec(['false'])
         self.assertTrue(success)
         self.assertEqual(result[2], 2)
 
     def test_lc_all_defaults_to_C(self):
         Fake = make_popen()
         with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('true')
+            shell.shell_exec(['true'])
         self.assertEqual(Fake.instances[0].kwargs['env']['LC_ALL'], 'C')
 
     def test_lc_all_override(self):
         Fake = make_popen()
         with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('true', lc_all='en_US.UTF-8')
+            shell.shell_exec(['true'], lc_all='en_US.UTF-8')
         self.assertEqual(Fake.instances[0].kwargs['env']['LC_ALL'], 'en_US.UTF-8')
 
     def test_env_is_merged_with_os_environ(self):
@@ -237,7 +166,7 @@ class TestShellExecNonShell(unittest.TestCase):
             mock.patch.dict(os.environ, {'EXISTING': 'keep'}, clear=False),
             mock.patch.object(shell.subprocess, 'Popen', Fake),
         ):
-            shell.shell_exec('true', env={'CUSTOM': 'value'})
+            shell.shell_exec(['true'], env={'CUSTOM': 'value'})
         env = Fake.instances[0].kwargs['env']
         self.assertEqual(env['CUSTOM'], 'value')
         self.assertEqual(env['EXISTING'], 'keep')
@@ -246,28 +175,40 @@ class TestShellExecNonShell(unittest.TestCase):
         Fake = make_popen()
         before = dict(os.environ)
         with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('true', env={'TRANSIENT': 'x'})
+            shell.shell_exec(['true'], env={'TRANSIENT': 'x'})
         self.assertNotIn('TRANSIENT', os.environ)
         self.assertEqual(dict(os.environ), before)
 
     def test_cwd_is_passed_through(self):
         Fake = make_popen()
         with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('true', cwd='/tmp')
+            shell.shell_exec(['true'], cwd='/tmp')
         self.assertEqual(Fake.instances[0].kwargs['cwd'], '/tmp')
 
     def test_timeout_is_passed_to_communicate(self):
         Fake = make_popen()
         with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('true', timeout=5)
+            shell.shell_exec(['true'], timeout=5)
         self.assertEqual(Fake.instances[0].last_timeout, 5)
+
+    def test_stdin_is_encoded_to_bytes(self):
+        Fake = make_popen()
+        with mock.patch.object(shell.subprocess, 'Popen', Fake):
+            shell.shell_exec(['cat'], stdin='hello')
+        self.assertEqual(Fake.instances[0].last_input, b'hello')
+
+    def test_no_stdin_passes_none_to_communicate(self):
+        Fake = make_popen()
+        with mock.patch.object(shell.subprocess, 'Popen', Fake):
+            shell.shell_exec(['true'])
+        self.assertIsNone(Fake.instances[0].last_input)
 
     def test_popen_construction_error_returns_false(self):
         def boom(*args, **kwargs):
             raise OSError('No such file or directory')
 
         with mock.patch.object(shell.subprocess, 'Popen', boom):
-            success, result = shell.shell_exec('nonexistent-binary')
+            success, result = shell.shell_exec(['nonexistent-binary'])
         self.assertFalse(success)
         self.assertIn('Error', result)
         self.assertIn('nonexistent-binary', result)
@@ -277,231 +218,113 @@ class TestShellExecNonShell(unittest.TestCase):
             raise ValueError('bad args')
 
         with mock.patch.object(shell.subprocess, 'Popen', boom):
-            success, result = shell.shell_exec('weird')
+            success, result = shell.shell_exec(['weird'])
         self.assertFalse(success)
         self.assertIn('bad args', result)
 
     def test_timeout_expired_kills_and_reports(self):
         Fake = make_popen(timeout=True)
         with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            success, result = shell.shell_exec('sleep 100', timeout=1)
+            success, result = shell.shell_exec(['sleep', '100'], timeout=1)
         self.assertFalse(success)
         self.assertEqual(result, 'Timeout after 1 seconds.')
         self.assertTrue(Fake.instances[0].killed)
 
+    def test_posix_decodes_utf8(self):
+        # 'ü' as UTF-8 (0xc3 0xbc) decodes cleanly on POSIX.
+        Fake = make_popen(stdout=b'm\xc3\xbcller\n')
+        with (
+            mock.patch.object(shell.os, 'name', 'posix'),
+            mock.patch.object(shell.subprocess, 'Popen', Fake),
+        ):
+            _success, result = shell.shell_exec(['echo'])
+        self.assertEqual(result[0], 'müller\n')
 
-# ---------------------------------------------------------------------------
-# shell_exec() - POSIX non-shell pipeline
-# ---------------------------------------------------------------------------
-
-class TestShellExecPipeline(unittest.TestCase):
-    def setUp(self):
-        self.os_name_patcher = mock.patch.object(shell.os, 'name', 'posix')
-        self.os_name_patcher.start()
-        self.addCleanup(self.os_name_patcher.stop)
-
-    def test_pipeline_spawns_one_process_per_stage(self):
-        Fake = make_popen(stdout=b'final\n', stderr=b'', returncode=0)
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            success, result = shell.shell_exec('cat /etc/passwd | grep root | wc -l')
-        self.assertTrue(success)
-        self.assertEqual(len(Fake.instances), 3)
-        self.assertEqual(result, ('final\n', '', 0))
-
-    def test_pipeline_wires_stdout_into_next_stdin(self):
-        Fake = make_popen()
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('echo hi | tr a-z A-Z')
-        first, second = Fake.instances
-        # Stage 1 gets a fresh PIPE for stdin.
-        self.assertEqual(first.kwargs['stdin'], subprocess.PIPE)
-        # Stage 2 reads from stage 1's stdout pipe.
-        self.assertIs(second.kwargs['stdin'], first.stdout)
-
-    def test_pipeline_closes_upstream_stdout_in_parent(self):
-        # Prevents fd leak / missing EOF; the parent must close the read end.
-        Fake = make_popen()
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('a | b')
-        first = Fake.instances[0]
-        first.stdout.close.assert_called_once_with()
-
-    def test_pipeline_strips_whitespace_around_stages(self):
-        Fake = make_popen()
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('  ls   |   wc -l  ')
-        self.assertEqual(Fake.instances[0].args[0], ['ls'])
-        self.assertEqual(Fake.instances[1].args[0], ['wc', '-l'])
-
-    def test_pipeline_construction_error_reports_offending_part(self):
-        calls = {'n': 0}
-
-        def boom(*args, **kwargs):
-            calls['n'] += 1
-            if calls['n'] == 2:
-                raise OSError('cannot exec grep')
-            return FakePopen(*args, **kwargs)
-
-        with mock.patch.object(shell.subprocess, 'Popen', boom):
-            success, result = shell.shell_exec('cat x | grep y')
-        self.assertFalse(success)
-        self.assertIn('grep y', result)
-
-    def test_pipeline_timeout(self):
-        Fake = make_popen(timeout=True)
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            success, result = shell.shell_exec('yes | head', timeout=2)
-        self.assertFalse(success)
-        self.assertEqual(result, 'Timeout after 2 seconds.')
-        self.assertTrue(Fake.instances[-1].killed)
+    def test_windows_decodes_with_console_code_page(self):
+        # 'ü' from a console program is OEM cp437 (byte 0x81), not UTF-8. The
+        # Windows path must decode with the console output code page so the
+        # username is not mangled (monitoring-plugins#681).
+        Fake = make_popen(stdout=b'm\x81ller\n')
+        with (
+            mock.patch.object(shell.os, 'name', 'nt'),
+            mock.patch.object(shell, '_windows_output_encoding', return_value='cp437'),
+            mock.patch.object(shell.subprocess, 'Popen', Fake),
+        ):
+            _success, result = shell.shell_exec(['query', 'user'])
+        self.assertEqual(result[0], 'müller\n')
 
 
 # ---------------------------------------------------------------------------
-# shell_exec() - shell=True / stdin path
+# safe_cli_value()
 # ---------------------------------------------------------------------------
 
-class TestShellExecShellTrue(unittest.TestCase):
-    def setUp(self):
-        self.os_name_patcher = mock.patch.object(shell.os, 'name', 'posix')
-        self.os_name_patcher.start()
-        self.addCleanup(self.os_name_patcher.stop)
-
-    def test_shell_true_uses_shell_and_single_process(self):
-        Fake = make_popen(stdout=b'piped\n', stderr=b'', returncode=0)
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            success, _result = shell.shell_exec('echo a | grep a', shell=True)
-        self.assertTrue(success)
-        # shell=True must NOT split on pipes; it is one Popen call.
-        self.assertEqual(len(Fake.instances), 1)
-        self.assertTrue(Fake.instances[0].kwargs['shell'])
-        # The raw command string is passed unsplit.
-        self.assertEqual(Fake.instances[0].args[0], 'echo a | grep a')
-
-    def test_stdin_forces_shell_path(self):
-        Fake = make_popen(stdout=b'GOT\n', stderr=b'', returncode=0)
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            success, _result = shell.shell_exec('cat', stdin='hello')
-        self.assertTrue(success)
-        self.assertEqual(len(Fake.instances), 1)
-        self.assertTrue(Fake.instances[0].kwargs['shell'])
-
-    def test_stdin_is_encoded_to_bytes(self):
-        Fake = make_popen()
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('cat', stdin='hello')
-        self.assertEqual(Fake.instances[0].last_input, b'hello')
-
-    def test_no_stdin_passes_none_to_communicate(self):
-        Fake = make_popen()
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('true', shell=True)
-        self.assertIsNone(Fake.instances[0].last_input)
-
-    def test_shell_true_construction_error(self):
-        def boom(*args, **kwargs):
-            raise OSError('shell missing')
-
-        with mock.patch.object(shell.subprocess, 'Popen', boom):
-            success, result = shell.shell_exec('whatever', shell=True)
-        self.assertFalse(success)
-        self.assertIn('shell missing', result)
-        self.assertIn('whatever', result)
-
-    def test_shell_true_timeout(self):
-        Fake = make_popen(timeout=True)
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            success, result = shell.shell_exec('sleep 9', shell=True, timeout=3)
-        self.assertFalse(success)
-        self.assertEqual(result, 'Timeout after 3 seconds.')
-        self.assertTrue(Fake.instances[0].killed)
-
-
-# ---------------------------------------------------------------------------
-# shell_exec() - Windows (os.name == 'nt') code path
-# ---------------------------------------------------------------------------
-
-class TestShellExecWindows(unittest.TestCase):
-    def setUp(self):
-        self.os_name_patcher = mock.patch.object(shell.os, 'name', 'nt')
-        self.os_name_patcher.start()
-        self.addCleanup(self.os_name_patcher.stop)
-
-    def test_prefixes_chcp_and_forces_shell(self):
-        Fake = make_popen(stdout=b'hello\r\n', stderr=b'', returncode=0)
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            success, _result = shell.shell_exec('dir')
-        self.assertTrue(success)
-        self.assertTrue(Fake.instances[0].kwargs['shell'])
-        self.assertEqual(Fake.instances[0].args[0], 'chcp 65001 && dir')
-
-    def test_strips_active_code_page_banner_from_stdout(self):
-        Fake = make_popen(
-            stdout=b'Active code page: 65001\r\nreal output\r\n',
-            stderr=b'',
-            returncode=0,
+class TestSafeCliValue(unittest.TestCase):
+    def test_plain_value_passes(self):
+        self.assertEqual(
+            shell.safe_cli_value('host.example', '--hostname'),
+            (True, 'host.example'),
         )
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            success, result = shell.shell_exec('whoami')
-        self.assertTrue(success)
-        self.assertEqual(result[0], 'real output\r\n')
 
-    def test_windows_runs_single_process_even_with_pipe(self):
-        Fake = make_popen()
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
-            shell.shell_exec('dir | findstr x')
-        # Windows forces shell=True, so no manual pipeline splitting.
-        self.assertEqual(len(Fake.instances), 1)
+    def test_leading_dash_is_rejected(self):
+        ok, msg = shell.safe_cli_value('-oProxyCommand=evil', '--hostname')
+        self.assertFalse(ok)
+        self.assertIn('--hostname', msg)
+
+    def test_single_dash_is_rejected(self):
+        ok, _msg = shell.safe_cli_value('-f', '--hostname')
+        self.assertFalse(ok)
+
+    def test_non_string_passes_through(self):
+        self.assertEqual(shell.safe_cli_value(5, 'count'), (True, 5))
+        self.assertEqual(shell.safe_cli_value(None, 'thing'), (True, None))
+
+    def test_value_with_inner_dash_passes(self):
+        self.assertEqual(
+            shell.safe_cli_value('some-host', '--hostname'),
+            (True, 'some-host'),
+        )
 
 
 # ---------------------------------------------------------------------------
 # End-to-end smoke checks against trivial real commands (POSIX only).
-# These are NOT the contract (the mock tests are); they just confirm the
-# wiring works against a real subprocess on a normal Linux host.
+# These also assert the security property against a real subprocess.
 # ---------------------------------------------------------------------------
 
 @unittest.skipUnless(os.name == 'posix', 'POSIX-only smoke checks')
 class TestShellExecRealCommands(unittest.TestCase):
-    def setUp(self):
-        # The non-shell pipeline path intentionally leaves the final stage's
-        # fds for the OS to reap; that surfaces as a ResourceWarning here but
-        # is not a defect of the function under test. Keep CI logs clean.
-        import warnings
-
-        warnings.simplefilter('ignore', ResourceWarning)
-        self.addCleanup(warnings.resetwarnings)
-
     def test_echo_roundtrip(self):
-        success, result = shell.shell_exec('echo linuxfabrik')
+        success, result = shell.shell_exec(['echo', 'linuxfabrik'])
         self.assertTrue(success)
         self.assertEqual(result[0].strip(), 'linuxfabrik')
         self.assertEqual(result[2], 0)
 
     def test_false_returns_nonzero(self):
-        success, result = shell.shell_exec('false')
+        success, result = shell.shell_exec(['false'])
         self.assertTrue(success)
         self.assertNotEqual(result[2], 0)
 
-    def test_real_pipeline(self):
-        success, result = shell.shell_exec('echo abc | tr a-z A-Z')
-        self.assertTrue(success)
-        self.assertEqual(result[0].strip(), 'ABC')
-
     def test_real_stdin(self):
-        success, result = shell.shell_exec('cat', stdin='from-stdin')
+        success, result = shell.shell_exec(['cat'], stdin='from-stdin')
         self.assertTrue(success)
         self.assertEqual(result[0].strip(), 'from-stdin')
 
     def test_real_timeout(self):
-        success, result = shell.shell_exec('sleep 5', shell=True, timeout=1)
+        success, result = shell.shell_exec(['sleep', '5'], timeout=1)
         self.assertFalse(success)
         self.assertEqual(result, 'Timeout after 1 seconds.')
 
-    def test_get_command_output_real(self):
-        self.assertEqual(shell.get_command_output('echo  hello  '), 'hello')
+    def test_metacharacters_are_not_interpreted(self):
+        # The whole string is one literal argument to echo; the shell would have
+        # split it on '|' and run 'reboot'. shell=False means it never does.
+        payload = '|reboot| ; rm -rf / && whoami'
+        success, result = shell.shell_exec(['echo', payload])
+        self.assertTrue(success)
+        self.assertEqual(result[0].strip(), payload)
 
-    def test_get_command_output_real_regex(self):
-        out = shell.get_command_output('echo version 1.2.3', regex=r'version (\S+)')
-        self.assertEqual(out, '1.2.3')
+    def test_argument_with_spaces_stays_single(self):
+        success, result = shell.shell_exec(['echo', 'one two three'])
+        self.assertTrue(success)
+        self.assertEqual(result[0].strip(), 'one two three')
 
 
 class TestWhich(unittest.TestCase):

@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026051002'
+__version__ = '2026061201'
 
 import html
 import numbers
@@ -119,6 +119,9 @@ def cu(msg=None):
     tb = format_exc() if has_traceback else None
 
     if msg is not None:
+        # Normalize line endings to LF (see oao); error output may also carry
+        # CRLF, for example when a Windows command prints its error to stdout.
+        msg = msg.replace('\r\n', '\n').replace('\r', '\n')
         msg = (
             txt.sanitize_sensitive_data(msg).strip().replace('<', "'").replace('>', "'")
         )
@@ -628,6 +631,10 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
     (and exits with code 2)
 
     """
+    # Normalize line endings to LF. Output captured on Windows (or read from a
+    # file or HTTP response) can carry CRLF or stray CR, which a web UI showing
+    # the output with `white-space: pre-wrap` would render as an extra line break.
+    msg = msg.replace('\r\n', '\n').replace('\r', '\n')
     msg = html.escape(
         txt.sanitize_sensitive_data(msg.strip()),
         quote=False,

@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060801'
+__version__ = '2026061201'
 
 import csv
 import os
@@ -747,7 +747,14 @@ def udevadm(device, _property):
     >>> udevadm('/dev/linuxfabrik', 'DEVNAME')
     ''
     """
-    success, result = shell.shell_exec(f'udevadm info --query=property --name={device}')
+    # Only query real device nodes under /dev. Resolving the path first defends
+    # against a crafted `device` that points elsewhere or smuggles arguments.
+    device = os.path.realpath(device)
+    if not device.startswith('/dev/'):
+        return ''
+    success, result = shell.shell_exec(
+        ['udevadm', 'info', '--query=property', f'--name={device}']
+    )
     if not success:
         return ''
     stdout, _, _ = result

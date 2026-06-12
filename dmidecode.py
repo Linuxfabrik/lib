@@ -14,7 +14,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026061201'
 
 import re
 
@@ -511,7 +511,7 @@ def get_data():
         ...
     }
     """
-    success, result = shell.shell_exec('sudo dmidecode')
+    success, result = shell.shell_exec(['sudo', 'dmidecode'])
     if not success:
         return False
 

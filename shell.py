@@ -11,12 +11,10 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060601'
+__version__ = '2026061202'
 
 
 import os
-import re
-import shlex
 import shutil
 import subprocess  # nosec B404 - this library is the subprocess helper
 
@@ -33,79 +31,31 @@ RETC_SSHPASS = {
 }
 
 
-def get_command_output(cmd, regex=None):
+def shell_exec(cmd, env=None, stdin='', cwd=None, timeout=None, lc_all='C'):
     """
-    Execute a shell command and return its output, optionally filtered by a regular expression.
+    Execute a command in a subprocess, given as a list of arguments (argv).
 
-    This function runs the given command using the `shell_exec()` function and processes the output
-    as follows:
-      - If `shell_exec()` indicates an execution failure, an empty string is returned.
-      - Retrieves standard output (stdout), standard error (stderr), and exit code.
-      - If stdout is empty but stderr contains output, stderr is used instead.
-      - The output is stripped of any leading or trailing whitespace.
-      - If a regex is provided, attempts to extract and return the text captured by
-        the first capturing group. If no match is found or an error occurs, returns an empty string.
-      - If no regex is provided, the complete stripped output is returned.
+    The command is always run with `shell=False`, so no shell is involved: arguments are passed
+    verbatim to the executable and are never interpreted for pipes (`|`), redirection, globbing,
+    variable expansion or any other shell metacharacter. This makes the helper safe to call with
+    untrusted argument values: a value like `|reboot|` or `; rm -rf /` ends up as one literal
+    argument, not as a command.
+
+    Because there is no shell, `cmd` must be a list (argv). Passing a string raises `TypeError`.
+    Build the command as a list, for example `['df', '--human-readable', mountpoint]`, where
+    `mountpoint` may be untrusted. A genuine pipeline (`a | b`) has to be expressed in code by
+    running the stages and connecting them explicitly, or by post-processing the first command's
+    output; it can no longer be expressed as a shell string.
 
     ### Parameters
-    - **cmd** (`str`): The command to execute.
-    - **regex** (`str`, optional): A regular expression pattern with at least one capturing group to
-      extract specific output. Defaults to None.
-
-    ### Returns
-    - **str**: The processed command output, or the extracted substring if regex is provided;
-      returns an empty string if execution fails or no match is found.
-
-    ### Example
-    >>> get_command_output('nano --version')
-    GNU nano, version 5.3
-    (C) 1999-2011, 2013-2020 Free Software Foundation, Inc.
-    (C) 2014-2020 the contributors to nano
-    Compiled options: --enable-utf8
-
-    >>> get_command_output('nano --version', regex=r'version (.*)\\n')
-    5.3
-    """
-    success, result = shell_exec(cmd)
-    if not success:
-        return ''
-
-    stdout, stderr, _ = result
-    output = stdout.strip() or stderr.strip()
-
-    if regex:
-        try:
-            match = re.search(regex, output)
-            return match.group(1).strip() if match else ''
-        except Exception:
-            return ''
-
-    return output
-
-
-def shell_exec(
-    cmd, env=None, shell=False, stdin='', cwd=None, timeout=None, lc_all='C'
-):
-    """
-    Execute a command in a subprocess with flexible options for shell execution, environment
-    variables, piping, standard input, working directory, and a timeout.
-
-    On Windows, the function changes the code page to 65001 (UTF-8) so that command output is
-    handled in UTF-8.
-
-    ### Parameters
-    - **cmd** (`str`):
-      The command string to execute. If using pipes (`|`), individual commands will be run
-      in a pipeline when `shell=False`. If `shell=True`, the entire string is passed to the shell.
+    - **cmd** (`list`):
+      The command to execute, as a list of arguments (argv), e.g. `['ls', '-l', '/tmp']`.
+      The first element is the program, the rest are its arguments.
     - **env** (`dict`, optional):
       A dictionary of environment variables to merge with the current OS environment.
       Defaults to the current environment.
-    - **shell** (`bool`, optional):
-      If True, execute the command through the shell. Required when using shell features
-      (e.g., redirection, globbing) or when providing `stdin`. Defaults to False.
     - **stdin** (`str`, optional):
-      A string to pass as standard input to the command. If non‐empty, `shell` will be set
-      to True on Windows. Defaults to an empty string.
+      A string to pass as standard input to the command. Defaults to an empty string.
     - **cwd** (`str`, optional):
       Working directory in which to execute the command. Defaults to None (current directory).
     - **timeout** (`int` or `float`, optional):
@@ -128,90 +78,109 @@ def shell_exec(
     ### Notes
     - The environment is merged with `env` and always includes `LC_ALL=<lc_all>`, forcing output
       to the specified locale.
-    - On Windows (`os.name == 'nt'`), `cmd` is automatically prefixed with `chcp 65001 &&` to
-      switch to UTF-8 code page, and `shell` is set to True.
-    - If `shell=False` and `cmd` contains pipes (`|`), the function splits `cmd` on `|` and
-      creates a pipeline of subprocesses. Each segment is run without a shell, with stdout of
-      one feeding stdin of the next.
-    - If `shell=True` or `stdin` is provided, the command is executed in a single shell
-      invocation (`subprocess.Popen(..., shell=True)`). The provided `stdin` string is passed
-      to `communicate()`.
     - Exceptions such as `OSError`, `ValueError`, or other execution errors during process
       creation are caught and reported as `(False, <error message>)`.
     - If the process exceeds the specified `timeout`, it is killed, and the function returns
       `(False, "Timeout after <timeout> seconds.")`.
     """
+    if not isinstance(cmd, (list, tuple)):
+        raise TypeError(
+            'shell_exec() requires cmd as a list of arguments '
+            f'(for example ["df", "-h"]), got {type(cmd).__name__}.'
+        )
+
     env = {**os.environ.copy(), **(env or {})}
     env['LC_ALL'] = lc_all
 
-    if os.name == 'nt':
-        cmd = f'chcp 65001 && {cmd}'
-        shell = True
-
-    if shell or stdin:
-        # shell=True is opt-in via the `shell` parameter; this helper's purpose
-        # is to abstract shell-pipeline execution for callers that need it
-        try:
-            p = subprocess.Popen(  # nosec B602
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=env,
-                shell=True,
-                cwd=cwd,
-            )
-        except (OSError, ValueError, Exception) as e:
-            return False, f'Error "{e}" while calling command "{cmd}"'
-
-        try:
-            stdout, stderr = p.communicate(
-                input=txt.to_bytes(stdin) if stdin else None,
-                timeout=timeout,
-            )
-        except subprocess.TimeoutExpired:
-            p.kill()
-            p.communicate()
-            return False, f'Timeout after {timeout} seconds.'
-        retc = p.returncode
-        stdout = txt.to_text(stdout).replace('Active code page: 65001\r\n', '')
-        stderr = txt.to_text(stderr)
-        return True, (stdout, stderr, retc)
-
-    # non-shell pipeline: cmd string is split on '|' and each segment runs with
-    # shell=False; args come from the caller's cmd string via shlex.split.
-    # after connecting a stage's stdout to the next stage's stdin, we close it
-    # in the parent so only the downstream child holds the read end. Without
-    # this, the upstream child never sees EOF / SIGPIPE when the downstream
-    # exits early, and we leak a file descriptor per pipeline stage.
-    cmds = cmd.split('|')
-    p = None
-    for part in cmds:
-        try:
-            args = shlex.split(part.strip())
-            prev = p
-            p = subprocess.Popen(  # nosec B603
-                args,
-                stdin=prev.stdout if prev else subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=env,
-                shell=False,
-                cwd=cwd,
-            )
-            if prev is not None:
-                prev.stdout.close()
-        except (OSError, ValueError, Exception) as e:
-            return False, f'Error "{e}" while calling command "{part}"'
+    try:
+        p = subprocess.Popen(  # nosec B603 - shell=False, cmd is an argv list, no shell interpretation
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            shell=False,
+            cwd=cwd,
+        )
+    except (OSError, ValueError, Exception) as e:
+        return False, f'Error "{e}" while calling command "{cmd}"'
 
     try:
-        stdout, stderr = p.communicate(timeout=timeout)
+        stdout, stderr = p.communicate(
+            input=txt.to_bytes(stdin) if stdin else None,
+            timeout=timeout,
+        )
     except subprocess.TimeoutExpired:
         p.kill()
         p.communicate()
         return False, f'Timeout after {timeout} seconds.'
 
-    return True, (txt.to_text(stdout), txt.to_text(stderr), p.returncode)
+    # Decode the captured bytes. On Windows, console programs (query, schtasks,
+    # w32tm, ...) write their piped output in the OEM / console output code page
+    # (e.g. cp437, cp850), not UTF-8 and not the ANSI code page, so a username
+    # like "müller" would otherwise be mangled (Linuxfabrik/monitoring-plugins#681).
+    if os.name == 'nt':
+        encoding, errors = _windows_output_encoding(), 'replace'
+    else:
+        encoding, errors = 'utf-8', 'surrogateescape'
+    return True, (
+        txt.to_text(stdout, encoding=encoding, errors=errors),
+        txt.to_text(stderr, encoding=encoding, errors=errors),
+        p.returncode,
+    )
+
+
+def _windows_output_encoding():
+    """
+    Best-effort code page name for decoding a Windows subprocess's piped output.
+
+    Console programs emit their pipe output in the OEM / console output code page, not UTF-8 and
+    not the ANSI code page (`chcp 65001` has no effect on a pipe; see PEP 528). Prefer the console
+    output code page, fall back to the OEM code page when the process has no console (for example
+    when run headless by a monitoring agent), and fall back to UTF-8 if neither is available.
+
+    ### Returns
+    - **str**: A Python codec name such as `'cp437'`, or `'utf-8'` as a last resort.
+    """
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        code_page = kernel32.GetConsoleOutputCP() or kernel32.GetOEMCP()
+        if code_page:
+            return f'cp{code_page}'
+    except (OSError, AttributeError, ValueError):
+        pass
+    return 'utf-8'
+
+
+def safe_cli_value(value, name='value'):
+    """
+    Reject a value that a called program could misinterpret as an option.
+
+    Building a command as an argument list (argv) and running it with `shell_exec()` prevents
+    shell injection, but it does not stop a value that starts with `-` from being picked up as an
+    *option* by the program being run, for example an ssh destination `-oProxyCommand=...` (remote
+    code execution) or a `ping` target `-f` (flood). Use this for values that reach a command as a
+    positional argument or as a command target, where option-style values have no legitimate
+    meaning. Values that are bound to an explicit option (`--name=<value>` or `-H <value>`) do not
+    need this guard.
+
+    ### Parameters
+    - **value** (`any`): The value to check. Non-string values pass through unchanged.
+    - **name** (`str`, optional): Human-readable name used in the error message. Defaults to
+      `'value'`.
+
+    ### Returns
+    - **tuple**: `(True, value)` if the value is safe, else `(False, error_message)`. The shape
+      is suitable for `lib.base.coe()`.
+
+    ### Example
+    >>> host = lib.base.coe(lib.shell.safe_cli_value(args.HOSTNAME, '--hostname'))
+    """
+    if isinstance(value, str) and value.startswith('-'):
+        return False, f'Refusing {name} that starts with "-": {value}'
+    return True, value
 
 
 def which(name):

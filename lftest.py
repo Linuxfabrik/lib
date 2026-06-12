@@ -13,12 +13,13 @@
 import contextlib
 import os
 import re
+import shlex
 import tempfile
 
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060202'
+__version__ = '2026061201'
 
 
 def run(test_instance, plugin, testcase):
@@ -73,8 +74,10 @@ def run(test_instance, plugin, testcase):
     ...             with self.subTest(id=t['id']):
     ...                 lib.lftest.run(self, self.check, t)
     """
+    # params come from the trusted testcase definition; tokenize them the way a
+    # shell would so quoted multi-word values stay intact, then build the argv.
     params = testcase.get('params', '')
-    cmd = f'{plugin} {params} --test={testcase["test"]}'.strip()
+    cmd = [plugin, *shlex.split(params), f'--test={testcase["test"]}']
     stdout, stderr, retc = base.coe(shell.shell_exec(cmd))
 
     test_instance.assertEqual(
@@ -133,7 +136,6 @@ def attach_tests(test_class, tests, plugin_attr='check'):
     ### Example
     >>> class TestCheck(unittest.TestCase):
     ...     check = '../my-plugin'
-    ...
     >>> attach_tests(TestCheck, TESTS)
     >>>
     >>> if __name__ == '__main__':
@@ -157,6 +159,7 @@ def attach_tests(test_class, tests, plugin_attr='check'):
         def _make(captured_testcase):
             def _method(self):
                 run(self, getattr(self, plugin_attr), captured_testcase)
+
             return _method
 
         setattr(test_class, method_name, _make(testcase))
@@ -222,6 +225,7 @@ def attach_each(test_class, items, action, id_func=str):
         def _make(captured_item):
             def _method(self):
                 action(self, captured_item)
+
             return _method
 
         setattr(test_class, method_name, _make(item))
@@ -339,8 +343,7 @@ def run_container(
         from testcontainers.core.wait_strategies import LogMessageWaitStrategy
     except ImportError as e:
         raise RuntimeError(
-            'testcontainers is not installed; run '
-            "`pip install testcontainers`"
+            'testcontainers is not installed; run `pip install testcontainers`'
         ) from e
 
     c = DockerContainer(image)
@@ -456,12 +459,15 @@ def _run_mysql_compatible_resolved(image_ref, command, seed):
             # in favour of `mariadb`; sclorg c10s ships both; MySQL
             # ships `mysql` only. Prefer `mariadb`, fall back to
             # `mysql` so all flavours work.
-            container.exec([
-                'sh', '-c',
-                'if command -v mariadb >/dev/null 2>&1; then CLIENT=mariadb; '
-                'else CLIENT=mysql; fi; '
-                f'"$CLIENT" -utest -ptest test -e "{seed}"',
-            ])
+            container.exec(
+                [
+                    'sh',
+                    '-c',
+                    'if command -v mariadb >/dev/null 2>&1; then CLIENT=mariadb; '
+                    'else CLIENT=mysql; fi; '
+                    f'"$CLIENT" -utest -ptest test -e "{seed}"',
+                ]
+            )
 
         host = container.get_container_host_ip()
         port = container.get_exposed_port(3306)
@@ -574,7 +580,8 @@ def run_mysql_compatible_from_containerfile(
     ... ) as (container, defaults_file):
     ...     result = subprocess.run(
     ...         ['python3', '../mysql-traffic', f'--defaults-file={defaults_file}'],
-    ...         capture_output=True, text=True,
+    ...         capture_output=True,
+    ...         text=True,
     ...     )
     """
     try:
@@ -594,14 +601,19 @@ def run_mysql_compatible_from_containerfile(
 
     # No parenthesized context managers: they are Python 3.10+ syntax and break
     # parsing on RHEL 8's default Python 3.6.
-    with DockerImage(
-        path=build_dir,
-        dockerfile_path=dockerfile_name,
-        tag=tag,
-        clean_up=False,
-    ) as image, _run_mysql_compatible_resolved(
-        str(image.tag), command, seed,
-    ) as result:
+    with (
+        DockerImage(
+            path=build_dir,
+            dockerfile_path=dockerfile_name,
+            tag=tag,
+            clean_up=False,
+        ) as image,
+        _run_mysql_compatible_resolved(
+            str(image.tag),
+            command,
+            seed,
+        ) as result,
+    ):
         yield result
 
 

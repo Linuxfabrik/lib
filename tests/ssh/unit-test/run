@@ -10,9 +10,9 @@
 
 """Unit tests for lib.ssh.
 
-build_options() and target() are pure. run(), scp() and rsync() are exercised
-by mocking lib.shell.shell_exec, so the assembled command line is asserted
-without spawning ssh/scp/rsync.
+build_options() and target() are pure and return argv tokens. run(), scp() and
+rsync() are exercised by mocking lib.shell.shell_exec, so the assembled argument
+list is asserted without spawning ssh/scp/rsync.
 """
 
 import sys
@@ -26,7 +26,7 @@ import lib.ssh as ssh
 
 class TestBuildOptions(unittest.TestCase):
     def test_empty(self):
-        self.assertEqual(ssh.build_options(), '')
+        self.assertEqual(ssh.build_options(), [])
 
     def test_typical_non_interactive(self):
         self.assertEqual(
@@ -36,8 +36,16 @@ class TestBuildOptions(unittest.TestCase):
                 connect_timeout=3,
                 log_level='ERROR',
             ),
-            "-i '~/.ssh/id_ed25519' -o BatchMode=yes -o LogLevel=ERROR "
-            '-o ConnectTimeout=3',
+            [
+                '-i',
+                '~/.ssh/id_ed25519',
+                '-o',
+                'BatchMode=yes',
+                '-o',
+                'LogLevel=ERROR',
+                '-o',
+                'ConnectTimeout=3',
+            ],
         )
 
     def test_flags_and_lists(self):
@@ -48,29 +56,37 @@ class TestBuildOptions(unittest.TestCase):
             ipv4=True,
             quiet=True,
         )
-        self.assertIn('-4', opts)
-        self.assertIn("-F '/etc/ssh/ssh_config'", opts)
-        self.assertIn("-i '/a'", opts)
-        self.assertIn("-i '/b'", opts)
-        self.assertIn("-o 'StrictHostKeyChecking=no'", opts)
-        self.assertIn('-q', opts)
+        self.assertEqual(
+            opts,
+            [
+                '-4',
+                '-F',
+                '/etc/ssh/ssh_config',
+                '-i',
+                '/a',
+                '-i',
+                '/b',
+                '-o',
+                'StrictHostKeyChecking=no',
+                '-q',
+            ],
+        )
 
 
 class TestTarget(unittest.TestCase):
     def test_without_username(self):
-        self.assertEqual(ssh.target('myhost'), "'myhost'")
+        self.assertEqual(ssh.target('myhost'), 'myhost')
 
     def test_with_username(self):
-        self.assertEqual(ssh.target('myhost', 'root'), "'root'@'myhost'")
+        self.assertEqual(ssh.target('myhost', 'root'), 'root@myhost')
 
 
 class TestRun(unittest.TestCase):
     def _capture(self):
         captured = {}
 
-        def fake(cmd, shell=False, timeout=None):
+        def fake(cmd, timeout=None):
             captured['cmd'] = cmd
-            captured['shell'] = shell
             captured['timeout'] = timeout
             return (True, ('out', '', 0))
 
@@ -80,18 +96,35 @@ class TestRun(unittest.TestCase):
         captured, fake = self._capture()
         with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
             ok, result = ssh.run(
-                'myhost', 'true', username='root', port=2222, options='-q'
+                'myhost', 'true', username='root', port=2222, options=['-q']
             )
         self.assertTrue(ok)
         self.assertEqual(result, ('out', '', 0))
-        self.assertEqual(captured['cmd'], "ssh -q -p 2222 'root'@'myhost' 'true'")
-        self.assertTrue(captured['shell'])
+        self.assertEqual(
+            captured['cmd'], ['ssh', '-q', '-p', '2222', 'root@myhost', 'true']
+        )
 
     def test_password_prefixes_sshpass(self):
         captured, fake = self._capture()
         with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
             ssh.run('myhost', 'true', password='linuxfabrik')
-        self.assertTrue(captured['cmd'].startswith('sshpass -p linuxfabrik ssh '))
+        self.assertEqual(
+            captured['cmd'][:3], ['sshpass', '-p', 'linuxfabrik']
+        )
+        self.assertEqual(captured['cmd'][3], 'ssh')
+
+    def test_rejects_option_like_host(self):
+        with mock.patch('lib.ssh.shell.shell_exec') as m:
+            ok, msg = ssh.run('-oProxyCommand=evil', 'true')
+        self.assertFalse(ok)
+        self.assertIn('-oProxyCommand=evil', msg)
+        m.assert_not_called()
+
+    def test_rejects_option_like_username(self):
+        with mock.patch('lib.ssh.shell.shell_exec') as m:
+            ok, _msg = ssh.run('myhost', 'true', username='-x')
+        self.assertFalse(ok)
+        m.assert_not_called()
 
 
 class TestScp(unittest.TestCase):
@@ -99,12 +132,13 @@ class TestScp(unittest.TestCase):
         captured = {}
         with mock.patch(
             'lib.ssh.shell.shell_exec',
-            side_effect=lambda cmd, shell=False, timeout=None: captured.update(cmd=cmd)
+            side_effect=lambda cmd, timeout=None: captured.update(cmd=cmd)
             or (True, ('', '', 0)),
         ):
             ssh.scp('myhost', '/local/dir', '/remote/dir', recursive=True)
-        self.assertIn('scp -r -p', captured['cmd'])
-        self.assertIn("'/local/dir' 'myhost':/remote/dir", captured['cmd'])
+        cmd = captured['cmd']
+        self.assertEqual(cmd[:3], ['scp', '-r', '-p'])
+        self.assertEqual(cmd[-2:], ['/local/dir', 'myhost:/remote/dir'])
 
 
 class TestRsync(unittest.TestCase):
@@ -112,23 +146,25 @@ class TestRsync(unittest.TestCase):
         captured = {}
         with mock.patch(
             'lib.ssh.shell.shell_exec',
-            side_effect=lambda cmd, shell=False, timeout=None: captured.update(cmd=cmd)
+            side_effect=lambda cmd, timeout=None: captured.update(cmd=cmd)
             or (True, ('', '', 0)),
         ):
             ssh.rsync(
-                'myhost', '/local/dir', '/remote/dir', options='-q', sudo=True
+                'myhost', '/local/dir', '/remote/dir', options=['-q'], sudo=True
             )
         cmd = captured['cmd']
-        self.assertIn('rsync --archive', cmd)
-        self.assertIn("--rsync-path='sudo rsync'", cmd)
-        self.assertIn('--rsh="ssh -q"', cmd)
-        self.assertIn("'/local/dir/' 'myhost':/remote/dir/", cmd)
+        self.assertEqual(cmd[:2], ['rsync', '--archive'])
+        self.assertIn('--rsync-path', cmd)
+        self.assertEqual(cmd[cmd.index('--rsync-path') + 1], 'sudo rsync')
+        self.assertIn('--rsh', cmd)
+        self.assertEqual(cmd[cmd.index('--rsh') + 1], 'ssh -q')
+        self.assertEqual(cmd[-2:], ['/local/dir/', 'myhost:/remote/dir/'])
 
     def test_no_sudo_omits_rsync_path(self):
         captured = {}
         with mock.patch(
             'lib.ssh.shell.shell_exec',
-            side_effect=lambda cmd, shell=False, timeout=None: captured.update(cmd=cmd)
+            side_effect=lambda cmd, timeout=None: captured.update(cmd=cmd)
             or (True, ('', '', 0)),
         ):
             ssh.rsync('myhost', '/local/dir', '/remote/dir')

@@ -508,12 +508,22 @@ class TestProcessDistFiles(unittest.TestCase):
 class TestGetDistributionFacts(unittest.TestCase):
     """get_distribution_facts: public entry point, os_family + os_info."""
 
-    def _run(self, dist_facts, shell_result):
-        with mock.patch(
-            'lib.distro._process_dist_files', return_value=dict(dist_facts)
-        ), mock.patch('lib.distro.shell.shell_exec', return_value=shell_result) as m:
+    def _run(self, dist_facts, os_release=None):
+        import io
+
+        def fake_open(*args, **kwargs):
+            if os_release is None:
+                raise OSError('no /etc/os-release')
+            return io.StringIO(os_release)
+
+        with (
+            mock.patch(
+                'lib.distro._process_dist_files', return_value=dict(dist_facts)
+            ),
+            mock.patch('builtins.open', side_effect=fake_open),
+        ):
             facts = distro.get_distribution_facts()
-        return facts, m
+        return facts
 
     def test_redhat_full_facts(self):
         dist_facts = {
@@ -525,43 +535,35 @@ class TestGetDistributionFacts(unittest.TestCase):
             'distribution_file_variety': 'RedHat',
             'distribution_file_parsed': True,
         }
-        shell_result = (True, ('Red Hat Enterprise Linux 8.5 (Ootpa)\n', '', 0))
-        facts, mock_shell = self._run(dist_facts, shell_result)
+        os_release = 'NAME="Red Hat Enterprise Linux"\nVERSION="8.5 (Ootpa)"\n'
+        facts = self._run(dist_facts, os_release)
         self.assertEqual(facts['os_family'], 'RedHat')
         self.assertEqual(facts['os_info'], 'Red Hat Enterprise Linux 8.5 (Ootpa)')
-        mock_shell.assert_called_once()
-        # The sourcing command must run with shell=True.
-        _, kwargs = mock_shell.call_args
-        self.assertTrue(kwargs.get('shell'))
 
-    def test_os_info_is_stripped(self):
+    def test_os_info_from_os_release(self):
         dist_facts = {'distribution_file_variety': 'Debian'}
-        facts, _ = self._run(
-            dist_facts, (True, ('  Ubuntu 22.04.2 LTS  \n', '', 0))
-        )
-        self.assertEqual(facts['os_info'], 'Ubuntu 22.04.2 LTS')
+        facts = self._run(dist_facts, OS_RELEASE_UBUNTU)
+        self.assertEqual(facts['os_info'], 'Ubuntu 22.04.2 LTS (Jammy Jellyfish)')
 
     def test_os_family_from_variety(self):
-        facts, _ = self._run(
-            {'distribution_file_variety': 'Fedora'}, (True, ('Fedora\n', '', 0))
-        )
+        facts = self._run({'distribution_file_variety': 'Fedora'}, OS_RELEASE_FEDORA)
         self.assertEqual(facts['os_family'], 'RedHat')
 
     def test_os_family_falls_back_to_distribution_literal(self):
         # No distribution_file_variety key -> default 'distribution' string is
         # mapped, which has no family, so it is returned unchanged.
-        facts, _ = self._run({}, (True, ('x\n', '', 0)))
+        facts = self._run({}, OS_RELEASE_UBUNTU)
         self.assertEqual(facts['os_family'], 'distribution')
 
-    def test_shell_failure_returns_facts_without_os_info(self):
+    def test_unreadable_os_release_returns_facts_without_os_info(self):
         dist_facts = {'distribution_file_variety': 'Debian'}
-        facts, _ = self._run(dist_facts, (False, 'command not found'))
+        facts = self._run(dist_facts, None)
         self.assertNotIn('os_info', facts)
-        # os_family is still set before the shell call.
+        # os_family is still set before /etc/os-release is read.
         self.assertEqual(facts['os_family'], 'Debian')
 
     def test_returns_dict_type(self):
-        facts, _ = self._run({}, (True, ('x\n', '', 0)))
+        facts = self._run({}, OS_RELEASE_UBUNTU)
         self.assertIsInstance(facts, dict)
 
 
