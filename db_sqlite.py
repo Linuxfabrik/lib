@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026061701'
 
 import csv
 import hashlib
@@ -355,7 +355,8 @@ def create_index(
       If `True`, creates a unique index.
       If `False`, creates a standard (non-unique) index. Defaults to `False`.
     - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when an `OperationalError` occurs.
+      If `True`, deletes the database file when the on-disk database turns out
+      to be unusable (e.g. a schema mismatch between releases).
       Defaults to `True`.
 
     ### Returns
@@ -467,7 +468,8 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     - **_max** (`int`, optional):
       Number of most recent records to keep. Defaults to `5`.
     - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when an `OperationalError` occurs.
+      If `True`, deletes the database file when the on-disk database turns out
+      to be unusable (e.g. a schema mismatch between releases).
       Defaults to `True`.
 
     ### Returns
@@ -530,7 +532,8 @@ def delete(conn, sql, data=None, delete_db_on_operational_error=True):
       Dictionary of parameters to bind to the SQL statement.
       Defaults to an empty dict (no parameters).
     - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when an `OperationalError` occurs.
+      If `True`, deletes the database file when the on-disk database turns out
+      to be unusable (e.g. a schema mismatch between releases).
       Defaults to `True`.
 
     ### Returns
@@ -563,6 +566,14 @@ def delete(conn, sql, data=None, delete_db_on_operational_error=True):
         if delete_db_on_operational_error:
             rm_db(conn)
         return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
+    except (sqlite3.IntegrityError, sqlite3.DataError) as e:
+        # A constraint or data error (e.g. a NOT NULL column that a newer or
+        # older release no longer writes) means the on-disk schema no
+        # longer matches the data being written. Deleting the database lets the
+        # next run rebuild a valid cache from scratch.
+        if delete_db_on_operational_error:
+            rm_db(conn)
+        return False, f'Integrity Error: {e}, Query: {sql}, Data: {data}'
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
@@ -906,7 +917,8 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
       Name of the table to insert into.
       Defaults to `'perfdata'`.
     - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when an `OperationalError` occurs.
+      If `True`, deletes the database file when the on-disk database turns out
+      to be unusable (e.g. a schema mismatch between releases).
       Defaults to `True`.
 
     ### Returns
@@ -946,6 +958,14 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
         if delete_db_on_operational_error:
             rm_db(conn)
         return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
+    except (sqlite3.IntegrityError, sqlite3.DataError) as e:
+        # A constraint or data error (e.g. a NOT NULL column that a newer or
+        # older release no longer writes) means the on-disk schema no
+        # longer matches the data being written. Deleting the database lets the
+        # next run rebuild a valid cache from scratch.
+        if delete_db_on_operational_error:
+            rm_db(conn)
+        return False, f'Integrity Error: {e}, Query: {sql}, Data: {data}'
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
@@ -1030,7 +1050,7 @@ def per_second_deltas(filename, name, counters):
     # subsequent drop_table() with "Cannot operate on a closed database".
     ok, _ = insert(conn, row, delete_db_on_operational_error=False)
     if not ok:
-        # Schema mismatch from a previous plugin version (different counter
+        # Schema mismatch from a previous release (different counter
         # columns or NOT NULL constraints). Rebuild the table from the
         # current schema; we lose the previous baseline but auto-recover on
         # the next run.
@@ -1130,7 +1150,8 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
       Name of the table to operate on.
       Defaults to `'perfdata'`.
     - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when an `OperationalError` occurs.
+      If `True`, deletes the database file when the on-disk database turns out
+      to be unusable (e.g. a schema mismatch between releases).
       Defaults to `True`.
 
     ### Returns
@@ -1169,6 +1190,14 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
         if delete_db_on_operational_error:
             rm_db(conn)
         return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
+    except (sqlite3.IntegrityError, sqlite3.DataError) as e:
+        # A constraint or data error (e.g. a NOT NULL column that a newer or
+        # older release no longer writes) means the on-disk schema no
+        # longer matches the data being written. Deleting the database lets the
+        # next run rebuild a valid cache from scratch.
+        if delete_db_on_operational_error:
+            rm_db(conn)
+        return False, f'Integrity Error: {e}, Query: {sql}, Data: {data}'
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
@@ -1237,7 +1266,8 @@ def select(
       If `True`, return results as a list of dictionaries.
       If `False`, return raw SQLite row objects. Defaults to `True`.
     - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when an `OperationalError` occurs.
+      If `True`, deletes the database file when the on-disk database turns out
+      to be unusable (e.g. a schema mismatch between releases).
       Defaults to `True`.
 
     ### Returns

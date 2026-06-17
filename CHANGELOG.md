@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Fixed
+
+* db_sqlite.py: cached databases now self-heal after a schema change between releases. A constraint or data error (such as a `NOT NULL` column that a newer or older release no longer writes) deletes and rebuilds the cache on the next run, instead of failing on every run until the stale file is removed by hand.
 
 
 ## [v5.0.0] - 2026-06-12
