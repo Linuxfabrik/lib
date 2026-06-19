@@ -8,7 +8,7 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""This module tries to make accessing the Bexio API easier."""
+"""This library interacts with the Bexio API and provides a simplified interface for use with Python."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026060501'
