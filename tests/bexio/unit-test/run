@@ -1,0 +1,378 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.bexio.
+
+The module is a thin client for the Bexio REST API. Every network call goes
+through `lib.url.fetch_json`, so the suite is made fully hermetic by replacing
+`lib.bexio.url.fetch_json` with a MagicMock. No socket, no DNS, no TLS
+handshake ever happens.
+
+Bexio is a paid hosted SaaS with no public container image, so there is no
+container-test class; the unit tests are the full coverage.
+
+The tests probe three things:
+
+  * `call_api()` is the one place where URL, auth header, encoding, timeout,
+    and the `response_on_error` flag are constructed; nearly every wrapper
+    funnels through it, so this gets the bulk of the assertions.
+  * `get_all()` implements the pagination loop (offset/limit, terminate on
+    empty page, short-circuit on failure) and is covered end-to-end.
+  * The thin CRUD wrappers (~30 of them) all reduce to "call `get_all` or
+    `call_api` with the right URL constant". One representative per category
+    is asserted, plus the wrappers with non-trivial argument handling
+    (`fetch_contacts(archived=...)`, `delete_contact_relation` with its
+    DELETE method, `edit_*` with the id-to-string conversion) and a single
+    `test_url_constants_match_documented_endpoints` to pin the URL constants.
+"""
+
+import sys
+import unittest
+import urllib.parse
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.bexio as bexio
+
+API_TOKEN = 'linuxfabrik'
+
+
+def make_fetch_json(return_value=(True, [])):
+    """Return a MagicMock standing in for url.fetch_json with a canned result."""
+    return mock.MagicMock(name='fetch_json', return_value=return_value)
+
+
+class BexioTestBase(unittest.TestCase):
+    """Patches url.fetch_json for every test.
+
+    self.fetch_json is the mock; the helpers expose the URL and kwargs of the
+    request the module crafted so the wire contract can be asserted.
+    """
+
+    def setUp(self):
+        self.fetch_json = make_fetch_json()
+        self._p_fetch = mock.patch.object(bexio.url, 'fetch_json', self.fetch_json)
+        self._p_fetch.start()
+        self.addCleanup(self._p_fetch.stop)
+
+    def last_call(self):
+        """Return (args, kwargs) of the most recent fetch_json call."""
+        self.assertTrue(self.fetch_json.called, 'fetch_json was never called')
+        return self.fetch_json.call_args
+
+    def sent_url(self):
+        """First positional arg passed to fetch_json (the full URL)."""
+        return self.last_call().args[0]
+
+    def sent_kwargs(self):
+        return self.last_call().kwargs
+
+    def sent_header(self):
+        return self.sent_kwargs()['header']
+
+
+# ---------------------------------------------------------------------------
+# call_api()
+# ---------------------------------------------------------------------------
+
+
+class TestCallApi(BexioTestBase):
+    def test_returns_fetch_json_result_unchanged(self):
+        sentinel = (True, {'id': 1, 'name': 'Linuxfabrik'})
+        self.fetch_json.return_value = sentinel
+        result = bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertIs(result, sentinel)
+
+    def test_error_tuple_propagates(self):
+        self.fetch_json.return_value = (False, 'HTTP 401: invalid token')
+        success, body = bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertFalse(success)
+        self.assertEqual(body, 'HTTP 401: invalid token')
+
+    def test_full_url_is_base_plus_path(self):
+        bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertEqual(self.sent_url(), 'https://api.bexio.com/2.0/contact')
+
+    def test_authorization_header_is_bearer_token(self):
+        bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertEqual(self.sent_header()['Authorization'], f'Bearer {API_TOKEN}')
+
+    def test_accept_header_is_application_json(self):
+        bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertEqual(self.sent_header()['Accept'], 'application/json')
+
+    def test_no_extra_headers_set(self):
+        # Regression guard: only Accept and Authorization, nothing else.
+        bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertEqual(set(self.sent_header()), {'Accept', 'Authorization'})
+
+    def test_encoding_is_serialized_json(self):
+        bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertEqual(self.sent_kwargs()['encoding'], 'serialized-json')
+
+    def test_timeout_is_default_constant(self):
+        bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertEqual(
+            self.sent_kwargs()['timeout'], bexio.BEXIO_API_DEFAULT_API_CALL_TIMEOUT
+        )
+
+    def test_default_api_call_timeout_constant_value(self):
+        self.assertEqual(bexio.BEXIO_API_DEFAULT_API_CALL_TIMEOUT, 20)
+
+    def test_response_on_error_true_is_forwarded(self):
+        # Bexio's API returns error details in the response body, so call_api
+        # must opt into url.fetch_json's response_on_error mode.
+        bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertTrue(self.sent_kwargs()['response_on_error'])
+
+    def test_data_none_becomes_empty_dict(self):
+        bexio.call_api(API_TOKEN, '/2.0/contact', data=None)
+        self.assertEqual(self.sent_kwargs()['data'], {})
+
+    def test_data_dict_passed_through(self):
+        payload = {'name_1': 'Linuxfabrik', 'contact_type_id': 1}
+        bexio.call_api(API_TOKEN, '/2.0/contact', data=payload)
+        self.assertEqual(self.sent_kwargs()['data'], payload)
+
+    def test_method_default_none_forwarded(self):
+        # No explicit method: fetch_json infers GET/POST from the body presence,
+        # so call_api must not silently pin a method.
+        bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertIsNone(self.sent_kwargs()['method'])
+
+    def test_method_delete_forwarded(self):
+        # The only wrapper that overrides the method is delete_contact_relation;
+        # pin that the override survives the call_api seam.
+        bexio.call_api(API_TOKEN, '/2.0/contact_relation/1', method='DELETE')
+        self.assertEqual(self.sent_kwargs()['method'], 'DELETE')
+
+    def test_called_exactly_once(self):
+        bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertEqual(self.fetch_json.call_count, 1)
+
+
+# ---------------------------------------------------------------------------
+# get_all() - pagination loop
+# ---------------------------------------------------------------------------
+
+
+def _query(url_with_params):
+    """Return the parsed query-string of a URL as a dict."""
+    return dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url_with_params).query))
+
+
+class TestGetAll(BexioTestBase):
+    def test_empty_first_page_returns_empty_list(self):
+        self.fetch_json.return_value = (True, [])
+        success, result = bexio.get_all(API_TOKEN, '/2.0/contact')
+        self.assertTrue(success)
+        self.assertEqual(result, [])
+        self.assertEqual(self.fetch_json.call_count, 1)
+
+    def test_single_page_then_terminator_returns_items(self):
+        self.fetch_json.side_effect = [
+            (True, [{'id': 1}, {'id': 2}]),
+            (True, []),
+        ]
+        success, result = bexio.get_all(API_TOKEN, '/2.0/contact')
+        self.assertTrue(success)
+        self.assertEqual(result, [{'id': 1}, {'id': 2}])
+        self.assertEqual(self.fetch_json.call_count, 2)
+
+    def test_multi_page_pagination_concatenates_in_order(self):
+        self.fetch_json.side_effect = [
+            (True, [{'id': 1}, {'id': 2}]),
+            (True, [{'id': 3}]),
+            (True, [{'id': 4}, {'id': 5}, {'id': 6}]),
+            (True, []),
+        ]
+        success, result = bexio.get_all(API_TOKEN, '/2.0/contact')
+        self.assertTrue(success)
+        self.assertEqual(result, [{'id': i} for i in range(1, 7)])
+        self.assertEqual(self.fetch_json.call_count, 4)
+
+    def test_offset_advances_by_returned_page_length(self):
+        # Pages of length 2 then 3: offsets must be 0, 2, 5, then a terminator.
+        self.fetch_json.side_effect = [
+            (True, [{'id': 1}, {'id': 2}]),
+            (True, [{'id': 3}, {'id': 4}, {'id': 5}]),
+            (True, []),
+        ]
+        bexio.get_all(API_TOKEN, '/2.0/contact')
+        offsets = [
+            int(_query(call.args[0])['offset'])
+            for call in self.fetch_json.call_args_list
+        ]
+        self.assertEqual(offsets, [0, 2, 5])
+
+    def test_limit_is_2000_on_every_request(self):
+        self.fetch_json.side_effect = [
+            (True, [{'id': 1}]),
+            (True, [{'id': 2}]),
+            (True, []),
+        ]
+        bexio.get_all(API_TOKEN, '/2.0/contact')
+        limits = {
+            _query(call.args[0])['limit'] for call in self.fetch_json.call_args_list
+        }
+        self.assertEqual(limits, {'2000'})
+
+    def test_default_params_none_adds_only_offset_and_limit(self):
+        self.fetch_json.return_value = (True, [])
+        bexio.get_all(API_TOKEN, '/2.0/contact')
+        self.assertEqual(set(_query(self.sent_url())), {'offset', 'limit'})
+
+    def test_extra_params_are_preserved_on_every_page(self):
+        self.fetch_json.side_effect = [
+            (True, [{'id': 1}]),
+            (True, []),
+        ]
+        bexio.get_all(API_TOKEN, '/2.0/contact', params={'show_archived': True})
+        for call in self.fetch_json.call_args_list:
+            params = _query(call.args[0])
+            self.assertEqual(params['show_archived'], 'True')
+
+    def test_call_failure_on_first_page_short_circuits(self):
+        self.fetch_json.return_value = (False, 'boom')
+        success, body = bexio.get_all(API_TOKEN, '/2.0/contact')
+        self.assertFalse(success)
+        self.assertEqual(body, 'boom')
+        self.assertEqual(self.fetch_json.call_count, 1)
+
+    def test_call_failure_on_second_page_discards_partial_result(self):
+        # The current contract is all-or-nothing: a mid-pagination failure
+        # returns the error verbatim, and the items from the first page are
+        # dropped, not surfaced.
+        self.fetch_json.side_effect = [
+            (True, [{'id': 1}]),
+            (False, 'HTTP 500'),
+        ]
+        success, body = bexio.get_all(API_TOKEN, '/2.0/contact')
+        self.assertFalse(success)
+        self.assertEqual(body, 'HTTP 500')
+        self.assertEqual(self.fetch_json.call_count, 2)
+
+    def test_authorization_header_present_on_paginated_calls(self):
+        # get_all funnels through call_api, but pin it once: every page must
+        # carry the Bearer token, not just the first.
+        self.fetch_json.side_effect = [
+            (True, [{'id': 1}]),
+            (True, []),
+        ]
+        bexio.get_all(API_TOKEN, '/2.0/contact')
+        for call in self.fetch_json.call_args_list:
+            self.assertEqual(
+                call.kwargs['header']['Authorization'], f'Bearer {API_TOKEN}'
+            )
+
+
+# ---------------------------------------------------------------------------
+# Thin CRUD wrappers - one representative per category, plus the wrappers
+# whose argument handling is non-trivial.
+# ---------------------------------------------------------------------------
+
+
+class TestThinWrappers(BexioTestBase):
+    def test_fetch_accounts_targets_account_url(self):
+        # Representative for all read-only fetch_* wrappers that just delegate
+        # to get_all(api_token, BEXIO_API_*_URL).
+        self.fetch_json.return_value = (True, [])
+        bexio.fetch_accounts(API_TOKEN)
+        self.assertTrue(
+            self.sent_url().startswith(
+                f'{bexio.BEXIO_API_BASE_URL}{bexio.BEXIO_API_ACCOUNT_URL}?'
+            )
+        )
+
+    def test_fetch_contacts_default_archived_false(self):
+        self.fetch_json.return_value = (True, [])
+        bexio.fetch_contacts(API_TOKEN)
+        self.assertEqual(_query(self.sent_url())['show_archived'], 'False')
+
+    def test_fetch_contacts_archived_true(self):
+        self.fetch_json.return_value = (True, [])
+        bexio.fetch_contacts(API_TOKEN, archived=True)
+        self.assertEqual(_query(self.sent_url())['show_archived'], 'True')
+
+    def test_create_contact_posts_to_contact_url_with_data(self):
+        # Representative for all create_* wrappers.
+        payload = {'name_1': 'Linuxfabrik', 'contact_type_id': 1}
+        self.fetch_json.return_value = (True, {'id': 42})
+        bexio.create_contact(API_TOKEN, data=payload)
+        self.assertEqual(
+            self.sent_url(),
+            f'{bexio.BEXIO_API_BASE_URL}{bexio.BEXIO_API_CONTACT_URL}',
+        )
+        self.assertEqual(self.sent_kwargs()['data'], payload)
+
+    def test_edit_contact_appends_id_to_url(self):
+        # Representative for all edit_* wrappers.
+        self.fetch_json.return_value = (True, {'id': 42})
+        bexio.edit_contact(API_TOKEN, 42, data={'name_1': 'Updated'})
+        self.assertEqual(
+            self.sent_url(),
+            f'{bexio.BEXIO_API_BASE_URL}{bexio.BEXIO_API_CONTACT_URL}/42',
+        )
+
+    def test_edit_contact_int_id_stringified(self):
+        # The wrapper does str(contact_id); pin that an int survives the
+        # concatenation without a TypeError.
+        self.fetch_json.return_value = (True, {})
+        bexio.edit_contact(API_TOKEN, 42, data={})
+        self.assertTrue(self.sent_url().endswith('/42'))
+
+    def test_delete_contact_relation_uses_delete_method(self):
+        # The only wrapper that overrides the HTTP method; high-value test.
+        self.fetch_json.return_value = (True, {})
+        bexio.delete_contact_relation(API_TOKEN, 7)
+        self.assertEqual(self.sent_kwargs()['method'], 'DELETE')
+
+    def test_delete_contact_relation_url_has_id(self):
+        self.fetch_json.return_value = (True, {})
+        bexio.delete_contact_relation(API_TOKEN, 7)
+        self.assertEqual(
+            self.sent_url(),
+            f'{bexio.BEXIO_API_BASE_URL}{bexio.BEXIO_API_CONTACT_RELATION_URL}/7',
+        )
+
+    def test_url_constants_match_documented_endpoints(self):
+        # Pin the URL constants. Catches accidental edits and makes the
+        # version-pinning of the Bexio API surface explicit in one place.
+        self.assertEqual(bexio.BEXIO_API_BASE_URL, 'https://api.bexio.com')
+        self.assertEqual(bexio.BEXIO_API_ACCOUNT_URL, '/2.0/accounts')
+        self.assertEqual(bexio.BEXIO_API_BANK_ACCOUNT_URL, '/3.0/banking/accounts')
+        self.assertEqual(bexio.BEXIO_API_BUSINESS_ACTIVITY_URL, '/2.0/client_service')
+        self.assertEqual(bexio.BEXIO_API_CONTACT_URL, '/2.0/contact')
+        self.assertEqual(bexio.BEXIO_API_CONTACT_GROUP_URL, '/2.0/contact_group')
+        self.assertEqual(bexio.BEXIO_API_CONTACT_RELATION_URL, '/2.0/contact_relation')
+        self.assertEqual(bexio.BEXIO_API_CONTACT_SECTOR_URL, '/2.0/contact_branch')
+        self.assertEqual(bexio.BEXIO_API_COUNTRY_URL, '/2.0/country')
+        self.assertEqual(bexio.BEXIO_API_CURRENCY_URL, '/3.0/currencies')
+        self.assertEqual(bexio.BEXIO_API_INVOICE_URL, '/2.0/kb_invoice')
+        self.assertEqual(bexio.BEXIO_API_ITEM_URL, '/2.0/article')
+        self.assertEqual(bexio.BEXIO_API_LANGUAGE_URL, '/2.0/language')
+        self.assertEqual(bexio.BEXIO_API_SALUTATION_URL, '/2.0/salutation')
+        self.assertEqual(bexio.BEXIO_API_PAYMENT_TYPE_URL, '/2.0/payment_type')
+        self.assertEqual(bexio.BEXIO_API_PROJECT_STATUS_URL, '/2.0/pr_project_state')
+        self.assertEqual(bexio.BEXIO_API_PROJECT_TYPE_URL, '/2.0/pr_project_type')
+        self.assertEqual(bexio.BEXIO_API_PROJECT_URL, '/2.0/pr_project')
+        self.assertEqual(bexio.BEXIO_API_STOCK_AREA_URL, '/2.0/stock_place')
+        self.assertEqual(bexio.BEXIO_API_STOCK_LOCATION_URL, '/2.0/stock')
+        self.assertEqual(bexio.BEXIO_API_TAX_URL, '/3.0/taxes')
+        self.assertEqual(bexio.BEXIO_API_TIMESHEET_URL, '/2.0/timesheet')
+        self.assertEqual(bexio.BEXIO_API_TIMESHEET_STATUS_URL, '/2.0/timesheet_status')
+        self.assertEqual(bexio.BEXIO_API_TITLE_URL, '/2.0/title')
+        self.assertEqual(bexio.BEXIO_API_UNIT_URL, '/2.0/unit')
+        self.assertEqual(bexio.BEXIO_API_USER_URL, '/3.0/users')
+
+
+if __name__ == '__main__':
+    unittest.main()
