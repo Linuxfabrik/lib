@@ -11,12 +11,20 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060701'
+__version__ = '2026061901'
 
 import datetime
 import re
 import time
-import zoneinfo
+
+try:
+    import zoneinfo
+except ImportError:
+    # zoneinfo is part of the standard library since Python 3.9. On older
+    # interpreters (such as the system Python 3.6 on RHEL 8 / Rocky 8) it is
+    # missing; degrade to UTC in get_timezone() instead of failing at import,
+    # so consumers that do not need named time zones keep working.
+    zoneinfo = None
 
 
 def epoch2iso(timestamp):
@@ -62,6 +70,9 @@ def get_timezone(tz_name):
     >>> get_timezone('Invalid/Zone').key
     'Etc/UTC'
     """
+    if zoneinfo is None:
+        # Python < 3.9 without the zoneinfo backport
+        return datetime.timezone.utc
     try:
         return zoneinfo.ZoneInfo(tz_name)
     except Exception:
@@ -69,7 +80,6 @@ def get_timezone(tz_name):
         try:
             return zoneinfo.ZoneInfo('Etc/UTC')
         except Exception:
-            # Python < 3.9
             return datetime.timezone.utc
 
 

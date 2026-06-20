@@ -19,7 +19,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061201'
+__version__ = '2026061901'
 
 
 def run(test_instance, plugin, testcase):
@@ -600,20 +600,24 @@ def run_mysql_compatible_from_containerfile(
     tag = f'lfmp-mysql-{dockerfile_name}'.lower().replace('_', '-')
 
     # No parenthesized context managers: they are Python 3.10+ syntax and break
-    # parsing on RHEL 8's default Python 3.6.
-    with (
-        DockerImage(
-            path=build_dir,
-            dockerfile_path=dockerfile_name,
-            tag=tag,
-            clean_up=False,
-        ) as image,
-        _run_mysql_compatible_resolved(
-            str(image.tag),
-            command,
-            seed,
-        ) as result,
-    ):
+    # parsing on RHEL 8's default Python 3.6. Use an ExitStack so the module
+    # stays importable on the oldest interpreters our plugins run on.
+    with contextlib.ExitStack() as stack:
+        image = stack.enter_context(
+            DockerImage(
+                path=build_dir,
+                dockerfile_path=dockerfile_name,
+                tag=tag,
+                clean_up=False,
+            )
+        )
+        result = stack.enter_context(
+            _run_mysql_compatible_resolved(
+                str(image.tag),
+                command,
+                seed,
+            )
+        )
         yield result
 
 
