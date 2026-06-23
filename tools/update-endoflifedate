@@ -25,7 +25,7 @@ DESCRIPTION = """Simply creates the file "endoflifedate.py" for a given list of 
 
 DEFAULT_FILE = 'lib/endoflifedate.py'
 
-VERSION = '2026061001' # adapt this if one of PRODUCTS was added/deleted
+VERSION = '2026062301' # adapt this if one of PRODUCTS was added/deleted
 PRODUCTS = [
     'https://endoflife.date/api/apache-http-server.json',
     'https://endoflife.date/api/composer.json',
@@ -53,6 +53,7 @@ PRODUCTS = [
     'https://endoflife.date/api/rhel.json',
     'https://endoflife.date/api/rocket-chat.json',
     'https://endoflife.date/api/solr.json',
+    'https://endoflife.date/api/tomcat.json',
     'https://endoflife.date/api/valkey.json',
     'https://endoflife.date/api/wordpress.json',
 ]
