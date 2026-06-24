@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lftest.py: no longer breaks at import with a `SyntaxError` on Python interpreters older than 3.10 (such as the system Python 3.6 on RHEL 8 / Rocky 8, and our supported Python 3.9 floor). A parenthesized context manager was rewritten as nested `with` statements, so every plugin that imports this module stays runnable on those interpreters.
 * time.py: no longer fails to import on Python interpreters older than 3.9 (such as the system Python 3.6 on RHEL 8 / Rocky 8) where the `zoneinfo` module does not exist. Consumers that do not need named time zones keep working and fall back to UTC.
 
+### Security
+
+* Python 3.9 lockfile bumps the cryptography library to a release that ships a patched OpenSSL, closing a known vulnerability for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11.
+
 
 ## [v5.0.0] - 2026-06-12
 
