@@ -73,7 +73,7 @@ SENSITIVE_AUTH_PATTERN = re.compile(
 # Captures the prefix (group 1), replacing the credential value.
 
 
-def compile_regex(regex, key=''):
+def compile_regex(regex, key='', flags=0):
     """
     Return a compiled regex from a string or list of strings.
 
@@ -82,6 +82,7 @@ def compile_regex(regex, key=''):
     ### Parameters
     - **regex** (`str` or `list`): A regex string or a list of regex strings to compile.
     - **key** (`str`, optional): A label or identifier string for better error messages. Defaults to ''.
+    - **flags** (`int`, optional): Flags passed to `re.compile`, e.g. `re.IGNORECASE`. Defaults to `0`.
 
     ### Returns
     - **tuple** or **list of tuples**:
@@ -100,7 +101,7 @@ def compile_regex(regex, key=''):
 
     def _compile(rgx):
         try:
-            return True, re.compile(rgx)
+            return True, re.compile(rgx, flags)
         except re.error as e:
             return (
                 False,

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * endoflifedate.py: bundled offline End-of-Life data for Apache Tomcat.
+* txt.py: `compile_regex()` accepts a `flags` argument, so callers can compile case-insensitive patterns (`re.IGNORECASE`) without a separate helper.
 
 ### Fixed
 
