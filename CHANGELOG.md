@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v5.1.0] - 2026-06-24
+
 ### Added
 
 * endoflifedate.py: bundled offline End-of-Life data for Apache Tomcat.
@@ -688,7 +693,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v5.1.0...HEAD
+[v5.1.0]: https://github.com/Linuxfabrik/lib/compare/v5.0.0...v5.1.0
 [v5.0.0]: https://github.com/Linuxfabrik/lib/compare/v4.4.0...v5.0.0
 [v4.4.0]: https://github.com/Linuxfabrik/lib/compare/v4.3.0...v4.4.0
 [v4.3.0]: https://github.com/Linuxfabrik/lib/compare/v4.2.0...v4.3.0
