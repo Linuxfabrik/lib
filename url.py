@@ -501,7 +501,9 @@ def fetch(
     try:
         # No parenthesized context managers here: they are Python 3.10+ syntax and
         # break `import lib.url` on RHEL 8's default Python 3.6.
+        # fmt: off
         with client, client.stream(method, url, headers=headers, content=body) as response:
+            # fmt: on
             tls_version, alpn, peer_cert_der = _capture_tls_info(response)
             # Read body and capture metadata before raise_for_status() so the
             # response_on_error path can surface error bodies, status codes and
