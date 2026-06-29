@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Changed
+
+* args.py: the developer-only `--test` parameter is now hidden from plugin `--help` output. It is still accepted on the command line, so the unit-test suite keeps working.
 
 
 ## [v5.1.0] - 2026-06-24
