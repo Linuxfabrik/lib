@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061202'
+__version__ = '2026063001'
 
 
 import os
@@ -31,7 +31,9 @@ RETC_SSHPASS = {
 }
 
 
-def shell_exec(cmd, env=None, stdin='', cwd=None, timeout=None, lc_all='C'):
+def shell_exec(
+    cmd, env=None, stdin='', cwd=None, timeout=None, lc_all='C', run_as=None
+):
     """
     Execute a command in a subprocess, given as a list of arguments (argv).
 
@@ -64,6 +66,16 @@ def shell_exec(cmd, env=None, stdin='', cwd=None, timeout=None, lc_all='C'):
     - **lc_all** (`str`, optional):
       Value to set for the `LC_ALL` environment variable, forcing command output locale.
       Defaults to `'C'` (POSIX "C" locale, i.e., English).
+    - **run_as** (`str`, optional):
+      Local user name to run the command as. The command is wrapped so it runs as that
+      user with the user's session runtime directory exported
+      (`sudo -u <user> env XDG_RUNTIME_DIR=/run/user/<uid> ...`), which per-user session
+      services such as rootless Podman or `systemctl --user` need in order to find the
+      right session when invoked from root or another account. The caller must already
+      be allowed to `sudo -u <user>` (root is, by default). When `run_as` is set and no
+      `cwd` is given, `cwd` defaults to `/` so `sudo` can chdir as the target user
+      without a harmless warning. An unknown user yields `(False, error_message)`.
+      Defaults to None (run as the current user). Unix-only.
 
     ### Returns
     - **tuple**:
@@ -88,6 +100,24 @@ def shell_exec(cmd, env=None, stdin='', cwd=None, timeout=None, lc_all='C'):
             'shell_exec() requires cmd as a list of arguments '
             f'(for example ["df", "-h"]), got {type(cmd).__name__}.'
         )
+
+    if run_as:
+        import pwd  # Unix-only; per-user session switching does not apply on Windows
+
+        try:
+            uid = pwd.getpwnam(run_as).pw_uid
+        except KeyError:
+            return False, f'Unknown user: {run_as}'
+        cmd = [
+            'sudo',
+            '-u',
+            run_as,
+            'env',
+            f'XDG_RUNTIME_DIR=/run/user/{uid}',
+            *cmd,
+        ]
+        if cwd is None:
+            cwd = '/'
 
     env = {**os.environ.copy(), **(env or {})}
     env['LC_ALL'] = lc_all
