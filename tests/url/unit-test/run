@@ -698,6 +698,94 @@ class TestFetchErrors(unittest.TestCase):
 
 
 # -----------------------------------------------------------------------------
+# fetch(): response_on_error
+# -----------------------------------------------------------------------------
+
+
+@skip_without_httpx
+class TestFetchResponseOnError(unittest.TestCase):
+    """The flag exists for APIs (e.g. Bexio) that return machine-readable error
+    details in the HTTP error body. Default behaviour is unchanged; opting in
+    swaps the formatted error message for the response body and (in extended
+    mode) the full response dict.
+    """
+
+    def _http_status_error(self, code):
+        req = httpx.Request('GET', 'https://example.com')
+        resp = httpx.Response(code, request=req)
+        return httpx.HTTPStatusError('err', request=req, response=resp)
+
+    def test_default_false_keeps_formatted_message(self):
+        # Regression guard for the unchanged default path.
+        resp = FakeStreamResponse(
+            body=b'{"error":"bad"}',
+            status_code=400,
+            raise_exc=self._http_status_error(400),
+        )
+        fake, _ = make_fake_client(resp)
+        with patch_client(fake):
+            ok, msg = url.fetch('https://example.com')
+        self.assertFalse(ok)
+        self.assertIn('HTTP error', msg)
+        self.assertIn('400', msg)
+        self.assertIn('Bad Request', msg)
+
+    def test_true_returns_decoded_body(self):
+        resp = FakeStreamResponse(
+            body=b'{"error":"validation failed"}',
+            status_code=400,
+            raise_exc=self._http_status_error(400),
+        )
+        fake, _ = make_fake_client(resp)
+        with patch_client(fake):
+            ok, body = url.fetch('https://example.com', response_on_error=True)
+        self.assertFalse(ok)
+        self.assertEqual(body, '{"error":"validation failed"}')
+
+    def test_true_extended_returns_full_dict(self):
+        # Pins that status_code, response_header and timings.total are populated
+        # on the error path.
+        resp = FakeStreamResponse(
+            body=b'{"error":"x"}',
+            status_code=422,
+            headers={'Content-Type': 'application/json', 'X-Req-Id': 'abc'},
+            elapsed_seconds=0.75,
+            raise_exc=self._http_status_error(422),
+        )
+        fake, _ = make_fake_client(resp)
+        with no_timing_transport(), patch_client(fake):
+            ok, res = url.fetch(
+                'https://example.com',
+                extended=True,
+                response_on_error=True,
+            )
+        self.assertFalse(ok)
+        self.assertEqual(res['response'], '{"error":"x"}')
+        self.assertEqual(res['status_code'], 422)
+        self.assertEqual(res['response_header']['x-req-id'], 'abc')
+        self.assertEqual(res['timings']['total'], 0.75)
+
+    def test_true_only_affects_http_status_error(self):
+        # A transport-level failure (ConnectError) must still surface as the
+        # formatted "URL error" message, not as a body or extended dict.
+        fake, _ = make_fake_client(stream_exc=httpx.ConnectError('refused'))
+        with patch_client(fake):
+            ok, msg = url.fetch('https://example.com', response_on_error=True)
+        self.assertFalse(ok)
+        self.assertIn('URL error', msg)
+        self.assertIn('refused', msg)
+
+    def test_true_success_response_unchanged(self):
+        # A 2xx response with response_on_error=True behaves like the default.
+        resp = FakeStreamResponse(body=b'ok', status_code=200)
+        fake, _ = make_fake_client(resp)
+        with patch_client(fake):
+            ok, body = url.fetch('https://example.com', response_on_error=True)
+        self.assertTrue(ok)
+        self.assertEqual(body, 'ok')
+
+
+# -----------------------------------------------------------------------------
 # fetch_json()
 # -----------------------------------------------------------------------------
 
@@ -795,6 +883,7 @@ class TestFetchJson(unittest.TestCase):
                 tls_min='1.2',
                 tls_max='1.3',
                 method='POST',
+                response_on_error=True,
             )
         _, kwargs = m.call_args
         self.assertTrue(kwargs['insecure'])
@@ -809,6 +898,22 @@ class TestFetchJson(unittest.TestCase):
         self.assertEqual(kwargs['tls_min'], '1.2')
         self.assertEqual(kwargs['tls_max'], '1.3')
         self.assertEqual(kwargs['method'], 'POST')
+        self.assertTrue(kwargs['response_on_error'])
+
+    def test_response_on_error_defaults_to_false(self):
+        with mock.patch.object(url, 'fetch', return_value=(True, '{}')) as m:
+            url.fetch_json('https://example.com')
+        self.assertFalse(m.call_args.kwargs['response_on_error'])
+
+    def test_response_on_error_failure_body_returned_unparsed(self):
+        # When fetch() returns (False, body) because of response_on_error=True,
+        # fetch_json() forwards the raw body without attempting json.loads().
+        # Bexio relies on this to inspect error details verbatim.
+        body = '{"error":{"code":"invalid_data"}}'
+        with mock.patch.object(url, 'fetch', return_value=(False, body)):
+            ok, res = url.fetch_json('https://example.com', response_on_error=True)
+        self.assertFalse(ok)
+        self.assertEqual(res, body)
 
 
 # -----------------------------------------------------------------------------

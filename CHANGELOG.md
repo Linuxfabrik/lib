@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* bexio.py: new library
+* url.py: added new optional flag `response_on_error` for `fetch()`/`fetch_json()` to return the response body instead of an error message on failure. Primarily for use with APIs that provide machine-readable error responses such as the Bexio API.
+
 ### Changed
 
 * args.py: the developer-only `--test` parameter is now hidden from plugin `--help` output. It is still accepted on the command line, so the unit-test suite keeps working.
