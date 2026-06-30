@@ -10,8 +10,10 @@
 
 """Extends argparse by new input argument data types on demand."""
 
+import argparse
+
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041901'
+__version__ = '2026062901'
 
 
 # Help text descriptions only - no "Default:" here.
@@ -100,9 +102,11 @@ HELP_TEXTS = {
         'A computer that is synchronised to a stratum 2 computer is at stratum 3, '
         'and so on.'
     ),
-    '--test': (
-        'For unit tests. Needs "path-to-stdout-file,path-to-stderr-file,expected-retc".'
-    ),
+    # Developer-only switch for the unit-test harness. Mapped to argparse.SUPPRESS
+    # so it stays accepted on the command line but is hidden from --help (and
+    # therefore from the generated READMEs and Director baskets), like the
+    # deprecated parameters. Consumers keep declaring it via help('--test').
+    '--test': argparse.SUPPRESS,
     '--timeout': 'Network timeout in seconds.',
     '--url': 'URL to the endpoint.',
     '--username': 'Username.',
