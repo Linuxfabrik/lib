@@ -25,7 +25,7 @@
 
 # Linuxfabrik Python Libraries
 
-A mature, production-grade Python library collection providing 35+ modules with 300+ functions for system administration, monitoring, and infrastructure automation. These libraries are used across several Linuxfabrik projects -- most prominently the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins) (Nagios/Icinga check plugins), but also in [ChecklistFabrik](https://github.com/Linuxfabrik/checklistfabrik) and other tools.
+A mature, production-grade Python library collection providing 40 modules with 300+ functions for system administration, monitoring, and infrastructure automation. These libraries are used across several Linuxfabrik projects -- most prominently the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins) (Nagios/Icinga check plugins), but also in [ChecklistFabrik](https://github.com/Linuxfabrik/checklistfabrik) and other tools.
 
 > If these libraries help you developing your own monitoring plugins, system tools or infrastructure automation, please give it a star.
 
@@ -67,13 +67,13 @@ These libraries are built with a clear set of priorities:
 
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
-| **args.py** | Extends `argparse` with custom input types for monitoring thresholds and common parameters. | `csv()`, `float_or_none()`, `int_or_none()`, `number_unit_method()` |
-| **base.py** | The central library for plugin development. Provides state evaluation, threshold comparison, performance data formatting, ASCII table output, and the `coe()` error-handling pattern. | `coe()`, `get_perfdata()`, `get_state()`, `get_table()`, `get_worst()`, `match_range()`, `oao()`, `state2str()` |
+| **args.py** | Extends `argparse` with custom input types for monitoring thresholds and a registry of reusable `--help` texts. | `csv()`, `float_or_none()`, `help()`, `int_or_none()`, `number_unit_method()` |
+| **base.py** | The central library for plugin development. Provides state evaluation, threshold comparison, performance data formatting, ASCII table output, and the `coe()` error-handling pattern. | `coe()`, `cu()`, `get_perfdata()`, `get_state()`, `get_table()`, `get_worst()`, `oao()`, `state2str()` |
 | **globals.py** | Defines the four Nagios/Icinga plugin states: `STATE_OK` (0), `STATE_WARN` (1), `STATE_CRIT` (2), `STATE_UNKNOWN` (3). | -- |
-| **human.py** | Converts raw numbers and durations to human-readable representations and back. Supports binary/SI prefixes and Nagios range syntax with units. | `bytes2human()`, `human2bytes()`, `seconds2human()`, `human2seconds()`, `number2human()` |
-| **lftest.py** | Test harness for running plugin unit tests against expected STDOUT/STDERR output files. | `test()` |
-| **time.py** | Date/time conversions between UNIX epochs, ISO strings, datetime objects, and weekday names. Timezone-aware. | `epoch2iso()`, `now()`, `timestr2epoch()`, `timestrdiff()`, `utc_offset()` |
-| **txt.py** | Text processing: encoding conversion, regex compilation, substring extraction, multi-line parsing, sensitive data redaction, and pluralization. | `sanitize_sensitive_data()`, `extract_str()`, `mltext2array()`, `to_text()`, `to_bytes()` |
+| **human.py** | Converts raw numbers, byte sizes, bit rates, and durations to human-readable representations and back. Supports binary/SI prefixes and Nagios range syntax with units. | `bits2human()`, `bps2human()`, `bytes2human()`, `human2bytes()`, `human2seconds()`, `humanrange2bytes()`, `number2human()`, `seconds2human()` |
+| **lftest.py** | Test harness for data-driven plugin unit tests, spinning up throwaway containers (including MySQL/MariaDB) as fixtures. | `attach_each()`, `attach_tests()`, `run()`, `run_container()`, `run_mysql_compatible_from_containerfile()`, `test()` |
+| **time.py** | Date/time conversions between UNIX epochs, ISO strings, and datetime objects, plus time-macro expansion and time differences. Timezone-aware. | `epoch2iso()`, `now()`, `timestr2datetime()`, `timestrdiff()` |
+| **txt.py** | Text processing: regex compilation, substring extraction, multi-line parsing, sensitive data redaction, pluralization, and byte/text encoding conversion. | `compile_regex()`, `extract_str()`, `match_regex()`, `mltext2array()`, `pluralize()`, `to_bytes()`, `to_text()` |
 | **version.py** | Software version parsing, comparison, and End-of-Life checking against [endoflife.date](https://endoflife.date). | `check_eol()`, `version()`, `version2float()` |
 
 
@@ -82,20 +82,20 @@ These libraries are built with a clear set of priorities:
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
 | **cache.py** | A simple SQLite-based key-value store with optional key expiration. Used for persisting state between plugin runs. | `get()`, `set()` |
-| **db_mysql.py** | MySQL/MariaDB client with connection management, query execution, and privilege checking. | `connect()`, `select()`, `check_privileges()` |
-| **db_sqlite.py** | Full SQLite interface: table/index creation, CRUD operations, CSV import, regex support, and automatic load computation for time-series data. | `connect()`, `select()`, `insert()`, `create_table()`, `compute_load()`, `import_csv()` |
+| **db_mysql.py** | MySQL/MariaDB client with connection management, query execution, privilege checking, and server flavor/status/variable/replication inspection. | `check_privileges()`, `connect()`, `get_all_variables()`, `get_engines()`, `get_replica_status()`, `lod2dict()`, `select()` |
+| **db_sqlite.py** | Full SQLite interface: table/index creation, CRUD operations, CSV import, regex support, and per-second counter deltas for time-series data. | `connect()`, `create_index()`, `create_table()`, `cut()`, `delete()`, `insert()`, `per_second_deltas()`, `select()` |
 
 
 ### System & OS
 
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
-| **disk.py** | File I/O, directory walking, CSV/environment file parsing, partition listing, device-mapper resolution, and file ownership lookup. | `read_file()`, `walk_directory()`, `grep_file()`, `read_csv()`, `get_real_disks()` |
+| **disk.py** | File I/O, directory walking, CSV/environment file parsing, block device and partition listing, and temp directory management. | `dir_exists()`, `file_exists()`, `get_real_disks()`, `get_tmpdir()`, `grep_file()`, `read_file()` |
 | **distro.py** | Linux distribution detection. Returns normalized facts including distribution name, version, and Ansible-compatible `os_family`. | `get_distribution_facts()` |
-| **dmidecode.py** | Parses `dmidecode` output into structured data. Extracts CPU, RAM, firmware, serial number, manufacturer, and model information. | `get_data()`, `cpu_type()`, `ram()`, `manufacturer()`, `model()`, `serno()` |
+| **dmidecode.py** | Parses `dmidecode` output into structured data. Extracts CPU, RAM, firmware, serial number, manufacturer, and model information. | `cpu_speed()`, `cpu_type()`, `firmware()`, `get_data()`, `manufacturer()`, `model()`, `ram()`, `serno()` |
 | **endoflifedate.py** | Bundled End-of-Life data from [endoflife.date](https://endoflife.date) for offline version checks when internet access is unavailable. | -- |
 | **psutil.py** | Wrapper around `psutil` for retrieving mounted disk partitions with device, mount point, and filesystem type. | `get_partitions()` |
-| **shell.py** | Subprocess execution with pipeline support, regex filtering, configurable locale, and timeout handling. Works on Linux and Windows. | `shell_exec()`, `get_command_output()` |
+| **shell.py** | Runs external commands from an argv list without a shell, guards option-style CLI values, and locates executables in `PATH`. | `safe_cli_value()`, `shell_exec()`, `which()` |
 
 
 ### Networking & HTTP
@@ -103,8 +103,9 @@ These libraries are built with a clear set of priorities:
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
 | **feedparser.py** | Parses Atom and RSS feeds from URLs using BeautifulSoup. | `parse()` |
-| **net.py** | Low-level networking: TCP/UDP sockets, SSL connections, Unix domain sockets, public IP lookup, hostname validation, and CIDR conversion. | `fetch()`, `fetch_ssl()`, `fetch_socket()`, `get_public_ip()`, `is_valid_hostname()` |
-| **url.py** | HTTP client for fetching HTML, JSON, or raw data. Supports GET/POST, Basic/Digest authentication, SSL/TLS options, custom headers, and proxy control. | `fetch()`, `fetch_json()`, `get_latest_version_from_github()`, `strip_tags()` |
+| **net.py** | Low-level networking: TCP/UDP/TLS and Unix domain sockets, public IP lookup, subnet enumeration, netmask conversion, and hostname validation. | `cidr_to_hosts()`, `fetch()`, `fetch_socket()`, `get_public_ip()`, `get_subnet_hosts()`, `ip_to_cidr()` |
+| **ssh.py** | Runs commands and copies files over SSH by building shell-free `ssh`/`scp`/`rsync` argument lists. | `build_options()`, `rsync()`, `run()`, `scp()`, `target()` |
+| **url.py** | HTTP/1.x and HTTP/2 client (httpx) for HTML, JSON, or raw data. Supports GET/POST, Basic/Digest authentication, TLS version pinning, proxy control, and connection telemetry. | `fetch()`, `fetch_json()`, `get_latest_version_from_github()`, `split_basic_auth()`, `strip_tags()` |
 
 
 ### Windows Integration
@@ -113,28 +114,29 @@ These libraries are built with a clear set of priorities:
 |--------|-------------|---------------|
 | **powershell.py** | Executes PowerShell commands locally (on Windows hosts). | `run_ps()` |
 | **smb.py** | Native SMB/CIFS file access: list, glob, and open files on remote shares with encryption support. | `glob()`, `open_file()` |
-| **winrm.py** | Executes commands and PowerShell scripts on remote Windows hosts via WinRM. Supports Kerberos, NTLM, CredSSP, and JEA (Just Enough Administration). | `run_cmd()`, `run_ps()` |
+| **winrm.py** | Executes commands and PowerShell scripts on remote Windows hosts via WinRM/PSRP, preferring pypsrp with a pywinrm fallback. | `run_cmd()`, `run_ps()` |
 
 
 ### API Integrations
 
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
-| **grassfish.py** | [Grassfish](https://www.grassfish.com/) digital signage REST API. | `fetch_json()` |
-| **huawei.py** | Huawei storage system status parsing (controller models, health, LED status). | `get_controller_model()` |
-| **icinga.py** | Icinga2 REST API client for querying services, setting acknowledgements, and managing downtimes. | `get_service()`, `set_ack()`, `set_downtime()`, `remove_downtime()` |
-| **infomaniak.py** | [Infomaniak](https://www.infomaniak.com/) Swiss Backup REST API for events and backup products. | `get_events()`, `get_swiss_backup_products()` |
-| **jitsi.py** | [Jitsi Meet](https://jitsi.org/) server statistics API. | `get_data()` |
-| **keycloak.py** | [Keycloak](https://www.keycloak.org/) identity provider API with OIDC discovery and admin token management. | `discover_oidc_endpoints()`, `obtain_admin_token()`, `get_data()` |
-| **librenms.py** | [LibreNMS](https://www.librenms.org/) monitoring API with state conversion. | `get_data()` |
-| **nextcloud.py** | [Nextcloud](https://nextcloud.com/) OCC command execution. | `run_occ()` |
-| **nodebb.py** | [NodeBB](https://nodebb.org/) forum API. | `get_data()` |
-| **qts.py** | [QNAP QTS](https://www.qnap.com/) NAS API with authentication. | `get_auth_sid()` |
-| **redfish.py** | [Redfish](https://www.dmtf.org/standards/redfish) BMC API for chassis, thermal, power, and storage monitoring. | `get_chassis()`, `get_thermal()`, `get_power()` |
-| **rocket.py** | [Rocket.Chat](https://www.rocket.chat/) API for statistics, room management, and webhooks. | `get_token()`, `get_stats()`, `send2webhook()` |
-| **uptimerobot.py** | [UptimeRobot](https://uptimerobot.com/) API for monitor and alert management. | `get_monitors()`, `new_monitor()`, `get_account_details()` |
-| **veeam.py** | [Veeam](https://www.veeam.com/) Backup & Replication Enterprise Manager API. | `get_token()` |
-| **wildfly.py** | [WildFly/JBoss](https://www.wildfly.org/) application server management API (standalone and domain mode). | `get_data()` |
+| **bexio.py** | [Bexio](https://www.bexio.com/) business software REST API (contacts, invoices, projects, items, timesheets, and more). | `call_api()`, `fetch_accounts()`, `fetch_contacts()`, `fetch_invoices()`, `fetch_projects()`, `get_all()` |
+| **grassfish.py** | [Grassfish](https://www.grassfish.com/) digital signage REST API. | `fetch_json()`, `set_player_defaults()`, `set_screen_defaults()` |
+| **huawei.py** | Huawei [OceanStor/Dorado](https://www.huawei.com/) storage REST API, decoding its numeric status, model, and hardware codes. | `get_data()`, `get_health_status()`, `get_running_status()`, `get_uuid()` |
+| **icinga.py** | [Icinga2](https://icinga.com/) REST API client for querying services and managing acknowledgements and downtimes. | `get_service()`, `remove_ack()`, `remove_downtime()`, `set_ack()`, `set_downtime()` |
+| **infomaniak.py** | [Infomaniak](https://www.infomaniak.com/) Swiss Backup REST API for events, backup products, and slots. | `get_events()`, `get_swiss_backup_products()`, `get_swiss_backup_slots()` |
+| **jitsi.py** | [Jitsi Meet](https://jitsi.org/) server statistics endpoint, with optional HTTP Basic auth. | `get_data()` |
+| **keycloak.py** | [Keycloak](https://www.keycloak.org/) identity provider with OIDC discovery, admin-token retrieval, and Admin REST API access. | `discover_oidc_endpoints()`, `get_data()`, `obtain_admin_token()` |
+| **librenms.py** | [LibreNMS](https://www.librenms.org/) monitoring API, mapping its alert states to Nagios states. | `get_data()`, `get_prop()`, `get_state()` |
+| **nextcloud.py** | [Nextcloud](https://nextcloud.com/) `occ` command execution as the `config.php` owner, parsing JSON or text output. | `run_occ()` |
+| **nodebb.py** | [NodeBB](https://nodebb.org/) forum API, using a Bearer user token. | `get_data()` |
+| **qts.py** | QNAP [QTS](https://www.qnap.com/) NAS API with session authentication. | `get_auth_sid()` |
+| **redfish.py** | [Redfish](https://www.dmtf.org/standards/redfish) BMC API for chassis, systems, storage, managers, and sensors, deriving Nagios states and perfdata. | `get_auth_header()`, `get_perfdata()`, `get_state()`, `get_systems()` |
+| **rocket.py** | [Rocket.Chat](https://www.rocket.chat/) REST API for login, room/group history, statistics, and incoming webhooks. | `get_groups_history()`, `get_rooms_get()`, `get_rooms_info()`, `get_stats()`, `get_token()`, `send2webhook()` |
+| **uptimerobot.py** | [UptimeRobot](https://uptimerobot.com/) API for monitors, alert contacts, maintenance windows, and status pages. | `delete_monitor()`, `edit_monitor()`, `get_account_details()`, `get_alert_contacts()`, `get_monitors()`, `get_mwindows()`, `get_psps()`, `new_monitor()` |
+| **veeam.py** | [Veeam](https://www.veeam.com/) Backup & Replication Enterprise Manager REST API. | `get_token()` |
+| **wildfly.py** | [WildFly/JBoss](https://www.wildfly.org/) management API with digest auth (standalone and domain mode). | `get_data()` |
 
 
 ## Usage Example
