@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* args.py: added a central help text for the `--no-match-severity` parameter, used by filter-based plugins to make the state configurable when no item matches the filters.
 * bexio.py: new library
 * url.py: added new optional flag `response_on_error` for `fetch()`/`fetch_json()` to return the response body instead of an error message on failure. Primarily for use with APIs that provide machine-readable error responses such as the Bexio API.
 

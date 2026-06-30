@@ -86,6 +86,9 @@ HELP_TEXTS = {
         '`(?i)example` to match "example" regardless of case. '
         '`^(?!.*example).*$` to match any string except "example" (negative lookahead).'
     ),
+    '--no-match-severity': (
+        'State to report when no item matches the filters and nothing is checked.'
+    ),
     '--no-proxy': 'Do not use a proxy.',
     '--offset-eol': (
         'Alert n days before ("-30") or after an EOL date ("30" or "+30").'
