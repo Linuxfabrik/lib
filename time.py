@@ -11,7 +11,7 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061901'
+__version__ = '2026070101'
 
 import datetime
 import re
@@ -234,20 +234,26 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
     ### Parameters
     - **timestr** (`str`): The time string to convert.
     - **pattern** (`str`): The format of the time string (default is '%Y-%m-%d %H:%M:%S').
-      Pass the special value `'iso8601'` to parse ISO 8601 strings tolerantly, without knowing the
-      exact layout in advance: a trailing `Z` (UTC), an embedded offset (`+02:00`) and a date-only
-      value are all accepted.
+      Pass the special value `'iso8601'` to parse without knowing the exact `strptime` layout in
+      advance. Despite the name, this mode is backed by `datetime.fromisoformat()` (with a trailing
+      `Z` normalized to `+00:00` first), not a full ISO 8601 parser: it reliably handles RFC 3339
+      timestamps (date, `T`, time, and a `Z` or `+hh:mm` offset) and date-only values, but rejects
+      other valid ISO 8601 forms such as ordinal dates (`2024-015`). Which further layouts are
+      accepted depends on the Python version, because `fromisoformat()` was narrow before 3.11 and
+      broad from 3.11 on; RFC 3339 works consistently on 3.7+. A value that carries an offset (or
+      `Z`) keeps it; a value without one is treated per `tzinfo` (local time if `tzinfo` is None).
     - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.
       If provided, the parsed datetime is set to this timezone.
       If None, the time is assumed to be local time.
-      A value that already carries its own offset (e.g. an ISO 8601 string) keeps it.
+      A value that already carries its own offset (e.g. a `Z` or `+hh:mm` in an iso8601 string)
+      keeps it.
 
     ### Returns
     - **float**: The UNIX epoch timestamp (seconds since January 1, 1970, 00:00:00 UTC).
 
     ### Raises
-    - **ValueError**: If the time string does not match the provided format (or is not ISO 8601 when
-      `pattern='iso8601'`).
+    - **ValueError**: If the time string does not match the provided format (or is not accepted by
+      `datetime.fromisoformat()` after `Z` normalization when `pattern='iso8601'`).
 
     ### Example
         # Convert a time string in local time:

@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * args.py: the developer-only `--test` parameter is now hidden from plugin `--help` output. It is still accepted on the command line, so the unit-test suite keeps working.
+* time.py: clarified the `timestr2epoch(..., pattern='iso8601')` docstring - the mode is backed by `datetime.fromisoformat()`, not a full ISO 8601 parser, and which layouts it accepts beyond RFC 3339 depends on the Python version.
 
 
 ## [v5.1.0] - 2026-06-24
