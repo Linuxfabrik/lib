@@ -13,7 +13,7 @@
 import argparse
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026062901'
+__version__ = '2026070201'
 
 
 # Help text descriptions only - no "Default:" here.
@@ -111,6 +111,10 @@ HELP_TEXTS = {
     # deprecated parameters. Consumers keep declaring it via help('--test').
     '--test': argparse.SUPPRESS,
     '--timeout': 'Network timeout in seconds.',
+    '--unreachable-severity': (
+        'State to report when the online end-of-life source is unreachable and the check falls '
+        'back to the bundled offline data.'
+    ),
     '--url': 'URL to the endpoint.',
     '--username': 'Username.',
     '--verbose': (

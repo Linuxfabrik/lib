@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061201'
+__version__ = '2026070201'
 
 import datetime
 import json
@@ -33,6 +33,7 @@ def check_eol(
     insecure=False,
     no_proxy=False,
     timeout=8,
+    unreachable_severity='ok',
 ):
     """
     Check if a software version is End of Life (EOL) by comparing it to endoflife.date data.
@@ -52,13 +53,18 @@ def check_eol(
     - **insecure** (`bool`, optional): Disable SSL certificate verification.
     - **no_proxy** (`bool`, optional): Ignore proxy settings.
     - **timeout** (`int`, optional): Network timeout in seconds. Default: `8`.
+    - **unreachable_severity** (`str`, optional): State to report when endoflife.date is
+      unreachable and the check falls back to the bundled offline data. One of `'ok'`, `'warn'`,
+      `'crit'` or `'unknown'`. Default: `'ok'`.
 
     ### Returns
     - **tuple** (`int`, `str`):
       Nagios state and a descriptive status message.
 
     ### Notes
-    - Data is cached locally for 24 hours.
+    - A successful online lookup is cached locally for 24 hours. The bundled offline fallback is
+      not cached, so the next call retries the online source instead of masking a persistent
+      outage from `unreachable_severity`.
 
     ### Example
     >>> check_eol('https://endoflife.date/api/python.json', '3.10')
@@ -72,23 +78,36 @@ def check_eol(
     except (json.JSONDecodeError, TypeError):
         eol = None
 
+    used_fallback = False
     if not eol:
         success, eol = url.fetch_json(
             product, insecure=insecure, no_proxy=no_proxy, timeout=timeout
         )
         if not success or not eol:
+            # endoflife.date is unreachable. Fall back to the bundled offline snapshot.
             try:
                 from . import endoflifedate
 
                 eol = endoflifedate.ENDOFLIFE_DATE[product]
+                used_fallback = True
             except (ImportError, KeyError):
                 return STATE_UNKNOWN, f'product {product} unknown'
-        cache.set(
-            product,
-            json.dumps(eol),
-            expire=time.now() + 86400,
-            filename='linuxfabrik-lib-version.db',
-        )
+        else:
+            # Only cache genuine online responses. The bundled snapshot is static, so caching it
+            # would just suppress the retry against the online source for 24 hours.
+            cache.set(
+                product,
+                json.dumps(eol),
+                expire=time.now() + 86400,
+                filename='linuxfabrik-lib-version.db',
+            )
+
+    unreachable_state = (
+        base.str2state(unreachable_severity) if used_fallback else STATE_OK
+    )
+    unreachable_note = (
+        ', endoflife.date unreachable, using bundled data' if used_fallback else ''
+    )
 
     installed = version(version_string)
 
@@ -100,7 +119,10 @@ def check_eol(
             break
 
     if not cycles_eoldate:
-        return STATE_UNKNOWN, f'version {version_string} unknown'
+        return (
+            base.get_worst(STATE_UNKNOWN, unreachable_state),
+            f'version {version_string} unknown{unreachable_note}',
+        )
 
     msg = []
     state = STATE_OK
@@ -129,7 +151,8 @@ def check_eol(
     try:
         latest_versions = [version(item['latest']) for item in eol]
     except (TypeError, KeyError):
-        return state, ' '.join(msg)
+        state = base.get_worst(state, unreachable_state)
+        return state, ' '.join(msg) + unreachable_note
 
     major, minor, patch = installed
 
@@ -150,7 +173,8 @@ def check_eol(
                 state = STATE_WARN
             break
 
-    return state, ''.join(msg)
+    state = base.get_worst(state, unreachable_state)
+    return state, ''.join(msg) + unreachable_note
 
 
 def get_os_info():
