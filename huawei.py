@@ -13,7 +13,7 @@ needed by Huawei check plugins.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060501'
+__version__ = '2026070301'
 
 import time as _time
 
@@ -94,7 +94,7 @@ def get_cp_type(cp):
     return mapping.get(cp, 'Unknown')
 
 
-def get_creds(args):
+def get_creds(args, force_relogin=False):
     """
     Retrieve and cache Huawei appliance credentials.
 
@@ -115,6 +115,10 @@ def get_creds(args):
         - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
         - `TIMEOUT` (`int`): Request timeout in seconds.
         - `CACHE_EXPIRE` (`int`): Cache expiration time in minutes.
+    - **force_relogin** (`bool`, optional):
+      If `True`, ignore any cached token and perform a fresh login, overwriting the cache.
+      Used to recover from a cached session that the appliance no longer accepts (for example
+      after a controller reboot, a manual session reset, or the server-side 20-minute timeout).
 
     ### Returns
     - **tuple** (`str`, `str`):
@@ -133,11 +137,11 @@ def get_creds(args):
     token_key = f'huawei-{args.DEVICE_ID}-ibasetoken'
     cookie_key = f'huawei-{args.DEVICE_ID}-cookie'
 
-    ibasetoken = cache.get(token_key)
-    cookie = cache.get(cookie_key)
-
-    if ibasetoken:
-        return ibasetoken, cookie
+    if not force_relogin:
+        ibasetoken = cache.get(token_key)
+        cookie = cache.get(cookie_key)
+        if ibasetoken:
+            return ibasetoken, cookie
 
     uri = f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/sessions'
     header = {'Content-Type': 'application/json'}
@@ -172,11 +176,14 @@ def get_creds(args):
 
 def get_data(endpoint, args, params=''):
     """
-    Fetch data from a Huawei appliance endpoint, with automatic retry on authorization errors.
+    Fetch data from a Huawei appliance endpoint, re-authenticating on a stale session.
 
-    This function performs an authenticated GET request to a Huawei device's REST API. It handles
-    common transient errors (like unauthorized errors) by retrying the request several times before
-    giving up.
+    This function performs an authenticated GET request to a Huawei device's REST API. The first
+    attempt reuses the cached session token. If the appliance rejects the request, the most common
+    cause is a session the appliance no longer accepts (controller reboot, manual session reset, or
+    the server-side 20-minute timeout expiring before the local cache). Retrying with the same token
+    can never recover from that, so the next attempt forces a fresh login and retries. Any remaining
+    attempts cover short-lived transient errors.
 
     ### Parameters
     - **endpoint** (`str`):
@@ -193,11 +200,15 @@ def get_data(endpoint, args, params=''):
 
     ### Returns
     - **dict**:
-      The parsed JSON response from the API, plus an extra `counter` key showing retry attempts.
+      The parsed JSON response from the API, plus an extra `counter` key showing how many attempts
+      were made.
 
     ### Notes
-    - Automatically retries up to 9 times on authorization failures (`-401` errors).
-    - Waits 1 second between retries.
+    - Makes at most three attempts, forcing a fresh login before the second one, and waits one
+      second between attempts. The retry count is kept low on purpose so the total runtime stays
+      within the monitoring server's check timeout.
+    - The API reference documents no dedicated "session expired" status code, so a fresh login is
+      triggered on any non-zero error rather than by matching a specific code.
 
     ### Example
     >>> get_data('disk/list', args)
@@ -207,19 +218,24 @@ def get_data(endpoint, args, params=''):
         'counter': 1
     }
     """
-    ibasetoken, cookie = get_creds(args)
-
     uri = f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/{endpoint}{params}'
-    header = {
-        'Content-Type': 'application/json',
-        'iBaseToken': ibasetoken,
-        'Cookie': cookie,
-    }
 
-    max_retries = 9
+    max_attempts = 3
     counter = 0
+    result = {}
 
-    for attempt in range(1, max_retries + 1):
+    for attempt in range(1, max_attempts + 1):
+        counter = attempt
+        # On the second attempt, drop the cached session and log in again; a
+        # rejected request is most likely an expired session that retrying
+        # with the same token cannot fix. The third attempt then reuses that
+        # fresh token to absorb a remaining transient error.
+        ibasetoken, cookie = get_creds(args, force_relogin=attempt == 2)
+        header = {
+            'Content-Type': 'application/json',
+            'iBaseToken': ibasetoken,
+            'Cookie': cookie,
+        }
         result = base.coe(
             url.fetch_json(
                 uri,
@@ -229,10 +245,10 @@ def get_data(endpoint, args, params=''):
                 timeout=args.TIMEOUT,
             )
         )
-        counter = attempt
         if result.get('error', {}).get('code') == 0:
             break
-        _time.sleep(1)
+        if attempt < max_attempts:
+            _time.sleep(1)
 
     result['counter'] = counter
     return result
@@ -736,27 +752,59 @@ def get_running_status(rs):
     'Powering off (47)'
     """
     rs = int(rs)
+    # RUNNINGSTATUS is a shared enumeration across many object types, so a
+    # single object only ever reports a subset of these codes. The union is
+    # kept complete here so that every documented state renders a readable
+    # label instead of 'Unknown'.
     mapping = {
+        0: 'Unknown (0)',
         1: 'Normal (1)',
         2: 'Running (2)',
         3: 'Not running (3)',
         5: 'Sleep in High Temperature (5)',
+        8: 'Spin down (8)',
+        10: 'Link up (10)',
+        11: 'Link down (11)',
         12: 'Powering on (12)',
         13: 'Powered off (13)',
         14: 'Pre-Copy (14)',
         16: 'Reconstruction (16)',
         23: 'Synchronizing (23)',
+        26: 'Split (26)',
         27: 'Online (27)',
         28: 'Offline (28)',
+        30: 'Enabled (30)',
+        31: 'Disabled (31)',
+        32: 'Balancing (32)',
         33: 'To be recovered (33)',
+        34: 'Interrupted (34)',
         35: 'Invalid (35)',
+        37: 'Queuing (37)',
         41: 'Paused (41)',
+        43: 'Activated (43)',
+        44: 'Rolling back (44)',
+        45: 'Inactive (45)',
+        46: 'Idle (46)',
         47: 'Powering off (47)',
+        48: 'Charging (48)',
+        49: 'Charging completed (49)',
+        50: 'Discharging (50)',
         51: 'Upgrading (51)',
+        53: 'Initializing (53)',
+        74: 'Migration fault (74)',
+        75: 'Migrating (75)',
+        76: 'Migration completed (76)',
         93: 'Forcibly started (93)',
+        94: 'Error (94)',
         100: 'To be synchronized (100)',
+        101: 'Connecting (101)',
         103: 'Power-on failed (103)',
         105: 'Abnormal (105)',
+        106: 'Deleting (106)',
+        107: 'Modifying (107)',
+        110: 'Standby (110)',
+        111: 'Stopping (111)',
+        112: 'Faulty restoration (112)',
         114: 'Erasing (114)',
         115: 'Verifying (115)',
     }
