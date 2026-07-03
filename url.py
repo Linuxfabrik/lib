@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061901'
+__version__ = '2026070301'
 
 import base64
 import json
@@ -537,7 +537,21 @@ def fetch(
 
     try:
         charset = response_charset or 'UTF-8'
-        body_decoded = body_bytes.decode(charset) if to_text else body_bytes
+        if to_text:
+            try:
+                body_decoded = body_bytes.decode(charset)
+            except UnicodeDecodeError:
+                if response_charset:
+                    # The server explicitly declared this charset, so a mismatch
+                    # is a genuine error and must surface to the caller.
+                    raise
+                # No charset header was sent and our UTF-8 assumption was wrong.
+                # Latin-1 maps every byte 1:1 and never fails, preserving bytes
+                # like 0xb0 (° in ISO-8859-1) emitted by sensor firmware that
+                # serves non-UTF-8 content without a charset header.
+                body_decoded = body_bytes.decode('latin-1')
+        else:
+            body_decoded = body_bytes
 
         if not extended:
             return success, body_decoded
