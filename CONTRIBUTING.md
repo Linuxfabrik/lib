@@ -108,6 +108,25 @@ We follow [PEP 8 -- Style Guide for Python Code](https://www.python.org/dev/peps
 Libraries are documented using [numpydoc docstrings](https://numpydoc.readthedocs.io/en/latest/format.html#docstring-standard), so that `pydoc lib/base.py` produces useful output.
 
 
+### Text Encoding and Decoding
+
+Convert between `bytes` and `str` through `lib.txt.to_text()` and `lib.txt.to_bytes()`, not with bare `.decode()` / `.encode()`, so the encoding policy stays in one place.
+
+Decoding external bytes whose real encoding is not reliably known (subprocess stdout/stderr, WinRM and PowerShell output, file contents, sensor payloads) and that later end up in the plugin's printed result: pass `errors='strict_or_latin1'`.
+
+```python
+text = lib.txt.to_text(raw_bytes, errors='strict_or_latin1')
+```
+
+This decodes as UTF-8 and, on any invalid byte, retries the whole input as Latin-1. Latin-1 maps every byte `0x00`-`0xFF` one-to-one to a real Unicode scalar, so it never fails and re-encodes cleanly when the plugin prints its result.
+
+Do **not** leave such data on the default handler (`errors=None`, which maps to `surrogateescape`). `surrogateescape` turns an invalid byte into a lone surrogate that decodes without error but raises `UnicodeEncodeError` later, at the stdout re-encode. That moves the crash away from the cause and makes it hard to diagnose (see [Linuxfabrik/lib#256](https://github.com/Linuxfabrik/lib/issues/256)).
+
+When the source declares its encoding, decode with that codec first and only fall back. `url.fetch()` already does this for response bodies (declared HTTP charset, Latin-1 fallback only when none is declared), and `shell.py` decodes Windows subprocess output with the console code page.
+
+Encoding text back to bytes for stdin, hashing, sockets, or a base64 input: use `to_bytes()`. Base64 output is pure ASCII, so `to_text(base64.b64encode(...))` needs no special handler.
+
+
 ### PyLint
 
 To improve code quality, we use [PyLint](https://www.pylint.org/):

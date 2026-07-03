@@ -134,6 +134,15 @@ class TestRunPsDecoding(unittest.TestCase):
             result = powershell.run_ps('x')
         self.assertEqual(result['stdout'], text)
 
+    def test_non_utf8_output_falls_back_to_latin1(self):
+        # A non-UTF-8 byte (0xfc = ü in CP1252/Latin-1) must not crash and must
+        # survive a later stdout re-encode, so decode via Latin-1, not
+        # surrogateescape (Linuxfabrik/lib#256).
+        with patch_run(stdout=b'M\xfcller'):
+            result = powershell.run_ps('x')
+        self.assertEqual(result['stdout'], 'Müller')
+        result['stdout'].encode('utf-8')  # would raise under surrogateescape
+
     def test_stderr_not_merged_into_stdout(self):
         # The docstring guarantees stderr is kept separate.
         with patch_run(stdout=b'real-out', stderr=b'real-err'):
@@ -143,14 +152,23 @@ class TestRunPsDecoding(unittest.TestCase):
 
     def test_decoding_delegates_to_txt_to_text(self):
         # Prove run_ps uses txt.to_text rather than a bare .decode(), so the
-        # library's decoding policy (errors handling, nonstring, etc.) applies.
+        # library's decoding policy (UTF-8 with Latin-1 fallback) applies.
         with patch_run(stdout=b'X', stderr=b'Y'), mock.patch.object(
-            powershell.txt, 'to_text', side_effect=lambda _: 'DECODED'
+            powershell.txt, 'to_text', side_effect=lambda _, **kw: 'DECODED'
         ) as m:
             result = powershell.run_ps('x')
         self.assertEqual(result['stdout'], 'DECODED')
         self.assertEqual(result['stderr'], 'DECODED')
         self.assertEqual(m.call_count, 2)
+
+    def test_decoding_uses_strict_or_latin1(self):
+        # run_ps must ask to_text for the Latin-1 fallback policy, not the default
+        # surrogateescape, so non-UTF-8 output survives the later stdout re-encode.
+        with patch_run(stdout=b'X'), mock.patch.object(
+            powershell.txt, 'to_text', side_effect=lambda _, **kw: 'DECODED'
+        ) as m:
+            powershell.run_ps('x')
+        self.assertEqual(m.call_args.kwargs.get('errors'), 'strict_or_latin1')
 
 
 # ---------------------------------------------------------------------------

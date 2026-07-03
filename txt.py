@@ -18,7 +18,7 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026070301'
 
 import operator
 import re
@@ -470,7 +470,9 @@ def sanitize_sensitive_data(msg, replacement='******'):
 # project. Deliberate omissions vs. upstream: the Python 2 fallback for when the
 # `surrogateescape` error handler is unavailable (it always is on Python 3), and
 # the str() -> repr() -> empty UnicodeError guard in the `simplerepr` path
-# (irrelevant for the command output and numbers we convert).
+# (irrelevant for the command output and numbers we convert). Deliberate addition
+# vs. upstream: to_text() accepts the extra `errors='strict_or_latin1'` token that
+# retries the whole input as Latin-1 on a decode error (Linuxfabrik/lib#256).
 def to_bytes(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     """
     Convert an object to a byte string.
@@ -564,7 +566,15 @@ def to_text(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     - **errors** (`str`, optional): Error handler for decoding.
       Surrogate-related strategies (`surrogate_or_strict`,
       `surrogate_or_replace`, `surrogate_then_replace`, or
-      `None`) are mapped to `'surrogateescape'`.
+      `None`) are mapped to `'surrogateescape'`. The special value
+      `'strict_or_latin1'` decodes with `encoding` and, on any
+      invalid byte, retries the whole input as Latin-1 instead of
+      raising. Prefer it over `'surrogateescape'` whenever the
+      result is later re-encoded for output (for example printed to
+      stdout): `'surrogateescape'` maps an invalid byte to a lone
+      surrogate that decodes fine but raises `UnicodeEncodeError` at
+      the re-encode, whereas Latin-1 maps to real scalars that
+      survive the round trip.
       Defaults to `None`.
     - **nonstring** (`str`, optional): Strategy for non-string
       objects:
@@ -594,10 +604,18 @@ def to_text(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     if isinstance(obj, str):
         return obj
 
-    if errors in _SURROGATE_ERRORS:
-        errors = 'surrogateescape'
-
     if isinstance(obj, bytes):
+        if errors == 'strict_or_latin1':
+            # Try the expected codec, fall back to Latin-1 on any invalid byte.
+            # Latin-1 maps every byte 0x00-0xFF one-to-one to a real Unicode scalar,
+            # so it never fails and, unlike 'surrogateescape', re-encodes cleanly when
+            # the caller later writes the text to stdout (Linuxfabrik/lib#256).
+            try:
+                return obj.decode(encoding)
+            except UnicodeDecodeError:
+                return obj.decode('latin-1')
+        if errors in _SURROGATE_ERRORS:
+            errors = 'surrogateescape'
         return obj.decode(encoding, errors)
 
     if nonstring == 'simplerepr':

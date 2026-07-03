@@ -382,6 +382,18 @@ class TestRunCmdJea(unittest.TestCase):
         self.assertEqual(result['stdout'], 'hello')
         self.assertEqual(result['stderr'], 'warn')
 
+    def test_non_utf8_output_falls_back_to_latin1(self):
+        # A non-UTF-8 byte (0xfc = ü in Latin-1/CP1252) must decode via Latin-1,
+        # not surrogateescape, so the text survives a later stdout re-encode
+        # (Linuxfabrik/lib#256).
+        session = MagicMock()
+        session.execute_cmd.return_value = (b'M\xfcller', b'', 0)
+        client_cls = MagicMock(return_value=session)
+        with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
+            result = winrm_lib.run_cmd(make_args(), 'hostname')
+        self.assertEqual(result['stdout'], 'Müller')
+        result['stdout'].encode('utf-8')  # would raise under surrogateescape
+
 
 # ============================================================================
 # run_cmd - pywinrm backend

@@ -171,6 +171,31 @@ class TestToText(unittest.TestCase):
     def test_nonstring_empty(self):
         self.assertEqual(txt.to_text(None, nonstring='empty'), '')
 
+    def test_strict_or_latin1_valid_utf8(self):
+        self.assertEqual(txt.to_text('über'.encode(), errors='strict_or_latin1'), 'über')
+
+    def test_strict_or_latin1_falls_back_on_invalid_utf8(self):
+        # 0xfc is ü in Latin-1/CP1252 and an invalid UTF-8 start byte. With
+        # surrogateescape it would decode to a lone surrogate and crash on the
+        # later stdout re-encode; Latin-1 maps it to a real scalar instead (#256).
+        self.assertEqual(txt.to_text(b'M\xfcller', errors='strict_or_latin1'), 'Müller')
+
+    def test_strict_or_latin1_result_re_encodes_for_stdout(self):
+        # The decoded text must survive a strict UTF-8 re-encode (what print()/stdout
+        # does), which surrogateescape would not.
+        txt.to_text(b'M\xfcller', errors='strict_or_latin1').encode('utf-8')
+
+    def test_strict_or_latin1_str_passes_through(self):
+        self.assertEqual(
+            txt.to_text('already text', errors='strict_or_latin1'), 'already text'
+        )
+
+    def test_strict_or_latin1_every_byte_survives(self):
+        # Latin-1 maps all 256 byte values, so no input can raise.
+        self.assertEqual(
+            len(txt.to_text(bytes(range(256)), errors='strict_or_latin1')), 256
+        )
+
 
 class TestUniq(unittest.TestCase):
     def test_dedups_tokens_preserving_order(self):
