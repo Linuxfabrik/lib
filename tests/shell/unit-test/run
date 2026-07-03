@@ -240,6 +240,19 @@ class TestShellExec(unittest.TestCase):
             _success, result = shell.shell_exec(['echo'])
         self.assertEqual(result[0], 'müller\n')
 
+    def test_posix_non_utf8_falls_back_to_latin1(self):
+        # A non-UTF-8 byte (0xfc = ü in Latin-1/CP1252) must decode via Latin-1,
+        # not surrogateescape: a lone surrogate would decode here but crash later
+        # when the plugin re-encodes the message for stdout (Linuxfabrik/lib#256).
+        Fake = make_popen(stdout=b'M\xfcller\n')
+        with (
+            mock.patch.object(shell.os, 'name', 'posix'),
+            mock.patch.object(shell.subprocess, 'Popen', Fake),
+        ):
+            _success, result = shell.shell_exec(['echo'])
+        self.assertEqual(result[0], 'Müller\n')
+        result[0].encode('utf-8')  # would raise under surrogateescape
+
     def test_windows_decodes_with_console_code_page(self):
         # 'ü' from a console program is OEM cp437 (byte 0x81), not UTF-8. The
         # Windows path must decode with the console output code page so the

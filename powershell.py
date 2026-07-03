@@ -11,7 +11,7 @@
 """This library collects some Microsoft PowerShell related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025103002'
+__version__ = '2026070301'
 
 import subprocess  # nosec B404 - required to run PowerShell on Windows targets
 
@@ -61,8 +61,11 @@ def run_ps(cmd):
         return {
             #'args': result.args,
             'retc': result.returncode,
-            'stdout': txt.to_text(result.stdout),  # convert from byte to unicode
-            'stderr': txt.to_text(result.stderr),  # convert from byte to unicode
+            # Decode as UTF-8 with a Latin-1 fallback rather than surrogateescape, so a
+            # non-UTF-8 byte does not crash later when the caller prints the result to
+            # stdout (Linuxfabrik/lib#256).
+            'stdout': txt.to_text(result.stdout, errors='strict_or_latin1'),
+            'stderr': txt.to_text(result.stderr, errors='strict_or_latin1'),
         }
     except Exception as e:
         return {

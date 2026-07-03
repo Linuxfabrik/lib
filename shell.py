@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026063001'
+__version__ = '2026070301'
 
 
 import os
@@ -150,12 +150,18 @@ def shell_exec(
     # (e.g. cp437, cp850), not UTF-8 and not the ANSI code page, so a username
     # like "müller" would otherwise be mangled (Linuxfabrik/monitoring-plugins#681).
     if os.name == 'nt':
-        encoding, errors = _windows_output_encoding(), 'replace'
-    else:
-        encoding, errors = 'utf-8', 'surrogateescape'
+        encoding = _windows_output_encoding()
+        return True, (
+            txt.to_text(stdout, encoding=encoding, errors='replace'),
+            txt.to_text(stderr, encoding=encoding, errors='replace'),
+            p.returncode,
+        )
+    # On Unix decode as UTF-8, but fall back to Latin-1 on invalid bytes instead of
+    # surrogateescape: a lone surrogate decodes fine here but crashes later when the
+    # plugin re-encodes the message for stdout (Linuxfabrik/lib#256).
     return True, (
-        txt.to_text(stdout, encoding=encoding, errors=errors),
-        txt.to_text(stderr, encoding=encoding, errors=errors),
+        txt.to_text(stdout, errors='strict_or_latin1'),
+        txt.to_text(stderr, errors='strict_or_latin1'),
         p.returncode,
     )
 

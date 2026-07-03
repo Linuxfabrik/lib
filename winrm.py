@@ -11,7 +11,7 @@
 """This library collects some Microsoft WinRM related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026030301'
+__version__ = '2026070301'
 
 try:
     import winrm
@@ -161,8 +161,8 @@ def run_cmd(args, cmd, params=None):
             )
             return {
                 'retc': rc,
-                'stdout': txt.to_text(stdout),
-                'stderr': txt.to_text(stderr),
+                'stdout': txt.to_text(stdout, errors='strict_or_latin1'),
+                'stderr': txt.to_text(stderr, errors='strict_or_latin1'),
             }
         except Exception as e:
             return {
@@ -182,8 +182,8 @@ def run_cmd(args, cmd, params=None):
             result = session.run_cmd(cmd, params)
             return {
                 'retc': result.status_code,
-                'stdout': txt.to_text(result.std_out),
-                'stderr': txt.to_text(result.std_err),
+                'stdout': txt.to_text(result.std_out, errors='strict_or_latin1'),
+                'stderr': txt.to_text(result.std_err, errors='strict_or_latin1'),
             }
         except Exception as e:
             return {
@@ -347,8 +347,8 @@ def run_ps(args, cmd, params=None):
 
             return {
                 'retc': 0 if not ps.had_errors else 1,
-                'stdout': txt.to_text(stdout),
-                'stderr': txt.to_text(stderr),
+                'stdout': txt.to_text(stdout, errors='strict_or_latin1'),
+                'stderr': txt.to_text(stderr, errors='strict_or_latin1'),
             }
         except Exception as e:
             return {
@@ -387,8 +387,8 @@ def run_ps(args, cmd, params=None):
 
             result = {
                 'retc': result.status_code,
-                'stdout': txt.to_text(result.std_out),
-                'stderr': txt.to_text(result.std_err),
+                'stdout': txt.to_text(result.std_out, errors='strict_or_latin1'),
+                'stderr': txt.to_text(result.std_err, errors='strict_or_latin1'),
             }
             if result['retc'] == 0 and result['stderr'].startswith(
                 '#< CLIXML',

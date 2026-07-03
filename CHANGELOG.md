@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* powershell.py, shell.py, winrm.py: command output that contains non-UTF-8 bytes (such as a Windows username with an umlaut, or a locale-dependent tool message) no longer crashes the plugin later when it prints its result. Such output is now read as Latin-1 instead of producing text that fails to print ([#256](https://github.com/Linuxfabrik/lib/issues/256)).
 * url.py: fetching a page or JSON no longer fails with a decode error when the remote host sends non-UTF-8 content without declaring a charset (such as sensor firmware that serves the degree sign as a raw Latin-1 byte). The response is read as Latin-1 in that case instead of aborting the check.
 
 
