@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * redfish.py: a cached Redfish session token is now kept only as long as the controller itself keeps the session alive, read from the controller's own session timeout. This avoids sporadic "401 Unauthorized" errors on controllers with short session timeouts (such as Supermicro's 300 seconds) without having to tune the cache expiration by hand ([#246](https://github.com/Linuxfabrik/lib/issues/246)).
 * time.py: clarified the `timestr2epoch(..., pattern='iso8601')` docstring - the mode is backed by `datetime.fromisoformat()`, not a full ISO 8601 parser, and which layouts it accepts beyond RFC 3339 depends on the Python version.
 
+### Fixed
+
+* url.py: fetching a page or JSON no longer fails with a decode error when the remote host sends non-UTF-8 content without declaring a charset (such as sensor firmware that serves the degree sign as a raw Latin-1 byte). The response is read as Latin-1 in that case instead of aborting the check.
+
 
 ## [v5.1.0] - 2026-06-24
 
