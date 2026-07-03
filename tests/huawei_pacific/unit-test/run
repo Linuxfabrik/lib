@@ -22,6 +22,7 @@ Public functions under test:
 """
 
 import sys
+import typing
 import unittest
 from unittest import mock
 
@@ -74,6 +75,49 @@ DATA_OK = (
         'result': {'code': 0, 'description': ''},
     },
 )
+
+
+class TestMappingHelpers(unittest.TestCase):
+    """Known-code assertions for the code -> text mapping helpers, run for both
+    int and str input, plus the 'Unknown' fallback and the ValueError path.
+    """
+
+    # (function, sample_code, expected_text)
+    KNOWN: typing.ClassVar = [
+        (huawei_pacific.get_alarm_severity, 3, 'Warning (3)'),
+        (huawei_pacific.get_alarm_severity, 6, 'Critical (6)'),
+        (huawei_pacific.get_alarm_status, 1, 'Unrecovered (1)'),
+        (huawei_pacific.get_alarm_status, 4, 'Recovered (4)'),
+        (huawei_pacific.get_oam_agent_status, -1, '-- (-1)'),
+        (huawei_pacific.get_oam_agent_status, 0, 'healthy (0)'),
+        (huawei_pacific.get_oam_agent_status, 1, 'faulty (1)'),
+    ]
+
+    FUNCS: typing.ClassVar = [
+        huawei_pacific.get_alarm_severity,
+        huawei_pacific.get_alarm_status,
+        huawei_pacific.get_oam_agent_status,
+    ]
+
+    def test_known_codes_as_int(self):
+        for func, code, expected in self.KNOWN:
+            with self.subTest(func=func.__name__, code=code):
+                self.assertEqual(func(code), expected)
+
+    def test_known_codes_as_str(self):
+        for func, code, expected in self.KNOWN:
+            with self.subTest(func=func.__name__, code=str(code)):
+                self.assertEqual(func(str(code)), expected)
+
+    def test_unknown_code_returns_unknown(self):
+        for func in self.FUNCS:
+            with self.subTest(func=func.__name__):
+                self.assertEqual(func(999999), 'Unknown')
+
+    def test_non_numeric_input_raises_value_error(self):
+        for func in self.FUNCS:
+            with self.subTest(func=func.__name__), self.assertRaises(ValueError):
+                func('not-a-number')
 
 
 class PacificHttpTestBase(unittest.TestCase):

@@ -21,6 +21,59 @@ import time as _time
 from . import base, cache, time, url
 
 
+def get_alarm_severity(sev):
+    """
+    Convert a Huawei OceanStor Pacific alarm severity code into a human-readable description.
+
+    ### Parameters
+    - **sev** (`int` or `str`):
+      The alarm severity code. If a string is passed, it is converted to an integer.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Example
+    >>> get_alarm_severity(6)
+    'Critical (6)'
+    """
+    sev = int(sev)
+    mapping = {
+        2: 'Information (2)',
+        3: 'Warning (3)',
+        5: 'Major (5)',
+        6: 'Critical (6)',
+    }
+    return mapping.get(sev, 'Unknown')
+
+
+def get_alarm_status(st):
+    """
+    Convert a Huawei OceanStor Pacific alarm status code into a human-readable description.
+
+    ### Parameters
+    - **st** (`int` or `str`):
+      The alarm status code. If a string is passed, it is converted to an integer.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Example
+    >>> get_alarm_status(1)
+    'Unrecovered (1)'
+    """
+    st = int(st)
+    mapping = {
+        1: 'Unrecovered (1)',
+        2: 'Cleared (2)',
+        4: 'Recovered (4)',
+    }
+    return mapping.get(st, 'Unknown')
+
+
 def get_creds(args, force_relogin=False):
     """
     Retrieve and cache a Huawei OceanStor Pacific session token.
@@ -175,3 +228,61 @@ def get_data(endpoint, args, payload=None, method=None):
 
     result['counter'] = counter
     return result
+
+
+def get_management_ips(args):
+    """
+    Query the cluster nodes and return their internal management IP addresses.
+
+    The hardware endpoints (for example `hwm/fan` and `hwm/power`) are node-scoped and require a
+    `server_list` of node management IPs in the request body. This helper enumerates the cluster
+    nodes through `cluster/servers` and collects that list, so a caller can query hardware across
+    the whole cluster without hard-coding node addresses.
+
+    ### Parameters
+    - **args** (object):
+      The argument object read by `get_data()` / `get_creds()`.
+
+    ### Returns
+    - **list** of `str`:
+      The `management_ip` of every cluster node. Aborts the plugin (UNKNOWN) if the node query
+      itself fails.
+
+    ### Example
+    >>> get_management_ips(args)
+    ['192.0.2.11', '192.0.2.12']
+    """
+    result = get_data('cluster/servers', args)
+    if result.get('result', {}).get('code') != 0:
+        base.cu('Failed to query cluster nodes for their management IP addresses.')
+    return [
+        node['management_ip']
+        for node in result.get('data', [])
+        if node.get('management_ip')
+    ]
+
+
+def get_oam_agent_status(s):
+    """
+    Convert a Huawei OceanStor Pacific OAM agent status code into a human-readable description.
+
+    ### Parameters
+    - **s** (`int` or `str`):
+      The OAM agent status code. If a string is passed, it is converted to an integer.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Example
+    >>> get_oam_agent_status(0)
+    'healthy (0)'
+    """
+    s = int(s)
+    mapping = {
+        -1: '-- (-1)',
+        0: 'healthy (0)',
+        1: 'faulty (1)',
+    }
+    return mapping.get(s, 'Unknown')
