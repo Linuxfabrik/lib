@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060704'
+__version__ = '2026070300'
 
 import base64
 
@@ -394,9 +394,13 @@ def get_auth_header(args):
     offer the SessionService) it falls back to HTTP Basic auth, and when no credentials are given
     (e.g. against an anonymous mockup) it returns an empty header.
 
-    A cached token is reused until `CACHE_EXPIRE` minutes pass, independent of the controller's own
-    session timeout. Keep `CACHE_EXPIRE` below that timeout so the cached token does not go stale
-    before it is dropped.
+    The cached token's lifetime is bounded by the controller's own `SessionTimeout` (an inactivity
+    timeout in seconds, read back from the SessionService) minus a `TIMEOUT`-sized safety margin, so
+    a token is never reused after the controller would already have dropped the session, which
+    otherwise surfaces as a "401 Unauthorized". `CACHE_EXPIRE` (in minutes) caps that lifetime from
+    above; the effective cache time is the smaller of the two. When the controller does not report a
+    usable `SessionTimeout`, only `CACHE_EXPIRE` applies, so keep it below the controller's timeout
+    in that case.
 
     ### Parameters
     - **args** (object): must provide `URL`, `USERNAME`, `PASSWORD`, `INSECURE`, `NO_PROXY`,
@@ -435,7 +439,35 @@ def get_auth_header(args):
     if success and isinstance(result, dict):
         token = result.get('response_header', {}).get('x-auth-token', '')
     if token:
-        cache.set(token_key, token, time.now() + args.CACHE_EXPIRE * 60)
+        # Bound the cached token's lifetime by the controller's own inactivity
+        # timeout (SessionTimeout, in seconds) so the token is never reused after
+        # the controller would already have dropped the session. CACHE_EXPIRE
+        # (minutes) caps it from above.
+        cache_ttl = args.CACHE_EXPIRE * 60
+        success, result = url.fetch_json(
+            f'{args.URL}/redfish/v1/SessionService',
+            encoding='serialized-json',
+            header={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Auth-Token': token,
+            },
+            insecure=args.INSECURE,
+            no_proxy=args.NO_PROXY,
+            timeout=args.TIMEOUT,
+        )
+        session_timeout = 0
+        if success and isinstance(result, dict):
+            try:
+                session_timeout = int(result.get('SessionTimeout') or 0)
+            except (TypeError, ValueError):
+                session_timeout = 0
+        if session_timeout > 0:
+            # Subtract a TIMEOUT-sized margin so a token fetched at the very edge
+            # of the window still reaches the controller before it drops the
+            # session. Never drop below one second.
+            cache_ttl = min(cache_ttl, max(session_timeout - args.TIMEOUT, 1))
+        cache.set(token_key, token, time.now() + cache_ttl)
         return {'X-Auth-Token': token}
 
     # session creation failed: fall back to HTTP Basic auth

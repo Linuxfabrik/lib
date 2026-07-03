@@ -10,17 +10,20 @@
 
 """Unit tests for lib.redfish.
 
-lib.redfish is a pure parser: it never opens a socket itself. The plugins that
-use it do the HTTP talking (through lib.url) and hand the already-decoded JSON
-(a Python dict) to these functions. There is therefore no transport to mock for
-the module's own behaviour; the "HTTP layer" is the caller's concern. To keep
-the suite honest about that contract, the request-side is still asserted: a
-representative captured-style Redfish payload is decoded exactly the way a
-plugin would (json.loads on a fetched body) and fed in, and the parser output
-is pinned byte for byte.
+Apart from get_auth_header(), lib.redfish is a pure parser: it never opens a
+socket itself. The plugins that use it do the HTTP talking (through lib.url) and
+hand the already-decoded JSON (a Python dict) to these functions. There is
+therefore no transport to mock for the parser behaviour; the "HTTP layer" is the
+caller's concern. To keep the suite honest about that contract, the request-side
+is still asserted: a representative captured-style Redfish payload is decoded
+exactly the way a plugin would (json.loads on a fetched body) and fed in, and the
+parser output is pinned byte for byte. get_auth_header() is the one exception: it
+talks to lib.url, cache and time, all of which are mocked so its session/token
+caching logic can be pinned without a live controller.
 
-Public functions under test (16):
+Public functions under test (17):
 
+- get_auth_header()                        -> session token caching (mocked I/O)
 - get_chassis()                            -> flat + nested key projection
 - get_chassis_power_powercontrol()         -> projection
 - get_chassis_power_powersupplies()        -> projection + PowerOutputWatts fallback
@@ -49,8 +52,10 @@ ReadingRangeMin/Max of 0 are dropped from perfdata because of the `or None`.
 import json
 import re
 import sys
+import types
 import typing
 import unittest
+from unittest import mock
 
 sys.path.insert(0, '..')
 
@@ -143,6 +148,171 @@ def load(body):
 CRIT_SUFFIX = base.state2str(STATE_CRIT, prefix=' ')  # ' [CRITICAL]'
 WARN_SUFFIX = base.state2str(STATE_WARN, prefix=' ')  # ' [WARNING]'
 CAP_500GB = human.bytes2human(500000000000)  # '465.7GiB'
+
+
+# ---------------------------------------------------------------------------
+# get_auth_header (session token caching; lib.url/cache/time are mocked)
+# ---------------------------------------------------------------------------
+TOKEN_KEY = 'redfish-https://203.0.113.10-linuxfabrik-token'
+# a session creation response as lib.url returns it with extended=True: the
+# X-Auth-Token header, lower-cased by lib.url (RFC 9110, section 5.1).
+SESSION_CREATED = (True, {'response_header': {'x-auth-token': 'new-token'}})
+
+
+def _args(**over):
+    """Build a minimal args namespace with sane, RFC-5737 defaults."""
+    values = {
+        'CACHE_EXPIRE': 60,  # minutes
+        'INSECURE': True,
+        'NO_PROXY': False,
+        'PASSWORD': 'linuxfabrik',
+        'TIMEOUT': 8,
+        'URL': 'https://203.0.113.10',
+        'USERNAME': 'linuxfabrik',
+    }
+    values.update(over)
+    return types.SimpleNamespace(**values)
+
+
+class TestGetAuthHeader(unittest.TestCase):
+    def test_no_credentials_returns_empty_header(self):
+        # Without both username and password there is nothing to authenticate.
+        self.assertEqual(redfish.get_auth_header(_args(USERNAME='', PASSWORD='')), {})
+        self.assertEqual(redfish.get_auth_header(_args(PASSWORD='')), {})
+
+    @mock.patch.object(redfish, 'url')
+    @mock.patch.object(redfish, 'cache')
+    def test_cached_token_is_reused_without_any_request(self, cache_mock, url_mock):
+        cache_mock.get.return_value = 'cached-token'
+        out = redfish.get_auth_header(_args())
+        self.assertEqual(out, {'X-Auth-Token': 'cached-token'})
+        url_mock.fetch_json.assert_not_called()
+        cache_mock.set.assert_not_called()
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'url')
+    @mock.patch.object(redfish, 'cache')
+    def test_session_timeout_bounds_ttl_with_margin(
+        self, cache_mock, url_mock, time_mock
+    ):
+        cache_mock.get.return_value = False  # no cached token
+        time_mock.now.return_value = 1_000_000
+        url_mock.fetch_json.side_effect = [
+            SESSION_CREATED,
+            (True, {'SessionTimeout': 300}),
+        ]
+        out = redfish.get_auth_header(_args(CACHE_EXPIRE=60, TIMEOUT=8))
+        self.assertEqual(out, {'X-Auth-Token': 'new-token'})
+        # min(60*60, 300 - 8) = 292; expiry is now + ttl
+        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 292)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'url')
+    @mock.patch.object(redfish, 'cache')
+    def test_cache_expire_caps_a_large_session_timeout(
+        self, cache_mock, url_mock, time_mock
+    ):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1_000_000
+        url_mock.fetch_json.side_effect = [
+            SESSION_CREATED,
+            (True, {'SessionTimeout': 86400}),
+        ]
+        out = redfish.get_auth_header(_args(CACHE_EXPIRE=1, TIMEOUT=8))
+        self.assertEqual(out, {'X-Auth-Token': 'new-token'})
+        # min(1*60, 86400 - 8) = 60
+        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 60)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'url')
+    @mock.patch.object(redfish, 'cache')
+    def test_string_session_timeout_is_coerced(self, cache_mock, url_mock, time_mock):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1_000_000
+        url_mock.fetch_json.side_effect = [
+            SESSION_CREATED,
+            (True, {'SessionTimeout': '300'}),
+        ]
+        redfish.get_auth_header(_args(CACHE_EXPIRE=60, TIMEOUT=8))
+        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 292)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'url')
+    @mock.patch.object(redfish, 'cache')
+    def test_margin_never_drops_below_one_second(self, cache_mock, url_mock, time_mock):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1_000_000
+        # SessionTimeout below the margin would go negative; clamped to 1.
+        url_mock.fetch_json.side_effect = [
+            SESSION_CREATED,
+            (True, {'SessionTimeout': 5}),
+        ]
+        redfish.get_auth_header(_args(CACHE_EXPIRE=60, TIMEOUT=8))
+        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 1)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'url')
+    @mock.patch.object(redfish, 'cache')
+    def test_missing_session_timeout_falls_back_to_cache_expire(
+        self, cache_mock, url_mock, time_mock
+    ):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1_000_000
+        url_mock.fetch_json.side_effect = [
+            SESSION_CREATED,
+            (True, {'Id': 'default'}),  # no SessionTimeout property
+        ]
+        redfish.get_auth_header(_args(CACHE_EXPIRE=2, TIMEOUT=8))
+        # only CACHE_EXPIRE applies: 2*60 = 120
+        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 120)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'url')
+    @mock.patch.object(redfish, 'cache')
+    def test_sessionservice_get_failure_falls_back_to_cache_expire(
+        self, cache_mock, url_mock, time_mock
+    ):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1_000_000
+        url_mock.fetch_json.side_effect = [
+            SESSION_CREATED,
+            (False, 'Bad Gateway'),  # SessionService GET failed
+        ]
+        redfish.get_auth_header(_args(CACHE_EXPIRE=3, TIMEOUT=8))
+        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 180)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'url')
+    @mock.patch.object(redfish, 'cache')
+    def test_session_creation_failure_falls_back_to_basic_auth(
+        self, cache_mock, url_mock, time_mock
+    ):
+        cache_mock.get.return_value = False
+        # No X-Auth-Token in the response header -> no session token.
+        url_mock.fetch_json.side_effect = [(False, 'Unauthorized')]
+        out = redfish.get_auth_header(_args())
+        # 'linuxfabrik:linuxfabrik' base64-encoded.
+        self.assertEqual(
+            out, {'Authorization': 'Basic bGludXhmYWJyaWs6bGludXhmYWJyaWs='}
+        )
+        # Only the session-creation POST was attempted; no SessionService GET.
+        self.assertEqual(url_mock.fetch_json.call_count, 1)
+        cache_mock.set.assert_not_called()
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'url')
+    @mock.patch.object(redfish, 'cache')
+    def test_non_dict_session_response_falls_back_to_basic_auth(
+        self, cache_mock, url_mock, time_mock
+    ):
+        cache_mock.get.return_value = False
+        # success but body is not a dict -> the isinstance guard rejects it.
+        url_mock.fetch_json.side_effect = [(True, 'not-a-dict')]
+        out = redfish.get_auth_header(_args())
+        self.assertEqual(
+            out, {'Authorization': 'Basic bGludXhmYWJyaWs6bGludXhmYWJyaWs='}
+        )
+        cache_mock.set.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -443,7 +613,9 @@ class TestGetChassisThermalFans(unittest.TestCase):
 
     def test_percent_unit_mapped_to_symbol(self):
         # HP/Lenovo report a percentage; 'Percent' is normalized to '%'
-        out = redfish.get_chassis_thermal_fans({'Reading': 42, 'ReadingUnits': 'Percent'})
+        out = redfish.get_chassis_thermal_fans(
+            {'Reading': 42, 'ReadingUnits': 'Percent'}
+        )
         self.assertEqual(out['Reading'], 42)
         self.assertEqual(out['ReadingUnits'], '%')
 
@@ -1097,15 +1269,11 @@ class TestGetSystemsMemory(unittest.TestCase):
     def test_dell_idrac8_size_division(self):
         # vendor quirk: Dell reports decimal MB when the value is not a clean
         # MiB multiple; 16000 -> round(16000 * 1024**2 / 1000**2) = 16777 MiB
-        out = redfish.get_systems_memory(
-            {'CapacityMiB': 16000, 'Oem': {'Dell': {}}}
-        )
+        out = redfish.get_systems_memory({'CapacityMiB': 16000, 'Oem': {'Dell': {}}})
         self.assertEqual(out['CapacityMiB'], human.bytes2human(16777 * 1024 * 1024))
 
     def test_dell_clean_multiple_unchanged(self):
-        out = redfish.get_systems_memory(
-            {'CapacityMiB': 16384, 'Oem': {'Dell': {}}}
-        )
+        out = redfish.get_systems_memory({'CapacityMiB': 16384, 'Oem': {'Dell': {}}})
         self.assertEqual(out['CapacityMiB'], human.bytes2human(16384 * 1024 * 1024))
 
     def test_non_dell_size_unchanged(self):
@@ -1114,9 +1282,7 @@ class TestGetSystemsMemory(unittest.TestCase):
 
     def test_hpe_dimmstatus_healthy(self):
         # vendor quirk: HPE reports operational state in Oem.Hpe.DIMMStatus
-        out = redfish.get_systems_memory(
-            {'Oem': {'Hpe': {'DIMMStatus': 'GoodInUse'}}}
-        )
+        out = redfish.get_systems_memory({'Oem': {'Hpe': {'DIMMStatus': 'GoodInUse'}}})
         self.assertEqual(out['Status_State'], 'Enabled')
         self.assertEqual(out['Status_Health'], 'OK')
 
@@ -1247,7 +1413,9 @@ class TestGetSystemsStorageDrives(unittest.TestCase):
         self.assertEqual(out['Temperature'], 41)
 
     def test_temperature_from_oem_temperature_c(self):
-        out = redfish.get_systems_storage_drives({'Oem': {'Dell': {'TemperatureC': 29}}})
+        out = redfish.get_systems_storage_drives(
+            {'Oem': {'Dell': {'TemperatureC': 29}}}
+        )
         self.assertEqual(out['Temperature'], 29)
 
     def test_temperature_missing_is_empty(self):
