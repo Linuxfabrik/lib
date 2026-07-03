@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.huawei_pacific.
+
+The module talks to a Huawei OceanStor Pacific appliance only through
+lib.url.fetch_json (HTTP), persists the session token through lib.cache and
+reads the clock through lib.time / time.sleep. All of those seams are mocked,
+so no network call, no real cache file, and no real sleep ever happens.
+
+Public functions under test:
+
+- get_creds() -> login (POST /api/v2/aa/sessions) + X-Auth-Token caching
+- get_data()  -> authenticated GET/POST, re-login on a rejected request
+"""
+
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.huawei_pacific as huawei_pacific
+
+
+class Args:
+    """Plain attribute bag mirroring the argparse namespace the module reads."""
+
+    def __init__(self, **kw):
+        defaults = {
+            'URL': 'https://storage.example.com',
+            'USERNAME': 'linuxfabrik',
+            'PASSWORD': 'linuxfabrik',
+            'SCOPE': '0',
+            'INSECURE': False,
+            'NO_PROXY': False,
+            'TIMEOUT': 8,
+            'CACHE_EXPIRE': 15,
+        }
+        defaults.update(kw)
+        for key, value in defaults.items():
+            setattr(self, key, value)
+
+
+# Login response as returned by url.fetch_json: a (success, dict) tuple whose
+# dict carries the token in the body (no response header needed).
+LOGIN_OK = (
+    True,
+    {
+        'data': {
+            'x_auth_token': 'NDQ2ODQwMTEzQUJCQkJCQkJCQkJCQkJC',
+            'system_esn': '286ed489047020190103171152',
+            'user_name': 'linuxfabrik',
+        },
+        'result': {'code': 0, 'description': '0'},
+    },
+)
+
+# Data response for an authenticated query.
+DATA_OK = (
+    True,
+    {
+        'data': [
+            {'name': 'Fan0', 'status': 'normal'},
+            {'name': 'Fan1', 'status': 'normal'},
+        ],
+        'result': {'code': 0, 'description': ''},
+    },
+)
+
+
+class PacificHttpTestBase(unittest.TestCase):
+    def setUp(self):
+        self.args = Args()
+
+        self.fetch_json = mock.MagicMock(name='fetch_json', return_value=LOGIN_OK)
+        self._p_fetch = mock.patch.object(
+            huawei_pacific.url, 'fetch_json', self.fetch_json
+        )
+
+        self.cache_get = mock.MagicMock(name='cache.get', return_value=None)
+        self.cache_set = mock.MagicMock(name='cache.set')
+        self._p_cget = mock.patch.object(huawei_pacific.cache, 'get', self.cache_get)
+        self._p_cset = mock.patch.object(huawei_pacific.cache, 'set', self.cache_set)
+
+        self.now = mock.MagicMock(name='time.now', return_value=1_000_000)
+        self._p_now = mock.patch.object(huawei_pacific.time, 'now', self.now)
+
+        self.sleep = mock.MagicMock(name='time.sleep')
+        self._p_sleep = mock.patch.object(huawei_pacific._time, 'sleep', self.sleep)
+
+        for p in (
+            self._p_fetch,
+            self._p_cget,
+            self._p_cset,
+            self._p_now,
+            self._p_sleep,
+        ):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def last_call(self):
+        self.assertTrue(self.fetch_json.called, 'fetch_json was never called')
+        return self.fetch_json.call_args
+
+    def sent_uri(self):
+        return self.last_call().args[0]
+
+    def sent_kwargs(self):
+        return self.last_call().kwargs
+
+
+class TestGetCreds(PacificHttpTestBase):
+    def test_login_returns_token(self):
+        self.fetch_json.return_value = LOGIN_OK
+        token = huawei_pacific.get_creds(self.args)
+        self.assertEqual(token, 'NDQ2ODQwMTEzQUJCQkJCQkJCQkJCQkJC')
+
+    def test_login_uri(self):
+        huawei_pacific.get_creds(self.args)
+        self.assertEqual(
+            self.sent_uri(), 'https://storage.example.com/api/v2/aa/sessions'
+        )
+
+    def test_login_body_carries_credentials_and_scope(self):
+        huawei_pacific.get_creds(self.args)
+        self.assertEqual(
+            self.sent_kwargs()['data'],
+            {
+                'user_name': 'linuxfabrik',
+                'password': 'linuxfabrik',
+                'isEncrypt': False,
+                'scope': '0',
+            },
+        )
+
+    def test_login_uses_serialized_json_encoding(self):
+        huawei_pacific.get_creds(self.args)
+        self.assertEqual(self.sent_kwargs()['encoding'], 'serialized-json')
+
+    def test_login_caches_token(self):
+        huawei_pacific.get_creds(self.args)
+        self.cache_set.assert_called_once_with(
+            'huaweipacific-https://storage.example.com-xauthtoken',
+            'NDQ2ODQwMTEzQUJCQkJCQkJCQkJCQkJC',
+            1_000_000 + 15 * 60,
+        )
+
+    def test_cache_key_namespaced_by_url(self):
+        self.args = Args(URL='https://other.example.com')
+        huawei_pacific.get_creds(self.args)
+        read_keys = [c.args[0] for c in self.cache_get.call_args_list]
+        self.assertIn('huaweipacific-https://other.example.com-xauthtoken', read_keys)
+
+    def test_cached_token_short_circuits_login(self):
+        self.cache_get.return_value = 'CACHED-TOKEN'
+        token = huawei_pacific.get_creds(self.args)
+        self.assertEqual(token, 'CACHED-TOKEN')
+        self.assertFalse(self.fetch_json.called)
+        self.assertFalse(self.cache_set.called)
+
+    def test_force_relogin_ignores_cache(self):
+        self.cache_get.return_value = 'CACHED-TOKEN'
+        token = huawei_pacific.get_creds(self.args, force_relogin=True)
+        self.assertFalse(self.cache_get.called)
+        self.assertTrue(self.fetch_json.called)
+        self.assertEqual(token, 'NDQ2ODQwMTEzQUJCQkJCQkJCQkJCQkJC')
+
+    def test_login_failure_exits_via_coe(self):
+        self.fetch_json.return_value = (False, 'connection refused')
+        with self.assertRaises(SystemExit):
+            huawei_pacific.get_creds(self.args)
+
+
+class TestGetData(PacificHttpTestBase):
+    def setUp(self):
+        super().setUp()
+        self._p_creds = mock.patch.object(
+            huawei_pacific, 'get_creds', return_value='TOKEN'
+        )
+        self.get_creds = self._p_creds.start()
+        self.addCleanup(self._p_creds.stop)
+        self.fetch_json.return_value = DATA_OK
+
+    def test_success_first_try_returns_payload_with_counter(self):
+        result = huawei_pacific.get_data('hwm/power', self.args)
+        self.assertEqual(result['result']['code'], 0)
+        self.assertEqual(result['data'][0]['name'], 'Fan0')
+        self.assertEqual(result['counter'], 1)
+
+    def test_uri_includes_api_v2_and_endpoint(self):
+        huawei_pacific.get_data('hwm/power', self.args)
+        self.assertEqual(
+            self.sent_uri(), 'https://storage.example.com/api/v2/hwm/power'
+        )
+
+    def test_auth_header_carries_x_auth_token(self):
+        huawei_pacific.get_data('hwm/power', self.args)
+        header = self.sent_kwargs()['header']
+        self.assertEqual(header['Content-Type'], 'application/json')
+        self.assertEqual(header['X-Auth-Token'], 'TOKEN')
+
+    def test_get_when_no_payload(self):
+        # A GET read forwards no body; fetch_json infers GET from data=None.
+        huawei_pacific.get_data('hwm/power', self.args)
+        self.assertIsNone(self.sent_kwargs()['data'])
+
+    def test_post_with_payload(self):
+        huawei_pacific.get_data(
+            'hwm/fan', self.args, payload={'server_list': ['192.0.2.10']}
+        )
+        self.assertEqual(self.sent_kwargs()['data'], {'server_list': ['192.0.2.10']})
+
+    def test_forces_relogin_on_second_attempt(self):
+        self.fetch_json.return_value = (True, {'result': {'code': 1}})
+        huawei_pacific.get_data('hwm/power', self.args)
+        forced = [
+            call
+            for call in self.get_creds.call_args_list
+            if call.kwargs.get('force_relogin')
+        ]
+        self.assertEqual(len(forced), 1)
+
+    def test_retries_until_max_on_persistent_error(self):
+        self.fetch_json.return_value = (True, {'result': {'code': 1}})
+        result = huawei_pacific.get_data('hwm/power', self.args)
+        self.assertEqual(self.fetch_json.call_count, 3)
+        self.assertEqual(result['counter'], 3)
+        self.assertEqual(self.sleep.call_count, 2)
+
+    def test_recovers_mid_loop_and_reports_attempt_count(self):
+        self.fetch_json.side_effect = [
+            (True, {'result': {'code': 1}}),
+            (True, {'result': {'code': 0}, 'data': ['recovered']}),
+        ]
+        result = huawei_pacific.get_data('hwm/power', self.args)
+        self.assertEqual(result['counter'], 2)
+        self.assertEqual(result['data'], ['recovered'])
+
+    def test_forwards_insecure_no_proxy_timeout(self):
+        self.args = Args(INSECURE=True, NO_PROXY=True, TIMEOUT=21)
+        huawei_pacific.get_data('hwm/power', self.args)
+        kw = self.sent_kwargs()
+        self.assertTrue(kw['insecure'])
+        self.assertTrue(kw['no_proxy'])
+        self.assertEqual(kw['timeout'], 21)
+
+    def test_fetch_failure_exits_via_coe(self):
+        self.fetch_json.return_value = (False, 'timeout')
+        with self.assertRaises(SystemExit):
+            huawei_pacific.get_data('hwm/power', self.args)
+
+
+if __name__ == '__main__':
+    unittest.main()

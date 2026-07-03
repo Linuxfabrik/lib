@@ -8,12 +8,13 @@
 
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
 
-"""This library collects some Huawei related functions that are
-needed by Huawei check plugins.
+"""This library collects functions for Huawei OceanStor Dorado storage systems,
+which are accessed through the DeviceManager REST API (numeric status codes,
+iBaseToken authentication).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070301'
+__version__ = '2026070302'
 
 import time as _time
 

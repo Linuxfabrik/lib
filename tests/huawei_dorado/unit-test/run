@@ -8,7 +8,7 @@
 
 # https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
-"""Unit tests for lib.huawei.
+"""Unit tests for lib.huawei_dorado.
 
 Every public function of the module is covered hermetically. The module talks
 to a Huawei storage appliance only through lib.url.fetch_json (HTTP), and it
@@ -21,7 +21,7 @@ Public functions under test:
 - get_controller_model()  -> code -> text mapping
 - get_cp_type()           -> code -> text mapping
 - get_creds()             -> login + token/cookie caching (HTTP via fetch_json)
-- get_data()              -> authenticated GET with retry-on-error loop (HTTP)
+- get_data()              -> authenticated GET, re-login on a rejected request (HTTP)
 - get_enclosure_model()   -> code -> text mapping
 - get_health_status()     -> code -> text mapping
 - get_host_access_state() -> code -> text mapping
@@ -53,11 +53,12 @@ from unittest import mock
 
 sys.path.insert(0, '..')
 
-import lib.huawei as huawei
+import lib.huawei_dorado as huawei
 
 # ---------------------------------------------------------------------------
 # Test double for the args object passed to get_creds / get_data.
 # ---------------------------------------------------------------------------
+
 
 class Args:
     """Plain attribute bag mirroring the argparse namespace the module reads."""
@@ -119,6 +120,7 @@ DATA_OK = (
 # Mapping helpers (data-driven).
 # ---------------------------------------------------------------------------
 
+
 class TestMappingHelpers(unittest.TestCase):
     """One representative known-code assertion per mapping function, run for
     both int and str input, plus the 'Unknown' fallback and ValueError path.
@@ -129,19 +131,34 @@ class TestMappingHelpers(unittest.TestCase):
 
     # (function, sample_code, expected_text)
     KNOWN: typing.ClassVar = [
-        (huawei.get_controller_model, 4127, 'V6R1C00 2U2C mid-range PALM control board'),
+        (
+            huawei.get_controller_model,
+            4127,
+            'V6R1C00 2U2C mid-range PALM control board',
+        ),
         (huawei.get_controller_model, 4144, 'V6R3C00 2U2C low-end NVMe control board'),
         (huawei.get_cp_type, 1, 'Quorum Server'),
         (huawei.get_cp_type, 2, 'Quorum Disk'),
         (huawei.get_cp_type, 3, 'None'),
-        (huawei.get_enclosure_model, 39, '4 U 75-slot 3.5-inch 12 Gbit/s SAS disk enclosure'),
-        (huawei.get_enclosure_model, 122,
-         '2 U 2-controller 25-slot 2.5-inch NVMe controller enclosure'),
+        (
+            huawei.get_enclosure_model,
+            39,
+            '4 U 75-slot 3.5-inch 12 Gbit/s SAS disk enclosure',
+        ),
+        (
+            huawei.get_enclosure_model,
+            122,
+            '2 U 2-controller 25-slot 2.5-inch NVMe controller enclosure',
+        ),
         (huawei.get_health_status, 1, 'Normal (1)'),
         (huawei.get_health_status, 5, 'Degraded (5)'),
         (huawei.get_host_access_state, 2, 'Read-only'),
         (huawei.get_host_access_state, 3, 'R/W'),
-        (huawei.get_interface_model, 2306, '4 ports FE 32 Gbit/s Fibre Channel I/O module'),
+        (
+            huawei.get_interface_model,
+            2306,
+            '4 ports FE 32 Gbit/s Fibre Channel I/O module',
+        ),
         (huawei.get_interface_model, 4133, 'System Management Module'),
         (huawei.get_interface_runmode, 1, 'FC'),
         (huawei.get_interface_runmode, 5, 'RoCE'),
@@ -160,7 +177,10 @@ class TestMappingHelpers(unittest.TestCase):
         (huawei.get_runlevel, 1, 'normal (1)'),
         (huawei.get_runlevel, 2, 'high (2)'),
         (huawei.get_running_status, 1, 'Normal (1)'),
+        (huawei.get_running_status, 11, 'Link down (11)'),
         (huawei.get_running_status, 47, 'Powering off (47)'),
+        (huawei.get_running_status, 48, 'Charging (48)'),
+        (huawei.get_running_status, 49, 'Charging completed (49)'),
         (huawei.get_switch_status, 1, 'On'),
         (huawei.get_switch_status, 2, 'Off'),
     ]
@@ -224,8 +244,8 @@ class TestMappingHelpers(unittest.TestCase):
 # Pin that formatting explicitly because plugin output relies on it.
 # ---------------------------------------------------------------------------
 
-class TestStatusFormatting(unittest.TestCase):
 
+class TestStatusFormatting(unittest.TestCase):
     def test_health_status_appends_code_in_brackets(self):
         self.assertEqual(huawei.get_health_status(2), 'Faulty (2)')
         self.assertEqual(huawei.get_health_status('18'), 'Offline (18)')
@@ -246,8 +266,8 @@ class TestStatusFormatting(unittest.TestCase):
 # which is indistinguishable from the fallback. Pin both paths.
 # ---------------------------------------------------------------------------
 
-class TestHostAccessState(unittest.TestCase):
 
+class TestHostAccessState(unittest.TestCase):
     def test_forbidden(self):
         self.assertEqual(huawei.get_host_access_state(1), 'Forbidden')
 
@@ -263,8 +283,8 @@ class TestHostAccessState(unittest.TestCase):
 # get_uuid()
 # ---------------------------------------------------------------------------
 
-class TestGetUuid(unittest.TestCase):
 
+class TestGetUuid(unittest.TestCase):
     def test_builds_type_colon_id(self):
         self.assertEqual(huawei.get_uuid({'TYPE': '207', 'ID': '0A'}), '207:0A')
 
@@ -290,8 +310,8 @@ class TestGetUuid(unittest.TestCase):
 # url.fetch_json so nothing escapes the process.
 # ---------------------------------------------------------------------------
 
-class HuaweiHttpTestBase(unittest.TestCase):
 
+class HuaweiHttpTestBase(unittest.TestCase):
     def setUp(self):
         self.args = Args()
 
@@ -313,7 +333,13 @@ class HuaweiHttpTestBase(unittest.TestCase):
         self.sleep = mock.MagicMock(name='time.sleep')
         self._p_sleep = mock.patch.object(huawei._time, 'sleep', self.sleep)
 
-        for p in (self._p_fetch, self._p_cget, self._p_cset, self._p_now, self._p_sleep):
+        for p in (
+            self._p_fetch,
+            self._p_cget,
+            self._p_cset,
+            self._p_now,
+            self._p_sleep,
+        ):
             p.start()
             self.addCleanup(p.stop)
 
@@ -332,8 +358,8 @@ class HuaweiHttpTestBase(unittest.TestCase):
 # get_creds()
 # ---------------------------------------------------------------------------
 
-class TestGetCreds(HuaweiHttpTestBase):
 
+class TestGetCreds(HuaweiHttpTestBase):
     def test_login_returns_token_and_cookie(self):
         self.fetch_json.return_value = LOGIN_OK
         token, cookie = huawei.get_creds(self.args)
@@ -443,8 +469,8 @@ class TestGetCreds(HuaweiHttpTestBase):
 # get_data()
 # ---------------------------------------------------------------------------
 
-class TestGetData(HuaweiHttpTestBase):
 
+class TestGetData(HuaweiHttpTestBase):
     def setUp(self):
         super().setUp()
         # get_data calls get_creds internally; stub it so these tests focus on
@@ -500,14 +526,26 @@ class TestGetData(HuaweiHttpTestBase):
         self.assertTrue(kw['no_proxy'])
         self.assertEqual(kw['timeout'], 21)
 
-    def test_retries_until_max_on_persistent_auth_error(self):
-        # Every attempt returns error -401; the loop runs all 9 attempts.
+    def test_retries_until_max_on_persistent_error(self):
+        # Every attempt is rejected; the loop runs its three bounded attempts.
         self.fetch_json.return_value = (True, {'error': {'code': -401}})
         result = huawei.get_data('disk', self.args)
-        self.assertEqual(self.fetch_json.call_count, 9)
-        self.assertEqual(result['counter'], 9)
-        # sleep is invoked after every attempt, including the last one.
-        self.assertEqual(self.sleep.call_count, 9)
+        self.assertEqual(self.fetch_json.call_count, 3)
+        self.assertEqual(result['counter'], 3)
+        # sleep runs only between attempts, so one fewer than the attempt count.
+        self.assertEqual(self.sleep.call_count, 2)
+
+    def test_forces_relogin_on_second_attempt(self):
+        # A rejected first request must trigger a fresh login (force_relogin)
+        # rather than reusing the same token forever.
+        self.fetch_json.return_value = (True, {'error': {'code': -401}})
+        huawei.get_data('disk', self.args)
+        forced = [
+            call
+            for call in self.get_creds.call_args_list
+            if call.kwargs.get('force_relogin')
+        ]
+        self.assertEqual(len(forced), 1)
 
     def test_retries_sleep_one_second(self):
         self.fetch_json.return_value = (True, {'error': {'code': -401}})
@@ -518,32 +556,33 @@ class TestGetData(HuaweiHttpTestBase):
     def test_recovers_mid_loop_and_reports_attempt_count(self):
         self.fetch_json.side_effect = [
             (True, {'error': {'code': -401}}),
-            (True, {'error': {'code': -401}}),
             (True, {'error': {'code': 0}, 'data': ['recovered']}),
         ]
         result = huawei.get_data('disk', self.args)
-        self.assertEqual(result['counter'], 3)
-        self.assertEqual(self.fetch_json.call_count, 3)
-        # Two sleeps for the two failed attempts; the success breaks the loop.
-        self.assertEqual(self.sleep.call_count, 2)
+        self.assertEqual(result['counter'], 2)
+        self.assertEqual(self.fetch_json.call_count, 2)
+        # One sleep for the single failed attempt; the success breaks the loop.
+        self.assertEqual(self.sleep.call_count, 1)
         self.assertEqual(result['data'], ['recovered'])
 
     def test_missing_error_key_is_treated_as_failure_and_retried(self):
         # .get('error', {}).get('code') -> None, which is != 0, so it retries.
         self.fetch_json.return_value = (True, {'data': 'x'})
         result = huawei.get_data('disk', self.args)
-        self.assertEqual(self.fetch_json.call_count, 9)
-        self.assertEqual(result['counter'], 9)
+        self.assertEqual(self.fetch_json.call_count, 3)
+        self.assertEqual(result['counter'], 3)
 
     def test_empty_dict_response_retried_to_max(self):
         self.fetch_json.return_value = (True, {})
         result = huawei.get_data('disk', self.args)
-        self.assertEqual(result['counter'], 9)
-        self.assertEqual(self.fetch_json.call_count, 9)
+        self.assertEqual(result['counter'], 3)
+        self.assertEqual(self.fetch_json.call_count, 3)
 
-    def test_calls_get_creds_once(self):
+    def test_calls_get_creds_with_cached_session_first(self):
+        # On a first-try success the login is consulted once, reusing the
+        # cached session (force_relogin is False).
         huawei.get_data('disk', self.args)
-        self.get_creds.assert_called_once_with(self.args)
+        self.get_creds.assert_called_once_with(self.args, force_relogin=False)
 
     def test_fetch_failure_exits_via_coe(self):
         # A transport failure (False, msg) makes base.coe abort.

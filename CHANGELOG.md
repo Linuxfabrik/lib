@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * args.py: added a central help text for the `--no-match-severity` parameter, used by filter-based plugins to make the state configurable when no item matches the filters.
 * args.py: added a central help text for the `--unreachable-severity` parameter, used by end-of-life checks to make the state configurable when the online source is unreachable.
 * bexio.py: new library
+* huawei_pacific.py: new library for Huawei OceanStor Pacific storage systems, which use the `/api/v2/` REST API with `X-Auth-Token` authentication (a different protocol from the Dorado line).
 * shell.py: `shell_exec()` gained a `run_as` parameter to run a command as another local user with that user's session runtime directory (`XDG_RUNTIME_DIR`), as rootless Podman and other per-user session services require.
 * url.py: added new optional flag `response_on_error` for `fetch()`/`fetch_json()` to return the response body instead of an error message on failure. Primarily for use with APIs that provide machine-readable error responses such as the Bexio API.
 * version.py: `check_eol()` gained an `unreachable_severity` parameter to report a configurable state (default OK) when the online end-of-life source is unreachable and the bundled offline data is used. The offline fallback is no longer cached, so the next call retries the online source instead of masking a persistent outage.
@@ -20,13 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * args.py: the developer-only `--test` parameter is now hidden from plugin `--help` output. It is still accepted on the command line, so the unit-test suite keeps working.
+* huawei.py: renamed to `huawei_dorado.py`, freeing the generic name now that a second Huawei storage line is supported. **Breaking:** consumers must change their import from `lib.huawei` to `lib.huawei_dorado`.
 * redfish.py: a cached Redfish session token is now kept only as long as the controller itself keeps the session alive, read from the controller's own session timeout. This avoids sporadic "401 Unauthorized" errors on controllers with short session timeouts (such as Supermicro's 300 seconds) without having to tune the cache expiration by hand ([#246](https://github.com/Linuxfabrik/lib/issues/246)).
 * time.py: clarified the `timestr2epoch(..., pattern='iso8601')` docstring - the mode is backed by `datetime.fromisoformat()`, not a full ISO 8601 parser, and which layouts it accepts beyond RFC 3339 depends on the Python version.
 
 ### Fixed
 
-* huawei.py: Huawei OceanStor Dorado checks no longer raise a false warning for a backup battery unit that is charging, and more component states are now shown with a readable label instead of `Unknown` (for example spun-down disks, link up/down, and replication states). The running-status translation was completed against the full documented status list.
-* huawei.py: Huawei OceanStor Dorado checks now recover on their own when the cached API session is no longer accepted by the appliance (after a controller reboot, a manual session reset, or the server-side session timeout). The check logs in again and retries instead of failing, and it no longer keeps retrying a doomed request long enough to risk hitting the monitoring server's check timeout.
+* huawei_dorado.py: Huawei OceanStor Dorado checks no longer raise a false warning for a backup battery unit that is charging, and more component states are now shown with a readable label instead of `Unknown` (for example spun-down disks, link up/down, and replication states). The running-status translation was completed against the full documented status list.
+* huawei_dorado.py: Huawei OceanStor Dorado checks now recover on their own when the cached API session is no longer accepted by the appliance (after a controller reboot, a manual session reset, or the server-side session timeout). The check logs in again and retries instead of failing, and it no longer keeps retrying a doomed request long enough to risk hitting the monitoring server's check timeout.
 
 
 ## [v5.1.0] - 2026-06-24
