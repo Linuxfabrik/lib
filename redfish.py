@@ -11,9 +11,10 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070300'
+__version__ = '2026070700'
 
 import base64
+import urllib.parse
 
 from . import base, cache, human, time, txt, url
 from .globals import STATE_CRIT, STATE_OK, STATE_WARN
@@ -377,6 +378,46 @@ VOLUME_NESTED_KEYS = {
 #   * Starting              This function or resource is starting.
 #   * UnavailableOffline    This function or resource is present but cannot be used.
 #   * Updating              The element is updating and may be unavailable or degraded.
+
+
+def build_url(base_url, odata_id):
+    """
+    Build an absolute Redfish URL from the operator-supplied base URL and a server-supplied
+    `@odata.id` link, always taking scheme and host from the base URL.
+
+    Redfish responses reference sub-resources by an `@odata.id` field that is expected to be a
+    server-relative path such as `/redfish/v1/Systems/1`. Concatenating it onto the base URL
+    without validation lets a malicious or compromised controller inject a different authority
+    (for example an `@host` userinfo prefix that turns `https://bmc` + `@evil/x` into
+    `https://bmc@evil/x`), turning the next authenticated request into a server-side request
+    forgery that also forwards the Redfish auth header to the attacker-chosen host
+    (CWE-918/CWE-20). This helper rejects any `@odata.id` that is not a single-slash-rooted
+    relative path and pins scheme and host to `base_url`, so a response can never redirect the
+    request to another host.
+
+    ### Parameters
+    - **base_url** (`str`): The operator-supplied Redfish base URL, e.g. `https://bmc`.
+    - **odata_id** (`str`): The `@odata.id` value taken from the controller's response.
+
+    ### Returns
+    - **tuple** (`bool`, `str`):
+      - `(True, url)` with the safe absolute URL on success.
+      - `(False, error)` if `odata_id` is not a server-relative path.
+
+    ### Example
+    >>> build_url('https://bmc', '/redfish/v1/Systems/1')
+    (True, 'https://bmc/redfish/v1/Systems/1')
+    >>> build_url('https://bmc', '@evil.example.com/x')
+    (False, "Refusing non-relative Redfish @odata.id link: '@evil.example.com/x'")
+    """
+    if (
+        not isinstance(odata_id, str)
+        or not odata_id.startswith('/')
+        or odata_id.startswith('//')
+    ):
+        return False, f'Refusing non-relative Redfish @odata.id link: {odata_id!r}'
+    parts = urllib.parse.urlsplit(base_url)
+    return True, f'{parts.scheme}://{parts.netloc}{odata_id}'
 
 
 def get_auth_header(args):
