@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070301'
+__version__ = '2026070700'
 
 import base64
 import json
@@ -48,6 +48,80 @@ if hasattr(ssl, 'TLSVersion'):
         '1.2': ssl.TLSVersion.TLSv1_2,
         '1.3': ssl.TLSVersion.TLSv1_3,
     }
+
+# Transport headers that are safe to keep when a redirect crosses the origin.
+# httpx only strips `Authorization` and `Cookie` on a cross-origin redirect, so
+# any other credential header a caller set (an API session token such as
+# Redfish's `X-Auth-Token`, an API key, ...) would still be sent to the new,
+# possibly attacker-controlled host. Rather than enumerate every auth header a
+# caller might use, keep only these benign transport headers on a cross-origin
+# hop and drop everything else the caller supplied.
+_REDIRECT_SAFE_HEADERS = frozenset(
+    {
+        'accept',
+        'accept-encoding',
+        'accept-language',
+        'connection',
+        'content-length',
+        'content-type',
+        'host',
+        'transfer-encoding',
+        'user-agent',
+    }
+)
+
+
+def _default_port(url):
+    """Return the URL's port, filling in the scheme default when it is implicit."""
+    if url.port is not None:
+        return url.port
+    return 443 if url.scheme == 'https' else 80
+
+
+def _leaks_credentials_on_redirect(src, dst):
+    """Return True if a redirect from `src` to `dst` crosses the origin in a way
+    that must not carry credential headers. Mirrors httpx's own condition for
+    stripping `Authorization`: a plain same-host HTTP-to-HTTPS upgrade is allowed,
+    every other scheme/host/port change is treated as cross-origin."""
+    same_origin = (
+        src.scheme == dst.scheme
+        and src.host == dst.host
+        and _default_port(src) == _default_port(dst)
+    )
+    if same_origin:
+        return False
+    https_upgrade = (
+        src.host == dst.host
+        and src.scheme == 'http'
+        and _default_port(src) == 80
+        and dst.scheme == 'https'
+        and _default_port(dst) == 443
+    )
+    return not https_upgrade
+
+
+def _install_safe_redirect_stripping(client):
+    """Wrap an httpx client's redirect-header logic so credential headers are
+    dropped when a redirect crosses the origin. Patched on the instance (not via
+    subclassing) so it also works when a caller has replaced `httpx.Client` with
+    a test double, and so importing lib.url never touches `httpx` at module
+    scope. httpx looks `_redirect_headers` up on the instance, so the wrapper
+    shadows the original bound method."""
+    original = getattr(client, '_redirect_headers', None)
+    if original is None:
+        # A test double or a future httpx without this internal: nothing to wrap.
+        return client
+
+    def _redirect_headers(request, url, method):
+        headers = original(request, url, method)
+        if _leaks_credentials_on_redirect(request.url, url):
+            for name in list(headers.keys()):
+                if name.lower() not in _REDIRECT_SAFE_HEADERS:
+                    del headers[name]
+        return headers
+
+    client._redirect_headers = _redirect_headers
+    return client
 
 
 def _redact_url(url):
@@ -483,7 +557,7 @@ def fetch(
             client_kwargs['verify'] = ctx
             client_kwargs['http1'] = http_version in ('1.0', '1.1')
             client_kwargs['http2'] = http_version == '2'
-        client = httpx.Client(**client_kwargs)
+        client = _install_safe_redirect_stripping(httpx.Client(**client_kwargs))
     except Exception as e:
         return False, f'{e} while fetching {url_safe}'
 

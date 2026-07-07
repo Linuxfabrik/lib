@@ -1040,5 +1040,81 @@ class TestTimingClasses(unittest.TestCase):
         self.assertIsNone(backend)
 
 
+class TestRedirectOriginCheck(unittest.TestCase):
+    """Pure origin comparison used to decide whether a redirect may keep
+    credential headers."""
+
+    @skip_without_httpx
+    def test_cross_host_and_port_are_cross_origin(self):
+        self.assertTrue(
+            url._leaks_credentials_on_redirect(
+                httpx.URL('http://bmc/x'), httpx.URL('http://evil/y')
+            )
+        )
+        self.assertTrue(
+            url._leaks_credentials_on_redirect(
+                httpx.URL('http://bmc:80/x'), httpx.URL('http://bmc:9000/y')
+            )
+        )
+
+    @skip_without_httpx
+    def test_same_origin_and_https_upgrade_are_allowed(self):
+        self.assertFalse(
+            url._leaks_credentials_on_redirect(
+                httpx.URL('http://bmc/x'), httpx.URL('http://bmc/y')
+            )
+        )
+        # a plain same-host HTTP-to-HTTPS upgrade keeps credentials
+        self.assertFalse(
+            url._leaks_credentials_on_redirect(
+                httpx.URL('http://bmc/x'), httpx.URL('https://bmc/y')
+            )
+        )
+        # but an HTTPS-to-HTTP downgrade does not
+        self.assertTrue(
+            url._leaks_credentials_on_redirect(
+                httpx.URL('https://bmc/x'), httpx.URL('http://bmc/y')
+            )
+        )
+
+
+@skip_without_httpx
+class TestRedirectCredentialStripping(unittest.TestCase):
+    """The redirect-header wrapper installed on the httpx client must drop
+    credential headers when a redirect crosses the origin and keep them
+    otherwise. Exercised offline against the real httpx internals (no request is
+    sent), so it also fails loudly if a future httpx drops `_redirect_headers`
+    and the wrapper silently becomes a no-op. Regression guard for the SSRF /
+    auth-token-leak hardening."""
+
+    def _redirect_headers(self, from_url, to_url, sent):
+        client = url._install_safe_redirect_stripping(httpx.Client())
+        try:
+            request = httpx.Request('GET', from_url, headers=sent)
+            result = client._redirect_headers(request, httpx.URL(to_url), 'GET')
+        finally:
+            client.close()
+        return {key.lower() for key in result}
+
+    def test_cross_origin_strips_custom_auth_header(self):
+        keys = self._redirect_headers(
+            'http://bmc/x', 'http://evil/y', {'X-Auth-Token': 'secret'}
+        )
+        self.assertNotIn('x-auth-token', keys)
+
+    def test_cross_origin_strips_arbitrary_caller_header(self):
+        # deny-by-default: any non-transport header the caller set is dropped
+        keys = self._redirect_headers(
+            'http://bmc/x', 'http://evil/y', {'X-Api-Key': 'secret'}
+        )
+        self.assertNotIn('x-api-key', keys)
+
+    def test_same_origin_keeps_custom_auth_header(self):
+        keys = self._redirect_headers(
+            'http://bmc/x', 'http://bmc/y', {'X-Auth-Token': 'secret'}
+        )
+        self.assertIn('x-auth-token', keys)
+
+
 if __name__ == '__main__':
     unittest.main()
