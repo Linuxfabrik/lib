@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v6.0.0] - 2026-07-07
+
 ### Added
 
 * args.py: added a central help text for the `--no-match-severity` parameter, used by filter-based plugins to make the state configurable when no item matches the filters.
@@ -720,7 +725,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v5.1.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v6.0.0...HEAD
+[v6.0.0]: https://github.com/Linuxfabrik/lib/compare/v5.1.0...v6.0.0
 [v5.1.0]: https://github.com/Linuxfabrik/lib/compare/v5.0.0...v5.1.0
 [v5.0.0]: https://github.com/Linuxfabrik/lib/compare/v4.4.0...v5.0.0
 [v4.4.0]: https://github.com/Linuxfabrik/lib/compare/v4.3.0...v4.4.0
