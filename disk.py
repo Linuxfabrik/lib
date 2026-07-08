@@ -347,53 +347,33 @@ def get_owner(file):
         return -1
 
 
-def get_size(file):
+def stat(file):
     """
-    Get the size of a filesystem entry in bytes.
+    Return the `os.stat()` result for a filesystem entry, or `None` on failure.
+
+    A single stat() syscall exposes every field (size, modification time, mode,
+    owner, ...), so a caller that needs more than one of them should use this
+    instead of calling `get_size()`, `get_owner()` etc. separately. The common
+    fields (`st_size`, `st_mtime`, `st_mode`, `st_uid`) are available on every
+    supported platform, including Windows.
 
     ### Parameters
     - **file** *(str | os.PathLike)*:
-      Path whose size should be retrieved.
+      Path to stat.
 
     ### Returns
-    - **int**:
-      The size in bytes if available; `-1` if the call fails (for example the
-      path does not exist or is not accessible).
+    - **os.stat_result | None**:
+      The stat result on success; `None` if the call fails (for example the path
+      does not exist or is not accessible).
 
     ### Example
-    >>> get_size('/path/does/not/exist')
-    -1
+    >>> stat('/path/does/not/exist') is None
+    True
     """
     try:
-        return os.stat(file).st_size
+        return os.stat(file)
     except OSError:
-        return -1
-
-
-def get_mtime(file):
-    """
-    Get the last-modification time of a filesystem entry in seconds since the epoch.
-
-    `os.stat().st_mtime` returns this on every supported platform (including
-    Windows), so the value is portable.
-
-    ### Parameters
-    - **file** *(str | os.PathLike)*:
-      Path whose modification time should be retrieved.
-
-    ### Returns
-    - **float**:
-      The modification time in seconds since the epoch if available; `-1` if the
-      call fails (for example the path does not exist or is not accessible).
-
-    ### Example
-    >>> get_mtime('/path/does/not/exist')
-    -1
-    """
-    try:
-        return os.stat(file).st_mtime
-    except OSError:
-        return -1
+        return None
 
 
 def glob(pattern, recursive=True):
@@ -729,24 +709,31 @@ def read_env(filename, delimiter='='):
         return False, f'Unknown error opening or reading {filename}: {e}'
 
 
-def read_file(filename):
+def read_file(filename, binary=False):
     """
-    Read the contents of a file and return it as a string.
+    Read the contents of a file and return them.
 
     ### Parameters
     - **filename** (`str`): Path to the file to read.
+    - **binary** (`bool`, optional): If True, read in binary mode and return the
+      contents as `bytes`; otherwise decode as UTF-8 text. Defaults to False.
 
     ### Returns
     - **tuple**:
         - tuple[0] (**bool**): True if reading succeeded, otherwise False.
-        - tuple[1] (**str**):
-          - If successful, the contents of the file as a string.
+        - tuple[1] (**str | bytes**):
+          - If successful, the contents of the file (`str`, or `bytes` when
+            `binary` is True).
           - If unsuccessful, an error message string.
 
     ### Example
     >>> success, content = read_file('example.txt')
+    >>> success, raw = read_file('cert.der', binary=True)
     """
     try:
+        if binary:
+            with open(filename, mode='rb') as f:
+                return True, f.read()
         with open(filename, mode='r', encoding='utf-8') as f:
             return True, f.read()
     except OSError as e:

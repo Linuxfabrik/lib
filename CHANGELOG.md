@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* disk.py: `get_mtime()` and `get_size()` return a filesystem entry's modification time and size (or `-1` on failure), mirroring `get_owner()`.
 * disk.py: `glob()` returns a sorted list of paths matching a shell glob pattern (recursive by default).
+* disk.py: `read_file()` can return raw `bytes` via a new `binary` parameter.
+* disk.py: `stat()` returns a filesystem entry's `os.stat()` result (or `None`), so callers get every field (size, mtime, mode, owner, ...) in one syscall.
 * disk.py: `is_within()` reports whether a path resolves inside a set of allowed directories (symlinks and `..` are resolved so they cannot escape), for callers that must confine filesystem access.
 
 ### Fixed

@@ -35,6 +35,10 @@ class TestFileHelpers(unittest.TestCase):
         self.assertEqual(disk.write_file(self.file, 'hello'), (True, None))
         self.assertEqual(disk.read_file(self.file), (True, 'hello'))
 
+    def test_read_file_binary(self):
+        disk.write_file(self.file, 'héllo')
+        self.assertEqual(disk.read_file(self.file, binary=True), (True, 'héllo'.encode('utf-8')))
+
     def test_write_append(self):
         disk.write_file(self.file, 'a')
         disk.write_file(self.file, 'b', append=True)
@@ -77,15 +81,12 @@ class TestFileHelpers(unittest.TestCase):
         finally:
             shutil.rmtree(outside, ignore_errors=True)
 
-    def test_get_size(self):
+    def test_stat(self):
         disk.write_file(self.file, 'hello')
-        self.assertEqual(disk.get_size(self.file), 5)
-        self.assertEqual(disk.get_size(os.path.join(self.dir, 'nope')), -1)
-
-    def test_get_mtime(self):
-        disk.write_file(self.file, 'x')
-        self.assertGreater(disk.get_mtime(self.file), 0)
-        self.assertEqual(disk.get_mtime(os.path.join(self.dir, 'nope')), -1)
+        st = disk.stat(self.file)
+        self.assertEqual(st.st_size, 5)
+        self.assertGreater(st.st_mtime, 0)
+        self.assertIsNone(disk.stat(os.path.join(self.dir, 'nope')))
 
     def test_glob(self):
         disk.write_file(os.path.join(self.dir, 'a.log'), 'x')
