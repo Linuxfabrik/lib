@@ -77,6 +77,26 @@ class TestFileHelpers(unittest.TestCase):
         finally:
             shutil.rmtree(outside, ignore_errors=True)
 
+    def test_get_size(self):
+        disk.write_file(self.file, 'hello')
+        self.assertEqual(disk.get_size(self.file), 5)
+        self.assertEqual(disk.get_size(os.path.join(self.dir, 'nope')), -1)
+
+    def test_get_mtime(self):
+        disk.write_file(self.file, 'x')
+        self.assertGreater(disk.get_mtime(self.file), 0)
+        self.assertEqual(disk.get_mtime(os.path.join(self.dir, 'nope')), -1)
+
+    def test_glob(self):
+        disk.write_file(os.path.join(self.dir, 'a.log'), 'x')
+        disk.mkdir(os.path.join(self.dir, 'sub'))
+        disk.write_file(os.path.join(self.dir, 'sub', 'b.log'), 'y')
+        flat = disk.glob(os.path.join(self.dir, '*.log'))
+        self.assertEqual([os.path.basename(p) for p in flat], ['a.log'])
+        deep = disk.glob(os.path.join(self.dir, '**', '*.log'))
+        self.assertEqual([os.path.basename(p) for p in deep], ['a.log', 'b.log'])
+        self.assertEqual(disk.glob(os.path.join(self.dir, 'nope*')), [])
+
     def test_read_env(self):
         envfile = os.path.join(self.dir, 'env')
         disk.write_file(envfile, 'FOO=bar\nBAZ=qux\n')

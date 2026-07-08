@@ -13,9 +13,10 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061201'
+__version__ = '2026070801'
 
 import csv
+import glob as _glob
 import os
 import re
 import shutil
@@ -210,9 +211,12 @@ def is_within(path, roots):
     >>> is_within('/var/log/../etc/shadow', ['/var/log'])
     False
     """
-    real = os.path.realpath(path)
+    # normcase() is a no-op on POSIX but lowercases and normalizes separators on
+    # Windows, where paths are case-insensitive; without it the containment check
+    # would wrongly reject `C:\Var\Log\...` against a `C:\var\log` root.
+    real = os.path.normcase(os.path.realpath(path))
     for root in roots:
-        real_root = os.path.realpath(root)
+        real_root = os.path.normcase(os.path.realpath(root))
         if real == real_root or real.startswith(real_root + os.sep):
             return True
     return False
@@ -341,6 +345,81 @@ def get_owner(file):
         return os.stat(file).st_uid
     except OSError:
         return -1
+
+
+def get_size(file):
+    """
+    Get the size of a filesystem entry in bytes.
+
+    ### Parameters
+    - **file** *(str | os.PathLike)*:
+      Path whose size should be retrieved.
+
+    ### Returns
+    - **int**:
+      The size in bytes if available; `-1` if the call fails (for example the
+      path does not exist or is not accessible).
+
+    ### Example
+    >>> get_size('/path/does/not/exist')
+    -1
+    """
+    try:
+        return os.stat(file).st_size
+    except OSError:
+        return -1
+
+
+def get_mtime(file):
+    """
+    Get the last-modification time of a filesystem entry in seconds since the epoch.
+
+    `os.stat().st_mtime` returns this on every supported platform (including
+    Windows), so the value is portable.
+
+    ### Parameters
+    - **file** *(str | os.PathLike)*:
+      Path whose modification time should be retrieved.
+
+    ### Returns
+    - **float**:
+      The modification time in seconds since the epoch if available; `-1` if the
+      call fails (for example the path does not exist or is not accessible).
+
+    ### Example
+    >>> get_mtime('/path/does/not/exist')
+    -1
+    """
+    try:
+        return os.stat(file).st_mtime
+    except OSError:
+        return -1
+
+
+def glob(pattern, recursive=True):
+    """
+    Return a sorted list of paths matching a shell glob pattern.
+
+    Wraps the standard-library glob with `recursive=True` by default, so a `**`
+    segment spans directories. Absolute and relative patterns both work. A
+    pattern that matches nothing yields an empty list; the call never raises for
+    a non-matching pattern.
+
+    ### Parameters
+    - **pattern** *(str)*:
+      The glob pattern, e.g. `/var/log/**/*.log` or `*.txt`.
+    - **recursive** *(bool, optional)*:
+      Whether `**` should match across directory boundaries. Defaults to True.
+
+    ### Returns
+    - **list**:
+      The matching paths, sorted for a deterministic order.
+
+    ### Example
+    >>> glob('/path/does/not/exist/*')
+    []
+    """
+    return sorted(_glob.glob(pattern, recursive=recursive))
 
 
 def get_real_disks():
