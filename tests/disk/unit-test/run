@@ -16,6 +16,7 @@ only for its return shape here.
 """
 
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -54,6 +55,27 @@ class TestFileHelpers(unittest.TestCase):
     def test_grep_file_returns_first_group(self):
         disk.write_file(self.file, 'hello')
         self.assertEqual(disk.grep_file(self.file, 'he(l+)o'), (True, 'll'))
+
+    def test_is_within_containment_and_escape(self):
+        self.assertTrue(disk.is_within(os.path.join(self.dir, 'sub', 'a.log'), [self.dir]))
+        self.assertTrue(disk.is_within(self.dir, [self.dir]))
+        # `..` cannot climb out of the root
+        self.assertFalse(disk.is_within(os.path.join(self.dir, '..', 'x'), [self.dir]))
+        # a sibling sharing the name prefix must not match
+        self.assertFalse(disk.is_within(self.dir + 'x', [self.dir]))
+        # first matching root of several wins
+        self.assertTrue(disk.is_within('/var/lib/mysql/h.err', ['/var/log', '/var/lib/mysql']))
+
+    def test_is_within_resolves_symlink_out_of_root(self):
+        # A symlink inside the root pointing outside is rejected: this is why an
+        # operator must bind-mount (not symlink) an external location to include it.
+        outside = tempfile.mkdtemp(prefix='lftest-disk-out-')
+        try:
+            link = os.path.join(self.dir, 'link')
+            os.symlink(outside, link)
+            self.assertFalse(disk.is_within(os.path.join(link, 'secret'), [self.dir]))
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
 
     def test_read_env(self):
         envfile = os.path.join(self.dir, 'env')

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* disk.py: `is_within()` reports whether a path resolves inside a set of allowed directories (symlinks and `..` are resolved so they cannot escape), for callers that must confine filesystem access.
+
 ### Fixed
 
 * db_sqlite.py: `get_db_path()` rejects a database filename that is not a plain basename, so a caller cannot traverse out of the secured per-user directory.

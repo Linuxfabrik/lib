@@ -180,6 +180,44 @@ def file_exists(path, allow_empty=False):
     return os.path.getsize(path) > 0
 
 
+def is_within(path, roots):
+    """
+    Return whether `path` resolves inside one of the directories in `roots`.
+
+    Both `path` and each root are canonicalized with `os.path.realpath()` before
+    comparison, so symlinks and `..` segments are resolved and cannot be used to
+    step outside a root. A caller that must restrict which files it touches (for
+    example something running with elevated privileges that should stay inside an
+    operator-controlled directory) can use this to reject any path that escapes
+    the intended roots. Because symlinks are resolved, a symlink pointing out of
+    a root is rejected; to legitimately reach a location stored elsewhere,
+    bind-mount it into a root instead of symlinking it.
+
+    ### Parameters
+    - **path** (`str`):
+      The path to check. It need not exist; only its resolved location matters.
+    - **roots** (`iterable` of `str`):
+      The directories `path` is allowed to resolve into.
+
+    ### Returns
+    - **bool**:
+      True if `path` resolves to one of the roots or a location below it,
+      otherwise False.
+
+    ### Example
+    >>> is_within('/var/log/app/today.log', ['/var/log'])
+    True
+    >>> is_within('/var/log/../etc/shadow', ['/var/log'])
+    False
+    """
+    real = os.path.realpath(path)
+    for root in roots:
+        real_root = os.path.realpath(root)
+        if real == real_root or real.startswith(real_root + os.sep):
+            return True
+    return False
+
+
 # Block-device name prefixes that never carry meaningful I/O for monitoring
 # (loopback, RAM disks, compressed RAM, floppy and optical devices). They are
 # skipped by get_block_devices().
