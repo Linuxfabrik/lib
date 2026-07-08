@@ -14,12 +14,13 @@ import contextlib
 import os
 import re
 import shlex
+import sys
 import tempfile
 
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061901'
+__version__ = '2026070801'
 
 
 def run(test_instance, plugin, testcase):
@@ -660,9 +661,46 @@ def test(args):
     stderr = args[1] if len(args) > 1 else ''
     retc = int(args[2]) if len(args) > 2 and args[2] != '' else 0
 
-    if stdout and os.path.isfile(stdout):
-        _, stdout = disk.read_file(stdout)
-    if stderr and os.path.isfile(stderr):
-        _, stderr = disk.read_file(stderr)
+    stdout = _read_fixture(stdout)
+    stderr = _read_fixture(stderr)
 
     return stdout, stderr, retc
+
+
+def _read_fixture(value):
+    """
+    Resolve a `--test` channel value to fixture content, confined to the calling
+    plugin's own `unit-test/` directory.
+
+    The unit-test harness passes fixture paths relative to a plugin's
+    `unit-test/` directory (for example `stdout/ok`) and invokes the plugin as
+    an unprivileged user from within that directory. To keep that working while
+    preventing `--test` from reading arbitrary files when a plugin runs as root
+    (the plugins are whitelisted in the shipped sudoers file), the read is
+    confined to `<plugin_dir>/unit-test/`. The directory is anchored to the
+    plugin script's own location (`sys.argv[0]`), not the current working
+    directory, which an attacker controls. On a deployed host the plugin lives
+    in a flat plugins directory with no `unit-test/` sibling, so nothing there
+    resolves to a readable fixture and the value is returned verbatim. This
+    closes the arbitrary root file read reported in GHSA-rh9c-rqvg-f7pr.
+
+    A value that does not resolve to a contained fixture file (an absolute path,
+    a `..` escape, or an inline literal test string) is returned unchanged.
+    """
+    if not value:
+        return value
+    fixtures_dir = os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), 'unit-test')
+    # Refuse a symlinked anchor: on a host where the plugin directory is
+    # (mis)configured writable by the low-privilege user, a `unit-test` symlink
+    # to e.g. /etc would otherwise redirect the read out of the source tree. A
+    # real checkout always has unit-test/ as a plain directory. Symlinks *below*
+    # the anchor are already caught by the realpath containment check below,
+    # because they resolve to a path outside fixtures_dir.
+    if os.path.islink(fixtures_dir):
+        return value
+    fixtures_dir = os.path.realpath(fixtures_dir)
+    candidate = os.path.realpath(os.path.join(fixtures_dir, value))
+    if candidate == fixtures_dir or candidate.startswith(fixtures_dir + os.sep):
+        if os.path.isfile(candidate):
+            _, value = disk.read_file(candidate)
+    return value

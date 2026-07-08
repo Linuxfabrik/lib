@@ -17,7 +17,9 @@ exercised by the modules that use them, not here, so this stays a fast test.
 """
 
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -34,8 +36,16 @@ class TestTestHelper(unittest.TestCase):
     def setUp(self):
         self.cwd = os.getcwd()
         os.chdir(HERE)
+        # test() confines fixture reads to <plugin_dir>/unit-test/, anchored to
+        # sys.argv[0] (the plugin) rather than the cwd (which an attacker
+        # controls). Simulate a plugin whose unit-test/ directory is this test's
+        # own directory, so the stdout/ and stderr/ fixtures resolve exactly as
+        # they do for a real plugin run.
+        self._argv0 = sys.argv[0]
+        sys.argv[0] = os.path.join(os.path.dirname(HERE), 'lftest-plugin')
 
     def tearDown(self):
+        sys.argv[0] = self._argv0
         os.chdir(self.cwd)
 
     def test_stdout_only_defaults(self):
@@ -49,6 +59,51 @@ class TestTestHelper(unittest.TestCase):
 
     def test_empty_retc_field_is_zero(self):
         self.assertEqual(lftest.test(['stdout/case', '', '']), ('hello world', '', 0))
+
+    def test_absolute_path_is_not_read(self):
+        # An absolute path escapes the fixtures directory and must be returned
+        # verbatim instead of being read (GHSA-rh9c-rqvg-f7pr).
+        self.assertEqual(lftest.test(['/etc/hostname']), ('/etc/hostname', '', 0))
+
+    def test_parent_traversal_is_not_read(self):
+        # A ../ escape out of the fixtures directory must not read the target.
+        payload = '../../../../../../etc/hostname'
+        self.assertEqual(lftest.test([payload]), (payload, '', 0))
+
+
+class TestFixtureConfinement(unittest.TestCase):
+    """test(): the fixture read stays inside the plugin's own unit-test/ dir,
+    even against symlinks a writable plugin directory could plant."""
+
+    def setUp(self):
+        self._argv0 = sys.argv[0]
+        self.tmp = tempfile.mkdtemp()
+        self.secret = os.path.join(self.tmp, 'secret')
+        os.makedirs(self.secret)
+        with open(os.path.join(self.secret, 'shadow'), 'w') as handle:
+            handle.write('root:$leak$')
+
+    def tearDown(self):
+        sys.argv[0] = self._argv0
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_symlinked_unit_test_anchor_is_refused(self):
+        # A `unit-test` symlink pointing out of the tree (only reachable if the
+        # plugin dir is attacker-writable) must not redirect the read.
+        plugin_dir = os.path.join(self.tmp, 'plugins')
+        os.makedirs(plugin_dir)
+        os.symlink(self.secret, os.path.join(plugin_dir, 'unit-test'))
+        sys.argv[0] = os.path.join(plugin_dir, 'plugin')
+        self.assertEqual(lftest.test(['shadow']), ('shadow', '', 0))
+
+    def test_symlink_below_anchor_is_refused(self):
+        # unit-test/ is a real directory, but a subdir symlink escapes the tree.
+        plugin_dir = os.path.join(self.tmp, 'plugins')
+        unit_test = os.path.join(plugin_dir, 'unit-test')
+        os.makedirs(unit_test)
+        os.symlink(self.secret, os.path.join(unit_test, 'stdout'))
+        sys.argv[0] = os.path.join(plugin_dir, 'plugin')
+        self.assertEqual(lftest.test(['stdout/shadow']), ('stdout/shadow', '', 0))
 
 
 class TestIsMariadbImage(unittest.TestCase):

@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Fixed
+
+* db_sqlite.py: `get_db_path()` rejects a database filename that is not a plain basename, so a caller cannot traverse out of the secured per-user directory.
+* lftest.py: the shared `--test` unit-test mechanism could be used to read arbitrary files as root on hosts where plugins run via a sudoers allowlist; fixture reads are now confined to the calling plugin's own `unit-test/` directory ([GHSA-rh9c-rqvg-f7pr](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-rh9c-rqvg-f7pr)).
 
 
 ## [v6.0.0] - 2026-07-07

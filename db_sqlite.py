@@ -748,6 +748,12 @@ def get_db_path(path='', filename=''):
         path = disk.get_tmpdir()
     if not filename:
         filename = 'linuxfabrik-monitoring-plugins-sqlite.db'
+    # Confine the database to the secured per-user directory: a filename must be
+    # a plain basename. Reject anything that carries a path separator, a
+    # parent-directory reference or an absolute path, so a caller-supplied name
+    # cannot traverse out of the directory get_db_dir() just hardened.
+    if filename in ('.', '..') or os.path.basename(filename) != filename:
+        return False, f'Refusing unsafe database filename: {filename!r}'
     success, db_dir = get_db_dir(path)
     if not success:
         return False, db_dir
