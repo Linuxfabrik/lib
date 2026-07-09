@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * db_mysql.py: `get_replica_hosts()` lists the replicas registered with a server, using `SHOW REPLICAS` on MySQL 8.0.22+ and falling back to `SHOW SLAVE HOSTS` on MariaDB and older MySQL.
+* db_mysql.py: `get_server_info()` also returns `version_tuple`, the comparable form of the version it already reported as a string.
 * db_mysql.py: `get_version()` returns the connected server's flavor and version as a comparable tuple, so callers no longer parse the version string themselves.
 * disk.py: `glob()` returns a sorted list of paths matching a shell glob pattern (recursive by default).
 * disk.py: `read_file()` can return raw `bytes` via a new `binary` parameter.
@@ -21,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * icinga.py: `render_notification_mail()` renders the plain-text and HTML body of an Icinga notification mail from label/value rows, HTML-escaping the untrusted cell values.
 * mail.py: new library for sending plain-text and HTML email via SMTP, with optional login and inline related images.
 * rocket.py: `send_message()` posts a JSON payload to a complete Rocket.Chat incoming-webhook URL (with custom headers and the parsed response returned), complementing `send2webhook()` which builds the URL from a base plus a webhook id.
+
+### Changed
+
+* db_mysql.py: both version parsers share one flavor rule and delegate to `version.version()`, so a lowercase `-mariadb` tag is no longer read as MySQL.
+* version.py: importing the module no longer drags in the cache, SQLite and HTTP machinery; only `check_eol()` loads those, on call.
 
 ### Fixed
 

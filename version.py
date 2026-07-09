@@ -11,13 +11,12 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070201'
+__version__ = '2026070901'
 
 import datetime
 import json
 import re
 
-from . import base, cache, time, url
 from .globals import STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 
@@ -70,6 +69,12 @@ def check_eol(
     >>> check_eol('https://endoflife.date/api/python.json', '3.10')
     (STATE_WARN, 'EOL 2026-10-01')
     """
+    # Imported here, not at module level: `check_eol()` is the only consumer of
+    # these, and importing them eagerly would pull cache, db_sqlite and url into
+    # every module that only wants the pure `version()` / `version2float()`
+    # parsers below.
+    from . import base, cache, time, url
+
     now = time.now(as_type='datetime')
 
     try:

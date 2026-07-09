@@ -14,13 +14,13 @@ import re
 import sys
 import warnings
 
-from . import base
+from . import base, version
 from .globals import STATE_UNKNOWN
 
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070901'
+__version__ = '2026070902'
 
 try:
     import pymysql.cursors
@@ -515,19 +515,41 @@ _VERSION_REGEXES = (
 )
 
 
+def _flavor_of(raw):
+    """Return `'mariadb'` or `'mysql'` for a raw version token. MariaDB tags
+    itself in the version string; MySQL never does.
+    """
+    return 'mariadb' if 'mariadb' in raw.lower() else 'mysql'
+
+
 def _parse_version_banner(banner):
     """Extract `(flavor, version)` from a `mysqld`/`mariadbd`/`mariadb`/
-    `mysql` --version banner. Returns `(None, None)` if no regex matches.
+    `mysql` --version banner, `version` being a string. Returns
+    `(None, None)` if no regex matches.
     """
     for regex in _VERSION_REGEXES:
-        m = re.search(regex, banner)
+        # Case-insensitive so the `-MariaDB` tag reaches `_flavor_of()` no
+        # matter how a distro spells it.
+        m = re.search(regex, banner, flags=re.IGNORECASE)
         if not m:
             continue
         raw = m.group(1).strip()
-        flavor = 'mariadb' if '-MariaDB' in raw else 'mysql'
-        version = raw.replace('-MariaDB', '')
-        return flavor, version
+        return _flavor_of(raw), re.sub('-mariadb', '', raw, flags=re.IGNORECASE)
     return None, None
+
+
+def _server_info(banner):
+    """Build the `get_server_info()` dict from a --version banner, or return
+    `None` when the banner holds no version.
+    """
+    flavor, version_string = _parse_version_banner(banner)
+    if not version_string:
+        return None
+    return {
+        'flavor': flavor,
+        'version': version_string,
+        'version_tuple': version.version(version_string),
+    }
 
 
 def get_server_info(banner=None):
@@ -535,8 +557,11 @@ def get_server_info(banner=None):
     Determine the installed MySQL/MariaDB flavor and version. Does not
     require a database connection.
 
-    Returns a dict like `{'flavor': 'mariadb', 'version': '10.11.16'}`,
-    or `None` when nothing matches.
+    Returns a dict like `{'flavor': 'mariadb', 'version': '10.11.16',
+    'version_tuple': (10, 11, 16)}`, or `None` when nothing matches.
+    `version` is the string as the server reports it; `version_tuple` is
+    the same value made comparable, so callers never have to parse it
+    themselves.
 
     If `banner` is `None`, probe `mysqld`, `mariadbd`, `mariadb`, `mysql`
     in order and parse the first responding --version banner. Server
@@ -556,18 +581,15 @@ def get_server_info(banner=None):
       to parse instead of probing.
 
     ### Returns
-    - **dict | None**: `{'flavor': 'mariadb'|'mysql', 'version': str}`
-      or `None`.
+    - **dict | None**: `{'flavor': 'mariadb'|'mysql', 'version': str,
+      'version_tuple': tuple}` or `None`.
 
     ### Example
     >>> get_server_info()
-    {'flavor': 'mariadb', 'version': '10.11.16'}
+    {'flavor': 'mariadb', 'version': '10.11.16', 'version_tuple': (10, 11, 16)}
     """
     if banner is not None:
-        flavor, version = _parse_version_banner(banner)
-        if version:
-            return {'flavor': flavor, 'version': version}
-        return None
+        return _server_info(banner)
 
     # local import to keep db_mysql usable without shell at module load
     from . import shell
@@ -584,9 +606,9 @@ def get_server_info(banner=None):
         stdout, _, _ = result
         if not stdout:
             continue
-        flavor, version = _parse_version_banner(stdout.strip())
-        if version:
-            return {'flavor': flavor, 'version': version}
+        info = _server_info(stdout.strip())
+        if info:
+            return info
     return None
 
 
@@ -597,25 +619,26 @@ def get_server_info(banner=None):
 # handshake-derived string parses to 10.6.25 instead of 5.5.5.
 _MARIADB_HANDSHAKE_PREFIX = '5.5.5-'
 
-# A `VERSION()` value always starts with `major.minor.patch`, optionally
-# followed by a flavor and a distro suffix:
+# A `VERSION()` value always starts with `major.minor`, optionally followed by
+# a patch level, a flavor and a distro suffix:
 #   11.8.8-MariaDB-ubu2404
 #   8.0.45-0ubuntu0.22.04.1
-_VERSION_VALUE_REGEX = re.compile(r'(\d+)\.(\d+)\.(\d+)')
+# Used only to tell "this holds a version" from "this holds none"; turning the
+# string into a comparable tuple is `version.version()`'s job.
+_VERSION_VALUE_REGEX = re.compile(r'\d+\.\d+')
 
 
 def _parse_version_value(raw):
     """Extract `(flavor, version_tuple)` from a bare `VERSION()` value.
-    Returns `(None, ())` when no version number is found.
+    Returns `(None, ())` when no version number is found, rather than the
+    `(0, 0, 0)` that `version.version()` yields for unparseable input.
     """
     raw = (raw or '').strip()
     if raw.startswith(_MARIADB_HANDSHAKE_PREFIX):
         raw = raw[len(_MARIADB_HANDSHAKE_PREFIX) :]
-    match = _VERSION_VALUE_REGEX.search(raw)
-    if not match:
+    if not _VERSION_VALUE_REGEX.search(raw):
         return None, ()
-    flavor = 'mariadb' if 'mariadb' in raw.lower() else 'mysql'
-    return flavor, tuple(int(part) for part in match.groups())
+    return _flavor_of(raw), version.version(raw)
 
 
 def get_version(conn):

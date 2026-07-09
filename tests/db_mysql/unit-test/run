@@ -39,8 +39,14 @@ class TestVersionBanner(unittest.TestCase):
 
     def test_mariadb_distrib_banner(self):
         self.assertEqual(
-            db_mysql.get_server_info(banner='mysql  Ver 15.1 Distrib 10.11.8-MariaDB, for Linux'),
-            {'flavor': 'mariadb', 'version': '10.11.8'},
+            db_mysql.get_server_info(
+                banner='mysql  Ver 15.1 Distrib 10.11.8-MariaDB, for Linux'
+            ),
+            {
+                'flavor': 'mariadb',
+                'version': '10.11.8',
+                'version_tuple': (10, 11, 8),
+            },
         )
 
     def test_mysql_banner(self):
@@ -48,8 +54,18 @@ class TestVersionBanner(unittest.TestCase):
             db_mysql.get_server_info(
                 banner='mysql  Ver 8.0.36 for Linux on x86_64 (MySQL Community Server - GPL)'
             ),
-            {'flavor': 'mysql', 'version': '8.0.36'},
+            {'flavor': 'mysql', 'version': '8.0.36', 'version_tuple': (8, 0, 36)},
         )
+
+    def test_no_version_in_banner(self):
+        self.assertIsNone(db_mysql.get_server_info(banner='garbage with no version'))
+
+    def test_banner_flavor_detection_is_case_insensitive(self):
+        # `_parse_version_banner()` and `_parse_version_value()` share one
+        # flavor rule, so a lowercase `-mariadb` tag must not read as MySQL.
+        info = db_mysql.get_server_info(banner='mysqld  Ver 10.11.8-mariadb for Linux')
+        self.assertEqual(info['flavor'], 'mariadb')
+        self.assertEqual(info['version'], '10.11.8')
 
 
 class TestVersionValue(unittest.TestCase):
@@ -80,8 +96,17 @@ class TestVersionValue(unittest.TestCase):
             ('mariadb', (10, 6, 25)),
         )
 
+    def test_two_component_version_is_padded(self):
+        # `version.version()` pads to three components.
+        self.assertEqual(db_mysql._parse_version_value('11.8'), ('mysql', (11, 8, 0)))
+
     def test_unparseable(self):
         self.assertEqual(db_mysql._parse_version_value('not-a-version'), (None, ()))
+
+    def test_distro_suffix_alone_is_not_a_version(self):
+        # A bare `ubu2404` holds digits but no `major.minor`, so it must not
+        # be mistaken for version 2404.
+        self.assertEqual(db_mysql._parse_version_value('ubu2404'), (None, ()))
 
     def test_empty(self):
         self.assertEqual(db_mysql._parse_version_value(''), (None, ()))
@@ -94,7 +119,10 @@ class TestLod2Dict(unittest.TestCase):
     def test_maps_variable_name_to_value(self):
         self.assertEqual(
             db_mysql.lod2dict(
-                [{'Variable_name': 'a', 'Value': '1'}, {'Variable_name': 'b', 'Value': '2'}]
+                [
+                    {'Variable_name': 'a', 'Value': '1'},
+                    {'Variable_name': 'b', 'Value': '2'},
+                ]
             ),
             {'a': '1', 'b': '2'},
         )
@@ -110,7 +138,10 @@ class TestContainer(unittest.TestCase):
 def _check_image(test, containerfile):
     path = os.path.join(CONTAINERFILES_DIR, containerfile)
     print(f'\n=== Testing {containerfile} ===', flush=True)
-    with lib.lftest.run_mysql_compatible_from_containerfile(path) as (_container, defaults_file):
+    with lib.lftest.run_mysql_compatible_from_containerfile(path) as (
+        _container,
+        defaults_file,
+    ):
         ok, conn = db_mysql.connect({'defaults_file': defaults_file})
         test.assertTrue(ok, conn)
         try:
