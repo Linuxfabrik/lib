@@ -37,7 +37,7 @@ class TestFileHelpers(unittest.TestCase):
 
     def test_read_file_binary(self):
         disk.write_file(self.file, 'héllo')
-        self.assertEqual(disk.read_file(self.file, binary=True), (True, 'héllo'.encode('utf-8')))
+        self.assertEqual(disk.read_file(self.file, binary=True), (True, 'héllo'.encode()))
 
     def test_write_append(self):
         disk.write_file(self.file, 'a')
