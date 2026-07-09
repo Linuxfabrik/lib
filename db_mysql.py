@@ -20,7 +20,7 @@ from .globals import STATE_UNKNOWN
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061201'
+__version__ = '2026070901'
 
 try:
     import pymysql.cursors
@@ -436,6 +436,36 @@ def get_flavor():
     return info['flavor'] if info else None
 
 
+def get_replica_hosts(conn):
+    """
+    Return the rows of `SHOW REPLICAS` (or the legacy `SHOW SLAVE HOSTS`),
+    listing the replicas registered with this server.
+
+    `SHOW REPLICAS` is the MySQL 8.0.22+ wording; MySQL 8.4 dropped the `SLAVE`
+    keyword from its grammar entirely, so the legacy form is a syntax error
+    there. MariaDB in turn does not know `SHOW REPLICAS` and keeps
+    `SHOW SLAVE HOSTS`. This helper tries the newer form first and silently
+    falls back, so callers do not have to know which server flavour they are
+    talking to.
+
+    ### Parameters
+    - **conn** (`Connection`): An active database connection.
+
+    ### Returns
+    - **list**: One dict per registered replica, or `[]` when the server has
+      none. Also `[]` when the account may not list them: that needs
+      `REPLICATION SLAVE` on MySQL and `REPLICATION MASTER ADMIN` on
+      MariaDB 11+, while a monitoring account often holds only
+      `BINLOG MONITOR`.
+    """
+    success, rows = select(conn, 'SHOW REPLICAS')
+    if not success:
+        success, rows = select(conn, 'SHOW SLAVE HOSTS')
+    if not success or not rows:
+        return []
+    return rows
+
+
 def get_replica_status(conn):
     """
     Return the first row of `SHOW REPLICA STATUS` (or the legacy
@@ -558,6 +588,66 @@ def get_server_info(banner=None):
         if version:
             return {'flavor': flavor, 'version': version}
     return None
+
+
+# MariaDB announces its version to the client with a `5.5.5-` prefix during the
+# connection handshake (`5.5.5-10.6.25-MariaDB`), a compatibility hack for old
+# clients that refuse to talk to a server claiming a major version below 10.
+# `SELECT VERSION()` never carries the prefix, but strip it anyway so that a
+# handshake-derived string parses to 10.6.25 instead of 5.5.5.
+_MARIADB_HANDSHAKE_PREFIX = '5.5.5-'
+
+# A `VERSION()` value always starts with `major.minor.patch`, optionally
+# followed by a flavor and a distro suffix:
+#   11.8.8-MariaDB-ubu2404
+#   8.0.45-0ubuntu0.22.04.1
+_VERSION_VALUE_REGEX = re.compile(r'(\d+)\.(\d+)\.(\d+)')
+
+
+def _parse_version_value(raw):
+    """Extract `(flavor, version_tuple)` from a bare `VERSION()` value.
+    Returns `(None, ())` when no version number is found.
+    """
+    raw = (raw or '').strip()
+    if raw.startswith(_MARIADB_HANDSHAKE_PREFIX):
+        raw = raw[len(_MARIADB_HANDSHAKE_PREFIX) :]
+    match = _VERSION_VALUE_REGEX.search(raw)
+    if not match:
+        return None, ()
+    flavor = 'mariadb' if 'mariadb' in raw.lower() else 'mysql'
+    return flavor, tuple(int(part) for part in match.groups())
+
+
+def get_version(conn):
+    """
+    Return the connected server's flavor and version.
+
+    Asks the server itself via `SELECT VERSION()` instead of inspecting local
+    binaries, so it reports the server actually being talked to (which may be
+    remote, or a different install than the one on `PATH`). Use
+    `get_server_info()` when no connection is available.
+
+    The version is a comparable `(major, minor, patch)` tuple, so callers can
+    gate version-dependent behaviour with a plain comparison, for example
+    `flavor == 'mysql' and version >= (8, 0, 0)`.
+
+    ### Parameters
+    - **conn** (`Connection`): An active database connection.
+
+    ### Returns
+    - **tuple** (`str | None`, `tuple`):
+      - Flavor: `'mariadb'`, `'mysql'`, or `None` if the value is unparseable.
+      - Version: `(major, minor, patch)`, or `()` if the value is unparseable.
+
+    ### Example
+    >>> get_version(conn)
+    ('mariadb', (11, 8, 8))
+    >>> flavor, version = get_version(conn)
+    >>> flavor == 'mysql' and version >= (8, 0, 0)
+    False
+    """
+    row = base.coe(select(conn, 'SELECT VERSION() AS version', fetchone=True))
+    return _parse_version_value(row['version'] if row else '')
 
 
 def has_is_role_column(conn):

@@ -52,6 +52,44 @@ class TestVersionBanner(unittest.TestCase):
         )
 
 
+class TestVersionValue(unittest.TestCase):
+    """Pure `VERSION()` value parsing, no database needed."""
+
+    def test_mariadb(self):
+        self.assertEqual(
+            db_mysql._parse_version_value('11.8.8-MariaDB-ubu2404'),
+            ('mariadb', (11, 8, 8)),
+        )
+
+    def test_mysql(self):
+        self.assertEqual(
+            db_mysql._parse_version_value('8.4.9'),
+            ('mysql', (8, 4, 9)),
+        )
+
+    def test_mysql_with_distro_suffix(self):
+        self.assertEqual(
+            db_mysql._parse_version_value('8.0.45-0ubuntu0.22.04.1'),
+            ('mysql', (8, 0, 45)),
+        )
+
+    def test_mariadb_handshake_prefix_is_stripped(self):
+        # MariaDB announces `5.5.5-<real version>` in the client handshake.
+        self.assertEqual(
+            db_mysql._parse_version_value('5.5.5-10.6.25-MariaDB-ubu2204'),
+            ('mariadb', (10, 6, 25)),
+        )
+
+    def test_unparseable(self):
+        self.assertEqual(db_mysql._parse_version_value('not-a-version'), (None, ()))
+
+    def test_empty(self):
+        self.assertEqual(db_mysql._parse_version_value(''), (None, ()))
+
+    def test_none(self):
+        self.assertEqual(db_mysql._parse_version_value(None), (None, ()))
+
+
 class TestLod2Dict(unittest.TestCase):
     def test_maps_variable_name_to_value(self):
         self.assertEqual(
@@ -102,9 +140,23 @@ def _check_image(test, containerfile):
             # get_replica_status(): None on a standalone server.
             test.assertIsNone(db_mysql.get_replica_status(conn))
 
+            # get_replica_hosts(): [] on a standalone server. MariaDB rejects
+            # `SHOW REPLICAS`, so this also exercises the fallback to the
+            # legacy `SHOW SLAVE HOSTS`.
+            test.assertEqual(db_mysql.get_replica_hosts(conn), [])
+
             # has_is_role_column(): returns a definite bool against the live server
             # (the exact value is server/version dependent).
             test.assertIsInstance(db_mysql.has_is_role_column(conn), bool)
+
+            # get_version(): the containerfiles all run MariaDB, so the flavor is
+            # pinned; the version is only checked for shape, not for an exact
+            # value, so a container image bump does not break the test.
+            flavor, server_version = db_mysql.get_version(conn)
+            test.assertEqual(flavor, 'mariadb')
+            test.assertEqual(len(server_version), 3)
+            test.assertTrue(all(isinstance(part, int) for part in server_version))
+            test.assertGreaterEqual(server_version, (10, 0, 0))
 
             # root (via the defaults file) has the SELECT smoke-test privilege.
             ok, _ = db_mysql.check_select_privileges(conn)
