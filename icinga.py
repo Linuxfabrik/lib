@@ -11,10 +11,13 @@
 """This module tries to make accessing the Icinga2 API easier."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026070901'
 
 import base64
+import html
 import time
+import urllib.parse
+from string import Template
 
 from . import txt, url
 
@@ -97,6 +100,106 @@ def api_post(
     )
     time.sleep(DEFAULT_SLEEP)
     return result
+
+
+def build_icingaweb2_url(base_url, hostname, servicename=None):
+    """
+    Build an Icinga Web 2 detail URL for a host or a service.
+
+    Composes the Icinga DB module's host or service detail URL from a base Icinga Web 2 URL and the
+    object name(s). A service URL is built when `servicename` is a non-empty string, otherwise a
+    host URL.
+
+    The object names are treated as untrusted: they are URL-encoded (including `/`, `&`, `?`, `#`,
+    quotes and spaces), so a name cannot inject extra query parameters or break out of the URL. The
+    returned link is meant to be embedded verbatim in notifications (mail, chat), so the function
+    also pins the scheme to `http`/`https` and never emits a `javascript:`, `data:` or `file:` URL
+    from a malformed base URL.
+
+    ### Parameters
+    - **base_url** (`str`): Base Icinga Web 2 URL, e.g. `https://example.com/icingaweb2`.
+    - **hostname** (`str`): Host object name.
+    - **servicename** (`str`, optional): Service object name. When a non-empty string, a service
+      detail URL is built; otherwise a host detail URL. Defaults to `None`.
+
+    ### Returns
+    - **str** or **None**: The composed URL, or `None` when `base_url`/`hostname` is missing, not a
+      string, or when `base_url` does not use the `http`/`https` scheme.
+
+    ### Notes
+    - Callers that embed the URL in HTML must still HTML-escape it; encoding a URL is not the same
+      as escaping it for an HTML attribute.
+
+    ### Example
+    >>> build_icingaweb2_url('https://example.com/icingaweb2', 'web01')
+    'https://example.com/icingaweb2/icingadb/host?name=web01'
+    >>> build_icingaweb2_url('https://example.com/icingaweb2', 'web01', 'http')
+    'https://example.com/icingaweb2/icingadb/service?name=http&host.name=web01'
+    """
+    if not isinstance(base_url, str) or not isinstance(hostname, str):
+        return None
+    if not base_url or not hostname:
+        return None
+    if urllib.parse.urlsplit(base_url).scheme.lower() not in ('http', 'https'):
+        return None
+    if isinstance(servicename, str) and servicename:
+        query = urllib.parse.urlencode(
+            {'name': servicename, 'host.name': hostname},
+            quote_via=urllib.parse.quote,
+        )
+        path = f'icingadb/service?{query}'
+    else:
+        query = urllib.parse.urlencode(
+            {'name': hostname},
+            quote_via=urllib.parse.quote,
+        )
+        path = f'icingadb/host?{query}'
+    return urllib.parse.urljoin(f'{base_url}/', path)
+
+
+# Base64-encoded Icinga logo (PNG, 100x35 px).
+_LOGO_PNG_BASE64 = """
+iVBORw0KGgoAAAANSUhEUgAAAGQAAAAjCAQAAADItmcLAAAAAmJLR0QA/4ePzL8AAAAJcEhZcwAA
+CxMAAAsTAQCanBgAAAAHdElNRQfhChAQLB+jeuiSAAAFCklEQVRYw9WYf0yVVRjHP5d7uYAo6JKf
+Ggm4NtY0S1PyF6FLW239wRICLfmnQEv+snJmtbExwVzRD2eWs5xDpQbD5la2tlolRKHJQmqZrulF
+B1oKBMiFe5/+uIeX9733fbkX18a95/3jfc/zPOc553vOeX69MHGzU0MPLrYT4W0Xop5NkQ3krAak
+IbwXGhWE/4/JV0S2fG4jCH3khPdCbUElDjKTTg7xV2SfSBYNREfCQn02kk4dW035m6hnJHL2/UsE
+YV0AfS5NxEYGBN+J9ABeHjQ5jwZum47L5DFmhJ+xR1POJZ7gGjW4iWMj84nnHAUUMmAyqoB6HHSx
+lKvheDpOdnKAzXRpQbCXFaaSrYq/I3yv2mt4NBiCMOwHZTrL2cIVxS0L3zhykSw/SjMrgAQWsohF
+pNNBOwPsYT4nKLawoCkHspB2E5lqUkimg3bO8QceRY1hOJyuksPQW2AqM0oNF/D6UYdNPKAd8ARI
+ms16D9Pp4obl9kZhwxuCJou2zmAfY89aE8lCPiDbsAVNuJX8D6zRcZbxIXm6fgy7+VtJ/sTKAM2z
+qeWG4p+l2AJoFXUkWgNJZSgARj8xAXJJjCLUa/1nGDaM8fKqxvsT4ZLWu48Og6SHaoPmB3Q+0/cc
+87s1ACUIwpGJzmRvAJAaE6l7EYQ21VvNCILgpplmBtS4ZxX3FoKowBvL74p7mZ81yS2a3hSuKlon
+LfSq79qA+X9UHjXVGkiCSlfGnlPYgwJpVxdqrroajQhCt1q8Hohvm1zkAxDHOwjCv5qn3I8gXCEX
+gHjF95BpmH2ptro3JjqT9bTRgeDlIictClw9kFS17ESdKXciCNP8gDjpQ/CySqfpMwShSjkLH/8h
+Hb8BQXjSMPsRDcg168w8mSaygVk4gFROkBQEyP0IwnsG/jJ+4ZBy7eNAFqhLE+hevlK3QX/OY2lr
+M98YzDqFYYQRLiAIJVZAanna0C81PT49kFwE4WXLEx4H8ohJ7T9Pp+kuBKExiGd9HUE4TimC0GJe
+sxdh0/kigKPkU2tqJ8YmIQdfj4Hm1XFsIWiKphyAtznGdSCXJeMBcQbrmcdNfqOE5/0Uuckmj4N0
+TEGwXsIGHMAA++hWtKdIA1poBQ6wC6jw+UcHGZxW/sZDpTZgvG0jh/NTkjx9wWz1PYtt2mp8BuDz
+ca8QTRHb6YEo3lIwwM6LJr+Hmtgd0sX5v5vofkAlq/diHlbnUkcdb9IHOH05uMNQ4CaRwK2wyQNX
+s5Y57NFRKtR7g0GunGpGovyMb/J7P6LqFH2L5QVDvhVa8/hp6uYopwAYUttcZDounQJw0ESpRrpM
+/6Sn912Axw1uej+leIifZKI/iGBjOYn0arRHAXABUEYM8DXvGqK8z+DrIYlftcJ2ZYhT6uOIXeWq
+42niRgRhFKdfHMlHED41aMpAEM6o3ncqRkRr9dFNBGEN4MCFIIZMGpx0I4jvx4mdLBaTQ1zIe2fM
+tSrURnzLVspoxIsgfBQQEIMDyVNjz/MSm9nHIILQig0oRBCTwq8SQfjkzswwE0H4XnOUxwNy5jMk
+KO51hCFswCoE4bBBU5pKOMfajgBNLjIAOIwgPGdiIW7EskQL6uNP4tblOVHspF9XjXysM9lKPOwF
+YBptDAY4gUZGdFYKxVoqLwifk6ZlZW5Om/4urMLD+7Y7do52P38Xw93MxE4/LvosJf1HmdHszCEJ
+BwO4DMHAidvyR5b7P+7cOe8ELUP1AAAAAElFTkSuQmCC"""
+
+
+def get_logo():
+    """
+    Return the Icinga logo as PNG image bytes.
+
+    Provides the bundled Icinga logo as a 100x35 px PNG.
+
+    ### Returns
+    - **bytes**: The decoded PNG image data.
+
+    ### Example
+    >>> get_logo()[:8]
+    b'\\x89PNG\\r\\n\\x1a\\n'
+    """
+    return base64.b64decode(_LOGO_PNG_BASE64)
 
 
 def get_service(
@@ -286,6 +389,99 @@ def remove_downtime(
         no_proxy=no_proxy,
         timeout=timeout,
     )
+
+
+def render_notification_mail(rows, logo_cid, hostname):
+    """
+    Render the plain-text and HTML body of an Icinga notification mail.
+
+    Turns a list of label/value rows into a two-column notification: a plain-text version and an
+    HTML version whose header references the bundled logo by Content-ID. Cell values are treated as
+    untrusted and HTML-escaped; a newline becomes `<br>` and a value that is a URL becomes a link.
+
+    ### Parameters
+    - **rows** (`list` of `dict`): One row per line. Each dict has:
+      - `left_column` (`str`): The label.
+      - `right_column` (`str` or falsy): The value. Escaped before it reaches the HTML.
+      - `right_column_attributes` (`str`, optional): Extra attributes inserted verbatim into the
+        value cell's `<td>` (e.g. a fixed `style="..."`). The caller must keep this trusted; it is
+        not escaped.
+    - **logo_cid** (`str`): Content-ID of the inline logo image as produced by
+      `email.utils.make_msgid()` (with angle brackets); the brackets are stripped for the `cid:`
+      reference.
+    - **hostname** (`str`): Name of the host generating the notification, shown in the footer.
+
+    ### Returns
+    - **tuple** (`str`, `str`): `(plain_text, html)`.
+
+    ### Notes
+    - `right_column_attributes` is the only field inserted without escaping, so callers must build
+      it from trusted data only (a state-keyed color lookup, not raw external input).
+    """
+    row_template = Template("""
+                <tr>
+                    <th width="180px" class="$row_class">$left_column</th><td class="$row_class" $right_column_attributes>$right_column</td>
+                </tr>
+""")
+
+    html_template = Template("""
+<html><head><style type="text/css">
+body {text-align: center; font-family: Verdana, sans-serif; font-size: 10pt;}
+img.logo {float: left; margin: 10px 10px 10px; vertical-align: middle}
+img.link {float: right;  margin: 0px 1px; vertical-align: middle}
+span {font-family: Verdana, sans-serif; font-size: 12pt;}
+table {text-align:center; margin-left: auto; margin-right: auto; border: 1px solid black;}
+th {white-space: nowrap;}
+th.even {background-color: #D9D9D9;}
+td.even {background-color: #F2F2F2;}
+th.odd {background-color: #F2F2F2;}
+td.odd {background-color: #FFFFFF;}
+th,td {font-family: Verdana, sans-serif; font-size: 10pt; text-align:left;}
+th.customer {width: 600px; background-color: #004488; color: #ffffff;}
+p.foot {width: 1002px; background-color: #004488; color: #ffffff; margin-left: auto; margin-right: auto;};
+    </style></head>
+        <body>
+            <table width="1000px">
+                <tr>
+                    <td><img class="logo" src="cid:$logo_cid"></td><td><span>Icinga Monitoring System Notification</span></td>
+                </tr>
+                $table
+            </table>
+
+            <p class="foot">Generated by Icinga2 on $icinga_host, the OpenSource monitoring solution.</p>
+        </body>
+</html>
+""")
+
+    table = ''
+    plain = ''
+    for index, row in enumerate(rows):
+        value = row.get('right_column')
+        plain += f'{row["left_column"]} {value if value else ""}\n'
+
+        if value:
+            if value.startswith('http'):
+                safe = html.escape(value, quote=True)
+                cell = f'<a href="{safe}">{safe}</a>'
+            else:
+                cell = html.escape(value).replace('\n', '<br>')
+        else:
+            cell = ''
+
+        table += row_template.substitute(
+            row_class='even' if index % 2 == 0 else 'odd',
+            left_column=html.escape(row['left_column']),
+            right_column_attributes=row.get('right_column_attributes', ''),
+            right_column=cell,
+        )
+
+    # the logo_cid arrives wrapped in <> from make_msgid(); the HTML cid: needs it without
+    html_body = html_template.substitute(
+        table=table,
+        icinga_host=html.escape(hostname),
+        logo_cid=logo_cid[1:-1],
+    )
+    return plain, html_body
 
 
 def set_ack(

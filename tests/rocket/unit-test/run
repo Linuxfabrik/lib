@@ -144,7 +144,10 @@ class TestGetGroupsHistory(unittest.TestCase):
         captured, ctx = patch_fetch((True, {'ok': 1}))
         with ctx:
             rocket.get_groups_history(
-                'https://chat.example.com/api/v1///', AUTH_TOKEN, USER_ID, room_id='ABC123'
+                'https://chat.example.com/api/v1///',
+                AUTH_TOKEN,
+                USER_ID,
+                room_id='ABC123',
             )
         self.assertTrue(captured['url'].startswith(BASE_URL + '/groups.history?'))
 
@@ -166,7 +169,10 @@ class TestGetGroupsHistory(unittest.TestCase):
         captured, ctx = patch_fetch((True, {'ok': 1}))
         with ctx:
             rocket.get_groups_history(
-                BASE_URL, AUTH_TOKEN, USER_ID, room_id='ABC123',
+                BASE_URL,
+                AUTH_TOKEN,
+                USER_ID,
+                room_id='ABC123',
                 params={'count': 50, 'offset': 0},
             )
         self.assertEqual(
@@ -178,7 +184,10 @@ class TestGetGroupsHistory(unittest.TestCase):
         captured, ctx = patch_fetch((True, {'ok': 1}))
         with ctx:
             rocket.get_groups_history(
-                BASE_URL, AUTH_TOKEN, USER_ID, room_id='ABC123',
+                BASE_URL,
+                AUTH_TOKEN,
+                USER_ID,
+                room_id='ABC123',
                 params={'oldest': '2026-05-01T00:00:00.000Z'},
             )
         self.assertEqual(
@@ -229,8 +238,13 @@ class TestGetGroupsHistory(unittest.TestCase):
         captured, ctx = patch_fetch((True, {'ok': 1}))
         with ctx:
             rocket.get_groups_history(
-                BASE_URL, AUTH_TOKEN, USER_ID, room_id='ABC123',
-                insecure=True, no_proxy=True, timeout=42,
+                BASE_URL,
+                AUTH_TOKEN,
+                USER_ID,
+                room_id='ABC123',
+                insecure=True,
+                no_proxy=True,
+                timeout=42,
             )
         self.assertIs(captured['kw']['insecure'], True)
         self.assertIs(captured['kw']['no_proxy'], True)
@@ -284,7 +298,9 @@ class TestGetRoomsGet(unittest.TestCase):
     def test_trailing_slashes_stripped(self):
         captured, ctx = patch_fetch((True, {'ok': 1}))
         with ctx:
-            rocket.get_rooms_get('https://chat.example.com/api/v1//', AUTH_TOKEN, USER_ID)
+            rocket.get_rooms_get(
+                'https://chat.example.com/api/v1//', AUTH_TOKEN, USER_ID
+            )
         self.assertEqual(captured['url'], BASE_URL + '/rooms.get')
 
     def test_already_full_endpoint_not_doubled(self):
@@ -420,8 +436,13 @@ class TestGetRoomsInfo(unittest.TestCase):
         captured, ctx = patch_fetch((True, {'ok': 1}))
         with ctx:
             rocket.get_rooms_info(
-                BASE_URL, AUTH_TOKEN, USER_ID, room_id='ABC123',
-                insecure=True, no_proxy=True, timeout=7,
+                BASE_URL,
+                AUTH_TOKEN,
+                USER_ID,
+                room_id='ABC123',
+                insecure=True,
+                no_proxy=True,
+                timeout=7,
             )
         self.assertIs(captured['kw']['insecure'], True)
         self.assertIs(captured['kw']['no_proxy'], True)
@@ -558,7 +579,9 @@ class TestGetToken(unittest.TestCase):
     def test_trailing_slashes_stripped(self):
         captured, ctx = patch_fetch((True, load_fixture('login.json')))
         with ctx:
-            rocket.get_token('https://chat.example.com/api/v1///', 'admin', 'linuxfabrik')
+            rocket.get_token(
+                'https://chat.example.com/api/v1///', 'admin', 'linuxfabrik'
+            )
         self.assertEqual(captured['url'], BASE_URL + '/login')
 
     def test_already_full_endpoint_not_doubled(self):
@@ -571,7 +594,9 @@ class TestGetToken(unittest.TestCase):
         captured, ctx = patch_fetch((True, load_fixture('login.json')))
         with ctx:
             rocket.get_token(BASE_URL, 'admin', 'linuxfabrik')
-        self.assertEqual(captured['kw']['data'], {'user': 'admin', 'password': 'linuxfabrik'})
+        self.assertEqual(
+            captured['kw']['data'], {'user': 'admin', 'password': 'linuxfabrik'}
+        )
 
     def test_no_auth_headers_on_login(self):
         captured, ctx = patch_fetch((True, load_fixture('login.json')))
@@ -583,7 +608,12 @@ class TestGetToken(unittest.TestCase):
         captured, ctx = patch_fetch((True, load_fixture('login.json')))
         with ctx:
             rocket.get_token(
-                BASE_URL, 'admin', 'linuxfabrik', insecure=True, no_proxy=True, timeout=5
+                BASE_URL,
+                'admin',
+                'linuxfabrik',
+                insecure=True,
+                no_proxy=True,
+                timeout=5,
             )
         self.assertIs(captured['kw']['insecure'], True)
         self.assertIs(captured['kw']['no_proxy'], True)
@@ -672,7 +702,9 @@ class TestSend2Webhook(unittest.TestCase):
     def test_api_v1_with_trailing_slash(self):
         captured, ctx = patch_fetch((True, {'success': True}))
         with ctx:
-            rocket.send2webhook('https://chat.example.com/api/v1/', 'TOKEN', {'text': 'hi'})
+            rocket.send2webhook(
+                'https://chat.example.com/api/v1/', 'TOKEN', {'text': 'hi'}
+            )
         self.assertEqual(captured['url'], 'https://chat.example.com/hooks/TOKEN')
 
     def test_payload_posted_as_data(self):
@@ -692,8 +724,12 @@ class TestSend2Webhook(unittest.TestCase):
         captured, ctx = patch_fetch((True, {'success': True}))
         with ctx:
             rocket.send2webhook(
-                BASE_URL, 'TOKEN', {'text': 'hi'},
-                insecure=True, no_proxy=True, timeout=6,
+                BASE_URL,
+                'TOKEN',
+                {'text': 'hi'},
+                insecure=True,
+                no_proxy=True,
+                timeout=6,
             )
         self.assertIs(captured['kw']['insecure'], True)
         self.assertIs(captured['kw']['no_proxy'], True)
@@ -758,10 +794,14 @@ class TestRocketContainer(unittest.TestCase):
                 wait_log_timeout=120,
             ) as mongo,
         ):
-            mongo.exec([
-                'mongosh', '--quiet', '--eval',
-                'rs.initiate({_id:"rs0",members:[{_id:0,host:"mongo:27017"}]})',
-            ])
+            mongo.exec(
+                [
+                    'mongosh',
+                    '--quiet',
+                    '--eval',
+                    'rs.initiate({_id:"rs0",members:[{_id:0,host:"mongo:27017"}]})',
+                ]
+            )
             with lib.lftest.run_container(
                 ROCKETCHAT_IMAGE,
                 env={
@@ -798,6 +838,81 @@ class TestRocketContainer(unittest.TestCase):
                 ok, stats = rocket.get_stats(api, auth_token, user_id)
                 self.assertTrue(ok, stats)
                 self.assertIn('version', stats)
+
+
+# -----------------------------------------------------------------------------
+# send_message
+# -----------------------------------------------------------------------------
+
+
+class TestSendMessage(unittest.TestCase):
+    """Assert full-URL JSON webhook posting via send_message()."""
+
+    WEBHOOK = 'https://chat.example.com/hooks/abc/def'
+
+    def test_posts_to_full_url_unchanged(self):
+        captured, ctx = patch_fetch((True, {'success': True}))
+        with ctx:
+            rocket.send_message(self.WEBHOOK, {'text': 'hi'})
+        self.assertEqual(captured['url'], self.WEBHOOK)
+
+    def test_payload_posted_as_json(self):
+        captured, ctx = patch_fetch((True, {'success': True}))
+        payload = {'text': 'hi', 'attachments': [{'title': 't'}]}
+        with ctx:
+            rocket.send_message(self.WEBHOOK, payload)
+        self.assertEqual(captured['kw']['data'], payload)
+        self.assertEqual(captured['kw']['encoding'], 'serialized-json')
+        self.assertIs(captured['kw']['extended'], True)
+
+    def test_default_content_type_header(self):
+        captured, ctx = patch_fetch((True, {'success': True}))
+        with ctx:
+            rocket.send_message(self.WEBHOOK, {'text': 'hi'})
+        self.assertEqual(captured['kw']['header'], {'Content-Type': 'application/json'})
+
+    def test_custom_header_overrides_default(self):
+        captured, ctx = patch_fetch((True, {'success': True}))
+        header = {'Content-Type': 'application/json', 'X-Extra': '1'}
+        with ctx:
+            rocket.send_message(self.WEBHOOK, {'text': 'hi'}, header=header)
+        self.assertEqual(captured['kw']['header'], header)
+
+    def test_default_transport_kwargs(self):
+        captured, ctx = patch_fetch((True, {'success': True}))
+        with ctx:
+            rocket.send_message(self.WEBHOOK, {'text': 'hi'})
+        self.assertIs(captured['kw']['insecure'], False)
+        self.assertIs(captured['kw']['no_proxy'], False)
+        self.assertEqual(captured['kw']['timeout'], 3)
+
+    def test_transport_kwargs_forwarded(self):
+        captured, ctx = patch_fetch((True, {'success': True}))
+        with ctx:
+            rocket.send_message(
+                self.WEBHOOK,
+                {'text': 'hi'},
+                insecure=True,
+                no_proxy=True,
+                timeout=9,
+            )
+        self.assertIs(captured['kw']['insecure'], True)
+        self.assertIs(captured['kw']['no_proxy'], True)
+        self.assertEqual(captured['kw']['timeout'], 9)
+
+    def test_success_passes_through_fetch_result(self):
+        _, ctx = patch_fetch((True, {'ok': 1}))
+        with ctx:
+            success, result = rocket.send_message(self.WEBHOOK, {'text': 'hi'})
+        self.assertTrue(success)
+        self.assertEqual(result, {'ok': 1})
+
+    def test_transport_failure_passes_through(self):
+        _, ctx = patch_fetch((False, 'HTTP 500'))
+        with ctx:
+            success, result = rocket.send_message(self.WEBHOOK, {'text': 'hi'})
+        self.assertFalse(success)
+        self.assertEqual(result, 'HTTP 500')
 
 
 if __name__ == '__main__':

@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.mail.
+
+lib.mail.send() assembles an EmailMessage and hands it to smtplib.SMTP. The
+suite replaces smtplib.SMTP with an in-memory fake, so no socket is ever
+opened, and asserts the message-assembly contract (From/To/Subject headers,
+plain-only vs. multipart/alternative, inline related image by Content-ID),
+the login contract (only when a password is set, sender used as the fallback
+login user) and the (success, result) error handling for a transport failure.
+"""
+
+import sys
+import unittest
+from typing import ClassVar
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.mail as mail
+
+
+class _FakeSMTP:
+    """Minimal smtplib.SMTP stand-in that records construction, login and send."""
+
+    instances: ClassVar[list] = []
+
+    def __init__(self, host=None, port=None, timeout=None):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self.logins = []
+        self.sent = []
+        _FakeSMTP.instances.append(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def login(self, user, password):
+        self.logins.append((user, password))
+
+    def send_message(self, msg):
+        self.sent.append(msg)
+
+
+def patch_smtp():
+    """Patch lib.mail.smtplib.SMTP with a fresh _FakeSMTP recorder."""
+    _FakeSMTP.instances = []
+    return mock.patch.object(mail.smtplib, 'SMTP', _FakeSMTP)
+
+
+class TestSend(unittest.TestCase):
+    """Assert message assembly, login handling and error propagation."""
+
+    def test_success_returns_true_true(self):
+        with patch_smtp():
+            result = mail.send(
+                'localhost', 'from@example.com', 'to@example.com', plain='Body'
+            )
+        self.assertEqual(result, (True, True))
+
+    def test_smtp_constructed_with_server_port_timeout(self):
+        with patch_smtp():
+            mail.send(
+                'mail.example.com',
+                'from@example.com',
+                'to@example.com',
+                plain='Body',
+                port=587,
+                timeout=12,
+            )
+        smtp = _FakeSMTP.instances[0]
+        self.assertEqual(smtp.host, 'mail.example.com')
+        self.assertEqual(smtp.port, 587)
+        self.assertEqual(smtp.timeout, 12)
+
+    def test_headers_set(self):
+        with patch_smtp():
+            mail.send(
+                'localhost',
+                'from@example.com',
+                'to@example.com',
+                subject='Subject Line',
+                plain='Body',
+            )
+        msg = _FakeSMTP.instances[0].sent[0]
+        self.assertEqual(msg['From'], 'from@example.com')
+        self.assertEqual(msg['To'], 'to@example.com')
+        self.assertEqual(msg['Subject'], 'Subject Line')
+
+    def test_empty_subject_omits_header(self):
+        with patch_smtp():
+            mail.send('localhost', 'from@example.com', 'to@example.com', plain='Body')
+        msg = _FakeSMTP.instances[0].sent[0]
+        self.assertIsNone(msg['Subject'])
+
+    def test_plain_only_message_is_text_plain(self):
+        with patch_smtp():
+            mail.send('localhost', 'from@example.com', 'to@example.com', plain='Body')
+        msg = _FakeSMTP.instances[0].sent[0]
+        self.assertFalse(msg.is_multipart())
+        self.assertEqual(msg.get_content_type(), 'text/plain')
+
+    def test_html_builds_multipart_alternative(self):
+        with patch_smtp():
+            mail.send(
+                'localhost',
+                'from@example.com',
+                'to@example.com',
+                plain='Body',
+                html='<p>Body</p>',
+            )
+        msg = _FakeSMTP.instances[0].sent[0]
+        types = [part.get_content_type() for part in msg.walk()]
+        self.assertIn('multipart/alternative', types)
+        self.assertIn('text/plain', types)
+        self.assertIn('text/html', types)
+
+    def test_inline_image_related_by_cid(self):
+        images = [
+            {
+                'data': b'\x89PNG\r\n\x1a\n',
+                'maintype': 'image',
+                'subtype': 'png',
+                'cid': '<logo@host>',
+            }
+        ]
+        with patch_smtp():
+            mail.send(
+                'localhost',
+                'from@example.com',
+                'to@example.com',
+                plain='Body',
+                html='<img src="cid:logo@host">',
+                images=images,
+            )
+        msg = _FakeSMTP.instances[0].sent[0]
+        image_parts = [p for p in msg.walk() if p.get_content_type() == 'image/png']
+        self.assertEqual(len(image_parts), 1)
+        # EmailMessage stores the Content-ID in angle brackets.
+        self.assertEqual(image_parts[0]['Content-ID'], '<logo@host>')
+
+    def test_images_ignored_without_html(self):
+        images = [{'data': b'x', 'maintype': 'image', 'subtype': 'png', 'cid': '<c>'}]
+        with patch_smtp():
+            mail.send(
+                'localhost',
+                'from@example.com',
+                'to@example.com',
+                plain='Body',
+                images=images,
+            )
+        msg = _FakeSMTP.instances[0].sent[0]
+        self.assertFalse(msg.is_multipart())
+
+    def test_no_login_without_password(self):
+        with patch_smtp():
+            mail.send('localhost', 'from@example.com', 'to@example.com', plain='Body')
+        self.assertEqual(_FakeSMTP.instances[0].logins, [])
+
+    def test_login_with_explicit_username(self):
+        with patch_smtp():
+            mail.send(
+                'localhost',
+                'from@example.com',
+                'to@example.com',
+                plain='Body',
+                username='login-user',
+                password='linuxfabrik',
+            )
+        self.assertEqual(_FakeSMTP.instances[0].logins, [('login-user', 'linuxfabrik')])
+
+    def test_login_falls_back_to_sender(self):
+        with patch_smtp():
+            mail.send(
+                'localhost',
+                'from@example.com',
+                'to@example.com',
+                plain='Body',
+                password='linuxfabrik',
+            )
+        self.assertEqual(
+            _FakeSMTP.instances[0].logins, [('from@example.com', 'linuxfabrik')]
+        )
+
+    def test_transport_failure_returns_error(self):
+        with mock.patch.object(
+            mail.smtplib, 'SMTP', side_effect=OSError('connection refused')
+        ):
+            result = mail.send(
+                'localhost', 'from@example.com', 'to@example.com', plain='Body'
+            )
+        self.assertFalse(result[0])
+        self.assertIn('connection refused', result[1])
+
+
+if __name__ == '__main__':
+    unittest.main()

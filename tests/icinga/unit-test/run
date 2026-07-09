@@ -85,8 +85,8 @@ class IcingaTestBase(unittest.TestCase):
 # api_post()
 # ---------------------------------------------------------------------------
 
-class TestApiPost(IcingaTestBase):
 
+class TestApiPost(IcingaTestBase):
     def test_returns_fetch_json_result_unchanged(self):
         sentinel = (True, {'results': [{'code': 200}]})
         self.fetch_json.return_value = sentinel
@@ -115,9 +115,7 @@ class TestApiPost(IcingaTestBase):
 
     def test_method_override_header_set_when_given(self):
         icinga.api_post(f'{URI}/v1/x', USER, PASSWORD, method_override='GET')
-        self.assertEqual(
-            self.sent_kwargs()['header']['X-HTTP-Method-Override'], 'GET'
-        )
+        self.assertEqual(self.sent_kwargs()['header']['X-HTTP-Method-Override'], 'GET')
 
     def test_method_override_header_absent_by_default(self):
         icinga.api_post(f'{URI}/v1/x', USER, PASSWORD)
@@ -184,8 +182,8 @@ class TestApiPost(IcingaTestBase):
 # get_service()
 # ---------------------------------------------------------------------------
 
-class TestGetService(IcingaTestBase):
 
+class TestGetService(IcingaTestBase):
     def test_uri_targets_services_endpoint(self):
         icinga.get_service(URI, USER, PASSWORD, 'host!svc')
         self.assertEqual(self.sent_uri(), f'{URI}/v1/objects/services')
@@ -196,9 +194,7 @@ class TestGetService(IcingaTestBase):
 
     def test_uses_get_method_override(self):
         icinga.get_service(URI, USER, PASSWORD, 'host!svc')
-        self.assertEqual(
-            self.sent_kwargs()['header']['X-HTTP-Method-Override'], 'GET'
-        )
+        self.assertEqual(self.sent_kwargs()['header']['X-HTTP-Method-Override'], 'GET')
 
     def test_filter_matches_service_name(self):
         icinga.get_service(URI, USER, PASSWORD, 'host!special-service')
@@ -227,8 +223,13 @@ class TestGetService(IcingaTestBase):
 
     def test_forwards_insecure_no_proxy_timeout(self):
         icinga.get_service(
-            URI, USER, PASSWORD, 'host!svc',
-            insecure=True, no_proxy=True, timeout=9,
+            URI,
+            USER,
+            PASSWORD,
+            'host!svc',
+            insecure=True,
+            no_proxy=True,
+            timeout=9,
         )
         kw = self.sent_kwargs()
         self.assertTrue(kw['insecure'])
@@ -240,19 +241,15 @@ class TestGetService(IcingaTestBase):
 # remove_ack()
 # ---------------------------------------------------------------------------
 
-class TestRemoveAck(IcingaTestBase):
 
+class TestRemoveAck(IcingaTestBase):
     def test_uri_targets_remove_acknowledgement(self):
         icinga.remove_ack(URI, USER, PASSWORD, 'host!svc')
-        self.assertEqual(
-            self.sent_uri(), f'{URI}/v1/actions/remove-acknowledgement'
-        )
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/actions/remove-acknowledgement')
 
     def test_trailing_slash_stripped(self):
         icinga.remove_ack(URI + '/', USER, PASSWORD, 'host!svc')
-        self.assertEqual(
-            self.sent_uri(), f'{URI}/v1/actions/remove-acknowledgement'
-        )
+        self.assertEqual(self.sent_uri(), f'{URI}/v1/actions/remove-acknowledgement')
 
     def test_default_type_is_service_capitalised(self):
         icinga.remove_ack(URI, USER, PASSWORD, 'host!svc')
@@ -286,8 +283,13 @@ class TestRemoveAck(IcingaTestBase):
 
     def test_forwards_insecure_no_proxy_timeout(self):
         icinga.remove_ack(
-            URI, USER, PASSWORD, 'host!svc',
-            insecure=True, no_proxy=True, timeout=11,
+            URI,
+            USER,
+            PASSWORD,
+            'host!svc',
+            insecure=True,
+            no_proxy=True,
+            timeout=11,
         )
         kw = self.sent_kwargs()
         self.assertTrue(kw['insecure'])
@@ -299,8 +301,8 @@ class TestRemoveAck(IcingaTestBase):
 # remove_downtime()
 # ---------------------------------------------------------------------------
 
-class TestRemoveDowntime(IcingaTestBase):
 
+class TestRemoveDowntime(IcingaTestBase):
     def test_uri_targets_remove_downtime(self):
         icinga.remove_downtime(URI, USER, PASSWORD, 'host!svc!uuid')
         self.assertEqual(self.sent_uri(), f'{URI}/v1/actions/remove-downtime')
@@ -341,8 +343,8 @@ class TestRemoveDowntime(IcingaTestBase):
 # set_ack()
 # ---------------------------------------------------------------------------
 
-class TestSetAck(IcingaTestBase):
 
+class TestSetAck(IcingaTestBase):
     def test_uri_targets_acknowledge_problem(self):
         icinga.set_ack(URI, USER, PASSWORD, 'host!svc')
         self.assertEqual(self.sent_uri(), f'{URI}/v1/actions/acknowledge-problem')
@@ -389,8 +391,13 @@ class TestSetAck(IcingaTestBase):
 
     def test_forwards_insecure_no_proxy_timeout(self):
         icinga.set_ack(
-            URI, USER, PASSWORD, 'host!svc',
-            insecure=True, no_proxy=True, timeout=5,
+            URI,
+            USER,
+            PASSWORD,
+            'host!svc',
+            insecure=True,
+            no_proxy=True,
+            timeout=5,
         )
         kw = self.sent_kwargs()
         self.assertTrue(kw['insecure'])
@@ -402,8 +409,8 @@ class TestSetAck(IcingaTestBase):
 # set_downtime()
 # ---------------------------------------------------------------------------
 
-class TestSetDowntime(IcingaTestBase):
 
+class TestSetDowntime(IcingaTestBase):
     NAME = 'host!svc!3ad20784-52f9-4acc-b2df-90788667d587'
 
     def ok_result(self, name=None):
@@ -455,9 +462,7 @@ class TestSetDowntime(IcingaTestBase):
 
     def test_explicit_start_and_end_times(self):
         self.fetch_json.return_value = self.ok_result()
-        icinga.set_downtime(
-            URI, USER, PASSWORD, 'host!svc', starttime=100, endtime=200
-        )
+        icinga.set_downtime(URI, USER, PASSWORD, 'host!svc', starttime=100, endtime=200)
         data = self.sent_kwargs()['data']
         self.assertEqual(data['start_time'], 100)
         self.assertEqual(data['end_time'], 200)
@@ -504,13 +509,161 @@ class TestSetDowntime(IcingaTestBase):
     def test_forwards_insecure_no_proxy_timeout(self):
         self.fetch_json.return_value = self.ok_result()
         icinga.set_downtime(
-            URI, USER, PASSWORD, 'host!svc',
-            insecure=True, no_proxy=True, timeout=13,
+            URI,
+            USER,
+            PASSWORD,
+            'host!svc',
+            insecure=True,
+            no_proxy=True,
+            timeout=13,
         )
         kw = self.sent_kwargs()
         self.assertTrue(kw['insecure'])
         self.assertTrue(kw['no_proxy'])
         self.assertEqual(kw['timeout'], 13)
+
+
+class TestBuildIcingaweb2Url(unittest.TestCase):
+    """Assert host/service URL composition and untrusted-input handling."""
+
+    BASE = 'https://example.com/icingaweb2'
+
+    def test_host_url(self):
+        self.assertEqual(
+            icinga.build_icingaweb2_url(self.BASE, 'web01'),
+            'https://example.com/icingaweb2/icingadb/host?name=web01',
+        )
+
+    def test_service_url(self):
+        self.assertEqual(
+            icinga.build_icingaweb2_url(self.BASE, 'web01', 'http'),
+            'https://example.com/icingaweb2/icingadb/service?name=http&host.name=web01',
+        )
+
+    def test_empty_servicename_builds_host_url(self):
+        self.assertEqual(
+            icinga.build_icingaweb2_url(self.BASE, 'web01', ''),
+            'https://example.com/icingaweb2/icingadb/host?name=web01',
+        )
+
+    def test_names_are_url_encoded(self):
+        result = icinga.build_icingaweb2_url(self.BASE, 'web 01', 'disk io')
+        self.assertIn('name=disk%20io', result)
+        self.assertIn('host.name=web%2001', result)
+        self.assertNotIn(' ', result)
+
+    def test_name_cannot_inject_query_parameter(self):
+        # A hostname carrying '&admin=1' must not become a second query parameter.
+        result = icinga.build_icingaweb2_url(self.BASE, 'web01&admin=1')
+        self.assertNotIn('&admin=1', result)
+        self.assertIn('%26admin%3D1', result)
+
+    def test_missing_base_url_returns_none(self):
+        self.assertIsNone(icinga.build_icingaweb2_url('', 'web01'))
+
+    def test_missing_hostname_returns_none(self):
+        self.assertIsNone(icinga.build_icingaweb2_url(self.BASE, ''))
+
+    def test_non_string_inputs_return_none(self):
+        self.assertIsNone(icinga.build_icingaweb2_url(None, 'web01'))
+        self.assertIsNone(icinga.build_icingaweb2_url(self.BASE, None))
+
+    def test_non_http_scheme_returns_none(self):
+        self.assertIsNone(icinga.build_icingaweb2_url('javascript:alert(1)', 'web01'))
+        self.assertIsNone(icinga.build_icingaweb2_url('file:///etc/passwd', 'web01'))
+        self.assertIsNone(icinga.build_icingaweb2_url('ftp://example.com', 'web01'))
+
+    def test_scheme_less_base_url_returns_none(self):
+        self.assertIsNone(
+            icinga.build_icingaweb2_url('example.com/icingaweb2', 'web01')
+        )
+
+
+class TestGetLogo(unittest.TestCase):
+    """Assert the bundled Icinga logo decodes to a valid PNG."""
+
+    def test_returns_bytes(self):
+        self.assertIsInstance(icinga.get_logo(), bytes)
+
+    def test_is_png(self):
+        # PNG magic number.
+        self.assertTrue(icinga.get_logo().startswith(b'\x89PNG\r\n\x1a\n'))
+
+    def test_dimensions_100x35(self):
+        # Width and height live in the IHDR chunk at bytes 16..24.
+        data = icinga.get_logo()
+        width = int.from_bytes(data[16:20], 'big')
+        height = int.from_bytes(data[20:24], 'big')
+        self.assertEqual((width, height), (100, 35))
+
+
+class TestRenderNotificationMail(unittest.TestCase):
+    """Assert notification-mail rendering, escaping and table structure."""
+
+    CID = '<178.199@linuxfabrik>'
+
+    def render(self, rows, hostname='monitor01'):
+        return icinga.render_notification_mail(rows, self.CID, hostname)
+
+    def test_returns_plain_and_html(self):
+        plain, html_body = self.render(
+            [{'left_column': 'Host:', 'right_column': 'web01'}]
+        )
+        self.assertIn('Host: web01', plain)
+        self.assertIn('<html>', html_body)
+
+    def test_value_is_html_escaped(self):
+        _, html_body = self.render(
+            [{'left_column': 'Output:', 'right_column': '<script>alert(1)</script>'}]
+        )
+        self.assertNotIn('<script>alert(1)', html_body)
+        self.assertIn('&lt;script&gt;alert(1)&lt;/script&gt;', html_body)
+
+    def test_label_is_html_escaped(self):
+        _, html_body = self.render([{'left_column': '<b>L</b>', 'right_column': 'v'}])
+        self.assertNotIn('<b>L</b>', html_body)
+        self.assertIn('&lt;b&gt;L&lt;/b&gt;', html_body)
+
+    def test_newline_becomes_br(self):
+        _, html_body = self.render([{'left_column': 'Out:', 'right_column': 'a\nb'}])
+        self.assertIn('a<br>b', html_body)
+
+    def test_url_value_becomes_escaped_link(self):
+        url = 'https://example.com/x?a=1&b=2'
+        _, html_body = self.render([{'left_column': 'Link:', 'right_column': url}])
+        self.assertIn('<a href="https://example.com/x?a=1&amp;b=2">', html_body)
+        # the raw ampersand must not survive in the attribute
+        self.assertNotIn('a=1&b=2', html_body)
+
+    def test_even_odd_alternation(self):
+        rows = [{'left_column': f'L{i}', 'right_column': f'v{i}'} for i in range(3)]
+        _, html_body = self.render(rows)
+        self.assertEqual(
+            html_body.count('class="even"'), 4
+        )  # rows 0 and 2 (th+td each)
+        self.assertEqual(html_body.count('class="odd"'), 2)  # row 1 (th+td)
+
+    def test_attributes_inserted_verbatim(self):
+        _, html_body = self.render(
+            [
+                {
+                    'left_column': 'State:',
+                    'right_column': 'DOWN',
+                    'right_column_attributes': 'style="background-color: #FFAA60"',
+                }
+            ]
+        )
+        self.assertIn('style="background-color: #FFAA60"', html_body)
+
+    def test_logo_cid_brackets_stripped(self):
+        _, html_body = self.render([{'left_column': 'L', 'right_column': 'v'}])
+        self.assertIn('src="cid:178.199@linuxfabrik"', html_body)
+
+    def test_footer_contains_escaped_hostname(self):
+        _, html_body = self.render(
+            [{'left_column': 'L', 'right_column': 'v'}], hostname='mon<x>'
+        )
+        self.assertIn('Generated by Icinga2 on mon&lt;x&gt;', html_body)
 
 
 if __name__ == '__main__':

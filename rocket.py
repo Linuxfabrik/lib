@@ -39,7 +39,7 @@ result = lib.base.coe(
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026070901'
 
 from . import url
 
@@ -478,3 +478,47 @@ def send2webhook(rc_url, webhook, data, insecure=False, no_proxy=False, timeout=
         return False, f'Error: {result}'
 
     return True, True
+
+
+def send_message(
+    webhook_url, data, header=None, insecure=False, no_proxy=False, timeout=3
+):
+    """
+    Post a JSON message payload to a Rocket.Chat incoming webhook (complete URL).
+
+    Unlike `send2webhook()`, which composes the endpoint from a base URL plus a webhook id and
+    posts form-encoded data, this function posts to an already complete incoming-webhook URL and
+    serialises `data` as JSON. This lets callers send rich payloads (custom emoji, attachments)
+    together with their own headers, and receive the parsed response.
+
+    ### Parameters
+    - **webhook_url** (`str`): Complete Rocket.Chat incoming-webhook URL, for example
+      `https://chat.example.com/hooks/<id>/<token>`.
+    - **data** (`dict`): JSON-serializable payload to send (e.g. `{'text': 'message'}`).
+    - **header** (`dict`, optional): Request headers. Defaults to
+      `{'Content-Type': 'application/json'}` when omitted.
+    - **insecure** (`bool`, optional): Allow insecure SSL connections. Defaults to `False`.
+    - **no_proxy** (`bool`, optional): Bypass any proxy settings. Defaults to `False`.
+    - **timeout** (`int`, optional): Request timeout in seconds. Defaults to `3`.
+
+    ### Returns
+    - **tuple** (`bool`, `dict` or `str`):
+      - On success: `(True, <response dict>)`.
+      - On failure: `(False, '<error message>')`.
+
+    ### Example
+    >>> send_message('https://chat.example.com/hooks/abc/def', {'text': 'hello'})
+    (True, {...})
+    """
+    if header is None:
+        header = {'Content-Type': 'application/json'}
+    return url.fetch_json(
+        webhook_url,
+        header=header,
+        data=data,
+        encoding='serialized-json',
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+        extended=True,
+    )
