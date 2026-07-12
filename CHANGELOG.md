@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* args.py: `--no-perfdata` help text, so plugins can offer a switch to suppress performance data output.
+* base.py: `oao()` gained a `no_perfdata` parameter to suppress the performance data section while keeping the message and exit code.
 * db_mysql.py: `get_replica_hosts()` lists the replicas registered with a server, using `SHOW REPLICAS` on MySQL 8.0.22+ and falling back to `SHOW SLAVE HOSTS` on MariaDB and older MySQL.
 * db_mysql.py: `get_server_info()` also returns `version_tuple`, the comparable form of the version it already reported as a string.
 * db_mysql.py: `get_version()` returns the connected server's flavor and version as a comparable tuple, so callers no longer parse the version string themselves.

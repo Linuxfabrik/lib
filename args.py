@@ -13,7 +13,7 @@
 import argparse
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070201'
+__version__ = '2026071201'
 
 
 # Help text descriptions only - no "Default:" here.
@@ -88,6 +88,11 @@ HELP_TEXTS = {
     ),
     '--no-match-severity': (
         'State to report when no item matches the filters and nothing is checked.'
+    ),
+    '--no-perfdata': (
+        'Suppress the performance data section from the output. '
+        'The status message and the exit code are unaffected, so alerting keeps working '
+        'while trending data is dropped.'
     ),
     '--no-proxy': 'Do not use a proxy.',
     '--offset-eol': (

@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061201'
+__version__ = '2026071201'
 
 import html
 import numbers
@@ -588,7 +588,7 @@ def match_range(value, spec):
     return True, not invert
 
 
-def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
+def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
     """
     Over and Out (OaO)
 
@@ -606,6 +606,8 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
       Defaults to an empty string (no performance data).
     - **always_ok** (`bool`, optional): If `True`, forces the exit code to `STATE_OK` regardless
       of the specified `state`. Defaults to `False`.
+    - **no_perfdata** (`bool`, optional): If `True`, suppresses the performance data section
+      entirely, printing only the message and preserving the exit code. Defaults to `False`.
 
     ### Returns
     - **None**: This function does not return; it terminates the script via `sys.exit()`.
@@ -620,6 +622,8 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
       original characters when rendering.
     - Sensitive information like passwords, tokens, and keys is automatically redacted.
     - `perfdata`, if provided, must follow monitoring plugin standards for performance metrics.
+    - `no_perfdata` only affects what is printed; the message and the exit code are unchanged, so
+      alerting keeps working while trending data is dropped from the output.
 
     ### Example
     >>> oao('Service is healthy', STATE_OK, 'load=0.12;1.00;5.00', always_ok=False)
@@ -644,7 +648,7 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False):
         parts = msg.split('\n', 1)
         parts[0] += ' (always ok)'
         msg = '\n'.join(parts)
-    print(f'{msg}|{perfdata.strip()}' if perfdata else msg)
+    print(f'{msg}|{perfdata.strip()}' if perfdata and not no_perfdata else msg)
     sys.exit(STATE_OK if always_ok else state)
 
 
