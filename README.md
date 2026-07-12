@@ -9,7 +9,7 @@
 <div align="center">
 
 ![GitHub Stars](https://img.shields.io/github/stars/linuxfabrik/lib)
-[![Star History Chart](https://api.star-history.com/svg?repos=Linuxfabrik/lib&type=Date)](https://star-history.com/#Linuxfabrik/lib&Date)
+[![Star History Chart](https://api.star-history.com/chart?repos=Linuxfabrik/lib&type=date&legend=top-left&sealed_token=6SUm1801mnVVflh1FjdwjwI1jTKV5frTQxeT9BI5GQvcCSalOiWVA9ZX6pLrUmxtmvs1v6KGVThzjW1gGciZf7jpiQbS4713HMIMiGkG-9v7I5GQhnnPIw)](https://www.star-history.com/?repos=Linuxfabrik%2Flib&type=date&legend=top-left)
 ![License](https://img.shields.io/github/license/linuxfabrik/lib)
 ![Version](https://img.shields.io/github/v/release/linuxfabrik/lib?sort=semver)
 [![PyPI](https://img.shields.io/pypi/v/linuxfabrik-lib)](https://pypi.org/project/linuxfabrik-lib/)
