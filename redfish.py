@@ -11,13 +11,36 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070700'
+__version__ = '2026071404'
 
 import base64
+import json
 import urllib.parse
 
 from . import base, cache, human, time, txt, url
 from .globals import STATE_CRIT, STATE_OK, STATE_WARN
+
+# Shared cache database filename for the Redfish fetch layer. The fetch helpers below cache by URL,
+# but only when a caller opts in by passing a non-zero `cache_expire` (the plugins pass one); with
+# the default `cache_expire=0` they fetch straight through and touch no cache. Several checks read
+# the same data from one controller each cycle (its session token, its `$expand` support, the
+# Systems or Managers collection and their members), so the first check to miss the cache fetches
+# and fills it and every sibling check reuses the entry instead of hitting the controller again.
+# Kept out of the default cache database so those response bodies do not mingle with other cached
+# data. Named here so every plugin and this library agree on the same file and can share entries.
+CACHE_FILENAME = 'linuxfabrik-monitoring-plugins-redfish.db'
+
+# Upper bound for the Redfish `$expand` `$levels` we ask for, even when a controller advertises a
+# higher `MaxLevels`. A single deeply expanded document already inlines every member a check reads;
+# going deeper only inflates the response (and the controller's work) without a caller that needs
+# it. Three levels reach the deepest tree we walk (Systems -> Storage -> Drives/Volumes).
+MAX_EXPAND_LEVELS = 3
+
+# `$expand` suffix used when the controller does not advertise its expand support (or the service
+# root cannot be read): ask for one level of subordinate members. `fetch_collection()` falls back
+# to a plain request if the controller rejects it, so this stays safe on controllers without
+# `$expand`.
+DEFAULT_EXPAND = '?$expand=.($levels=1)'
 
 CHASSIS_FAN_KEYS = (
     'FanName',
@@ -348,6 +371,33 @@ VOLUME_NESTED_KEYS = {
 }
 
 
+def _cache_read(cache_key, cache_expire, cache_filename):
+    """Return the cached JSON value stored under `cache_key`, or `None` on a miss.
+
+    Returns `None` when caching is off (`cache_expire` is `0`) or the key is absent, so callers
+    treat both the same and fetch. A stored value is deserialized from JSON before it is returned.
+    """
+    if not cache_expire:
+        return None
+    cached = cache.get(cache_key, filename=cache_filename)
+    return json.loads(cached) if cached else None
+
+
+def _cache_write(data, cache_key, cache_expire, cache_filename):
+    """Store `data` as JSON under `cache_key` for `cache_expire` seconds, when caching is on.
+
+    A no-op when caching is off (`cache_expire` is `0`) or `data` is not a JSON-serializable
+    container, so a failed fetch never poisons the cache.
+    """
+    if cache_expire and isinstance(data, (dict, list)):
+        cache.set(
+            cache_key,
+            json.dumps(data),
+            time.now() + cache_expire,
+            filename=cache_filename,
+        )
+
+
 # The "Status" property is common to many Redfish schema, and contains:
 #
 #   Health: This represents the health state of this resource in the absence
@@ -420,7 +470,223 @@ def build_url(base_url, odata_id):
     return True, f'{parts.scheme}://{parts.netloc}{odata_id}'
 
 
-def get_auth_header(args):
+def fetch_collection(
+    collection_url,
+    expand=DEFAULT_EXPAND,
+    header=None,
+    insecure=False,
+    no_proxy=False,
+    timeout=8,
+    retries=0,
+    cache_expire=0,
+    cache_filename=CACHE_FILENAME,
+):
+    """
+    Fetch a Redfish collection, asking the controller to inline its members in one request.
+
+    A Redfish collection (for example `Sensors`, `Memory`, `Drives` or `FirmwareInventory`) lists
+    its members as bare `@odata.id` references, so reading every member classically costs one
+    request for the collection plus one request per member. On a controller with dozens of members
+    that fan-out dominates the check runtime and, on a slow management controller, can exceed the
+    monitoring server's check timeout.
+
+    This helper appends the Redfish `$expand` query `expand` (default: one level of subordinate
+    members), which asks the controller to return the full member objects inline. When the
+    controller honours it, the whole collection is read in a single request; callers detect the
+    inlined members with `is_member_expanded()` and skip the per-member requests. When the
+    controller rejects `$expand` (some implementations answer with an HTTP error), this helper
+    transparently retries the plain request, so the returned document is the same either way, just
+    without the inlined members.
+
+    Callers pass the `expand` suffix that `get_expand_suffix()` derived from the controller's
+    advertised support, so a single request inlines as much of the subtree as the controller can.
+
+    When `cache_expire` is non-zero the parsed collection is cached under `redfish-<collection_url>`
+    (keyed by the plain URL, not the `$expand` variant) and reused by any sibling check reading the
+    same collection within the window, so identical reads across a host's Redfish checks hit the
+    cache instead of the controller. A failed fetch is never cached.
+
+    ### Parameters
+    - **collection_url** (`str`): The absolute URL of the collection resource, as produced by
+      `build_url()`. Must not already carry a query string.
+    - **expand** (`str`, optional): The `$expand` query suffix to append (default `DEFAULT_EXPAND`).
+    - **header** (`dict`, optional): Request headers (including the auth header).
+    - **insecure**, **no_proxy**, **timeout**, **retries**: Forwarded to `url.fetch_json()`.
+    - **cache_expire** (`int`, optional): Cache lifetime in seconds; `0` (default) disables caching.
+    - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
+
+    ### Returns
+    - **tuple** (`bool`, `dict` | `str`):
+      - `(True, collection)` with the parsed collection document on success. Its `Members` may or
+        may not be expanded, depending on controller support.
+      - `(False, error)` if the collection cannot be read even without `$expand`.
+
+    ### Example
+    >>> success, collection = fetch_collection('https://bmc/redfish/v1/Chassis/1U/Sensors')
+    >>> members = collection.get('Members', [])
+    """
+    cache_key = f'redfish-{collection_url}'
+    cached = _cache_read(cache_key, cache_expire, cache_filename)
+    if cached is not None:
+        return True, cached
+    # `expand` is the `$expand` query suffix (default: one level of subordinate members). It is
+    # derived from the controller's advertised expand support by `get_expand_suffix()`, so it is
+    # our own literal and cannot smuggle in a different authority the way an `@odata.id` could.
+    success, collection = url.fetch_json(
+        f'{collection_url}{expand}',
+        header=header,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+        retries=retries,
+    )
+    if not (success and isinstance(collection, dict)):
+        # controller rejected or could not answer the $expand query: read it plainly
+        success, collection = url.fetch_json(
+            collection_url,
+            header=header,
+            insecure=insecure,
+            no_proxy=no_proxy,
+            timeout=timeout,
+            retries=retries,
+        )
+    if success and isinstance(collection, dict):
+        _cache_write(collection, cache_key, cache_expire, cache_filename)
+        return True, collection
+    return success, collection
+
+
+def fetch_members(
+    members,
+    base_url,
+    header=None,
+    insecure=False,
+    no_proxy=False,
+    timeout=8,
+    retries=0,
+    cache_expire=0,
+    cache_filename=CACHE_FILENAME,
+):
+    """
+    Return every member reference of a Redfish collection as a fully populated dict.
+
+    A collection lists its members as reference stubs (`{"@odata.id": "..."}`). With the Redfish
+    `$expand` query (see `fetch_collection()`) the controller inlines the full member objects
+    instead. This helper accepts either form and normalizes it: members that already arrived
+    expanded are returned untouched, and members that are still bare references are fetched
+    individually. It also accepts inline reference arrays that are not part of a collection's
+    `Members` list, such as a storage member's `Drives` array.
+
+    Each follow-up request goes through `build_url()`, so a malicious or compromised controller
+    cannot redirect it to another host (see `build_url()` for the SSRF rationale).
+
+    When `cache_expire` is non-zero each fetched member is cached under `redfish-<member_url>` and
+    reused by any sibling check that reads the same member within the window. On a controller without
+    `$expand` support several checks otherwise re-fetch the same members every cycle, so this is what
+    keeps a fleet of Redfish checks from hammering the controller. Already-inlined members are not
+    re-cached (they came from an already-cached collection), and a failed fetch is never cached.
+
+    ### Parameters
+    - **members** (`list`): The member references, e.g. `collection.get('Members', [])` or a
+      storage member's `Drives` list. Each item is a dict, expanded or a bare `@odata.id` stub.
+    - **base_url** (`str`): The operator-supplied Redfish base URL, used to pin the host of every
+      follow-up request.
+    - **header** (`dict`, optional): Request headers (including the auth header).
+    - **insecure**, **no_proxy**, **timeout**, **retries**: Forwarded to `url.fetch_json()`.
+    - **cache_expire** (`int`, optional): Cache lifetime in seconds; `0` (default) disables caching.
+    - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
+
+    ### Returns
+    - **tuple** (`bool`, `list` | `str`):
+      - `(True, [member_dict, ...])` on success (the list is empty when `members` is empty).
+      - `(False, error)` if a bare reference is malformed or cannot be fetched.
+
+    ### Example
+    >>> success, collection = fetch_collection('https://bmc/redfish/v1/Chassis/1U/Sensors')
+    >>> success, sensors = fetch_members(collection.get('Members', []), 'https://bmc')
+    """
+    result = []
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        if is_member_expanded(member):
+            # the controller already inlined this member via $expand
+            result.append(member)
+            continue
+        # bare reference: fetch the member individually, pinning the host
+        success, member_url = build_url(base_url, member.get('@odata.id'))
+        if not success:
+            return False, member_url
+        cache_key = f'redfish-{member_url}'
+        member_data = _cache_read(cache_key, cache_expire, cache_filename)
+        if member_data is None:
+            success, member_data = url.fetch_json(
+                member_url,
+                header=header,
+                insecure=insecure,
+                no_proxy=no_proxy,
+                timeout=timeout,
+                retries=retries,
+            )
+            if not success or not isinstance(member_data, dict):
+                return False, member_data
+            _cache_write(member_data, cache_key, cache_expire, cache_filename)
+        result.append(member_data)
+    return True, result
+
+
+def fetch_resource(
+    resource_url,
+    header=None,
+    insecure=False,
+    no_proxy=False,
+    timeout=8,
+    retries=0,
+    cache_expire=0,
+    cache_filename=CACHE_FILENAME,
+):
+    """
+    Fetch a single Redfish resource by URL, optionally serving and filling a shared cache.
+
+    Unlike `fetch_collection()` this adds no `$expand` query; it is for reading an individual
+    resource such as the service root a caller inspects to detect the controller vendor. When
+    `cache_expire` is non-zero the parsed document is cached under `redfish-<resource_url>` and
+    reused by any sibling check that reads the same URL within the window, so identical reads across
+    a host's Redfish checks hit the cache instead of the controller. A failed fetch is never cached.
+
+    ### Parameters
+    - **resource_url** (`str`): The absolute URL of the resource.
+    - **header** (`dict`, optional): Request headers (including the auth header).
+    - **insecure**, **no_proxy**, **timeout**, **retries**: Forwarded to `url.fetch_json()`.
+    - **cache_expire** (`int`, optional): Cache lifetime in seconds; `0` (default) disables caching.
+    - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
+
+    ### Returns
+    - **tuple** (`bool`, `dict` | `str`):
+      - `(True, resource)` with the parsed resource document on success.
+      - `(False, error)` if the resource cannot be read.
+
+    ### Example
+    >>> success, root = fetch_resource('https://bmc/redfish/v1/')
+    """
+    cache_key = f'redfish-{resource_url}'
+    cached = _cache_read(cache_key, cache_expire, cache_filename)
+    if cached is not None:
+        return True, cached
+    success, resource = url.fetch_json(
+        resource_url,
+        header=header,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+        retries=retries,
+    )
+    if success and isinstance(resource, dict):
+        _cache_write(resource, cache_key, cache_expire, cache_filename)
+    return success, resource
+
+
+def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
     """
     Build the authentication header for Redfish API requests, reusing a cached session token.
 
@@ -428,24 +694,28 @@ def get_auth_header(args):
     request) and session-based auth (a token is obtained once from the SessionService and then
     presented as `X-Auth-Token`). Some management controllers create and log a new internal
     session for every Basic-auth request, which floods their session table or audit log. To avoid
-    that, this function establishes a session once, caches the returned token via `cache`, and
-    reuses it across requests and subsequent runs until the cache entry expires.
+    that, this function establishes a session once and, when `cache_expire` is non-zero, caches the
+    token under `redfish-<URL>-<USERNAME>-token` so this run's later requests and the sibling
+    Redfish checks on the host present the same token instead of each creating a new session.
 
     It degrades gracefully: when a session cannot be created (e.g. the implementation does not
     offer the SessionService) it falls back to HTTP Basic auth, and when no credentials are given
-    (e.g. against an anonymous mockup) it returns an empty header.
+    (e.g. against an anonymous mockup) it returns an empty header. Only the session token is cached;
+    the Basic and empty headers carry no token.
 
     The cached token's lifetime is bounded by the controller's own `SessionTimeout` (an inactivity
     timeout in seconds, read back from the SessionService) minus a `TIMEOUT`-sized safety margin, so
     a token is never reused after the controller would already have dropped the session, which
-    otherwise surfaces as a "401 Unauthorized". `CACHE_EXPIRE` (in minutes) caps that lifetime from
-    above; the effective cache time is the smaller of the two. When the controller does not report a
-    usable `SessionTimeout`, only `CACHE_EXPIRE` applies, so keep it below the controller's timeout
-    in that case.
+    otherwise surfaces as a "401 Unauthorized". `cache_expire` caps that lifetime from above; the
+    effective lifetime is the smaller of the two. When caching is off (`cache_expire` is `0`) the
+    SessionService is not even probed, since there is no lifetime to bound.
 
     ### Parameters
-    - **args** (object): must provide `URL`, `USERNAME`, `PASSWORD`, `INSECURE`, `NO_PROXY`,
-      `TIMEOUT` and `CACHE_EXPIRE` (cache lifetime in minutes).
+    - **args** (object): must provide `URL`, `USERNAME`, `PASSWORD`, `INSECURE`, `NO_PROXY` and
+      `TIMEOUT`.
+    - **cache_expire** (`int`, optional): Token cache lifetime cap in seconds; `0` (default) fetches
+      a fresh session and does not cache the token.
+    - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
 
     ### Returns
     - **dict**: a header fragment to merge into the request headers, one of
@@ -453,15 +723,16 @@ def get_auth_header(args):
 
     ### Example
     >>> header = {'Accept': 'application/json'}
-    >>> header.update(get_auth_header(args))
+    >>> header.update(get_auth_header(args, cache_expire=300))
     """
     if not (args.USERNAME and args.PASSWORD):
         return {}
 
     token_key = f'redfish-{args.URL}-{args.USERNAME}-token'
-    token = cache.get(token_key)
-    if token:
-        return {'X-Auth-Token': token}
+    if cache_expire:
+        cached_token = cache.get(token_key, filename=cache_filename)
+        if cached_token:
+            return {'X-Auth-Token': cached_token}
 
     # no cached token: create a new session via the SessionService
     success, result = url.fetch_json(
@@ -480,35 +751,38 @@ def get_auth_header(args):
     if success and isinstance(result, dict):
         token = result.get('response_header', {}).get('x-auth-token', '')
     if token:
-        # Bound the cached token's lifetime by the controller's own inactivity
-        # timeout (SessionTimeout, in seconds) so the token is never reused after
-        # the controller would already have dropped the session. CACHE_EXPIRE
-        # (minutes) caps it from above.
-        cache_ttl = args.CACHE_EXPIRE * 60
-        success, result = url.fetch_json(
-            f'{args.URL}/redfish/v1/SessionService',
-            encoding='serialized-json',
-            header={
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-Auth-Token': token,
-            },
-            insecure=args.INSECURE,
-            no_proxy=args.NO_PROXY,
-            timeout=args.TIMEOUT,
-        )
-        session_timeout = 0
-        if success and isinstance(result, dict):
-            try:
-                session_timeout = int(result.get('SessionTimeout') or 0)
-            except (TypeError, ValueError):
-                session_timeout = 0
-        if session_timeout > 0:
-            # Subtract a TIMEOUT-sized margin so a token fetched at the very edge
-            # of the window still reaches the controller before it drops the
-            # session. Never drop below one second.
-            cache_ttl = min(cache_ttl, max(session_timeout - args.TIMEOUT, 1))
-        cache.set(token_key, token, time.now() + cache_ttl)
+        if cache_expire:
+            # Bound the cached token's lifetime by the controller's own inactivity
+            # timeout (SessionTimeout, in seconds) so a sibling check never reuses
+            # the token after the controller would already have dropped the
+            # session. cache_expire caps it from above.
+            token_ttl = cache_expire
+            success, result = url.fetch_json(
+                f'{args.URL}/redfish/v1/SessionService',
+                encoding='serialized-json',
+                header={
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Auth-Token': token,
+                },
+                insecure=args.INSECURE,
+                no_proxy=args.NO_PROXY,
+                timeout=args.TIMEOUT,
+            )
+            session_timeout = 0
+            if success and isinstance(result, dict):
+                try:
+                    session_timeout = int(result.get('SessionTimeout') or 0)
+                except (TypeError, ValueError):
+                    session_timeout = 0
+            if session_timeout > 0:
+                # Subtract a TIMEOUT-sized margin so a token cached at the very edge
+                # of the window still reaches the controller before it drops the
+                # session. Never drop below one second.
+                token_ttl = min(token_ttl, max(session_timeout - args.TIMEOUT, 1))
+            cache.set(
+                token_key, token, time.now() + token_ttl, filename=cache_filename
+            )
         return {'X-Auth-Token': token}
 
     # session creation failed: fall back to HTTP Basic auth
@@ -873,6 +1147,76 @@ def get_chassis_thermal_temperatures(redfish):
         data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
 
     return data
+
+
+def get_expand_suffix(
+    base_url,
+    header=None,
+    insecure=False,
+    no_proxy=False,
+    timeout=8,
+    retries=0,
+    cache_expire=0,
+    cache_filename=CACHE_FILENAME,
+):
+    """
+    Return the deepest Redfish `$expand` query the controller advertises, as a URL suffix.
+
+    Reading the service root `/redfish/v1` once, this inspects
+    `ProtocolFeaturesSupported.ExpandQuery` and builds the most generic `$expand` suffix the
+    controller supports, so a single request inlines as much of a collection's subtree as possible
+    (see `fetch_collection()`). `ExpandAll` selects the `*` operator (subordinate resources and
+    links, so linked resources such as a storage controller's `Drives` are inlined too); otherwise
+    the `.` operator (subordinate resources only) is used. `Levels`/`MaxLevels` add a `$levels`
+    clause, capped at `MAX_EXPAND_LEVELS`.
+
+    When `cache_expire` is non-zero the derived suffix is cached under `redfish-expand-<base_url>`
+    and reused by the sibling Redfish checks on the host within the window, so the service root is
+    probed once per cycle instead of by every check. On any failure (root not readable, no expand
+    support advertised) it returns `DEFAULT_EXPAND`; `fetch_collection()` falls back to a plain
+    request should the controller reject even that.
+
+    ### Parameters
+    - **base_url** (`str`): The operator-supplied Redfish base URL, e.g. `https://bmc`.
+    - **header** (`dict`, optional): Request headers (including the auth header).
+    - **insecure**, **no_proxy**, **timeout**, **retries**: Forwarded to `url.fetch_json()`.
+    - **cache_expire** (`int`, optional): Cache lifetime in seconds; `0` (default) disables caching.
+    - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
+
+    ### Returns
+    - **str**: A `$expand` query suffix such as `?$expand=*($levels=1)`, or `DEFAULT_EXPAND` when
+      the controller's support is unknown.
+    """
+    expand_key = f'redfish-expand-{base_url}'
+    if cache_expire:
+        cached = cache.get(expand_key, filename=cache_filename)
+        if cached:
+            return cached
+    suffix = DEFAULT_EXPAND
+    success, root = url.fetch_json(
+        f'{base_url}/redfish/v1',
+        header=header,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        timeout=timeout,
+        retries=retries,
+    )
+    expand = {}
+    if success and isinstance(root, dict):
+        features = root.get('ProtocolFeaturesSupported', {})
+        if isinstance(features, dict):
+            expand = features.get('ExpandQuery', {}) or {}
+    if isinstance(expand, dict) and (expand.get('ExpandAll') or expand.get('NoLinks')):
+        # `*` inlines subordinate resources and links (e.g. Drives); `.` only subordinate resources
+        operator = '*' if expand.get('ExpandAll') else '.'
+        if expand.get('Levels'):
+            levels = min(int(expand.get('MaxLevels', 1) or 1), MAX_EXPAND_LEVELS)
+            suffix = f'?$expand={operator}($levels={levels})'
+        else:
+            suffix = f'?$expand={operator}'
+    if cache_expire:
+        cache.set(expand_key, suffix, time.now() + cache_expire, filename=cache_filename)
+    return suffix
 
 
 def get_manager(redfish):
@@ -1793,3 +2137,31 @@ def get_vendor(redfish):
         oem = redfish.get('Oem') or {}
         vendor = next(iter(oem), '')
     return vendor.lower() if vendor else 'generic'
+
+
+def is_member_expanded(member):
+    """
+    Report whether a Redfish collection member arrived fully populated or as a bare reference.
+
+    A collection normally lists its members as reference stubs (`{"@odata.id": "..."}`). With the
+    Redfish `$expand` query the controller inlines the full member object instead. A member counts
+    as expanded once it carries at least one property beyond the OData annotation keys (those
+    starting with `@odata`), because a real resource always exposes fields such as `Id`, `Name` or
+    `Status`. Used by `fetch_members()` to decide whether a follow-up request is still needed.
+
+    ### Parameters
+    - **member** (`dict`): A single entry from a collection's `Members` list (or an inline
+      reference array).
+
+    ### Returns
+    - **bool**: `True` if the member is already populated, `False` if it is a bare reference.
+
+    ### Example
+    >>> is_member_expanded({'@odata.id': '/redfish/v1/Chassis/1U/Sensors/0'})
+    False
+    >>> is_member_expanded({'@odata.id': '/redfish/v1/Chassis/1U/Sensors/0', 'Reading': 22.5})
+    True
+    """
+    if not isinstance(member, dict):
+        return False
+    return any(not key.startswith('@odata') for key in member)

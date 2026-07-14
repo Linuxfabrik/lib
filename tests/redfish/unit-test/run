@@ -10,20 +10,30 @@
 
 """Unit tests for lib.redfish.
 
-Apart from get_auth_header(), lib.redfish is a pure parser: it never opens a
-socket itself. The plugins that use it do the HTTP talking (through lib.url) and
-hand the already-decoded JSON (a Python dict) to these functions. There is
-therefore no transport to mock for the parser behaviour; the "HTTP layer" is the
-caller's concern. To keep the suite honest about that contract, the request-side
-is still asserted: a representative captured-style Redfish payload is decoded
-exactly the way a plugin would (json.loads on a fetched body) and fed in, and the
-parser output is pinned byte for byte. get_auth_header() is the one exception: it
-talks to lib.url, cache and time, all of which are mocked so its session/token
-caching logic can be pinned without a live controller.
+Most of lib.redfish is a pure parser: it never opens a socket itself. The plugins
+that use it do the HTTP talking (through lib.url) and hand the already-decoded
+JSON (a Python dict) to these functions. There is therefore no transport to mock
+for the parser behaviour; the "HTTP layer" is the caller's concern. To keep the
+suite honest about that contract, the request-side is still asserted: a
+representative captured-style Redfish payload is decoded exactly the way a plugin
+would (json.loads on a fetched body) and fed in, and the parser output is pinned
+byte for byte. build_url(), the fetch_* helpers, get_auth_header() and
+get_expand_suffix() are the exceptions: they talk to lib.url (and, on the caching
+paths, lib.cache/lib.time), all mocked so their request/fallback/cache logic can be
+pinned without a live controller. The fetch layer caches by URL, but only when a
+caller passes a non-zero cache_expire; with the default it fetches straight through
+and touches no cache. get_auth_header() returns just a header fragment and caches the
+session token itself when asked; get_expand_suffix() probes the service root and
+caches the derived suffix when asked.
 
-Public functions under test (17):
+Public functions under test (23):
 
-- get_auth_header()                        -> session token caching (mocked I/O)
+- build_url()                              -> @odata.id SSRF pinning
+- fetch_collection()                       -> $expand + plain fallback + cache (mocked I/O)
+- fetch_members()                          -> bare refs, skip expanded, cache (mocked I/O)
+- fetch_resource()                         -> cached plain GET (mocked I/O)
+- get_auth_header()                        -> session header, cached token (mocked I/O)
+- get_expand_suffix()                      -> deepest advertised $expand, cached (mocked I/O)
 - get_chassis()                            -> flat + nested key projection
 - get_chassis_power_powercontrol()         -> projection
 - get_chassis_power_powersupplies()        -> projection + PowerOutputWatts fallback
@@ -41,6 +51,7 @@ Public functions under test (17):
 - get_systems_storage()                    -> projection
 - get_systems_storage_drives()             -> projection + CapacityBytes + temperature
 - get_vendor()                             -> Vendor / Oem / 'generic' resolution
+- is_member_expanded()                     -> populated vs bare-reference detection
 
 All expected values were probed against the live module first, then pinned.
 Notably: lib.base.state2str renders [CRITICAL]/[WARNING] (not [CRIT]/[WARN]),
@@ -151,9 +162,8 @@ CAP_500GB = human.bytes2human(500000000000)  # '465.7GiB'
 
 
 # ---------------------------------------------------------------------------
-# get_auth_header (session token caching; lib.url/cache/time are mocked)
+# get_auth_header (create a session, return header + token + ttl; lib.url mocked)
 # ---------------------------------------------------------------------------
-TOKEN_KEY = 'redfish-https://203.0.113.10-linuxfabrik-token'
 # a session creation response as lib.url returns it with extended=True: the
 # X-Auth-Token header, lower-cased by lib.url (RFC 9110, section 5.1).
 SESSION_CREATED = (True, {'response_header': {'x-auth-token': 'new-token'}})
@@ -174,6 +184,9 @@ def _args(**over):
     return types.SimpleNamespace(**values)
 
 
+TOKEN_KEY = 'redfish-https://203.0.113.10-linuxfabrik-token'
+
+
 class TestGetAuthHeader(unittest.TestCase):
     def test_no_credentials_returns_empty_header(self):
         # Without both username and password there is nothing to authenticate.
@@ -181,138 +194,117 @@ class TestGetAuthHeader(unittest.TestCase):
         self.assertEqual(redfish.get_auth_header(_args(PASSWORD='')), {})
 
     @mock.patch.object(redfish, 'url')
+    def test_uncached_session_returns_token_header_without_probing_timeout(self, url_mock):
+        # cache_expire=0 (default): create a session, return its token header, and
+        # do NOT probe the SessionService (there is no lifetime to bound).
+        url_mock.fetch_json.side_effect = [SESSION_CREATED]
+        header = redfish.get_auth_header(_args())
+        self.assertEqual(header, {'X-Auth-Token': 'new-token'})
+        self.assertEqual(url_mock.fetch_json.call_count, 1)
+
     @mock.patch.object(redfish, 'cache')
-    def test_cached_token_is_reused_without_any_request(self, cache_mock, url_mock):
+    @mock.patch.object(redfish, 'url')
+    def test_cached_token_short_circuits(self, url_mock, cache_mock):
+        # A cached token is returned as-is; no session is created.
         cache_mock.get.return_value = 'cached-token'
-        out = redfish.get_auth_header(_args())
-        self.assertEqual(out, {'X-Auth-Token': 'cached-token'})
+        header = redfish.get_auth_header(_args(), cache_expire=300)
+        self.assertEqual(header, {'X-Auth-Token': 'cached-token'})
         url_mock.fetch_json.assert_not_called()
         cache_mock.set.assert_not_called()
 
     @mock.patch.object(redfish, 'time')
-    @mock.patch.object(redfish, 'url')
     @mock.patch.object(redfish, 'cache')
-    def test_session_timeout_bounds_ttl_with_margin(
-        self, cache_mock, url_mock, time_mock
+    @mock.patch.object(redfish, 'url')
+    def test_caching_bounds_ttl_with_session_timeout_margin(
+        self, url_mock, cache_mock, time_mock
     ):
-        cache_mock.get.return_value = False  # no cached token
-        time_mock.now.return_value = 1_000_000
-        url_mock.fetch_json.side_effect = [
-            SESSION_CREATED,
-            (True, {'SessionTimeout': 300}),
-        ]
-        out = redfish.get_auth_header(_args(CACHE_EXPIRE=60, TIMEOUT=8))
-        self.assertEqual(out, {'X-Auth-Token': 'new-token'})
-        # min(60*60, 300 - 8) = 292; expiry is now + ttl
-        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 292)
-
-    @mock.patch.object(redfish, 'time')
-    @mock.patch.object(redfish, 'url')
-    @mock.patch.object(redfish, 'cache')
-    def test_cache_expire_caps_a_large_session_timeout(
-        self, cache_mock, url_mock, time_mock
-    ):
-        cache_mock.get.return_value = False
-        time_mock.now.return_value = 1_000_000
-        url_mock.fetch_json.side_effect = [
-            SESSION_CREATED,
-            (True, {'SessionTimeout': 86400}),
-        ]
-        out = redfish.get_auth_header(_args(CACHE_EXPIRE=1, TIMEOUT=8))
-        self.assertEqual(out, {'X-Auth-Token': 'new-token'})
-        # min(1*60, 86400 - 8) = 60
-        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 60)
-
-    @mock.patch.object(redfish, 'time')
-    @mock.patch.object(redfish, 'url')
-    @mock.patch.object(redfish, 'cache')
-    def test_string_session_timeout_is_coerced(self, cache_mock, url_mock, time_mock):
-        cache_mock.get.return_value = False
-        time_mock.now.return_value = 1_000_000
-        url_mock.fetch_json.side_effect = [
-            SESSION_CREATED,
-            (True, {'SessionTimeout': '300'}),
-        ]
-        redfish.get_auth_header(_args(CACHE_EXPIRE=60, TIMEOUT=8))
-        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 292)
-
-    @mock.patch.object(redfish, 'time')
-    @mock.patch.object(redfish, 'url')
-    @mock.patch.object(redfish, 'cache')
-    def test_margin_never_drops_below_one_second(self, cache_mock, url_mock, time_mock):
-        cache_mock.get.return_value = False
-        time_mock.now.return_value = 1_000_000
-        # SessionTimeout below the margin would go negative; clamped to 1.
-        url_mock.fetch_json.side_effect = [
-            SESSION_CREATED,
-            (True, {'SessionTimeout': 5}),
-        ]
-        redfish.get_auth_header(_args(CACHE_EXPIRE=60, TIMEOUT=8))
-        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 1)
-
-    @mock.patch.object(redfish, 'time')
-    @mock.patch.object(redfish, 'url')
-    @mock.patch.object(redfish, 'cache')
-    def test_missing_session_timeout_falls_back_to_cache_expire(
-        self, cache_mock, url_mock, time_mock
-    ):
-        cache_mock.get.return_value = False
-        time_mock.now.return_value = 1_000_000
-        url_mock.fetch_json.side_effect = [
-            SESSION_CREATED,
-            (True, {'Id': 'default'}),  # no SessionTimeout property
-        ]
-        redfish.get_auth_header(_args(CACHE_EXPIRE=2, TIMEOUT=8))
-        # only CACHE_EXPIRE applies: 2*60 = 120
-        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 120)
-
-    @mock.patch.object(redfish, 'time')
-    @mock.patch.object(redfish, 'url')
-    @mock.patch.object(redfish, 'cache')
-    def test_sessionservice_get_failure_falls_back_to_cache_expire(
-        self, cache_mock, url_mock, time_mock
-    ):
-        cache_mock.get.return_value = False
-        time_mock.now.return_value = 1_000_000
-        url_mock.fetch_json.side_effect = [
-            SESSION_CREATED,
-            (False, 'Bad Gateway'),  # SessionService GET failed
-        ]
-        redfish.get_auth_header(_args(CACHE_EXPIRE=3, TIMEOUT=8))
-        cache_mock.set.assert_called_once_with(TOKEN_KEY, 'new-token', 1_000_000 + 180)
-
-    @mock.patch.object(redfish, 'time')
-    @mock.patch.object(redfish, 'url')
-    @mock.patch.object(redfish, 'cache')
-    def test_session_creation_failure_falls_back_to_basic_auth(
-        self, cache_mock, url_mock, time_mock
-    ):
-        cache_mock.get.return_value = False
-        # No X-Auth-Token in the response header -> no session token.
-        url_mock.fetch_json.side_effect = [(False, 'Unauthorized')]
-        out = redfish.get_auth_header(_args())
-        # 'linuxfabrik:linuxfabrik' base64-encoded.
-        self.assertEqual(
-            out, {'Authorization': 'Basic bGludXhmYWJyaWs6bGludXhmYWJyaWs='}
+        cache_mock.get.return_value = False  # cache miss
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.side_effect = [SESSION_CREATED, (True, {'SessionTimeout': 300})]
+        header = redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=3600)
+        self.assertEqual(header, {'X-Auth-Token': 'new-token'})
+        # min(3600, 300 - 8) = 292, cached until now + 292
+        cache_mock.set.assert_called_once_with(
+            TOKEN_KEY, 'new-token', 1000 + 292, filename=redfish.CACHE_FILENAME
         )
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_cache_expire_caps_a_large_session_timeout(self, url_mock, cache_mock, time_mock):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.side_effect = [SESSION_CREATED, (True, {'SessionTimeout': 86400})]
+        redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=60)
+        # min(60, 86400 - 8) = 60
+        self.assertEqual(cache_mock.set.call_args[0][2], 1000 + 60)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_string_session_timeout_is_coerced(self, url_mock, cache_mock, time_mock):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.side_effect = [SESSION_CREATED, (True, {'SessionTimeout': '300'})]
+        redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=3600)
+        self.assertEqual(cache_mock.set.call_args[0][2], 1000 + 292)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_margin_never_drops_below_one_second(self, url_mock, cache_mock, time_mock):
+        # SessionTimeout below the margin would go negative; clamped to 1.
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.side_effect = [SESSION_CREATED, (True, {'SessionTimeout': 5})]
+        redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=3600)
+        self.assertEqual(cache_mock.set.call_args[0][2], 1000 + 1)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_missing_session_timeout_falls_back_to_cache_expire(
+        self, url_mock, cache_mock, time_mock
+    ):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.side_effect = [SESSION_CREATED, (True, {'Id': 'default'})]
+        redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=120)
+        # only cache_expire applies: 120
+        self.assertEqual(cache_mock.set.call_args[0][2], 1000 + 120)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_sessionservice_get_failure_falls_back_to_cache_expire(
+        self, url_mock, cache_mock, time_mock
+    ):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.side_effect = [SESSION_CREATED, (False, 'Bad Gateway')]
+        redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=180)
+        self.assertEqual(cache_mock.set.call_args[0][2], 1000 + 180)
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_session_creation_failure_falls_back_to_basic_auth(self, url_mock, cache_mock):
+        # No X-Auth-Token in the response header -> no session token.
+        cache_mock.get.return_value = False
+        url_mock.fetch_json.side_effect = [(False, 'Unauthorized')]
+        header = redfish.get_auth_header(_args(), cache_expire=300)
+        # 'linuxfabrik:linuxfabrik' base64-encoded.
+        self.assertEqual(header, {'Authorization': 'Basic bGludXhmYWJyaWs6bGludXhmYWJyaWs='})
+        # nothing is cached on the Basic-auth fallback
+        cache_mock.set.assert_not_called()
         # Only the session-creation POST was attempted; no SessionService GET.
         self.assertEqual(url_mock.fetch_json.call_count, 1)
-        cache_mock.set.assert_not_called()
 
-    @mock.patch.object(redfish, 'time')
     @mock.patch.object(redfish, 'url')
-    @mock.patch.object(redfish, 'cache')
-    def test_non_dict_session_response_falls_back_to_basic_auth(
-        self, cache_mock, url_mock, time_mock
-    ):
-        cache_mock.get.return_value = False
+    def test_non_dict_session_response_falls_back_to_basic_auth(self, url_mock):
         # success but body is not a dict -> the isinstance guard rejects it.
         url_mock.fetch_json.side_effect = [(True, 'not-a-dict')]
-        out = redfish.get_auth_header(_args())
-        self.assertEqual(
-            out, {'Authorization': 'Basic bGludXhmYWJyaWs6bGludXhmYWJyaWs='}
-        )
-        cache_mock.set.assert_not_called()
+        header = redfish.get_auth_header(_args())
+        self.assertEqual(header, {'Authorization': 'Basic bGludXhmYWJyaWs6bGludXhmYWJyaWs='})
 
 
 # ---------------------------------------------------------------------------
@@ -1466,6 +1458,317 @@ class TestGetVendor(unittest.TestCase):
         self.assertEqual(
             redfish.get_vendor({'Vendor': 'Dell', 'Oem': {'Hpe': 1}}), 'dell'
         )
+
+
+# ---------------------------------------------------------------------------
+# build_url (@odata.id SSRF pinning)
+# ---------------------------------------------------------------------------
+class TestBuildUrl(unittest.TestCase):
+    def test_relative_link_is_pinned_to_base_host(self):
+        self.assertEqual(
+            redfish.build_url('https://bmc', '/redfish/v1/Systems/1'),
+            (True, 'https://bmc/redfish/v1/Systems/1'),
+        )
+
+    def test_base_host_wins_over_link_authority(self):
+        # the @odata.id can only supply a path, never a new host
+        ok, url_out = redfish.build_url('https://bmc', '/redfish/v1/x')
+        self.assertTrue(ok)
+        self.assertTrue(url_out.startswith('https://bmc/'))
+
+    def test_userinfo_injection_is_refused(self):
+        ok, err = redfish.build_url('https://bmc', '@evil.example.com/x')
+        self.assertFalse(ok)
+        self.assertIn('Refusing', err)
+
+    def test_protocol_relative_link_is_refused(self):
+        ok, err = redfish.build_url('https://bmc', '//evil.example.com/x')
+        self.assertFalse(ok)
+        self.assertIn('Refusing', err)
+
+    def test_non_string_link_is_refused(self):
+        ok, err = redfish.build_url('https://bmc', None)
+        self.assertFalse(ok)
+        self.assertIn('Refusing', err)
+
+
+# ---------------------------------------------------------------------------
+# fetch_collection ($expand with plain fallback; lib.url is mocked)
+# ---------------------------------------------------------------------------
+class TestFetchCollection(unittest.TestCase):
+    @mock.patch.object(redfish, 'url')
+    def test_expand_success_is_a_single_request(self, url_mock):
+        coll = {'Members': [{'@odata.id': '/x/1', 'Id': '1'}]}
+        url_mock.fetch_json.return_value = (True, coll)
+        ok, out = redfish.fetch_collection('https://bmc/redfish/v1/Chassis/1/Sensors')
+        self.assertTrue(ok)
+        self.assertEqual(out, coll)
+        self.assertEqual(url_mock.fetch_json.call_count, 1)
+        # the single request carries the $expand query
+        self.assertIn('$expand=.($levels=1)', url_mock.fetch_json.call_args[0][0])
+
+    @mock.patch.object(redfish, 'url')
+    def test_custom_expand_suffix_is_used(self, url_mock):
+        url_mock.fetch_json.return_value = (True, {'Members': []})
+        redfish.fetch_collection('https://bmc/x', expand='?$expand=*($levels=3)')
+        self.assertIn('$expand=*($levels=3)', url_mock.fetch_json.call_args[0][0])
+
+    @mock.patch.object(redfish, 'url')
+    def test_expand_rejected_falls_back_to_plain(self, url_mock):
+        plain = {'Members': [{'@odata.id': '/x/1'}]}
+        url_mock.fetch_json.side_effect = [(False, 'HTTP 400'), (True, plain)]
+        ok, out = redfish.fetch_collection('https://bmc/redfish/v1/Chassis/1/Sensors')
+        self.assertTrue(ok)
+        self.assertEqual(out, plain)
+        self.assertEqual(url_mock.fetch_json.call_count, 2)
+        # the fallback request drops the $expand query
+        self.assertNotIn('$expand', url_mock.fetch_json.call_args_list[1][0][0])
+
+    @mock.patch.object(redfish, 'url')
+    def test_expand_non_dict_falls_back_to_plain(self, url_mock):
+        url_mock.fetch_json.side_effect = [(True, 'not-a-dict'), (True, {'Members': []})]
+        ok, out = redfish.fetch_collection('https://bmc/x')
+        self.assertTrue(ok)
+        self.assertEqual(out, {'Members': []})
+        self.assertEqual(url_mock.fetch_json.call_count, 2)
+
+    @mock.patch.object(redfish, 'url')
+    def test_both_requests_fail_propagates_error(self, url_mock):
+        url_mock.fetch_json.side_effect = [(False, 'boom'), (False, 'boom2')]
+        ok, out = redfish.fetch_collection('https://bmc/x')
+        self.assertFalse(ok)
+        self.assertEqual(out, 'boom2')
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_cache_hit_skips_the_request(self, url_mock, cache_mock):
+        cache_mock.get.return_value = json.dumps({'Members': [{'Id': '1'}]})
+        ok, out = redfish.fetch_collection('https://bmc/x', cache_expire=300)
+        self.assertTrue(ok)
+        self.assertEqual(out, {'Members': [{'Id': '1'}]})
+        url_mock.fetch_json.assert_not_called()
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_cache_miss_fetches_and_fills_by_plain_url(self, url_mock, cache_mock, time_mock):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        coll = {'Members': [{'@odata.id': '/x/1', 'Id': '1'}]}
+        url_mock.fetch_json.return_value = (True, coll)
+        ok, out = redfish.fetch_collection('https://bmc/x', cache_expire=300)
+        self.assertTrue(ok)
+        self.assertEqual(out, coll)
+        # cached under the plain URL (not the $expand variant)
+        cache_mock.set.assert_called_once_with(
+            'redfish-https://bmc/x',
+            json.dumps(coll),
+            1000 + 300,
+            filename=redfish.CACHE_FILENAME,
+        )
+
+
+# ---------------------------------------------------------------------------
+# get_expand_suffix (derive the deepest advertised $expand; lib.url is mocked)
+# ---------------------------------------------------------------------------
+def _root(**expand_query):
+    """A service-root document advertising the given ExpandQuery support."""
+    return (True, {'ProtocolFeaturesSupported': {'ExpandQuery': expand_query}})
+
+
+class TestGetExpandSuffix(unittest.TestCase):
+    @mock.patch.object(redfish, 'url')
+    def test_expandall_uses_star_and_caps_levels(self, url_mock):
+        # MaxLevels 9 is capped at MAX_EXPAND_LEVELS (3)
+        url_mock.fetch_json.return_value = _root(
+            ExpandAll=True, Levels=True, MaxLevels=9
+        )
+        self.assertEqual(
+            redfish.get_expand_suffix('https://bmc'), '?$expand=*($levels=3)'
+        )
+
+    @mock.patch.object(redfish, 'url')
+    def test_maxlevels_below_cap_is_honoured(self, url_mock):
+        url_mock.fetch_json.return_value = _root(
+            ExpandAll=True, Levels=True, MaxLevels=1
+        )
+        self.assertEqual(
+            redfish.get_expand_suffix('https://bmc'), '?$expand=*($levels=1)'
+        )
+
+    @mock.patch.object(redfish, 'url')
+    def test_nolinks_only_uses_dot_operator(self, url_mock):
+        url_mock.fetch_json.return_value = _root(
+            ExpandAll=False, NoLinks=True, Levels=True, MaxLevels=2
+        )
+        self.assertEqual(
+            redfish.get_expand_suffix('https://bmc'), '?$expand=.($levels=2)'
+        )
+
+    @mock.patch.object(redfish, 'url')
+    def test_no_levels_support_omits_levels_clause(self, url_mock):
+        url_mock.fetch_json.return_value = _root(ExpandAll=True, Levels=False)
+        self.assertEqual(redfish.get_expand_suffix('https://bmc'), '?$expand=*')
+
+    @mock.patch.object(redfish, 'url')
+    def test_no_expand_support_returns_default(self, url_mock):
+        url_mock.fetch_json.return_value = (True, {'ProtocolFeaturesSupported': {}})
+        self.assertEqual(redfish.get_expand_suffix('https://bmc'), redfish.DEFAULT_EXPAND)
+
+    @mock.patch.object(redfish, 'url')
+    def test_unreadable_root_returns_default(self, url_mock):
+        url_mock.fetch_json.return_value = (False, 'HTTP 500')
+        self.assertEqual(redfish.get_expand_suffix('https://bmc'), redfish.DEFAULT_EXPAND)
+
+
+# ---------------------------------------------------------------------------
+# fetch_members (populate bare refs, skip expanded; lib.url is mocked)
+# ---------------------------------------------------------------------------
+class TestFetchMembers(unittest.TestCase):
+    @mock.patch.object(redfish, 'url')
+    def test_all_expanded_makes_no_requests(self, url_mock):
+        members = [{'@odata.id': '/x/1', 'Id': '1'}, {'@odata.id': '/x/2', 'Reading': 5}]
+        ok, out = redfish.fetch_members(members, 'https://bmc')
+        self.assertTrue(ok)
+        self.assertEqual(out, members)
+        url_mock.fetch_json.assert_not_called()
+
+    @mock.patch.object(redfish, 'url')
+    def test_bare_refs_are_fetched_and_host_is_pinned(self, url_mock):
+        url_mock.fetch_json.side_effect = [
+            (True, {'Id': '1', 'Reading': 1}),
+            (True, {'Id': '2', 'Reading': 2}),
+        ]
+        members = [{'@odata.id': '/redfish/v1/x/1'}, {'@odata.id': '/redfish/v1/x/2'}]
+        ok, out = redfish.fetch_members(members, 'https://bmc')
+        self.assertTrue(ok)
+        self.assertEqual(out, [{'Id': '1', 'Reading': 1}, {'Id': '2', 'Reading': 2}])
+        self.assertEqual(url_mock.fetch_json.call_count, 2)
+        self.assertEqual(
+            url_mock.fetch_json.call_args_list[0][0][0], 'https://bmc/redfish/v1/x/1'
+        )
+
+    @mock.patch.object(redfish, 'url')
+    def test_mixed_expanded_and_bare_only_fetches_the_bare_one(self, url_mock):
+        url_mock.fetch_json.return_value = (True, {'Id': '2', 'Reading': 2})
+        members = [{'@odata.id': '/x/1', 'Id': '1'}, {'@odata.id': '/redfish/v1/x/2'}]
+        ok, out = redfish.fetch_members(members, 'https://bmc')
+        self.assertTrue(ok)
+        self.assertEqual(out[0], {'@odata.id': '/x/1', 'Id': '1'})
+        self.assertEqual(out[1], {'Id': '2', 'Reading': 2})
+        self.assertEqual(url_mock.fetch_json.call_count, 1)
+
+    @mock.patch.object(redfish, 'url')
+    def test_malformed_odata_id_is_refused_without_request(self, url_mock):
+        ok, out = redfish.fetch_members([{'@odata.id': '@evil/x'}], 'https://bmc')
+        self.assertFalse(ok)
+        self.assertIn('Refusing', out)
+        url_mock.fetch_json.assert_not_called()
+
+    @mock.patch.object(redfish, 'url')
+    def test_member_fetch_failure_propagates(self, url_mock):
+        url_mock.fetch_json.return_value = (False, 'Bad Gateway')
+        ok, out = redfish.fetch_members([{'@odata.id': '/redfish/v1/x/1'}], 'https://bmc')
+        self.assertFalse(ok)
+        self.assertEqual(out, 'Bad Gateway')
+
+    @mock.patch.object(redfish, 'url')
+    def test_non_dict_member_is_skipped(self, url_mock):
+        members = ['not-a-dict', {'@odata.id': '/x/1', 'Id': '1'}]
+        ok, out = redfish.fetch_members(members, 'https://bmc')
+        self.assertTrue(ok)
+        self.assertEqual(out, [{'@odata.id': '/x/1', 'Id': '1'}])
+        url_mock.fetch_json.assert_not_called()
+
+    def test_empty_members_returns_empty_list(self):
+        self.assertEqual(redfish.fetch_members([], 'https://bmc'), (True, []))
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_bare_member_is_cached_by_url(self, url_mock, cache_mock, time_mock):
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.return_value = (True, {'Id': '1'})
+        ok, out = redfish.fetch_members(
+            [{'@odata.id': '/redfish/v1/x/1'}], 'https://bmc', cache_expire=300
+        )
+        self.assertTrue(ok)
+        self.assertEqual(out, [{'Id': '1'}])
+        cache_mock.set.assert_called_once_with(
+            'redfish-https://bmc/redfish/v1/x/1',
+            json.dumps({'Id': '1'}),
+            1000 + 300,
+            filename=redfish.CACHE_FILENAME,
+        )
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_cached_member_skips_the_request(self, url_mock, cache_mock):
+        cache_mock.get.return_value = json.dumps({'Id': '1'})
+        ok, out = redfish.fetch_members(
+            [{'@odata.id': '/redfish/v1/x/1'}], 'https://bmc', cache_expire=300
+        )
+        self.assertTrue(ok)
+        self.assertEqual(out, [{'Id': '1'}])
+        url_mock.fetch_json.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# fetch_resource (cached plain GET, no $expand; lib.url is mocked)
+# ---------------------------------------------------------------------------
+class TestFetchResource(unittest.TestCase):
+    @mock.patch.object(redfish, 'url')
+    def test_plain_get_without_expand(self, url_mock):
+        url_mock.fetch_json.return_value = (True, {'Vendor': 'Contoso'})
+        ok, out = redfish.fetch_resource('https://bmc/redfish/v1/')
+        self.assertTrue(ok)
+        self.assertEqual(out, {'Vendor': 'Contoso'})
+        self.assertEqual(url_mock.fetch_json.call_count, 1)
+        self.assertNotIn('$expand', url_mock.fetch_json.call_args[0][0])
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_cache_hit_skips_the_request(self, url_mock, cache_mock):
+        cache_mock.get.return_value = json.dumps({'Vendor': 'Contoso'})
+        ok, out = redfish.fetch_resource('https://bmc/redfish/v1/', cache_expire=300)
+        self.assertTrue(ok)
+        self.assertEqual(out, {'Vendor': 'Contoso'})
+        url_mock.fetch_json.assert_not_called()
+
+    @mock.patch.object(redfish, 'url')
+    def test_failure_propagates(self, url_mock):
+        url_mock.fetch_json.return_value = (False, 'HTTP 500')
+        ok, out = redfish.fetch_resource('https://bmc/redfish/v1/')
+        self.assertFalse(ok)
+        self.assertEqual(out, 'HTTP 500')
+
+
+# ---------------------------------------------------------------------------
+# is_member_expanded (populated vs bare-reference detection)
+# ---------------------------------------------------------------------------
+class TestIsMemberExpanded(unittest.TestCase):
+    def test_bare_reference_is_not_expanded(self):
+        self.assertFalse(redfish.is_member_expanded({'@odata.id': '/x/1'}))
+
+    def test_only_odata_annotations_is_not_expanded(self):
+        self.assertFalse(
+            redfish.is_member_expanded(
+                {'@odata.id': '/x/1', '@odata.type': '#Sensor.v1_0_0.Sensor'}
+            )
+        )
+
+    def test_populated_member_is_expanded(self):
+        self.assertTrue(
+            redfish.is_member_expanded({'@odata.id': '/x/1', 'Reading': 22.5})
+        )
+
+    def test_empty_dict_is_not_expanded(self):
+        self.assertFalse(redfish.is_member_expanded({}))
+
+    def test_non_dict_is_not_expanded(self):
+        self.assertFalse(redfish.is_member_expanded('nope'))
+        self.assertFalse(redfish.is_member_expanded(None))
 
 
 if __name__ == '__main__':
