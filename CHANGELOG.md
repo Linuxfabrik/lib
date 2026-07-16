@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_mysql.py: `get_replica_hosts()` lists the replicas registered with a server, using `SHOW REPLICAS` on MySQL 8.0.22+ and falling back to `SHOW SLAVE HOSTS` on MariaDB and older MySQL.
 * db_mysql.py: `get_server_info()` also returns `version_tuple`, the comparable form of the version it already reported as a string.
 * db_mysql.py: `get_version()` returns the connected server's flavor and version as a comparable tuple, so callers no longer parse the version string themselves.
+* disk.py: `get_fingerprint()` hashes a file's head, tail or whole content, so callers can recognize a file by what it holds rather than by metadata, which reports nothing when a file is rewritten in place.
 * disk.py: `glob()` returns a sorted list of paths matching a shell glob pattern (recursive by default).
 * disk.py: `read_file()` can return raw `bytes` via a new `binary` parameter.
 * disk.py: `stat()` returns a filesystem entry's `os.stat()` result (or `None`), so callers get every field (size, mtime, mode, owner, ...) in one syscall.

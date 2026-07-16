@@ -13,10 +13,11 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070801'
+__version__ = '2026071601'
 
 import csv
 import glob as _glob
+import hashlib
 import os
 import re
 import shutil
@@ -315,6 +316,83 @@ def get_cwd():
     except OSError:
         # Optional: handle rare cases where the cwd is invalid (e.g., directory was deleted)
         return ''
+
+
+def get_fingerprint(filename, length=256):
+    """
+    Hash a slice of a file, to recognize the file by its content instead of by its metadata.
+
+    Metadata answers few questions about content. Two files of the same size are not
+    necessarily the same, and a file that was rewritten in place keeps its inode and can end
+    up with the very same size, so nothing the filesystem reports has changed although
+    everything in the file has. A hash over the content answers those questions, and hashing
+    a fixed-size slice of it keeps the cost independent of the file size.
+
+    Which slice to take depends on the question:
+
+    - The **head** is the part that stays as it is while a file is appended to, which makes it
+      an identity marker: it changes when the file has become a different one (rewritten,
+      replaced, truncated), not when something was added to it. Use it to tell "still the same
+      file I was reading" from "a new file under the same name".
+    - The **tail** changes with every write. Use it to tell whether anything was added since
+      last time, not to identify the file.
+    - The **whole file** is the exact answer to "is this byte-for-byte the same content", and
+      the only one that also catches a change in the middle. It costs a full read.
+
+    Compare a fingerprint only against one taken over a slice of the same size and side,
+    otherwise a file that has merely grown looks like a different one. Pass the returned byte
+    count back as `length` for that, and treat a count below the one requested as "the file no
+    longer holds that many bytes", i.e. it was truncated.
+
+    ### Parameters
+    - **filename** (`str`):
+      Path to the file to fingerprint.
+    - **length** (`int`, optional):
+      How many bytes to hash, and from which side:
+      - `> 0`: the first `length` bytes (the head). Defaults to 256, which is enough to tell
+        two lines of text apart.
+      - `< 0`: the last `abs(length)` bytes (the tail).
+      - `0`: the whole file, read in chunks.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**bool**): True if reading succeeded, otherwise False.
+        - tuple[1] (**tuple | str**):
+          - If successful, a `(fingerprint, hashed)` tuple: the SHA-256 hexdigest of the
+            slice, and the number of bytes it was taken over. `hashed` is less than the
+            requested number of bytes if the file is shorter than that.
+          - If unsuccessful, an error message string.
+
+    ### Notes
+    - A file shorter than the requested slice is hashed as a whole, so head, tail and whole
+      file yield the same fingerprint for it.
+
+    ### Example
+    >>> success, (fingerprint, hashed) = get_fingerprint('/var/log/messages')
+    >>> success, (fingerprint, hashed) = get_fingerprint('/tmp/export', length=-4096)
+    >>> success, (fingerprint, hashed) = get_fingerprint('/tmp/export', length=0)
+    """
+    try:
+        with open(filename, mode='rb') as f:
+            if length == 0:
+                fingerprint = hashlib.sha256()
+                hashed = 0
+                # Read in chunks: the file is hashed as a whole, but never held
+                # as a whole in memory.
+                for chunk in iter(lambda: f.read(65536), b''):
+                    fingerprint.update(chunk)
+                    hashed += len(chunk)
+                return True, (fingerprint.hexdigest(), hashed)
+            if length < 0:
+                # Seek to the start of the tail. Clamped to 0, so a file shorter
+                # than the tail is read from its beginning instead of raising.
+                f.seek(max(0, os.fstat(f.fileno()).st_size + length))
+            data = f.read(abs(length))
+    except OSError as e:
+        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
+    except Exception as e:
+        return False, f'Unknown error opening or reading {filename}: {e}'
+    return True, (hashlib.sha256(data).hexdigest(), len(data))
 
 
 def get_owner(file):

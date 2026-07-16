@@ -56,6 +56,94 @@ class TestFileHelpers(unittest.TestCase):
         self.assertFalse(disk.file_exists(empty))
         self.assertTrue(disk.file_exists(empty, allow_empty=True))
 
+    def test_get_fingerprint_hashes_the_head_only(self):
+        disk.write_file(self.file, 'head' + 'tail')
+        success, (fingerprint, hashed) = disk.get_fingerprint(self.file, length=4)
+        self.assertTrue(success)
+        self.assertEqual(hashed, 4)
+        # Appending must not change a fingerprint taken over the same length.
+        disk.write_file(self.file, 'more', append=True)
+        self.assertEqual(
+            disk.get_fingerprint(self.file, length=4),
+            (True, (fingerprint, 4)),
+        )
+
+    def test_get_fingerprint_differs_on_rewritten_content(self):
+        disk.write_file(self.file, 'before')
+        success, (before, _) = disk.get_fingerprint(self.file)
+        self.assertTrue(success)
+        # Same length, different content: only the hash tells them apart.
+        disk.write_file(self.file, 'beforf')
+        success, (after, _) = disk.get_fingerprint(self.file)
+        self.assertTrue(success)
+        self.assertNotEqual(before, after)
+
+    def test_get_fingerprint_tail_ignores_the_head(self):
+        disk.write_file(self.file, 'head' + 'tail')
+        success, (fingerprint, hashed) = disk.get_fingerprint(self.file, length=-4)
+        self.assertTrue(success)
+        self.assertEqual(hashed, 4)
+        # Rewriting the head leaves the tail fingerprint alone ...
+        disk.write_file(self.file, 'HEAD' + 'tail')
+        self.assertEqual(
+            disk.get_fingerprint(self.file, length=-4),
+            (True, (fingerprint, 4)),
+        )
+        # ... while appending changes it.
+        disk.write_file(self.file, 'more', append=True)
+        self.assertNotEqual(
+            disk.get_fingerprint(self.file, length=-4)[1][0], fingerprint
+        )
+
+    def test_get_fingerprint_head_and_tail_differ(self):
+        disk.write_file(self.file, 'head' + 'tail')
+        self.assertNotEqual(
+            disk.get_fingerprint(self.file, length=4)[1][0],
+            disk.get_fingerprint(self.file, length=-4)[1][0],
+        )
+
+    def test_get_fingerprint_whole_file_covers_a_change_in_the_middle(self):
+        # Neither head nor tail sees this change, only the whole-file mode does.
+        disk.write_file(self.file, 'head' + 'middle' + 'tail')
+        success, (whole_before, hashed) = disk.get_fingerprint(self.file, length=0)
+        self.assertTrue(success)
+        self.assertEqual(hashed, 14)
+        head_before = disk.get_fingerprint(self.file, length=4)
+        tail_before = disk.get_fingerprint(self.file, length=-4)
+        disk.write_file(self.file, 'head' + 'MIDDLE' + 'tail')
+        self.assertEqual(disk.get_fingerprint(self.file, length=4), head_before)
+        self.assertEqual(disk.get_fingerprint(self.file, length=-4), tail_before)
+        self.assertNotEqual(
+            disk.get_fingerprint(self.file, length=0)[1][0], whole_before
+        )
+
+    def test_get_fingerprint_reports_short_reads(self):
+        disk.write_file(self.file, 'abc')
+        self.assertEqual(disk.get_fingerprint(self.file, length=256)[1][1], 3)
+        self.assertEqual(disk.get_fingerprint(self.file, length=-256)[1][1], 3)
+
+    def test_get_fingerprint_of_a_short_file_is_side_independent(self):
+        # A file shorter than the requested slice is hashed as a whole either way.
+        disk.write_file(self.file, 'abc')
+        self.assertEqual(
+            disk.get_fingerprint(self.file, length=256),
+            disk.get_fingerprint(self.file, length=-256),
+        )
+        self.assertEqual(
+            disk.get_fingerprint(self.file, length=256),
+            disk.get_fingerprint(self.file, length=0),
+        )
+
+    def test_get_fingerprint_of_an_empty_file_hashes_nothing(self):
+        disk.write_file(self.file, '')
+        for length in (256, -256, 0):
+            self.assertEqual(disk.get_fingerprint(self.file, length=length)[1][1], 0)
+
+    def test_get_fingerprint_on_missing_file_is_an_error(self):
+        success, result = disk.get_fingerprint(os.path.join(self.dir, 'nope'))
+        self.assertFalse(success)
+        self.assertIn('I/O error', result)
+
     def test_grep_file_returns_first_group(self):
         disk.write_file(self.file, 'hello')
         self.assertEqual(disk.grep_file(self.file, 'he(l+)o'), (True, 'll'))
