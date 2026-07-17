@@ -1,0 +1,875 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.openmetrics.
+
+The module is a pure parser, so the tests need neither a host nor a network and
+nothing is mocked. The payloads reproduce cases from the OpenMetrics
+specification and its conformance suite, from the error tables of the two
+reference parsers (model/textparse in prometheus/prometheus and the
+prometheus_client Python package), and from a live Nextcloud instance, which
+contributes what a real exporter sends as opposed to what the specification asks
+for.
+"""
+
+import math
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.openmetrics as openmetrics
+
+# --- Realistic payload fixtures ---
+
+# Metadata, several label combinations per family, a counter with its _created
+# sample and a histogram, as an exporter would serve it.
+OM_PAYLOAD = """\
+# HELP rpc_requests Total number of RPC requests received.
+# TYPE rpc_requests counter
+rpc_requests_total{service="exponential"} 22.0
+rpc_requests_created{service="exponential"} 1.726839813016893e+09
+rpc_requests_total{service="normal"} 15.0
+# HELP go_build_info Build information about the main Go module.
+# TYPE go_build_info gauge
+go_build_info{checksum="",path="",version=""} 1.0
+# HELP request_duration_seconds A histogram of the request duration.
+# TYPE request_duration_seconds histogram
+# UNIT request_duration_seconds seconds
+request_duration_seconds_bucket{le="0.05"} 24054.0
+request_duration_seconds_bucket{le="+Inf"} 144320.0
+request_duration_seconds_sum 53423.0
+request_duration_seconds_count 144320.0
+# EOF
+"""
+
+# The Prometheus format: no # EOF, no # UNIT, free-form comments, blank lines,
+# tabs and spaces sprinkled where OpenMetrics would forbid them.
+PROM_PAYLOAD = """\
+# HELP go_goroutines Number of goroutines that currently exist.
+# TYPE go_goroutines gauge
+go_goroutines 33
+
+# Hrandom comment starting with prefix of HELP
+#
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds { quantile = "1.0", a = "b" } 8.3835e-05
+go_gc_duration_seconds{quantile="0.25",} 7.424100000000001e-05
+some:aggregate:rate5m{a_b="c"}\t1
+"""
+
+# Taken off a live Nextcloud 34.0.1, shortened. Note that it puts # TYPE ahead
+# of # HELP, and that nextcloud_maintenance is declared an info yet carries the
+# value 0, where the specification allows an info only the value 1 and wants its
+# name to end in _info. A real exporter is not necessarily a conformant one,
+# which is why this module reads rather than judges.
+NEXTCLOUD_PAYLOAD = """\
+# TYPE nextcloud_instance_info info
+# HELP nextcloud_instance_info Basic information about Nextcloud
+nextcloud_instance_info{full_version="34.0.1",major_version="34",build="",installed="1"} 1 1784272189
+# TYPE nextcloud_app_enabled gauge
+# HELP nextcloud_app_enabled Information about the installed Nextcloud applications
+nextcloud_app_enabled{app_id="files",version="2.6.0"} 1
+nextcloud_app_enabled{app_id="spreed",version="24.0.2"} 1
+nextcloud_app_enabled{app_id="encryption",version="2.22.0"} 0
+# TYPE nextcloud_maintenance info
+# HELP nextcloud_maintenance Maintenance status of Nextcloud
+nextcloud_maintenance 0
+# TYPE nextcloud_active_users gauge
+# UNIT nextcloud_active_users users
+# HELP nextcloud_active_users Number of active users
+nextcloud_active_users{time="Last 5 minutes"} 0
+nextcloud_active_users{time="Last day"} 3
+# EOF
+"""
+
+
+class TestParseDialect(unittest.TestCase):
+
+    def test_autodetects_openmetrics_by_eof_marker(self):
+        success, samples = openmetrics.parse(OM_PAYLOAD)
+        self.assertTrue(success)
+        self.assertEqual(len(samples), 8)
+
+    def test_autodetects_prometheus_without_eof_marker(self):
+        success, samples = openmetrics.parse(PROM_PAYLOAD)
+        self.assertTrue(success)
+        self.assertEqual(len(samples), 4)
+
+    def test_openmetrics_requires_eof_marker(self):
+        success, result = openmetrics.parse('metric 1\n', dialect='openmetrics')
+        self.assertFalse(success)
+        self.assertIn('# EOF', result)
+
+    def test_prometheus_does_not_require_eof_marker(self):
+        success, samples = openmetrics.parse('metric 1\n', dialect='prometheus')
+        self.assertTrue(success)
+        self.assertEqual(samples[0]['value'], 1.0)
+
+    def test_eof_as_a_prometheus_comment_does_not_flip_the_dialect(self):
+        # `# EOF` is a legal comment in the Prometheus format. Taking it for the
+        # OpenMetrics marker would report the timestamp 1000 times too large.
+        success, samples = openmetrics.parse('# TYPE a gauge\n# EOF\na 33 123123\n')
+        self.assertTrue(success, msg=samples)
+        self.assertAlmostEqual(samples[0]['timestamp'], 123.123)
+
+    def test_payload_not_ending_in_the_eof_marker_is_rejected(self):
+        success, result = openmetrics.parse('# TYPE a gauge\n# EOF\na 1\n',
+                                            dialect='openmetrics')
+        self.assertFalse(success)
+        self.assertIn('does not end with # EOF', result)
+
+    def test_data_behind_an_interior_eof_marker_is_rejected(self):
+        # The payload does end in the marker, so it takes a second one to reach
+        # the case of data behind it.
+        success, result = openmetrics.parse('a 1\n# EOF\nb 2\n# EOF\n', dialect='openmetrics')
+        self.assertFalse(success)
+        self.assertIn('unexpected data after # EOF', result)
+
+    def test_trailing_blank_lines_do_not_hide_the_eof_marker(self):
+        success, samples = openmetrics.parse('a 1 123.5\n# EOF\n\n\n')
+        self.assertTrue(success, msg=samples)
+        self.assertAlmostEqual(samples[0]['timestamp'], 123.5)
+
+    def test_unknown_dialect_is_rejected(self):
+        success, result = openmetrics.parse('metric 1\n', dialect='influx')
+        self.assertFalse(success)
+        self.assertIn('unknown dialect', result)
+
+    def test_non_string_is_rejected(self):
+        success, result = openmetrics.parse(None)
+        self.assertFalse(success)
+        self.assertIn('expected a string', result)
+
+    def test_empty_prometheus_payload_yields_no_samples(self):
+        success, samples = openmetrics.parse('', dialect='prometheus')
+        self.assertTrue(success)
+        self.assertEqual(samples, [])
+
+
+class TestParseLineBreaks(unittest.TestCase):
+    """Only a line feed ends a line.
+
+    str.splitlines() also breaks on eight further characters that both grammars
+    take for ordinary content of a label value or a help text.
+    """
+
+    EXOTIC = ('\x0b', '\x0c', '\r', '\x1c', '\x1d', '\x1e', '\x85', '\u2028', '\u2029')
+
+    def test_exotic_characters_stay_inside_a_label_value(self):
+        for char in self.EXOTIC:
+            success, samples = openmetrics.parse(f'a{{b="x{char}y"}} 1\n# EOF\n')
+            self.assertTrue(success, msg=f'{char!r}: {samples}')
+            self.assertEqual(samples[0]['labels'], {'b': f'x{char}y'}, msg=repr(char))
+
+    def test_exotic_character_in_help_does_not_fabricate_a_sample(self):
+        # The injection case: a help text carrying data from elsewhere (a path,
+        # a user agent) must not be able to smuggle in a sample. Client
+        # libraries escape only a backslash, a quote and a line feed, so these
+        # characters reach the payload raw.
+        for char in self.EXOTIC:
+            payload = f'# HELP m some text{char}injected 999\nm 1\n'
+            success, samples = openmetrics.parse(payload, dialect='prometheus')
+            self.assertTrue(success, msg=f'{char!r}: {samples}')
+            self.assertEqual(len(samples), 1, msg=repr(char))
+            self.assertEqual(samples[0]['name'], 'm', msg=repr(char))
+
+    def test_trailing_carriage_return_is_not_content(self):
+        # A payload sent with CRLF line endings.
+        success, samples = openmetrics.parse('# TYPE a gauge\r\na 1\r\n# EOF\r\n')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['type'], 'gauge')
+        self.assertEqual(samples[0]['value'], 1.0)
+
+
+class TestParseMetadata(unittest.TestCase):
+
+    def _first(self, payload, name):
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success)
+        return openmetrics.get_samples(samples, name)[0]
+
+    def test_type_is_attached(self):
+        self.assertEqual(self._first(OM_PAYLOAD, 'go_build_info')['type'], 'gauge')
+
+    def test_help_is_attached(self):
+        sample = self._first(OM_PAYLOAD, 'go_build_info')
+        self.assertEqual(sample['help'], 'Build information about the main Go module.')
+
+    def test_unit_is_attached(self):
+        sample = self._first(OM_PAYLOAD, 'request_duration_seconds_count')
+        self.assertEqual(sample['unit'], 'seconds')
+
+    def test_sample_inherits_metadata_of_its_family(self):
+        # `# TYPE rpc_requests counter` describes the family, the sample is
+        # named rpc_requests_total.
+        self.assertEqual(self._first(OM_PAYLOAD, 'rpc_requests_total')['type'], 'counter')
+
+    def test_created_sample_inherits_metadata_of_its_family(self):
+        self.assertEqual(self._first(OM_PAYLOAD, 'rpc_requests_created')['type'], 'counter')
+
+    def test_bucket_sample_inherits_metadata_of_its_family(self):
+        sample = self._first(OM_PAYLOAD, 'request_duration_seconds_bucket')
+        self.assertEqual(sample['type'], 'histogram')
+
+    def test_missing_metadata_is_unknown_type(self):
+        success, samples = openmetrics.parse('lonely 1\n', dialect='prometheus')
+        self.assertTrue(success)
+        self.assertEqual(samples[0]['type'], 'unknown')
+        self.assertIsNone(samples[0]['help'])
+        self.assertIsNone(samples[0]['unit'])
+
+    def test_metadata_does_not_leak_into_a_foreign_family(self):
+        # A family switch without new metadata must not inherit the previous
+        # type, which is exactly what the reference parser gets wrong.
+        payload = '# TYPE first_metric histogram\nfirst_metric 1\nwind_speed{a="2"} 12345\n'
+        success, samples = openmetrics.parse(payload, dialect='prometheus')
+        self.assertTrue(success)
+        self.assertEqual(samples[1]['type'], 'unknown')
+
+    def test_empty_help_reads_as_no_help_at_all(self):
+        # The specification has an empty text mean the line is not there.
+        success, samples = openmetrics.parse('# HELP nohelp1 \nnohelp1 1\n', dialect='prometheus')
+        self.assertTrue(success)
+        self.assertIsNone(samples[0]['help'])
+
+    def test_empty_help_does_not_erase_a_filled_one(self):
+        payload = '# HELP a Real help.\n# HELP a \na 1\n'
+        success, samples = openmetrics.parse(payload, dialect='prometheus')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['help'], 'Real help.')
+
+    def test_quoted_metadata_name(self):
+        payload = '# TYPE "go.gc_duration_seconds" gauge\n{"go.gc_duration_seconds"} 1\n# EOF\n'
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success)
+        self.assertEqual(samples[0]['type'], 'gauge')
+
+    def test_comment_is_not_metadata(self):
+        payload = '# Hrandom comment starting with prefix of HELP\nmetric 1\n'
+        success, samples = openmetrics.parse(payload, dialect='prometheus')
+        self.assertTrue(success)
+        self.assertEqual(len(samples), 1)
+
+    def test_counter_without_the_total_suffix_keeps_the_name_it_was_served_under(self):
+        # Grafana and MinIO both declare counters whose name lacks the _total
+        # suffix the specification asks for. The name is reported as served, so
+        # that selecting a metric works off what the endpoint actually sends.
+        payload = '# TYPE minio_audit_total_messages counter\nminio_audit_total_messages 5\n'
+        success, samples = openmetrics.parse(payload, dialect='prometheus')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['name'], 'minio_audit_total_messages')
+        self.assertEqual(samples[0]['type'], 'counter')
+        self.assertEqual(openmetrics.get_value(samples, 'minio_audit_total_messages'), 5.0)
+
+    def test_help_on_a_sample_name_does_not_hide_the_family_type(self):
+        payload = '# TYPE foo counter\n# HELP foo_total Total of foo.\nfoo_total 1\n'
+        success, samples = openmetrics.parse(payload, dialect='prometheus')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['type'], 'counter')
+        self.assertEqual(samples[0]['help'], 'Total of foo.')
+
+    def test_a_sample_declaring_its_own_type_is_its_own_family(self):
+        # `a_total` says what it is, so it is not the `_total` of `a` and `# HELP
+        # a` does not describe it.
+        payload = ('# TYPE a counter\n# HELP a Help of family a.\n# TYPE a_total gauge\n'
+                   'a_total 1\n# EOF\n')
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['type'], 'gauge')
+        self.assertIsNone(samples[0]['help'])
+
+    def test_metadata_text_keeps_characters_that_are_not_separators(self):
+        # A non-breaking space and a line separator are ordinary text to both
+        # grammars, so str.strip() must not be let near them.
+        success, samples = openmetrics.parse('# HELP a x\xa0\na 1\n# EOF\n')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['help'], 'x\xa0')
+        success, samples = openmetrics.parse('# HELP a x\u2028\na 1\n# EOF\n')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['help'], 'x\u2028')
+
+    def test_a_type_padded_with_a_non_breaking_space_is_not_a_type(self):
+        # Stripping it would turn a name the format does not define into one it
+        # does, which is an invalid payload silently made valid.
+        success, result = openmetrics.parse('# TYPE a gauge\xa0\na 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('invalid metric type', result)
+
+    def test_quoted_metadata_name_needs_a_separator_behind_it(self):
+        success, result = openmetrics.parse('# TYPE "a"gauge\na 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('expected a metric name', result)
+
+    def test_a_family_only_owns_the_suffixes_of_its_type(self):
+        # A gauge named `a` owns no `a_bucket`, so the resemblance is a
+        # coincidence and `a_bucket` is a family of its own.
+        payload = '# TYPE a gauge\n# HELP a help\na 1\na_bucket{le="1"} 2\n# EOF\n'
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[1]['type'], 'unknown')
+        self.assertIsNone(samples[1]['help'])
+
+    def test_a_histogram_does_own_its_bucket(self):
+        payload = '# TYPE a histogram\n# HELP a help\na_bucket{le="1"} 2\n# EOF\n'
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['type'], 'histogram')
+        self.assertEqual(samples[0]['help'], 'help')
+
+    def test_metadata_name_must_be_consumed_whole(self):
+        # `a-b` is not a name the legacy charset covers, so reading the `a` that
+        # matched would attach this line to a different metric than it names.
+        success, result = openmetrics.parse('# TYPE a counter\n# HELP a-b some help\na_total 1\n'
+                                            '# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('expected a metric name', result)
+
+    def test_openmetrics_only_type_is_rejected_in_prometheus(self):
+        success, result = openmetrics.parse('# TYPE a info\na 1\n', dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('invalid metric type', result)
+
+    def test_prometheus_only_type_is_rejected_in_openmetrics(self):
+        success, result = openmetrics.parse('# TYPE a untyped\na 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('invalid metric type', result)
+
+    def test_unit_must_be_a_suffix_of_the_metric_name(self):
+        # The format carries the unit in the name and has # UNIT name the part
+        # holding it, so one that is not that part describes another metric.
+        success, result = openmetrics.parse('# UNIT metric suffix\nmetric 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('is not a suffix of metric', result)
+
+    def test_unit_without_an_underscore_is_not_a_suffix(self):
+        success, result = openmetrics.parse('# UNIT metricsuffix suffix\nmetricsuffix 1\n'
+                                            '# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('is not a suffix of metric', result)
+
+    def test_empty_unit_reads_as_no_unit_at_all(self):
+        # An empty unit means the line is not there, so it also escapes the
+        # suffix rule that a real unit has to keep.
+        success, samples = openmetrics.parse('# UNIT metric \nmetric 1\n# EOF\n')
+        self.assertTrue(success, msg=samples)
+        self.assertIsNone(samples[0]['unit'])
+
+    def test_empty_unit_does_not_erase_a_filled_one(self):
+        success, samples = openmetrics.parse('# UNIT a_seconds seconds\n# UNIT a_seconds \n'
+                                             'a_seconds 1\n# EOF\n')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['unit'], 'seconds')
+
+    def test_unit_is_a_comment_in_prometheus(self):
+        # The Prometheus format has no units.
+        success, samples = openmetrics.parse('# UNIT a seconds\na 1\n', dialect='prometheus')
+        self.assertTrue(success, msg=samples)
+        self.assertIsNone(samples[0]['unit'])
+
+    def test_invalid_type_is_rejected(self):
+        success, result = openmetrics.parse('# TYPE a meh\na 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('invalid metric type', result)
+
+    def test_metadata_name_outside_the_legacy_charset_is_rejected_unquoted(self):
+        success, result = openmetrics.parse('# TYPE 1x gauge\na 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('expected a metric name', result)
+
+    def test_untyped_is_reported_as_unknown(self):
+        # The Prometheus spelling of the same thing, so that a caller compares
+        # against one name instead of two.
+        success, samples = openmetrics.parse('# TYPE a untyped\na 1\n', dialect='prometheus')
+        self.assertTrue(success)
+        self.assertEqual(samples[0]['type'], 'unknown')
+
+    def test_double_space_behind_the_keyword(self):
+        success, samples = openmetrics.parse('# TYPE  a  gauge\na 1\n', dialect='prometheus')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['type'], 'gauge')
+
+    def test_metadata_name_may_be_quoted_utf8_holding_syntax_characters(self):
+        # The name holds a hash and braces, so neither splitting on whitespace
+        # nor scanning for a brace finds its end.
+        payload = (
+            '# TYPE "my.utf8.metric.#{}=" gauge\n'
+            '# HELP "my.utf8.metric.#{}=" A fancy metric.\n'
+            '{"my.utf8.metric.#{}="} 1\n# EOF\n'
+        )
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['name'], 'my.utf8.metric.#{}=')
+        self.assertEqual(samples[0]['type'], 'gauge')
+        self.assertEqual(samples[0]['help'], 'A fancy metric.')
+
+
+class TestParseLabels(unittest.TestCase):
+
+    def _labels(self, payload):
+        success, samples = openmetrics.parse(payload, dialect='prometheus')
+        self.assertTrue(success, msg=samples)
+        return samples[0]['labels']
+
+    def test_no_labels_is_empty_dict(self):
+        self.assertEqual(self._labels('metric 1\n'), {})
+
+    def test_empty_label_set_is_empty_dict(self):
+        self.assertEqual(self._labels('metric{} 1\n'), {})
+
+    def test_several_labels(self):
+        self.assertEqual(self._labels('metric{a="1",b="2"} 1\n'), {'a': '1', 'b': '2'})
+
+    def test_trailing_comma_is_allowed(self):
+        self.assertEqual(self._labels('metric{a="1",} 1\n'), {'a': '1'})
+
+    def test_prometheus_tolerates_whitespace_around_labels(self):
+        self.assertEqual(self._labels('metric { a = "1" , b = "2" } 1\n'), {'a': '1', 'b': '2'})
+
+    def test_label_name_may_start_with_underscore(self):
+        self.assertEqual(self._labels('metric{_a="1"} 1\n'), {'_a': '1'})
+
+    def test_colon_in_metric_name(self):
+        success, samples = openmetrics.parse('some:aggregate:rate5m{a_b="c"} 1\n',
+                                             dialect='prometheus')
+        self.assertTrue(success)
+        self.assertEqual(samples[0]['name'], 'some:aggregate:rate5m')
+
+    def test_empty_label_name_is_rejected(self):
+        success, result = openmetrics.parse('metric{=""} 0\n', dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('expected a label name', result)
+
+    def test_unquoted_label_value_is_rejected(self):
+        success, result = openmetrics.parse("metric{a='c'} 1\n", dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('expected a quoted value', result)
+
+    def test_unterminated_label_set_is_rejected(self):
+        success, result = openmetrics.parse('metric{a="c" 1\n', dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('unterminated', result)
+
+    def test_invalid_label_name_is_rejected(self):
+        success, result = openmetrics.parse('metric{1="1"} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('expected a label name', result)
+
+    def test_duplicate_label_is_rejected(self):
+        # Keeping either one would be a guess. Silently overwriting loses data.
+        success, result = openmetrics.parse('metric{a="1",a="2"} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('duplicate label', result)
+
+    def test_prometheus_reads_labels_without_the_comma(self):
+        # The Prometheus grammar takes the entries apart without the comma, so
+        # an endpoint leaving it out is scraped rather than lost.
+        self.assertEqual(self._labels('metric{a="1"b="2"} 1\n'), {'a': '1', 'b': '2'})
+
+    def test_prometheus_reads_labels_separated_by_a_space_only(self):
+        # The shape the Prometheus reference parser has in its accepted table.
+        payload = 'go_gc_duration_seconds { quantile = "1.0" a = "b" } 8.3835e-05\n'
+        self.assertEqual(self._labels(payload), {'quantile': '1.0', 'a': 'b'})
+
+    def test_openmetrics_requires_the_comma_between_labels(self):
+        # The OpenMetrics grammar wants it, so reading this as two labels would
+        # invent a structure the payload does not carry.
+        success, result = openmetrics.parse('metric{a="1"b="2"} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('expected ","', result)
+
+    def test_openmetrics_rejects_labels_separated_by_a_space_only(self):
+        success, result = openmetrics.parse('metric{a="1" b="2"} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('expected ","', result)
+
+    def test_missing_comma_behind_a_quoted_name_is_rejected(self):
+        # A quoted string is only the metric name where a comma or the end of the label set
+        # follows it. Without one it is read as a label name, which then lacks its value.
+        success, result = openmetrics.parse('{"my.metric"a="1"} 1\n', dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('expected "="', result)
+
+    def test_double_comma_is_rejected(self):
+        success, result = openmetrics.parse('metric{a="1",,b="2"} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('expected a label name', result)
+
+    def test_brace_inside_a_label_value_does_not_end_the_label_set(self):
+        labels = self._labels('metric{a="}",b="2"} 1\n')
+        self.assertEqual(labels, {'a': '}', 'b': '2'})
+
+    def test_label_value_ending_in_an_escaped_backslash(self):
+        # The closing quote sits behind an even number of backslashes, so it
+        # closes the value. Counting only the one backslash in front of it reads
+        # the quote as escaped and runs off the end of the line.
+        labels = self._labels(r'metric{a="foo\\",b="2"} 1' + '\n')
+        self.assertEqual(labels, {'a': 'foo\\', 'b': '2'})
+
+
+class TestParseEscaping(unittest.TestCase):
+
+    def _value(self, raw):
+        success, samples = openmetrics.parse(f'metric{{a="{raw}"}} 1\n', dialect='prometheus')
+        self.assertTrue(success, msg=samples)
+        return samples[0]['labels']['a']
+
+    def test_escaped_quote(self):
+        self.assertEqual(self._value(r'\"bar\"'), '"bar"')
+
+    def test_escaped_backslash(self):
+        self.assertEqual(self._value(r'\\'), '\\')
+
+    def test_escaped_newline(self):
+        self.assertEqual(self._value(r'\n'), '\n')
+
+    def test_escaped_backslash_before_n_is_not_a_newline(self):
+        # `\\n` is a backslash followed by an n, not a line break. A chain of
+        # str.replace() calls gets this wrong.
+        self.assertEqual(self._value(r'\\n'), '\\n')
+
+    def test_unknown_escape_stays_verbatim(self):
+        # There is no \t and no \x in either format: both keep their backslash.
+        self.assertEqual(self._value(r'\t'), '\\t')
+        self.assertEqual(self._value(r'\x'), '\\x')
+
+    def test_help_escaping(self):
+        payload = '# HELP metric escape \\ \\n \\\\ \\" \\x chars\nmetric 1\n# EOF\n'
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success)
+        self.assertEqual(samples[0]['help'], 'escape \\ \n \\ " \\x chars')
+
+    def test_prometheus_help_keeps_escaped_quote(self):
+        # The one escape the Prometheus format does not resolve in a help text.
+        payload = '# HELP metric a \\" b\nmetric 1\n'
+        success, samples = openmetrics.parse(payload, dialect='prometheus')
+        self.assertTrue(success)
+        self.assertEqual(samples[0]['help'], 'a \\" b')
+
+    def test_utf8_name_and_label_with_escapes(self):
+        # The showpiece fixture of the reference parser: unescaped braces and a
+        # line break inside a quoted name, so neither brace matching nor a
+        # naive scan for the closing quote finds the end of the series.
+        payload = (
+            '{"Heizölrückstoßabdämpfung 10€ metric with \\"interesting\\" '
+            '{character\\nchoices}","strange©™\\n\'quoted\' \\"name\\""="6"} 10.0\n# EOF\n'
+        )
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(
+            samples[0]['name'],
+            'Heizölrückstoßabdämpfung 10€ metric with "interesting" {character\nchoices}',
+        )
+        self.assertEqual(samples[0]['labels'], {'strange©™\n\'quoted\' "name"': '6'})
+
+    def test_utf8_name_may_sit_behind_a_label(self):
+        payload = '{q="0.9","http.status",a="b"} 8.3835e-05\n# EOF\n'
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success)
+        self.assertEqual(samples[0]['name'], 'http.status')
+        self.assertEqual(samples[0]['labels'], {'q': '0.9', 'a': 'b'})
+
+    def test_name_label_stays_an_ordinary_label(self):
+        # `__name__` carries the metric name through the Prometheus data model,
+        # but neither text grammar knows it: both put the name outside the label
+        # set, and OpenMetrics reserves every `__` label name without defining
+        # this one. So a payload naming a metric only this way names none.
+        success, result = openmetrics.parse('{__name__="foo"} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('metric name not set', result)
+        success, samples = openmetrics.parse('a{__name__="b"} 1\n# EOF\n')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['name'], 'a')
+        self.assertEqual(samples[0]['labels'], {'__name__': 'b'})
+
+    def test_empty_metric_name_is_rejected(self):
+        # No grammar allows one: both want at least one character. Guarding on
+        # "is None" alone would report a nameless sample.
+        success, result = openmetrics.parse('{""} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('metric name not set', result)
+
+    def test_label_without_a_value_is_rejected(self):
+        success, result = openmetrics.parse('metric{a} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('expected "=" behind label name "a"', result)
+
+    def test_unterminated_quote_in_a_label_set_is_rejected(self):
+        success, result = openmetrics.parse('metric{"unterminated} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('unterminated label set', result)
+
+    def test_metric_name_outside_the_legacy_charset_is_rejected_unquoted(self):
+        success, result = openmetrics.parse('1metric 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('expected a metric name', result)
+
+    def test_two_metric_names_inside_the_label_set_are_rejected(self):
+        success, result = openmetrics.parse('{"a","b"} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('already set inside the label set', result)
+
+    def test_a_name_in_front_of_and_inside_the_label_set_is_rejected(self):
+        success, result = openmetrics.parse('a{"b"} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('already given in front of the label set', result)
+
+    def test_missing_metric_name_is_rejected(self):
+        success, result = openmetrics.parse('{b="c",} 1\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('name not set', result)
+
+
+class TestParseValue(unittest.TestCase):
+
+    def _value(self, raw):
+        success, samples = openmetrics.parse(f'metric {raw}\n', dialect='prometheus')
+        self.assertTrue(success, msg=samples)
+        return samples[0]['value']
+
+    def test_integer_is_a_float(self):
+        self.assertEqual(self._value('99'), 99.0)
+        self.assertIsInstance(self._value('99'), float)
+
+    def test_exponent_notation(self):
+        self.assertEqual(self._value('4.9351e-05'), 4.9351e-05)
+
+    def test_negative(self):
+        self.assertEqual(self._value('-8.999999999999979e-05'), -8.999999999999979e-05)
+
+    def test_nan(self):
+        self.assertTrue(math.isnan(self._value('NaN')))
+        self.assertTrue(math.isnan(self._value('nan')))
+
+    def test_infinity(self):
+        self.assertEqual(self._value('+Inf'), math.inf)
+        self.assertEqual(self._value('-Inf'), -math.inf)
+
+    def test_digit_separator_is_rejected(self):
+        # Python's float() would happily read this as 12.
+        success, result = openmetrics.parse('metric 1_2\n', dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('not a number', result)
+
+    def test_hex_float_is_rejected(self):
+        success, result = openmetrics.parse('metric 0x1p-3\n', dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('not a number', result)
+
+    def test_non_number_is_rejected(self):
+        success, result = openmetrics.parse('metric true\n', dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('not a number', result)
+
+    def test_missing_value_is_rejected(self):
+        success, result = openmetrics.parse('metric\n', dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('expected a value', result)
+
+
+class TestParseTimestamp(unittest.TestCase):
+
+    def test_no_timestamp_is_none(self):
+        success, samples = openmetrics.parse('metric 1\n', dialect='prometheus')
+        self.assertTrue(success)
+        self.assertIsNone(samples[0]['timestamp'])
+
+    def test_openmetrics_timestamp_is_seconds(self):
+        success, samples = openmetrics.parse('metric 33 123.123\n# EOF\n', dialect='openmetrics')
+        self.assertTrue(success)
+        self.assertAlmostEqual(samples[0]['timestamp'], 123.123)
+
+    def test_prometheus_timestamp_is_milliseconds(self):
+        # The classic silent factor-1000 bug: the same digits mean a different
+        # point in time in the two formats.
+        success, samples = openmetrics.parse('metric 33 123123\n', dialect='prometheus')
+        self.assertTrue(success)
+        self.assertAlmostEqual(samples[0]['timestamp'], 123.123)
+
+    def test_prometheus_timestamp_must_be_whole_milliseconds(self):
+        # An exporter writing OpenMetrics seconds into a Prometheus payload must
+        # not be silently divided by 1000.
+        success, result = openmetrics.parse('foo 1 1.5\n', dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('expected digits for a timestamp', result)
+
+    def test_prometheus_timestamp_out_of_int64_range_is_rejected(self):
+        # Python carries the number, the format does not, so it is a digit run
+        # that merely looks like a point in time.
+        success, result = openmetrics.parse('foo 1 99999999999999999999999\n',
+                                            dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('out of range', result)
+
+    def test_a_tab_separates_only_in_the_prometheus_dialect(self):
+        # OpenMetrics counts a tab as part of the value, so reading one as a
+        # separator would invent a timestamp out of an unparseable value.
+        success, result = openmetrics.parse('a 1\t2\n# EOF\n', dialect='openmetrics')
+        self.assertFalse(success)
+        self.assertIn('not a number', result)
+        success, samples = openmetrics.parse('a 1\t2\n', dialect='prometheus')
+        self.assertTrue(success, msg=samples)
+        self.assertAlmostEqual(samples[0]['timestamp'], 0.002)
+
+    def test_nbsp_is_not_a_field_separator(self):
+        success, result = openmetrics.parse('a 1\u00a02\n# EOF\n')
+        self.assertFalse(success)
+        self.assertIn('not a number', result)
+
+    def test_nan_timestamp_is_rejected(self):
+        success, result = openmetrics.parse('metric 1 NaN\n# EOF\n', dialect='openmetrics')
+        self.assertFalse(success)
+        self.assertIn('invalid timestamp', result)
+
+    def test_non_numeric_openmetrics_timestamp_is_rejected(self):
+        success, result = openmetrics.parse('a 1 abc\n# EOF\n', dialect='openmetrics')
+        self.assertFalse(success)
+        self.assertIn('not a number', result)
+
+    def test_infinite_timestamp_is_rejected(self):
+        success, result = openmetrics.parse('metric 1 Inf\n# EOF\n', dialect='openmetrics')
+        self.assertFalse(success)
+        self.assertIn('invalid timestamp', result)
+
+    def test_second_timestamp_is_rejected(self):
+        success, result = openmetrics.parse('metric 1 1 1\n# EOF\n', dialect='openmetrics')
+        self.assertFalse(success)
+        self.assertIn('expected nothing behind the timestamp', result)
+
+
+class TestParseExemplar(unittest.TestCase):
+
+    def test_exemplar_is_dropped(self):
+        payload = 'foo_total 17.0 1520879607.789 # {id="counter-test"} 5\n# EOF\n'
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(len(samples), 1)
+        self.assertEqual(samples[0]['value'], 17.0)
+        self.assertAlmostEqual(samples[0]['timestamp'], 1520879607.789)
+
+    def test_exemplar_marker_inside_a_label_value_is_not_an_exemplar(self):
+        # A label value may hold anything, the exemplar separator included, so
+        # the separator may only be looked for behind the label set.
+        payload = 'metric{trace=" # {y"} 1\n# EOF\n'
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['labels'], {'trace': ' # {y'})
+        self.assertEqual(samples[0]['value'], 1.0)
+
+    def test_exemplar_marker_inside_a_label_value_next_to_a_real_exemplar(self):
+        payload = 'metric{trace=" # {y"} 1 # {id="x"} 2\n# EOF\n'
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['labels'], {'trace': ' # {y'})
+        self.assertEqual(samples[0]['value'], 1.0)
+
+    def test_exemplar_without_sample_timestamp(self):
+        payload = 'bucket{le="+Inf"} 1 # {id="test",xx="yy"} 4 123.123\n# EOF\n'
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(samples[0]['value'], 1.0)
+        self.assertIsNone(samples[0]['timestamp'])
+        self.assertEqual(samples[0]['labels'], {'le': '+Inf'})
+
+
+class TestGetSamples(unittest.TestCase):
+
+    def setUp(self):
+        success, self.samples = openmetrics.parse(NEXTCLOUD_PAYLOAD)
+        self.assertTrue(success)
+
+    def test_by_name(self):
+        self.assertEqual(len(openmetrics.get_samples(self.samples, 'nextcloud_app_enabled')), 3)
+
+    def test_by_name_and_label(self):
+        found = openmetrics.get_samples(self.samples, 'nextcloud_app_enabled',
+                                        labels={'app_id': 'spreed'})
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['value'], 1.0)
+
+    def test_labels_match_as_a_subset(self):
+        # app_enabled also carries a version label, which the caller need not know.
+        found = openmetrics.get_samples(self.samples, 'nextcloud_app_enabled',
+                                        labels={'app_id': 'files'})
+        self.assertEqual(len(found), 1)
+
+    def test_absent_metric_is_an_empty_list(self):
+        self.assertEqual(openmetrics.get_samples(self.samples, 'nope'), [])
+
+    def test_absent_label_is_an_empty_list(self):
+        found = openmetrics.get_samples(self.samples, 'nextcloud_app_enabled',
+                                        labels={'app_id': 'nope'})
+        self.assertEqual(found, [])
+
+    def test_name_matches_exactly_not_by_prefix(self):
+        self.assertEqual(openmetrics.get_samples(self.samples, 'nextcloud_app_'), [])
+
+    def test_order_is_kept(self):
+        found = openmetrics.get_samples(self.samples, 'nextcloud_app_enabled')
+        self.assertEqual([sample['labels']['app_id'] for sample in found],
+                         ['files', 'spreed', 'encryption'])
+
+
+class TestGetValue(unittest.TestCase):
+
+    def setUp(self):
+        success, self.samples = openmetrics.parse(NEXTCLOUD_PAYLOAD)
+        self.assertTrue(success)
+
+    def test_enabled_app(self):
+        value = openmetrics.get_value(self.samples, 'nextcloud_app_enabled',
+                                      labels={'app_id': 'spreed'})
+        self.assertEqual(value, 1.0)
+
+    def test_disabled_app(self):
+        value = openmetrics.get_value(self.samples, 'nextcloud_app_enabled',
+                                      labels={'app_id': 'encryption'})
+        self.assertEqual(value, 0.0)
+
+    def test_absent_returns_default(self):
+        self.assertIsNone(openmetrics.get_value(self.samples, 'nope'))
+        self.assertEqual(openmetrics.get_value(self.samples, 'nope', default=-1), -1)
+
+    def test_info_metric_carries_its_facts_in_labels(self):
+        found = openmetrics.get_samples(self.samples, 'nextcloud_instance_info')
+        self.assertEqual(found[0]['labels']['full_version'], '34.0.1')
+        self.assertEqual(found[0]['type'], 'info')
+
+    def test_metadata_ahead_of_help_is_read(self):
+        # Nextcloud emits # TYPE before # HELP, the other way round from every
+        # example in the specification.
+        found = openmetrics.get_samples(self.samples, 'nextcloud_active_users')
+        self.assertEqual(found[0]['type'], 'gauge')
+        self.assertEqual(found[0]['unit'], 'users')
+        self.assertEqual(found[0]['help'], 'Number of active users')
+
+    def test_nonconformant_info_value_is_read_rather_than_rejected(self):
+        # An info may only carry the value 1 per the specification, and its name
+        # should end in _info. Nextcloud sends neither. Reading it is the point:
+        # a plugin that refused this payload would report nothing at all.
+        self.assertEqual(openmetrics.get_value(self.samples, 'nextcloud_maintenance'), 0.0)
+
+    def test_timestamp_of_a_live_sample(self):
+        found = openmetrics.get_samples(self.samples, 'nextcloud_instance_info')
+        self.assertEqual(found[0]['timestamp'], 1784272189.0)
+
+    def test_a_disabled_app_is_not_the_same_as_an_absent_one(self):
+        # Both are falsy, which is why the default has to be distinguishable.
+        self.assertEqual(
+            openmetrics.get_value(self.samples, 'nextcloud_app_enabled',
+                                  labels={'app_id': 'encryption'}), 0.0
+        )
+        self.assertIsNone(
+            openmetrics.get_value(self.samples, 'nextcloud_app_enabled', labels={'app_id': 'mail'})
+        )
+
+
+if __name__ == '__main__':
+    unittest.main()
