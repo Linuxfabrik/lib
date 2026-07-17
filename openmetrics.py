@@ -19,7 +19,7 @@ specification about whitespace.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026071707'
+__version__ = '2026071708'
 
 
 import math
@@ -188,12 +188,23 @@ _LABEL_NAME_REGEX = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*', re.ASCII)
 _METRIC_NAME_REGEX = re.compile(r'[a-zA-Z_:][a-zA-Z0-9_:]*', re.ASCII)
 
 
+# A label set naming the same label twice. Both formats want label names unique within a label
+# set, and a dict cannot hold the two values anyway, so such a sample cannot be reported. It is
+# dropped on its own rather than taking the payload with it: the line is well-formed and fully
+# understood, so the reader has not lost its place in the payload and everything around it still
+# states the truth. It is also what the sample meets further along in practice, Prometheus reading
+# such a payload and rejecting only this one sample when it stores it.
+_DUPLICATE_LABEL = object()
+
+
 def _parse_labels(text, dialect):
     """Parse the inside of a `{...}` label set.
 
-    Returns a `(success, result)` tuple, where result is a `(name, labels)` tuple on success.
-    `name` is the metric name if the label set carries one (the form used for names outside the
-    legacy charset), otherwise `None`.
+    Returns a `(success, result)` tuple, where result is a `(name, labels, duplicate)` tuple on
+    success. `name` is the metric name if the label set carries one (the form used for names
+    outside the legacy charset), otherwise `None`. `duplicate` tells whether the label set named
+    the same label twice, which leaves `labels` holding an arbitrary one of the two values and so
+    fit to be dropped rather than reported.
 
     `dialect` decides whether the comma between two entries may be left out, which the Prometheus
     grammar allows and the OpenMetrics one does not.
@@ -212,6 +223,7 @@ def _parse_labels(text, dialect):
     """
     name = None
     labels = {}
+    duplicate = False
     i = 0
     while True:
         while i < len(text) and text[i] in ' \t':
@@ -241,8 +253,11 @@ def _parse_labels(text, dialect):
             if i < 0:
                 return False, f'unterminated value for label "{key}"'
             if key in labels:
-                # Keeping either one would be a guess about which the endpoint meant.
-                return False, f'duplicate label "{key}"'
+                # Not returning here: the rest of the label set still has to be read, so that a
+                # sample carrying both a duplicate label and a syntax error behind it fails the
+                # payload the way that syntax error alone would. Keeping either value would be a
+                # guess about which the endpoint meant, so the sample goes on the floor whole.
+                duplicate = True
             labels[key] = value
         elif quoted and (i >= len(text) or text[i] == ','):
             # A quoted string that is not followed by "=" is the metric name, which may sit at
@@ -267,7 +282,7 @@ def _parse_labels(text, dialect):
             # reference parser reads them as two labels, so the loop carries on to the next entry
             # rather than lose the whole payload over a separator that format does not require.
             return False, f'expected "," between the entries of a label set at "{text[i:i + 16]}"'
-    return True, (name, labels)
+    return True, (name, labels, duplicate)
 
 
 def _find_brace_close(text, i):
@@ -472,9 +487,12 @@ _FIELD_REGEX = {
 
 
 def _parse_sample(line, meta, dialect):
-    """Parse one sample line. Returns a `(success, result)` tuple."""
+    """Parse one sample line. Returns a `(success, result)` tuple, where result is the sample on
+    success, or `_DUPLICATE_LABEL` where the line is well-formed but names a label twice.
+    """
     name = None
     labels = {}
+    duplicate = False
     if line.startswith('{'):
         offset = 0
     else:
@@ -492,7 +510,10 @@ def _parse_sample(line, meta, dialect):
         success, result = _parse_labels(line[offset + 1:close], dialect)
         if not success:
             return False, result
-        quoted_name, labels = result
+        # Not acting on `duplicate` here: the value and the timestamp behind the label set still
+        # have to be read, so that a sample carrying a duplicate label and an unparseable value
+        # fails the payload the way that value alone would.
+        quoted_name, labels, duplicate = result
         if quoted_name is not None:
             if name is not None:
                 return False, (f'metric name already given in front of the label set, got a '
@@ -523,6 +544,9 @@ def _parse_sample(line, meta, dialect):
         success, timestamp = _parse_timestamp(fields[1], dialect)
         if not success:
             return False, timestamp
+    if duplicate:
+        # Everything the line says has been read by now, so nothing about it is left to fail on.
+        return True, _DUPLICATE_LABEL
     entry = _get_meta(meta, name)
     return True, {
         'name': name,
@@ -611,8 +635,18 @@ def parse(data, dialect=None):
       payload.
     - Neither format forbids a payload from reporting the same name and labels twice. Such
       samples are reported as they arrive, rather than deduplicated.
-    - This reads a payload, it does not judge it. What a sample says has to be well-formed, so a
-      duplicate label, an unparseable value or an unknown type is an error. What a payload
+    - A sample whose label set names the same label twice is dropped, and dropped silently, while
+      the rest of the payload is read. Both formats want label names unique within a label set,
+      and the two values cannot both be reported anyway, so there is nothing to report for that
+      one sample; failing the whole payload over it would throw away every other sample the
+      endpoint got right. This is the only line a well-formed payload loses without saying so,
+      and it is the one shape where the reader understands the line completely and still cannot
+      put it into words. Where the difference matters, ask for the metric by name first: an empty
+      result then says the sample is missing, whatever the reason.
+    - This reads a payload, it does not judge it. What a sample says has to be well-formed, so an
+      unparseable value or an unknown type is an error, and the payload is lost with it, because
+      past a line the grammar cannot take apart the reader no longer knows where it is. What a
+      payload
       *means* is not checked: a counter may arrive negative, a histogram may be missing its
       `+Inf` bucket, a metric family may be spread over the payload rather than kept together.
       Endpoints in the field send all of that, and the specification forbids all of it. A reader
@@ -651,7 +685,7 @@ def parse(data, dialect=None):
             success, result = _parse_meta(line, meta, dialect)
         else:
             success, result = _parse_sample(line, meta, dialect)
-            if success:
+            if success and result is not _DUPLICATE_LABEL:
                 samples.append(result)
         if not success:
             return False, result

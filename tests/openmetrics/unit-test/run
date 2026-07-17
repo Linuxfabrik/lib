@@ -462,11 +462,41 @@ class TestParseLabels(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn('expected a label name', result)
 
-    def test_duplicate_label_is_rejected(self):
-        # Keeping either one would be a guess. Silently overwriting loses data.
-        success, result = openmetrics.parse('metric{a="1",a="2"} 1\n# EOF\n')
+    def test_duplicate_label_drops_the_sample_and_keeps_the_payload(self):
+        # Keeping either one would be a guess, so the sample goes on the floor.
+        # The payload around it is read: the line is well-formed, so the reader
+        # still knows where it is, and every other sample states the truth.
+        success, samples = openmetrics.parse('good_a 1\nmetric{a="1",a="2"} 1\ngood_c 3\n# EOF\n')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual([s['name'] for s in samples], ['good_a', 'good_c'])
+
+    def test_duplicate_label_on_a_named_metric_drops_only_that_sample(self):
+        payload = 'metric{a="1"} 1\nmetric{a="1",a="2"} 2\n'
+        success, samples = openmetrics.parse(payload, dialect='prometheus')
+        self.assertTrue(success, msg=samples)
+        self.assertEqual(len(samples), 1)
+        self.assertEqual(samples[0]['value'], 1.0)
+
+    def test_duplicate_label_beside_a_quoted_name_drops_only_that_sample(self):
+        # The name sits inside the label set, so dropping the sample must not
+        # read as a nameless one and fail the payload.
+        payload = '{"my.metric",a="1",a="2"} 1\ngood 2\n# EOF\n'
+        success, samples = openmetrics.parse(payload)
+        self.assertTrue(success, msg=samples)
+        self.assertEqual([s['name'] for s in samples], ['good'])
+
+    def test_duplicate_label_does_not_swallow_a_syntax_error_behind_it(self):
+        # A line the grammar cannot take apart still fails the payload: past it
+        # the reader no longer knows where it is.
+        success, result = openmetrics.parse('metric{a="1",a="2"} notanumber\n',
+                                            dialect='prometheus')
         self.assertFalse(success)
-        self.assertIn('duplicate label', result)
+        self.assertIn('not a number', result)
+
+    def test_duplicate_label_does_not_swallow_a_broken_label_set_behind_it(self):
+        success, result = openmetrics.parse('metric{a="1",a="2",b} 1\n', dialect='prometheus')
+        self.assertFalse(success)
+        self.assertIn('expected "="', result)
 
     def test_prometheus_reads_labels_without_the_comma(self):
         # The Prometheus grammar takes the entries apart without the comma, so
