@@ -682,6 +682,15 @@ class TestParseValue(unittest.TestCase):
         self.assertEqual(self._value('+Inf'), math.inf)
         self.assertEqual(self._value('-Inf'), -math.inf)
 
+    def test_signed_nan_is_rejected(self):
+        # A sign is allowed in front of inf but not in front of nan, which Python's float() would
+        # read regardless. The OpenMetrics grammar and the Prometheus server parser reject both
+        # -nan and +nan; the prometheus_client package is looser and reads them.
+        for raw in ('-nan', '+nan', '-NaN', '+NaN'):
+            success, result = openmetrics.parse(f'metric {raw}\n', dialect='prometheus')
+            self.assertFalse(success, msg=raw)
+            self.assertIn('not a number', result)
+
     def test_digit_separator_is_rejected(self):
         # Python's float() would happily read this as 12.
         success, result = openmetrics.parse('metric 1_2\n', dialect='prometheus')

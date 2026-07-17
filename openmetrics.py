@@ -12,14 +12,16 @@
 endpoint serves, and turns it into plain Python data.
 
 The two formats are close relatives and this module accepts both. Where they disagree, the
-`dialect` parameter of `parse()` decides. The grammar implemented here follows the reference
-parsers (`model/textparse` in prometheus/prometheus and the `prometheus_client` Python package),
-which are stricter than most hand-written parsers about escaping and looser than the OpenMetrics
-specification about whitespace.
+`dialect` parameter of `parse()` decides. The grammar answers to two authorities: the OpenMetrics
+specification and the parser the Prometheus server runs (`model/textparse` in
+prometheus/prometheus). The `prometheus_client` Python package is a secondary, informational
+reference only, consulted where it shows what real exporters send and called out where it differs
+from those two. The result is stricter than most hand-written parsers about escaping and looser
+than the OpenMetrics specification about whitespace.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026071708'
+__version__ = '2026071710'
 
 
 import math
@@ -276,11 +278,12 @@ def _parse_labels(text, dialect):
             i += 1
         elif dialect == DIALECT_OPENMETRICS:
             # The two grammars disagree about whether the comma is optional. OpenMetrics wants it
-            # and its reference parser rejects a label set that leaves one out, so reading
-            # `a="1" b="2"` as two labels here would invent a structure out of a payload that says
-            # something else. The Prometheus grammar takes the entries apart without it and its
-            # reference parser reads them as two labels, so the loop carries on to the next entry
-            # rather than lose the whole payload over a separator that format does not require.
+            # and rejects a label set that leaves one out, so reading `a="1" b="2"` as two labels
+            # here would invent a structure out of a payload that says something else. The
+            # Prometheus grammar takes the entries apart without it and the Prometheus server parser
+            # reads them as two labels (the `prometheus_client` package rejects them instead), so
+            # the loop carries on to the next entry rather than lose the whole payload over a
+            # separator that format does not require.
             return False, f'expected "," between the entries of a label set at "{text[i:i + 16]}"'
     return True, (name, labels, duplicate)
 
@@ -308,9 +311,14 @@ def _find_brace_close(text, i):
 # The number grammar of both formats, which is narrower than what Python's float() reads. Spelled
 # out rather than filtered, because float() takes digit separators (`1_2`) and non-ASCII digits
 # (`١٢٣`), neither of which either format defines. Accepting those would read a number where the
-# endpoint sent something else entirely.
+# endpoint sent something else entirely. A sign is allowed in front of `inf` but not in front of
+# `nan`: the OpenMetrics grammar spells the value as bare `nan` with no sign (`number =/ "nan"`),
+# and the Prometheus server parser rejects `-nan` and `+nan` too, since Go's float parser reads a
+# sign only in front of `inf`. The `prometheus_client` package is looser and reads a signed nan
+# through Python's float(); this follows the two authorities and rejects it, as a signed
+# not-a-number says nothing a bare `nan` does not.
 _FLOAT_REGEX = re.compile(
-    r'[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|[-+]?(?:inf(?:inity)?|nan)',
+    r'[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|[-+]?inf(?:inity)?|nan',
     re.ASCII | re.IGNORECASE,
 )
 
@@ -610,9 +618,12 @@ def parse(data, dialect=None):
       OpenMetrics, putting every timestamp 1000 times too far in the future. Passing `dialect`
       rules both out, so pass it wherever the format is known, for instance from the
       `Content-Type` the endpoint answered with.
-    - Whitespace is taken the lenient way the Prometheus reference parser takes it, in both
-      dialects. A payload that a strict OpenMetrics reader would reject over spacing is read
-      here. As a consequence, a help text keeps neither its leading nor its trailing spaces.
+    - Whitespace is taken more leniently than either reference parser takes it: the leading and
+      trailing spaces and tabs of every line are stripped before the line is parsed, in both
+      dialects. A payload that a strict OpenMetrics reader would reject over spacing is read here,
+      and so is metadata whitespace that the Prometheus reference keeps and then rejects, such as
+      the trailing space that turns `# TYPE c counter ` into the type `counter ` there. As a
+      consequence, a help text keeps neither its leading nor its trailing spaces.
     - Beyond whitespace, two more line classes are read in the OpenMetrics dialect that its
       reference parser rejects: a blank line, and a comment other than `# HELP`, `# TYPE`,
       `# UNIT` and `# EOF`. Neither carries a measurement, so neither is worth losing every
@@ -631,8 +642,8 @@ def parse(data, dialect=None):
       trace data and say nothing about the value. This also reads them in the Prometheus dialect,
       which has no exemplars and whose reference parser rejects them, because an endpoint serving
       OpenMetrics under a `text/plain` content type is a thing that happens. Native histograms, an
-      experimental Prometheus extension neither format specifies, are not read at all and fail the
-      payload.
+      experimental Prometheus extension that this text format cannot carry (it is defined for the
+      protobuf exposition), are not read at all and fail the payload.
     - Neither format forbids a payload from reporting the same name and labels twice. Such
       samples are reported as they arrive, rather than deduplicated.
     - A sample whose label set names the same label twice is dropped, and dropped silently, while
