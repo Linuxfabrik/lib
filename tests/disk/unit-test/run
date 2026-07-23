@@ -279,6 +279,28 @@ class TestHostHelpers(unittest.TestCase):
         self.assertIsInstance(disk.get_block_devices(), list)
 
 
+class TestInodeUsage(unittest.TestCase):
+    def test_readable_mount_reports_usage_or_no_inodes(self):
+        # os.statvfs() works on any existing path; the filesystem type decides
+        # whether inodes are reported (a dict) or not (None, e.g. btrfs/FAT).
+        tmp = tempfile.mkdtemp(prefix='lftest-inode-')
+        try:
+            success, result = disk.get_inode_usage(tmp)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.assertTrue(success)
+        if result is not None:
+            self.assertEqual(set(result), {'total', 'free', 'used', 'percent'})
+            self.assertEqual(result['used'], result['total'] - result['free'])
+            self.assertGreaterEqual(result['percent'], 0)
+            self.assertLessEqual(result['percent'], 100)
+
+    def test_missing_mount_is_an_error(self):
+        success, result = disk.get_inode_usage('/nonexistent-lftest-mount-xyz')
+        self.assertFalse(success)
+        self.assertIsInstance(result, str)
+
+
 class TestShortenPath(unittest.TestCase):
     def test_abbreviates_parents_keeps_basename(self):
         self.assertEqual(
@@ -306,6 +328,42 @@ class TestShortenPath(unittest.TestCase):
 
     def test_root_stays(self):
         self.assertEqual(disk.shorten_path('/'), '/')
+
+    def test_max_len_leaves_short_path_untouched(self):
+        self.assertEqual(disk.shorten_path('/var/log/audit', max_len=40), '/var/log/audit')
+
+    def test_max_len_abbreviates_when_over_limit(self):
+        # abbreviating the parents is enough; no truncation needed.
+        self.assertEqual(
+            disk.shorten_path('/usr/share/icingaweb2/public/index.php', max_len=20),
+            '/u/s/i/p/index.php',
+        )
+
+    def test_max_len_middle_truncates_long_basename(self):
+        # a very long final component (e.g. a CSI volume handle) is
+        # middle-truncated so the result fits within max_len.
+        path = (
+            '/var/lib/kubelet/plugins/kubernetes.io/csi/rook-ceph.rbd.csi.ceph.com/'
+            '6f75297b4f41d9dc95027a8d7d09ea1edfd84d051b54455bad245b40ee4a1eb7/globalmount/'
+            '0001-0009-rook-ceph-000000000000000b-ef18f2fa-2957-4c50-8d44-56c3c866ac25'
+        )
+        short = disk.shorten_path(path, max_len=40)
+        self.assertLessEqual(len(short), 40)
+        self.assertIn('...', short)
+
+    def test_max_len_keeps_distinct_paths_distinct(self):
+        # two CSI mounts that differ only in their handles must not collapse
+        # to the same shortened string.
+        base = (
+            '/var/lib/kubelet/plugins/kubernetes.io/csi/rook-ceph.rbd.csi.ceph.com/'
+            '{h}/globalmount/0001-0009-rook-ceph-{s}'
+        )
+        a = base.format(h='6f75297b4f41d9dc95027a8d7d09ea1edfd84d05', s='000000000000000b-ef18f2fa')
+        b = base.format(h='79eba44fbcb484b29e9911328f58aba5e936f8b4', s='000000000000000c-1bf231b1')
+        self.assertNotEqual(
+            disk.shorten_path(a, max_len=40),
+            disk.shorten_path(b, max_len=40),
+        )
 
 
 if __name__ == '__main__':

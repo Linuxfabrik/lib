@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026071601'
+__version__ = '2026072301'
 
 import csv
 import glob as _glob
@@ -393,6 +393,54 @@ def get_fingerprint(filename, length=256):
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
     return True, (hashlib.sha256(data).hexdigest(), len(data))
+
+
+def get_inode_usage(mount):
+    """
+    Return the inode usage of the filesystem mounted at `mount`, via `os.statvfs()`.
+
+    Inodes are a Unix filesystem concept, so this relies on `os.statvfs()`, which does not
+    exist on Windows; there the call reports failure instead of raising. Some filesystems
+    (btrfs, FAT, many network mounts) allocate inodes dynamically and report a total of
+    zero. Such a filesystem has no meaningful inode-usage percentage, which is signalled
+    with a `None` result, distinct from a read failure.
+
+    ### Parameters
+    - **mount** (`str`): Mount point to inspect, e.g. `/` or `/boot`.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**bool**): True if the mount point could be read, otherwise False (for
+          example permission denied, an I/O error, or a platform without `os.statvfs()`).
+        - tuple[1] (**dict | None | str**):
+          - On success, a dict with the inode counts `total`, `free` and `used`, plus
+            `percent` (used inodes in percent, rounded to one decimal); or `None` if the
+            filesystem does not report inodes (total is zero).
+          - On failure, an error message string.
+
+    ### Example
+    >>> get_inode_usage('/boot')
+    (True, {'total': 65536, 'free': 65427, 'used': 109, 'percent': 0.2})
+    >>> get_inode_usage('/')  # btrfs, no fixed inode count
+    (True, None)
+    """
+    if not hasattr(os, 'statvfs'):
+        return False, 'os.statvfs() is not available on this platform'
+    try:
+        st = os.statvfs(mount)
+    except OSError as e:
+        return False, f'I/O error "{e.strerror}" while reading inodes of {mount}'
+    total = st.f_files
+    if not total:
+        return True, None
+    free = st.f_ffree
+    used = total - free
+    return True, {
+        'total': total,
+        'free': free,
+        'used': used,
+        'percent': round(used / total * 100, 1),
+    }
 
 
 def get_owner(file):
@@ -875,7 +923,7 @@ def rm_file(filename):
         return False, f'Unknown error deleting {filename}: {e}'
 
 
-def shorten_path(path):
+def shorten_path(path, max_len=None):
     """
     Shorten a path for display.
 
@@ -884,8 +932,18 @@ def shorten_path(path):
     component is kept in full because it usually carries the identifying information. This is
     a pure string transformation; the path is not resolved and the filesystem is not touched.
 
+    With `max_len`, a path that already fits within `max_len` characters is returned
+    unchanged, so short and readable paths are not abbreviated needlessly; only a longer path
+    is shortened. If reducing the parents to their initial still leaves the result longer than
+    `max_len` (a very long final component, for example a Kubernetes CSI volume handle), the
+    result is middle-truncated with `...`, keeping its head and tail so distinct paths stay
+    distinguishable. The `...` marker is plain ASCII so it renders in monospace tables on any
+    terminal and transport.
+
     ### Parameters
     - **path** (`str`): A slash-separated path, for example `/etc/pki/tls/certs/002c0b4f.0`.
+    - **max_len** (`int`, optional): Maximum length of the returned string. When `None` (the
+      default), the path is always abbreviated and never truncated.
 
     ### Returns
     - **str**: The abbreviated path, for example `/e/p/t/c/002c0b4f.0`. A value without a
@@ -897,12 +955,26 @@ def shorten_path(path):
 
     >>> shorten_path('index.php')
     'index.php'
+
+    >>> shorten_path('/var/log/audit', max_len=40)  # already short enough
+    '/var/log/audit'
+
+    >>> shorten_path('/a/very/long/path/' + 'x' * 60, max_len=20)
+    '/a/v/l/p...xxxxxxxxx'
     """
     if not path or '/' not in path:
         return path
+    if max_len is not None and len(path) <= max_len:
+        return path
     head, _, tail = path.rpartition('/')
     abbrev = '/'.join(part[:1] for part in head.split('/'))
-    return f'{abbrev}/{tail}'
+    result = f'{abbrev}/{tail}'
+    if max_len is not None and len(result) > max_len:
+        keep = max_len - 3
+        head_len = keep // 2
+        tail_len = keep - head_len
+        result = f'{result[:head_len]}...{result[-tail_len:]}'
+    return result
 
 
 def udevadm(device, _property):

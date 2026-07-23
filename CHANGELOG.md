@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_mysql.py: `get_server_info()` also returns `version_tuple`, the comparable form of the version it already reported as a string.
 * db_mysql.py: `get_version()` returns the connected server's flavor and version as a comparable tuple, so callers no longer parse the version string themselves.
 * disk.py: `get_fingerprint()` hashes a file's head, tail or whole content, so callers can recognize a file by what it holds rather than by metadata, which reports nothing when a file is rewritten in place.
+* disk.py: `get_inode_usage()` returns a mount point's inode counts and usage percentage via `os.statvfs()`, reporting a filesystem that does not track inodes (btrfs, FAT, many network mounts) distinctly from an unreadable one.
 * disk.py: `glob()` returns a sorted list of paths matching a shell glob pattern (recursive by default).
 * disk.py: `read_file()` can return raw `bytes` via a new `binary` parameter.
 * disk.py: `stat()` returns a filesystem entry's `os.stat()` result (or `None`), so callers get every field (size, mtime, mode, owner, ...) in one syscall.
@@ -31,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * db_mysql.py: both version parsers share one flavor rule and delegate to `version.version()`, so a lowercase `-mariadb` tag is no longer read as MySQL.
+* disk.py: `shorten_path()` gained an optional `max_len` so it leaves already-short paths untouched and middle-truncates an over-long result, keeping very long paths (such as Kubernetes CSI volume mounts) readable.
 * version.py: importing the module no longer drags in the cache, SQLite and HTTP machinery; only `check_eol()` loads those, on call.
 
 ### Fixed
