@@ -109,6 +109,15 @@ class TestCallApi(BexioTestBase):
         bexio.call_api(API_TOKEN, '/2.0/contact')
         self.assertEqual(self.sent_header()['Accept'], 'application/json')
 
+    def test_content_type_header_is_unset_without_data(self):
+        bexio.call_api(API_TOKEN, '/2.0/contact')
+        self.assertNotIn('Content-Type', self.sent_header())
+
+    def test_content_type_header_is_application_json_for_payload(self):
+        payload = {'name_1': 'Linuxfabrik', 'contact_type_id': 1}
+        bexio.call_api(API_TOKEN, '/2.0/contact', data=payload)
+        self.assertEqual(self.sent_header()['Content-Type'], 'application/json')
+
     def test_no_extra_headers_set(self):
         # Regression guard: only Accept and Authorization, nothing else.
         bexio.call_api(API_TOKEN, '/2.0/contact')

@@ -72,13 +72,16 @@ def call_api(api_token, path, data=None, method=None):
         - On success, the parsed JSON document from the Bexio API
         - On failure, an error message string.
     """
-    if data is None:
-        data = {}
 
     headers = {
         'Accept': 'application/json',
         'Authorization': f'Bearer {api_token}',
     }
+
+    if data is None:
+        data = {}
+    else:
+        headers['Content-Type'] = 'application/json'
 
     return url.fetch_json(
         f'{BEXIO_API_BASE_URL}{path}',
