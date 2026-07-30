@@ -91,6 +91,8 @@ def make_get_data_args(**overrides):
 
 def make_token_args(**overrides):
     base = {
+        'URL': 'https://kc.example.com',
+        'REALM': 'myrealm',
         'CLIENT_ID': 'admin-cli',
         'USERNAME': 'admin',
         'PASSWORD': 'linuxfabrik',
@@ -398,19 +400,74 @@ class TestGetData(unittest.TestCase):
 
 class TestObtainAdminToken(unittest.TestCase):
 
-    def test_token_endpoint_used_as_url(self):
-        args = make_token_args()
+    def test_token_url_built_from_base_url_and_realm(self):
+        args = make_token_args(URL='https://kc.example.com', REALM='myrealm')
         oidc = {'token_endpoint': 'https://kc.example.com/realms/myrealm/protocol/openid-connect/token'}
         with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
             keycloak.obtain_admin_token(args, oidc)
-        self.assertEqual(m.call_args.args[0], oidc['token_endpoint'])
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://kc.example.com/realms/myrealm/protocol/openid-connect/token',
+        )
 
-    def test_missing_token_endpoint_yields_empty_url(self):
-        # oidc_config without token_endpoint -> '' (no KeyError).
+    def test_hostile_token_endpoint_ignored(self):
+        # A malicious or compromised Keycloak announces a collector of its own; the
+        # credentials must still go to the host the operator asked to be monitored.
+        args = make_token_args(URL='https://kc.example.com', REALM='myrealm')
+        oidc = {'token_endpoint': 'https://attacker.example/collect'}
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, oidc)
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://kc.example.com/realms/myrealm/protocol/openid-connect/token',
+        )
+        self.assertNotIn('attacker.example', m.call_args.args[0])
+
+    def test_hostile_token_endpoint_on_internal_host_ignored(self):
+        # The same primitive aimed at an internal service instead of an external collector.
+        args = make_token_args(URL='https://kc.example.com', REALM='myrealm')
+        oidc = {'token_endpoint': 'http://192.0.2.10:8500/v1/kv/creds'}
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, oidc)
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://kc.example.com/realms/myrealm/protocol/openid-connect/token',
+        )
+
+    def test_trailing_slashes_on_base_stripped(self):
+        args = make_token_args(URL='https://kc.example.com///')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://kc.example.com/realms/myrealm/protocol/openid-connect/token',
+        )
+
+    def test_url_with_path_prefix(self):
+        # Reverse-proxied Keycloak under a sub-path.
+        args = make_token_args(URL='https://example.com/auth')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            keycloak.obtain_admin_token(args, {'token_endpoint': 'https://kc/token'})
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://example.com/auth/realms/myrealm/protocol/openid-connect/token',
+        )
+
+    def test_missing_token_endpoint_reports_error(self):
+        # A realm that announces no token endpoint is not asked for a token at all.
         args = make_token_args()
-        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(False, 'err')) as m:
-            keycloak.obtain_admin_token(args, {})
-        self.assertEqual(m.call_args.args[0], '')
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            success, result = keycloak.obtain_admin_token(args, {})
+        self.assertFalse(success)
+        self.assertIn('token endpoint', result)
+        self.assertEqual(m.call_count, 0)
+
+    def test_empty_token_endpoint_reports_error(self):
+        args = make_token_args()
+        with mock.patch.object(keycloak.url, 'fetch_json', return_value=(True, {})) as m:
+            success, result = keycloak.obtain_admin_token(args, {'token_endpoint': ''})
+        self.assertFalse(success)
+        self.assertEqual(m.call_count, 0)
 
     def test_endpoint_from_discovery_fixture(self):
         oidc = load_fixture('openid-configuration.json')
@@ -568,7 +625,12 @@ class TestTypicalUsageFlow(unittest.TestCase):
 
         self.assertTrue(ok1 and ok2 and ok3)
         self.assertEqual(m.call_count, 3)
-        # obtain_admin_token must have used the endpoint discovered in step 1.
+        # obtain_admin_token must have used the realm's token endpoint on the base URL,
+        # which for an honest discovery document is what step 1 announced.
+        self.assertEqual(
+            m.call_args_list[1].args[0],
+            'https://kc.example.com/realms/myrealm/protocol/openid-connect/token',
+        )
         self.assertEqual(m.call_args_list[1].args[0], oidc['token_endpoint'])
         # get_data must have used the access_token obtained in step 2.
         self.assertEqual(

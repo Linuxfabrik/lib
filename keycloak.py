@@ -22,7 +22,7 @@ Typical use case:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026073001'
 
 from . import url
 
@@ -113,11 +113,14 @@ def obtain_admin_token(args, oidc_config):
     Obtain an admin access token from Keycloak.
 
     This function requests an access token using the Resource Owner Password Credentials Grant
-    ("password grant"). It authenticates against the `token_endpoint` discovered via OIDC.
+    ("password grant"). It authenticates against the realm's token endpoint on the Keycloak
+    server given as the base URL.
 
     ### Parameters
     - **args** (object):
       An argument object containing:
+        - `URL` (`str`): Base URL of the Keycloak server.
+        - `REALM` (`str`): The Keycloak realm name.
         - `CLIENT_ID` (`str`): Client ID registered in Keycloak.
         - `USERNAME` (`str`): Admin username.
         - `PASSWORD` (`str`): Admin password.
@@ -135,11 +138,20 @@ def obtain_admin_token(args, oidc_config):
     ### Notes
     - Uses `grant_type=password`.
     - Make sure Resource Owner Password Credentials Grant is allowed in your realm settings.
+    - The request URL is built from the base URL and the realm, exactly like the discovery
+      request. The discovery document is served by the monitored host and therefore untrusted:
+      taking its `token_endpoint` as the request URL would let a malicious or compromised host
+      redirect this POST - which carries the cleartext admin credentials - to any host of its
+      choosing (CWE-918/CWE-522). The document is only asked whether the realm announces a
+      token endpoint at all.
 
     ### Example
     >>> success, token_data = obtain_admin_token(args, oidc_config)
     """
-    token_endpoint = oidc_config.get('token_endpoint', '')
+    if not oidc_config.get('token_endpoint'):
+        return False, f'Realm "{args.REALM}" does not announce an OIDC token endpoint.'
+    url_base = args.URL.rstrip('/')
+    token_endpoint = f'{url_base}/realms/{args.REALM}/protocol/openid-connect/token'
     payload = {
         'grant_type': 'password',
         'client_id': args.CLIENT_ID,

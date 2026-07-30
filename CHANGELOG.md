@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * db_sqlite.py: `get_db_path()` rejects a database filename that is not a plain basename, so a caller cannot traverse out of the secured per-user directory.
+* keycloak.py: the admin token is requested from the monitored Keycloak itself instead of from the URL its discovery document announces, so a malicious or compromised host can no longer collect the Keycloak admin credentials or aim the request at another host ([GHSA-88fj-95f7-w68m](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-88fj-95f7-w68m)).
 * lftest.py: the shared `--test` unit-test mechanism could be used to read arbitrary files as root on hosts where plugins run via a sudoers allowlist; fixture reads are now confined to the calling plugin's own `unit-test/` directory ([GHSA-rh9c-rqvg-f7pr](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-rh9c-rqvg-f7pr)).
 
 
