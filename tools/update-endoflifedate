@@ -9,6 +9,7 @@
 
 import argparse  # pylint: disable=C0413
 import pprint  # pylint: disable=C0413
+import subprocess  # pylint: disable=C0413
 import sys  # pylint: disable=C0413
 
 sys.path.append('../..')
@@ -119,15 +120,23 @@ ENDOFLIFE_DATE = {
     # fetch data
     for product in PRODUCTS:
         j = lib.base.coe(lib.url.fetch_json(product))
-        j = pprint.pformat(j, indent=4, sort_dicts=True)
-        endoflifedate_py += "    '{}': {},\n\n\n".format(
-            product,
-            j.replace('[ ', '[\n  ').replace(']', ',\n    ]'),
-        )
+        eol_data = pprint.pformat(j, indent=4, sort_dicts=True)
+        endoflifedate_py += f"    '{product}': {eol_data},\n\n\n"
 
     endoflifedate_py += '}\n'
 
     lib.disk.write_file(args.FILE, endoflifedate_py)
+
+    # `pprint` does not emit the layout `ruff format` enforces on this repo, so
+    # the raw output would show up as a large unrelated diff next to the actual
+    # data change. Formatting here keeps a data refresh reviewable.
+    try:
+        subprocess.run(['ruff', 'format', args.FILE], check=True)
+    except (OSError, subprocess.CalledProcessError):
+        print(
+            f'Could not run `ruff format {args.FILE}`. Format it before committing.',
+            file=sys.stderr,
+        )
 
 
 if __name__ == '__main__':
