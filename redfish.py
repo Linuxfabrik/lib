@@ -522,7 +522,9 @@ def fetch_collection(
       - `(False, error)` if the collection cannot be read even without `$expand`.
 
     ### Example
-    >>> success, collection = fetch_collection('https://bmc/redfish/v1/Chassis/1U/Sensors')
+    >>> success, collection = fetch_collection(
+    ...     'https://bmc/redfish/v1/Chassis/1U/Sensors'
+    ... )
     >>> members = collection.get('Members', [])
     """
     cache_key = f'redfish-{collection_url}'
@@ -602,7 +604,9 @@ def fetch_members(
       - `(False, error)` if a bare reference is malformed or cannot be fetched.
 
     ### Example
-    >>> success, collection = fetch_collection('https://bmc/redfish/v1/Chassis/1U/Sensors')
+    >>> success, collection = fetch_collection(
+    ...     'https://bmc/redfish/v1/Chassis/1U/Sensors'
+    ... )
     >>> success, sensors = fetch_members(collection.get('Members', []), 'https://bmc')
     """
     result = []
@@ -780,9 +784,7 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
                 # of the window still reaches the controller before it drops the
                 # session. Never drop below one second.
                 token_ttl = min(token_ttl, max(session_timeout - args.TIMEOUT, 1))
-            cache.set(
-                token_key, token, time.now() + token_ttl, filename=cache_filename
-            )
+            cache.set(token_key, token, time.now() + token_ttl, filename=cache_filename)
         return {'X-Auth-Token': token}
 
     # session creation failed: fall back to HTTP Basic auth
@@ -1215,7 +1217,9 @@ def get_expand_suffix(
         else:
             suffix = f'?$expand={operator}'
     if cache_expire:
-        cache.set(expand_key, suffix, time.now() + cache_expire, filename=cache_filename)
+        cache.set(
+            expand_key, suffix, time.now() + cache_expire, filename=cache_filename
+        )
     return suffix
 
 
@@ -2159,7 +2163,9 @@ def is_member_expanded(member):
     ### Example
     >>> is_member_expanded({'@odata.id': '/redfish/v1/Chassis/1U/Sensors/0'})
     False
-    >>> is_member_expanded({'@odata.id': '/redfish/v1/Chassis/1U/Sensors/0', 'Reading': 22.5})
+    >>> is_member_expanded(
+    ...     {'@odata.id': '/redfish/v1/Chassis/1U/Sensors/0', 'Reading': 22.5}
+    ... )
     True
     """
     if not isinstance(member, dict):
