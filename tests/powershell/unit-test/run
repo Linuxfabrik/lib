@@ -35,6 +35,7 @@ import lib.powershell as powershell
 # Helpers / fakes
 # ---------------------------------------------------------------------------
 
+
 class FakeCompletedProcess:
     """Minimal stand-in for subprocess.CompletedProcess.
 
@@ -56,7 +57,8 @@ def patch_run(**kwargs):
     assert on how subprocess.run was invoked.
     """
     return mock.patch.object(
-        powershell.subprocess, 'run',
+        powershell.subprocess,
+        'run',
         return_value=FakeCompletedProcess(**kwargs),
     )
 
@@ -80,6 +82,7 @@ SAMPLE_STDERR = (
 # ---------------------------------------------------------------------------
 # run_ps() - happy path / return shape
 # ---------------------------------------------------------------------------
+
 
 class TestRunPsReturnShape(unittest.TestCase):
     def test_returns_dict(self):
@@ -109,6 +112,7 @@ class TestRunPsReturnShape(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # run_ps() - stream decoding
 # ---------------------------------------------------------------------------
+
 
 class TestRunPsDecoding(unittest.TestCase):
     def test_stdout_decoded_to_text(self):
@@ -153,9 +157,12 @@ class TestRunPsDecoding(unittest.TestCase):
     def test_decoding_delegates_to_txt_to_text(self):
         # Prove run_ps uses txt.to_text rather than a bare .decode(), so the
         # library's decoding policy (UTF-8 with Latin-1 fallback) applies.
-        with patch_run(stdout=b'X', stderr=b'Y'), mock.patch.object(
-            powershell.txt, 'to_text', side_effect=lambda _, **kw: 'DECODED'
-        ) as m:
+        with (
+            patch_run(stdout=b'X', stderr=b'Y'),
+            mock.patch.object(
+                powershell.txt, 'to_text', side_effect=lambda _, **kw: 'DECODED'
+            ) as m,
+        ):
             result = powershell.run_ps('x')
         self.assertEqual(result['stdout'], 'DECODED')
         self.assertEqual(result['stderr'], 'DECODED')
@@ -164,9 +171,12 @@ class TestRunPsDecoding(unittest.TestCase):
     def test_decoding_uses_strict_or_latin1(self):
         # run_ps must ask to_text for the Latin-1 fallback policy, not the default
         # surrogateescape, so non-UTF-8 output survives the later stdout re-encode.
-        with patch_run(stdout=b'X'), mock.patch.object(
-            powershell.txt, 'to_text', side_effect=lambda _, **kw: 'DECODED'
-        ) as m:
+        with (
+            patch_run(stdout=b'X'),
+            mock.patch.object(
+                powershell.txt, 'to_text', side_effect=lambda _, **kw: 'DECODED'
+            ) as m,
+        ):
             powershell.run_ps('x')
         self.assertEqual(m.call_args.kwargs.get('errors'), 'strict_or_latin1')
 
@@ -174,6 +184,7 @@ class TestRunPsDecoding(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # run_ps() - non-zero return codes
 # ---------------------------------------------------------------------------
+
 
 class TestRunPsNonZero(unittest.TestCase):
     def test_nonzero_returncode_passed_through(self):
@@ -197,10 +208,12 @@ class TestRunPsNonZero(unittest.TestCase):
 # run_ps() - subprocess invocation contract
 # ---------------------------------------------------------------------------
 
+
 class TestRunPsInvocation(unittest.TestCase):
     def test_invokes_powershell_with_command_flag(self):
         with mock.patch.object(
-            powershell.subprocess, 'run',
+            powershell.subprocess,
+            'run',
             return_value=FakeCompletedProcess(),
         ) as m:
             powershell.run_ps('Get-Process')
@@ -210,7 +223,8 @@ class TestRunPsInvocation(unittest.TestCase):
     def test_passes_command_verbatim(self):
         cmd = 'Get-CimInstance Win32_OperatingSystem | Select-Object Caption'
         with mock.patch.object(
-            powershell.subprocess, 'run',
+            powershell.subprocess,
+            'run',
             return_value=FakeCompletedProcess(),
         ) as m:
             powershell.run_ps(cmd)
@@ -218,7 +232,8 @@ class TestRunPsInvocation(unittest.TestCase):
 
     def test_capture_output_is_enabled(self):
         with mock.patch.object(
-            powershell.subprocess, 'run',
+            powershell.subprocess,
+            'run',
             return_value=FakeCompletedProcess(),
         ) as m:
             powershell.run_ps('x')
@@ -226,7 +241,8 @@ class TestRunPsInvocation(unittest.TestCase):
 
     def test_called_exactly_once(self):
         with mock.patch.object(
-            powershell.subprocess, 'run',
+            powershell.subprocess,
+            'run',
             return_value=FakeCompletedProcess(),
         ) as m:
             powershell.run_ps('x')
@@ -235,7 +251,8 @@ class TestRunPsInvocation(unittest.TestCase):
     def test_does_not_pass_shell_true(self):
         # The list-arg form must not run through a shell.
         with mock.patch.object(
-            powershell.subprocess, 'run',
+            powershell.subprocess,
+            'run',
             return_value=FakeCompletedProcess(),
         ) as m:
             powershell.run_ps('x')
@@ -243,7 +260,8 @@ class TestRunPsInvocation(unittest.TestCase):
 
     def test_empty_command_still_invokes_powershell(self):
         with mock.patch.object(
-            powershell.subprocess, 'run',
+            powershell.subprocess,
+            'run',
             return_value=FakeCompletedProcess(),
         ) as m:
             powershell.run_ps('')
@@ -253,7 +271,8 @@ class TestRunPsInvocation(unittest.TestCase):
         # run_ps does no splitting/quoting; the whole string is one argv item.
         cmd = 'Write-Output "a b" | Sort-Object'
         with mock.patch.object(
-            powershell.subprocess, 'run',
+            powershell.subprocess,
+            'run',
             return_value=FakeCompletedProcess(),
         ) as m:
             powershell.run_ps(cmd)
@@ -264,11 +283,13 @@ class TestRunPsInvocation(unittest.TestCase):
 # run_ps() - exception handling
 # ---------------------------------------------------------------------------
 
+
 class TestRunPsExceptions(unittest.TestCase):
     def test_filenotfound_yields_retc_1(self):
         # powershell not on PATH (e.g. running on Linux) -> FileNotFoundError.
         with mock.patch.object(
-            powershell.subprocess, 'run',
+            powershell.subprocess,
+            'run',
             side_effect=FileNotFoundError(2, 'No such file or directory', 'powershell'),
         ):
             result = powershell.run_ps('Get-Process')
@@ -278,7 +299,9 @@ class TestRunPsExceptions(unittest.TestCase):
 
     def test_oserror_is_caught(self):
         with mock.patch.object(
-            powershell.subprocess, 'run', side_effect=OSError('boom'),
+            powershell.subprocess,
+            'run',
+            side_effect=OSError('boom'),
         ):
             result = powershell.run_ps('x')
         self.assertEqual(result['retc'], 1)
@@ -287,7 +310,9 @@ class TestRunPsExceptions(unittest.TestCase):
 
     def test_generic_exception_is_caught(self):
         with mock.patch.object(
-            powershell.subprocess, 'run', side_effect=RuntimeError('weird'),
+            powershell.subprocess,
+            'run',
+            side_effect=RuntimeError('weird'),
         ):
             result = powershell.run_ps('x')
         self.assertEqual(result['retc'], 1)
@@ -297,7 +322,8 @@ class TestRunPsExceptions(unittest.TestCase):
         # No timeout is applied by run_ps, but if the layer below raises one
         # (e.g. via a wrapping mock), it must still degrade to retc=1.
         with mock.patch.object(
-            powershell.subprocess, 'run',
+            powershell.subprocess,
+            'run',
             side_effect=subprocess.TimeoutExpired(cmd='powershell', timeout=5),
         ):
             result = powershell.run_ps('Start-Sleep 999')
@@ -307,7 +333,9 @@ class TestRunPsExceptions(unittest.TestCase):
 
     def test_exception_result_has_documented_keys(self):
         with mock.patch.object(
-            powershell.subprocess, 'run', side_effect=ValueError('x'),
+            powershell.subprocess,
+            'run',
+            side_effect=ValueError('x'),
         ):
             result = powershell.run_ps('x')
         self.assertEqual(set(result.keys()), {'retc', 'stdout', 'stderr'})
@@ -315,11 +343,18 @@ class TestRunPsExceptions(unittest.TestCase):
     def test_exception_message_built_via_exception2text(self):
         # Prove the error string comes from txt.exception2text, not str(e).
         sentinel = ValueError('original')
-        with mock.patch.object(
-            powershell.subprocess, 'run', side_effect=sentinel,
-        ), mock.patch.object(
-            powershell.txt, 'exception2text', return_value='SANITIZED',
-        ) as m:
+        with (
+            mock.patch.object(
+                powershell.subprocess,
+                'run',
+                side_effect=sentinel,
+            ),
+            mock.patch.object(
+                powershell.txt,
+                'exception2text',
+                return_value='SANITIZED',
+            ) as m,
+        ):
             result = powershell.run_ps('x')
         self.assertEqual(result['stderr'], 'SANITIZED')
         m.assert_called_once_with(sentinel)
@@ -327,9 +362,18 @@ class TestRunPsExceptions(unittest.TestCase):
     def test_decoding_failure_is_caught(self):
         # If to_text itself raises while decoding stdout, the broad except
         # turns it into a retc=1 result rather than propagating.
-        with patch_run(stdout=b'\xff\xfe'), mock.patch.object(
-            powershell.txt, 'to_text', side_effect=UnicodeDecodeError(
-                'utf-8', b'\xff', 0, 1, 'invalid start byte',
+        with (
+            patch_run(stdout=b'\xff\xfe'),
+            mock.patch.object(
+                powershell.txt,
+                'to_text',
+                side_effect=UnicodeDecodeError(
+                    'utf-8',
+                    b'\xff',
+                    0,
+                    1,
+                    'invalid start byte',
+                ),
             ),
         ):
             result = powershell.run_ps('x')

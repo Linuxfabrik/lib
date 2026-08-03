@@ -20,7 +20,9 @@ import lib.globals as g
 
 class TestStateConstants(unittest.TestCase):
     def test_nagios_state_values(self):
-        self.assertEqual((g.STATE_OK, g.STATE_WARN, g.STATE_CRIT, g.STATE_UNKNOWN), (0, 1, 2, 3))
+        self.assertEqual(
+            (g.STATE_OK, g.STATE_WARN, g.STATE_CRIT, g.STATE_UNKNOWN), (0, 1, 2, 3)
+        )
 
 
 if __name__ == '__main__':

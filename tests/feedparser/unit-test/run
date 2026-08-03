@@ -99,6 +99,7 @@ def rss_soup(xml=RSS_FEED):
 # parse() - orchestration + dispatch. lib.url.fetch is patched out.
 # ----------------------------------------------------------------------------
 
+
 @unittest.skipUnless(HAVE_DEPS, 'BeautifulSoup4 not installed: ' + IMPORT_ERROR)
 class TestParse(unittest.TestCase):
     """parse() fetch handling, format detection and dispatch."""
@@ -133,16 +134,20 @@ class TestParse(unittest.TestCase):
 
     def test_dispatches_to_parse_atom(self):
         # Format detection must route Atom payloads through parse_atom().
-        with patch.object(feedparser.url, 'fetch', return_value=(True, ATOM_FEED)), \
-                patch.object(feedparser, 'parse_atom', return_value={'k': 'atom'}) as m:
+        with (
+            patch.object(feedparser.url, 'fetch', return_value=(True, ATOM_FEED)),
+            patch.object(feedparser, 'parse_atom', return_value={'k': 'atom'}) as m,
+        ):
             ok, result = feedparser.parse('https://x/atom')
         self.assertTrue(ok)
         self.assertEqual(result, {'k': 'atom'})
         m.assert_called_once()
 
     def test_dispatches_to_parse_rss(self):
-        with patch.object(feedparser.url, 'fetch', return_value=(True, RSS_FEED)), \
-                patch.object(feedparser, 'parse_rss', return_value={'k': 'rss'}) as m:
+        with (
+            patch.object(feedparser.url, 'fetch', return_value=(True, RSS_FEED)),
+            patch.object(feedparser, 'parse_rss', return_value={'k': 'rss'}) as m,
+        ):
             ok, result = feedparser.parse('https://x/rss')
         self.assertTrue(ok)
         self.assertEqual(result, {'k': 'rss'})
@@ -178,6 +183,7 @@ class TestParse(unittest.TestCase):
 # ----------------------------------------------------------------------------
 # parse_atom()
 # ----------------------------------------------------------------------------
+
 
 @unittest.skipUnless(HAVE_DEPS, 'BeautifulSoup4 not installed: ' + IMPORT_ERROR)
 class TestParseAtom(unittest.TestCase):
@@ -278,6 +284,7 @@ class TestParseAtom(unittest.TestCase):
 # ----------------------------------------------------------------------------
 # parse_rss()
 # ----------------------------------------------------------------------------
+
 
 @unittest.skipUnless(HAVE_DEPS, 'BeautifulSoup4 not installed: ' + IMPORT_ERROR)
 class TestParseRss(unittest.TestCase):

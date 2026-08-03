@@ -45,6 +45,7 @@ except ImportError as exc:  # pragma: no cover - depends on venv contents
 # exactly what the module's isinstance()/strerror checks key off.
 # ----------------------------------------------------------------------------
 
+
 def make_smboserror(strerror, context=None):
     """Return a real SMBOSError with a controlled strerror and __context__."""
     # 0xC0000022 == STATUS_ACCESS_DENIED: any valid ntstatus works, we override
@@ -72,7 +73,10 @@ class TestGlobSuccess(unittest.TestCase):
         with patch.object(smb, 'smbclient') as cli:
             cli._os.SMBDirEntry.from_path.return_value = entry
             ok, result = smb.glob(
-                'smb://server/share/file.txt', 'user', 'pass', timeout=5,
+                'smb://server/share/file.txt',
+                'user',
+                'pass',
+                timeout=5,
             )
         self.assertTrue(ok)
         self.assertEqual(result, [entry])
@@ -99,7 +103,10 @@ class TestGlobSuccess(unittest.TestCase):
             cli._os.SMBDirEntry.from_path.return_value = dir_entry
             cli.scandir.return_value = iter(files)
             ok, result = smb.glob(
-                'smb://server/share/dir', 'user', 'pass', timeout=5,
+                'smb://server/share/dir',
+                'user',
+                'pass',
+                timeout=5,
             )
         self.assertTrue(ok)
         self.assertEqual(result, files)
@@ -111,8 +118,12 @@ class TestGlobSuccess(unittest.TestCase):
             cli._os.SMBDirEntry.from_path.return_value = dir_entry
             cli.scandir.return_value = iter([])
             smb.glob(
-                'smb://server/share/dir', 'user', 'pass', timeout=7,
-                pattern='*.log', encrypt=True,
+                'smb://server/share/dir',
+                'user',
+                'pass',
+                timeout=7,
+                pattern='*.log',
+                encrypt=True,
             )
         cli.scandir.assert_called_once_with(
             'smb://server/share/dir',
@@ -148,8 +159,7 @@ class TestGlobErrors(unittest.TestCase):
 
     def test_authentication_error(self):
         with patch.object(smb, 'smbclient') as cli:
-            cli._os.SMBDirEntry.from_path.side_effect = \
-                smbexc.SMBAuthenticationError()
+            cli._os.SMBDirEntry.from_path.side_effect = smbexc.SMBAuthenticationError()
             ok, msg = smb.glob('smb://s/f', 'user', 'pass', timeout=5)
         self.assertFalse(ok)
         self.assertEqual(msg, 'Login failed')
@@ -251,8 +261,7 @@ class TestOpenFileErrors(unittest.TestCase):
 
     def test_authentication_error_returns_str(self):
         with patch.object(smb, 'smbclient') as cli:
-            cli.open_file.side_effect = \
-                smbexc.SMBAuthenticationError('bad creds')
+            cli.open_file.side_effect = smbexc.SMBAuthenticationError('bad creds')
             ok, msg = smb.open_file('smb://s/f', 'user', 'pass', timeout=5)
         self.assertFalse(ok)
         self.assertEqual(msg, 'bad creds')

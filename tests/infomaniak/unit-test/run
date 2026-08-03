@@ -128,6 +128,7 @@ SLOTS_SUCCESS = {
 # Helpers
 # -----------------------------------------------------------------------------
 
+
 def ok(payload):
     """Build the (success, body) tuple lib.url.fetch_json returns on HTTP 200."""
     return (True, payload)
@@ -180,6 +181,7 @@ class InfomaniakTestCase(unittest.TestCase):
 # Module surface / constants
 # -----------------------------------------------------------------------------
 
+
 class TestModuleSurface(InfomaniakTestCase):
     def test_base_url(self):
         self.assertEqual(infomaniak.BASE_URL, 'https://api.infomaniak.com')
@@ -199,6 +201,7 @@ class TestModuleSurface(InfomaniakTestCase):
 # -----------------------------------------------------------------------------
 # get_events
 # -----------------------------------------------------------------------------
+
 
 class TestGetEvents(InfomaniakTestCase):
     def test_success_returns_payload(self):
@@ -251,8 +254,7 @@ class TestGetEvents(InfomaniakTestCase):
         self.assertFalse(success)
         self.assertEqual(
             result,
-            'There was no result from '
-            'https://api.infomaniak.com/2/events?locale=en.',
+            'There was no result from https://api.infomaniak.com/2/events?locale=en.',
         )
 
     def test_api_error_with_description(self):
@@ -282,6 +284,7 @@ class TestGetEvents(InfomaniakTestCase):
 # -----------------------------------------------------------------------------
 # get_swiss_backup_products
 # -----------------------------------------------------------------------------
+
 
 class TestGetSwissBackupProducts(InfomaniakTestCase):
     def test_success_returns_payload(self):
@@ -317,7 +320,11 @@ class TestGetSwissBackupProducts(InfomaniakTestCase):
     def test_custom_kwargs_forwarded(self):
         m = self.patch_fetch(ok(PRODUCTS_SUCCESS))
         infomaniak.get_swiss_backup_products(
-            'ACC', 'TOK', insecure=True, no_proxy=True, timeout=20,
+            'ACC',
+            'TOK',
+            insecure=True,
+            no_proxy=True,
+            timeout=20,
         )
         kwargs = m.call_args.kwargs
         self.assertTrue(kwargs['insecure'])
@@ -363,6 +370,7 @@ class TestGetSwissBackupProducts(InfomaniakTestCase):
 # get_swiss_backup_slots
 # -----------------------------------------------------------------------------
 
+
 class TestGetSwissBackupSlots(InfomaniakTestCase):
     def _two_products_side_effect(self):
         """Side effect: first call -> products, subsequent -> a fresh slot.
@@ -370,6 +378,7 @@ class TestGetSwissBackupSlots(InfomaniakTestCase):
         Every slot call returns an independent payload so the module's in-place
         enrichment cannot bleed across products.
         """
+
         def side(uri, **kwargs):
             if 'account_id' in uri:
                 return ok(PRODUCTS_SUCCESS)
@@ -431,7 +440,11 @@ class TestGetSwissBackupSlots(InfomaniakTestCase):
     def test_slot_fetch_forwards_custom_kwargs(self):
         m = self.patch_fetch(side_effect=self._two_products_side_effect())
         infomaniak.get_swiss_backup_slots(
-            'ACC', 'TOK', insecure=True, no_proxy=True, timeout=99,
+            'ACC',
+            'TOK',
+            insecure=True,
+            no_proxy=True,
+            timeout=99,
         )
         # The slot fetch (2nd call onward) forwards the caller's kwargs.
         slot_call = m.call_args_list[1]
@@ -446,7 +459,11 @@ class TestGetSwissBackupSlots(InfomaniakTestCase):
         # it always uses the function defaults.
         m = self.patch_fetch(side_effect=self._two_products_side_effect())
         infomaniak.get_swiss_backup_slots(
-            'ACC', 'TOK', insecure=True, no_proxy=True, timeout=99,
+            'ACC',
+            'TOK',
+            insecure=True,
+            no_proxy=True,
+            timeout=99,
         )
         products_call = m.call_args_list[0]
         self.assertFalse(products_call.kwargs['insecure'])

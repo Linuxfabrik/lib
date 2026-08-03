@@ -50,7 +50,9 @@ class TestExtractStr(unittest.TestCase):
         self.assertEqual(txt.extract_str('abcde', 'b', 'd'), 'c')
 
     def test_include_fromto(self):
-        self.assertEqual(txt.extract_str('abcde', 'b', 'x', include_fromto=True), 'bcde')
+        self.assertEqual(
+            txt.extract_str('abcde', 'b', 'x', include_fromto=True), 'bcde'
+        )
         self.assertEqual(txt.extract_str('abcde', 'b', 'd', include_fromto=True), 'bcd')
 
     def test_be_tolerant_combinations(self):
@@ -160,7 +162,9 @@ class TestToBytes(unittest.TestCase):
         self.assertEqual(txt.to_bytes(None, nonstring='empty'), b'')
 
     def test_errors_replace(self):
-        self.assertEqual(txt.to_bytes('café', encoding='ascii', errors='replace'), b'caf?')
+        self.assertEqual(
+            txt.to_bytes('café', encoding='ascii', errors='replace'), b'caf?'
+        )
 
 
 class TestToText(unittest.TestCase):
@@ -172,7 +176,9 @@ class TestToText(unittest.TestCase):
         self.assertEqual(txt.to_text(None, nonstring='empty'), '')
 
     def test_strict_or_latin1_valid_utf8(self):
-        self.assertEqual(txt.to_text('über'.encode(), errors='strict_or_latin1'), 'über')
+        self.assertEqual(
+            txt.to_text('über'.encode(), errors='strict_or_latin1'), 'über'
+        )
 
     def test_strict_or_latin1_falls_back_on_invalid_utf8(self):
         # 0xfc is ü in Latin-1/CP1252 and an invalid UTF-8 start byte. With
@@ -201,7 +207,9 @@ class TestUniq(unittest.TestCase):
     def test_dedups_tokens_preserving_order(self):
         self.assertEqual(txt.uniq('a a b a'), 'a b')
         self.assertEqual(
-            txt.uniq('This is a test. This is a second test. And this is a third test.'),
+            txt.uniq(
+                'This is a test. This is a second test. And this is a third test.'
+            ),
             'This is a test. second And this third',
         )
 

@@ -208,9 +208,7 @@ class TestParseDistributionFile(unittest.TestCase):
         self.assertEqual(facts['distribution'], 'Altlinux')
 
     def test_smgl_search_string(self):
-        ok, facts = distro._parse_distribution_file(
-            'SMGL', 'Source Mage GNU/Linux x\n'
-        )
+        ok, facts = distro._parse_distribution_file('SMGL', 'Source Mage GNU/Linux x\n')
         self.assertTrue(ok)
         self.assertEqual(facts['distribution'], 'SMGL')
 
@@ -300,16 +298,18 @@ class TestParseOsRelease(unittest.TestCase):
     """_parse_os_release: VERSION_ID extraction."""
 
     def test_ubuntu_version(self):
-        with mock.patch('lib.distro._file_exists', return_value=True), mock.patch(
-            'lib.distro._get_file_content', return_value=OS_RELEASE_UBUNTU
+        with (
+            mock.patch('lib.distro._file_exists', return_value=True),
+            mock.patch('lib.distro._get_file_content', return_value=OS_RELEASE_UBUNTU),
         ):
             facts = distro._parse_os_release('/etc/os-release')
         self.assertEqual(facts['distribution_version'], '22.04')
         self.assertEqual(facts['distribution_major_version'], '22')
 
     def test_fedora_version_unquoted(self):
-        with mock.patch('lib.distro._file_exists', return_value=True), mock.patch(
-            'lib.distro._get_file_content', return_value=OS_RELEASE_FEDORA
+        with (
+            mock.patch('lib.distro._file_exists', return_value=True),
+            mock.patch('lib.distro._get_file_content', return_value=OS_RELEASE_FEDORA),
         ):
             facts = distro._parse_os_release('/etc/os-release')
         self.assertEqual(facts['distribution_version'], '41')
@@ -320,14 +320,16 @@ class TestParseOsRelease(unittest.TestCase):
             self.assertEqual(distro._parse_os_release('/etc/os-release'), {})
 
     def test_read_exception_returns_empty(self):
-        with mock.patch('lib.distro._file_exists', return_value=True), mock.patch(
-            'lib.distro._get_file_content', side_effect=OSError('boom')
+        with (
+            mock.patch('lib.distro._file_exists', return_value=True),
+            mock.patch('lib.distro._get_file_content', side_effect=OSError('boom')),
         ):
             self.assertEqual(distro._parse_os_release('/etc/os-release'), {})
 
     def test_no_version_id_returns_empty(self):
-        with mock.patch('lib.distro._file_exists', return_value=True), mock.patch(
-            'lib.distro._get_file_content', return_value='ID=foo\n'
+        with (
+            mock.patch('lib.distro._file_exists', return_value=True),
+            mock.patch('lib.distro._get_file_content', return_value='ID=foo\n'),
         ):
             self.assertEqual(distro._parse_os_release('/etc/os-release'), {})
 
@@ -336,8 +338,9 @@ class TestParseLsbRelease(unittest.TestCase):
     """_parse_lsb_release: DISTRIB_RELEASE extraction."""
 
     def test_release_extracted(self):
-        with mock.patch('lib.distro._file_exists', return_value=True), mock.patch(
-            'lib.distro._get_file_content', return_value=LSB_RELEASE
+        with (
+            mock.patch('lib.distro._file_exists', return_value=True),
+            mock.patch('lib.distro._get_file_content', return_value=LSB_RELEASE),
         ):
             facts = distro._parse_lsb_release('/etc/lsb-release')
         self.assertEqual(facts['distribution_version'], '20.04')
@@ -348,14 +351,18 @@ class TestParseLsbRelease(unittest.TestCase):
             self.assertEqual(distro._parse_lsb_release('/etc/lsb-release'), {})
 
     def test_read_exception_returns_empty(self):
-        with mock.patch('lib.distro._file_exists', return_value=True), mock.patch(
-            'lib.distro._get_file_content', side_effect=OSError('boom')
+        with (
+            mock.patch('lib.distro._file_exists', return_value=True),
+            mock.patch('lib.distro._get_file_content', side_effect=OSError('boom')),
         ):
             self.assertEqual(distro._parse_lsb_release('/etc/lsb-release'), {})
 
     def test_no_release_line_returns_empty(self):
-        with mock.patch('lib.distro._file_exists', return_value=True), mock.patch(
-            'lib.distro._get_file_content', return_value='DISTRIB_ID=Ubuntu\n'
+        with (
+            mock.patch('lib.distro._file_exists', return_value=True),
+            mock.patch(
+                'lib.distro._get_file_content', return_value='DISTRIB_ID=Ubuntu\n'
+            ),
         ):
             self.assertEqual(distro._parse_lsb_release('/etc/lsb-release'), {})
 
@@ -364,7 +371,14 @@ class TestMapOsFamily(unittest.TestCase):
     """_map_os_family: distribution -> os_family mapping."""
 
     def test_redhat_family_members(self):
-        for member in ('RedHat', 'CentOS', 'Fedora', 'OracleLinux', 'Rocky', 'AlmaLinux'):
+        for member in (
+            'RedHat',
+            'CentOS',
+            'Fedora',
+            'OracleLinux',
+            'Rocky',
+            'AlmaLinux',
+        ):
             self.assertEqual(distro._map_os_family(member), 'RedHat')
 
     def test_debian_family_members(self):
@@ -408,12 +422,14 @@ class TestProcessDistFiles(unittest.TestCase):
         def fake_get_content(path):
             return files[path]
 
-        with mock.patch('lib.distro.os.path.isfile', side_effect=fake_isfile), \
-             mock.patch('lib.distro.os.path.getsize', side_effect=fake_getsize), \
-             mock.patch('lib.distro._get_file_content', side_effect=fake_get_content), \
-             mock.patch('lib.distro.platform.system', return_value='Linux'), \
-             mock.patch('lib.distro.platform.version', return_value='5.0.0'), \
-             mock.patch('lib.distro.platform.release', return_value='5.0.0-x'):
+        with (
+            mock.patch('lib.distro.os.path.isfile', side_effect=fake_isfile),
+            mock.patch('lib.distro.os.path.getsize', side_effect=fake_getsize),
+            mock.patch('lib.distro._get_file_content', side_effect=fake_get_content),
+            mock.patch('lib.distro.platform.system', return_value='Linux'),
+            mock.patch('lib.distro.platform.version', return_value='5.0.0'),
+            mock.patch('lib.distro.platform.release', return_value='5.0.0-x'),
+        ):
             return distro._process_dist_files()
 
     def test_redhat_release_detected(self):
@@ -493,12 +509,14 @@ class TestProcessDistFiles(unittest.TestCase):
                 raise OSError('unreadable')
             return OS_RELEASE_UBUNTU
 
-        with mock.patch('lib.distro.os.path.isfile', side_effect=fake_isfile), \
-             mock.patch('lib.distro.os.path.getsize', side_effect=fake_getsize), \
-             mock.patch('lib.distro._get_file_content', side_effect=fake_get_content), \
-             mock.patch('lib.distro.platform.system', return_value='Linux'), \
-             mock.patch('lib.distro.platform.version', return_value='5.0.0'), \
-             mock.patch('lib.distro.platform.release', return_value='5.0.0-x'):
+        with (
+            mock.patch('lib.distro.os.path.isfile', side_effect=fake_isfile),
+            mock.patch('lib.distro.os.path.getsize', side_effect=fake_getsize),
+            mock.patch('lib.distro._get_file_content', side_effect=fake_get_content),
+            mock.patch('lib.distro.platform.system', return_value='Linux'),
+            mock.patch('lib.distro.platform.version', return_value='5.0.0'),
+            mock.patch('lib.distro.platform.release', return_value='5.0.0-x'),
+        ):
             facts = distro._process_dist_files()
         # redhat-release was skipped, os-release ('Debian' variety) matched.
         self.assertEqual(facts['distribution_file_variety'], 'Debian')
@@ -517,9 +535,7 @@ class TestGetDistributionFacts(unittest.TestCase):
             return io.StringIO(os_release)
 
         with (
-            mock.patch(
-                'lib.distro._process_dist_files', return_value=dict(dist_facts)
-            ),
+            mock.patch('lib.distro._process_dist_files', return_value=dict(dist_facts)),
             mock.patch('builtins.open', side_effect=fake_open),
         ):
             facts = distro.get_distribution_facts()

@@ -119,7 +119,9 @@ class TestFetchJsonRequestBuilding(unittest.TestCase):
             'func': 'devices',
         }
         defaults.update(kwargs)
-        with mock.patch.object(grassfish.url, 'fetch_json', side_effect=fake_fetch_json):
+        with mock.patch.object(
+            grassfish.url, 'fetch_json', side_effect=fake_fetch_json
+        ):
             result = grassfish.fetch_json(**defaults)
         return captured, result
 
@@ -234,7 +236,9 @@ class TestFetchJsonResponseHandling(unittest.TestCase):
         self.assertEqual(self._run((True, 'pong')), (True, 'pong'))
 
     def test_transport_failure_passthrough(self):
-        self.assertEqual(self._run((False, 'connection refused')), (False, 'connection refused'))
+        self.assertEqual(
+            self._run((False, 'connection refused')), (False, 'connection refused')
+        )
 
     def test_transport_failure_short_circuits_before_empty_check(self):
         # A failure with a falsy message must still surface as (False, message),
@@ -273,9 +277,13 @@ class TestFetchJsonResponseHandling(unittest.TestCase):
 
     def test_error_message_contains_full_url(self):
         with mock.patch.object(grassfish.url, 'fetch_json', return_value=(True, {})):
-            ok, msg = grassfish.fetch_json('t', 'ds.example.com', 8443, '/gv2', 2, 'Screens')
+            ok, msg = grassfish.fetch_json(
+                't', 'ds.example.com', 8443, '/gv2', 2, 'Screens'
+            )
         self.assertFalse(ok)
-        self.assertEqual(msg, 'There was no result from https://ds.example.com:8443/gv2/v2/Screens.')
+        self.assertEqual(
+            msg, 'There was no result from https://ds.example.com:8443/gv2/v2/Screens.'
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -291,7 +299,9 @@ class TestSetPlayerDefaults(unittest.TestCase):
         self.assertEqual(set(result.keys()), EXPECTED_PLAYER_FIELDS)
 
     def test_empty_dict_field_count(self):
-        self.assertEqual(len(grassfish.set_player_defaults({})), len(EXPECTED_PLAYER_FIELDS))
+        self.assertEqual(
+            len(grassfish.set_player_defaults({})), len(EXPECTED_PLAYER_FIELDS)
+        )
 
     def test_missing_fields_default_to_none(self):
         result = grassfish.set_player_defaults({})
@@ -371,7 +381,9 @@ class TestSetScreenDefaults(unittest.TestCase):
         self.assertEqual(set(result.keys()), EXPECTED_SCREEN_FIELDS)
 
     def test_empty_dict_field_count(self):
-        self.assertEqual(len(grassfish.set_screen_defaults({})), len(EXPECTED_SCREEN_FIELDS))
+        self.assertEqual(
+            len(grassfish.set_screen_defaults({})), len(EXPECTED_SCREEN_FIELDS)
+        )
 
     def test_missing_fields_default_to_none(self):
         result = grassfish.set_screen_defaults({})
@@ -433,7 +445,9 @@ class TestFetchAndNormalize(unittest.TestCase):
 
     def test_players_endpoint_then_normalize(self):
         payload = load_fixture('players.json')
-        with mock.patch.object(grassfish.url, 'fetch_json', return_value=(True, payload)):
+        with mock.patch.object(
+            grassfish.url, 'fetch_json', return_value=(True, payload)
+        ):
             ok, result = grassfish.fetch_json(
                 'tok', 'ds.example.com', 443, '/gv2/webservices/API', 1, 'Players'
             )
@@ -444,7 +458,9 @@ class TestFetchAndNormalize(unittest.TestCase):
 
     def test_screens_endpoint_then_normalize(self):
         payload = load_fixture('screens.json')
-        with mock.patch.object(grassfish.url, 'fetch_json', return_value=(True, payload)):
+        with mock.patch.object(
+            grassfish.url, 'fetch_json', return_value=(True, payload)
+        ):
             ok, result = grassfish.fetch_json(
                 'tok', 'ds.example.com', 443, '/gv2/webservices/API', 1, 'Screens'
             )

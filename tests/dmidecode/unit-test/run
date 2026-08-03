@@ -390,13 +390,13 @@ class TestRam(unittest.TestCase):
 
     def test_total_ram_gb(self):
         # Two identical 16 GB DIMMs dedupe to one record, so ram() sees 16 GB.
-        self.assertEqual(dmidecode.ram(self.dmi), 16 * 1024 ** 3)
+        self.assertEqual(dmidecode.ram(self.dmi), 16 * 1024**3)
 
     def test_ram_mb_slot(self):
         dmi = {
             ('h', '17', '1'): {'dmitype': 17, 'Size': '512 MB'},
         }
-        self.assertEqual(dmidecode.ram(dmi), 512 * 1024 ** 2)
+        self.assertEqual(dmidecode.ram(dmi), 512 * 1024**2)
 
     def test_ram_no_modules_zero(self):
         self.assertEqual(dmidecode.ram({}), 0)
@@ -412,7 +412,7 @@ class TestRam(unittest.TestCase):
             ('a', '17', '1'): {'dmitype': 17, 'Size': '8 GB'},
             ('b', '17', '1'): {'dmitype': 17, 'Size': '2048 MB'},
         }
-        self.assertEqual(dmidecode.ram(dmi), 8 * 1024 ** 3 + 2048 * 1024 ** 2)
+        self.assertEqual(dmidecode.ram(dmi), 8 * 1024**3 + 2048 * 1024**2)
 
 
 class TestGetData(unittest.TestCase):

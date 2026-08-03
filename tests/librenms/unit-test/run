@@ -139,8 +139,8 @@ class LibrenmsTestBase(unittest.TestCase):
 # get_data() - request building
 # ---------------------------------------------------------------------------
 
-class TestGetDataRequest(LibrenmsTestBase):
 
+class TestGetDataRequest(LibrenmsTestBase):
     def test_returns_parsed_json_on_success(self):
         self.assertEqual(librenms.get_data(Args(), uri='/api/v0/devices'), DEVICES_OK)
 
@@ -155,12 +155,14 @@ class TestGetDataRequest(LibrenmsTestBase):
     def test_trailing_slash_on_base_url_is_stripped(self):
         class A(Args):
             URL = URL + '/'
+
         librenms.get_data(A(), uri='/api/v0/devices')
         self.assertEqual(self.sent_url(), f'{URL}/api/v0/devices')
 
     def test_multiple_trailing_slashes_on_base_stripped(self):
         class A(Args):
             URL = URL + '///'
+
         librenms.get_data(A(), uri='/api/v0/devices')
         self.assertEqual(self.sent_url(), f'{URL}/api/v0/devices')
 
@@ -180,12 +182,14 @@ class TestGetDataRequest(LibrenmsTestBase):
     def test_auth_token_value_taken_from_args(self):
         class A(Args):
             TOKEN = 'deadbeefdeadbeef'
+
         librenms.get_data(A(), uri='/x')
         self.assertEqual(self.sent_header()['X-Auth-Token'], 'deadbeefdeadbeef')
 
     def test_insecure_forwarded_true(self):
         class A(Args):
             INSECURE = True
+
         librenms.get_data(A(), uri='/x')
         self.assertTrue(self.sent_kwargs()['insecure'])
 
@@ -196,6 +200,7 @@ class TestGetDataRequest(LibrenmsTestBase):
     def test_no_proxy_forwarded_true(self):
         class A(Args):
             NO_PROXY = True
+
         librenms.get_data(A(), uri='/x')
         self.assertTrue(self.sent_kwargs()['no_proxy'])
 
@@ -206,6 +211,7 @@ class TestGetDataRequest(LibrenmsTestBase):
     def test_timeout_forwarded(self):
         class A(Args):
             TIMEOUT = 42
+
         librenms.get_data(A(), uri='/x')
         self.assertEqual(self.sent_kwargs()['timeout'], 42)
 
@@ -228,8 +234,8 @@ class TestGetDataRequest(LibrenmsTestBase):
 # get_data() - status handling
 # ---------------------------------------------------------------------------
 
-class TestGetDataStatus(LibrenmsTestBase):
 
+class TestGetDataStatus(LibrenmsTestBase):
     def test_status_ok_lowercase_returns_payload(self):
         self.fetch_json.return_value = (True, {'status': 'ok', 'foo': 1})
         self.assertEqual(librenms.get_data(Args()), {'status': 'ok', 'foo': 1})
@@ -280,6 +286,7 @@ class TestGetDataStatus(LibrenmsTestBase):
     def test_always_ok_turns_error_into_exit_zero(self):
         class A(Args):
             ALWAYS_OK = True
+
         self.fetch_json.return_value = (True, DEVICES_ERR)
         with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
             librenms.get_data(A())
@@ -303,8 +310,8 @@ class TestGetDataStatus(LibrenmsTestBase):
 # get_data() - transport failure (coe path)
 # ---------------------------------------------------------------------------
 
-class TestGetDataTransportFailure(LibrenmsTestBase):
 
+class TestGetDataTransportFailure(LibrenmsTestBase):
     def test_fetch_failure_exits_unknown(self):
         self.fetch_json.return_value = (False, 'connection refused')
         with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
@@ -323,6 +330,7 @@ class TestGetDataTransportFailure(LibrenmsTestBase):
         # failure exits UNKNOWN even with ALWAYS_OK=True.
         class A(Args):
             ALWAYS_OK = True
+
         self.fetch_json.return_value = (False, 'boom')
         with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
             librenms.get_data(A())
@@ -333,8 +341,8 @@ class TestGetDataTransportFailure(LibrenmsTestBase):
 # get_prop()
 # ---------------------------------------------------------------------------
 
-class TestGetProp(unittest.TestCase):
 
+class TestGetProp(unittest.TestCase):
     # --- default mytype='str' ------------------------------------------------
 
     def test_str_existing_string_returned_unchanged(self):
@@ -404,8 +412,8 @@ class TestGetProp(unittest.TestCase):
 # get_state()
 # ---------------------------------------------------------------------------
 
-class TestGetState(unittest.TestCase):
 
+class TestGetState(unittest.TestCase):
     # --- the OK states (0=CLEAR, 2=ACKNOWLEDGED) -----------------------------
 
     def test_clear_state_is_ok_crit(self):
@@ -525,28 +533,37 @@ class TestLibrenmsContainer(unittest.TestCase):
                 wait_log_timeout=300,
             ) as app,
         ):
-            base = (
-                f'http://{app.get_container_host_ip()}:'
-                f'{app.get_exposed_port(8000)}'
-            )
+            base = f'http://{app.get_container_host_ip()}:{app.get_exposed_port(8000)}'
             # lnms must not run as root; the image's default user is root, so su
             # to the librenms user. Retry user-create + token-seed until the API
             # authenticates (handles migration / propagation timing). Poll with a
             # raw request because get_data() sys.exits on a non-ok status.
             authed = None
             for _ in range(40):
-                app.exec([
-                    'su', '-s', '/bin/sh', 'librenms', '-c',
-                    f'lnms user:add admin -p {ADMIN_PW} -r admin '
-                    '-e admin@example.com --no-interaction || true',
-                ])
-                db.exec([
-                    'mariadb', '-uroot', '-prootpw', 'librenms', '-e',
-                    'DELETE FROM api_tokens; '
-                    "INSERT INTO api_tokens (user_id, token_hash, description, disabled) "
-                    f"SELECT user_id, '{API_TOKEN}', 'test', 0 FROM users "
-                    "WHERE username = 'admin';",
-                ])
+                app.exec(
+                    [
+                        'su',
+                        '-s',
+                        '/bin/sh',
+                        'librenms',
+                        '-c',
+                        f'lnms user:add admin -p {ADMIN_PW} -r admin '
+                        '-e admin@example.com --no-interaction || true',
+                    ]
+                )
+                db.exec(
+                    [
+                        'mariadb',
+                        '-uroot',
+                        '-prootpw',
+                        'librenms',
+                        '-e',
+                        'DELETE FROM api_tokens; '
+                        'INSERT INTO api_tokens (user_id, token_hash, description, disabled) '
+                        f"SELECT user_id, '{API_TOKEN}', 'test', 0 FROM users "
+                        "WHERE username = 'admin';",
+                    ]
+                )
                 ok, res = librenms.url.fetch_json(
                     f'{base}/api/v0/devices',
                     header={'X-Auth-Token': API_TOKEN},

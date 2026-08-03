@@ -108,9 +108,7 @@ class TestRun(unittest.TestCase):
         captured, fake = self._capture()
         with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
             ssh.run('myhost', 'true', password='linuxfabrik')
-        self.assertEqual(
-            captured['cmd'][:3], ['sshpass', '-p', 'linuxfabrik']
-        )
+        self.assertEqual(captured['cmd'][:3], ['sshpass', '-p', 'linuxfabrik'])
         self.assertEqual(captured['cmd'][3], 'ssh')
 
     def test_rejects_option_like_host(self):
@@ -132,8 +130,9 @@ class TestScp(unittest.TestCase):
         captured = {}
         with mock.patch(
             'lib.ssh.shell.shell_exec',
-            side_effect=lambda cmd, timeout=None: captured.update(cmd=cmd)
-            or (True, ('', '', 0)),
+            side_effect=lambda cmd, timeout=None: (
+                captured.update(cmd=cmd) or (True, ('', '', 0))
+            ),
         ):
             ssh.scp('myhost', '/local/dir', '/remote/dir', recursive=True)
         cmd = captured['cmd']
@@ -146,12 +145,11 @@ class TestRsync(unittest.TestCase):
         captured = {}
         with mock.patch(
             'lib.ssh.shell.shell_exec',
-            side_effect=lambda cmd, timeout=None: captured.update(cmd=cmd)
-            or (True, ('', '', 0)),
+            side_effect=lambda cmd, timeout=None: (
+                captured.update(cmd=cmd) or (True, ('', '', 0))
+            ),
         ):
-            ssh.rsync(
-                'myhost', '/local/dir', '/remote/dir', options=['-q'], sudo=True
-            )
+            ssh.rsync('myhost', '/local/dir', '/remote/dir', options=['-q'], sudo=True)
         cmd = captured['cmd']
         self.assertEqual(cmd[:2], ['rsync', '--archive'])
         self.assertIn('--rsync-path', cmd)
@@ -164,8 +162,9 @@ class TestRsync(unittest.TestCase):
         captured = {}
         with mock.patch(
             'lib.ssh.shell.shell_exec',
-            side_effect=lambda cmd, timeout=None: captured.update(cmd=cmd)
-            or (True, ('', '', 0)),
+            side_effect=lambda cmd, timeout=None: (
+                captured.update(cmd=cmd) or (True, ('', '', 0))
+            ),
         ):
             ssh.rsync('myhost', '/local/dir', '/remote/dir')
         self.assertNotIn('--rsync-path', captured['cmd'])

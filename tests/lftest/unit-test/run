@@ -119,7 +119,9 @@ class TestIsMariadbImage(unittest.TestCase):
 class TestMysqlStartupCommand(unittest.TestCase):
     def test_no_extra_args_uses_image_default(self):
         self.assertIsNone(
-            lftest._mysql_compatible_startup_command('docker.io/library/mariadb:11', None)
+            lftest._mysql_compatible_startup_command(
+                'docker.io/library/mariadb:11', None
+            )
         )
         self.assertIsNone(
             lftest._mysql_compatible_startup_command('docker.io/library/mysql:8', None)
@@ -127,13 +129,17 @@ class TestMysqlStartupCommand(unittest.TestCase):
 
     def test_mariadb_daemon(self):
         self.assertEqual(
-            lftest._mysql_compatible_startup_command('docker.io/library/mariadb:11', '--bar'),
+            lftest._mysql_compatible_startup_command(
+                'docker.io/library/mariadb:11', '--bar'
+            ),
             'mariadbd --bar',
         )
 
     def test_mysql_daemon(self):
         self.assertEqual(
-            lftest._mysql_compatible_startup_command('docker.io/library/mysql:8', '--foo'),
+            lftest._mysql_compatible_startup_command(
+                'docker.io/library/mysql:8', '--foo'
+            ),
             'mysqld --foo',
         )
 
@@ -164,7 +170,9 @@ class TestAttachTests(unittest.TestCase):
             check = '../x'
 
         with self.assertRaises(ValueError):
-            lftest.attach_tests(Dummy, [{'id': 'dup', 'test': 'a'}, {'id': 'dup', 'test': 'b'}])
+            lftest.attach_tests(
+                Dummy, [{'id': 'dup', 'test': 'a'}, {'id': 'dup', 'test': 'b'}]
+            )
 
 
 class TestAttachEach(unittest.TestCase):
@@ -172,7 +180,9 @@ class TestAttachEach(unittest.TestCase):
         class Dummy(unittest.TestCase):
             pass
 
-        lftest.attach_each(Dummy, ['alpha', 'beta'], lambda test, item: None, id_func=str)
+        lftest.attach_each(
+            Dummy, ['alpha', 'beta'], lambda test, item: None, id_func=str
+        )
         self.assertTrue(hasattr(Dummy, 'test_alpha'))
         self.assertTrue(hasattr(Dummy, 'test_beta'))
 
@@ -203,16 +213,22 @@ class TestRun(unittest.TestCase):
 
     def test_wrong_return_code_fails(self):
         probe = self._Probe()
-        with mock.patch.object(
-            lftest.shell, 'shell_exec', return_value=(True, ('hello world', '', 0))
-        ), self.assertRaises(AssertionError):
+        with (
+            mock.patch.object(
+                lftest.shell, 'shell_exec', return_value=(True, ('hello world', '', 0))
+            ),
+            self.assertRaises(AssertionError),
+        ):
             lftest.run(probe, '../plugin', {'test': 'stdout/case', 'assert-retc': 2})
 
     def test_missing_assert_in_fails(self):
         probe = self._Probe()
-        with mock.patch.object(
-            lftest.shell, 'shell_exec', return_value=(True, ('hello world', '', 0))
-        ), self.assertRaises(AssertionError):
+        with (
+            mock.patch.object(
+                lftest.shell, 'shell_exec', return_value=(True, ('hello world', '', 0))
+            ),
+            self.assertRaises(AssertionError),
+        ):
             lftest.run(
                 probe,
                 '../plugin',

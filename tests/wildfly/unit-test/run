@@ -120,7 +120,6 @@ def run_get_data(args, data=None, uri='', *, fetch_return):
 
 
 class TestUrlConstruction(unittest.TestCase):
-
     def test_standalone_base_plus_management(self):
         args = make_args(URL='https://wf.example.com', MODE='standalone')
         _, _, m, _ = run_get_data(args, uri='', fetch_return=(True, ok(1)))
@@ -152,14 +151,18 @@ class TestUrlConstruction(unittest.TestCase):
         # The module does not insert a separator; document the real behaviour.
         args = make_args()
         _, _, m, _ = run_get_data(args, uri='subsystem', fetch_return=(True, ok(1)))
-        self.assertEqual(m.call_args.args[0], 'https://wf.example.com/managementsubsystem')
+        self.assertEqual(
+            m.call_args.args[0], 'https://wf.example.com/managementsubsystem'
+        )
 
     def test_uri_default_is_empty(self):
         # Calling get_data without the uri argument must behave like uri=''.
         args = make_args()
         buf = io.StringIO()
         with (
-            mock.patch.object(wildfly.url, 'fetch_json', return_value=(True, ok(1))) as m,
+            mock.patch.object(
+                wildfly.url, 'fetch_json', return_value=(True, ok(1))
+            ) as m,
             contextlib.redirect_stdout(buf),
         ):
             wildfly.get_data(args, {'operation': 'x'})
@@ -183,7 +186,9 @@ class TestUrlConstruction(unittest.TestCase):
         )
 
     def test_domain_mode_strips_base_trailing_slash(self):
-        args = make_args(URL='https://wf.example.com/', MODE='domain', NODE='h', INSTANCE='s')
+        args = make_args(
+            URL='https://wf.example.com/', MODE='domain', NODE='h', INSTANCE='s'
+        )
         _, _, m, _ = run_get_data(args, uri='', fetch_return=(True, ok(1)))
         self.assertEqual(
             m.call_args.args[0],
@@ -203,11 +208,12 @@ class TestUrlConstruction(unittest.TestCase):
 
 
 class TestRequestConstruction(unittest.TestCase):
-
     def test_content_type_header(self):
         args = make_args()
         _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
-        self.assertEqual(m.call_args.kwargs['header'], {'Content-Type': 'application/json'})
+        self.assertEqual(
+            m.call_args.kwargs['header'], {'Content-Type': 'application/json'}
+        )
 
     def test_digest_auth_user_and_password(self):
         args = make_args(USERNAME='svc', PASSWORD='s3cr3t')
@@ -258,8 +264,13 @@ class TestRequestConstruction(unittest.TestCase):
     def test_full_kwargs_shape(self):
         # Pin the exact contract handed to fetch_json so an accidental rename or
         # dropped argument is caught immediately.
-        args = make_args(USERNAME='admin', PASSWORD='linuxfabrik',
-                         INSECURE=True, NO_PROXY=True, TIMEOUT=20)
+        args = make_args(
+            USERNAME='admin',
+            PASSWORD='linuxfabrik',
+            INSECURE=True,
+            NO_PROXY=True,
+            TIMEOUT=20,
+        )
         body = {'operation': 'read-attribute', 'name': 'server-state'}
         _, _, m, _ = run_get_data(args, data=body, fetch_return=(True, ok(1)))
         self.assertEqual(
@@ -294,7 +305,6 @@ class TestRequestConstruction(unittest.TestCase):
 
 
 class TestSuccessParsing(unittest.TestCase):
-
     def test_returns_inner_result_scalar(self):
         # get_data unwraps result['result'], not the whole envelope.
         args = make_args()
@@ -353,7 +363,6 @@ class TestSuccessParsing(unittest.TestCase):
 
 
 class TestOutcomeErrorHandling(unittest.TestCase):
-
     def test_outcome_failed_exits_unknown(self):
         args = make_args(ALWAYS_OK=False)
         payload = {'outcome': 'failed', 'failure-description': 'oops'}
@@ -400,9 +409,12 @@ class TestOutcomeErrorHandling(unittest.TestCase):
         # unconditionally, so a KeyError surfaces (documented behaviour, not a
         # graceful exit).
         args = make_args()
-        with mock.patch.object(
-            wildfly.url, 'fetch_json', return_value=(True, {'outcome': 'success'})
-        ), self.assertRaises(KeyError):
+        with (
+            mock.patch.object(
+                wildfly.url, 'fetch_json', return_value=(True, {'outcome': 'success'})
+            ),
+            self.assertRaises(KeyError),
+        ):
             wildfly.get_data(args, {'operation': 'x'}, '')
 
 
@@ -412,7 +424,6 @@ class TestOutcomeErrorHandling(unittest.TestCase):
 
 
 class TestTransportErrorHandling(unittest.TestCase):
-
     def test_connection_refused_exits_unknown(self):
         args = make_args()
         returned, raised, _, out = run_get_data(
@@ -468,7 +479,6 @@ class TestTransportErrorHandling(unittest.TestCase):
 
 
 class TestModuleSanity(unittest.TestCase):
-
     def test_get_data_is_callable(self):
         self.assertTrue(callable(wildfly.get_data))
 

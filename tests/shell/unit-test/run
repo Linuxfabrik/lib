@@ -32,6 +32,7 @@ import lib.shell as shell
 # Helpers / fakes
 # ---------------------------------------------------------------------------
 
+
 class FakePopen:
     """Minimal stand-in for subprocess.Popen.
 
@@ -86,6 +87,7 @@ def make_popen(stdout=b'', stderr=b'', returncode=0, timeout=False):
 # shell_exec() - argument type guard
 # ---------------------------------------------------------------------------
 
+
 class TestShellExecRequiresList(unittest.TestCase):
     def test_string_raises_type_error(self):
         with self.assertRaises(TypeError):
@@ -107,6 +109,7 @@ class TestShellExecRequiresList(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # shell_exec() - process wiring (mocked Popen)
 # ---------------------------------------------------------------------------
+
 
 class TestShellExec(unittest.TestCase):
     def test_single_command_success(self):
@@ -271,6 +274,7 @@ class TestShellExec(unittest.TestCase):
 # safe_cli_value()
 # ---------------------------------------------------------------------------
 
+
 class TestSafeCliValue(unittest.TestCase):
     def test_plain_value_passes(self):
         self.assertEqual(
@@ -302,6 +306,7 @@ class TestSafeCliValue(unittest.TestCase):
 # End-to-end smoke checks against trivial real commands (POSIX only).
 # These also assert the security property against a real subprocess.
 # ---------------------------------------------------------------------------
+
 
 @unittest.skipUnless(os.name == 'posix', 'POSIX-only smoke checks')
 class TestShellExecRealCommands(unittest.TestCase):
