@@ -37,7 +37,9 @@ class TestFileHelpers(unittest.TestCase):
 
     def test_read_file_binary(self):
         disk.write_file(self.file, 'héllo')
-        self.assertEqual(disk.read_file(self.file, binary=True), (True, 'héllo'.encode()))
+        self.assertEqual(
+            disk.read_file(self.file, binary=True), (True, 'héllo'.encode())
+        )
 
     def test_write_append(self):
         disk.write_file(self.file, 'a')
@@ -149,14 +151,18 @@ class TestFileHelpers(unittest.TestCase):
         self.assertEqual(disk.grep_file(self.file, 'he(l+)o'), (True, 'll'))
 
     def test_is_within_containment_and_escape(self):
-        self.assertTrue(disk.is_within(os.path.join(self.dir, 'sub', 'a.log'), [self.dir]))
+        self.assertTrue(
+            disk.is_within(os.path.join(self.dir, 'sub', 'a.log'), [self.dir])
+        )
         self.assertTrue(disk.is_within(self.dir, [self.dir]))
         # `..` cannot climb out of the root
         self.assertFalse(disk.is_within(os.path.join(self.dir, '..', 'x'), [self.dir]))
         # a sibling sharing the name prefix must not match
         self.assertFalse(disk.is_within(self.dir + 'x', [self.dir]))
         # first matching root of several wins
-        self.assertTrue(disk.is_within('/var/lib/mysql/h.err', ['/var/log', '/var/lib/mysql']))
+        self.assertTrue(
+            disk.is_within('/var/lib/mysql/h.err', ['/var/log', '/var/lib/mysql'])
+        )
 
     def test_is_within_resolves_symlink_out_of_root(self):
         # A symlink inside the root pointing outside is rejected: this is why an
@@ -330,7 +336,9 @@ class TestShortenPath(unittest.TestCase):
         self.assertEqual(disk.shorten_path('/'), '/')
 
     def test_max_len_leaves_short_path_untouched(self):
-        self.assertEqual(disk.shorten_path('/var/log/audit', max_len=40), '/var/log/audit')
+        self.assertEqual(
+            disk.shorten_path('/var/log/audit', max_len=40), '/var/log/audit'
+        )
 
     def test_max_len_abbreviates_when_over_limit(self):
         # abbreviating the parents is enough; no truncation needed.
@@ -358,8 +366,12 @@ class TestShortenPath(unittest.TestCase):
             '/var/lib/kubelet/plugins/kubernetes.io/csi/rook-ceph.rbd.csi.ceph.com/'
             '{h}/globalmount/0001-0009-rook-ceph-{s}'
         )
-        a = base.format(h='6f75297b4f41d9dc95027a8d7d09ea1edfd84d05', s='000000000000000b-ef18f2fa')
-        b = base.format(h='79eba44fbcb484b29e9911328f58aba5e936f8b4', s='000000000000000c-1bf231b1')
+        a = base.format(
+            h='6f75297b4f41d9dc95027a8d7d09ea1edfd84d05', s='000000000000000b-ef18f2fa'
+        )
+        b = base.format(
+            h='79eba44fbcb484b29e9911328f58aba5e936f8b4', s='000000000000000c-1bf231b1'
+        )
         self.assertNotEqual(
             disk.shorten_path(a, max_len=40),
             disk.shorten_path(b, max_len=40),

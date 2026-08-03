@@ -155,7 +155,13 @@ def main():
     if selected is None or 'bandit' in selected:
         exit_code |= run_analyzer(
             'bandit',
-            ['bandit', '-q', '--severity-level=high', '--confidence-level=high', *python_files],
+            [
+                'bandit',
+                '-q',
+                '--severity-level=high',
+                '--confidence-level=high',
+                *python_files,
+            ],
             stderr_filter=bandit_line_is_noise,
         )
 

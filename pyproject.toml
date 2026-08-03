@@ -58,6 +58,7 @@ Tracker = "https://github.com/Linuxfabrik/lib/issues"
 Download = "https://github.com/Linuxfabrik/lib/releases"
 
 [tool.ruff]
+line-length = 88
 target-version = 'py39'
 
 [tool.ruff.lint]
@@ -83,8 +84,8 @@ ignore = [
 ]
 
 [tool.ruff.format]
-quote-style = 'single'
 docstring-code-format = true
+quote-style = 'single'
 
 [tool.bandit]
 # B110 (try/except/pass) and B112 (try/except/continue): intentional patterns
@@ -96,9 +97,9 @@ skips = ['B110', 'B112', 'B311']
 # packages are not in the root of the repository or do not correspond exactly to
 # the directory structure, so we need to configure package_dir
 # https://setuptools.pypa.io/en/latest/userguide/package_discovery.html
-package-dir = {"lib" = "."}
+package-dir = {'lib' = '.'}
 # Declare the package explicitly. Without this, setuptools auto-discovery walks
 # the repository root with followlinks=True. The per-module `tests/*/lib`
 # symlinks point back to the root, so the walk recurses through them endlessly
 # and the build hangs. There is a single flat `lib` package, so list it directly.
-packages = ["lib"]
+packages = ['lib']

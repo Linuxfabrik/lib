@@ -44,7 +44,9 @@ class TestGetDbDir(unittest.TestCase):
     def test_creates_private_0700_directory_owned_by_user(self):
         ok, db_dir = db.get_db_dir(self.base)
         self.assertTrue(ok, db_dir)
-        self.assertTrue(db_dir.endswith(f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}'))
+        self.assertTrue(
+            db_dir.endswith(f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}')
+        )
         st = os.lstat(db_dir)
         self.assertTrue(stat.S_ISDIR(st.st_mode))
         self.assertEqual(st.st_uid, os.geteuid())
@@ -59,7 +61,9 @@ class TestGetDbDir(unittest.TestCase):
 
     @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
     def test_rejects_symlink(self):
-        link = os.path.join(self.base, f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}')
+        link = os.path.join(
+            self.base, f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}'
+        )
         os.symlink('/nonexistent/attacker/target', link)
         ok, msg = db.get_db_dir(self.base)
         self.assertFalse(ok)
@@ -67,7 +71,9 @@ class TestGetDbDir(unittest.TestCase):
 
     @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
     def test_rejects_group_or_world_accessible_directory(self):
-        db_dir = os.path.join(self.base, f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}')
+        db_dir = os.path.join(
+            self.base, f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}'
+        )
         os.mkdir(db_dir, 0o755)
         ok, msg = db.get_db_dir(self.base)
         self.assertFalse(ok)
@@ -120,7 +126,9 @@ class TestConnect(unittest.TestCase):
 
     @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
     def test_connect_refuses_symlinked_dir(self):
-        link = os.path.join(self.base, f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}')
+        link = os.path.join(
+            self.base, f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}'
+        )
         os.symlink('/nonexistent', link)
         ok, msg = db.connect(path=self.base, filename='t.db')
         self.assertFalse(ok)
@@ -139,8 +147,13 @@ class TestCrud(unittest.TestCase):
         db.close(self.conn)
 
     def test_create_insert_select(self):
-        self.assertEqual(db.create_table(self.conn, 'a TEXT, b INTEGER NOT NULL', table='t'), (True, True))
-        self.assertEqual(db.insert(self.conn, {'a': 'x', 'b': 1}, table='t'), (True, True))
+        self.assertEqual(
+            db.create_table(self.conn, 'a TEXT, b INTEGER NOT NULL', table='t'),
+            (True, True),
+        )
+        self.assertEqual(
+            db.insert(self.conn, {'a': 'x', 'b': 1}, table='t'), (True, True)
+        )
         db.commit(self.conn)
         ok, rows = db.select(self.conn, 'SELECT a, b FROM t')
         self.assertTrue(ok)
@@ -207,7 +220,9 @@ class TestPureHelpers(unittest.TestCase):
 
     def test_sha1sum_docstring_example(self):
         sha1sum = getattr(db, '__sha1sum')
-        self.assertEqual(sha1sum('linuxfabrik'), '74301e766db4a4006ec1fbd6e031760e7e322223')
+        self.assertEqual(
+            sha1sum('linuxfabrik'), '74301e766db4a4006ec1fbd6e031760e7e322223'
+        )
 
     def test_filter_str_strips_unsafe_chars(self):
         filter_str = getattr(db, '__filter_str')
@@ -264,8 +279,12 @@ class TestPerSecondDeltas(unittest.TestCase):
         ticks = iter([1000, 1010])
         db.time.now = lambda: next(ticks)
         try:
-            first = db.per_second_deltas('lftest-psd-rate.db', 'eth0', {'rx_bytes': 100})
-            rates = db.per_second_deltas('lftest-psd-rate.db', 'eth0', {'rx_bytes': 300})
+            first = db.per_second_deltas(
+                'lftest-psd-rate.db', 'eth0', {'rx_bytes': 100}
+            )
+            rates = db.per_second_deltas(
+                'lftest-psd-rate.db', 'eth0', {'rx_bytes': 300}
+            )
         finally:
             db.time.now = saved_now
         self.assertIsNone(first)

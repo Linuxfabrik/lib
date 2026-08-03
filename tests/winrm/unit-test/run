@@ -49,6 +49,7 @@ except ImportError as exc:  # pragma: no cover - only if the repo layout breaks
 # Fixtures / helpers
 # ----------------------------------------------------------------------------
 
+
 class Args:
     """Minimal argparse.Namespace stand-in with the WINRM_* attributes.
 
@@ -165,9 +166,9 @@ def make_error_record(to_string=None, message=None, raise_on_to_string=False):
 # _build_auth
 # ============================================================================
 
+
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
 class TestBuildAuth(unittest.TestCase):
-
     def test_basic_username_password(self):
         args = make_args(WINRM_TRANSPORT='basic')
         self.assertEqual(
@@ -198,7 +199,9 @@ class TestBuildAuth(unittest.TestCase):
         self.assertEqual(winrm_lib._build_auth(args), (None, None))
 
     def test_negotiate_missing_creds_falls_back_to_ccache(self):
-        args = make_args(WINRM_TRANSPORT='negotiate', WINRM_USERNAME='', WINRM_PASSWORD='')
+        args = make_args(
+            WINRM_TRANSPORT='negotiate', WINRM_USERNAME='', WINRM_PASSWORD=''
+        )
         self.assertEqual(winrm_lib._build_auth(args), (None, None))
 
     def test_transport_case_insensitive(self):
@@ -230,9 +233,9 @@ class TestBuildAuth(unittest.TestCase):
 # _map_transport
 # ============================================================================
 
+
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
 class TestMapTransport(unittest.TestCase):
-
     def test_ssl_uses_basic_auth_ssl_true_port_5986(self):
         args = make_args(WINRM_TRANSPORT='ssl')
         self.assertEqual(winrm_lib._map_transport(args), ('basic', True, 5986))
@@ -274,9 +277,9 @@ class TestMapTransport(unittest.TestCase):
 # _quote_ps_value
 # ============================================================================
 
+
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
 class TestQuotePsValue(unittest.TestCase):
-
     def test_plain_string_is_single_quoted(self):
         self.assertEqual(winrm_lib._quote_ps_value('WinRM'), "'WinRM'")
 
@@ -297,9 +300,9 @@ class TestQuotePsValue(unittest.TestCase):
 # run_cmd - pypsrp (JEA) backend
 # ============================================================================
 
+
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
 class TestRunCmdJea(unittest.TestCase):
-
     def test_success_returns_normalized_dict(self):
         session = MagicMock(name='Client-instance')
         session.execute_cmd.return_value = ('out', 'err', 0)
@@ -347,7 +350,9 @@ class TestRunCmdJea(unittest.TestCase):
         session = MagicMock()
         session.execute_cmd.return_value = ('', '', 0)
         client_cls = MagicMock(return_value=session)
-        args = make_args(WINRM_TRANSPORT='kerberos', WINRM_USERNAME='', WINRM_PASSWORD='')
+        args = make_args(
+            WINRM_TRANSPORT='kerberos', WINRM_USERNAME='', WINRM_PASSWORD=''
+        )
         with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
             winrm_lib.run_cmd(args, 'hostname')
         _, kwargs = client_cls.call_args
@@ -399,16 +404,18 @@ class TestRunCmdJea(unittest.TestCase):
 # run_cmd - pywinrm backend
 # ============================================================================
 
+
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
 class TestRunCmdPywinrm(unittest.TestCase):
-
     def test_success(self):
         session = MagicMock(name='winrm.Session-instance')
         session.run_cmd.return_value = make_pywinrm_result(0, b'out', b'')
         winrm_mock = MagicMock(name='winrm-module')
         winrm_mock.Session.return_value = session
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             result = winrm_lib.run_cmd(make_args(), 'ipconfig', ['/all'])
         self.assertEqual(result, {'retc': 0, 'stdout': 'out', 'stderr': ''})
         session.run_cmd.assert_called_once_with('ipconfig', ['/all'])
@@ -419,8 +426,10 @@ class TestRunCmdPywinrm(unittest.TestCase):
         winrm_mock = MagicMock()
         winrm_mock.Session.return_value = session
         args = make_args(WINRM_TRANSPORT='ntlm', WINRM_DOMAIN='corp')
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             winrm_lib.run_cmd(args, 'hostname')
         winrm_mock.Session.assert_called_once_with(
             'win.example.com',
@@ -433,16 +442,20 @@ class TestRunCmdPywinrm(unittest.TestCase):
         session.run_cmd.return_value = make_pywinrm_result(2, b'', b'fail')
         winrm_mock = MagicMock()
         winrm_mock.Session.return_value = session
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             result = winrm_lib.run_cmd(make_args(), 'hostname')
         self.assertEqual(result, {'retc': 2, 'stdout': '', 'stderr': 'fail'})
 
     def test_exception_normalized(self):
         winrm_mock = MagicMock()
         winrm_mock.Session.side_effect = RuntimeError('no route to host')
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             result = winrm_lib.run_cmd(make_args(), 'hostname')
         self.assertEqual(result['retc'], 1)
         self.assertIn('no route to host', result['stderr'])
@@ -452,8 +465,10 @@ class TestRunCmdPywinrm(unittest.TestCase):
         session.run_cmd.return_value = make_pywinrm_result(0, b'', b'')
         winrm_mock = MagicMock()
         winrm_mock.Session.return_value = session
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             winrm_lib.run_cmd(make_args(), 'hostname')
         session.run_cmd.assert_called_once_with('hostname', [])
 
@@ -462,9 +477,9 @@ class TestRunCmdPywinrm(unittest.TestCase):
 # run_cmd - no backend
 # ============================================================================
 
+
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
 class TestRunCmdNoBackend(unittest.TestCase):
-
     def test_returns_clear_error(self):
         with force_jea(have_jea=False, have_winrm=False):
             result = winrm_lib.run_cmd(make_args(), 'hostname')
@@ -477,14 +492,15 @@ class TestRunCmdNoBackend(unittest.TestCase):
 # run_ps - pypsrp (JEA) backend
 # ============================================================================
 
+
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
 class TestRunPsJea(unittest.TestCase):
-
     def _run(self, args, cmd, params, powershell):
         """Wire up the lazily imported pypsrp symbols and call run_ps."""
         pool = make_runspace_pool(powershell)
-        patches, runspace_cls, powershell_cls, wsman_cls, created = \
+        patches, runspace_cls, powershell_cls, wsman_cls, created = (
             patch_pypsrp_powershell(pool, powershell)
+        )
         try:
             with force_jea():
                 for p in patches:
@@ -502,7 +518,10 @@ class TestRunPsJea(unittest.TestCase):
     def test_script_path_uses_add_script(self):
         ps = make_powershell(outputs=['line1', 'line2'])
         result, _, _, _, _ = self._run(
-            make_args(), 'Get-Process | Select -First 1', None, ps,
+            make_args(),
+            'Get-Process | Select -First 1',
+            None,
+            ps,
         )
         self.assertEqual(result, {'retc': 0, 'stdout': 'line1\nline2', 'stderr': ''})
         ps.add_script.assert_called_once_with('Get-Process | Select -First 1')
@@ -519,7 +538,10 @@ class TestRunPsJea(unittest.TestCase):
     def test_dict_params_use_add_parameter(self):
         ps = make_powershell(outputs=['ok'])
         result, _, _, _, _ = self._run(
-            make_args(), 'Get-WmiObject', {'Class': 'Win32_OperatingSystem'}, ps,
+            make_args(),
+            'Get-WmiObject',
+            {'Class': 'Win32_OperatingSystem'},
+            ps,
         )
         self.assertEqual(result['retc'], 0)
         ps.add_cmdlet.assert_called_once_with('Get-WmiObject')
@@ -624,9 +646,9 @@ class TestRunPsJea(unittest.TestCase):
 # run_ps - configuration name without pypsrp
 # ============================================================================
 
+
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
 class TestRunPsConfigurationGuard(unittest.TestCase):
-
     def test_configuration_name_without_jea_is_rejected(self):
         args = make_args(WINRM_CONFIGURATION_NAME='LF.JEA')
         with force_jea(have_jea=False, have_winrm=True):
@@ -656,9 +678,9 @@ class TestRunPsConfigurationGuard(unittest.TestCase):
 # run_ps - pywinrm backend
 # ============================================================================
 
+
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
 class TestRunPsPywinrm(unittest.TestCase):
-
     def _session(self, result):
         session = MagicMock(name='winrm.Session-instance')
         session.run_ps.return_value = result
@@ -668,32 +690,42 @@ class TestRunPsPywinrm(unittest.TestCase):
 
     def test_script_path_passes_cmd_verbatim(self):
         session, winrm_mock = self._session(make_pywinrm_result(0, b'out', b''))
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
         self.assertEqual(result, {'retc': 0, 'stdout': 'out', 'stderr': ''})
         session.run_ps.assert_called_once_with('Get-Date')
 
     def test_positional_params_are_appended(self):
         session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             winrm_lib.run_ps(make_args(), 'Get-Service', ['WinRM', 'Spooler'])
         session.run_ps.assert_called_once_with('Get-Service WinRM Spooler')
 
     def test_empty_positional_params_keeps_bare_cmd(self):
         session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             winrm_lib.run_ps(make_args(), 'Get-Date', [])
         session.run_ps.assert_called_once_with('Get-Date')
 
     def test_dict_params_are_quoted(self):
         session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             winrm_lib.run_ps(
-                make_args(), 'Get-WmiObject', {'Class': 'Win32_OperatingSystem'},
+                make_args(),
+                'Get-WmiObject',
+                {'Class': 'Win32_OperatingSystem'},
             )
         session.run_ps.assert_called_once_with(
             "Get-WmiObject -Class 'Win32_OperatingSystem'",
@@ -701,16 +733,20 @@ class TestRunPsPywinrm(unittest.TestCase):
 
     def test_dict_params_escape_single_quotes(self):
         session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             winrm_lib.run_ps(make_args(), 'Get-Thing', {'Name': "O'Brien"})
         session.run_ps.assert_called_once_with("Get-Thing -Name 'O''Brien'")
 
     def test_clixml_noise_suppressed_on_success(self):
         result_obj = make_pywinrm_result(0, b'data', b'#< CLIXML\r\n<Objs>...')
         _, winrm_mock = self._session(result_obj)
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
         self.assertEqual(result['retc'], 0)
         self.assertEqual(result['stderr'], '')
@@ -718,8 +754,10 @@ class TestRunPsPywinrm(unittest.TestCase):
     def test_clixml_noise_kept_on_failure(self):
         result_obj = make_pywinrm_result(1, b'', b'#< CLIXML\r\nreal error')
         _, winrm_mock = self._session(result_obj)
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
         self.assertEqual(result['retc'], 1)
         self.assertTrue(result['stderr'].startswith('#< CLIXML'))
@@ -727,16 +765,20 @@ class TestRunPsPywinrm(unittest.TestCase):
     def test_non_clixml_stderr_kept_on_success(self):
         result_obj = make_pywinrm_result(0, b'', b'plain warning')
         _, winrm_mock = self._session(result_obj)
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
         self.assertEqual(result['stderr'], 'plain warning')
 
     def test_exception_is_normalized(self):
         winrm_mock = MagicMock()
         winrm_mock.Session.side_effect = RuntimeError('ps failed')
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             result = winrm_lib.run_ps(make_args(), 'Get-Date', None)
         self.assertEqual(result['retc'], 1)
         self.assertIn('ps failed', result['stderr'])
@@ -744,8 +786,10 @@ class TestRunPsPywinrm(unittest.TestCase):
     def test_session_built_with_auth_and_transport(self):
         _, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
         args = make_args(WINRM_TRANSPORT='basic')
-        with force_jea(have_jea=False, have_winrm=True), \
-                patch.object(winrm_lib, 'winrm', winrm_mock, create=True):
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
             winrm_lib.run_ps(args, 'Get-Date', None)
         winrm_mock.Session.assert_called_once_with(
             'win.example.com',
@@ -758,9 +802,9 @@ class TestRunPsPywinrm(unittest.TestCase):
 # run_ps - no backend
 # ============================================================================
 
+
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
 class TestRunPsNoBackend(unittest.TestCase):
-
     def test_returns_clear_error(self):
         with force_jea(have_jea=False, have_winrm=False):
             result = winrm_lib.run_ps(make_args(), 'Get-Date', None)

@@ -67,6 +67,7 @@ import lib.uptimerobot as uptimerobot
 # Helpers
 # -----------------------------------------------------------------------------
 
+
 def ok(payload):
     """Build the (success, body) tuple lib.url.fetch_json returns on HTTP 200."""
     return (True, payload)
@@ -134,6 +135,7 @@ class UptimeRobotTestCase(unittest.TestCase):
 # Module surface
 # -----------------------------------------------------------------------------
 
+
 class TestModuleSurface(UptimeRobotTestCase):
     def test_public_functions_exist(self):
         for name in (
@@ -165,6 +167,7 @@ class TestModuleSurface(UptimeRobotTestCase):
 # get_data  (the core transport + pagination engine)
 # -----------------------------------------------------------------------------
 
+
 class TestGetData(UptimeRobotTestCase):
     def test_single_page_list_result(self):
         m = self.patch_fetch(ok(ok_envelope('monitors', [{'id': 1}, {'id': 2}])))
@@ -195,7 +198,9 @@ class TestGetData(UptimeRobotTestCase):
 
     def test_calls_given_uri(self):
         _m, store = self.capture_request(ok_envelope('monitors', [{'id': 1}]))
-        uptimerobot.get_data('https://example.com/api/foo', {'api_key': 'k'}, 'monitors')
+        uptimerobot.get_data(
+            'https://example.com/api/foo', {'api_key': 'k'}, 'monitors'
+        )
         self.assertEqual(store['uri'], 'https://example.com/api/foo')
 
     def test_dict_result_is_wrapped_in_list(self):
@@ -247,11 +252,13 @@ class TestGetData(UptimeRobotTestCase):
         def side(uri, **kwargs):
             off = kwargs['data']['offset']
             seen_offsets.append(off)
-            return ok({
-                'stat': 'ok',
-                'monitors': [{'id': off}],
-                'pagination': {'total': 120},
-            })
+            return ok(
+                {
+                    'stat': 'ok',
+                    'monitors': [{'id': off}],
+                    'pagination': {'total': 120},
+                }
+            )
 
         self.patch_fetch(side_effect=side)
         success, result = uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitors')
@@ -264,11 +271,13 @@ class TestGetData(UptimeRobotTestCase):
         # fetched at offset 50, after which 50 > 0 breaks. Two requests.
         def side(uri, **kwargs):
             off = kwargs['data']['offset']
-            return ok({
-                'stat': 'ok',
-                'monitors': [{'id': off}],
-                'pagination': {'total': 0},
-            })
+            return ok(
+                {
+                    'stat': 'ok',
+                    'monitors': [{'id': off}],
+                    'pagination': {'total': 0},
+                }
+            )
 
         m = self.patch_fetch(side_effect=side)
         success, result = uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitors')
@@ -280,11 +289,13 @@ class TestGetData(UptimeRobotTestCase):
         # Second page errors out; the partial result is discarded.
         def side(uri, **kwargs):
             if kwargs['data']['offset'] == 0:
-                return ok({
-                    'stat': 'ok',
-                    'monitors': [{'id': 0}],
-                    'pagination': {'total': 500},
-                })
+                return ok(
+                    {
+                        'stat': 'ok',
+                        'monitors': [{'id': 0}],
+                        'pagination': {'total': 500},
+                    }
+                )
             return fail('page 2 broke')
 
         self.patch_fetch(side_effect=side)
@@ -304,6 +315,7 @@ class TestGetData(UptimeRobotTestCase):
 # -----------------------------------------------------------------------------
 # get_response_header
 # -----------------------------------------------------------------------------
+
 
 class TestGetResponseHeader(UptimeRobotTestCase):
     def test_returns_response_header(self):
@@ -345,10 +357,14 @@ class TestGetResponseHeader(UptimeRobotTestCase):
 # delete_* endpoints (all share api_key/id filtering + a fixed URL)
 # -----------------------------------------------------------------------------
 
+
 class TestDeleteEndpoints(UptimeRobotTestCase):
     DELETE_CASES: typing.ClassVar = [
-        ('delete_alert_contact', 'https://api.uptimerobot.com/v2/deleteAlertContact',
-         'alert_contact'),
+        (
+            'delete_alert_contact',
+            'https://api.uptimerobot.com/v2/deleteAlertContact',
+            'alert_contact',
+        ),
         ('delete_monitor', 'https://api.uptimerobot.com/v2/deleteMonitor', 'monitor'),
         ('delete_mwindow', 'https://api.uptimerobot.com/v2/deleteMWindow', 'mwindow'),
         ('delete_psp', 'https://api.uptimerobot.com/v2/deletePSP', 'psp'),
@@ -400,6 +416,7 @@ class TestDeleteEndpoints(UptimeRobotTestCase):
 # edit_monitor / new_monitor (richest translation maps)
 # -----------------------------------------------------------------------------
 
+
 class TestEditMonitor(UptimeRobotTestCase):
     def test_url(self):
         _, store = self.capture_request(ok_envelope('monitor', {'id': 1}))
@@ -415,18 +432,20 @@ class TestEditMonitor(UptimeRobotTestCase):
 
     def test_translates_string_values(self):
         _, store = self.capture_request(ok_envelope('monitor', {'id': 1}))
-        uptimerobot.edit_monitor({
-            'api_key': 'k',
-            'id': 1,
-            'status': 'up',
-            'http_method': 'post',
-            'keyword_type': 'exist',
-            'keyword_case_type': 'ci',
-            'http_auth_type': 'digest',
-            'post_type': 'raw data',
-            'post_content_type': 'content/json',
-            'disable_domain_expire_notifications': 'disable',
-        })
+        uptimerobot.edit_monitor(
+            {
+                'api_key': 'k',
+                'id': 1,
+                'status': 'up',
+                'http_method': 'post',
+                'keyword_type': 'exist',
+                'keyword_case_type': 'ci',
+                'http_auth_type': 'digest',
+                'post_type': 'raw data',
+                'post_content_type': 'content/json',
+                'disable_domain_expire_notifications': 'disable',
+            }
+        )
         self.assertEqual(store['data']['status'], '1')
         self.assertEqual(store['data']['http_method'], '3')
         self.assertEqual(store['data']['keyword_type'], '1')
@@ -464,23 +483,27 @@ class TestEditMonitor(UptimeRobotTestCase):
 class TestNewMonitor(UptimeRobotTestCase):
     def test_url(self):
         _, store = self.capture_request(ok_envelope('monitor', {'id': 1}))
-        uptimerobot.new_monitor({'api_key': 'k', 'friendly_name': 'F', 'url': 'http://e'})
+        uptimerobot.new_monitor(
+            {'api_key': 'k', 'friendly_name': 'F', 'url': 'http://e'}
+        )
         self.assertEqual(store['uri'], 'https://api.uptimerobot.com/v2/newMonitor')
 
     def test_translates_type_and_methods(self):
         _, store = self.capture_request(ok_envelope('monitor', {'id': 1}))
-        uptimerobot.new_monitor({
-            'api_key': 'k',
-            'friendly_name': 'F',
-            'url': 'http://e',
-            'type': 'http',
-            'http_method': 'get',
-            'keyword_type': 'notex',
-            'keyword_case_type': 'cs',
-            'http_auth_type': 'basic',
-            'post_type': 'key-value',
-            'post_content_type': 'text/html',
-        })
+        uptimerobot.new_monitor(
+            {
+                'api_key': 'k',
+                'friendly_name': 'F',
+                'url': 'http://e',
+                'type': 'http',
+                'http_method': 'get',
+                'keyword_type': 'notex',
+                'keyword_case_type': 'cs',
+                'http_auth_type': 'basic',
+                'post_type': 'key-value',
+                'post_content_type': 'text/html',
+            }
+        )
         self.assertEqual(store['data']['type'], '1')
         self.assertEqual(store['data']['http_method'], '2')
         self.assertEqual(store['data']['keyword_type'], '2')
@@ -490,10 +513,17 @@ class TestNewMonitor(UptimeRobotTestCase):
         self.assertEqual(store['data']['post_content_type'], '0')
 
     def test_type_keyw_ping_port_beat(self):
-        for human, expected in (('keyw', '2'), ('ping', '3'), ('port', '4'), ('beat', '5')):
+        for human, expected in (
+            ('keyw', '2'),
+            ('ping', '3'),
+            ('port', '4'),
+            ('beat', '5'),
+        ):
             with self.subTest(type=human):
                 _, store = self.capture_request(ok_envelope('monitor', {'id': 1}))
-                uptimerobot.new_monitor({'api_key': 'k', 'url': 'http://e', 'type': human})
+                uptimerobot.new_monitor(
+                    {'api_key': 'k', 'url': 'http://e', 'type': human}
+                )
                 self.assertEqual(store['data']['type'], expected)
 
     def test_drops_id_key(self):
@@ -513,16 +543,19 @@ class TestNewMonitor(UptimeRobotTestCase):
 # edit_mwindow / new_mwindow
 # -----------------------------------------------------------------------------
 
+
 class TestMWindowWrite(UptimeRobotTestCase):
     def test_edit_mwindow_translation(self):
         _, store = self.capture_request(ok_envelope('mwindow', {'id': 1}))
-        uptimerobot.edit_mwindow({
-            'api_key': 'k',
-            'id': 1,
-            'type': 'daily',
-            'value': 'mon',
-            'status': 'active',
-        })
+        uptimerobot.edit_mwindow(
+            {
+                'api_key': 'k',
+                'id': 1,
+                'type': 'daily',
+                'value': 'mon',
+                'status': 'active',
+            }
+        )
         self.assertEqual(store['uri'], 'https://api.uptimerobot.com/v2/editMWindow')
         self.assertEqual(store['data']['type'], '2')
         self.assertEqual(store['data']['value'], '1')
@@ -535,14 +568,16 @@ class TestMWindowWrite(UptimeRobotTestCase):
 
     def test_new_mwindow_translation(self):
         _, store = self.capture_request(ok_envelope('mwindow', {'id': 1}))
-        uptimerobot.new_mwindow({
-            'api_key': 'k',
-            'friendly_name': 'W',
-            'type': 'once',
-            'value': 'tue',
-            'start_time': '2022-05-01T00:00:00',
-            'duration': 60,
-        })
+        uptimerobot.new_mwindow(
+            {
+                'api_key': 'k',
+                'friendly_name': 'W',
+                'type': 'once',
+                'value': 'tue',
+                'start_time': '2022-05-01T00:00:00',
+                'duration': 60,
+            }
+        )
         self.assertEqual(store['uri'], 'https://api.uptimerobot.com/v2/newMWindow')
         self.assertEqual(store['data']['type'], '1')
         self.assertEqual(store['data']['value'], '2')
@@ -550,7 +585,9 @@ class TestMWindowWrite(UptimeRobotTestCase):
     def test_new_mwindow_drops_status_and_id(self):
         # new_mwindow allows neither 'status' nor 'id'.
         _, store = self.capture_request(ok_envelope('mwindow', {'id': 1}))
-        uptimerobot.new_mwindow({'api_key': 'k', 'type': 'weekly', 'status': 'active', 'id': 7})
+        uptimerobot.new_mwindow(
+            {'api_key': 'k', 'type': 'weekly', 'status': 'active', 'id': 7}
+        )
         self.assertNotIn('status', store['data'])
         self.assertNotIn('id', store['data'])
         self.assertEqual(store['data']['type'], '3')
@@ -562,8 +599,13 @@ class TestMWindowWrite(UptimeRobotTestCase):
 
     def test_value_all_weekdays(self):
         for human, expected in (
-            ('mon', '1'), ('tue', '2'), ('wed', '3'), ('thu', '4'),
-            ('fri', '5'), ('sat', '6'), ('sun', '7'),
+            ('mon', '1'),
+            ('tue', '2'),
+            ('wed', '3'),
+            ('thu', '4'),
+            ('fri', '5'),
+            ('sat', '6'),
+            ('sun', '7'),
         ):
             with self.subTest(value=human):
                 _, store = self.capture_request(ok_envelope('mwindow', {'id': 1}))
@@ -575,22 +617,28 @@ class TestMWindowWrite(UptimeRobotTestCase):
 # edit_psp / new_psp
 # -----------------------------------------------------------------------------
 
+
 class TestPSPWrite(UptimeRobotTestCase):
     def test_edit_psp_translation(self):
         _, store = self.capture_request(ok_envelope('psp', {'id': 1}))
-        uptimerobot.edit_psp({
-            'api_key': 'k',
-            'id': 1,
-            'sort': 'a-z',
-            'status': 'active',
-        })
+        uptimerobot.edit_psp(
+            {
+                'api_key': 'k',
+                'id': 1,
+                'sort': 'a-z',
+                'status': 'active',
+            }
+        )
         self.assertEqual(store['uri'], 'https://api.uptimerobot.com/v2/editPSP')
         self.assertEqual(store['data']['sort'], '1')
         self.assertEqual(store['data']['status'], '1')
 
     def test_edit_psp_sort_variants(self):
         for human, expected in (
-            ('a-z', '1'), ('z-a', '2'), ('up-down-paused', '3'), ('down-up-paused', '4'),
+            ('a-z', '1'),
+            ('z-a', '2'),
+            ('up-down-paused', '3'),
+            ('down-up-paused', '4'),
         ):
             with self.subTest(sort=human):
                 _, store = self.capture_request(ok_envelope('psp', {'id': 1}))
@@ -611,20 +659,28 @@ class TestPSPWrite(UptimeRobotTestCase):
 
     def test_new_psp_keeps_allowed_keys(self):
         _, store = self.capture_request(ok_envelope('psp', {'id': 1}))
-        uptimerobot.new_psp({
-            'api_key': 'k',
-            'friendly_name': 'P',
-            'monitors': '1-2-3',
-            'custom_domain': 'status.example.com',
-            'password': 'linuxfabrik',
-            'hide_url_links': '1',
-            'junk': 'drop',
-        })
+        uptimerobot.new_psp(
+            {
+                'api_key': 'k',
+                'friendly_name': 'P',
+                'monitors': '1-2-3',
+                'custom_domain': 'status.example.com',
+                'password': 'linuxfabrik',
+                'hide_url_links': '1',
+                'junk': 'drop',
+            }
+        )
         self.assertEqual(
             set(store['data'].keys()),
             {
-                'api_key', 'friendly_name', 'monitors', 'custom_domain',
-                'password', 'hide_url_links', 'format', 'offset',
+                'api_key',
+                'friendly_name',
+                'monitors',
+                'custom_domain',
+                'password',
+                'hide_url_links',
+                'format',
+                'offset',
             },
         )
 
@@ -632,6 +688,7 @@ class TestPSPWrite(UptimeRobotTestCase):
 # -----------------------------------------------------------------------------
 # get_monitors (longest result-translation path)
 # -----------------------------------------------------------------------------
+
 
 class TestGetMonitors(UptimeRobotTestCase):
     def test_url(self):
@@ -651,42 +708,57 @@ class TestGetMonitors(UptimeRobotTestCase):
         self.assertNotIn('junk', store['data'])
 
     def test_result_translation_known_values(self):
-        payload = ok_envelope('monitors', [{
-            'id': 1,
-            'status': 2,
-            'type': 1,
-            'http_method': 3,
-            'keyword_type': 1,
-            'keyword_case_type': 0,
-            'auth_type': 1,
-            'alert_contacts': [{'type': 2}],
-        }])
+        payload = ok_envelope(
+            'monitors',
+            [
+                {
+                    'id': 1,
+                    'status': 2,
+                    'type': 1,
+                    'http_method': 3,
+                    'keyword_type': 1,
+                    'keyword_case_type': 0,
+                    'auth_type': 1,
+                    'alert_contacts': [{'type': 2}],
+                }
+            ],
+        )
         self.patch_fetch(ok(payload))
         success, result = uptimerobot.get_monitors({'api_key': 'k'})
         self.assertTrue(success)
-        self.assertEqual(result, [{
-            'id': 1,
-            'status': 'up',
-            'type': 'http',
-            'http_method': 'post',
-            'keyword_type': 'exist',
-            'keyword_case_type': 'cs',
-            'auth_type': 'basic',
-            'alert_contacts': [{'type': 'e-mail'}],
-        }])
+        self.assertEqual(
+            result,
+            [
+                {
+                    'id': 1,
+                    'status': 'up',
+                    'type': 'http',
+                    'http_method': 'post',
+                    'keyword_type': 'exist',
+                    'keyword_case_type': 'cs',
+                    'auth_type': 'basic',
+                    'alert_contacts': [{'type': 'e-mail'}],
+                }
+            ],
+        )
 
     def test_result_translation_unknown_values(self):
         # status/type/http_method/keyword_case_type keep the unknown value;
         # keyword_type and auth_type fall back to the literal 'None'.
-        payload = ok_envelope('monitors', [{
-            'id': 1,
-            'status': 99,
-            'type': 99,
-            'http_method': 99,
-            'keyword_case_type': 99,
-            'keyword_type': 99,
-            'auth_type': 99,
-        }])
+        payload = ok_envelope(
+            'monitors',
+            [
+                {
+                    'id': 1,
+                    'status': 99,
+                    'type': 99,
+                    'http_method': 99,
+                    'keyword_case_type': 99,
+                    'keyword_type': 99,
+                    'auth_type': 99,
+                }
+            ],
+        )
         self.patch_fetch(ok(payload))
         _, result = uptimerobot.get_monitors({'api_key': 'k'})
         item = result[0]
@@ -698,7 +770,9 @@ class TestGetMonitors(UptimeRobotTestCase):
         self.assertEqual(item['auth_type'], 'None')
 
     def test_alert_contact_unknown_type_kept(self):
-        payload = ok_envelope('monitors', [{'id': 1, 'alert_contacts': [{'type': 999}]}])
+        payload = ok_envelope(
+            'monitors', [{'id': 1, 'alert_contacts': [{'type': 999}]}]
+        )
         self.patch_fetch(ok(payload))
         _, result = uptimerobot.get_monitors({'api_key': 'k'})
         self.assertEqual(result[0]['alert_contacts'][0]['type'], 999)
@@ -733,26 +807,35 @@ class TestGetMonitors(UptimeRobotTestCase):
 # get_alert_contacts
 # -----------------------------------------------------------------------------
 
+
 class TestGetAlertContacts(UptimeRobotTestCase):
     def test_url_and_key_filtering(self):
         _, store = self.capture_request(ok_envelope('alert_contacts', []))
         uptimerobot.get_alert_contacts({'api_key': 'k', 'limit': 10, 'junk': 1})
-        self.assertEqual(store['uri'], 'https://api.uptimerobot.com/v2/getAlertContacts')
+        self.assertEqual(
+            store['uri'], 'https://api.uptimerobot.com/v2/getAlertContacts'
+        )
         self.assertNotIn('junk', store['data'])
         self.assertEqual(store['data']['limit'], 10)
 
     def test_result_translation_known(self):
-        payload = ok_envelope('alert_contacts', [
-            {'id': 1, 'status': 2, 'type': 2},
-            {'id': 2, 'status': 1, 'type': 11},
-        ])
+        payload = ok_envelope(
+            'alert_contacts',
+            [
+                {'id': 1, 'status': 2, 'type': 2},
+                {'id': 2, 'status': 1, 'type': 11},
+            ],
+        )
         self.patch_fetch(ok(payload))
         success, result = uptimerobot.get_alert_contacts({'api_key': 'k'})
         self.assertTrue(success)
-        self.assertEqual(result, [
-            {'id': 1, 'status': 'active', 'type': 'e-mail'},
-            {'id': 2, 'status': 'paused', 'type': 'slack'},
-        ])
+        self.assertEqual(
+            result,
+            [
+                {'id': 1, 'status': 'active', 'type': 'e-mail'},
+                {'id': 2, 'status': 'paused', 'type': 'slack'},
+            ],
+        )
 
     def test_result_translation_unknown_falls_back_to_none(self):
         payload = ok_envelope('alert_contacts', [{'id': 1, 'status': 99, 'type': 99}])
@@ -769,7 +852,9 @@ class TestGetAlertContacts(UptimeRobotTestCase):
         self.assertEqual(result[0]['type'], 'sms')
 
     def test_single_dict_wrapped_and_translated(self):
-        self.patch_fetch(ok(ok_envelope('alert_contacts', {'id': 1, 'status': 2, 'type': 1})))
+        self.patch_fetch(
+            ok(ok_envelope('alert_contacts', {'id': 1, 'status': 2, 'type': 1}))
+        )
         _, result = uptimerobot.get_alert_contacts({'api_key': 'k'})
         self.assertEqual(result, [{'id': 1, 'status': 'active', 'type': 'sms'}])
 
@@ -790,6 +875,7 @@ class TestGetAlertContacts(UptimeRobotTestCase):
 # get_mwindows
 # -----------------------------------------------------------------------------
 
+
 class TestGetMWindows(UptimeRobotTestCase):
     def test_url_and_key_filtering(self):
         _, store = self.capture_request(ok_envelope('mwindows', []))
@@ -799,19 +885,25 @@ class TestGetMWindows(UptimeRobotTestCase):
         self.assertEqual(store['data']['mwindows'], '1-2')
 
     def test_result_translation(self):
-        payload = ok_envelope('mwindows', [
-            {'id': 1, 'status': 1},
-            {'id': 2, 'status': 0},
-            {'id': 3, 'status': 99},
-        ])
+        payload = ok_envelope(
+            'mwindows',
+            [
+                {'id': 1, 'status': 1},
+                {'id': 2, 'status': 0},
+                {'id': 3, 'status': 99},
+            ],
+        )
         self.patch_fetch(ok(payload))
         success, result = uptimerobot.get_mwindows({'api_key': 'k'})
         self.assertTrue(success)
-        self.assertEqual(result, [
-            {'id': 1, 'status': 'active'},
-            {'id': 2, 'status': 'paused'},
-            {'id': 3, 'status': 'None'},
-        ])
+        self.assertEqual(
+            result,
+            [
+                {'id': 1, 'status': 'active'},
+                {'id': 2, 'status': 'paused'},
+                {'id': 3, 'status': 'None'},
+            ],
+        )
 
     def test_api_error_returns_two_tuple(self):
         self.patch_fetch(ok(ERROR_ENVELOPE))
@@ -830,6 +922,7 @@ class TestGetMWindows(UptimeRobotTestCase):
 # get_psps
 # -----------------------------------------------------------------------------
 
+
 class TestGetPSPs(UptimeRobotTestCase):
     def test_url_and_key_filtering(self):
         _, store = self.capture_request(ok_envelope('psps', []))
@@ -839,19 +932,25 @@ class TestGetPSPs(UptimeRobotTestCase):
         self.assertEqual(store['data']['psps'], '1')
 
     def test_result_translation(self):
-        payload = ok_envelope('psps', [
-            {'id': 1, 'sort': 1, 'status': 1},
-            {'id': 2, 'sort': 4, 'status': 0},
-            {'id': 3, 'sort': 99, 'status': 99},
-        ])
+        payload = ok_envelope(
+            'psps',
+            [
+                {'id': 1, 'sort': 1, 'status': 1},
+                {'id': 2, 'sort': 4, 'status': 0},
+                {'id': 3, 'sort': 99, 'status': 99},
+            ],
+        )
         self.patch_fetch(ok(payload))
         success, result = uptimerobot.get_psps({'api_key': 'k'})
         self.assertTrue(success)
-        self.assertEqual(result, [
-            {'id': 1, 'sort': 'a-z', 'status': 'active'},
-            {'id': 2, 'sort': 'down-up-paused', 'status': 'paused'},
-            {'id': 3, 'sort': 'None', 'status': 'None'},
-        ])
+        self.assertEqual(
+            result,
+            [
+                {'id': 1, 'sort': 'a-z', 'status': 'active'},
+                {'id': 2, 'sort': 'down-up-paused', 'status': 'paused'},
+                {'id': 3, 'sort': 'None', 'status': 'None'},
+            ],
+        )
 
     def test_api_error_returns_two_tuple(self):
         self.patch_fetch(ok(ERROR_ENVELOPE))
@@ -870,19 +969,25 @@ class TestGetPSPs(UptimeRobotTestCase):
 # get_account_details (two fetch_json calls: header then data)
 # -----------------------------------------------------------------------------
 
+
 class TestGetAccountDetails(UptimeRobotTestCase):
     def _two_call_side_effect(self, header_value, data_payload):
         def side(uri, **kwargs):
             if kwargs.get('extended'):
                 return ok({'response_header': header_value})
             return ok(data_payload)
+
         return side
 
     def test_returns_three_tuple_on_success(self):
-        self.patch_fetch(side_effect=self._two_call_side_effect(
-            {'X-RateLimit-Remaining': '10'},
-            ok_envelope('account', {'email': 'user@example.com', 'monitor_limit': 50}),
-        ))
+        self.patch_fetch(
+            side_effect=self._two_call_side_effect(
+                {'X-RateLimit-Remaining': '10'},
+                ok_envelope(
+                    'account', {'email': 'user@example.com', 'monitor_limit': 50}
+                ),
+            )
+        )
         result = uptimerobot.get_account_details({'api_key': 'k'})
         self.assertEqual(len(result), 3)
         success, account, rl = result
@@ -892,18 +997,24 @@ class TestGetAccountDetails(UptimeRobotTestCase):
         self.assertEqual(rl, {'X-RateLimit-Remaining': '10'})
 
     def test_makes_two_requests_header_then_data(self):
-        m = self.patch_fetch(side_effect=self._two_call_side_effect(
-            {}, ok_envelope('account', {'email': 'a@b.c'}),
-        ))
+        m = self.patch_fetch(
+            side_effect=self._two_call_side_effect(
+                {},
+                ok_envelope('account', {'email': 'a@b.c'}),
+            )
+        )
         uptimerobot.get_account_details({'api_key': 'k'})
         self.assertEqual(m.call_count, 2)
         self.assertTrue(m.call_args_list[0].kwargs['extended'])
         self.assertIsNone(m.call_args_list[1].kwargs.get('extended'))
 
     def test_both_requests_target_account_endpoint(self):
-        m = self.patch_fetch(side_effect=self._two_call_side_effect(
-            {}, ok_envelope('account', {'email': 'a@b.c'}),
-        ))
+        m = self.patch_fetch(
+            side_effect=self._two_call_side_effect(
+                {},
+                ok_envelope('account', {'email': 'a@b.c'}),
+            )
+        )
         uptimerobot.get_account_details({'api_key': 'k'})
         for call in m.call_args_list:
             self.assertEqual(
@@ -912,9 +1023,12 @@ class TestGetAccountDetails(UptimeRobotTestCase):
             )
 
     def test_filters_input_to_api_key_only(self):
-        m = self.patch_fetch(side_effect=self._two_call_side_effect(
-            {}, ok_envelope('account', {'email': 'a@b.c'}),
-        ))
+        m = self.patch_fetch(
+            side_effect=self._two_call_side_effect(
+                {},
+                ok_envelope('account', {'email': 'a@b.c'}),
+            )
+        )
         uptimerobot.get_account_details({'api_key': 'k', 'junk': 'x', 'limit': 5})
         # The header request body keeps only api_key (+ injected format).
         header_data = m.call_args_list[0].kwargs['data']
@@ -923,9 +1037,12 @@ class TestGetAccountDetails(UptimeRobotTestCase):
         self.assertEqual(header_data['api_key'], 'k')
 
     def test_mutates_input_dict_in_place(self):
-        self.patch_fetch(side_effect=self._two_call_side_effect(
-            {}, ok_envelope('account', {'email': 'a@b.c'}),
-        ))
+        self.patch_fetch(
+            side_effect=self._two_call_side_effect(
+                {},
+                ok_envelope('account', {'email': 'a@b.c'}),
+            )
+        )
         data = {'api_key': 'k', 'junk': 'x'}
         uptimerobot.get_account_details(data)
         # 'junk' was popped, format/offset injected by get_data.

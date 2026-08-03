@@ -24,6 +24,7 @@ sys.path.insert(0, '..')
 
 try:
     import lib.psutil as lib_psutil
+
     HAVE_PSUTIL = True
 except SystemExit:
     # lib.psutil sys.exit()s with STATE_UNKNOWN when psutil is missing.

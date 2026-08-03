@@ -78,8 +78,9 @@ def patched(which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0))):
 class _Base(unittest.TestCase):
     """Shared helper to run run_occ under the three patches."""
 
-    def run_occ(self, *args, which=PHP_BIN, owner=UID,
-                shell_ret=(True, ('{}', '', 0)), **kwargs):
+    def run_occ(
+        self, *args, which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0)), **kwargs
+    ):
         (which_p, owner_p, shell_p), shell_mock = patched(which, owner, shell_ret)
         with which_p, owner_p, shell_p:
             result = nextcloud.run_occ(*args, **kwargs)
@@ -111,9 +112,11 @@ class TestMissingPhp(_Base):
 
     def test_owner_not_consulted_when_no_php(self):
         # No point statting config.php if there is no interpreter to run occ.
-        with mock.patch.object(nextcloud.shutil, 'which', return_value=None), \
-             mock.patch.object(nextcloud.disk, 'get_owner') as go, \
-             mock.patch.object(nextcloud.shell, 'shell_exec') as se:
+        with (
+            mock.patch.object(nextcloud.shutil, 'which', return_value=None),
+            mock.patch.object(nextcloud.disk, 'get_owner') as go,
+            mock.patch.object(nextcloud.shell, 'shell_exec') as se,
+        ):
             nextcloud.run_occ(NC_PATH, 'status')
         go.assert_not_called()
         se.assert_not_called()
@@ -137,9 +140,13 @@ class TestCommandConstruction(_Base):
         self.shell_mock.assert_called_once()
 
     def test_owner_lookup_targets_config_php(self):
-        with mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN), \
-             mock.patch.object(nextcloud.disk, 'get_owner', return_value=UID) as go, \
-             mock.patch.object(nextcloud.shell, 'shell_exec', return_value=(True, ('{}', '', 0))):
+        with (
+            mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN),
+            mock.patch.object(nextcloud.disk, 'get_owner', return_value=UID) as go,
+            mock.patch.object(
+                nextcloud.shell, 'shell_exec', return_value=(True, ('{}', '', 0))
+            ),
+        ):
             nextcloud.run_occ(NC_PATH, 'status')
         go.assert_called_once_with(os.path.join(NC_PATH, 'config/config.php'))
 
@@ -180,7 +187,14 @@ class TestCommandConstruction(_Base):
         (cmd,), _ = self.shell_mock.call_args
         self.assertEqual(
             cmd,
-            ['sudo', '-u', '#www-data', '/usr/bin/php', '/var/www/nextcloud/occ', 'status'],
+            [
+                'sudo',
+                '-u',
+                '#www-data',
+                '/usr/bin/php',
+                '/var/www/nextcloud/occ',
+                'status',
+            ],
         )
 
     def test_shell_exec_called_once_positionally(self):
@@ -199,20 +213,23 @@ class TestJsonResponse(_Base):
     """Assert JSON parsing on the success path."""
 
     def test_parses_object(self):
-        ok, data = self.run_occ(NC_PATH, 'status',
-                                shell_ret=(True, ('{"installed": true}', '', 0)))
+        ok, data = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, ('{"installed": true}', '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(data, {'installed': True})
 
     def test_parses_array(self):
-        ok, data = self.run_occ(NC_PATH, 'status',
-                                shell_ret=(True, ('[1, 2, 3]', '', 0)))
+        ok, data = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, ('[1, 2, 3]', '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(data, [1, 2, 3])
 
     def test_returns_python_types(self):
         ok, data = self.run_occ(
-            NC_PATH, 'status',
+            NC_PATH,
+            'status',
             shell_ret=(True, ('{"maintenance": false, "n": 7, "v": null}', '', 0)),
         )
         self.assertTrue(ok)
@@ -222,32 +239,37 @@ class TestJsonResponse(_Base):
 
     def test_default_format_is_json(self):
         # No _format kwarg -> JSON parsing happens.
-        ok, data = self.run_occ(NC_PATH, 'status',
-                                shell_ret=(True, ('{"a": 1}', '', 0)))
+        ok, data = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, ('{"a": 1}', '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(data, {'a': 1})
 
     def test_bytes_stdout_decoded_and_parsed(self):
-        ok, data = self.run_occ(NC_PATH, 'status',
-                                shell_ret=(True, (b'{"a": 1}', '', 0)))
+        ok, data = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, (b'{"a": 1}', '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(data, {'a': 1})
 
     def test_bytearray_stdout_decoded_and_parsed(self):
-        ok, data = self.run_occ(NC_PATH, 'status',
-                                shell_ret=(True, (bytearray(b'{"a": 1}'), '', 0)))
+        ok, data = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, (bytearray(b'{"a": 1}'), '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(data, {'a': 1})
 
     def test_format_json_is_case_insensitive(self):
-        ok, data = self.run_occ(NC_PATH, 'status', _format='JSON',
-                                shell_ret=(True, ('{"a": 1}', '', 0)))
+        ok, data = self.run_occ(
+            NC_PATH, 'status', _format='JSON', shell_ret=(True, ('{"a": 1}', '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(data, {'a': 1})
 
     def test_format_json_mixed_case(self):
-        ok, data = self.run_occ(NC_PATH, 'status', _format='Json',
-                                shell_ret=(True, ('{"a": 1}', '', 0)))
+        ok, data = self.run_occ(
+            NC_PATH, 'status', _format='Json', shell_ret=(True, ('{"a": 1}', '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(data, {'a': 1})
 
@@ -261,28 +283,30 @@ class TestJsonErrors(_Base):
     """Assert behaviour when stdout is not valid JSON."""
 
     def test_non_json_text_fails(self):
-        ok, msg = self.run_occ(NC_PATH, 'status',
-                               shell_ret=(True, ('not json at all', '', 0)))
+        ok, msg = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, ('not json at all', '', 0))
+        )
         self.assertFalse(ok)
         self.assertIn('JSON decode error', msg)
 
     def test_error_includes_raw_stdout(self):
-        ok, msg = self.run_occ(NC_PATH, 'status',
-                               shell_ret=(True, ('garbage-123', '', 0)))
+        ok, msg = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, ('garbage-123', '', 0))
+        )
         self.assertFalse(ok)
         self.assertIn('Raw stdout', msg)
         self.assertIn('garbage-123', msg)
 
     def test_empty_stdout_is_json_error(self):
         # rc==0 but empty stdout: json.loads('') raises -> decode error.
-        ok, msg = self.run_occ(NC_PATH, 'status',
-                               shell_ret=(True, ('', '', 0)))
+        ok, msg = self.run_occ(NC_PATH, 'status', shell_ret=(True, ('', '', 0)))
         self.assertFalse(ok)
         self.assertIn('JSON decode error', msg)
 
     def test_truncated_json_fails(self):
-        ok, msg = self.run_occ(NC_PATH, 'status',
-                               shell_ret=(True, ('{"installed": tr', '', 0)))
+        ok, msg = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, ('{"installed": tr', '', 0))
+        )
         self.assertFalse(ok)
         self.assertIn('JSON decode error', msg)
 
@@ -296,40 +320,52 @@ class TestTextResponse(_Base):
     """Assert raw-text mode trims and returns stdout untouched otherwise."""
 
     def test_text_format_returns_string(self):
-        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
-                                shell_ret=(True, ('Nextcloud is installed', '', 0)))
+        ok, text = self.run_occ(
+            NC_PATH,
+            'status',
+            _format='text',
+            shell_ret=(True, ('Nextcloud is installed', '', 0)),
+        )
         self.assertTrue(ok)
         self.assertEqual(text, 'Nextcloud is installed')
 
     def test_text_is_stripped(self):
-        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
-                                shell_ret=(True, ('  hello \n', '', 0)))
+        ok, text = self.run_occ(
+            NC_PATH, 'status', _format='text', shell_ret=(True, ('  hello \n', '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(text, 'hello')
 
     def test_bytes_text_decoded_and_stripped(self):
-        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
-                                shell_ret=(True, (b'  hi \n', '', 0)))
+        ok, text = self.run_occ(
+            NC_PATH, 'status', _format='text', shell_ret=(True, (b'  hi \n', '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(text, 'hi')
 
     def test_bytearray_text_decoded_and_stripped(self):
-        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
-                                shell_ret=(True, (bytearray(b' x '), '', 0)))
+        ok, text = self.run_occ(
+            NC_PATH,
+            'status',
+            _format='text',
+            shell_ret=(True, (bytearray(b' x '), '', 0)),
+        )
         self.assertTrue(ok)
         self.assertEqual(text, 'x')
 
     def test_text_does_not_parse_json(self):
         # In text mode JSON-looking output stays a raw string.
-        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
-                                shell_ret=(True, ('{"a": 1}', '', 0)))
+        ok, text = self.run_occ(
+            NC_PATH, 'status', _format='text', shell_ret=(True, ('{"a": 1}', '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(text, '{"a": 1}')
 
     def test_arbitrary_non_json_format_is_text(self):
         # Any _format other than 'json' triggers the text branch.
-        ok, text = self.run_occ(NC_PATH, 'status', _format='plain',
-                                shell_ret=(True, (' ok ', '', 0)))
+        ok, text = self.run_occ(
+            NC_PATH, 'status', _format='plain', shell_ret=(True, (' ok ', '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(text, 'ok')
 
@@ -343,49 +379,49 @@ class TestFailurePath(_Base):
     """Assert the command-failure contract and its message composition."""
 
     def test_nonzero_rc_is_failure(self):
-        ok, _ = self.run_occ(NC_PATH, 'status',
-                             shell_ret=(True, ('', 'boom', 1)))
+        ok, _ = self.run_occ(NC_PATH, 'status', shell_ret=(True, ('', 'boom', 1)))
         self.assertFalse(ok)
 
     def test_failure_message_contains_command(self):
-        _ok, msg = self.run_occ(NC_PATH, 'status',
-                               shell_ret=(True, ('', 'boom', 1)))
+        _ok, msg = self.run_occ(NC_PATH, 'status', shell_ret=(True, ('', 'boom', 1)))
         self.assertIn('sudo -u #33 /usr/bin/php /var/www/nextcloud/occ status', msg)
 
     def test_failure_message_contains_rc(self):
-        _ok, msg = self.run_occ(NC_PATH, 'status',
-                               shell_ret=(True, ('', 'boom', 7)))
+        _ok, msg = self.run_occ(NC_PATH, 'status', shell_ret=(True, ('', 'boom', 7)))
         self.assertIn('rc=7', msg)
 
     def test_failure_prefers_stderr(self):
-        _ok, msg = self.run_occ(NC_PATH, 'status',
-                               shell_ret=(True, ('some stdout', 'the stderr', 1)))
+        _ok, msg = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, ('some stdout', 'the stderr', 1))
+        )
         self.assertIn('the stderr', msg)
 
     def test_failure_falls_back_to_stdout_when_no_stderr(self):
         # stderr empty -> the (or-fallback) stdout is shown instead.
-        ok, msg = self.run_occ(NC_PATH, 'status',
-                               shell_ret=(True, ('the stdout', '', 5)))
+        ok, msg = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, ('the stdout', '', 5))
+        )
         self.assertFalse(ok)
         self.assertIn('the stdout', msg)
         self.assertIn('rc=5', msg)
 
     def test_success_flag_false_is_failure(self):
         # shell_exec itself failing (success=False) is a failure even at rc 0.
-        ok, msg = self.run_occ(NC_PATH, 'status',
-                               shell_ret=(False, ('', 'exec failed', 0)))
+        ok, msg = self.run_occ(
+            NC_PATH, 'status', shell_ret=(False, ('', 'exec failed', 0))
+        )
         self.assertFalse(ok)
         self.assertIn('exec failed', msg)
 
     def test_success_flag_false_with_rc_zero_still_fails(self):
-        ok, _ = self.run_occ(NC_PATH, 'status',
-                             shell_ret=(False, ('out', '', 0)))
+        ok, _ = self.run_occ(NC_PATH, 'status', shell_ret=(False, ('out', '', 0)))
         self.assertFalse(ok)
 
     def test_failure_short_circuits_before_json_parse(self):
         # Valid JSON in stdout must not turn an rc!=0 run into a success.
-        ok, msg = self.run_occ(NC_PATH, 'status',
-                               shell_ret=(True, ('{"a": 1}', 'err', 1)))
+        ok, msg = self.run_occ(
+            NC_PATH, 'status', shell_ret=(True, ('{"a": 1}', 'err', 1))
+        )
         self.assertFalse(ok)
         self.assertIn('err', msg)
 
@@ -401,8 +437,7 @@ class TestCapturedPayloads(_Base):
     def test_occ_status_payload(self):
         raw = load_fixture_text('status.json')
         expected = load_fixture('status.json')
-        ok, data = self.run_occ(NC_PATH, 'status',
-                                shell_ret=(True, (raw, '', 0)))
+        ok, data = self.run_occ(NC_PATH, 'status', shell_ret=(True, (raw, '', 0)))
         self.assertTrue(ok)
         self.assertEqual(data, expected)
         self.assertIs(data['installed'], True)
@@ -412,16 +447,16 @@ class TestCapturedPayloads(_Base):
     def test_occ_status_payload_as_bytes(self):
         raw = load_fixture_text('status.json').encode('utf-8')
         expected = load_fixture('status.json')
-        ok, data = self.run_occ(NC_PATH, 'status',
-                                shell_ret=(True, (raw, '', 0)))
+        ok, data = self.run_occ(NC_PATH, 'status', shell_ret=(True, (raw, '', 0)))
         self.assertTrue(ok)
         self.assertEqual(data, expected)
 
     def test_occ_user_list_payload(self):
         raw = load_fixture_text('user-list.json')
         expected = load_fixture('user-list.json')
-        ok, data = self.run_occ(NC_PATH, 'user:list --output=json',
-                                shell_ret=(True, (raw, '', 0)))
+        ok, data = self.run_occ(
+            NC_PATH, 'user:list --output=json', shell_ret=(True, (raw, '', 0))
+        )
         self.assertTrue(ok)
         self.assertEqual(data, expected)
         self.assertEqual(data['alice'], 'Alice Example')
@@ -429,8 +464,9 @@ class TestCapturedPayloads(_Base):
 
     def test_occ_status_text_mode_returns_raw(self):
         raw = load_fixture_text('status.json')
-        ok, text = self.run_occ(NC_PATH, 'status', _format='text',
-                                shell_ret=(True, (raw, '', 0)))
+        ok, text = self.run_occ(
+            NC_PATH, 'status', _format='text', shell_ret=(True, (raw, '', 0))
+        )
         self.assertTrue(ok)
         # Text mode keeps it a string (stripped), not a dict.
         self.assertIsInstance(text, str)

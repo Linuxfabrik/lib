@@ -172,7 +172,9 @@ class TestGetAuthSidRequestBuilding(unittest.TestCase):
         import base64
 
         captured, _ = self._call(password='')
-        self.assertEqual(captured['kw']['data']['pwd'], base64.b64encode(b'').decode('ascii'))
+        self.assertEqual(
+            captured['kw']['data']['pwd'], base64.b64encode(b'').decode('ascii')
+        )
 
     def test_body_has_exactly_user_and_pwd(self):
         captured, _ = self._call()
@@ -215,7 +217,9 @@ class TestGetAuthSidRequestBuilding(unittest.TestCase):
 
     def test_url_passed_positionally(self):
         # The URL is the sole positional argument to the delegate.
-        recorder = mock.Mock(return_value=(True, xml_response(auth_passed='1', auth_sid='S')))
+        recorder = mock.Mock(
+            return_value=(True, xml_response(auth_passed='1', auth_sid='S'))
+        )
         with mock.patch.object(qts.url, 'fetch', recorder):
             qts.get_auth_sid(FakeArgs(url='https://h'))
         args, _ = recorder.call_args
