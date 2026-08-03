@@ -1027,10 +1027,16 @@ def per_second_deltas(filename, name, counters):
     ... )
     >>> if rates is not None:
     ...     perfdata += lib.base.get_perfdata(
-    ...         'rx_bytes_per_second', rates['rx_bytes'], uom='B', _min=0,
+    ...         'rx_bytes_per_second',
+    ...         rates['rx_bytes'],
+    ...         uom='B',
+    ...         _min=0,
     ...     )
     ...     perfdata += lib.base.get_perfdata(
-    ...         'tx_bytes_per_second', rates['tx_bytes'], uom='B', _min=0,
+    ...         'tx_bytes_per_second',
+    ...         rates['tx_bytes'],
+    ...         uom='B',
+    ...         _min=0,
     ...     )
     """
     ok, conn = connect(filename=filename)

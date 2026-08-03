@@ -19,13 +19,17 @@ import lib.globals  # pylint: disable=C0413
 import lib.url  # pylint: disable=C0413
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061001'  # adapt this if something in this script changed fundamentally
+__version__ = (
+    '2026061001'  # adapt this if something in this script changed fundamentally
+)
 
-DESCRIPTION = """Simply creates the file "endoflifedate.py" for a given list of products."""
+DESCRIPTION = (
+    """Simply creates the file "endoflifedate.py" for a given list of products."""
+)
 
 DEFAULT_FILE = 'lib/endoflifedate.py'
 
-VERSION = '2026062301' # adapt this if one of PRODUCTS was added/deleted
+VERSION = '2026062301'  # adapt this if one of PRODUCTS was added/deleted
 PRODUCTS = [
     'https://endoflife.date/api/apache-http-server.json',
     'https://endoflife.date/api/composer.json',
@@ -60,14 +64,14 @@ PRODUCTS = [
 
 
 def parse_args():
-    """Parse command line arguments using argparse.
-    """
+    """Parse command line arguments using argparse."""
     parser = argparse.ArgumentParser(description=DESCRIPTION)
 
     parser.add_argument(
-        '-V', '--version',
+        '-V',
+        '--version',
         action='version',
-        version=f'%(prog)s: v{__version__} by {__author__}'
+        version=f'%(prog)s: v{__version__} by {__author__}',
     )
 
     parser.add_argument(
@@ -81,8 +85,7 @@ def parse_args():
 
 
 def main():
-    """The main function. Hier spielt die Musik.
-    """
+    """The main function. Hier spielt die Musik."""
 
     # parse the command line, exit with UNKNOWN if it fails
     try:
@@ -117,7 +120,7 @@ ENDOFLIFE_DATE = {
     for product in PRODUCTS:
         j = lib.base.coe(lib.url.fetch_json(product))
         j = pprint.pformat(j, indent=4, sort_dicts=True)
-        endoflifedate_py += '    \'{}\': {},\n\n\n'.format(
+        endoflifedate_py += "    '{}': {},\n\n\n".format(
             product,
             j.replace('[ ', '[\n  ').replace(']', ',\n    ]'),
         )
@@ -130,5 +133,5 @@ ENDOFLIFE_DATE = {
 if __name__ == '__main__':
     try:
         main()
-    except Exception:   # pylint: disable=W0703
+    except Exception:  # pylint: disable=W0703
         lib.base.cu()

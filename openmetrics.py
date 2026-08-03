@@ -38,16 +38,18 @@ TYPE_UNKNOWN = 'unknown'
 # The possible values of a sample's `type`. Not the set of names a `# TYPE` line may carry: the
 # formats spell TYPE_UNKNOWN differently (`unknown` here, `untyped` in the Prometheus format) and
 # only OpenMetrics knows `gaugehistogram`, `info` and `stateset`.
-TYPES = frozenset((
-    'counter',
-    'gauge',
-    'gaugehistogram',
-    'histogram',
-    'info',
-    'stateset',
-    'summary',
-    TYPE_UNKNOWN,
-))
+TYPES = frozenset(
+    (
+        'counter',
+        'gauge',
+        'gaugehistogram',
+        'histogram',
+        'info',
+        'stateset',
+        'summary',
+        TYPE_UNKNOWN,
+    )
+)
 
 
 def _match_labels(labels, wanted):
@@ -91,7 +93,8 @@ def get_samples(samples, name, labels=None):
     if labels is None:
         labels = {}
     return [
-        sample for sample in samples
+        sample
+        for sample in samples
         if sample['name'] == name and _match_labels(sample['labels'], labels)
     ]
 
@@ -179,7 +182,7 @@ def _read_quoted(text, i):
             j += 2
             continue
         if char == '"':
-            return _unescape(text[i + 1:j]), j + 1
+            return _unescape(text[i + 1 : j]), j + 1
         j += 1
     return None, -1
 
@@ -240,7 +243,7 @@ def _parse_labels(text, dialect):
         else:
             match = _LABEL_NAME_REGEX.match(text, i)
             if not match:
-                return False, f'expected a label name at "{text[i:i + 16]}"'
+                return False, f'expected a label name at "{text[i : i + 16]}"'
             key = match.group(0)
             i = match.end()
         while i < len(text) and text[i] in ' \t':
@@ -265,7 +268,10 @@ def _parse_labels(text, dialect):
             # A quoted string that is not followed by "=" is the metric name, which may sit at
             # any position of the label set, not just the first.
             if name is not None:
-                return False, f'metric name already set inside the label set, got "{key}" too'
+                return (
+                    False,
+                    f'metric name already set inside the label set, got "{key}" too',
+                )
             name = key
         else:
             return False, f'expected "=" behind label name "{key}"'
@@ -284,7 +290,10 @@ def _parse_labels(text, dialect):
             # reads them as two labels (the `prometheus_client` package rejects them instead), so
             # the loop carries on to the next entry rather than lose the whole payload over a
             # separator that format does not require.
-            return False, f'expected "," between the entries of a label set at "{text[i:i + 16]}"'
+            return (
+                False,
+                f'expected "," between the entries of a label set at "{text[i : i + 16]}"',
+            )
     return True, (name, labels, duplicate)
 
 
@@ -342,7 +351,9 @@ _TYPE_SUFFIXES = {
     'summary': ('_count', '_created', '_sum'),
 }
 
-_FAMILY_SUFFIXES = tuple(sorted({s for suffixes in _TYPE_SUFFIXES.values() for s in suffixes}))
+_FAMILY_SUFFIXES = tuple(
+    sorted({s for suffixes in _TYPE_SUFFIXES.values() for s in suffixes})
+)
 
 
 def _get_meta(meta, name):
@@ -357,7 +368,7 @@ def _get_meta(meta, name):
     for suffix in _FAMILY_SUFFIXES:
         if not name.endswith(suffix):
             continue
-        family = meta.get(name[:-len(suffix)])
+        family = meta.get(name[: -len(suffix)])
         if family is None or suffix not in _TYPE_SUFFIXES.get(family.get('type'), ()):
             continue
         # A `# HELP` naming the sample rather than the family must not cost the sample the
@@ -395,7 +406,9 @@ def _parse_meta_name(text):
 # one of them knows cannot be of the other.
 _TYPE_NAMES = {
     DIALECT_OPENMETRICS: TYPES,
-    DIALECT_PROMETHEUS: frozenset(('counter', 'gauge', 'histogram', 'summary', 'untyped')),
+    DIALECT_PROMETHEUS: frozenset(
+        ('counter', 'gauge', 'histogram', 'summary', 'untyped')
+    ),
 }
 
 _META_REGEX = re.compile(r'#[ \t]+(HELP|TYPE|UNIT)[ \t]+')
@@ -416,13 +429,13 @@ def _parse_meta(line, meta, dialect):
     if keyword == 'UNIT' and dialect == DIALECT_PROMETHEUS:
         # The Prometheus format has no units, so this is a comment that happens to look like one.
         return True, None
-    name, offset = _parse_meta_name(line[match.end():])
+    name, offset = _parse_meta_name(line[match.end() :])
     if offset < 0:
         return False, f'expected a metric name in {keyword}, got "{line}"'
     # Strip the separator only, never `str.strip()`'s default: that also takes a non-breaking
     # space, a form feed and a line separator, which both grammars count as ordinary text. It
     # would cut them off a help text and, worse, turn `gauge<NBSP>` into a type that validates.
-    text = line[match.end() + offset:].strip(' \t')
+    text = line[match.end() + offset :].strip(' \t')
     if not text and keyword in ('HELP', 'UNIT'):
         # An empty text says as much as no line at all, and the specification asks for exactly
         # that reading. Reporting `''` instead of `None` would tell a caller testing for absence
@@ -455,14 +468,17 @@ def _parse_meta(line, meta, dialect):
 # integer, written as digits and nothing else, not even a sign. The OpenMetrics format counts
 # seconds instead and takes any number there.
 _PROMETHEUS_TIMESTAMP_REGEX = re.compile(r'\d+', re.ASCII)
-_INT64_MAX = 2 ** 63 - 1
+_INT64_MAX = 2**63 - 1
 
 
 def _parse_timestamp(text, dialect):
     """Parse a timestamp into seconds. Returns a `(success, result)` tuple."""
     if dialect == DIALECT_PROMETHEUS:
         if not _PROMETHEUS_TIMESTAMP_REGEX.fullmatch(text):
-            return False, f'expected digits for a timestamp in milliseconds, got "{text}"'
+            return (
+                False,
+                f'expected digits for a timestamp in milliseconds, got "{text}"',
+            )
         milliseconds = int(text)
         if milliseconds > _INT64_MAX:
             # Python would carry this, the format would not, so it is not a point in time but a
@@ -515,7 +531,7 @@ def _parse_sample(line, meta, dialect):
         close = _find_brace_close(line, offset)
         if close < 0:
             return False, f'unterminated label set in "{line}"'
-        success, result = _parse_labels(line[offset + 1:close], dialect)
+        success, result = _parse_labels(line[offset + 1 : close], dialect)
         if not success:
             return False, result
         # Not acting on `duplicate` here: the value and the timestamp behind the label set still
@@ -524,8 +540,10 @@ def _parse_sample(line, meta, dialect):
         quoted_name, labels, duplicate = result
         if quoted_name is not None:
             if name is not None:
-                return False, (f'metric name already given in front of the label set, got a '
-                               f'second one inside it: "{quoted_name}"')
+                return False, (
+                    f'metric name already given in front of the label set, got a '
+                    f'second one inside it: "{quoted_name}"'
+                )
             name = quoted_name
         offset = close + 1
     if not name:
@@ -537,13 +555,16 @@ def _parse_sample(line, meta, dialect):
     if exemplar:
         # An exemplar links a sample to a trace. It says nothing about the value, so it is read
         # off the line and dropped rather than reported.
-        rest = rest[:exemplar.start()]
+        rest = rest[: exemplar.start()]
     rest = rest.strip(' \t')
     fields = _FIELD_REGEX[dialect].split(rest) if rest else []
     if not fields:
         return False, f'expected a value behind metric "{name}"'
     if len(fields) > 2:
-        return False, f'expected nothing behind the timestamp of "{name}", got "{fields[2]}"'
+        return (
+            False,
+            f'expected nothing behind the timestamp of "{name}", got "{fields[2]}"',
+        )
     success, value = _parse_float(fields[0])
     if not success:
         return False, value

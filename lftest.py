@@ -689,7 +689,9 @@ def _read_fixture(value):
     """
     if not value:
         return value
-    fixtures_dir = os.path.join(os.path.dirname(os.path.realpath(sys.argv[0])), 'unit-test')
+    fixtures_dir = os.path.join(
+        os.path.dirname(os.path.realpath(sys.argv[0])), 'unit-test'
+    )
     # Refuse a symlinked anchor: on a host where the plugin directory is
     # (mis)configured writable by the low-privilege user, a `unit-test` symlink
     # to e.g. /etc would otherwise redirect the read out of the source tree. A
