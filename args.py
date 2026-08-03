@@ -11,9 +11,15 @@
 """Extends argparse by new input argument data types on demand."""
 
 import argparse
+import os
+import re
+import textwrap
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026071201'
+__version__ = '2026080301'
+
+# Base URL of the rendered online documentation.
+DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
 
 
 # Help text descriptions only - no "Default:" here.
@@ -137,6 +143,25 @@ _UNITS = {'%', 'K', 'M', 'G', 'T', 'P'}
 _METHODS = {'USED', 'FREE'}
 
 
+class HelpFormatter(argparse.HelpFormatter):
+    """Formats the help output like argparse does, but never splits long words.
+
+    argparse's default formatter breaks words at hyphens to fit the terminal width,
+    which turns a URL like `https://example.com/a-b/c/` into two unusable fragments.
+    Here, a word that does not fit is kept intact and overflows instead.
+    """
+
+    def _fill_text(self, text, width, indent):
+        return textwrap.fill(
+            re.sub(r'\s+', ' ', text).strip(),
+            width,
+            initial_indent=indent,
+            subsequent_indent=indent,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+
+
 def csv(arg):
     """Converts a CSV string into a list of values.
 
@@ -151,6 +176,34 @@ def csv(arg):
     ['apple', 'orange', 'banana', 'grape']
     """
     return [x.strip() for x in arg.split(',')]
+
+
+def epilog(path, section='check-plugins'):
+    """Builds a pointer to the online documentation, to be used as an argparse epilog.
+
+    The document name is derived from the file name of the calling script, so pass
+    `__file__`. A trailing `.exe` or `.py` extension is stripped.
+
+    Use together with `HelpFormatter`, otherwise argparse breaks the URL at its hyphens.
+
+    ### Parameters
+    - **path** (`str`): Path of the calling script, normally `__file__`.
+    - **section** (`str`, optional): Section the document lives in.
+      Defaults to `check-plugins`.
+
+    ### Returns
+    - **str**: A single line pointing to the documentation URL.
+
+    ### Example
+    >>> epilog('/usr/lib64/nagios/plugins/example')
+    'Documentation: https://linuxfabrik.github.io/monitoring-plugins/check-plugins/example/'
+    """
+    name = os.path.basename(path)
+    for suffix in ('.exe', '.py'):
+        if name.lower().endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    return f'Documentation: {DOCS_BASE_URL}/{section}/{name}/'
 
 
 def float_or_none(arg):

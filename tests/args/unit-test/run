@@ -10,6 +10,8 @@
 
 """Unit tests for lib.args (argparse type/validator helpers)."""
 
+import argparse
+import os
 import sys
 import unittest
 
@@ -27,6 +29,62 @@ class TestCsv(unittest.TestCase):
 
     def test_strips_whitespace(self):
         self.assertEqual(args.csv(' a , b '), ['a', 'b'])
+
+
+class TestEpilog(unittest.TestCase):
+    def test_name_is_taken_from_the_file_name(self):
+        self.assertEqual(
+            args.epilog('/usr/lib64/nagios/plugins/example'),
+            f'Documentation: {args.DOCS_BASE_URL}/check-plugins/example/',
+        )
+
+    def test_extensions_are_stripped(self):
+        for path in ('/opt/example.exe', '/opt/example.EXE', '/opt/example.py'):
+            self.assertEqual(
+                args.epilog(path),
+                f'Documentation: {args.DOCS_BASE_URL}/check-plugins/example/',
+            )
+
+    def test_section_is_configurable(self):
+        self.assertEqual(
+            args.epilog('/opt/notify-host-mail', section='notification-plugins'),
+            f'Documentation: {args.DOCS_BASE_URL}/notification-plugins/notify-host-mail/',
+        )
+
+
+class TestHelpFormatter(unittest.TestCase):
+    def format_help(self, parser, columns):
+        """Renders the help text as if the terminal was `columns` wide."""
+        previous = os.environ.get('COLUMNS')
+        os.environ['COLUMNS'] = str(columns)
+        try:
+            return parser.format_help()
+        finally:
+            if previous is None:
+                del os.environ['COLUMNS']
+            else:
+                os.environ['COLUMNS'] = previous
+
+    def test_url_survives_a_narrow_terminal(self):
+        # The default formatter would break this URL at one of its hyphens.
+        epilog = args.epilog('/opt/infomaniak-swiss-backup-products')
+        parser = argparse.ArgumentParser(
+            prog='infomaniak-swiss-backup-products',
+            description='Lorem ipsum dolor sit amet.',
+            epilog=epilog,
+            formatter_class=args.HelpFormatter,
+        )
+        url = epilog.split()[-1]
+        self.assertIn(url, self.format_help(parser, 40))
+
+    def test_description_is_still_wrapped(self):
+        parser = argparse.ArgumentParser(
+            prog='example',
+            description='word ' * 30,
+            formatter_class=args.HelpFormatter,
+        )
+        for line in self.format_help(parser, 40).splitlines():
+            self.assertLessEqual(len(line), 40)
 
 
 class TestOrNone(unittest.TestCase):
