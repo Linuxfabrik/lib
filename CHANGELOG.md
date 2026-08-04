@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* args.py: `--no-insecure` help text, so plugins that talk to internal endpoints insecurely by default can offer a switch to enforce TLS certificate verification.
 * args.py: `--no-perfdata` help text, so plugins can offer a switch to suppress performance data output.
 * args.py: `epilog()` builds a pointer to a script's online documentation for the `--help` output.
 * args.py: `HelpFormatter` wraps the `--help` output like argparse does, but keeps long words such as URLs intact.

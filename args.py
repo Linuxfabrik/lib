@@ -16,7 +16,7 @@ import re
 import textwrap
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080301'
+__version__ = '2026080401'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -91,6 +91,12 @@ HELP_TEXTS = {
         'Examples: '
         '`(?i)example` to match "example" regardless of case. '
         '`^(?!.*example).*$` to match any string except "example" (negative lookahead).'
+    ),
+    '--no-insecure': (
+        'Verify the TLS certificate against the system trust store, overriding the '
+        'insecure default of this check. '
+        'Use it once the endpoint presents a publicly trusted certificate, or once its '
+        'CA has been added to the system trust store.'
     ),
     '--no-match-severity': (
         'State to report when no item matches the filters and nothing is checked.'
