@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v6.1.0] - 2026-08-04
+
 ### Added
 
 * args.py: `--no-insecure` help text, so plugins that talk to internal endpoints insecurely by default can offer a switch to enforce TLS certificate verification.
@@ -760,7 +765,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v6.0.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v6.1.0...HEAD
+[v6.1.0]: https://github.com/Linuxfabrik/lib/compare/v6.0.0...v6.1.0
 [v6.0.0]: https://github.com/Linuxfabrik/lib/compare/v5.1.0...v6.0.0
 [v5.1.0]: https://github.com/Linuxfabrik/lib/compare/v5.0.0...v5.1.0
 [v5.0.0]: https://github.com/Linuxfabrik/lib/compare/v4.4.0...v5.0.0
