@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
+# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
 
 """A collection of text functions.
 
@@ -18,7 +18,7 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070301'
+__version__ = '2026080501'
 
 import operator
 import re
@@ -63,6 +63,15 @@ SENSITIVE_JSON_PATTERN = re.compile(
 #   "api_key" : "abc"
 # Captures the prefix (group 1) and the closing quote (group 2),
 # replacing only the secret value between them.
+
+SENSITIVE_MAPPING_PATTERN = re.compile(
+    r"(?i)('(?:password|pass|token|key|secret|api[_-]?key|access[_-]?token)'\s*:\s*')[^']*(')"
+)
+# Same as SENSITIVE_JSON_PATTERN, but for the single-quoted form a Python mapping produces when
+# it is interpolated into a message:
+#   {'user': 'admin', 'password': 'secret123'}
+# json.dumps() emits double quotes, repr() emits single ones, and an error message built with an
+# f-string around a dict therefore escapes the double-quoted pattern above.
 
 SENSITIVE_AUTH_PATTERN = re.compile(
     r'(?i)(Authorization:\s*(?:Bearer|Basic|Digest|Token)\s+)\S+'
@@ -458,6 +467,7 @@ def sanitize_sensitive_data(msg, replacement='******'):
         return msg
     msg = SENSITIVE_FIELDS_PATTERN.sub(rf'\1{replacement}', msg)
     msg = SENSITIVE_JSON_PATTERN.sub(rf'\1{replacement}\2', msg)
+    msg = SENSITIVE_MAPPING_PATTERN.sub(rf'\1{replacement}\2', msg)
     msg = SENSITIVE_AUTH_PATTERN.sub(rf'\1{replacement}', msg)
     return msg
 

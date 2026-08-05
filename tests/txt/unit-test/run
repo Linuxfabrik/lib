@@ -149,6 +149,25 @@ class TestSanitizeSensitiveData(unittest.TestCase):
         out = txt.sanitize_sensitive_data('api_key = xyz987', replacement='X')
         self.assertNotIn('xyz987', out)
 
+    def test_redacts_json_form(self):
+        out = txt.sanitize_sensitive_data('{"user": "admin", "password": "linuxfabrik"}')
+        self.assertNotIn('linuxfabrik', out)
+        self.assertIn('admin', out)
+
+    def test_redacts_python_mapping_form(self):
+        # An f-string around a dict renders repr(), which single-quotes its
+        # keys and values and therefore escapes the JSON pattern.
+        body = {'user_name': 'admin', 'password': 'linuxfabrik', 'scope': '0'}
+        out = txt.sanitize_sensitive_data(f'Type error, data="{body}"')
+        self.assertNotIn('linuxfabrik', out)
+        self.assertIn('admin', out)
+
+    def test_redacts_mapping_token_and_key_variants(self):
+        for field in ('token', 'secret', 'api_key', 'access-token'):
+            with self.subTest(field=field):
+                out = txt.sanitize_sensitive_data(f"{{'{field}': 'linuxfabrik'}}")
+                self.assertNotIn('linuxfabrik', out)
+
 
 class TestToBytes(unittest.TestCase):
     def test_str_and_int(self):

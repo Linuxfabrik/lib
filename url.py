@@ -6,12 +6,12 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
+# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
 
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070700'
+__version__ = '2026080501'
 
 import base64
 import json
@@ -127,6 +127,25 @@ def _install_safe_redirect_stripping(client):
 def _redact_url(url):
     """Strip `token=...` and `password=...` query parameters before logging."""
     return re.sub(r'(token|password)=([^&]+)', r'\1=********', url)
+
+
+def _body_hint(data):
+    """Describe a request body for an error message without disclosing its values.
+
+    Request bodies routinely carry credentials (a login `password`, an API key, a bearer
+    token). Rendering the body itself would put them into the plugin output, and
+    `txt.sanitize_sensitive_data()` cannot be relied on to catch that: a Python mapping renders
+    as `{'password': 'x'}`, which is neither the `password=x` nor the `"password": "x"` form its
+    patterns match. Only the field names are reported, which is what identifies the offending
+    field while the values stay out of the message.
+    """
+    if isinstance(data, dict):
+        return (
+            'body fields: ' + ', '.join(sorted(map(str, data)))
+            if data
+            else 'empty body'
+        )
+    return f'body of type {type(data).__name__}'
 
 
 def _build_ssl_context(insecure, tls_min, tls_max):
@@ -504,7 +523,10 @@ def fetch(
                 return False, f'Unknown encoding "{encoding}"'
             body = txt.to_bytes(body)
         except TypeError as e:
-            return False, f'Type error "{e}", data="{data}"'
+            return (
+                False,
+                f'Type error "{e}" while encoding the request body ({_body_hint(data)})',
+            )
     else:
         body = None
 
@@ -605,7 +627,9 @@ def fetch(
     except httpx.HTTPError as e:
         return False, f'URL error "{e}" for {url_safe}'
     except TypeError as e:
-        return False, f'Type error "{e}", data="{data}"'
+        return False, (
+            f'Type error "{e}" while fetching {url_safe} ({_body_hint(data)})'
+        )
     except Exception as e:
         return False, f'{e} while fetching {url_safe}'
 

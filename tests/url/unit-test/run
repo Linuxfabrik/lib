@@ -1116,5 +1116,28 @@ class TestRedirectCredentialStripping(unittest.TestCase):
         self.assertIn('x-auth-token', keys)
 
 
+class TestBodyHint(unittest.TestCase):
+    """A failed request must not echo the request body: it routinely carries the
+    login password of the monitored appliance, and the message ends up in the
+    plugin output."""
+
+    def test_reports_field_names_only(self):
+        body = {'user_name': 'admin', 'password': 'linuxfabrik', 'scope': '0'}
+        hint = url._body_hint(body)
+        self.assertNotIn('linuxfabrik', hint)
+        self.assertNotIn('admin', hint)
+        self.assertEqual(hint, 'body fields: password, scope, user_name')
+
+    def test_empty_body(self):
+        self.assertEqual(url._body_hint({}), 'empty body')
+
+    def test_non_mapping_body_reports_type_only(self):
+        self.assertEqual(url._body_hint('password=linuxfabrik'), 'body of type str')
+        self.assertEqual(url._body_hint(None), 'body of type NoneType')
+
+    def test_non_string_keys_do_not_break_the_hint(self):
+        self.assertEqual(url._body_hint({1: 'a', 'b': 'c'}), 'body fields: 1, b')
+
+
 if __name__ == '__main__':
     unittest.main()
