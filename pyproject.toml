@@ -103,3 +103,11 @@ package-dir = {'lib' = '.'}
 # symlinks point back to the root, so the walk recurses through them endlessly
 # and the build hangs. There is a single flat `lib` package, so list it directly.
 packages = ['lib']
+
+[tool.vulture]
+# The upstream hook runs with `pass_filenames: false` and expects the scope to be
+# declared here. Without `paths` vulture is invoked with no argument at all and
+# aborts, so the hook never actually analysed anything.
+exclude = ['.tox/', 'build/', 'dist/']
+min_confidence = 80
+paths = ['.']

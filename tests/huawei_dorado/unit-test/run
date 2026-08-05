@@ -340,7 +340,7 @@ class HuaweiHttpTestBase(unittest.TestCase):
 
         # Make the retry throttle (time.sleep) a no-op so the suite stays fast.
         self.sleep = mock.MagicMock(name='time.sleep')
-        self._p_sleep = mock.patch.object(huawei._time, 'sleep', self.sleep)
+        self._p_sleep = mock.patch.object(huawei, '_sleep', self.sleep)
 
         for p in (
             self._p_fetch,

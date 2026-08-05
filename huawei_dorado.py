@@ -18,10 +18,14 @@ subset its own firmware knows, so the union lets every documented code render a
 readable label instead of `'Unknown'`, regardless of which firmware answers.
 """
 
+# The module is long because it transcribes the vendor's enumeration tables, not
+# because of branching; splitting it would only scatter that data.
+# pylint: disable=C0302
+
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026080501'
 
-import time as _time
+from time import sleep as _sleep
 
 from . import base, cache, time, url
 
@@ -62,7 +66,8 @@ def get_controller_model(cm):
 
     ### Parameters
     - **cm** (`int` or `str`):
-      The controller model code to interpret. If a string is passed, it will be converted to integer.
+      The controller model code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -112,7 +117,8 @@ def get_cp_type(cp):
 
     ### Parameters
     - **cp** (`int` or `str`):
-      The CP type code to interpret. If a string is passed, it will be converted to integer.
+      The CP type code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -306,7 +312,7 @@ def get_data(endpoint, args, params=''):
         if result.get('error', {}).get('code') in (0, '0'):
             break
         if attempt < max_attempts:
-            _time.sleep(1)
+            _sleep(1)
 
     result['counter'] = counter
     return result
@@ -321,7 +327,8 @@ def get_enclosure_model(em):
 
     ### Parameters
     - **em** (`int` or `str`):
-      The enclosure model code to interpret. If a string is passed, it will be converted to integer.
+      The enclosure model code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -362,7 +369,8 @@ def get_health_status(hs):
 
     ### Parameters
     - **hs** (`int` or `str`):
-      The health status code to interpret. If a string is passed, it will be converted to integer.
+      The health status code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -404,7 +412,8 @@ def get_host_access_state(has):
 
     ### Parameters
     - **has** (`int` or `str`):
-      The host access state code to interpret. If a string is passed, it will be converted to integer.
+      The host access state code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -694,7 +703,8 @@ def get_logic_type(lt):
 
     ### Parameters
     - **lt** (`int` or `str`):
-      The logic type code to interpret. If a string is passed, it will be converted to integer.
+      The logic type code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -727,7 +737,8 @@ def get_os(os):
 
     ### Parameters
     - **os** (`int` or `str`):
-      The OS code to interpret. If a string is passed, it will be converted to integer.
+      The OS code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -769,7 +780,8 @@ def get_product_mode(pm):
 
     ### Parameters
     - **pm** (`int` or `str`):
-      The product mode code to interpret. If a string is passed, it will be converted to integer.
+      The product mode code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -852,7 +864,8 @@ def get_role(role):
 
     ### Parameters
     - **role** (`int` or `str`):
-      The role code to interpret. If a string is passed, it will be converted to integer.
+      The role code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -883,7 +896,8 @@ def get_runlevel(rl):
 
     ### Parameters
     - **rl** (`int` or `str`):
-      The run level code to interpret. If a string is passed, it will be converted to integer.
+      The run level code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -914,7 +928,8 @@ def get_running_status(rs):
 
     ### Parameters
     - **rs** (`int` or `str`):
-      The running status code to interpret. If a string is passed, it will be converted to integer.
+      The running status code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -1002,7 +1017,8 @@ def get_switch_status(st):
 
     ### Parameters
     - **st** (`int` or `str`):
-      The switch status code to interpret. If a string is passed, it will be converted to integer.
+      The switch status code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:

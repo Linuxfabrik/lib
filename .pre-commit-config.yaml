@@ -33,5 +33,4 @@ repos:
     rev: 'v2.16'
     hooks:
       - id: 'vulture'
-        args: ['--min-confidence=80']
         types_or: ['python']

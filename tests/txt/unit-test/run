@@ -150,7 +150,9 @@ class TestSanitizeSensitiveData(unittest.TestCase):
         self.assertNotIn('xyz987', out)
 
     def test_redacts_json_form(self):
-        out = txt.sanitize_sensitive_data('{"user": "admin", "password": "linuxfabrik"}')
+        out = txt.sanitize_sensitive_data(
+            '{"user": "admin", "password": "linuxfabrik"}'
+        )
         self.assertNotIn('linuxfabrik', out)
         self.assertIn('admin', out)
 

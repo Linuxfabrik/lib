@@ -16,7 +16,7 @@ string- and integer-valued status fields).
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026080501'
 
-import time as _time
+from time import sleep as _sleep
 
 from . import base, cache, time, url
 
@@ -54,7 +54,8 @@ def get_alarm_severity(sev):
 
     ### Parameters
     - **sev** (`int` or `str`):
-      The alarm severity code. If a string is passed, it is converted to an integer.
+      The alarm severity code.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -81,7 +82,8 @@ def get_alarm_status(st):
 
     ### Parameters
     - **st** (`int` or `str`):
-      The alarm status code. If a string is passed, it is converted to an integer.
+      The alarm status code.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
@@ -266,7 +268,7 @@ def get_data(endpoint, args, payload=None, method=None):
         if code in (0, '0'):
             break
         if attempt < max_attempts:
-            _time.sleep(1)
+            _sleep(1)
 
     result['counter'] = counter
     return result
@@ -310,7 +312,8 @@ def get_oam_agent_status(s):
 
     ### Parameters
     - **s** (`int` or `str`):
-      The OAM agent status code. If a string is passed, it is converted to an integer.
+      The OAM agent status code.
+      A missing or malformed value renders as `'Unknown'`.
 
     ### Returns
     - **str**:
