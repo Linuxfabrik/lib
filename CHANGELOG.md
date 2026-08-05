@@ -8,8 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
+
 ### Fixed
 
+* db_sqlite.py: A cached database is no longer thrown away because of a lock held by a concurrently running check, a full or read-only disk, or a bad query. Only a schema that no longer matches the installed release, and now also an unreadable database file, trigger the rebuild.
+* db_sqlite.py: A regular expression match against a numeric column works instead of failing the whole query.
+* db_sqlite.py: A single unusable row no longer aborts a CSV import with a misleading "error reading file" and deletes the database. The offending line number is reported and the imported rows are kept.
+* db_sqlite.py: Column definitions containing a comma, such as `DECIMAL(10,2)`, and table constraints such as `PRIMARY KEY (a, b)` are read correctly, so CSV imports using them put the values in the right columns.
+* db_sqlite.py: Table and column names that are SQL keywords work in every operation, not just in some of them.
 * huawei_dorado.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
 * huawei_dorado.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
 * huawei_dorado.py: An interface module running in RDMA or NoF mode is named correctly on V700 appliances, and a 100 Gbit/s RoCE module no longer reports 10 Gbit/s.
@@ -22,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+* db_sqlite.py: Table, index and column names are quoted when a statement is built, so a column name carrying SQL syntax can no longer alter the statement it appears in.
 * Python 3.9 lockfile bumps the cryptography library to a release that is not vulnerable to a padding oracle in its PKCS#7 decryption, for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11.
 * txt.py: Passwords, tokens and API keys are also redacted when a message embeds them as a Python mapping, not only in the `key=value` and JSON forms.
 * url.py: A failed request no longer echoes the request body, so login credentials cannot reach the plugin output. Only the field names are reported.

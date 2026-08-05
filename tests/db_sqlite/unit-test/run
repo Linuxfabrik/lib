@@ -19,6 +19,7 @@ the security-relevant edge cases of the per-user database directory
 """
 
 import os
+import sqlite3
 import stat
 import sys
 import tempfile
@@ -204,6 +205,155 @@ class TestCrud(unittest.TestCase):
         self.assertEqual(tables, ['keep'])
 
 
+class TestDbDiscardPolicy(unittest.TestCase):
+    """Only an unusable database file gets deleted, never a healthy one."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-discard-')
+        ok, self.conn = db.connect(path=self.base, filename='d.db')
+        self.assertTrue(ok, self.conn)
+        _, self.path = db.get_db_path(path=self.base, filename='d.db')
+        db.create_table(self.conn, 'n INTEGER NOT NULL', table='perfdata')
+        db.insert(self.conn, {'n': 1})
+        db.commit(self.conn)
+
+    def tearDown(self):
+        db.close(self.conn)
+
+    def test_lock_held_by_other_process_keeps_database(self):
+        # A concurrent plugin run holding a write lock must not cost us the cache.
+        other = sqlite3.connect(self.path, timeout=0)
+        other.execute('BEGIN EXCLUSIVE')
+        try:
+            ok, msg = db.insert(self.conn, {'n': 2})
+        finally:
+            other.close()
+        self.assertFalse(ok)
+        self.assertIn('database is locked', msg)
+        self.assertTrue(os.path.isfile(self.path), 'database was deleted on a lock')
+
+    def test_syntax_error_keeps_database(self):
+        ok, msg = db.select(self.conn, 'this is not sql')
+        self.assertFalse(ok)
+        self.assertIn('Operational Error:', msg)
+        self.assertTrue(
+            os.path.isfile(self.path), 'database was deleted on a bad query'
+        )
+
+    def test_failing_user_function_keeps_database(self):
+        # A REGEXP against a non-TEXT column used to raise inside the function, which surfaced
+        # as an OperationalError and took the database with it.
+        ok, rows = db.select(self.conn, "SELECT n FROM perfdata WHERE n REGEXP '^1$'")
+        self.assertTrue(ok, rows)
+        self.assertEqual(rows, [{'n': 1}])
+        self.assertTrue(os.path.isfile(self.path))
+
+    def test_schema_mismatch_deletes_database(self):
+        # A column the current release writes but the on-disk table does not have.
+        ok, msg = db.insert(self.conn, {'n': 2, 'newcol': 3})
+        self.assertFalse(ok)
+        self.assertIn('has no column named', msg)
+        self.assertFalse(os.path.isfile(self.path), 'stale schema was not discarded')
+
+    def test_corrupt_file_deletes_database(self):
+        db.close(self.conn)
+        with open(self.path, 'wb') as f:
+            f.write(b'this is not a database' * 50)
+        ok, self.conn = db.connect(path=self.base, filename='d.db')
+        self.assertTrue(ok, self.conn)
+        ok, msg = db.select(self.conn, 'SELECT n FROM perfdata')
+        self.assertFalse(ok)
+        self.assertIn('file is not a database', msg)
+        self.assertFalse(os.path.isfile(self.path), 'corrupt file was not discarded')
+
+    def test_delete_db_on_operational_error_false_is_honoured(self):
+        ok, msg = db.insert(
+            self.conn, {'n': 2, 'newcol': 3}, delete_db_on_operational_error=False
+        )
+        self.assertFalse(ok)
+        self.assertTrue(os.path.isfile(self.path))
+
+
+class TestIdentifierQuoting(unittest.TestCase):
+    """Identifiers are quoted, so they cannot carry SQL into a statement."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-quote-')
+        ok, self.conn = db.connect(path=self.base, filename='q.db')
+        self.assertTrue(ok, self.conn)
+
+    def tearDown(self):
+        db.close(self.conn)
+
+    def test_insert_column_name_cannot_inject_sql(self):
+        db.create_table(self.conn, 'a INTEGER', table='t')
+        ok, _ = db.insert(
+            self.conn,
+            {'a) VALUES (99); --': 1},
+            table='t',
+            delete_db_on_operational_error=False,
+        )
+        self.assertFalse(ok, 'a column name carrying SQL was executed')
+        db.commit(self.conn)
+        _, rows = db.select(self.conn, 'SELECT a FROM t')
+        self.assertEqual(rows, [])
+
+    def test_replace_column_name_cannot_inject_sql(self):
+        db.create_table(self.conn, 'a INTEGER', table='t')
+        ok, _ = db.replace(
+            self.conn,
+            {'a) VALUES (99); --': 1},
+            table='t',
+            delete_db_on_operational_error=False,
+        )
+        self.assertFalse(ok)
+
+    def test_keyword_table_name_works_everywhere(self):
+        # 'select' passes __filter_str() and has to survive every statement this library builds.
+        self.assertEqual(
+            db.create_table(self.conn, 'n INTEGER', table='select'), (True, True)
+        )
+        self.assertEqual(db.create_index(self.conn, 'n', table='select'), (True, True))
+        for n in range(5):
+            self.assertEqual(
+                db.insert(self.conn, {'n': n}, table='select'), (True, True)
+            )
+        db.commit(self.conn)
+        self.assertEqual(db.cut(self.conn, table='select', _max=2), (True, True))
+        db.commit(self.conn)
+        _, rows = db.select(self.conn, 'SELECT n FROM "select" ORDER BY n')
+        self.assertEqual([r['n'] for r in rows], [3, 4])
+        self.assertEqual(db.drop_table(self.conn, table='select'), (True, True))
+
+    def test_create_index_rejects_unknown_column(self):
+        # SQLite would resolve the quoted, unknown name to a string literal and happily build an
+        # index over a constant instead of reporting the typo.
+        db.create_table(self.conn, 'a INTEGER', table='t')
+        ok, msg = db.create_index(self.conn, 'typo', table='t')
+        self.assertFalse(ok)
+        self.assertIn('typo', msg)
+        _, rows = db.select(
+            self.conn, "SELECT name FROM sqlite_master WHERE type = 'index'"
+        )
+        self.assertEqual(rows, [])
+
+    def test_compute_load_rejects_unknown_sensorcol(self):
+        db.create_table(self.conn, 'a INTEGER, timestamp INT', table='t')
+        ok, msg = db.compute_load(self.conn, 'typo', ['a'], 2, table='t')
+        self.assertFalse(ok)
+        self.assertIn('typo', msg)
+
+    def test_create_index_normalizes_column_list(self):
+        # 'a, b' and 'a,b' describe the same index and must not create two.
+        db.create_table(self.conn, 'a INTEGER, b INTEGER', table='t')
+        db.create_index(self.conn, 'a, b', table='t')
+        db.create_index(self.conn, 'a,b', table='t')
+        _, rows = db.select(
+            self.conn, "SELECT name FROM sqlite_master WHERE type = 'index'"
+        )
+        self.assertEqual(len(rows), 1, rows)
+
+
 class TestPureHelpers(unittest.TestCase):
     """Pure functions and the documented docstring examples."""
 
@@ -213,10 +363,39 @@ class TestPureHelpers(unittest.TestCase):
             ['date', 'count', 'name'],
         )
 
+    def test_get_colnames_ignores_commas_inside_types(self):
+        self.assertEqual(
+            db.get_colnames('id INT, price DECIMAL(10,2), name TEXT'),
+            ['id', 'price', 'name'],
+        )
+
+    def test_get_colnames_skips_table_constraints(self):
+        self.assertEqual(
+            db.get_colnames(
+                'a INT, b INT, PRIMARY KEY (a, b), '
+                'CONSTRAINT c CHECK (a > 0), '
+                'FOREIGN KEY (b) REFERENCES other(id), '
+                'UNIQUE (a)'
+            ),
+            ['a', 'b'],
+        )
+
+    def test_get_colnames_unquotes_names(self):
+        self.assertEqual(
+            db.get_colnames('"my col" TEXT, [other] INT'), ['my col', 'other']
+        )
+
     def test_regexp_docstring_examples(self):
         self.assertTrue(db.regexp('^abc', 'abcdef'))
         self.assertFalse(db.regexp('xyz$', 'abcdef'))
         self.assertFalse(db.regexp('^abc', None))
+
+    def test_regexp_coerces_non_text_values(self):
+        # SQLite hands the function whatever the column holds; its own implementation applies
+        # sqlite3_value_text() first, so ours has to accept INTEGER, REAL and BLOB too.
+        self.assertTrue(db.regexp('^9', 9000))
+        self.assertTrue(db.regexp(r'^1\.5$', 1.5))
+        self.assertTrue(db.regexp('^ab', b'abc'))
 
     def test_sha1sum_docstring_example(self):
         sha1sum = getattr(db, '__sha1sum')
@@ -253,6 +432,61 @@ class TestImportCsv(unittest.TestCase):
         self.assertTrue(ok)
         ok, rows = db.select(self.conn, 'SELECT date, name FROM data ORDER BY date')
         self.assertEqual([r['name'] for r in rows], ['alpha', 'beta', 'gamma'])
+
+    def test_bad_row_aborts_with_line_number_and_keeps_database(self):
+        # A duplicate primary key used to delete the database mid-import, after which every
+        # remaining row failed against a closed connection.
+        broken = os.path.join(self.base, 'broken.csv')
+        with open(broken, 'w', encoding='utf-8') as f:
+            f.write('1,ok\n2,ok\n2,duplicate\n3,ok\n')
+        _, path = db.get_db_path(path=self.base, filename='csv.db')
+        ok, msg = db.import_csv(
+            self.conn, broken, table='data', fieldnames='id INT PRIMARY KEY, v TEXT'
+        )
+        self.assertFalse(ok)
+        self.assertIn('line 3', msg)
+        self.assertIn('UNIQUE constraint failed', msg)
+        self.assertTrue(os.path.isfile(path), 'database was deleted on a bad CSV row')
+        ok, rows = db.select(self.conn, 'SELECT id FROM data ORDER BY id')
+        self.assertTrue(ok, rows)
+        self.assertEqual([r['id'] for r in rows], [1, 2])
+
+    def test_table_constraint_in_fieldnames_maps_columns_correctly(self):
+        good = os.path.join(self.base, 'good.csv')
+        with open(good, 'w', encoding='utf-8') as f:
+            f.write('1,a\n2,b\n')
+        ok, msg = db.import_csv(
+            self.conn,
+            good,
+            table='data',
+            fieldnames='id INT, v TEXT, PRIMARY KEY (id, v)',
+        )
+        self.assertTrue(ok, msg)
+        _, rows = db.select(self.conn, 'SELECT id, v FROM data ORDER BY id')
+        self.assertEqual(rows, [{'id': 1, 'v': 'a'}, {'id': 2, 'v': 'b'}])
+
+
+class TestRmDb(unittest.TestCase):
+    """rm_db(): closes the connection and removes the main database file."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-rmdb-')
+
+    def test_removes_file_and_closes_connection(self):
+        ok, conn = db.connect(path=self.base, filename='r.db')
+        _, path = db.get_db_path(path=self.base, filename='r.db')
+        self.assertTrue(os.path.isfile(path))
+        self.assertTrue(db.rm_db(conn))
+        self.assertFalse(os.path.isfile(path))
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute('SELECT 1')
+
+    def test_in_memory_database_is_closed(self):
+        # An in-memory database has no filename; the connection still has to be closed.
+        conn = sqlite3.connect(':memory:')
+        self.assertTrue(db.rm_db(conn))
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute('SELECT 1')
 
 
 class TestPerSecondDeltas(unittest.TestCase):

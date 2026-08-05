@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
+# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
 
 """Library for accessing SQLite databases.
 
@@ -28,9 +28,10 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061701'
+__version__ = '2026080501'
 
 import csv
+import functools
 import hashlib
 import os
 import re
@@ -38,6 +39,31 @@ import sqlite3
 import stat
 
 from . import disk, time, txt
+
+# Substrings identifying an `sqlite3.OperationalError` that means the on-disk schema no longer
+# matches what this release reads or writes, for example because a plugin gained or lost a column
+# between two versions. Discarding the database is the correct recovery here: the next run
+# rebuilds a valid cache from scratch.
+#
+# `OperationalError` covers far more than that, though. A lock held by a concurrent plugin run
+# ("database is locked"), a full or read-only disk, an I/O error or a broken SQL statement all
+# raise it as well, and deleting the file there destroys a healthy cache, possibly one another
+# process is still using. Those errors are reported to the caller and leave the database alone.
+SCHEMA_ERRORS = (
+    'has no column named',
+    'no such column',
+    'no such table',
+    'values were supplied',  # "table t has 2 columns but 3 values were supplied"
+)
+
+# Substrings identifying a database file that is unusable no matter what is queried. sqlite3
+# reports these as a plain `sqlite3.DatabaseError`, not as an `OperationalError`, so the case
+# where discarding the file is most clearly right needs to be matched separately.
+CORRUPT_ERRORS = (
+    'database disk image is malformed',
+    'file is not a database',
+    'malformed database schema',
+)
 
 
 def __filter_str(s, charclass='a-zA-Z0-9_'):
@@ -100,6 +126,183 @@ def __sha1sum(string):
     '74301e766db4a4006ec1fbd6e031760e7e322223'
     """
     return hashlib.sha1(txt.to_bytes(string), usedforsecurity=False).hexdigest()
+
+
+@functools.lru_cache(maxsize=128)
+def __compile_regex(expr):
+    """
+    Compile and cache a regular expression used by the `REGEXP` SQL function.
+
+    A `REGEXP` comparison is evaluated once per row, always with the same pattern. Caching the
+    compiled pattern mirrors what SQLite's own `regexp()` implementation does by stashing the
+    compiled expression via `sqlite3_set_auxdata()`.
+
+    ### Parameters
+    - **expr** (`str`):
+      The regular expression pattern.
+
+    ### Returns
+    - **re.Pattern**:
+      The compiled pattern.
+
+    ### Example
+    >>> __compile_regex('^abc').search('abcdef') is not None
+    True
+    """
+    return re.compile(expr)
+
+
+def __quote_ident(name):
+    """
+    Quote an SQL identifier (a table, index or column name) for use in a statement.
+
+    Values are always passed as bind parameters, but identifiers cannot be bound and have to be
+    interpolated into the statement text. Quoting them makes an identifier that contains SQL
+    syntax inert instead of executable, and additionally allows names that are SQLite keywords
+    (`select`) or start with a digit.
+
+    ### Parameters
+    - **name** (`str`):
+      The identifier to quote.
+
+    ### Returns
+    - **str**:
+      The identifier wrapped in double quotes, with embedded double quotes doubled.
+
+    ### Example
+    >>> __quote_ident('perfdata')
+    '"perfdata"'
+
+    >>> __quote_ident('a) VALUES (99); --')
+    '"a) VALUES (99); --"'
+    """
+    escaped = str(name).replace('"', '""')
+    return f'"{escaped}"'
+
+
+def __quote_ident_list(column_list):
+    """
+    Quote every column of a comma-separated column list.
+
+    ### Parameters
+    - **column_list** (`str`):
+      A comma-separated list of column names, for example `'col1, col2'`.
+
+    ### Returns
+    - **str**:
+      The same list with every column quoted, for example `'"col1","col2"'`.
+
+    ### Example
+    >>> __quote_ident_list('host_id, service_id')
+    '"host_id","service_id"'
+    """
+    return ','.join(
+        __quote_ident(col.strip()) for col in column_list.split(',') if col.strip()
+    )
+
+
+def __table_columns(conn, table):
+    """
+    Return the column names of `table` as reported by the database itself.
+
+    Used to reject a column name before it reaches a statement. SQLite resolves a double-quoted
+    token that matches no column to a string literal instead of raising "no such column" (the
+    double-quoted string misfeature, see `resolveExprStep()` in SQLite's `resolve.c`). A
+    misspelled column would therefore index or group by a constant, silently and successfully.
+
+    ### Parameters
+    - **conn** (`sqlite3.Connection`):
+      An active database connection object.
+    - **table** (`str`):
+      Name of the table to inspect.
+
+    ### Returns
+    - **list** of `str`:
+      The column names, or an empty list if the table does not exist or cannot be inspected.
+
+    ### Example
+    >>> __table_columns(conn, 'perfdata')
+    ['name', 'timestamp', 'rx_bytes']
+    """
+    try:
+        rows = conn.execute(f'PRAGMA table_info({__quote_ident(table)});').fetchall()
+    except sqlite3.Error:
+        return []
+    # PRAGMA table_info yields (cid, name, type, notnull, dflt_value, pk).
+    return [row[1] for row in rows]
+
+
+def __is_unusable_db(e):
+    """
+    Decide whether an `sqlite3` exception means the database file has to be discarded.
+
+    Only a schema that no longer matches this release, a constraint or data mismatch, or an
+    unreadable file justify deleting the database. Everything else (a lock held by a concurrent
+    plugin run, a full or read-only disk, an I/O error, a broken statement, a failing user-defined
+    function) is transient or a caller bug: the cache is fine and has to survive.
+
+    ### Parameters
+    - **e** (`Exception`):
+      The exception raised by the failed statement.
+
+    ### Returns
+    - **bool**:
+      `True` if the database file is unusable and should be removed, `False` otherwise.
+
+    ### Example
+    >>> __is_unusable_db(sqlite3.OperationalError('no such column: foo'))
+    True
+
+    >>> __is_unusable_db(sqlite3.OperationalError('database is locked'))
+    False
+    """
+    # A constraint or data error (for example a NOT NULL column that a newer or older release no
+    # longer writes) means the on-disk schema no longer matches the data being written.
+    if isinstance(e, (sqlite3.DataError, sqlite3.IntegrityError)):
+        return True
+
+    msg = str(e).lower()
+    if isinstance(e, sqlite3.OperationalError):
+        return any(pattern in msg for pattern in SCHEMA_ERRORS)
+    if isinstance(e, sqlite3.DatabaseError):
+        return any(pattern in msg for pattern in CORRUPT_ERRORS)
+    return False
+
+
+def __handle_db_error(conn, e, sql, data=None, delete_db=True):
+    """
+    Turn an `sqlite3` exception into this library's error tuple, deleting the database first if
+    the file turned out to be unusable.
+
+    ### Parameters
+    - **conn** (`sqlite3.Connection`):
+      The connection the statement was executed on.
+    - **e** (`Exception`):
+      The exception raised by the failed statement.
+    - **sql** (`str`):
+      The statement that failed, included in the error message.
+    - **data** (`dict` or `tuple`, optional):
+      The bind parameters of the failed statement, included in the error message when given.
+    - **delete_db** (`bool`, optional):
+      Whether deleting an unusable database file is allowed at all. Defaults to `True`.
+
+    ### Returns
+    - **tuple** (`bool`, `str`):
+      Always `False` plus an error message describing the failure.
+
+    ### Notes
+    - The message wording is part of this library's contract: the plugin documentation and
+      several plugin unit tests match on `Operational Error: <sqlite message>, Query: ...`.
+    """
+    if delete_db and __is_unusable_db(e):
+        rm_db(conn)
+
+    suffix = '' if data is None else f', Data: {data}'
+    if isinstance(e, sqlite3.OperationalError):
+        return False, f'Operational Error: {e}, Query: {sql}{suffix}'
+    if isinstance(e, (sqlite3.DataError, sqlite3.IntegrityError)):
+        return False, f'Integrity Error: {e}, Query: {sql}{suffix}'
+    return False, f'Query failed: {sql}, Error: {e}{suffix}'
 
 
 def close(conn):
@@ -232,8 +435,19 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     """
     table = __filter_str(table)
 
-    # table and sensorcol are sanitized via __filter_str() above / by callers
-    sql = f'SELECT DISTINCT {sensorcol} FROM {table} ORDER BY {sensorcol} ASC;'  # nosec B608
+    # See __table_columns(): an unknown sensor column would silently become a string literal
+    # instead of raising, so every sensor would look identical.
+    known = __table_columns(conn, table)
+    if known and sensorcol not in known:
+        return False, f'No such column {sensorcol} in table {table}'
+
+    quoted_table = __quote_ident(table)
+    quoted_sensorcol = __quote_ident(sensorcol)
+
+    sql = (
+        f'SELECT DISTINCT {quoted_sensorcol} FROM {quoted_table} '  # nosec B608
+        f'ORDER BY {quoted_sensorcol} ASC;'
+    )
     success, sensors = select(conn, sql)
     if not success:
         return False, sensors
@@ -244,10 +458,13 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
 
     for sensor in sensors:
         sensor_name = sensor[sensorcol]
+        # A fixed bind name, not the column name: `sensorcol` may legitimately contain characters
+        # that are not valid in a `:placeholder`.
         success, perfdata = select(
             conn,
-            f'SELECT * FROM {table} WHERE {sensorcol} = :{sensorcol} ORDER BY timestamp DESC;',  # nosec B608
-            data={sensorcol: sensor_name},
+            f'SELECT * FROM {quoted_table} WHERE {quoted_sensorcol} = :sensorvalue '  # nosec B608
+            f'ORDER BY timestamp DESC;',
+            data={'sensorvalue': sensor_name},
         )
         if not success:
             return False, perfdata
@@ -275,7 +492,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     return True, load
 
 
-def connect(path='', filename=''):
+def connect(path='', filename='', timeout=5.0):
     """
     Connect to a SQLite database file.
 
@@ -291,6 +508,10 @@ def connect(path='', filename=''):
     - **filename** (`str`, optional):
       Name of the database file.
       Defaults to `'linuxfabrik-monitoring-plugins-sqlite.db'`.
+    - **timeout** (`float`, optional):
+      Seconds to wait for a lock held by another process before giving up with
+      `database is locked`. Defaults to `5.0`. Raise it when several checks share one database
+      file and run concurrently.
 
     ### Returns
     - **tuple** (`bool`, `Connection or str`):
@@ -321,10 +542,12 @@ def connect(path='', filename=''):
         return False, db
 
     try:
-        conn = sqlite3.connect(db)
+        conn = sqlite3.connect(db, timeout=timeout)
         conn.row_factory = sqlite3.Row
         conn.text_factory = str
-        conn.create_function('REGEXP', 2, regexp)
+        # `deterministic=True`: the same pattern and string always yield the same result, so
+        # SQLite may use REGEXP in partial indexes and generated columns, and may cache results.
+        conn.create_function('REGEXP', 2, regexp, deterministic=True)
         return True, conn
     except Exception as e:
         return False, f'Connecting to DB {db} failed, Error: {e}'
@@ -379,20 +602,35 @@ def create_index(
     (True, True)
     """
     table = __filter_str(table)
-    index_name = f'idx_{__sha1sum(table + column_list)}'
-    if unique:
-        sql = f'CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON "{table}" ({column_list});'
-    else:
-        sql = f'CREATE INDEX IF NOT EXISTS {index_name} ON "{table}" ({column_list});'
+    requested = [col.strip() for col in column_list.split(',') if col.strip()]
+
+    # An unknown column would be quoted into the statement and then resolved to a string literal
+    # by SQLite instead of raising, leaving a useless index over a constant behind. Only validate
+    # when the table is already there; otherwise let SQLite report "no such table" itself.
+    known = __table_columns(conn, table)
+    if known:
+        unknown = [col for col in requested if col not in known]
+        if unknown:
+            return False, (
+                f'Cannot index unknown column(s) {", ".join(unknown)} of table {table}'
+            )
+
+    # Normalize the column list before hashing it, so 'a, b' and 'a,b' describe the same index
+    # instead of creating two identical ones.
+    columns = ','.join(requested)
+    index_name = f'idx_{__sha1sum(table + columns)}'
+    unique_kw = 'UNIQUE ' if unique else ''
+    sql = (
+        f'CREATE {unique_kw}INDEX IF NOT EXISTS {__quote_ident(index_name)} '
+        f'ON {__quote_ident(table)} ({__quote_ident_list(column_list)});'
+    )
 
     c = conn.cursor()
     try:
         c.execute(sql)
         return True, True
-    except sqlite3.OperationalError as e:
-        if delete_db_on_operational_error:
-            rm_db(conn)
-        return False, f'Operational Error: {e}, Query: {sql}'
+    except sqlite3.Error as e:
+        return __handle_db_error(conn, e, sql, delete_db=delete_db_on_operational_error)
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}'
 
@@ -443,7 +681,7 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
         if not success:
             return success, result
 
-    sql = f'CREATE TABLE IF NOT EXISTS "{table}" ({definition});'
+    sql = f'CREATE TABLE IF NOT EXISTS {__quote_ident(table)} ({definition});'
 
     c = conn.cursor()
     try:
@@ -490,9 +728,11 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     >>> cut(conn, table='logs', _max=1000)
     (True, True)
     """
-    table = __filter_str(table)
+    table = __quote_ident(__filter_str(table))
 
-    # table is sanitized via __filter_str() above
+    # `LIMIT -1` means "no limit" (see SQLite's select.c), so the subquery yields every row after
+    # the `_max` most recent ones.
+    # `table` is filtered and quoted above, `_max` is bound.
     sql = f"""
         DELETE FROM {table}
         WHERE rowid IN (
@@ -506,10 +746,8 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     try:
         c.execute(sql, {'_max': _max})
         return True, True
-    except sqlite3.OperationalError as e:
-        if delete_db_on_operational_error:
-            rm_db(conn)
-        return False, f'Operational Error: {e}, Query: {sql}'
+    except sqlite3.Error as e:
+        return __handle_db_error(conn, e, sql, delete_db=delete_db_on_operational_error)
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}'
 
@@ -562,18 +800,10 @@ def delete(conn, sql, data=None, delete_db_on_operational_error=True):
     try:
         rowcount = c.execute(sql, data).rowcount if data else c.execute(sql).rowcount
         return True, rowcount
-    except sqlite3.OperationalError as e:
-        if delete_db_on_operational_error:
-            rm_db(conn)
-        return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
-    except (sqlite3.IntegrityError, sqlite3.DataError) as e:
-        # A constraint or data error (e.g. a NOT NULL column that a newer or
-        # older release no longer writes) means the on-disk schema no
-        # longer matches the data being written. Deleting the database lets the
-        # next run rebuild a valid cache from scratch.
-        if delete_db_on_operational_error:
-            rm_db(conn)
-        return False, f'Integrity Error: {e}, Query: {sql}, Data: {data}'
+    except sqlite3.Error as e:
+        return __handle_db_error(
+            conn, e, sql, data=data, delete_db=delete_db_on_operational_error
+        )
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
@@ -609,7 +839,7 @@ def drop_table(conn, table='perfdata'):
     (True, True)
     """
     table = __filter_str(table)
-    sql = f'DROP TABLE IF EXISTS "{table}";'
+    sql = f'DROP TABLE IF EXISTS {__quote_ident(table)};'
 
     c = conn.cursor()
     try:
@@ -636,14 +866,64 @@ def get_colnames(col_definition):
 
     ### Notes
     - Only the first word of each column definition is considered the column name.
-    - Data types, constraints (e.g., `PRIMARY KEY`, `NOT NULL`) are ignored.
-    - Whitespace and commas are used as separators.
+    - Column constraints (`PRIMARY KEY`, `NOT NULL`) and data types are ignored.
+    - Splitting happens on top-level commas only, so a comma inside a type (`DECIMAL(10,2)`) or
+      inside a quoted default value does not start a new column.
+    - Table-level constraints (`PRIMARY KEY (a, b)`, `UNIQUE`, `CHECK`, `FOREIGN KEY`,
+      `CONSTRAINT`) are not columns and are skipped.
+    - Quoted column names are returned unquoted.
 
     ### Example
     >>> get_colnames('date TEXT PRIMARY KEY, count FLOAT, name TEXT')
     ['date', 'count', 'name']
+
+    >>> get_colnames('id INT, price DECIMAL(10,2), PRIMARY KEY (id, price)')
+    ['id', 'price']
     """
-    return [col.strip().split()[0] for col in col_definition.split(',') if col.strip()]
+    # Table constraints share the column-definition list but do not name a column.
+    table_constraints = ('CHECK', 'CONSTRAINT', 'FOREIGN', 'PRIMARY', 'UNIQUE')
+    quotes = {'"': '"', "'": "'", '`': '`', '[': ']'}
+
+    parts = []
+    current = ''
+    depth = 0
+    closing = None
+    for char in col_definition:
+        if closing:
+            current += char
+            if char == closing:
+                closing = None
+            continue
+        if char in quotes:
+            closing = quotes[char]
+            current += char
+            continue
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+        elif char == ',' and depth == 0:
+            parts.append(current)
+            current = ''
+            continue
+        current += char
+    parts.append(current)
+
+    colnames = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if part[0] in quotes:
+            # A quoted name may contain spaces, so it cannot be taken apart with split().
+            end = part.find(quotes[part[0]], 1)
+            colnames.append(part[1:end] if end > 0 else part[1:])
+            continue
+        name = part.split()[0]
+        if name.upper() in table_constraints:
+            continue
+        colnames.append(name)
+    return colnames
 
 
 def get_db_dir(path):
@@ -811,6 +1091,7 @@ def import_csv(
     quotechar='"',
     newline='',
     chunksize=1000,
+    encoding='utf-8',
 ):
     """
     Import a CSV file into a SQLite table.
@@ -842,6 +1123,8 @@ def import_csv(
       Newline control when opening the file. Defaults to `''`.
     - **chunksize** (`int`, optional):
       Number of rows after which a database commit occurs. Defaults to `1000`.
+    - **encoding** (`str`, optional):
+      Character encoding of the CSV file. Defaults to `'utf-8'`.
 
     ### Returns
     - **tuple** (`bool`, `bool or str`):
@@ -857,6 +1140,8 @@ def import_csv(
     - Does not use the SQLite CLI tool to avoid dependency and version issues.
     - Automatically skips empty rows during import.
     - Catches CSV parsing errors, I/O errors, and unexpected exceptions.
+    - The import aborts on the first row that cannot be inserted, reporting the offending line.
+      The database is kept so the caller can inspect the partial import.
 
     ### Example
     >>> import_csv(
@@ -881,7 +1166,7 @@ def import_csv(
     new_fieldnames = get_colnames(fieldnames)
 
     try:
-        with open(filename, newline=newline) as csvfile:
+        with open(filename, newline=newline, encoding=encoding) as csvfile:
             reader = csv.reader(csvfile, delimiter=delimiter, quotechar=quotechar)
             i = 0
             for csv_row in reader:
@@ -891,7 +1176,19 @@ def import_csv(
                 if all(s.strip() == '' for s in csv_row):
                     continue
                 data = dict(zip(new_fieldnames, csv_row))
-                insert(conn, data, table)
+                # `delete_db_on_operational_error=False`: a bad row says nothing about the
+                # database, which this function just created. Removing it here would also close
+                # the connection and turn every following row into a misleading
+                # "Cannot operate on a closed database".
+                success, result = insert(
+                    conn, data, table, delete_db_on_operational_error=False
+                )
+                if not success:
+                    commit(conn)
+                    return (
+                        False,
+                        f'Import of {filename} failed in line {reader.line_num}: {result}',
+                    )
                 i += 1
                 if i > 0 and i % chunksize == 0:
                     commit(conn)
@@ -950,28 +1247,21 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
     """
     table = __filter_str(table)
 
-    # table is sanitized via __filter_str() above; keys come from the caller's
-    # data dict (column names, not values); VALUES use parameterized binds
-    keys = ','.join(data.keys())
-    binds = ','.join(f':{key}' for key in data)
-    sql = f'INSERT INTO "{table}" ({keys}) VALUES ({binds});'  # nosec B608
+    # Column names are quoted, not bound: SQLite cannot bind an identifier, so a key carrying SQL
+    # syntax would otherwise end up as executable text. Values use positional binds, which also
+    # keeps keys working that are not valid `:placeholder` names.
+    keys = ','.join(__quote_ident(key) for key in data)
+    binds = ','.join('?' for _ in data)
+    sql = f'INSERT INTO {__quote_ident(table)} ({keys}) VALUES ({binds});'  # nosec B608
 
     c = conn.cursor()
     try:
-        c.execute(sql, data)
+        c.execute(sql, tuple(data.values()))
         return True, True
-    except sqlite3.OperationalError as e:
-        if delete_db_on_operational_error:
-            rm_db(conn)
-        return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
-    except (sqlite3.IntegrityError, sqlite3.DataError) as e:
-        # A constraint or data error (e.g. a NOT NULL column that a newer or
-        # older release no longer writes) means the on-disk schema no
-        # longer matches the data being written. Deleting the database lets the
-        # next run rebuild a valid cache from scratch.
-        if delete_db_on_operational_error:
-            rm_db(conn)
-        return False, f'Integrity Error: {e}, Query: {sql}, Data: {data}'
+    except sqlite3.Error as e:
+        return __handle_db_error(
+            conn, e, sql, data=data, delete_db=delete_db_on_operational_error
+        )
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
@@ -1128,7 +1418,14 @@ def regexp(expr, item):
 
     ### Notes
     - Must be registered on the SQLite connection using `create_function('REGEXP', 2, regexp)`.
+    - SQLite passes the pattern as the first and the value as the second argument: `X REGEXP Y`
+      is evaluated as `regexp(Y, X)`.
     - Regular expressions use Python's `re` module syntax.
+    - Values that are not TEXT (INTEGER, REAL, BLOB) are converted to text first, the same way
+      SQLite's own `regexp()` implementation applies `sqlite3_value_text()` to its argument.
+      Without that conversion, matching against a numeric column raises inside the function and
+      the whole query fails.
+    - `NULL` never matches.
     - Commonly used in queries like:
       `SELECT * FROM table WHERE column REGEXP 'pattern'`.
 
@@ -1138,11 +1435,17 @@ def regexp(expr, item):
 
     >>> regexp('xyz$', 'abcdef')
     False
+
+    >>> regexp('^9', 9000)
+    True
     """
     if item is None:
         return False
-    reg = re.compile(expr)
-    return reg.search(item) is not None
+    if isinstance(item, bytes):
+        item = item.decode('utf-8', 'replace')
+    elif not isinstance(item, str):
+        item = str(item)
+    return __compile_regex(expr).search(item) is not None
 
 
 def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
@@ -1190,26 +1493,19 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
     """
     table = __filter_str(table)
 
-    keys = ','.join(data.keys())
-    binds = ','.join(f':{key}' for key in data)
-    sql = f'REPLACE INTO "{table}" ({keys}) VALUES ({binds});'
+    # See insert(): identifiers are quoted, values are bound positionally.
+    keys = ','.join(__quote_ident(key) for key in data)
+    binds = ','.join('?' for _ in data)
+    sql = f'REPLACE INTO {__quote_ident(table)} ({keys}) VALUES ({binds});'
 
     c = conn.cursor()
     try:
-        c.execute(sql, data)
+        c.execute(sql, tuple(data.values()))
         return True, True
-    except sqlite3.OperationalError as e:
-        if delete_db_on_operational_error:
-            rm_db(conn)
-        return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
-    except (sqlite3.IntegrityError, sqlite3.DataError) as e:
-        # A constraint or data error (e.g. a NOT NULL column that a newer or
-        # older release no longer writes) means the on-disk schema no
-        # longer matches the data being written. Deleting the database lets the
-        # next run rebuild a valid cache from scratch.
-        if delete_db_on_operational_error:
-            rm_db(conn)
-        return False, f'Integrity Error: {e}, Query: {sql}, Data: {data}'
+    except sqlite3.Error as e:
+        return __handle_db_error(
+            conn, e, sql, data=data, delete_db=delete_db_on_operational_error
+        )
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
@@ -1230,20 +1526,31 @@ def rm_db(conn):
       Always returns `True`.
 
     ### Notes
-    - Useful when the database schema has changed and `OperationalError` occurs
-      (e.g., after updates).
+    - Useful when the on-disk database turns out to be unusable, for example because its schema
+      no longer matches what the current release writes.
     - Only the `main` database file is deleted (ignores attached databases).
+    - The connection is closed in every case, including for in-memory databases, which have no
+      file to delete.
     - Any errors from file deletion are handled externally (through `disk.rm_file()`).
 
     ### Example
     >>> rm_db(conn)
     True
     """
-    for _, name, filename in conn.execute('PRAGMA database_list'):
-        if name == 'main' and filename:
-            close(conn)
-            disk.rm_file(filename)
-            break
+    # `PRAGMA database_list` yields (seq, name, file); `file` is empty for an in-memory database.
+    filename = ''
+    try:
+        for _, name, dbfile in conn.execute('PRAGMA database_list'):
+            if name == 'main':
+                filename = dbfile
+                break
+    except sqlite3.Error:
+        # An unusable database may not even answer the pragma. Closing still has to happen.
+        pass
+
+    close(conn)
+    if filename:
+        disk.rm_file(filename)
     return True
 
 
@@ -1324,9 +1631,9 @@ def select(
 
         return True, rows
 
-    except sqlite3.OperationalError as e:
-        if delete_db_on_operational_error:
-            rm_db(conn)
-        return False, f'Operational Error: {e}, Query: {sql}, Data: {data}'
+    except sqlite3.Error as e:
+        return __handle_db_error(
+            conn, e, sql, data=data, delete_db=delete_db_on_operational_error
+        )
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
