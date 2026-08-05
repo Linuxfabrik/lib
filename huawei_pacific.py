@@ -14,11 +14,38 @@ string- and integer-valued status fields).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070301'
+__version__ = '2026080501'
 
 import time as _time
 
 from . import base, cache, time, url
+
+
+def _as_code(value):
+    """
+    Normalise an API status code into an `int`, or `None` if it is unusable.
+
+    The appliance reports some of its codes as strings, and a field may be missing entirely, in
+    which case the caller hands in `None` (`node.get('oam_agent_status')`). A missing or
+    malformed code has to render as `'Unknown'`; aborting the calling process with a
+    `TypeError` or `ValueError` would turn a single unexpected field into a crashed check.
+
+    ### Parameters
+    - **value** (`any`): The raw field value taken from the API response.
+
+    ### Returns
+    - **int** or **None**: The code as an integer, or `None` if it cannot be converted.
+
+    ### Example
+    >>> _as_code('6')
+    6
+    >>> _as_code(None) is None
+    True
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def get_alarm_severity(sev):
@@ -38,14 +65,14 @@ def get_alarm_severity(sev):
     >>> get_alarm_severity(6)
     'Critical (6)'
     """
-    sev = int(sev)
     mapping = {
         2: 'Information (2)',
         3: 'Warning (3)',
+        4: 'Minor (4)',
         5: 'Major (5)',
         6: 'Critical (6)',
     }
-    return mapping.get(sev, 'Unknown')
+    return mapping.get(_as_code(sev), 'Unknown')
 
 
 def get_alarm_status(st):
@@ -65,13 +92,12 @@ def get_alarm_status(st):
     >>> get_alarm_status(1)
     'Unrecovered (1)'
     """
-    st = int(st)
     mapping = {
         1: 'Unrecovered (1)',
         2: 'Cleared (2)',
         4: 'Recovered (4)',
     }
-    return mapping.get(st, 'Unknown')
+    return mapping.get(_as_code(st), 'Unknown')
 
 
 def get_creds(args, force_relogin=False):
@@ -107,6 +133,16 @@ def get_creds(args, force_relogin=False):
     - The token is stored in the cache key `huaweipacific-{URL}-xauthtoken`.
     - The password is sent as plaintext over HTTPS (`isEncrypt` is `False`); the token is returned
       in the response body, not in a response header.
+    - A rejected login aborts the caller (UNKNOWN) instead of returning an empty token.
+      The appliance answers a wrong password, an expired password or a locked account with
+      HTTP 200 and a non-zero `result.code`, so without this check the empty token would travel
+      into the next request header and surface as an unrelated type error. Failing here also
+      keeps a wrong password from being replayed, which would drive the account towards the
+      appliance's lockout threshold.
+    - The login response also carries an `x_csrf_token`. The `/api/v2/` endpoints used here
+      authenticate on `X-Auth-Token` alone, so it is not sent. Endpoints below the
+      `/deviceManager/rest/{system_esn}/` prefix additionally require the CSRF token as a
+      request header and would have to pick it up from the login response.
 
     ### Example
     >>> x_auth_token = get_creds(args)
@@ -139,6 +175,12 @@ def get_creds(args, force_relogin=False):
     )
 
     x_auth_token = result.get('data', {}).get('x_auth_token')
+
+    if not x_auth_token:
+        res = result.get('result', {})
+        reason = res.get('description') or 'no session token returned'
+        code = res.get('code', 'n/a')
+        base.cu(f'Login at {args.URL} failed: {reason} (code {code}).')
 
     expire = time.now() + args.CACHE_EXPIRE * 60
     cache.set(token_key, x_auth_token, expire)
@@ -183,7 +225,7 @@ def get_data(endpoint, args, payload=None, method=None):
       timeout.
 
     ### Example
-    >>> get_data('hwm/fan', args, payload={'server_list': ['192.0.2.10']}))
+    >>> get_data('hwm/fan', args, payload={'server_list': ['192.0.2.10']})
     {
         'data': [...],
         'result': {'code': 0},
@@ -253,7 +295,7 @@ def get_management_ips(args):
     ['192.0.2.11', '192.0.2.12']
     """
     result = get_data('cluster/servers', args)
-    if result.get('result', {}).get('code') != 0:
+    if result.get('result', {}).get('code') not in (0, '0'):
         base.cu('Failed to query cluster nodes for their management IP addresses.')
     return [
         node['management_ip']
@@ -279,10 +321,9 @@ def get_oam_agent_status(s):
     >>> get_oam_agent_status(0)
     'healthy (0)'
     """
-    s = int(s)
     mapping = {
         -1: '-- (-1)',
         0: 'healthy (0)',
         1: 'faulty (1)',
     }
-    return mapping.get(s, 'Unknown')
+    return mapping.get(_as_code(s), 'Unknown')

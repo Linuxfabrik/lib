@@ -131,12 +131,9 @@ class TestMappingHelpers(unittest.TestCase):
 
     # (function, sample_code, expected_text)
     KNOWN: typing.ClassVar = [
-        (
-            huawei.get_controller_model,
-            4127,
-            'V6R1C00 2U2C mid-range PALM control board',
-        ),
-        (huawei.get_controller_model, 4144, 'V6R3C00 2U2C low-end NVMe control board'),
+        (huawei.get_controller_model, 4127, '2U2C PALM control board'),
+        (huawei.get_controller_model, 4144, '2U2C NVMe control board'),
+        (huawei.get_controller_model, 4174, '4U4C4P control board'),
         (huawei.get_cp_type, 1, 'Quorum Server'),
         (huawei.get_cp_type, 2, 'Quorum Disk'),
         (huawei.get_cp_type, 3, 'None'),
@@ -153,15 +150,21 @@ class TestMappingHelpers(unittest.TestCase):
         (huawei.get_health_status, 1, 'Normal (1)'),
         (huawei.get_health_status, 5, 'Degraded (5)'),
         (huawei.get_host_access_state, 2, 'Read-only'),
-        (huawei.get_host_access_state, 3, 'R/W'),
+        (huawei.get_host_access_state, 3, 'Read/write'),
         (
             huawei.get_interface_model,
             2306,
             '4 ports FE 32 Gbit/s Fibre Channel I/O module',
         ),
-        (huawei.get_interface_model, 4133, 'System Management Module'),
+        # 2330 is 100 Gbit/s in both documented firmware revisions; it was
+        # transcribed as 10 Gbit/s when this mapping was first written.
+        (huawei.get_interface_model, 2330, '2 ports FE 100 Gbit/s RoCE I/O module'),
+        (huawei.get_interface_model, 4133, 'management module'),
         (huawei.get_interface_runmode, 1, 'FC'),
-        (huawei.get_interface_runmode, 5, 'RoCE'),
+        # Code 5 means RoCE on 6.1.0 and RDMA on V700, and the response carries
+        # no firmware marker, so the label has to hold under both.
+        (huawei.get_interface_runmode, 5, 'RDMA/RoCE'),
+        (huawei.get_interface_runmode, 10, 'RoCE'),
         (huawei.get_led_status, 0, 'Off'),
         (huawei.get_led_status, 1, 'On'),
         (huawei.get_logic_type, 1, 'Controller Enclosure'),
@@ -220,23 +223,25 @@ class TestMappingHelpers(unittest.TestCase):
             with self.subTest(func=func.__name__):
                 self.assertEqual(func(999999), 'Unknown')
 
-    def test_non_numeric_input_raises_value_error(self):
+    def test_non_numeric_input_returns_unknown(self):
         for func in self.UNKNOWN_FALLBACK:
-            with (
-                self.subTest(func=func.__name__),
-                self.assertRaises(ValueError),
-            ):
-                func('not-a-number')
+            with self.subTest(func=func.__name__):
+                self.assertEqual(func('not-a-number'), 'Unknown')
 
-    def test_none_input_raises_type_error(self):
-        # int(None) raises TypeError; pins that the helpers do not silently
-        # swallow a None code.
+    def test_none_input_returns_unknown(self):
+        # A field the appliance did not report reaches the helper as None,
+        # because the callers read it with a plain .get(). That has to render
+        # as 'Unknown' and let the check report a status; raising here would
+        # take down the whole check over a single missing field.
         for func in self.UNKNOWN_FALLBACK:
-            with (
-                self.subTest(func=func.__name__),
-                self.assertRaises(TypeError),
-            ):
-                func(None)
+            with self.subTest(func=func.__name__):
+                self.assertEqual(func(None), 'Unknown')
+
+    def test_unusable_input_types_return_unknown(self):
+        for func in self.UNKNOWN_FALLBACK:
+            for value in ('', '  ', [], {}, None):
+                with self.subTest(func=func.__name__, value=value):
+                    self.assertEqual(func(value), 'Unknown')
 
 
 # ---------------------------------------------------------------------------
@@ -268,11 +273,12 @@ class TestStatusFormatting(unittest.TestCase):
 
 
 class TestHostAccessState(unittest.TestCase):
-    def test_forbidden(self):
-        self.assertEqual(huawei.get_host_access_state(1), 'Forbidden')
+    def test_access_denied(self):
+        self.assertEqual(huawei.get_host_access_state(1), 'Access denied')
 
-    def test_known_code_5_maps_to_unknown_string(self):
-        # Code 5 is an explicit mapping entry, value 'Unknown'.
+    def test_code_5_falls_back_to_unknown(self):
+        # Code 5 used to be an explicit entry with the value 'Unknown'. Neither
+        # documented revision defines it, so it goes through the fallback now.
         self.assertEqual(huawei.get_host_access_state(5), 'Unknown')
 
     def test_unmapped_code_falls_back_to_unknown(self):
@@ -296,13 +302,16 @@ class TestGetUuid(unittest.TestCase):
         data = {'TYPE': '11', 'ID': '5', 'NAME': 'CTE0.A', 'HEALTHSTATUS': '1'}
         self.assertEqual(huawei.get_uuid(data), '11:5')
 
-    def test_missing_id_raises_key_error(self):
-        with self.assertRaises(KeyError):
-            huawei.get_uuid({'TYPE': '207'})
+    def test_missing_id_renders_placeholder(self):
+        # An incomplete object still has to yield a printable identifier; a
+        # KeyError here would abort the caller over one missing field.
+        self.assertEqual(huawei.get_uuid({'TYPE': '207'}), '207:--')
 
-    def test_missing_type_raises_key_error(self):
-        with self.assertRaises(KeyError):
-            huawei.get_uuid({'ID': '0A'})
+    def test_missing_type_renders_placeholder(self):
+        self.assertEqual(huawei.get_uuid({'ID': '0A'}), '--:0A')
+
+    def test_empty_dict_renders_placeholders(self):
+        self.assertEqual(huawei.get_uuid({}), '--:--')
 
 
 # ---------------------------------------------------------------------------
@@ -441,22 +450,44 @@ class TestGetCreds(HuaweiHttpTestBase):
         self.assertFalse(self.fetch_json.called)
         self.assertFalse(self.cache_set.called)
 
-    def test_empty_login_response_yields_none_token_and_cookie(self):
-        # Malformed / empty body: the deep .get() chain returns None instead
-        # of raising, and the Nones are still cached.
-        self.fetch_json.return_value = (True, {})
-        token, cookie = huawei.get_creds(self.args)
-        self.assertIsNone(token)
-        self.assertIsNone(cookie)
-
-    def test_login_response_missing_data_key_yields_none_token(self):
+    def test_cached_token_without_cookie_triggers_relogin(self):
+        # Both are needed to build the request header, so a half-populated
+        # cache must not be reused: it would send 'Cookie: False'.
+        self.cache_get.side_effect = ['CACHED-TOKEN', False]
         self.fetch_json.return_value = (
             True,
-            {'response_json': {'error': {'code': 0}}, 'response_header': {}},
+            {
+                'response_json': {'data': {'iBaseToken': 'FRESH-TOKEN'}},
+                'response_header': {'set-cookie': 'FRESH-COOKIE'},
+            },
         )
         token, cookie = huawei.get_creds(self.args)
-        self.assertIsNone(token)
-        self.assertIsNone(cookie)
+        self.assertEqual(token, 'FRESH-TOKEN')
+        self.assertEqual(cookie, 'FRESH-COOKIE')
+        self.assertTrue(self.fetch_json.called)
+
+    def test_empty_login_response_aborts(self):
+        # Malformed / empty body: no token to work with. Aborting here beats
+        # caching a None that only fails later, in an unrelated place.
+        self.fetch_json.return_value = (True, {})
+        with self.assertRaises(SystemExit):
+            huawei.get_creds(self.args)
+        self.assertFalse(self.cache_set.called)
+
+    def test_rejected_login_aborts_without_caching(self):
+        # A wrong password answers HTTP 200 with a non-zero error code.
+        self.fetch_json.return_value = (
+            True,
+            {
+                'response_json': {
+                    'error': {'code': 1077949061, 'description': 'Invalid password'}
+                },
+                'response_header': {},
+            },
+        )
+        with self.assertRaises(SystemExit):
+            huawei.get_creds(self.args)
+        self.assertFalse(self.cache_set.called)
 
     def test_login_failure_exits_via_coe(self):
         # url.fetch_json returns (False, error); base.coe must abort the run.

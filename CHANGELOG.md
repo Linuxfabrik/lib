@@ -8,9 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+* huawei_dorado.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
+* huawei_dorado.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
+* huawei_dorado.py: An interface module running in RDMA or NoF mode is named correctly on V700 appliances, and a 100 Gbit/s RoCE module no longer reports 10 Gbit/s.
+* huawei_dorado.py: Checks no longer abort with a traceback when the appliance omits a status field.
+* huawei_dorado.py: Controller boards, enclosures, interface modules, appliance models and health and running states introduced with V700 are named instead of shown as "Unknown".
+* huawei_pacific.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
+* huawei_pacific.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
+* huawei_pacific.py: Checks no longer abort with a traceback when the appliance omits a status field.
+* huawei_pacific.py: Minor alarms are reported with their severity instead of as "Unknown".
+
 ### Security
 
 * Python 3.9 lockfile bumps the cryptography library to a release that is not vulnerable to a padding oracle in its PKCS#7 decryption, for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11.
+* txt.py: Passwords, tokens and API keys are also redacted when a message embeds them as a Python mapping, not only in the `key=value` and JSON forms.
+* url.py: A failed request no longer echoes the request body, so login credentials cannot reach the plugin output. Only the field names are reported.
 
 
 ## [v6.1.0] - 2026-08-04

@@ -114,10 +114,19 @@ class TestMappingHelpers(unittest.TestCase):
             with self.subTest(func=func.__name__):
                 self.assertEqual(func(999999), 'Unknown')
 
-    def test_non_numeric_input_raises_value_error(self):
+    def test_unusable_input_returns_unknown(self):
+        # A field the appliance did not report reaches the helper as None,
+        # because the callers read it with a plain .get(). That has to render
+        # as 'Unknown' and let the check report a status; raising here would
+        # take down the whole check over a single missing field.
         for func in self.FUNCS:
-            with self.subTest(func=func.__name__), self.assertRaises(ValueError):
-                func('not-a-number')
+            for value in ('not-a-number', '', '  ', [], {}, None):
+                with self.subTest(func=func.__name__, value=value):
+                    self.assertEqual(func(value), 'Unknown')
+
+    def test_minor_alarm_severity(self):
+        # Documented for "Interface for Querying Alarm Details".
+        self.assertEqual(huawei_pacific.get_alarm_severity(4), 'Minor (4)')
 
 
 class PacificHttpTestBase(unittest.TestCase):
@@ -221,6 +230,29 @@ class TestGetCreds(PacificHttpTestBase):
         self.fetch_json.return_value = (False, 'connection refused')
         with self.assertRaises(SystemExit):
             huawei_pacific.get_creds(self.args)
+
+    def test_rejected_login_aborts_without_caching(self):
+        # A wrong password, an expired password or a locked account answer
+        # HTTP 200 with a non-zero result code and no token. Aborting here
+        # beats caching a None that only fails later, in an unrelated place.
+        self.fetch_json.return_value = (
+            True,
+            {
+                'result': {
+                    'code': 1077949061,
+                    'description': 'The user name or password is incorrect.',
+                }
+            },
+        )
+        with self.assertRaises(SystemExit):
+            huawei_pacific.get_creds(self.args)
+        self.assertFalse(self.cache_set.called)
+
+    def test_empty_login_response_aborts(self):
+        self.fetch_json.return_value = (True, {})
+        with self.assertRaises(SystemExit):
+            huawei_pacific.get_creds(self.args)
+        self.assertFalse(self.cache_set.called)
 
 
 class TestGetData(PacificHttpTestBase):
