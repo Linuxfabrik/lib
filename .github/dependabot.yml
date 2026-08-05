@@ -28,6 +28,12 @@ updates:
   # break `pip install --require-hashes` on RHEL 8 / Debian 11. The
   # py39 lockfile is regenerated manually via `pip-compile` on a
   # Python 3.9 host when an actual fix lands that still supports 3.9.
+  #
+  # A missing entry stops version bumps only. Dependabot security
+  # updates scan every manifest in the repository regardless of this
+  # file, so a security PR against a frozen lockfile still shows up.
+  # `.github/workflows/dependabot-auto-merge.yml` leaves it open for
+  # a human.
   - package-ecosystem: 'pip'
     directory: '/lockfiles/py310'
     schedule:

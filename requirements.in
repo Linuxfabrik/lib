@@ -2,21 +2,36 @@
 # `lockfiles/pyXX/requirements.txt` (`py39` ... `py314`). Pick the
 # one that matches the local Python version when reproducing a CI run
 # or vendoring downstream. Each subdirectory under `lockfiles/` is a
-# separate Dependabot watchpoint, except `lockfiles/py39/` which is
-# excluded from Dependabot (most upstream packages dropped Python
-# 3.9 over 2025/2026; Dependabot does not honour `requires_python`
-# when proposing bumps, so every PR against py39 would break RHEL 8
-# / Debian 11). The py39 lockfile is regenerated manually as needed.
+# separate Dependabot watchpoint, except `lockfiles/py39/`. Most
+# upstream packages dropped Python 3.9 over 2025/2026 and Dependabot
+# does not honour `requires_python`, so a version bump against py39
+# would break RHEL 8 / Debian 11. Dropping the watchpoint stops
+# version bumps only: Dependabot security updates scan every manifest
+# in the repository regardless, so a security PR against the frozen
+# lockfile still shows up.
+# `.github/workflows/dependabot-auto-merge.yml` leaves it open for a
+# human. The py39 lockfile is regenerated manually as needed.
 #
 # To regenerate all of them:
 #
 #   for v in 3.9 3.10 3.11 3.12 3.13 3.14; do
 #     python${v} -m venv .venv-py${v//.}
-#     ./.venv-py${v//.}/bin/python -m pip install 'pip<25.1' pip-tools
+#     ./.venv-py${v//.}/bin/python -m pip install 'pip<25.1'
+#     ./.venv-py${v//.}/bin/python -m pip install pip-tools typing_extensions
 #     mkdir -p lockfiles/py${v//.}
 #     ./.venv-py${v//.}/bin/python -m piptools compile --generate-hashes \
 #         --output-file=lockfiles/py${v//.}/requirements.txt requirements.in
 #   done
+#
+# The two `pip install` calls have to stay separate: pip replaces
+# itself mid-run, and pip-tools imports `typing_extensions` without
+# declaring it as a dependency.
+#
+# That `piptools compile` run only adds and removes packages.
+# pip-compile reads the existing lockfile as a constraint and never
+# raises a pin on its own. Append `--upgrade-package NAME` to bump a
+# single package, which is the usual case for a security fix on a
+# frozen lockfile, or `--upgrade` to raise every pin.
 
 beautifulsoup4
 httpx[http2]
