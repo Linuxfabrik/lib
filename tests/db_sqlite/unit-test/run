@@ -204,6 +204,55 @@ class TestCrud(unittest.TestCase):
         ok, tables = db.get_tables(self.conn)
         self.assertEqual(tables, ['keep'])
 
+    def test_regexp_null_row_is_not_selected_when_negated(self):
+        # A NULL value must behave like it does in SQLite's own regexp(): the comparison is NULL,
+        # so the row drops out of a negated WHERE instead of being selected by `NOT False`.
+        db.create_table(self.conn, 'v TEXT', table='t')
+        db.insert(self.conn, {'v': 'abc'}, table='t')
+        db.insert(self.conn, {'v': None}, table='t')
+        db.commit(self.conn)
+        ok, rows = db.select(self.conn, "SELECT v FROM t WHERE NOT (v REGEXP '^z')")
+        self.assertTrue(ok, rows)
+        self.assertEqual(rows, [{'v': 'abc'}])
+
+    def test_get_tables_only_hides_real_sqlite_internals(self):
+        # `_` is a LIKE wildcard, so a plain 'sqlite_%' filter also swallowed user tables whose
+        # seventh character is not an underscore.
+        db.create_table(self.conn, 'a TEXT', table='sqliteXfoo')
+        db.create_table(self.conn, 'a TEXT', table='sqlite_lookalike')
+        db.create_table(self.conn, 'a TEXT', table='normal')
+        ok, tables = db.get_tables(self.conn)
+        self.assertTrue(ok)
+        self.assertEqual(sorted(tables), ['normal', 'sqliteXfoo'])
+
+    def test_insert_and_replace_without_columns(self):
+        # An empty dict has no column list; '() VALUES ()' is a syntax error, DEFAULT VALUES is
+        # SQLite's spelling for a row of column defaults.
+        db.create_table(self.conn, 'a INTEGER DEFAULT 7', table='t')
+        self.assertEqual(db.insert(self.conn, {}, table='t'), (True, True))
+        self.assertEqual(db.replace(self.conn, {}, table='t'), (True, True))
+        db.commit(self.conn)
+        _, rows = db.select(self.conn, 'SELECT a FROM t')
+        self.assertEqual([r['a'] for r in rows], [7, 7])
+
+    def test_table_name_with_punctuation_is_not_mangled(self):
+        # Identifiers are quoted, so the name reaches the database as given instead of being
+        # silently rewritten to 'perfdata'.
+        self.assertEqual(
+            db.create_table(self.conn, 'a INTEGER', table='perf-data'), (True, True)
+        )
+        self.assertEqual(
+            db.insert(self.conn, {'a': 1}, table='perf-data'), (True, True)
+        )
+        db.commit(self.conn)
+        _, tables = db.get_tables(self.conn)
+        self.assertEqual(tables, ['perf-data'])
+        self.assertEqual(
+            db.create_index(self.conn, 'a', table='perf-data'), (True, True)
+        )
+        self.assertEqual(db.cut(self.conn, table='perf-data', _max=1), (True, True))
+        self.assertEqual(db.drop_table(self.conn, table='perf-data'), (True, True))
+
 
 class TestDbDiscardPolicy(unittest.TestCase):
     """Only an unusable database file gets deleted, never a healthy one."""
@@ -273,6 +322,77 @@ class TestDbDiscardPolicy(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(os.path.isfile(self.path))
 
+    def test_unique_violation_keeps_database(self):
+        # A duplicate key is an ordinary data condition on a healthy cache, and replace() exists
+        # to resolve it. It used to take the whole database with it.
+        db.create_table(self.conn, 'k TEXT, v TEXT', table='u')
+        db.create_index(self.conn, 'k', table='u', unique=True)
+        db.insert(self.conn, {'k': 'a', 'v': '1'}, table='u')
+        db.commit(self.conn)
+        ok, msg = db.insert(self.conn, {'k': 'a', 'v': '2'}, table='u')
+        self.assertFalse(ok)
+        self.assertIn('UNIQUE constraint failed', msg)
+        self.assertTrue(
+            os.path.isfile(self.path), 'database was deleted on a duplicate key'
+        )
+
+    def test_not_null_violation_deletes_database(self):
+        # A NOT NULL column the current release no longer fills does mean a schema mismatch.
+        ok, msg = db.insert(self.conn, {})
+        self.assertFalse(ok)
+        self.assertIn('NOT NULL constraint failed', msg)
+        self.assertFalse(os.path.isfile(self.path), 'stale schema was not discarded')
+
+    def test_missing_table_keeps_database(self):
+        # The default database file is shared by every plugin that does not pass a filename. A
+        # table that does not exist yet is the normal first-run state and must not wipe it.
+        ok, msg = db.select(self.conn, 'SELECT * FROM not_created_yet')
+        self.assertFalse(ok)
+        self.assertIn('no such table', msg)
+        self.assertTrue(
+            os.path.isfile(self.path), 'database was deleted on a missing table'
+        )
+
+    def test_cut_on_without_rowid_table_keeps_database(self):
+        # A WITHOUT ROWID table has no rowid, so cut() fails with "no such column: rowid". That
+        # is the schema the caller asked for, not a mismatch between releases.
+        self.conn.execute('CREATE TABLE wr (k TEXT PRIMARY KEY, v INT) WITHOUT ROWID')
+        db.commit(self.conn)
+        ok, msg = db.cut(self.conn, table='wr', _max=2)
+        self.assertFalse(ok)
+        self.assertIn('no such column: rowid', msg)
+        self.assertTrue(
+            os.path.isfile(self.path), 'database was deleted on a WITHOUT ROWID table'
+        )
+
+    def test_is_unusable_db_classification(self):
+        # sqlite3.DataError is raised for SQLITE_TOOBIG only, which is a value the caller may not
+        # store rather than a broken file. Asserted directly: provoking it needs a 1 GB value.
+        is_unusable = getattr(db, '__is_unusable_db')
+        for exc, expected in [
+            (sqlite3.OperationalError('no such column: foo'), True),
+            (sqlite3.OperationalError('table t has no column named foo'), True),
+            (
+                sqlite3.OperationalError(
+                    'table t has 2 columns but 3 values were supplied'
+                ),
+                True,
+            ),
+            (sqlite3.OperationalError('no such column: rowid'), False),
+            (sqlite3.OperationalError('no such table: foo'), False),
+            (sqlite3.OperationalError('database is locked'), False),
+            (sqlite3.IntegrityError('NOT NULL constraint failed: t.a'), True),
+            (sqlite3.IntegrityError('UNIQUE constraint failed: t.a'), False),
+            (sqlite3.IntegrityError('CHECK constraint failed: t'), False),
+            (sqlite3.IntegrityError('FOREIGN KEY constraint failed'), False),
+            (sqlite3.IntegrityError('datatype mismatch'), False),
+            (sqlite3.DataError('string or blob too big'), False),
+            (sqlite3.DatabaseError('file is not a database'), True),
+            (sqlite3.DatabaseError('database disk image is malformed'), True),
+        ]:
+            with self.subTest(error=str(exc)):
+                self.assertIs(is_unusable(exc), expected)
+
 
 class TestIdentifierQuoting(unittest.TestCase):
     """Identifiers are quoted, so they cannot carry SQL into a statement."""
@@ -309,7 +429,7 @@ class TestIdentifierQuoting(unittest.TestCase):
         self.assertFalse(ok)
 
     def test_keyword_table_name_works_everywhere(self):
-        # 'select' passes __filter_str() and has to survive every statement this library builds.
+        # 'select' is an SQL keyword and has to survive every statement this library builds.
         self.assertEqual(
             db.create_table(self.conn, 'n INTEGER', table='select'), (True, True)
         )
@@ -342,6 +462,16 @@ class TestIdentifierQuoting(unittest.TestCase):
         ok, msg = db.compute_load(self.conn, 'typo', ['a'], 2, table='t')
         self.assertFalse(ok)
         self.assertIn('typo', msg)
+
+    def test_create_index_accepts_generated_column(self):
+        # PRAGMA table_info omits generated columns, so validating against it rejected a column
+        # SQLite indexes just fine. PRAGMA table_xinfo lists them.
+        db.create_table(
+            self.conn,
+            'a INTEGER, b INTEGER GENERATED ALWAYS AS (a * 2) VIRTUAL',
+            table='g',
+        )
+        self.assertEqual(db.create_index(self.conn, 'b', table='g'), (True, True))
 
     def test_create_index_normalizes_column_list(self):
         # 'a, b' and 'a,b' describe the same index and must not create two.
@@ -388,7 +518,12 @@ class TestPureHelpers(unittest.TestCase):
     def test_regexp_docstring_examples(self):
         self.assertTrue(db.regexp('^abc', 'abcdef'))
         self.assertFalse(db.regexp('xyz$', 'abcdef'))
-        self.assertFalse(db.regexp('^abc', None))
+
+    def test_regexp_returns_null_for_null_arguments(self):
+        # SQLite's own regexp() leaves its result unset for a NULL argument, which surfaces as
+        # SQL NULL. Returning False instead made a negated comparison select the NULL rows.
+        self.assertIsNone(db.regexp('^abc', None))
+        self.assertIsNone(db.regexp(None, 'abcdef'))
 
     def test_regexp_coerces_non_text_values(self):
         # SQLite hands the function whatever the column holds; its own implementation applies
@@ -524,6 +659,26 @@ class TestPerSecondDeltas(unittest.TestCase):
         self.assertIsNone(first)
         self.assertIsNotNone(rates)
         self.assertAlmostEqual(rates['rx_bytes'], 20.0)  # (300-100) / (1010-1000)
+
+    def test_counter_name_needing_sanitizing_still_works(self):
+        # The column name was sanitized for the CREATE but not for the INSERT, so a counter like
+        # 'rx-bytes' created a column 'rxbytes' and then inserted into 'rx-bytes' forever.
+        saved_now = db.time.now
+        ticks = iter([1000, 1010])
+        db.time.now = lambda: next(ticks)
+        try:
+            first = db.per_second_deltas(
+                'lftest-psd-dash.db', 'eth0', {'rx-bytes': 100}
+            )
+            rates = db.per_second_deltas(
+                'lftest-psd-dash.db', 'eth0', {'rx-bytes': 300}
+            )
+        finally:
+            db.time.now = saved_now
+        self.assertIsNone(first)
+        self.assertIsNotNone(rates)
+        # The caller reads the result back with the key it passed in, not with the column name.
+        self.assertAlmostEqual(rates['rx-bytes'], 20.0)
 
 
 if __name__ == '__main__':

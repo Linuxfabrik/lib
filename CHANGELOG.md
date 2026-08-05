@@ -14,11 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* db_sqlite.py: A cached database is no longer thrown away because of a lock held by a concurrently running check, a full or read-only disk, or a bad query. Only a schema that no longer matches the installed release, and now also an unreadable database file, trigger the rebuild.
+* db_sqlite.py: A cached database is no longer thrown away because of a lock held by a concurrently running check, a full or read-only disk, a bad query, a duplicate record, a table that does not exist yet, or a value that is too large to store. Only a schema that no longer matches the installed release, and now also an unreadable database file, trigger the rebuild. Checks that share the default database file therefore no longer discard each other's cached data.
+* db_sqlite.py: A regular expression comparison against an empty value behaves the way SQLite itself does, so a negated match no longer reports rows that have no value at all.
 * db_sqlite.py: A regular expression match against a numeric column works instead of failing the whole query.
 * db_sqlite.py: A single unusable row no longer aborts a CSV import with a misleading "error reading file" and deletes the database. The offending line number is reported and the imported rows are kept.
+* db_sqlite.py: An index can be created on a generated column.
 * db_sqlite.py: Column definitions containing a comma, such as `DECIMAL(10,2)`, and table constraints such as `PRIMARY KEY (a, b)` are read correctly, so CSV imports using them put the values in the right columns.
+* db_sqlite.py: Listing the tables of a database no longer hides user tables whose name begins with `sqlite`.
+* db_sqlite.py: Per-second rate counters whose name contains a dash or other punctuation are recorded, instead of silently never producing a value.
 * db_sqlite.py: Table and column names that are SQL keywords work in every operation, not just in some of them.
+* db_sqlite.py: Table names containing a dash or other punctuation are used as given, instead of being silently stripped down to letters, digits and underscores.
 * huawei_dorado.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
 * huawei_dorado.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
 * huawei_dorado.py: An interface module running in RDMA or NoF mode is named correctly on V700 appliances, and a 100 Gbit/s RoCE module no longer reports 10 Gbit/s.

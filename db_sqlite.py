@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080501'
+__version__ = '2026080502'
 
 import csv
 import functools
@@ -49,12 +49,32 @@ from . import disk, time, txt
 # ("database is locked"), a full or read-only disk, an I/O error or a broken SQL statement all
 # raise it as well, and deleting the file there destroys a healthy cache, possibly one another
 # process is still using. Those errors are reported to the caller and leave the database alone.
+#
+# "no such table" is deliberately absent: a table that does not exist yet is the normal state on
+# the first run, and `create_table()` uses `IF NOT EXISTS`, so nothing has to be discarded to
+# recover. Matching it would let one plugin's first query wipe the tables of every other plugin
+# sharing the default database file.
 SCHEMA_ERRORS = (
     'has no column named',
     'no such column',
-    'no such table',
     'values were supplied',  # "table t has 2 columns but 3 values were supplied"
 )
+
+# Substrings matched before `SCHEMA_ERRORS` and always treated as harmless. A WITHOUT ROWID table
+# has no `rowid` column, so `cut()` fails against one with "no such column: rowid". That schema is
+# what the caller asked for, not a mismatch between releases, but the `no such column` entry above
+# would otherwise match it and delete a perfectly healthy database.
+HEALTHY_SCHEMA_ERRORS = ('no such column: rowid',)
+
+# Substrings identifying an `sqlite3.IntegrityError` (SQLITE_CONSTRAINT, SQLITE_MISMATCH) that
+# means the on-disk schema no longer matches the data being written, for example a NOT NULL column
+# a newer or older release no longer fills.
+#
+# The other constraint violations are not schema problems at all. A UNIQUE or PRIMARY KEY conflict
+# is an ordinary data condition that a plugin hits on a healthy cache, and `replace()` exists to
+# resolve exactly that; CHECK and FOREIGN KEY violations and "datatype mismatch" say something
+# about the row, not about the file.
+INTEGRITY_SCHEMA_ERRORS = ('not null constraint failed',)
 
 # Substrings identifying a database file that is unusable no matter what is queried. sqlite3
 # reports these as a plain `sqlite3.DatabaseError`, not as an `OperationalError`, so the case
@@ -224,22 +244,28 @@ def __table_columns(conn, table):
     >>> __table_columns(conn, 'perfdata')
     ['name', 'timestamp', 'rx_bytes']
     """
-    try:
-        rows = conn.execute(f'PRAGMA table_info({__quote_ident(table)});').fetchall()
-    except sqlite3.Error:
-        return []
-    # PRAGMA table_info yields (cid, name, type, notnull, dflt_value, pk).
-    return [row[1] for row in rows]
+    # `table_xinfo` rather than `table_info`: the latter omits generated columns, which SQLite
+    # selects and indexes like any other column, so validating against it would reject a name that
+    # is perfectly usable. `table_xinfo` needs SQLite 3.26.0, hence the fallback.
+    # Both pragmas yield (cid, name, type, notnull, dflt_value, pk), `table_xinfo` plus `hidden`.
+    for pragma in ('table_xinfo', 'table_info'):
+        try:
+            rows = conn.execute(f'PRAGMA {pragma}({__quote_ident(table)});').fetchall()
+        except sqlite3.Error:
+            continue
+        return [row[1] for row in rows]
+    return []
 
 
 def __is_unusable_db(e):
     """
     Decide whether an `sqlite3` exception means the database file has to be discarded.
 
-    Only a schema that no longer matches this release, a constraint or data mismatch, or an
-    unreadable file justify deleting the database. Everything else (a lock held by a concurrent
-    plugin run, a full or read-only disk, an I/O error, a broken statement, a failing user-defined
-    function) is transient or a caller bug: the cache is fine and has to survive.
+    Only a schema that no longer matches this release, or an unreadable file, justify deleting the
+    database. Everything else (a lock held by a concurrent plugin run, a full or read-only disk, an
+    I/O error, a broken statement, a failing user-defined function, a value the caller may not
+    store, a row that violates a constraint) is transient, a caller bug or ordinary data: the cache
+    is fine and has to survive.
 
     ### Parameters
     - **e** (`Exception`):
@@ -255,14 +281,22 @@ def __is_unusable_db(e):
 
     >>> __is_unusable_db(sqlite3.OperationalError('database is locked'))
     False
-    """
-    # A constraint or data error (for example a NOT NULL column that a newer or older release no
-    # longer writes) means the on-disk schema no longer matches the data being written.
-    if isinstance(e, (sqlite3.DataError, sqlite3.IntegrityError)):
-        return True
 
+    >>> __is_unusable_db(sqlite3.IntegrityError('UNIQUE constraint failed: t.a'))
+    False
+    """
     msg = str(e).lower()
+
+    # `sqlite3.DataError` is raised for SQLITE_TOOBIG only ("string or blob too big"). That is a
+    # value the caller must not store, and says nothing about the file. Checked before
+    # `DatabaseError`, of which it is a subclass.
+    if isinstance(e, sqlite3.DataError):
+        return False
+    if isinstance(e, sqlite3.IntegrityError):
+        return any(pattern in msg for pattern in INTEGRITY_SCHEMA_ERRORS)
     if isinstance(e, sqlite3.OperationalError):
+        if any(pattern in msg for pattern in HEALTHY_SCHEMA_ERRORS):
+            return False
         return any(pattern in msg for pattern in SCHEMA_ERRORS)
     if isinstance(e, sqlite3.DatabaseError):
         return any(pattern in msg for pattern in CORRUPT_ERRORS)
@@ -408,7 +442,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
       - `<column>1`: Load computed between the two most recent entries.
       - `<column>n`: Load computed between the most recent and the oldest of `count` entries.
     - Load values are calculated as delta per second.
-    - Table names are sanitized to allow only safe characters.
+    - The table name is quoted, so keywords and names containing punctuation work.
 
     ### Example
     Calculate loads for `tx_bytes` and `rx_bytes` over 5 intervals:
@@ -433,8 +467,6 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
             ...
         ]
     """
-    table = __filter_str(table)
-
     # See __table_columns(): an unknown sensor column would silently become a string literal
     # instead of raising, so every sensor would look identical.
     known = __table_columns(conn, table)
@@ -601,7 +633,6 @@ def create_index(
     >>> create_index(conn, 'timestamp', table='logs', unique=True)
     (True, True)
     """
-    table = __filter_str(table)
     requested = [col.strip() for col in column_list.split(',') if col.strip()]
 
     # An unknown column would be quoted into the statement and then resolved to a string literal
@@ -661,7 +692,7 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
         - Error message (`str`) describing the failure.
 
     ### Notes
-    - The table name is sanitized to allow only safe characters.
+    - The table name is quoted, so keywords and names containing punctuation work.
     - If `drop_table_first=True`, the function will attempt to drop the existing table before
       creating it.
     - The table creation uses `IF NOT EXISTS` to avoid errors if the table already exists.
@@ -674,8 +705,6 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
 
         CREATE TABLE IF NOT EXISTS "test" (a TEXT, b TEXT, c INTEGER NOT NULL);
     """
-    table = __filter_str(table)
-
     if drop_table_first:
         success, result = drop_table(conn, table)
         if not success:
@@ -718,8 +747,10 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
         - Error message (`str`) describing the failure.
 
     ### Notes
-    - The function relies on the implicit `rowid` column for ordering.
-    - The table name is sanitized to allow only safe characters.
+    - The function relies on the implicit `rowid` column for ordering. A `WITHOUT ROWID` table has
+      no such column and cannot be pruned this way; the call reports `no such column: rowid` and
+      leaves the database alone.
+    - The table name is quoted, so keywords and names containing punctuation work.
     - If an `OperationalError` occurs (e.g., due to schema mismatch), the database file can
       be deleted automatically.
     - Uses `LIMIT -1 OFFSET :_max` to delete everything after the most recent `_max` records.
@@ -728,11 +759,11 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     >>> cut(conn, table='logs', _max=1000)
     (True, True)
     """
-    table = __quote_ident(__filter_str(table))
+    table = __quote_ident(table)
 
     # `LIMIT -1` means "no limit" (see SQLite's select.c), so the subquery yields every row after
     # the `_max` most recent ones.
-    # `table` is filtered and quoted above, `_max` is bound.
+    # `table` is quoted above, `_max` is bound.
     sql = f"""
         DELETE FROM {table}
         WHERE rowid IN (
@@ -830,7 +861,7 @@ def drop_table(conn, table='perfdata'):
         - Error message (`str`) describing the failure.
 
     ### Notes
-    - The table name is sanitized to allow only safe characters.
+    - The table name is quoted, so keywords and names containing punctuation work.
     - Dropping a table is permanent: all table data, indices, and triggers are permanently deleted.
     - The statement uses `DROP TABLE IF EXISTS` to avoid errors if the table is missing.
 
@@ -838,7 +869,6 @@ def drop_table(conn, table='perfdata'):
     >>> drop_table(conn, table='logs')
     (True, True)
     """
-    table = __filter_str(table)
     sql = f'DROP TABLE IF EXISTS {__quote_ident(table)};'
 
     c = conn.cursor()
@@ -1070,7 +1100,13 @@ def get_tables(conn):
     >>> else:
     >>>     print(tables)
     """
-    sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
+    # `ESCAPE '_'` makes the doubled underscore a literal one. Without it `_` is a LIKE wildcard
+    # matching any single character, so a user table named `sqliteXfoo` would be hidden as well.
+    # This is the same spelling SQLite's own shell uses.
+    sql = (
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name NOT LIKE 'sqlite__%' ESCAPE '_';"
+    )
     success, result = select(conn, sql, as_dict=False)
 
     if not success:
@@ -1232,7 +1268,7 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
         - Error message (`str`) describing the failure.
 
     ### Notes
-    - Table names are sanitized to allow only safe characters.
+    - The table name is quoted, so keywords and names containing punctuation work.
     - Field names and values are safely parameterized to prevent SQL injection.
     - If an `OperationalError` occurs (e.g., due to a schema mismatch), the database can optionally
       be deleted automatically.
@@ -1245,14 +1281,18 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
     ... )
     (True, True)
     """
-    table = __filter_str(table)
-
     # Column names are quoted, not bound: SQLite cannot bind an identifier, so a key carrying SQL
     # syntax would otherwise end up as executable text. Values use positional binds, which also
     # keeps keys working that are not valid `:placeholder` names.
-    keys = ','.join(__quote_ident(key) for key in data)
-    binds = ','.join('?' for _ in data)
-    sql = f'INSERT INTO {__quote_ident(table)} ({keys}) VALUES ({binds});'  # nosec B608
+    if data:
+        keys = ','.join(__quote_ident(key) for key in data)
+        binds = ','.join('?' for _ in data)
+        sql = f'INSERT INTO {__quote_ident(table)} ({keys}) VALUES ({binds});'  # nosec B608
+    else:
+        # An empty dict has no column list to build. `DEFAULT VALUES` is SQLite's spelling for a
+        # row made up entirely of column defaults; the alternative `() VALUES ()` is a syntax
+        # error.
+        sql = f'INSERT INTO {__quote_ident(table)} DEFAULT VALUES;'  # nosec B608
 
     c = conn.cursor()
     try:
@@ -1296,12 +1336,14 @@ def per_second_deltas(filename, name, counters):
       name). Lets multiple checks share a single cache file when
       convenient, but typically one name per filename.
     - **counters** (`dict[str, int]`):
-      Mapping from column name to cumulative counter value. Column names
-      must match `[a-zA-Z0-9_]+`; other characters get stripped by
-      `__filter_str()`.
+      Mapping from counter name to cumulative counter value. Characters
+      outside `[a-zA-Z0-9_]` are stripped for the database column, so
+      `rx-bytes` is stored in a column `rxbytes`. The returned mapping
+      keeps the names as passed in. Pick names that already match
+      `[a-zA-Z0-9_]+` so two counters cannot collapse onto one column.
 
     ### Returns
-    - **dict[str, float]**: `{column_name: per_second_rate}` on success.
+    - **dict[str, float]**: `{counter_name: per_second_rate}` on success.
     - **None**: fewer than 2 samples recorded yet (fresh install or
       cache wiped), counter reset detected (delta < 0; happens on
       restart of the monitored service or any `FLUSH`-style reset),
@@ -1333,9 +1375,14 @@ def per_second_deltas(filename, name, counters):
     if not ok:
         return None
 
+    # Map every caller-supplied counter name to the column name actually used in the table, so the
+    # CREATE and the INSERT below agree. Sanitizing only the CREATE would build a column `rxbytes`
+    # for a counter named `rx-bytes` and then insert into `rx-bytes`, which fails on every run and
+    # leaves the helper returning None forever.
+    columns = {col: __filter_str(col) for col in counters}
+
     col_defs = ['name TEXT NOT NULL', 'timestamp INT NOT NULL']
-    for col in counters:
-        col_defs.append(f'{__filter_str(col)} INT NOT NULL')
+    col_defs.extend(f'{column} INT NOT NULL' for column in columns.values())
     definition = ', '.join(col_defs)
 
     ok, _ = create_table(conn, definition, drop_table_first=False)
@@ -1345,7 +1392,8 @@ def per_second_deltas(filename, name, counters):
     create_index(conn, 'name')
 
     row = {'name': name, 'timestamp': time.now()}
-    row.update(counters)
+    for col, column in columns.items():
+        row[column] = counters[col]
     # Pass `delete_db_on_operational_error=False` so a schema mismatch leaves
     # the connection open. We then drop+recreate the table ourselves below;
     # the default `True` would `rm_db(conn)` (close + delete) and break the
@@ -1388,9 +1436,11 @@ def per_second_deltas(filename, name, counters):
     if timestamp_diff <= 0:
         return None
 
+    # Keyed by the caller's counter names, not by the sanitized column names, so the caller reads
+    # the result back with the keys it passed in.
     rates = {}
-    for col in counters:
-        delta = rows[0][col] - rows[1][col]
+    for col, column in columns.items():
+        delta = rows[0][column] - rows[1][column]
         if delta < 0:
             # counter reset (server restart, FLUSH STATUS)
             return None
@@ -1413,8 +1463,9 @@ def regexp(expr, item):
       The string to test against the regular expression.
 
     ### Returns
-    - **bool**:
-      `True` if the regular expression matches the string, `False` otherwise.
+    - **bool** or **None**:
+      `True` if the regular expression matches the string, `False` if it does not, and `None`
+      (SQL `NULL`) if either argument is `NULL`.
 
     ### Notes
     - Must be registered on the SQLite connection using `create_function('REGEXP', 2, regexp)`.
@@ -1425,7 +1476,10 @@ def regexp(expr, item):
       SQLite's own `regexp()` implementation applies `sqlite3_value_text()` to its argument.
       Without that conversion, matching against a numeric column raises inside the function and
       the whole query fails.
-    - `NULL` never matches.
+    - A `NULL` pattern or value yields `NULL`, not `False`, matching SQLite's own `regexp()`,
+      which leaves its result unset for a `NULL` argument. The difference is visible in a negated
+      comparison: `WHERE NOT (col REGEXP 'x')` skips a `NULL` row, whereas `False` would select
+      it.
     - Commonly used in queries like:
       `SELECT * FROM table WHERE column REGEXP 'pattern'`.
 
@@ -1439,8 +1493,8 @@ def regexp(expr, item):
     >>> regexp('^9', 9000)
     True
     """
-    if item is None:
-        return False
+    if expr is None or item is None:
+        return None
     if isinstance(item, bytes):
         item = item.decode('utf-8', 'replace')
     elif not isinstance(item, str):
@@ -1481,7 +1535,7 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
     - If any constraint violation (e.g., `NOT NULL`) occurs during the second step, the operation
       aborts and rolls back.
     - Field names and values are safely parameterized to prevent SQL injection.
-    - Table names are sanitized to allow only safe characters.
+    - The table name is quoted, so keywords and names containing punctuation work.
 
     ### Example
     >>> replace(
@@ -1491,12 +1545,14 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
     ... )
     (True, True)
     """
-    table = __filter_str(table)
-
-    # See insert(): identifiers are quoted, values are bound positionally.
-    keys = ','.join(__quote_ident(key) for key in data)
-    binds = ','.join('?' for _ in data)
-    sql = f'REPLACE INTO {__quote_ident(table)} ({keys}) VALUES ({binds});'
+    # See insert(): identifiers are quoted, values are bound positionally, and an empty dict falls
+    # back to `DEFAULT VALUES`.
+    if data:
+        keys = ','.join(__quote_ident(key) for key in data)
+        binds = ','.join('?' for _ in data)
+        sql = f'REPLACE INTO {__quote_ident(table)} ({keys}) VALUES ({binds});'  # nosec B608
+    else:
+        sql = f'REPLACE INTO {__quote_ident(table)} DEFAULT VALUES;'  # nosec B608
 
     c = conn.cursor()
     try:
