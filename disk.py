@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
+# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
 
 """Offers file and disk related functions, like getting a list of
 partitions, grepping a file, etc.

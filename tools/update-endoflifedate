@@ -102,7 +102,7 @@ def main():
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.rst
+# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
 
 """This library stores information from https://endoflife.date/api/ for offline usage
 and therefore needs to be updated periodically when version checks don't have access to the
