@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Security
+
+* Python 3.9 lockfile bumps the cryptography library to a release that is not vulnerable to a padding oracle in its PKCS#7 decryption, for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11.
 
 
 ## [v6.1.0] - 2026-08-04
