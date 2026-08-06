@@ -221,6 +221,20 @@ class TestRun(unittest.TestCase):
         ):
             lftest.run(probe, '../plugin', {'test': 'stdout/case', 'assert-retc': 2})
 
+    def test_omitted_return_code_is_not_asserted(self):
+        # A testcase may cover the parsed output without pinning a state it does not control,
+        # such as one derived from an end-of-life date that moves with the calendar.
+        probe = self._Probe()
+        with mock.patch.object(
+            lftest.shell, 'shell_exec', return_value=(True, ('hello world', '', 2))
+        ):
+            # Must not raise: no 'assert-retc', so the return code is nobody's business here.
+            lftest.run(
+                probe,
+                '../plugin',
+                {'test': 'stdout/case', 'assert-in': ['hello']},
+            )
+
     def test_missing_assert_in_fails(self):
         probe = self._Probe()
         with (

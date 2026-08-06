@@ -20,7 +20,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070801'
+__version__ = '2026080601'
 
 
 def run(test_instance, plugin, testcase):
@@ -39,7 +39,10 @@ def run(test_instance, plugin, testcase):
         e.g. `'stdout/ok-healthy,,0'`.
       - `params` (`str`, optional): Additional plugin parameters.
         Default: `''`.
-      - `assert-retc` (`int`): Expected return code (STATE_OK, etc.).
+      - `assert-retc` (`int`, optional): Expected return code (STATE_OK,
+        etc.). Omit it when the plugin's state depends on something the
+        testcase does not control, for example an end-of-life date that
+        moves the verdict from OK to WARNING as the calendar advances.
       - `assert-in` (`list` of `str`, optional): Strings that must
         appear in stdout.
       - `assert-not-in` (`list` of `str`, optional): Strings that must
@@ -81,11 +84,14 @@ def run(test_instance, plugin, testcase):
     cmd = [plugin, *shlex.split(params), f'--test={testcase["test"]}']
     stdout, stderr, retc = base.coe(shell.shell_exec(cmd))
 
-    test_instance.assertEqual(
-        retc,
-        testcase['assert-retc'],
-        f'Expected retc {testcase["assert-retc"]}, got {retc}',
-    )
+    # Optional like every other assertion here, so a testcase can cover what it does control
+    # (the parsed output) without pinning a state it does not.
+    if 'assert-retc' in testcase:
+        test_instance.assertEqual(
+            retc,
+            testcase['assert-retc'],
+            f'Expected retc {testcase["assert-retc"]}, got {retc}',
+        )
 
     expected_stderr = testcase.get('assert-stderr', '')
     test_instance.assertEqual(stderr, expected_stderr)

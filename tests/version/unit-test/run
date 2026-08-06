@@ -10,17 +10,46 @@
 
 """Unit tests for lib.version.
 
-Pure functions only. `check_eol()` fetches the endoflife.date API over the
-network, so it is covered separately by the mock-based test batch, not here.
+`check_eol()` normally reads the live endoflife.date API, which makes any
+assertion about it drift: upstream re-dates its cycles, and a state derived from
+the distance between today and an EOL date flips as time passes. The tests here
+seed the lookup with synthetic cycles instead, so they neither reach the network
+nor age (see `TestCheckEol`).
 """
 
+import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, '..')
 
+import lib.cache as cache
+import lib.time as lib_time
 import lib.version as version
+from lib.globals import STATE_OK, STATE_UNKNOWN, STATE_WARN
+
+# A product that does not exist. A cache miss therefore fails the fetch, and the bundled
+# offline snapshot has no entry either, so `TestCheckEol` reports "product ... unknown"
+# instead of silently grading itself against live endoflife.date data.
+EOL_PRODUCT = 'https://endoflife.date/api/linuxfabrik-unit-test.json'
+
+# Newest first, the order the API itself uses. `check_eol()` walks the list to find an
+# available upgrade and stops at the first hit, so the order is part of what is tested.
+EOL_CYCLES = [
+    {'cycle': '999', 'eol': '2100-01-01', 'support': '2099-01-01', 'latest': '999.0.0'},
+    {
+        'cycle': '2',
+        'eol': '2000-01-01',
+        'extendedSupport': '2100-06-01',
+        'support': '1999-01-01',
+        'latest': '2.0.0',
+    },
+    {'cycle': '1', 'eol': False, 'support': True, 'latest': '1.0.0'},
+]
 
 
 class TestImportWeight(unittest.TestCase):
@@ -47,6 +76,103 @@ class TestImportWeight(unittest.TestCase):
             check=True,
         )
         self.assertEqual(out.stdout.strip(), '')
+
+
+class TestCheckEol(unittest.TestCase):
+    """`check_eol()` against a seeded cache, so nothing here reaches the network or drifts.
+
+    The cycles are synthetic and pinned far enough out on both sides that no expected state
+    can change with the calendar: `999` goes end of life in 2100, `2` did so in 2000, and `1`
+    has no announced date at all. Real endoflife.date data is unusable for this, as MariaDB
+    12.2 showed when upstream moved its EOL by two weeks and every assertion that named the
+    date broke.
+    """
+
+    def setUp(self):
+        # `check_eol()` resolves its cache through `disk.get_tmpdir()`, which honours
+        # `tempfile.tempdir`. Pointing that at a throwaway directory keeps the seeded data out
+        # of the shared per-user cache that every plugin on this machine reads.
+        self.tmpdir = tempfile.mkdtemp(prefix='lftest-eol-')
+        self.saved_tempdir = tempfile.tempdir
+        tempfile.tempdir = self.tmpdir
+        ok = cache.set(
+            EOL_PRODUCT,
+            json.dumps(EOL_CYCLES),
+            expire=lib_time.now() + 3600,
+            filename='linuxfabrik-lib-version.db',
+        )
+        self.assertTrue(ok, 'seeding the EOL cache failed')
+
+    def tearDown(self):
+        tempfile.tempdir = self.saved_tempdir
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def check(self, version_string, **kwargs):
+        return version.check_eol(EOL_PRODUCT, version_string, timeout=1, **kwargs)
+
+    def test_seeded_cache_is_isolated(self):
+        # Guards the mechanism itself: if `tempfile.tempdir` ever stops steering the cache, the
+        # seeded file lands in the shared directory and every other assertion here silently
+        # starts grading against live data.
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    self.tmpdir,
+                    f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}',
+                    'linuxfabrik-lib-version.db',
+                )
+            )
+        )
+
+    def test_eol_far_in_the_future_is_ok(self):
+        state, msg = self.check('999.0.0')
+        self.assertEqual(state, STATE_OK)
+        self.assertIn('EOL 2100-01-01 -30d', msg)
+        self.assertNotIn('[WARNING]', msg)
+
+    def test_support_still_running_adds_no_note(self):
+        _, msg = self.check('999.0.0')
+        self.assertNotIn('full support ended', msg)
+
+    def test_eol_in_the_past_warns(self):
+        state, msg = self.check('2.0.0')
+        self.assertEqual(state, STATE_WARN)
+        self.assertIn('EOL 2000-01-01 -30d', msg)
+        self.assertIn('[WARNING]', msg)
+
+    def test_ended_support_is_reported(self):
+        _, msg = self.check('2.0.0')
+        self.assertIn('full support ended on 1999-01-01', msg)
+
+    def test_missing_eol_date_is_reported_as_unknown(self):
+        state, msg = self.check('1.0.0')
+        self.assertEqual(state, STATE_OK)
+        self.assertIn('EOL unknown', msg)
+
+    def test_offset_shifts_the_warning_window(self):
+        # Same cycle as test_eol_far_in_the_future_is_ok(), only the window moves: warning
+        # 30000 days before 2100-01-01 puts the threshold in 2018, which is past for good.
+        state, _ = self.check('999.0.0', offset_eol=-30000)
+        self.assertEqual(state, STATE_WARN)
+
+    def test_extended_support_date_wins_when_asked_for(self):
+        state, msg = self.check('2.0.0', extended_support=True)
+        self.assertEqual(state, STATE_OK)
+        self.assertIn('EOL 2100-06-01', msg)
+
+    def test_newer_major_is_reported_but_stays_ok(self):
+        state, msg = self.check('1.0.0')
+        self.assertEqual(state, STATE_OK)
+        self.assertIn('major 999.0.0 available', msg)
+
+    def test_check_major_turns_the_upgrade_into_a_warning(self):
+        state, _ = self.check('1.0.0', check_major=True)
+        self.assertEqual(state, STATE_WARN)
+
+    def test_unknown_version_is_unknown(self):
+        state, msg = self.check('42.0.0')
+        self.assertEqual(state, STATE_UNKNOWN)
+        self.assertIn('version 42.0.0 unknown', msg)
 
 
 class TestVersion(unittest.TestCase):

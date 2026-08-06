@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Highlights:** The SQLite cache layer stops discarding a database over transient problems such as a lock held by a parallel check, so checks sharing a cache file no longer wipe each other's data. Huawei Dorado and Pacific sessions are closed on the appliance instead of piling up until its session pool is full and it refuses every login, including an administrator's login to the management GUI. Distribution detection is corrected for Alpine, Amazon Linux and the whole SUSE family, which were all reported as Debian. Several function renames and one removed function need consumer changes, see Breaking Changes.
+
+### Breaking Changes
+
+* distro.py: `distribution_release` holds the release name of the distribution (`Plow`, `noble`, `bookworm`), the same as the Ansible fact of the same name, instead of the running kernel release. Anything reading that field needs to be checked.
+* huawei_dorado.py: `get_data()` no longer takes URL parameters in a separate argument. Consumers passing `params` must append it to the endpoint instead, which is what every consumer already did.
+* huawei_dorado.py: `get_logic_type()` is now `get_enclosure_logic_type()` and `get_role()` is now `get_controller_role()`, since both only ever translated the codes of one object type and the appliance numbers the same fields differently on ports, disks and HyperMetro domains. Consumers must rename their calls.
+* huawei_dorado.py: A HyperMetro domain or a DR Star trio is no longer reported through the running states of unrelated objects, where a faulty domain came out as "Running" and a disabled trio did the same. Consumers must call `get_dr_star_running_status()` and `get_hypermetro_domain_running_status()` for these objects.
+* version.py: `get_os_info()` is gone; it was a second copy of a read that `distro.py` has been doing for years. Consumers read the `os_info` key of `distro.get_distribution_facts()` instead.
+
 ### Added
 
 * db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
@@ -19,18 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* distro.py: `distribution_release` holds the release name of the distribution (`Plow`, `noble`, `bookworm`), the same as the Ansible fact of the same name. It used to hold the running kernel release. Anything reading that field needs to be checked.
 * huawei_dorado.py, huawei_pacific.py: `--cache-expire 0` switches session caching off. It used to store a session that expired about a second later, which is neither caching nor not caching.
 * huawei_dorado.py, huawei_pacific.py: session tokens are kept in the library's own cache file instead of the one every plugin on the host shares, so parallel checks no longer wait on each other's cache writes. The first run after the update logs in once to fill the new file.
 * huawei_dorado.py, huawei_pacific.py: `get_data()` returns the appliance's response as it is. It used to add a `counter` field holding the number of attempts, which would overwrite an API field of that name.
-* huawei_dorado.py: `get_data()` no longer takes URL parameters in a separate argument. They go on the endpoint, which is what every consumer already did. **Breaking:** consumers passing `params` must append it to the endpoint instead.
-* huawei_dorado.py: `get_logic_type()` is now `get_enclosure_logic_type()` and `get_role()` is now `get_controller_role()`. Both only ever translated the codes of one object type, and the appliance numbers the same fields differently on ports, disks and HyperMetro domains. **Breaking:** consumers must rename their calls.
 * huawei_dorado.py: A component being rebuilt is reported as "Rebuilding", the word V700 appliances use for it, instead of the older firmware's "Reconstruction".
+* lftest.py: `assert-retc` is optional in a testcase, like every other assertion already was. A test can now cover the output a fixture controls without pinning a state that depends on something else, such as an end-of-life date that turns OK into WARNING as the calendar advances.
 * nextcloud.py: `occ` is called without `sudo` when the check already runs as the owner of `config/config.php`. No sudoers entry is needed in that case, and the checks work inside the official Nextcloud container, which ships without `sudo`.
-
-### Removed
-
-* version.py: `get_os_info()` is gone. It was a second copy of a read that `distro.py` has been doing for years. **Breaking:** consumers read the `os_info` key of `distro.get_distribution_facts()` instead.
 
 ### Fixed
 
@@ -65,7 +69,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * distro.py: The release name is reported on AlmaLinux, Kali, Kylin, openEuler, Parrot and TencentOS. It used to be missing, and on TencentOS it was taken from the CentOS release file the distribution also ships.
 * distro.py: The OS family of Alpine, Amazon Linux and the whole SUSE family is correct. All three were reported as Debian, so checks branching on the OS family ran the Debian code path on them.
 * huawei_dorado.py, huawei_pacific.py: Sessions are closed on the appliance instead of being left open until they time out. This covers the session a failed request replaces, and every session at all when `--cache-expire 0` switches caching off. A check used to leave one session behind per run, or up to three with caching off, and could fill the appliance's session pool, which on a Dorado holds 32 by default. Once it was full the appliance refused every login, including an administrator's login to the management GUI.
-* huawei_dorado.py: A HyperMetro domain or a DR Star trio is no longer reported through the running states of unrelated objects, where a faulty domain came out as "Running" and a disabled trio did the same. Consumers must call the two new functions for these objects.
 * huawei_dorado.py: A HyperMetro pair in the faulty state is named on V700 appliances, which use a different word for it than the older firmware.
 * huawei_dorado.py: A component whose rollback failed is reported as such. It used to be labelled "faulty restoration", which reads as a recovery in progress and hides that something went wrong.
 * huawei_dorado.py: A host that has lost path redundancy is named the way the appliance documents it for hosts, not the way it documents the same code for disks.
@@ -106,6 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v6.1.0] - 2026-08-04
 
+**Highlights:** Two security fixes: a malicious or compromised Keycloak can no longer collect the admin credentials, and the shared `--test` mechanism can no longer be used to read arbitrary files as root on hosts where plugins run via a sudoers allowlist. A cache-aware Redfish layer lets the several Redfish checks on a host share one session and the fetched data instead of each hitting the controller. New libraries for sending mail, reading OpenMetrics endpoints and rendering Icinga notification mails.
+
 ### Added
 
 * args.py: `--no-insecure` help text, so plugins that talk to internal endpoints insecurely by default can offer a switch to enforce TLS certificate verification.
@@ -145,6 +150,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v6.0.0] - 2026-07-07
 
+**Highlights:** `huawei.py` is renamed to `huawei_dorado.py`, so consumers have to change their import. A redirect can no longer make `fetch()` forward credential headers to another host. Dorado checks recover on their own when the cached API session is no longer accepted, and command output containing non-UTF-8 bytes no longer crashes a plugin when it prints its result.
+
+### Breaking Changes
+
+* huawei.py: renamed to `huawei_dorado.py`, freeing the generic name now that a second Huawei storage line is supported. Consumers must change their import from `lib.huawei` to `lib.huawei_dorado`.
+
 ### Added
 
 * args.py: added a central help text for the `--no-match-severity` parameter, used by filter-based plugins to make the state configurable when no item matches the filters.
@@ -159,7 +170,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * args.py: the developer-only `--test` parameter is now hidden from plugin `--help` output. It is still accepted on the command line, so the unit-test suite keeps working.
-* huawei.py: renamed to `huawei_dorado.py`, freeing the generic name now that a second Huawei storage line is supported. **Breaking:** consumers must change their import from `lib.huawei` to `lib.huawei_dorado`.
 * redfish.py: a cached Redfish session token is now kept only as long as the controller itself keeps the session alive, read from the controller's own session timeout. This avoids sporadic "401 Unauthorized" errors on controllers with short session timeouts (such as Supermicro's 300 seconds) without having to tune the cache expiration by hand ([#246](https://github.com/Linuxfabrik/lib/issues/246)).
 * time.py: clarified the `timestr2epoch(..., pattern='iso8601')` docstring - the mode is backed by `datetime.fromisoformat()`, not a full ISO 8601 parser, and which layouts it accepts beyond RFC 3339 depends on the Python version.
 
