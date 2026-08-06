@@ -44,8 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: Table names containing a dash or other punctuation are used as given, instead of being silently stripped down to letters, digits and underscores.
 * db_sqlite.py: The journal and write-ahead log files belonging to a discarded database are removed with it, instead of piling up in the temporary directory.
 * distro.py: Alpine Linux is recognised by its own release file, so its version is reported.
+* distro.py: Amazon Linux recognised through `/etc/system-release` reports its major version instead of "NA".
 * distro.py: CentOS Stream is reported as Stream.
 * distro.py: Oracle Linux is reported as Oracle Linux instead of Red Hat.
+* distro.py: SLES 11 and older, which ship no `/etc/os-release`, report their version instead of "NA".
+* distro.py: The release name is reported on AlmaLinux, Kali, Kylin, openEuler, Parrot and TencentOS. It used to be missing, and on TencentOS it was taken from the CentOS release file the distribution also ships.
 * distro.py: The OS family of Alpine, Amazon Linux and the whole SUSE family is correct. All three were reported as Debian, so checks branching on the OS family ran the Debian code path on them.
 * huawei_dorado.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
 * huawei_dorado.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.

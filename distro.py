@@ -26,6 +26,13 @@ Deliberate differences to Ansible:
   reads /etc/lsb-release through the `lsb_release` command. Where that command
   reports a release name the file does not carry, "distribution_release" ends up as
   "NA" here. Gentoo is one such case.
+* A release file line naming no "release" keyword only yields a version if that
+  version is purely numeric. The `distro` package accepts any lowercase token there
+  and consequently reads the version "64-pc-linux-gnu" out of the Source Mage line
+  "Source Mage GNU/Linux x86_64-pc-linux-gnu".
+* /etc/debian_version only counts as a version if it holds one. On testing and
+  unstable it holds a release name such as "trixie/sid", which the `distro` package
+  reports as the version.
 * Adds the "os_info" key, holding NAME plus VERSION from /etc/os-release.
 """
 
@@ -38,16 +45,189 @@ Deliberate differences to Ansible:
 # pylint: disable=W0613
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080501'
+__version__ = '2026080601'
 
 
 import os
 import platform
 import re
 
+# Order matters and is not alphabetical: the first entry that parses wins. Oracle
+# Linux has to come before Red Hat because it ships a /etc/redhat-release naming Red
+# Hat, and UnionTech before Red Hat because its A-version symlinks redhat-release to
+# uos-release. The generic 'NA' entry has to stay last.
+OSDIST_LIST = (
+    {'path': '/etc/altlinux-release', 'name': 'Altlinux'},
+    {'path': '/etc/oracle-release', 'name': 'OracleLinux'},
+    {'path': '/etc/slackware-version', 'name': 'Slackware'},
+    {'path': '/etc/centos-release', 'name': 'CentOS'},
+    {'path': '/etc/redhat-release', 'name': 'UnionTech'},
+    {'path': '/etc/redhat-release', 'name': 'RedHat'},
+    {'path': '/etc/vmware-release', 'name': 'VMwareESX', 'allowempty': True},
+    {'path': '/etc/openwrt_release', 'name': 'OpenWrt'},
+    {'path': '/etc/os-release', 'name': 'Amazon'},
+    {'path': '/etc/system-release', 'name': 'Amazon'},
+    {'path': '/etc/alpine-release', 'name': 'Alpine'},
+    {'path': '/etc/arch-release', 'name': 'Archlinux', 'allowempty': True},
+    {'path': '/etc/os-release', 'name': 'Archlinux'},
+    {'path': '/etc/os-release', 'name': 'SUSE'},
+    {'path': '/etc/SuSE-release', 'name': 'SUSE'},
+    {'path': '/etc/gentoo-release', 'name': 'Gentoo'},
+    {'path': '/etc/os-release', 'name': 'UnionTech'},
+    {'path': '/etc/os-release', 'name': 'Debian'},
+    {'path': '/etc/lsb-release', 'name': 'Debian'},
+    {'path': '/etc/lsb-release', 'name': 'Mandriva'},
+    {'path': '/etc/sourcemage-release', 'name': 'SMGL'},
+    {'path': '/usr/lib/os-release', 'name': 'ClearLinux'},
+    {'path': '/etc/coreos/update.conf', 'name': 'Coreos'},
+    {'path': '/etc/os-release', 'name': 'Flatcar'},
+    {'path': '/etc/os-release', 'name': 'NA'},
+)
+
+# Keys and members are kept in sync with the Ansible Conditionals documentation, so
+# that "os_family" means the same thing here as in a playbook. Non-Linux families are
+# left out because this module never reports them.
+OS_FAMILY_MAP = {
+    'Alpine': ['Alpine'],
+    'Altlinux': ['Altlinux'],
+    'Archlinux': ['Antergos', 'Archlinux', 'Manjaro'],
+    'ClearLinux': ['Clear Linux Mix', 'Clear Linux OS'],
+    'Debian': [
+        'Cumulus Linux',
+        'Debian',
+        'Deepin',
+        'Devuan',
+        'KDE neon',
+        'Kali',
+        'Linux Mint',
+        'Linux Mint Debian Edition',
+        'Neon',
+        'OSMC',
+        'Pardus GNU/Linux',
+        'Parrot',
+        'Pop!_OS',
+        'Raspbian',
+        'SteamOS',
+        'Ubuntu',
+        'Univention Corporate Server',
+        'Uos',
+    ],
+    'Gentoo': ['Funtoo', 'Gentoo'],
+    'Mandrake': ['Mandrake', 'Mandriva'],
+    'RedHat': [
+        'Alibaba',
+        'AlmaLinux',
+        'Amazon',
+        'Amzn',
+        'Ascendos',
+        'CentOS',
+        'CloudLinux',
+        'EuroLinux',
+        'EulerOS',
+        'Fedora',
+        'Kylin Linux Advanced Server',
+        'MIRACLE',
+        'OEL',
+        'OVS',
+        'OracleLinux',
+        'PSBM',
+        'RHEL',
+        'RedHat',
+        'Rocky',
+        'SLC',
+        'Scientific',
+        'TencentOS',
+        'UnionTech',
+        'Virtuozzo',
+        'XenServer',
+        'openEuler',
+    ],
+    'SMGL': ['SMGL'],
+    'Slackware': ['Slackware'],
+    'Suse': [
+        'ALP-Dolomite',
+        'SLED',
+        'SLES',
+        'SLES_SAP',
+        'SL-Micro',
+        'SUSE_LINUX',
+        'SuSE',
+        'openSUSE',
+        'openSUSE Leap',
+        'openSUSE MicroOS',
+        'openSUSE Tumbleweed',
+    ],
+}
+
+# Flattened for lookup. No distribution appears in more than one family.
+_OS_FAMILY = {
+    member: family for family, members in OS_FAMILY_MAP.items() for member in members
+}
+
+# Kept apart from SEARCH_STRING: a match on one of its keys falls back to the first
+# word of the file, which for an os-release file is the useless 'NAME=Arch'.
+OS_RELEASE_ALIAS = {
+    'Archlinux': 'Arch Linux',
+}
+
+# Distributions whose release file is recognised by a marker string rather than by a
+# parser. If the marker is absent, the first word of the file becomes the
+# distribution name, which is how Scientific Linux and friends are picked up from
+# /etc/redhat-release.
+SEARCH_STRING = {
+    'Altlinux': 'ALT',
+    'OracleLinux': 'Oracle Linux',
+    'RedHat': 'Red Hat',
+    'SMGL': 'Source Mage GNU/Linux',
+}
+
 # Characters Ansible strips off release file content before parsing it: a quote or
 # backslash carries no meaning in any of the formats handled here.
 STRIP_QUOTES = r'\'\"\\'
+
+# Basenames that qualify as a release file, such as "rocky-release", "SuSE-release"
+# or "slackware-version".
+_DISTRO_RELEASE_BASENAME_REGEX = re.compile(r'\w+[-_](?:release|version)$')
+
+# Basenames that look like a release file but do not identify a distribution. Taken
+# from the `distro` package Ansible uses. /etc/system-release is on it because it is
+# a symlink whose content repeats the product name, which would otherwise end up
+# being reported as the release name of Amazon Linux.
+_DISTRO_RELEASE_IGNORE_BASENAMES = (
+    'board-release',
+    'debian_version',
+    'ec2_version',
+    'iredmail-release',
+    'lsb-release',
+    'oem-release',
+    'os-release',
+    'plesk-release',
+    'system-release',
+)
+
+# /usr/lib/os-release is the vendor copy and the only one present on image based
+# distributions such as Clear Linux.
+_OS_RELEASE_PATHS = ('/etc/os-release', '/usr/lib/os-release')
+
+# Release file content naming no "release" keyword, as in "SUSE Linux Enterprise
+# Server 11 (x86_64)" or "Ubuntu 20.04.1 LTS". Only a purely numeric version is
+# accepted here. The `distro` package allows any lowercase token, which makes it read
+# the version "64-pc-linux-gnu" out of "Source Mage GNU/Linux x86_64-pc-linux-gnu".
+_RELEASE_CONTENT_NO_KEYWORD_REGEX = re.compile(
+    r'^(?P<name>.+?)\s+'
+    r'(?P<version>\d+(?:\.\d+)*)'
+    r'(?:\s+LTS)?'
+    r'(?:\s+\((?P<codename>[^)]*)\))?\s*$'
+)
+
+# Release file content naming a "release" or "version" keyword, as in
+# "Red Hat Enterprise Linux release 9.7 (Plow)" -> name, version, release name.
+_RELEASE_CONTENT_REGEX = re.compile(
+    r'^(?P<name>.+?)\s+(?:release|version)\s+'
+    r'(?P<version>[\d.+\-a-z]*\d)'
+    r'(?:\s+LTS)?'
+    r'(?:\s+\((?P<codename>[^)]*)\))?'
+)
 
 
 def _file_exists(path, allow_empty=False):
@@ -77,6 +257,138 @@ def _file_exists(path, allow_empty=False):
     if allow_empty:
         return True
     return os.path.getsize(path) > 0
+
+
+def _get_best_version(distro_id, candidates):
+    """
+    Pick the most precise version out of the candidates.
+
+    ### Parameters
+    - **distro_id** (`str`):
+      The lowercase distribution ID, as found in `ID=` of /etc/os-release.
+    - **candidates** (`list`):
+      The result of `_get_version_candidates()`.
+
+    ### Returns
+    - **str**:
+      The most precise version, or an empty string if there is no candidate.
+
+    ### Notes
+    - CentOS ships only the major version in /etc/os-release while admins expect
+      `7.9`, and Debian omits the minor version there entirely (Debian bug #931197).
+      Ansible asks the `distro` package for its "best" version for exactly these
+      two, which is the candidate carrying the most dots.
+    - /etc/debian_version only counts as a candidate if it holds a version. Testing
+      and unstable hold a release name such as `trixie/sid` there, which the `distro`
+      package happily reports as the version.
+
+    ### Example
+    >>> _get_best_version('debian', ['12'])
+    '12.14'
+    """
+    if distro_id == 'debian':
+        candidates = candidates + [
+            line.strip()
+            for line in _get_file_lines('/etc/debian_version')
+            if re.match(r'^\d+\.\d+', line.strip())
+        ]
+
+    best = ''
+    for candidate in candidates:
+        if best == '' or candidate.count('.') > best.count('.'):
+            best = candidate
+
+    if distro_id == 'centos':
+        return '.'.join(best.split('.')[:2])
+    return best
+
+
+def _get_codename(distro_id, os_release, lsb_release, release_info):
+    """
+    Determine the release name, asking every source in the order Ansible does.
+
+    ### Parameters
+    - **distro_id** (`str`):
+      The lowercase distribution ID, as found in `ID=` of /etc/os-release.
+    - **os_release** (`dict`):
+      The result of `_get_os_release_info()`.
+    - **lsb_release** (`dict`):
+      The result of `_get_lsb_release_info()`.
+    - **release_info** (`dict`):
+      The result of `_get_distro_release_info()`.
+
+    ### Returns
+    - **str or None**:
+      The release name, or `None` if no source carries one.
+
+    ### Notes
+    - The order is `VERSION_CODENAME`, `UBUNTU_CODENAME`, /etc/lsb-release for
+      Ubuntu, whatever `VERSION` of /etc/os-release stands for, /etc/lsb-release for
+      everyone else, and finally the release file.
+    - An empty release name is an answer in itself and survives the first two steps.
+
+    ### Example
+    >>> _get_codename('kali', {}, {'distrib_codename': 'kali-rolling'}, {})
+    'kali-rolling'
+    """
+    codename = os_release.get('version_codename')
+    if codename is None:
+        codename = os_release.get('ubuntu_codename')
+    if codename is None and distro_id == 'ubuntu':
+        codename = lsb_release.get('distrib_codename')
+    if codename is not None:
+        return codename
+
+    codename = _get_os_release_codename(os_release)
+    if codename is None:
+        codename = (
+            lsb_release.get('distrib_codename') or release_info.get('codename') or ''
+        )
+    return codename or None
+
+
+def _get_distro_release_info():
+    """
+    Extract name, version and release name from the first matching release file in /etc.
+
+    ### Parameters
+    - *None*
+
+    ### Returns
+    - **dict**:
+      Any of the keys `name`, `version` and `codename` that could be determined.
+      Empty if no release file is readable or none of them parses.
+
+    ### Notes
+    - Replaces the release file handling of the `distro` package Ansible relies on.
+    - Candidates are sorted so that the result stays stable where a distribution
+      ships several of them, for example Oracle Linux with /etc/oracle-release next
+      to /etc/redhat-release.
+
+    ### Example
+    >>> _get_distro_release_info()
+    {'name': 'Red Hat Enterprise Linux', 'version': '9.7', 'codename': 'Plow'}
+    """
+    try:
+        basenames = sorted(
+            basename
+            for basename in os.listdir('/etc')
+            if basename not in _DISTRO_RELEASE_IGNORE_BASENAMES
+            and _DISTRO_RELEASE_BASENAME_REGEX.match(basename)
+        )
+    except OSError:
+        return {}
+
+    for basename in basenames:
+        data = _get_file_content(os.path.join('/etc', basename))
+        if not data:
+            continue
+        # A file carrying no version, such as the os-release formatted
+        # /etc/centos-release of TencentOS, states nothing worth reporting.
+        info = _parse_release_content(data.splitlines()[0])
+        if info:
+            return info
+    return {}
 
 
 def _get_file_content(path, default=None, strip=True):
@@ -138,42 +450,6 @@ def _get_file_lines(path):
     return data.splitlines() if data else []
 
 
-# /usr/lib/os-release is the vendor copy and the only one present on image based
-# distributions such as Clear Linux.
-_OS_RELEASE_PATHS = ('/etc/os-release', '/usr/lib/os-release')
-
-
-def _get_os_release_info():
-    """
-    Read the first available os-release file into a dictionary.
-
-    ### Parameters
-    - *None*
-
-    ### Returns
-    - **dict**:
-      The `KEY=value` pairs of the file, with keys lowercased and quotes stripped
-      from the values. Empty if no os-release file can be read.
-
-    ### Example
-    >>> _get_os_release_info()
-    {'name': 'Fedora Linux', 'version': '41 (Workstation Edition)', 'id': 'fedora', ...}
-    """
-    values = {}
-    for path in _OS_RELEASE_PATHS:
-        data = _get_file_content(path)
-        if not data:
-            continue
-        for line in data.splitlines():
-            line = line.strip()
-            if not line or line.startswith('#') or '=' not in line:
-                continue
-            key, value = line.split('=', 1)
-            values[key.strip().lower()] = value.strip().strip(STRIP_QUOTES)
-        break
-    return values
-
-
 def _get_lsb_release_info():
     """
     Read /etc/lsb-release into a dictionary.
@@ -207,112 +483,108 @@ def _get_lsb_release_info():
     return values
 
 
-# Basenames that look like a release file but do not identify a distribution. Taken
-# from the `distro` package Ansible uses. /etc/system-release is on it because it is
-# a symlink whose content repeats the product name, which would otherwise end up
-# being reported as the release name of Amazon Linux.
-_DISTRO_RELEASE_IGNORE_BASENAMES = (
-    'board-release',
-    'debian_version',
-    'ec2_version',
-    'iredmail-release',
-    'lsb-release',
-    'oem-release',
-    'os-release',
-    'plesk-release',
-    'system-release',
-)
-
-_DISTRO_RELEASE_BASENAME_REGEX = re.compile(r'\w+[-_](?:release|version)$')
-
-# "Red Hat Enterprise Linux release 9.7 (Plow)" -> name, version, release name.
-_DISTRO_RELEASE_REGEX = re.compile(
-    r'^(?P<name>.+?)\s+(?:release|version)\s+'
-    r'(?P<version>[\d.+\-a-z]*\d)'
-    r'(?:\s+\((?P<codename>.+)\))?'
-)
-
-
-def _get_distro_release_info():
+def _get_os_release_codename(os_release):
     """
-    Extract name, version and release name from the first matching release file in /etc.
+    Determine the release name /etc/os-release stands for.
+
+    ### Parameters
+    - **os_release** (`dict`):
+      The result of `_get_os_release_info()`.
+
+    ### Returns
+    - **str or None**:
+      The release name, or `None` if the file carries none.
+
+    ### Notes
+    - `VERSION_CODENAME` and `UBUNTU_CODENAME` win over anything derived from
+      `VERSION`, even when they are empty: a distribution setting them to nothing
+      states that it has no release name. That is how Fedora ends up without one.
+    - Deriving the release name from `VERSION` is what makes openEuler report `LTS`
+      and AlmaLinux `Purple Manul`, neither of which carries a `VERSION_CODENAME`.
+
+    ### Example
+    >>> _get_os_release_codename({'version': '8.3 (Purple Manul)'})
+    'Purple Manul'
+    """
+    if 'version_codename' in os_release:
+        return os_release['version_codename']
+    if 'ubuntu_codename' in os_release:
+        return os_release['ubuntu_codename']
+
+    match = re.search(
+        r'\((?P<paren>\D+)\)|,\s*(?P<comma>\D+)', os_release.get('version', '')
+    )
+    if match:
+        return match.group('paren') or match.group('comma')
+    return None
+
+
+def _get_os_release_info():
+    """
+    Read the first available os-release file into a dictionary.
 
     ### Parameters
     - *None*
 
     ### Returns
     - **dict**:
-      Any of the keys `name`, `version` and `codename` that could be determined.
-      Empty if no release file is readable or none of them parses.
-
-    ### Notes
-    - Replaces the release file handling of the `distro` package Ansible relies on.
-      It is the only source of a release name on the Red Hat family, whose
-      /etc/os-release carries no `VERSION_CODENAME`.
-    - Candidates are sorted so that the result stays stable where a distribution
-      ships several of them, for example Oracle Linux with /etc/oracle-release next
-      to /etc/redhat-release.
+      The `KEY=value` pairs of the file, with keys lowercased and quotes stripped
+      from the values. Empty if no os-release file can be read.
 
     ### Example
-    >>> _get_distro_release_info()
-    {'name': 'Red Hat Enterprise Linux', 'version': '9.7', 'codename': 'Plow'}
+    >>> _get_os_release_info()
+    {'name': 'Fedora Linux', 'version': '41 (Workstation Edition)', 'id': 'fedora', ...}
     """
-    try:
-        basenames = sorted(
-            basename
-            for basename in os.listdir('/etc')
-            if basename not in _DISTRO_RELEASE_IGNORE_BASENAMES
-            and _DISTRO_RELEASE_BASENAME_REGEX.match(basename)
-        )
-    except OSError:
-        return {}
-
-    for basename in basenames:
-        data = _get_file_content(os.path.join('/etc', basename))
+    values = {}
+    for path in _OS_RELEASE_PATHS:
+        data = _get_file_content(path)
         if not data:
             continue
-        match = _DISTRO_RELEASE_REGEX.match(data.splitlines()[0])
-        if not match:
-            continue
-        return {k: v for k, v in match.groupdict().items() if v}
-    return {}
+        for line in data.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            values[key.strip().lower()] = value.strip().strip(STRIP_QUOTES)
+        break
+    return values
 
 
-def _get_best_version(distro_id, version, release_info):
+def _get_version_candidates(os_release, lsb_release, release_info):
     """
-    Refine the version of the two distributions whose os-release is too coarse.
+    Collect every version the release files offer, in the order Ansible prefers them.
 
     ### Parameters
-    - **distro_id** (`str`):
-      The lowercase distribution ID, as found in `ID=` of /etc/os-release.
-    - **version** (`str`):
-      The version determined so far.
+    - **os_release** (`dict`):
+      The result of `_get_os_release_info()`.
+    - **lsb_release** (`dict`):
+      The result of `_get_lsb_release_info()`.
     - **release_info** (`dict`):
       The result of `_get_distro_release_info()`.
 
     ### Returns
-    - **str**:
-      The refined version, or the version passed in if no better one is available.
+    - **list**:
+      The candidates, most preferred first. Sources that carry no version are left
+      out.
 
     ### Notes
-    - CentOS ships only the major version in /etc/os-release while admins expect
-      `7.9`, and Debian omits the minor version there entirely (Debian bug #931197).
-      Ansible special-cases exactly these two.
+    - Mirrors the candidate list of `distro.version()`. The uname candidate is
+      missing because it would require shelling out.
 
     ### Example
-    >>> _get_best_version('debian', '12', {})
-    '12.14'
+    >>> _get_version_candidates({'version_id': '9.7'}, {}, {'version': '9.7'})
+    ['9.7', '9.7']
     """
-    if distro_id == 'centos':
-        best = release_info.get('version', '')
-        if best:
-            return '.'.join(best.split('.')[:2])
-    elif distro_id == 'debian':
-        for line in _get_file_lines('/etc/debian_version'):
-            # Testing and unstable hold a release name such as 'trixie/sid'.
-            if re.match(r'^\d+\.\d+', line.strip()):
-                return line.strip()
-    return version
+    candidates = [
+        os_release.get('version_id', ''),
+        lsb_release.get('distrib_release', ''),
+        release_info.get('version', ''),
+        _parse_release_content(os_release.get('pretty_name', '')).get('version', ''),
+        _parse_release_content(lsb_release.get('distrib_description', '')).get(
+            'version', ''
+        ),
+    ]
+    return [candidate for candidate in candidates if candidate]
 
 
 def _guess_distribution():
@@ -344,7 +616,11 @@ def _guess_distribution():
     lsb_release = _get_lsb_release_info()
     release_info = _get_distro_release_info()
 
-    distro_id = os_release.get('id') or lsb_release.get('distrib_id', '').lower()
+    # Lowercased the way `distro.id()` normalises it, so that the comparisons below
+    # hold for a distribution spelling its ID with capitals, such as openEuler.
+    distro_id = (
+        os_release.get('id', '').lower() or lsb_release.get('distrib_id', '').lower()
+    )
 
     # Ansible normalises these two so that the OS family map and the release file
     # varieties agree on one spelling.
@@ -356,25 +632,14 @@ def _guess_distribution():
     elif not distribution:
         distribution = 'OtherLinux'
 
-    version = (
-        os_release.get('version_id')
-        or lsb_release.get('distrib_release')
-        or release_info.get('version')
-        or ''
-    )
-    version = _get_best_version(distro_id, version, release_info)
+    candidates = _get_version_candidates(os_release, lsb_release, release_info)
+    if distro_id in ('centos', 'debian'):
+        # Ansible asks for the most precise version it can get for these two.
+        version = _get_best_version(distro_id, candidates)
+    else:
+        version = candidates[0] if candidates else ''
 
-    # Each step only applies if the previous key is absent altogether. An empty
-    # VERSION_CODENAME is an answer in itself and has to survive, which is how
-    # Fedora ends up with an empty release name instead of the one from
-    # /etc/fedora-release.
-    codename = os_release.get('version_codename')
-    if codename is None:
-        codename = os_release.get('ubuntu_codename')
-    if codename is None and distro_id == 'ubuntu':
-        codename = lsb_release.get('distrib_codename')
-    if codename is None:
-        codename = release_info.get('codename') or None
+    codename = _get_codename(distro_id, os_release, lsb_release, release_info)
 
     guess = {
         'distribution': distribution,
@@ -385,6 +650,82 @@ def _guess_distribution():
         guess['distribution_version'].split('.')[0] or 'NA'
     )
     return guess
+
+
+def _map_os_family(distribution):
+    """
+    Map a detected distribution to its OS family.
+
+    ### Parameters
+    - **distribution** (`str`):
+      The detected distribution name.
+
+    ### Returns
+    - **str**:
+      The mapped OS family name, or the distribution itself if it has no family.
+
+    ### Example
+    >>> _map_os_family('Fedora')
+    'RedHat'
+    """
+    return _OS_FAMILY.get(distribution) or distribution
+
+
+def _parse_dist_file(name, data, path, collected_facts):
+    """
+    Dispatch a release file to the parser responsible for it.
+
+    ### Parameters
+    - **name** (`str`):
+      The variety name from `OSDIST_LIST`.
+    - **data** (`str`):
+      The contents of the release file.
+    - **path** (`str`):
+      The path the content was read from.
+    - **collected_facts** (`dict`):
+      The facts gathered so far.
+
+    ### Returns
+    - **tuple** (`bool`, `dict`):
+      - First element: `True` if the file belongs to this variety, `False` otherwise.
+      - Second element: The parsed facts.
+
+    ### Notes
+    - A variety without a parser reports no match, which lets `_process_dist_files`
+      move on to the next candidate.
+
+    ### Example
+    >>> _parse_dist_file(
+    ...     'RedHat',
+    ...     'Red Hat Enterprise Linux release 9.7 (Plow)',
+    ...     '/etc/redhat-release',
+    ...     {},
+    ... )
+    (True, {'distribution': 'RedHat', 'distribution_file_search_string': 'Red Hat'})
+    """
+    facts = {}
+    data = data.strip(STRIP_QUOTES)
+
+    if name in SEARCH_STRING:
+        if SEARCH_STRING[name] in data:
+            # Sets distribution=RedHat if 'Red Hat' shows up in the data.
+            facts['distribution'] = name
+            facts['distribution_file_search_string'] = SEARCH_STRING[name]
+        elif data.split():
+            # Sets distribution to what is in the data, for example CentOS.
+            facts['distribution'] = data.split()[0]
+        return True, facts
+
+    if name in OS_RELEASE_ALIAS:
+        if OS_RELEASE_ALIAS[name] in data:
+            facts['distribution'] = name
+            return True, facts
+        return False, facts
+
+    parser = _DIST_FILE_PARSERS.get(name)
+    if parser is None:
+        return False, facts
+    return parser(name, data, path, collected_facts)
 
 
 def _parse_distribution_file_alpine(name, data, path, collected_facts):
@@ -1027,27 +1368,12 @@ def _parse_distribution_file_uniontech(name, data, path, collected_facts):
     return True, facts
 
 
-# Distributions whose release file is recognised by a marker string rather than by a
-# parser. If the marker is absent, the first word of the file becomes the
-# distribution name, which is how Scientific Linux and friends are picked up from
-# /etc/redhat-release.
-SEARCH_STRING = {
-    'Altlinux': 'ALT',
-    'OracleLinux': 'Oracle Linux',
-    'RedHat': 'Red Hat',
-    'SMGL': 'Source Mage GNU/Linux',
-}
-
-# Kept apart from SEARCH_STRING: a match on one of its keys falls back to the first
-# word of the file, which for an os-release file is the useless 'NAME=Arch'.
-OS_RELEASE_ALIAS = {
-    'Archlinux': 'Arch Linux',
-}
-
 # Every name in OSDIST_LIST must either be listed in SEARCH_STRING or
 # OS_RELEASE_ALIAS, carry allowempty, or have a parser here. Gentoo is the one
 # exception: Ansible has no parser for it either, and it is picked up by the generic
 # 'NA' entry at the end of OSDIST_LIST.
+# Kept here instead of with the other constants at the top, because it names the
+# parsers above and they have to be defined by the time this is read.
 _DIST_FILE_PARSERS = {
     'Alpine': _parse_distribution_file_alpine,
     'Amazon': _parse_distribution_file_amazon,
@@ -1065,94 +1391,32 @@ _DIST_FILE_PARSERS = {
 }
 
 
-def _parse_dist_file(name, data, path, collected_facts):
+def _parse_release_content(line):
     """
-    Dispatch a release file to the parser responsible for it.
+    Split a release file line into name, version and release name.
+
+    Also used on the `PRETTY_NAME` of /etc/os-release and the `DISTRIB_DESCRIPTION`
+    of /etc/lsb-release, both of which carry the same wording.
 
     ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    - **line** (`str`):
+      A single line, for example `Red Hat Enterprise Linux release 9.7 (Plow)`.
 
     ### Returns
-    - **tuple** (`bool`, `dict`):
-      - First element: `True` if the file belongs to this variety, `False` otherwise.
-      - Second element: The parsed facts.
-
-    ### Notes
-    - A variety without a parser reports no match, which lets `_process_dist_files`
-      move on to the next candidate.
+    - **dict**:
+      Any of the keys `name`, `version` and `codename` that could be determined.
+      Empty if the line carries none of them.
 
     ### Example
-    >>> _parse_dist_file(
-    ...     'RedHat',
-    ...     'Red Hat Enterprise Linux release 9.7 (Plow)',
-    ...     '/etc/redhat-release',
-    ...     {},
-    ... )
-    (True, {'distribution': 'RedHat', 'distribution_file_search_string': 'Red Hat'})
+    >>> _parse_release_content('Red Hat Enterprise Linux release 9.7 (Plow)')
+    {'name': 'Red Hat Enterprise Linux', 'version': '9.7', 'codename': 'Plow'}
     """
-    facts = {}
-    data = data.strip(STRIP_QUOTES)
-
-    if name in SEARCH_STRING:
-        if SEARCH_STRING[name] in data:
-            # Sets distribution=RedHat if 'Red Hat' shows up in the data.
-            facts['distribution'] = name
-            facts['distribution_file_search_string'] = SEARCH_STRING[name]
-        elif data.split():
-            # Sets distribution to what is in the data, for example CentOS.
-            facts['distribution'] = data.split()[0]
-        return True, facts
-
-    if name in OS_RELEASE_ALIAS:
-        if OS_RELEASE_ALIAS[name] in data:
-            facts['distribution'] = name
-            return True, facts
-        return False, facts
-
-    parser = _DIST_FILE_PARSERS.get(name)
-    if parser is None:
-        return False, facts
-    return parser(name, data, path, collected_facts)
-
-
-# Order matters and is not alphabetical: the first entry that parses wins. Oracle
-# Linux has to come before Red Hat because it ships a /etc/redhat-release naming Red
-# Hat, and UnionTech before Red Hat because its A-version symlinks redhat-release to
-# uos-release. The generic 'NA' entry has to stay last.
-OSDIST_LIST = (
-    {'path': '/etc/altlinux-release', 'name': 'Altlinux'},
-    {'path': '/etc/oracle-release', 'name': 'OracleLinux'},
-    {'path': '/etc/slackware-version', 'name': 'Slackware'},
-    {'path': '/etc/centos-release', 'name': 'CentOS'},
-    {'path': '/etc/redhat-release', 'name': 'UnionTech'},
-    {'path': '/etc/redhat-release', 'name': 'RedHat'},
-    {'path': '/etc/vmware-release', 'name': 'VMwareESX', 'allowempty': True},
-    {'path': '/etc/openwrt_release', 'name': 'OpenWrt'},
-    {'path': '/etc/os-release', 'name': 'Amazon'},
-    {'path': '/etc/system-release', 'name': 'Amazon'},
-    {'path': '/etc/alpine-release', 'name': 'Alpine'},
-    {'path': '/etc/arch-release', 'name': 'Archlinux', 'allowempty': True},
-    {'path': '/etc/os-release', 'name': 'Archlinux'},
-    {'path': '/etc/os-release', 'name': 'SUSE'},
-    {'path': '/etc/SuSE-release', 'name': 'SUSE'},
-    {'path': '/etc/gentoo-release', 'name': 'Gentoo'},
-    {'path': '/etc/os-release', 'name': 'UnionTech'},
-    {'path': '/etc/os-release', 'name': 'Debian'},
-    {'path': '/etc/lsb-release', 'name': 'Debian'},
-    {'path': '/etc/lsb-release', 'name': 'Mandriva'},
-    {'path': '/etc/sourcemage-release', 'name': 'SMGL'},
-    {'path': '/usr/lib/os-release', 'name': 'ClearLinux'},
-    {'path': '/etc/coreos/update.conf', 'name': 'Coreos'},
-    {'path': '/etc/os-release', 'name': 'Flatcar'},
-    {'path': '/etc/os-release', 'name': 'NA'},
-)
+    line = (line or '').strip()
+    for regex in (_RELEASE_CONTENT_REGEX, _RELEASE_CONTENT_NO_KEYWORD_REGEX):
+        match = regex.match(line)
+        if match:
+            return {k: v for k, v in match.groupdict().items() if v}
+    return {}
 
 
 def _process_dist_files():
@@ -1212,107 +1476,18 @@ def _process_dist_files():
         facts.update(parsed_facts)
         break
 
+    # A parser may be the first to find a version, for example on an Amazon Linux
+    # recognised through /etc/system-release. Ansible has its major version from the
+    # `distro` package by then, this module has to derive it.
+    if (
+        facts['distribution_major_version'] == 'NA'
+        and facts['distribution_version'] != 'NA'
+    ):
+        facts['distribution_major_version'] = (
+            facts['distribution_version'].split('.')[0] or 'NA'
+        )
+
     return facts
-
-
-# Keys and members are kept in sync with the Ansible Conditionals documentation, so
-# that "os_family" means the same thing here as in a playbook. Non-Linux families are
-# left out because this module never reports them.
-OS_FAMILY_MAP = {
-    'Alpine': ['Alpine'],
-    'Altlinux': ['Altlinux'],
-    'Archlinux': ['Antergos', 'Archlinux', 'Manjaro'],
-    'ClearLinux': ['Clear Linux Mix', 'Clear Linux OS'],
-    'Debian': [
-        'Cumulus Linux',
-        'Debian',
-        'Deepin',
-        'Devuan',
-        'KDE neon',
-        'Kali',
-        'Linux Mint',
-        'Linux Mint Debian Edition',
-        'Neon',
-        'OSMC',
-        'Pardus GNU/Linux',
-        'Parrot',
-        'Pop!_OS',
-        'Raspbian',
-        'SteamOS',
-        'Ubuntu',
-        'Univention Corporate Server',
-        'Uos',
-    ],
-    'Gentoo': ['Funtoo', 'Gentoo'],
-    'Mandrake': ['Mandrake', 'Mandriva'],
-    'RedHat': [
-        'Alibaba',
-        'AlmaLinux',
-        'Amazon',
-        'Amzn',
-        'Ascendos',
-        'CentOS',
-        'CloudLinux',
-        'EuroLinux',
-        'EulerOS',
-        'Fedora',
-        'Kylin Linux Advanced Server',
-        'MIRACLE',
-        'OEL',
-        'OVS',
-        'OracleLinux',
-        'PSBM',
-        'RHEL',
-        'RedHat',
-        'Rocky',
-        'SLC',
-        'Scientific',
-        'TencentOS',
-        'UnionTech',
-        'Virtuozzo',
-        'XenServer',
-        'openEuler',
-    ],
-    'SMGL': ['SMGL'],
-    'Slackware': ['Slackware'],
-    'Suse': [
-        'ALP-Dolomite',
-        'SLED',
-        'SLES',
-        'SLES_SAP',
-        'SL-Micro',
-        'SUSE_LINUX',
-        'SuSE',
-        'openSUSE',
-        'openSUSE Leap',
-        'openSUSE MicroOS',
-        'openSUSE Tumbleweed',
-    ],
-}
-
-# Flattened for lookup. No distribution appears in more than one family.
-_OS_FAMILY = {
-    member: family for family, members in OS_FAMILY_MAP.items() for member in members
-}
-
-
-def _map_os_family(distribution):
-    """
-    Map a detected distribution to its OS family.
-
-    ### Parameters
-    - **distribution** (`str`):
-      The detected distribution name.
-
-    ### Returns
-    - **str**:
-      The mapped OS family name, or the distribution itself if it has no family.
-
-    ### Example
-    >>> _map_os_family('Fedora')
-    'RedHat'
-    """
-    return _OS_FAMILY.get(distribution) or distribution
 
 
 def get_distribution_facts():
@@ -1345,11 +1520,14 @@ def get_distribution_facts():
       same name. In particular, `distribution_release` is the release name such as
       `Plow` or `noble`, not the kernel release.
     - On anything other than Linux, only the `platform` module is consulted.
+    - `distribution_release` is empty where a distribution states that it has no
+      release name, which Fedora does by setting `VERSION_CODENAME=""`. It is `NA`
+      where no source carries one at all.
 
     ### Example
     >>> get_distribution_facts()
     {'distribution': 'Fedora', 'distribution_version': '41', 'distribution_release':
-    'NA', 'distribution_major_version': '41', 'distribution_file_path':
+    '', 'distribution_major_version': '41', 'distribution_file_path':
     '/etc/redhat-release', 'distribution_file_variety': 'RedHat',
     'distribution_file_parsed': True, 'os_family': 'RedHat', 'os_info':
     'Fedora Linux 41 (Workstation Edition)'}
