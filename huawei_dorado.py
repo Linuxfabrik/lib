@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026080602'
 
 import json
 from time import sleep as _sleep
@@ -218,12 +218,20 @@ def get_cp_type(cp):
     return mapping.get(_as_code(cp), 'Unknown')
 
 
-# Password states in which a login succeeds but the resulting session cannot query
-# anything: the appliance then only accepts the password and security-policy endpoints
-# (an expired, initial or must-be-changed password), or the login is not finished at all
-# (a pending one-time-password or challenge-response step). The states left out are the
-# ones a session survives: normal, about to expire, and never expires.
-_UNUSABLE_ACCOUNT_STATES = frozenset({3, 4, 6, 8, 9, 10, 11})
+# Password states that make a login pointless to continue from. Two groups qualify: an
+# expired password, where the account is out of its validity period, and a login that is
+# not finished at all because the appliance still waits for a one-time password or a
+# challenge response. In the second group no session exists yet to query anything with.
+#
+# Everything else is deliberately left out. Neither REST Interface Reference states which
+# password states restrict a session, so every entry here is an assumption about the
+# appliance rather than a documented rule. States 4 (initial password) and 6 (must be
+# changed at the next login) used to abort as well, which took every check on a freshly
+# deployed appliance to UNKNOWN before anyone had logged in to set a password. They now
+# run: if the appliance really does refuse their requests, `get_data()` reports its error
+# text, which names the cause better than a guess made here. This matches
+# `lib.huawei_pacific`, whose `_UNUSABLE_PASSWORD_STATES` covers the same ground.
+_UNUSABLE_ACCOUNT_STATES = frozenset({3, 8, 9, 10, 11})
 
 
 def _cached_session(session_key):
@@ -252,6 +260,51 @@ def _cached_session(session_key):
     if isinstance(pair, list) and len(pair) == 2 and all(pair):
         return pair[0], pair[1]
     return None
+
+
+def _logout(args, session):
+    """
+    End a session on the appliance, ignoring whatever comes back.
+
+    Called on a session nothing will read back: the one a forced re-login replaces in
+    `get_creds()`, and every session at all in `get_data()` when caching is switched off.
+    Without it such a session stays open until the appliance's own timeout expires it, which
+    is 20 minutes by default. The appliance caps the sessions it holds system-wide at 32 by
+    default (256 is the only other value `CHANGE_USER_LOGIN_MAX_SESSIONS` accepts), so a
+    check that keeps failing would leave orphans behind run after run and, at a one-minute
+    interval, fill that pool from a single service. Once it is full every login is refused,
+    including an operator's login to DeviceManager.
+
+    ### Parameters
+    - **args** (object): An object containing `URL`, `DEVICE_ID`, `INSECURE`, `NO_PROXY` and
+      `TIMEOUT`.
+    - **session** (`tuple` (`str`, `str`)): The `(iBaseToken, Cookie)` pair to end.
+
+    ### Returns
+    - **None**
+
+    ### Notes
+    - Every outcome is discarded, errors included. This is housekeeping on the way to a fresh
+      login, and the session most likely to be logged out here is one the appliance has
+      already dropped, which is exactly the case that answers with an error. Letting that
+      abort the re-login would break the recovery path this call is part of. `url.fetch()`
+      reports failures through its return value rather than by raising, so no exception can
+      escape either.
+    """
+    ibasetoken, cookie = session
+    url.fetch(
+        f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/sessions',
+        # No `Content-Type`: this is a bare verb with no body, and announcing a JSON one
+        # that is not there is what `get_data()` avoids for the same reason.
+        header={
+            'Cookie': cookie,
+            'iBaseToken': ibasetoken,
+        },
+        insecure=args.INSECURE,
+        method='DELETE',
+        no_proxy=args.NO_PROXY,
+        timeout=args.TIMEOUT,
+    )
 
 
 def get_creds(args, force_relogin=False):
@@ -307,14 +360,16 @@ def get_creds(args, force_relogin=False):
       into the next request header and surface as an unrelated type error. Failing here also
       keeps a wrong password from being replayed, which would drive the account towards the
       appliance's lockout threshold.
-    - An accepted login whose `accountstate` marks the password as expired, initial or due for
-      a change also aborts the caller, as does one that still waits for a one-time password.
-      Such a session is only good for changing the password, so every later request would fail
-      with an unrelated API error instead of naming the actual cause.
-    - The session is deliberately never deleted. Because the token is cached and reused across
-      runs, a logout at the end of a run would force a login on every single run and multiply
-      the login rate the appliance sees. The one session that `force_relogin` replaces lingers
-      until the appliance's own session timeout expires it.
+    - An accepted login whose `accountstate` marks the password as expired aborts the caller,
+      as does one that still waits for a one-time password or a challenge response: the
+      account is past its validity period, or the login never finished. Which password states
+      actually restrict a session is not documented, so no other state is treated as fatal;
+      see `_UNUSABLE_ACCOUNT_STATES`.
+    - No logout is sent at the end of a run. Because the token is cached and reused across
+      runs, that would force a login on every single run and multiply the login rate the
+      appliance sees. The session that `force_relogin` replaces is a different matter and is
+      handed back through `_logout()`, so it does not sit in the appliance's session pool
+      until its own timeout expires it.
     - The complete `Set-Cookie` field is sent back as the `Cookie` request header, attributes
       and all, because that is what the vendor's own example does. The limit of that approach
       is an appliance sending more than one `Set-Cookie` header: `lib.url` exposes the response
@@ -328,10 +383,14 @@ def get_creds(args, force_relogin=False):
     session_key = f'huaweidorado-{args.URL}-{args.DEVICE_ID}-{args.USERNAME}-session'
     caching = args.CACHE_EXPIRE > 0
 
-    if caching and not force_relogin:
+    if caching:
         cached = _cached_session(session_key)
-        if cached:
+        if cached and not force_relogin:
             return cached
+        if cached:
+            # About to replace this session, so hand it back to the appliance instead of
+            # leaving it to occupy a slot in the session pool until its timeout expires.
+            _logout(args, cached)
 
     uri = f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/sessions'
     header = {'Content-Type': 'application/json'}
@@ -369,9 +428,12 @@ def get_creds(args, force_relogin=False):
 
     if not ibasetoken or not cookie:
         error = response_json.get('error') or {}
+        # Both halves are required to build the request header, so a response carrying only
+        # one of them is as unusable as one carrying neither. The fallback text has to cover
+        # that case too, rather than naming the token alone.
         base.cu(
             f'Login at {args.URL} failed: '
-            f'{error.get("description") or "no session token returned"} '
+            f'{error.get("description") or "incomplete session in the login response"} '
             f'(code {error.get("code", "n/a")}).'
         )
 
@@ -484,6 +546,11 @@ def get_data(endpoint, args):
       `-401`. Whether an appliance reports a session it no longer accepts the same way is not
       documented, so the fresh login is not tied to that code: it is triggered on any non-zero
       error, which covers however a given firmware chooses to report it.
+    - With caching switched off (`CACHE_EXPIRE` of `0`) every attempt logs in again and the
+      session it gets is good for that one request only. Each is logged out right after it,
+      because nothing will ever read it back from the cache and the appliance holds a limited
+      number of sessions. In this mode a call can therefore reach three logins and three
+      logouts, which is the price of asking for no caching.
 
     ### Example
     >>> get_data('disk/list', args)
@@ -522,6 +589,11 @@ def get_data(endpoint, args):
                 timeout=args.TIMEOUT,
             )
         )
+        if args.CACHE_EXPIRE <= 0:
+            # Caching is off, so this session was created for this one request and nothing
+            # will ever reuse it. Hand it back instead of leaving it to occupy a slot in the
+            # appliance's session pool until its own timeout expires it.
+            _logout(args, (ibasetoken, cookie))
         error = result.get('error')
         code = error.get('code') if isinstance(error, dict) else error
         if code in (0, '0'):
@@ -530,6 +602,40 @@ def get_data(endpoint, args):
             _sleep(1)
 
     return result
+
+
+def get_dr_star_running_status(rs):
+    """
+    Convert a DR Star trio's `RUNNINGSTATUS` code into a human-readable description.
+
+    ### Parameters
+    - **rs** (`int` or `str`):
+      The running status code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description of the running status, including the original code in
+      brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Notes
+    - Scoped to the `dr_star` object, which renumbers `RUNNINGSTATUS` rather than sharing the
+      enumeration `get_running_status()` covers. Read through that function a disabled trio
+      would come out as `'Running (2)'`, which reads like the opposite of what it is.
+    - Both REST Interface References agree on these four values.
+
+    ### Example
+    >>> get_dr_star_running_status(2)
+    'Disabled (2)'
+    """
+    mapping = {
+        0: 'Unknown (0)',
+        1: 'Enabled (1)',
+        2: 'Disabled (2)',
+        3: 'Invalid (3)',
+    }
+    return mapping.get(_as_code(rs), 'Unknown')
 
 
 def get_enclosure_logic_type(lt):
@@ -597,6 +703,7 @@ def get_enclosure_model(em):
         39: '4 U 75-slot 3.5-inch 12 Gbit/s SAS disk enclosure',
         67: '2 U 25-slot 2.5-inch SAS disk enclosure',
         69: '4 U 24-slot 3.5-inch SAS disk enclosure',
+        73: '4 U 12 Gbit/s 75-slot 3.5-inch SAS disk enclosure',
         112: '4 U 4-controller controller enclosure',
         113: '2 U 2-controller 25-slot 2.5-inch SAS controller enclosure',
         114: '2 U 2-controller 12-slot 3.5-inch SAS controller enclosure',
@@ -607,6 +714,9 @@ def get_enclosure_model(em):
         119: '2 U 12-slot 3.5-inch smart SAS disk enclosure',
         120: '2 U 36-slot smart NVMe disk enclosure',
         122: '2 U 2-controller 25-slot 2.5-inch NVMe controller enclosure',
+        130: '2 U 2-controller 25-slot 2.5-inch SAS controller enclosure',
+        131: '2 U 2-controller 12-slot 3.5-inch SAS controller enclosure',
+        132: '4 U 2-controller 10-slot 3.5-inch controller enclosure',
     }
     return mapping.get(_as_code(em), 'Unknown')
 
@@ -691,6 +801,45 @@ def get_host_access_state(has):
         3: 'Read/write',
     }
     return mapping.get(_as_code(has), 'Unknown')
+
+
+def get_hypermetro_domain_running_status(rs):
+    """
+    Convert a HyperMetro domain's `RUNNINGSTATUS` code into a human-readable description.
+
+    ### Parameters
+    - **rs** (`int` or `str`):
+      The running status code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description of the running status, including the original code in
+      brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Notes
+    - Scoped to the `HyperMetroDomain` object, which renumbers `RUNNINGSTATUS` from `0` up
+      rather than sharing the enumeration `get_running_status()` covers. Every code below
+      collides: read through that function a faulty domain would come out as `'Running (2)'`
+      and an invalid one as `'Sleep in High Temperature (5)'`, so a broken HyperMetro pair
+      would look healthy in a check's output.
+    - Documented in the V700R001C10 REST Interface Reference. Code `4` exists nowhere else
+      and is deliberately absent from `get_running_status()`.
+
+    ### Example
+    >>> get_hypermetro_domain_running_status(2)
+    'Faulty (2)'
+    """
+    mapping = {
+        0: 'Normal (0)',
+        1: 'Recovering (1)',
+        2: 'Faulty (2)',
+        3: 'Split (3)',
+        4: 'Force started (4)',
+        5: 'Invalid (5)',
+    }
+    return mapping.get(_as_code(rs), 'Unknown')
 
 
 def get_interface_model(im):
@@ -973,8 +1122,10 @@ def get_os(os):
       Returns `'Unknown'` if the code is not recognized.
 
     ### Notes
-    - The appliance substitutes code `255` when the host never reported an operating system,
-      so that code stands for "none was delivered" rather than for a system of its own.
+    - Code `255` is not in the `OPERATIONSYSTEM` table of either REST Interface Reference. It
+      is carried here because appliances report it for a host that never delivered an
+      operating system, where rendering it as `'Unknown'` would read like a code the vendor
+      forgot to document. Treat the wording as observed behaviour, not as a documented value.
 
     ### Example
     >>> get_os(7)
@@ -1001,9 +1152,10 @@ def get_os(os):
         11: 'OpenVMS',
         12: 'Oracle_VM_Server_for_x86',
         13: 'Oracle_VM_Server_for_SPARC',
-        # Not a real operating system: the appliance substitutes 255 when the host
-        # never reported one, so it has to render as such rather than as 'Unknown',
-        # which is what an undocumented code means everywhere else in this module.
+        # Not a real operating system, and not in the vendor's table either: appliances
+        # report 255 for a host that never delivered one. Kept because 'Unknown', which
+        # is what an undocumented code means everywhere else in this module, would read
+        # as a gap in this mapping rather than as the absence of an answer.
         255: 'not specified (255)',
     }
     return mapping.get(_as_code(os), 'Unknown')
@@ -1143,12 +1295,19 @@ def get_running_status(rs):
       Returns `'Unknown'` if the code is not recognized.
 
     ### Notes
+    - Not scoped to `HyperMetroDomain` and `dr_star`. Both renumber `RUNNINGSTATUS` instead
+      of sharing this enumeration, and both collide on the low codes this function is most
+      likely to be handed: `2` is faulty on a HyperMetro domain and disabled on a DR Star
+      trio, not running. Read through this function either would look healthy, so they have
+      their own mappings in `get_hypermetro_domain_running_status()` and
+      `get_dr_star_running_status()`.
     - Code `94` is the one value whose meaning differs between the two documented firmware
       generations: 6.1.0 defines it as error, V700R001C10 as faulty. The response carries no
       firmware marker, so it renders as `'Error/Faulty'`, which holds under both revisions.
-    - Code `112` renders as `'Rollback failure'`. V700R001C10 uses that wording throughout,
-      and 6.1.0 uses it alongside its own `faulty restoration`, which reads as "restoring
-      after a fault" and therefore states the opposite of what the code means.
+    - Codes `16` and `112` follow the V700R001C10 wording, which is the newer of the two
+      references. 6.1.0 words `16` as `reconstruction`, and `112` alongside its own
+      `faulty restoration`, which reads as "restoring after a fault" and therefore states
+      the opposite of what the code means.
 
     ### Example
     >>> get_running_status(1)
@@ -1173,7 +1332,7 @@ def get_running_status(rs):
         12: 'Powering on (12)',
         13: 'Powered off (13)',
         14: 'Pre-Copy (14)',
-        16: 'Reconstruction (16)',
+        16: 'Rebuilding (16)',
         23: 'Synchronizing (23)',
         25: 'Unsynchronized (25)',
         26: 'Split (26)',

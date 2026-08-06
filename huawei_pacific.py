@@ -14,7 +14,7 @@ string- and integer-valued status fields).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026080602'
 
 import json
 from time import sleep as _sleep
@@ -70,9 +70,10 @@ def get_alarm_severity(sev):
 
     ### Notes
     - Scoped to the `/api/v2/` alarm and event endpoints. The older
-      `/dsware/service/${version}/alarm/list` endpoint numbers its `level` field the other way
-      round (`1` critical, `2` major, `3` minor, `4` warning), where this mapping would render
-      a critical alarm as `'Unknown'` and a major one as `'Information (2)'`.
+      `/dsware/service/${version}/alarm/list` endpoint numbers its `ialarmLevel` field the
+      other way round (`1` critical, `2` major, `3` minor, `4` warning, `5` other), where this
+      mapping would render a critical alarm as `'Unknown'` and a major one as
+      `'Information (2)'`.
 
     ### Example
     >>> get_alarm_severity(6)
@@ -105,12 +106,18 @@ def get_alarm_status(st):
     ### Notes
     - Scoped to the field named `alarmStatus`. The `status` field of `fms/alarms` shares the
       codes `1` and `2` but words them as uncleared and cleared, and never reports `4`.
+    - Code `-1` is not in the enumeration table of the field. It is carried here because the
+      response examples of `fms/events` and of the historical alarms and events endpoint show
+      it in both REST Interface References: a plain event has nothing to recover from, so it
+      reports no recovery state. Without the entry every row of an event listing would render
+      as `'Unknown'`.
 
     ### Example
     >>> get_alarm_status(1)
     'Unrecovered (1)'
     """
     mapping = {
+        -1: 'Not applicable (-1)',
         1: 'Unrecovered (1)',
         2: 'Cleared (2)',
         4: 'Recovered (4)',
@@ -130,6 +137,45 @@ def get_alarm_status(st):
 # refuse their requests, `get_data()` reports its error text, which names the cause better
 # than a guess made here.
 _UNUSABLE_PASSWORD_STATES = frozenset({3})
+
+
+def _logout(args, x_auth_token):
+    """
+    End a session on the appliance, ignoring whatever comes back.
+
+    Called on a session nothing will read back: the one a forced re-login replaces in
+    `get_creds()`, and every session at all in `get_data()` when caching is switched off.
+    Without it such a session stays open until the appliance's own timeout expires it, which
+    is configurable between 30 and 100 minutes. A check that keeps failing would leave orphans
+    behind run after run, so the count of open sessions grows for as long as the fault lasts.
+
+    ### Parameters
+    - **args** (object): An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT`.
+    - **x_auth_token** (`str`): The session token to end.
+
+    ### Returns
+    - **None**
+
+    ### Notes
+    - Every outcome is discarded, errors included. This is housekeeping on the way to a fresh
+      login, and the session most likely to be logged out here is one the appliance has
+      already dropped, which is exactly the case that answers with an error. Letting that
+      abort the re-login would break the recovery path this call is part of. `url.fetch()`
+      reports failures through its return value rather than by raising, so no exception can
+      escape either.
+    - `is_timeout` is left off the request. It only tells the appliance why the session ended,
+      and this is a deliberate logout, not one triggered by a timeout.
+    """
+    url.fetch(
+        f'{args.URL}/api/v2/aa/sessions',
+        # No `Content-Type`: this is a bare verb with no body, and announcing a JSON one
+        # that is not there is what `get_data()` avoids for the same reason.
+        header={'X-Auth-Token': x_auth_token},
+        insecure=args.INSECURE,
+        method='DELETE',
+        no_proxy=args.NO_PROXY,
+        timeout=args.TIMEOUT,
+    )
 
 
 def get_creds(args, force_relogin=False):
@@ -185,10 +231,11 @@ def get_creds(args, force_relogin=False):
       vendor's documentation authenticates with that header only. The prose does mention the
       CSRF token, but without saying which endpoints require it, so a firmware that starts
       demanding it would have to pick the token up from the login response here.
-    - The session is deliberately never deleted. Because the token is cached and reused across
-      runs, a logout at the end of a run would force a login on every single run and multiply
-      the login rate the appliance sees. The one session that `force_relogin` replaces lingers
-      until the appliance's own session timeout expires it.
+    - No logout is sent at the end of a run. Because the token is cached and reused across
+      runs, that would force a login on every single run and multiply the login rate the
+      appliance sees. The session that `force_relogin` replaces is a different matter and is
+      handed back through `_logout()`, so it does not stay open until its own timeout
+      expires it.
 
     ### Example
     >>> x_auth_token = get_creds(args)
@@ -196,10 +243,14 @@ def get_creds(args, force_relogin=False):
     token_key = f'huaweipacific-{args.URL}-{args.USERNAME}-xauthtoken'
     caching = args.CACHE_EXPIRE > 0
 
-    if caching and not force_relogin:
+    if caching:
         x_auth_token = cache.get(token_key, filename=CACHE_FILENAME)
-        if x_auth_token:
+        if x_auth_token and not force_relogin:
             return x_auth_token
+        if x_auth_token:
+            # About to replace this session, so hand it back to the appliance instead of
+            # leaving it open until its timeout expires.
+            _logout(args, x_auth_token)
 
     uri = f'{args.URL}/api/v2/aa/sessions'
     header = {'Content-Type': 'application/json'}
@@ -320,8 +371,10 @@ def get_data(endpoint, args, payload=None, method=None):
       the endpoint takes one. The string is appended to the request URL verbatim, so the caller
       is responsible for percent-encoding it; never build it from data the appliance itself
       returned. Note that the API knows two incompatible query syntaxes: the general one is
-      `?range={"offset":0,"limit":100}`, while the alarm and event endpoints expect
-      `?range=[0-100]&filter=alarmStatus::1`.
+      `?range={"offset":0,"limit":100}`, while a part of the endpoints expects
+      `?range=[0-100]&filter=alarmStatus::1` instead. The alarm and event endpoints are the
+      ones most likely to be queried that way, but the second syntax is not limited to them,
+      so check the endpoint's own description rather than assuming the general form.
     - **args** (object):
       An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT` (plus the credentials read
       by `get_creds()`).
@@ -351,6 +404,10 @@ def get_data(endpoint, args, payload=None, method=None):
       Whether an appliance reports a session it no longer accepts the same way is not
       documented, so the fresh login is not tied to that code: it is triggered on any non-zero
       error, which covers however a given firmware chooses to report it.
+    - With caching switched off (`CACHE_EXPIRE` of `0`) every attempt logs in again and the
+      session it gets is good for that one request only. Each is logged out right after it,
+      because nothing will ever read it back from the cache. In this mode a call can therefore
+      reach three logins and three logouts, which is the price of asking for no caching.
 
     ### Example
     >>> get_data('hwm/fan', args, payload={'server_list': ['192.0.2.10']})
@@ -395,6 +452,11 @@ def get_data(endpoint, args, payload=None, method=None):
                 timeout=args.TIMEOUT,
             )
         )
+        if args.CACHE_EXPIRE <= 0:
+            # Caching is off, so this session was created for this one request and nothing
+            # will ever reuse it. Hand it back instead of leaving it open until its own
+            # timeout expires it.
+            _logout(args, x_auth_token)
         res = result.get('result')
         code = res.get('code') if isinstance(res, dict) else res
         if code in (0, '0'):
@@ -488,6 +550,12 @@ def get_management_ips(args):
     ips = []
     without_ip = []
     for node in nodes:
+        # `cluster/servers` documents an array of node objects, but the sibling endpoint for
+        # a single node answers with a bare object. A firmware that does the same here would
+        # otherwise put the field lookups below on a string and end the check in a traceback
+        # instead of an UNKNOWN.
+        if not isinstance(node, dict):
+            continue
         # Anything but True means the node is not (yet) part of the cluster. Absent means
         # a firmware that does not report the field, which must not narrow the result.
         if 'in_cluster' in node and node['in_cluster'] is not True:
