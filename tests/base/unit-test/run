@@ -656,6 +656,15 @@ class TestVerbose(unittest.TestCase):
     def test_truthy_switch_prints(self):
         self.assertEqual(self._capture(1, 'scanning'), 'scanning\n')
 
+    # A progress message routinely carries the command that ran or the error a helper
+    # returned, so it gets the same redaction the other output functions apply.
+    def test_redacts_sensitive_data(self):
+        out = self._capture(
+            True, 'calling https://example.com/?user=admin&password=s3cr3t'
+        )
+        self.assertNotIn('s3cr3t', out)
+        self.assertIn('password=******', out)
+
     # Verbose output must never go to STDERR: the monitoring protocol only captures
     # STDOUT, so a message written there would be lost.
     def test_writes_nothing_to_stderr(self):

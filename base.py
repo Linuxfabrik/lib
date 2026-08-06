@@ -931,6 +931,10 @@ def verbose(enabled, msg):
     captures STDOUT. The message therefore becomes part of the check result and is meant
     for interactive debugging, not for a scheduled run.
 
+    The message is redacted the same way `coe()`, `cu()` and `oao()` redact theirs.
+    Progress messages routinely carry the command that was run or the error a helper
+    returned, and either can contain a credential the caller never meant to print.
+
     ### Parameters
     - **enabled** (`bool`): Whether verbose output is switched on. Pass the value of the
       consumer's own verbose switch.
@@ -943,4 +947,4 @@ def verbose(enabled, msg):
     >>> verbose(args.VERBOSE, f'Scanning {url}...')
     """
     if enabled:
-        print(msg)
+        print(txt.sanitize_sensitive_data(msg))
