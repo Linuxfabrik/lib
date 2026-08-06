@@ -103,6 +103,7 @@ These libraries are built with a clear set of priorities:
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
 | **feedparser.py** | Parses Atom and RSS feeds from URLs using BeautifulSoup. | `parse()` |
+| **mail.py** | Sends email over SMTP, with an optional HTML body alongside the plain-text one and inline images referenced by Content-ID. Authenticates when a password is given. | `send()` |
 | **net.py** | Low-level networking: TCP/UDP/TLS and Unix domain sockets, public IP lookup, subnet enumeration, netmask conversion, and hostname validation. | `cidr_to_hosts()`, `fetch()`, `fetch_socket()`, `get_public_ip()`, `get_subnet_hosts()`, `ip_to_cidr()` |
 | **ssh.py** | Runs commands and copies files over SSH by building shell-free `ssh`/`scp`/`rsync` argument lists. | `build_options()`, `rsync()`, `run()`, `scp()`, `target()` |
 | **url.py** | HTTP/1.x and HTTP/2 client (httpx) for HTML, JSON, or raw data. Supports GET/POST, Basic/Digest authentication, TLS version pinning, proxy control, and connection telemetry. | `fetch()`, `fetch_json()`, `get_latest_version_from_github()`, `split_basic_auth()`, `strip_tags()` |
@@ -123,7 +124,8 @@ These libraries are built with a clear set of priorities:
 |--------|-------------|---------------|
 | **bexio.py** | [Bexio](https://www.bexio.com/) business software REST API (contacts, invoices, projects, items, timesheets, and more). | `call_api()`, `fetch_accounts()`, `fetch_contacts()`, `fetch_invoices()`, `fetch_projects()`, `get_all()` |
 | **grassfish.py** | [Grassfish](https://www.grassfish.com/) digital signage REST API. | `fetch_json()`, `set_player_defaults()`, `set_screen_defaults()` |
-| **huawei.py** | Huawei [OceanStor/Dorado](https://www.huawei.com/) storage REST API, decoding its numeric status, model, and hardware codes. | `get_data()`, `get_health_status()`, `get_running_status()`, `get_uuid()` |
+| **huawei_dorado.py** | Huawei [OceanStor Dorado](https://www.huawei.com/) storage DeviceManager REST API: session handling, paged list walks, current performance counters, and the numeric status, model and hardware codes it reports. | `get_all_data()`, `get_data()`, `get_health_status()`, `get_health_status_state()`, `get_performance()`, `get_running_status()`, `get_running_status_state()`, `get_uuid()` |
+| **huawei_pacific.py** | Huawei [OceanStor Pacific](https://www.huawei.com/) storage REST API, including the older endpoint generation below `/dsware/service/`, and the status codes it reports as numbers and as strings. | `get_all_data()`, `get_data()`, `get_disk_status()`, `get_disk_status_state()`, `get_management_ips()`, `get_pool_status()`, `get_pool_status_state()`, `get_result_code()` |
 | **icinga.py** | [Icinga2](https://icinga.com/) REST API client for querying services and managing acknowledgements and downtimes. | `get_service()`, `remove_ack()`, `remove_downtime()`, `set_ack()`, `set_downtime()` |
 | **infomaniak.py** | [Infomaniak](https://www.infomaniak.com/) Swiss Backup REST API for events, backup products, and slots. | `get_events()`, `get_swiss_backup_products()`, `get_swiss_backup_slots()` |
 | **jitsi.py** | [Jitsi Meet](https://jitsi.org/) server statistics endpoint, with optional HTTP Basic auth. | `get_data()` |
@@ -137,6 +139,7 @@ These libraries are built with a clear set of priorities:
 | **uptimerobot.py** | [UptimeRobot](https://uptimerobot.com/) API for monitors, alert contacts, maintenance windows, and status pages. | `delete_monitor()`, `edit_monitor()`, `get_account_details()`, `get_alert_contacts()`, `get_monitors()`, `get_mwindows()`, `get_psps()`, `new_monitor()` |
 | **veeam.py** | [Veeam](https://www.veeam.com/) Backup & Replication Enterprise Manager REST API. | `get_token()` |
 | **wildfly.py** | [WildFly/JBoss](https://www.wildfly.org/) management API with digest auth (standalone and domain mode). | `get_data()` |
+| **wordpress.py** | [WordPress](https://wordpress.org/) installation read straight from the filesystem: core version, installed plugins and themes, and any file header field. Needs no database, no HTTP request and no `wp-cli`. | `get_header_value()`, `get_plugins()`, `get_themes()`, `get_version()`, `is_installation()` |
 
 
 ## Usage Example
