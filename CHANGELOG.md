@@ -24,7 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * distro.py: Clear Linux, CoreOS, Flatcar, Mandriva, OpenWrt, Slackware, SUSE, UnionTech and the Debian derivatives Cumulus Linux, Deepin, Devuan, Kali, Linux Mint, Parrot, SteamOS and Uos are recognised. Anything else still unknown is now identified from `/etc/os-release` instead of being reported as plain "Linux".
 * huawei_dorado.py: `get_account_state()` translates the password status the appliance reports at login into readable text.
 * huawei_dorado.py: `get_dr_star_running_status()` and `get_hypermetro_domain_running_status()` translate the running status of DR Star trios and HyperMetro domains, which the appliance numbers differently from every other object.
+* huawei_pacific.py: `get_base_board()` translates a node's base board code into the product line it names, and hands an undocumented code back unchanged.
+* huawei_pacific.py: `get_data()` reaches the appliance's older endpoint generation below `/dsware/service/` and `/dfv/service/` through its `base_path` argument. Some information, the disk inventory among it, is not served anywhere else.
+* huawei_pacific.py: `get_disk_role()`, `get_disk_status()` and `get_disk_type()` translate the role, status and media type of a disk into readable text.
 * huawei_pacific.py: `get_password_status()` translates the password status the appliance reports at login into readable text.
+* huawei_pacific.py: `get_result_code()` reads the status code out of either response envelope the appliance uses, so a consumer does not have to know which endpoint generation it is talking to.
 * nextcloud.py: `run_occ()` accepts a `timeout`, so a hanging `occ` no longer keeps a check running forever.
 
 ### Changed

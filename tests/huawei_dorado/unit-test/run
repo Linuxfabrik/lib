@@ -329,8 +329,8 @@ class TestGetUuid(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Shared base for the HTTP functions: patches cache, time, time.sleep and
-# url.fetch_json so nothing escapes the process.
+# Shared base for the HTTP functions: patches cache, time, time.sleep,
+# url.fetch_json and url.fetch so nothing escapes the process.
 # ---------------------------------------------------------------------------
 
 
@@ -341,6 +341,12 @@ class HuaweiHttpTestBase(unittest.TestCase):
         # url.fetch_json mock; individual tests set return_value / side_effect.
         self.fetch_json = mock.MagicMock(name='fetch_json', return_value=LOGIN_OK)
         self._p_fetch = mock.patch.object(huawei.url, 'fetch_json', self.fetch_json)
+
+        # `_logout()` goes through url.fetch(), not url.fetch_json(). Without this
+        # patch every test that ends a session would send a real DELETE to the
+        # example host in Args.
+        self.fetch = mock.MagicMock(name='fetch', return_value=(True, ''))
+        self._p_fetch_raw = mock.patch.object(huawei.url, 'fetch', self.fetch)
 
         # cache.get returns None by default (empty cache); cache.set is a no-op.
         self.cache_get = mock.MagicMock(name='cache.get', return_value=None)
@@ -358,6 +364,7 @@ class HuaweiHttpTestBase(unittest.TestCase):
 
         for p in (
             self._p_fetch,
+            self._p_fetch_raw,
             self._p_cget,
             self._p_cset,
             self._p_now,
@@ -485,6 +492,31 @@ class TestGetCreds(HuaweiHttpTestBase):
         self.assertEqual(cookie, 'CACHED-COOKIE')
         self.assertFalse(self.fetch_json.called)
         self.assertFalse(self.cache_set.called)
+
+    def test_force_relogin_replaces_the_cached_session(self):
+        # The cache is still read on this path, but not to reuse the session: the old
+        # one has to be handed back to the appliance, otherwise it occupies a slot in
+        # the session pool until its timeout expires.
+        self.cache_get.return_value = json.dumps(['CACHED-TOKEN', 'CACHED-COOKIE'])
+        token, _ = huawei.get_creds(self.args, force_relogin=True)
+        self.assertTrue(self.cache_get.called)
+        self.assertTrue(self.fetch_json.called)
+        self.assertEqual(token, '1234567890123456789012345678901234567890')
+
+    def test_force_relogin_logs_the_cached_session_out(self):
+        self.cache_get.return_value = json.dumps(['CACHED-TOKEN', 'CACHED-COOKIE'])
+        huawei.get_creds(self.args, force_relogin=True)
+        self.assertTrue(self.fetch.called, 'the old session was never logged out')
+        self.assertEqual(self.fetch.call_args.kwargs['method'], 'DELETE')
+        self.assertEqual(
+            self.fetch.call_args.kwargs['header'],
+            {'Cookie': 'CACHED-COOKIE', 'iBaseToken': 'CACHED-TOKEN'},
+        )
+
+    def test_force_relogin_without_a_cached_session_logs_nothing_out(self):
+        self.cache_get.return_value = None
+        huawei.get_creds(self.args, force_relogin=True)
+        self.assertFalse(self.fetch.called)
 
     def test_unusable_cache_entry_triggers_relogin(self):
         # Written by an older version, truncated, or missing half the pair. All

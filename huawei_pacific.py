@@ -9,12 +9,13 @@
 # https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
 
 """This library collects functions for Huawei OceanStor Pacific storage systems,
-which are accessed through the /api/v2/ REST API (X-Auth-Token authentication,
-string- and integer-valued status fields).
+which are accessed through their REST API (X-Auth-Token authentication, string-
+and integer-valued status fields). Most of it lives below /api/v2/, an older
+generation of endpoints below /dsware/service/ and /dfv/service/.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080602'
+__version__ = '2026080603'
 
 import json
 from time import sleep as _sleep
@@ -351,7 +352,34 @@ def _as_envelope(success, response):
     }
 
 
-def get_data(endpoint, args, payload=None, method=None):
+def get_result_code(result):
+    """
+    Read the status code out of a Huawei OceanStor Pacific response, whichever envelope it uses.
+
+    The API answers in two shapes. The `/api/v2/` endpoints wrap the code in an object
+    (`{'result': {'code': 0, 'description': ...}}`), while the older `/dsware/service/` and
+    `/dfv/service/` endpoints report it as a bare integer (`{'result': 0, 'nodeInfo': [...]}`).
+    A consumer that has to work with both should not have to know which one it is talking to.
+
+    ### Parameters
+    - **result** (`dict`): A response as returned by `get_data()`.
+
+    ### Returns
+    - **int**, **str** or **None**:
+      The status code as the appliance reported it (`0` means success in both shapes), or
+      `None` if the response carries no `result` at all.
+
+    ### Example
+    >>> get_result_code({'result': {'code': 0}, 'data': []})
+    0
+    >>> get_result_code({'result': 0, 'nodeInfo': []})
+    0
+    """
+    res = result.get('result') if isinstance(result, dict) else None
+    return res.get('code') if isinstance(res, dict) else res
+
+
+def get_data(endpoint, args, payload=None, method=None, base_path='api/v2'):
     """
     Fetch data from a Huawei OceanStor Pacific endpoint, re-authenticating on a stale session.
 
@@ -383,13 +411,20 @@ def get_data(endpoint, args, payload=None, method=None):
     - **method** (`str`, optional):
       Force the HTTP method regardless of the body, for endpoints that require a bodyless `POST`
       or a `GET` that carries one.
+    - **base_path** (`str`, optional):
+      The path between the base URL and the endpoint, without surrounding slashes. Defaults to
+      the `api/v2` the current API is built on. The appliance also serves an older generation of
+      endpoints below `dsware/service` and `dfv/service`, and some information is only available
+      there; a caller reaching for one of those passes its base path here. This is a developer
+      constant, not something to build from data the appliance or a user supplied.
 
     ### Returns
     - **dict**:
       The parsed JSON response from the API.
 
     ### Notes
-    - Success is indicated by `result.code == 0` in the response envelope.
+    - Success is indicated by a status code of `0`. The `api/v2` endpoints report it as
+      `result.code`, the older ones as a bare `result`; `get_result_code()` reads both.
     - Makes at most three attempts, forcing a fresh login before the second one, and waits one
       second between attempts. The retry count is kept low on purpose, so one call stays within
       the monitoring server's check timeout: the worst case is three requests plus one login,
@@ -416,7 +451,7 @@ def get_data(endpoint, args, payload=None, method=None):
         'result': {'code': 0}
     }
     """
-    uri = f'{args.URL}/api/v2/{endpoint}'
+    uri = f'{args.URL}/{base_path}/{endpoint}'
 
     max_attempts = 3
     result = {}
@@ -457,9 +492,7 @@ def get_data(endpoint, args, payload=None, method=None):
             # will ever reuse it. Hand it back instead of leaving it open until its own
             # timeout expires it.
             _logout(args, x_auth_token)
-        res = result.get('result')
-        code = res.get('code') if isinstance(res, dict) else res
-        if code in (0, '0'):
+        if get_result_code(result) in (0, '0'):
             break
         if attempt < max_attempts:
             _sleep(1)
@@ -574,6 +607,149 @@ def get_management_ips(args):
         base.cu('The cluster reported no node with a management IP address.')
 
     return ips
+
+
+def _from_string_code(value, mapping):
+    """
+    Look a string-keyed appliance code up, handing an undocumented one back unchanged.
+
+    Used by the helpers whose codes are strings rather than numbers. A numeric code that is
+    not in the vendor's table carries no information and renders as `'Unknown'`, but a string
+    code is already readable, and the vendor's tables are demonstrably incomplete. Keeping it
+    means a consumer still shows something an engineer can open a support case with.
+
+    ### Parameters
+    - **value** (`str`): The raw field value taken from the API response.
+    - **mapping** (`dict`): Upper-case code to description.
+
+    ### Returns
+    - **str**:
+      `'<description> (<code>)'` for a known code, the normalised code itself for an unknown
+      one, and `'Unknown'` for a missing or empty value.
+    """
+    if value is None:
+        return 'Unknown'
+    code = str(value).strip().upper()
+    if not code:
+        return 'Unknown'
+    if code not in mapping:
+        return code
+    return f'{mapping[code]} ({code})'
+
+
+def get_base_board(bb):
+    """
+    Convert a Huawei OceanStor Pacific base board code into a human-readable description.
+
+    The base board code names the product line a node's hardware belongs to, which the node's
+    own `model` field does not always spell out.
+
+    ### Parameters
+    - **bb** (`str`):
+      The base board code.
+      A missing or empty value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      An unrecognised code is returned unchanged.
+
+    ### Example
+    >>> get_base_board('STL6SPCM')
+    'Pacific (STL6SPCM)'
+    """
+    return _from_string_code(
+        bb,
+        {
+            'STL6SPCM': 'Pacific',
+            'STL6SPCN': 'Atlantic',
+            'STL6SPCP': 'Arctic',
+        },
+    )
+
+
+def get_disk_role(r):
+    """
+    Convert a Huawei OceanStor Pacific media role into a human-readable description.
+
+    ### Parameters
+    - **r** (`str`):
+      The media role.
+      A missing or empty value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      An unrecognised role is returned unchanged.
+
+    ### Example
+    >>> get_disk_role('main_storage')
+    'main storage (MAIN_STORAGE)'
+    """
+    return _from_string_code(
+        r,
+        {
+            'MAIN_STORAGE': 'main storage',
+            'OSD_CACHE': 'cache',
+        },
+    )
+
+
+def get_disk_status(st):
+    """
+    Convert a Huawei OceanStor Pacific disk status code into a human-readable description.
+
+    ### Parameters
+    - **st** (`int` or `str`):
+      The disk status code.
+      A missing or malformed value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Example
+    >>> get_disk_status(0)
+    'healthy (0)'
+    """
+    mapping = {
+        0: 'healthy (0)',
+        1: 'faulty (1)',
+        2: 'sub-healthy (2)',
+        101: 'removed from the storage pool (101)',
+    }
+    return mapping.get(_as_code(st), 'Unknown')
+
+
+def get_disk_type(t):
+    """
+    Convert a Huawei OceanStor Pacific media type into a human-readable description.
+
+    ### Parameters
+    - **t** (`str`):
+      The media type.
+      A missing or empty value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      An unrecognised media type is returned unchanged.
+
+    ### Example
+    >>> get_disk_type('ssd_card')
+    'SSD card or NVMe SSD (SSD_CARD)'
+    """
+    return _from_string_code(
+        t,
+        {
+            'SAS_DISK': 'SAS disk',
+            'SATA_DISK': 'SATA disk',
+            # The vendor's table folds SSD cards and NVMe SSDs into one code.
+            'SSD_CARD': 'SSD card or NVMe SSD',
+            'SSD_DISK': 'SSD',
+        },
+    )
 
 
 def get_oam_agent_status(s):
