@@ -34,6 +34,12 @@ import lib.db_sqlite as db
 
 HAS_GETEUID = hasattr(os, 'geteuid')
 
+SQLITE_VERSION = tuple(int(part) for part in sqlite3.sqlite_version.split('.'))
+
+# Generated columns need SQLite 3.31.0. RHEL 8 ships 3.26.0, where the CREATE TABLE below is a
+# syntax error, so the test would report a library defect that is really a missing feature.
+HAS_GENERATED_COLUMNS = SQLITE_VERSION >= (3, 31, 0)
+
 
 class TestGetDbDir(unittest.TestCase):
     """get_db_dir(): the secured per-user database directory."""
@@ -365,6 +371,43 @@ class TestDbDiscardPolicy(unittest.TestCase):
             os.path.isfile(self.path), 'database was deleted on a WITHOUT ROWID table'
         )
 
+    def test_rowid_aliases_on_without_rowid_table_keep_database(self):
+        # SQLite accepts oid and _rowid_ for the same column and qualifies the name when the
+        # query does ("no such column: x.rowid"). Every spelling is the schema the caller asked
+        # for, not a mismatch between releases.
+        self.conn.execute('CREATE TABLE wr (k TEXT PRIMARY KEY, v INT) WITHOUT ROWID')
+        db.commit(self.conn)
+        for sql in (
+            'SELECT oid FROM wr',
+            'SELECT _rowid_ FROM wr',
+            'SELECT x.rowid FROM wr x',
+        ):
+            ok, _ = db.select(self.conn, sql)
+            self.assertFalse(ok, sql)
+            self.assertTrue(
+                os.path.isfile(self.path), f'database was deleted by: {sql}'
+            )
+
+    def test_misspelled_column_still_deletes_database(self):
+        # The rowid exception must not swallow a real schema mismatch whose column name merely
+        # ends in one of the rowid spellings.
+        ok, _ = db.select(self.conn, 'SELECT user_rowid FROM perfdata')
+        self.assertFalse(ok)
+        self.assertFalse(os.path.isfile(self.path))
+
+    def test_cut_refuses_negative_max(self):
+        # SQLite clamps a negative OFFSET to 0, so this used to delete every row and report
+        # success.
+        for i in range(5):
+            db.insert(self.conn, {'n': i})
+        db.commit(self.conn)
+        _, before = db.select(self.conn, 'SELECT count(*) AS c FROM perfdata')
+        ok, msg = db.cut(self.conn, _max=-3)
+        self.assertFalse(ok)
+        self.assertIn('negative', msg)
+        _, after = db.select(self.conn, 'SELECT count(*) AS c FROM perfdata')
+        self.assertEqual(after[0]['c'], before[0]['c'])
+
     def test_is_unusable_db_classification(self):
         # sqlite3.DataError is raised for SQLITE_TOOBIG only, which is a value the caller may not
         # store rather than a broken file. Asserted directly: provoking it needs a 1 GB value.
@@ -463,6 +506,7 @@ class TestIdentifierQuoting(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('typo', msg)
 
+    @unittest.skipUnless(HAS_GENERATED_COLUMNS, 'needs SQLite 3.31.0')
     def test_create_index_accepts_generated_column(self):
         # PRAGMA table_info omits generated columns, so validating against it rejected a column
         # SQLite indexes just fine. PRAGMA table_xinfo lists them.

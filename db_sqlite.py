@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080502'
+__version__ = '2026080601'
 
 import csv
 import functools
@@ -60,11 +60,18 @@ SCHEMA_ERRORS = (
     'values were supplied',  # "table t has 2 columns but 3 values were supplied"
 )
 
-# Substrings matched before `SCHEMA_ERRORS` and always treated as harmless. A WITHOUT ROWID table
-# has no `rowid` column, so `cut()` fails against one with "no such column: rowid". That schema is
-# what the caller asked for, not a mismatch between releases, but the `no such column` entry above
+# Matched before `SCHEMA_ERRORS` and always treated as harmless. A WITHOUT ROWID table has no
+# `rowid` column, so `cut()` fails against one with "no such column: rowid". That schema is what
+# the caller asked for, not a mismatch between releases, but the `no such column` entry above
 # would otherwise match it and delete a perfectly healthy database.
-HEALTHY_SCHEMA_ERRORS = ('no such column: rowid',)
+#
+# SQLite accepts `oid` and `_rowid_` as names for the same column, and prefixes the name with the
+# table, the alias and possibly the database when the query qualifies it ("no such column:
+# main.t.rowid", see `lookupName()` in SQLite's `resolve.c`), so every spelling has to be
+# recognized. A real column that happens to be named `oid` and disappeared between two releases is
+# covered by this too and no longer discards the database, which is the safe direction to err in:
+# deleting a healthy cache is worse than keeping a stale one for one more run.
+HEALTHY_SCHEMA_ERROR_RE = re.compile(r'no such column: (?:.*\.)?(?:rowid|oid|_rowid_)')
 
 # Substrings identifying an `sqlite3.IntegrityError` (SQLITE_CONSTRAINT, SQLITE_MISMATCH) that
 # means the on-disk schema no longer matches the data being written, for example a NOT NULL column
@@ -221,14 +228,63 @@ def __quote_ident_list(column_list):
     )
 
 
+def __unquote_ident(part, closing_quote):
+    """
+    Read the leading quoted identifier out of `part` and return its plain name.
+
+    The inverse of `__quote_ident()`, used to recover a column name from a column definition. A
+    quoted name may contain spaces and commas, so it cannot be taken apart with `split()`.
+
+    ### Parameters
+    - **part** (`str`):
+      A string starting with an opening quote character, for example `'"a b" TEXT'`.
+    - **closing_quote** (`str`):
+      The quote character that ends the identifier. Equal to the opening one for `"`, `'` and
+      `` ` ``, but `]` for the `[name]` form.
+
+    ### Returns
+    - **str**:
+      The identifier without its quotes. If the closing quote is missing, everything after the
+      opening one is returned.
+
+    ### Notes
+    - Inside a quoted identifier SQLite reads a doubled quote character as one literal character,
+      so `"a""b"` is the column `a"b`. The `[...]` form has no such escape and ends at the first
+      `]`.
+
+    ### Example
+    >>> __unquote_ident('"a b" TEXT', '"')
+    'a b'
+
+    >>> __unquote_ident('"a""b" TEXT', '"')
+    'a"b'
+    """
+    opening_quote = part[0]
+    doubling_escapes = closing_quote == opening_quote
+    name = ''
+    i = 1
+    while i < len(part):
+        char = part[i]
+        if char == closing_quote:
+            if not doubling_escapes or part[i + 1 : i + 2] != closing_quote:
+                break
+            i += 1  # skip the second quote of the pair and keep one literal character
+        name += char
+        i += 1
+    return name
+
+
 def __table_columns(conn, table):
     """
     Return the column names of `table` as reported by the database itself.
 
     Used to reject a column name before it reaches a statement. SQLite resolves a double-quoted
     token that matches no column to a string literal instead of raising "no such column" (the
-    double-quoted string misfeature, see `resolveExprStep()` in SQLite's `resolve.c`). A
-    misspelled column would therefore index or group by a constant, silently and successfully.
+    double-quoted string misfeature, see `lookupName()` in SQLite's `resolve.c`). A misspelled
+    column would therefore index or group by a constant, silently and successfully. The
+    misfeature cannot be switched off on the SQLite 3.26 that RHEL 8 ships, because the
+    `SQLITE_DQS` build option only arrived in 3.29, and it is enabled in the builds CPython links
+    against anyway.
 
     ### Parameters
     - **conn** (`sqlite3.Connection`):
@@ -253,7 +309,15 @@ def __table_columns(conn, table):
             rows = conn.execute(f'PRAGMA {pragma}({__quote_ident(table)});').fetchall()
         except sqlite3.Error:
             continue
-        return [row[1] for row in rows]
+        # An unknown pragma is not an error in SQLite, it silently returns no rows: the pragma
+        # lookup in `pragma.c` jumps straight to the end when the name is unknown, and the
+        # documentation states that "no error messages are generated if an unknown pragma is
+        # used". Returning here unconditionally would therefore end the loop with an empty result
+        # on a build without `table_xinfo` and never try `table_info`, turning the validation off
+        # instead of falling back. Every existing table has at least one column, so an empty
+        # result means "ask the next pragma"; if that one is empty too, the table does not exist.
+        if rows:
+            return [row[1] for row in rows]
     return []
 
 
@@ -282,6 +346,9 @@ def __is_unusable_db(e):
     >>> __is_unusable_db(sqlite3.OperationalError('database is locked'))
     False
 
+    >>> __is_unusable_db(sqlite3.OperationalError('no such column: t.rowid'))
+    False
+
     >>> __is_unusable_db(sqlite3.IntegrityError('UNIQUE constraint failed: t.a'))
     False
     """
@@ -295,7 +362,7 @@ def __is_unusable_db(e):
     if isinstance(e, sqlite3.IntegrityError):
         return any(pattern in msg for pattern in INTEGRITY_SCHEMA_ERRORS)
     if isinstance(e, sqlite3.OperationalError):
-        if any(pattern in msg for pattern in HEALTHY_SCHEMA_ERRORS):
+        if HEALTHY_SCHEMA_ERROR_RE.fullmatch(msg):
             return False
         return any(pattern in msg for pattern in SCHEMA_ERRORS)
     if isinstance(e, sqlite3.DatabaseError):
@@ -422,7 +489,8 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     - **datacols** (`list` of `str`):
       List of columns for which to calculate per-second loads (e.g., `['tx_bytes', 'rx_bytes']`).
     - **count** (`int`):
-      Number of historical entries to use for calculating `Loadn`.
+      Number of historical entries to use for calculating `Loadn`. Must be at least 2, because
+      both metrics are a difference between two rows.
     - **table** (`str`, optional):
       Name of the table containing the performance data.
       Defaults to `'perfdata'`.
@@ -443,6 +511,7 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
       - `<column>n`: Load computed between the most recent and the oldest of `count` entries.
     - Load values are calculated as delta per second.
     - The table name is quoted, so keywords and names containing punctuation work.
+    - A `count` below 2 is rejected instead of raising further down.
 
     ### Example
     Calculate loads for `tx_bytes` and `rx_bytes` over 5 intervals:
@@ -467,6 +536,12 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
             ...
         ]
     """
+    # Both metrics compare two rows: `Load1` the two most recent ones, `Loadn` the most recent
+    # against the `count`-th. With fewer than two there is nothing to compare, and `perfdata[1]`
+    # below would raise IndexError out of a function that otherwise always returns a tuple.
+    if count < 2:
+        return False, f'Computing a load needs a count of at least 2, got {count}'
+
     # See __table_columns(): an unknown sensor column would silently become a string literal
     # instead of raising, so every sensor would look identical.
     known = __table_columns(conn, table)
@@ -524,6 +599,26 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     return True, load
 
 
+class __DbConnection(sqlite3.Connection):
+    """
+    A `sqlite3.Connection` that remembers the file it was opened from.
+
+    `rm_db()` has to know which file to delete, and asking the connection with
+    `PRAGMA database_list` only answers reliably on SQLite 3.39.0 and later. Before that the
+    pragma carried the `NeedSchema` flag and loaded the schema first (dropped in SQLite commit
+    `f2a777fa5d`), so on a corrupt or non-database file it fails with the very error that made
+    the caller want to discard the file, leaving it in place forever. A plain
+    `sqlite3.Connection` is a C type without an attribute dictionary and cannot carry the path,
+    hence this subclass.
+
+    ### Notes
+    - `db_path` is a class attribute, so reading it is safe even if a connection never got its
+      own value assigned.
+    """
+
+    db_path = ''
+
+
 def connect(path='', filename='', timeout=5.0):
     """
     Connect to a SQLite database file.
@@ -558,7 +653,9 @@ def connect(path='', filename='', timeout=5.0):
       This isolates each user's databases and prevents symlink attacks on the predictable paths
       (CWE-377, GHSA-r35r-fpx2-jgr4).
     - The connection uses a `Row` factory, allowing rows to behave like dictionaries.
-    - The connection registers a `REGEXP` SQL function for regular expression support.
+    - The connection registers a `REGEXP` SQL function for regular expression support. It is
+      registered as deterministic where the runtime supports it (Python 3.8 and SQLite 3.8.3),
+      and without that flag otherwise, so the connection also works on RHEL 8's default Python.
     - Always check the returned success flag before using the connection.
 
     ### Example
@@ -574,12 +671,19 @@ def connect(path='', filename='', timeout=5.0):
         return False, db
 
     try:
-        conn = sqlite3.connect(db, timeout=timeout)
+        conn = sqlite3.connect(db, timeout=timeout, factory=__DbConnection)
+        conn.db_path = db
         conn.row_factory = sqlite3.Row
         conn.text_factory = str
         # `deterministic=True`: the same pattern and string always yield the same result, so
         # SQLite may use REGEXP in partial indexes and generated columns, and may cache results.
-        conn.create_function('REGEXP', 2, regexp, deterministic=True)
+        # The keyword needs Python 3.8 and SQLite 3.8.3; below that it raises `TypeError`
+        # respectively `sqlite3.NotSupportedError`. Neither says anything about the database, so
+        # register the function without the optimization rather than failing the connection.
+        try:
+            conn.create_function('REGEXP', 2, regexp, deterministic=True)
+        except (TypeError, sqlite3.NotSupportedError):
+            conn.create_function('REGEXP', 2, regexp)
         return True, conn
     except Exception as e:
         return False, f'Connecting to DB {db} failed, Error: {e}'
@@ -693,6 +797,9 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
 
     ### Notes
     - The table name is quoted, so keywords and names containing punctuation work.
+    - `definition` is inserted into the statement verbatim, because a column definition is SQL
+      and not a value that could be bound. It must therefore come from the caller's own code and
+      never from input the caller does not control.
     - If `drop_table_first=True`, the function will attempt to drop the existing table before
       creating it.
     - The table creation uses `IF NOT EXISTS` to avoid errors if the table already exists.
@@ -733,7 +840,7 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     - **table** (`str`, optional):
       Name of the table to prune. Defaults to `'perfdata'`.
     - **_max** (`int`, optional):
-      Number of most recent records to keep. Defaults to `5`.
+      Number of most recent records to keep. Must not be negative. Defaults to `5`.
     - **delete_db_on_operational_error** (`bool`, optional):
       If `True`, deletes the database file when the on-disk database turns out
       to be unusable (e.g. a schema mismatch between releases).
@@ -754,11 +861,21 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     - If an `OperationalError` occurs (e.g., due to schema mismatch), the database file can
       be deleted automatically.
     - Uses `LIMIT -1 OFFSET :_max` to delete everything after the most recent `_max` records.
+    - A negative `_max` is rejected, because SQLite would read it as an offset of 0 and delete
+      every row while reporting success.
 
     ### Example
     >>> cut(conn, table='logs', _max=1000)
     (True, True)
     """
+    # SQLite replaces a negative OFFSET with 0: `OP_OffsetLimit` in `vdbe.c` adds
+    # `pIn3->u.i > 0 ? pIn3->u.i : 0` to the limit. A negative `_max` therefore deletes every row
+    # instead of keeping some, and still reports success. Refuse it rather than emptying a
+    # healthy table behind the caller's back. Any other unusable value is left to SQLite's own
+    # `OP_MustBeInt` check, which reports "datatype mismatch".
+    if isinstance(_max, (int, float)) and _max < 0:
+        return False, f'Refusing to cut table {table} to a negative size: {_max}'
+
     table = __quote_ident(table)
 
     # `LIMIT -1` means "no limit" (see SQLite's select.c), so the subquery yields every row after
@@ -901,7 +1018,9 @@ def get_colnames(col_definition):
       inside a quoted default value does not start a new column.
     - Table-level constraints (`PRIMARY KEY (a, b)`, `UNIQUE`, `CHECK`, `FOREIGN KEY`,
       `CONSTRAINT`) are not columns and are skipped.
-    - Quoted column names are returned unquoted.
+    - Quoted column names are returned unquoted. All four SQLite quoting styles are understood:
+      `"name"`, `'name'`, `` `name` `` and `[name]`. A doubled quote character inside a quoted
+      name is one literal character, as SQLite reads it.
 
     ### Example
     >>> get_colnames('date TEXT PRIMARY KEY, count FLOAT, name TEXT')
@@ -909,6 +1028,9 @@ def get_colnames(col_definition):
 
     >>> get_colnames('id INT, price DECIMAL(10,2), PRIMARY KEY (id, price)')
     ['id', 'price']
+
+    >>> get_colnames('"a""b" TEXT')
+    ['a"b']
     """
     # Table constraints share the column-definition list but do not name a column.
     table_constraints = ('CHECK', 'CONSTRAINT', 'FOREIGN', 'PRIMARY', 'UNIQUE')
@@ -945,9 +1067,7 @@ def get_colnames(col_definition):
         if not part:
             continue
         if part[0] in quotes:
-            # A quoted name may contain spaces, so it cannot be taken apart with split().
-            end = part.find(quotes[part[0]], 1)
-            colnames.append(part[1:end] if end > 0 else part[1:])
+            colnames.append(__unquote_ident(part, quotes[part[0]]))
             continue
         name = part.split()[0]
         if name.upper() in table_constraints:
@@ -1091,6 +1211,9 @@ def get_tables(conn):
     ### Notes
     - Only user-created tables are returned.
     - Tables created internally by SQLite (e.g., for indices or schema tracking) are excluded.
+    - Only the `main` database is listed. Temporary tables live in `sqlite_temp_master` and
+      attached databases have their own `sqlite_master`, so neither shows up here.
+    - Views are not tables and are not returned either.
     - Internally calls the `select()` helper function.
 
     ### Example
@@ -1172,6 +1295,8 @@ def import_csv(
     ### Notes
     - This function creates the destination table before import, replacing it if it exists.
     - Field names are taken from `fieldnames`, not from the CSV header.
+    - `fieldnames` reaches `CREATE TABLE` verbatim (see `create_table()`), so it must come from
+      the caller's own code and never from input the caller does not control.
     - Supports importing large CSVs efficiently by committing in chunks.
     - Does not use the SQLite CLI tool to avoid dependency and version issues.
     - Automatically skips empty rows during import.
@@ -1475,7 +1600,9 @@ def regexp(expr, item):
     - Values that are not TEXT (INTEGER, REAL, BLOB) are converted to text first, the same way
       SQLite's own `regexp()` implementation applies `sqlite3_value_text()` to its argument.
       Without that conversion, matching against a numeric column raises inside the function and
-      the whole query fails.
+      the whole query fails. The conversion is Python's, not SQLite's, so the text form of a
+      REAL can differ from what SQLite itself would render (`1e+20` versus `1.0e+20`). Anchor a
+      pattern on the stored digits rather than on an exponent notation.
     - A `NULL` pattern or value yields `NULL`, not `False`, matching SQLite's own `regexp()`,
       which leaves its result unset for a `NULL` argument. The difference is visible in a negated
       comparison: `WHERE NOT (col REGEXP 'x')` skips a `NULL` row, whereas `False` would select
@@ -1585,6 +1712,10 @@ def rm_db(conn):
     - Useful when the on-disk database turns out to be unusable, for example because its schema
       no longer matches what the current release writes.
     - Only the `main` database file is deleted (ignores attached databases).
+    - Works on a connection opened by `connect()` even when the file is too corrupt for SQLite
+      to answer questions about it. A connection the caller opened itself is queried with
+      `PRAGMA database_list`, which SQLite refuses on such a file before release 3.39.0; there
+      the file is left on disk.
     - The connection is closed in every case, including for in-memory databases, which have no
       file to delete.
     - Any errors from file deletion are handled externally (through `disk.rm_file()`).
@@ -1593,16 +1724,20 @@ def rm_db(conn):
     >>> rm_db(conn)
     True
     """
-    # `PRAGMA database_list` yields (seq, name, file); `file` is empty for an in-memory database.
-    filename = ''
-    try:
-        for _, name, dbfile in conn.execute('PRAGMA database_list'):
-            if name == 'main':
-                filename = dbfile
-                break
-    except sqlite3.Error:
-        # An unusable database may not even answer the pragma. Closing still has to happen.
-        pass
+    # A connection opened by connect() knows its own path (see `__DbConnection`), which is the
+    # only source that still answers when the file is corrupt. The pragma is the fallback for a
+    # connection the caller opened itself; it yields (seq, name, file), with `file` empty for an
+    # in-memory database.
+    filename = getattr(conn, 'db_path', '')
+    if not filename:
+        try:
+            for _, name, dbfile in conn.execute('PRAGMA database_list'):
+                if name == 'main':
+                    filename = dbfile
+                    break
+        except sqlite3.Error:
+            # An unusable database may not even answer the pragma. Closing still has to happen.
+            pass
 
     close(conn)
     if filename:
