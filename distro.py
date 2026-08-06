@@ -17,22 +17,41 @@ Source Code is taken, converted and modified from:
 
 Deliberate differences to Ansible:
 * Linux only. Ansible additionally handles AIX, Darwin, DragonFly, FreeBSD, HP-UX,
-  NetBSD, OpenBSD and SunOS, all of which require shelling out.
+  NetBSD, OpenBSD and SunOS, all of which require shelling out. On anything other
+  than Linux this module reports Ansible's bare baseline: "distribution" is what
+  platform.system() says, "distribution_release" is the kernel release,
+  "distribution_version" is the kernel version, and there is no
+  "distribution_major_version" at all.
 * Purely functional, no classes.
 * No external dependencies. Ansible derives its baseline facts from the `distro`
   package; they are read from /etc/os-release, /etc/lsb-release and the distro
   release files directly instead.
 * Never shells out. Ansible asks `dpkg` for the release name of pre-8 Debian, and
-  reads /etc/lsb-release through the `lsb_release` command. Where that command
-  reports a release name the file does not carry, "distribution_release" ends up as
-  "NA" here. Gentoo is one such case.
+  reaches /etc/lsb-release through the `lsb_release` command rather than reading the
+  file. That cuts both ways, and it is not only about the release name: Gentoo and
+  Arch report "NA" here where the command would say "n/a", and Debian 7 reports the
+  version of /etc/os-release where the command would report the more precise one.
+  The other way round, Flatcar reports the release name "Oklo" here, which the
+  command does not know about because Flatcar does not ship it.
 * A release file line naming no "release" keyword only yields a version if that
   version is purely numeric. The `distro` package accepts any lowercase token there
   and consequently reads the version "64-pc-linux-gnu" out of the Source Mage line
   "Source Mage GNU/Linux x86_64-pc-linux-gnu".
+* A release file whose first line yields neither a version nor a release name is
+  skipped and the next candidate in /etc is tried. The `distro` package takes any
+  non-empty first line as the distribution name and stops searching there.
 * /etc/debian_version only counts as a version if it holds one. On testing and
   unstable it holds a release name such as "trixie/sid", which the `distro` package
   reports as the version.
+* "distribution_major_version" is derived from "distribution_version" where a
+  release file parser was the first to find one, as on an Amazon Linux recognised
+  through /etc/system-release. Ansible has its major version from the `distro`
+  package by then and leaves "NA" standing in that case.
+* Never raises where Ansible raises. A three part Amazon VERSION_ID, a non numeric
+  SLES VERSION_ID, a Cumulus VERSION_ID that is not exactly three parts, a release
+  file holding nothing but whitespace, and an openSUSE that ships /etc/SuSE-release
+  without an /etc/os-release each take Ansible down with a ValueError,
+  AttributeError, IndexError or TypeError.
 * Adds the "os_info" key, holding NAME plus VERSION from /etc/os-release.
 """
 
@@ -45,7 +64,7 @@ Deliberate differences to Ansible:
 # pylint: disable=W0613
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026080602'
 
 
 import os
@@ -186,8 +205,9 @@ SEARCH_STRING = {
 STRIP_QUOTES = r'\'\"\\'
 
 # Basenames that qualify as a release file, such as "rocky-release", "SuSE-release"
-# or "slackware-version".
-_DISTRO_RELEASE_BASENAME_REGEX = re.compile(r'\w+[-_](?:release|version)$')
+# or "slackware-version". The captured word doubles as a distribution ID where no
+# other source names one.
+_DISTRO_RELEASE_BASENAME_REGEX = re.compile(r'(\w+)[-_](?:release|version)$')
 
 # Basenames that look like a release file but do not identify a distribution. Taken
 # from the `distro` package Ansible uses. /etc/system-release is on it because it is
@@ -347,17 +367,79 @@ def _get_codename(distro_id, os_release, lsb_release, release_info):
     return codename or None
 
 
+# Translation tables the `distro` package applies to the distribution ID, one per
+# source it reads the ID from. The lookup key is the value lowercased with blanks
+# turned into underscores; anything not listed passes through unchanged.
+_NORMALIZED_DISTRO_ID = {
+    # RHEL 6 and 7, whose ID is derived from the /etc/redhat-release basename.
+    'redhat': 'rhel',
+}
+_NORMALIZED_LSB_ID = {
+    'enterpriseenterpriseas': 'oracle',  # Oracle Enterprise Linux 4
+    'enterpriseenterpriseserver': 'oracle',  # Oracle Linux 5
+    'redhatenterprisecomputenode': 'rhel',  # RHEL 6 ComputeNode
+    'redhatenterpriseserver': 'rhel',  # RHEL 6 and 7 Server
+    'redhatenterpriseworkstation': 'rhel',  # RHEL 6 and 7 Workstation
+}
+_NORMALIZED_OS_ID = {
+    'ol': 'oracle',  # Oracle Linux
+    'opensuse-leap': 'opensuse',  # Newer openSUSE releases report opensuse-leap
+}
+
+
+def _get_distro_id(os_release, lsb_release, release_info):
+    """
+    Determine the distribution ID, asking every source in the order Ansible does.
+
+    ### Parameters
+    - **os_release** (`dict`):
+      The result of `_get_os_release_info()`.
+    - **lsb_release** (`dict`):
+      The result of `_get_lsb_release_info()`.
+    - **release_info** (`dict`):
+      The result of `_get_distro_release_info()`.
+
+    ### Returns
+    - **str**:
+      The lowercase distribution ID, or an empty string if no source names one.
+
+    ### Notes
+    - The order is `ID` of /etc/os-release, `DISTRIB_ID` of /etc/lsb-release and the
+      basename of the release file. Each source has its own translation table, so
+      that a distribution ends up under one ID no matter which of them answered.
+    - The release file is what gives RHEL 6, CentOS 6 and SLES 11 an ID at all. None
+      of them ships an /etc/os-release.
+    - `distro.id()` has a fourth source, `uname -rs`. It is left out, which is no
+      difference in practice: the `distro` package discards that output as soon as
+      the system name is `Linux`.
+
+    ### Example
+    >>> _get_distro_id({}, {}, {'id': 'redhat'})
+    'rhel'
+    """
+    for value, table in (
+        (os_release.get('id', ''), _NORMALIZED_OS_ID),
+        (lsb_release.get('distrib_id', ''), _NORMALIZED_LSB_ID),
+        (release_info.get('id', ''), _NORMALIZED_DISTRO_ID),
+    ):
+        if value:
+            value = value.lower().replace(' ', '_')
+            return table.get(value, value)
+    return ''
+
+
 def _get_distro_release_info():
     """
-    Extract name, version and release name from the first matching release file in /etc.
+    Extract ID, name, version and release name from the first matching release file.
 
     ### Parameters
     - *None*
 
     ### Returns
     - **dict**:
-      Any of the keys `name`, `version` and `codename` that could be determined.
-      Empty if no release file is readable or none of them parses.
+      Any of the keys `id`, `name`, `version` and `codename` that could be
+      determined. Empty if no release file in /etc is readable or none of them
+      parses.
 
     ### Notes
     - Replaces the release file handling of the `distro` package Ansible relies on.
@@ -367,7 +449,8 @@ def _get_distro_release_info():
 
     ### Example
     >>> _get_distro_release_info()
-    {'name': 'Red Hat Enterprise Linux', 'version': '9.7', 'codename': 'Plow'}
+    {'name': 'Red Hat Enterprise Linux', 'version': '9.7', 'codename': 'Plow',
+    'id': 'redhat'}
     """
     try:
         basenames = sorted(
@@ -386,8 +469,14 @@ def _get_distro_release_info():
         # A file carrying no version, such as the os-release formatted
         # /etc/centos-release of TencentOS, states nothing worth reporting.
         info = _parse_release_content(data.splitlines()[0])
-        if info:
-            return info
+        if not info:
+            continue
+        info['id'] = _DISTRO_RELEASE_BASENAME_REGEX.match(basename).group(1)
+        if 'cloudlinux' in info.get('name', '').lower():
+            # CloudLinux before 7 names itself in an /etc/redhat-release, which would
+            # otherwise leave it with the ID of Red Hat.
+            info['id'] = 'cloudlinux'
+        return info
     return {}
 
 
@@ -463,8 +552,11 @@ def _get_lsb_release_info():
       from the values. Empty if the file cannot be read.
 
     ### Notes
-    - Ansible calls `lsb_release` here. Reading the file keeps this module free of
-      subprocess calls and yields the same keys on every distribution that ships one.
+    - Ansible runs `lsb_release -a` here and never looks at the file. Reading the
+      file keeps this module free of subprocess calls. The `DISTRIB_` keys stand in
+      for the `Distributor ID`, `Release`, `Codename` and `Description` fields of
+      the command, which is not the same set of sources: a host can ship one without
+      the other. See the module docstring for what that costs and what it gains.
 
     ### Example
     >>> _get_lsb_release_info()
@@ -568,8 +660,10 @@ def _get_version_candidates(os_release, lsb_release, release_info):
       out.
 
     ### Notes
-    - Mirrors the candidate list of `distro.version()`. The uname candidate is
-      missing because it would require shelling out.
+    - Mirrors the candidate list of `distro.version()`. Its uname candidate is left
+      out, which is no difference in practice: the `distro` package discards the
+      output of `uname -rs` as soon as the system name is `Linux`, so on Linux that
+      candidate is always empty.
 
     ### Example
     >>> _get_version_candidates({'version_id': '9.7'}, {}, {'version': '9.7'})
@@ -616,11 +710,7 @@ def _guess_distribution():
     lsb_release = _get_lsb_release_info()
     release_info = _get_distro_release_info()
 
-    # Lowercased the way `distro.id()` normalises it, so that the comparisons below
-    # hold for a distribution spelling its ID with capitals, such as openEuler.
-    distro_id = (
-        os_release.get('id', '').lower() or lsb_release.get('distrib_id', '').lower()
-    )
+    distro_id = _get_distro_id(os_release, lsb_release, release_info)
 
     # Ansible normalises these two so that the OS family map and the release file
     # varieties agree on one spelling.
@@ -712,7 +802,9 @@ def _parse_dist_file(name, data, path, collected_facts):
             facts['distribution'] = name
             facts['distribution_file_search_string'] = SEARCH_STRING[name]
         elif data.split():
-            # Sets distribution to what is in the data, for example CentOS.
+            # Sets distribution to what is in the data, for example CentOS. Ansible
+            # indexes unconditionally here, which trips over a release file holding
+            # nothing but whitespace.
             facts['distribution'] = data.split()[0]
         return True, facts
 
@@ -991,6 +1083,8 @@ def _parse_distribution_file_debian(name, data, path, collected_facts):
         version = re.search(r'VERSION_ID=(.*)', data)
         if version:
             facts['distribution_version'] = version.group(1)
+            # Ansible unpacks into exactly three parts here and raises on anything
+            # else. Slicing keeps a two part version from taking the lib down.
             facts['distribution_major_version'] = version.group(1).split('.')[0]
         release = re.search(r'VERSION="(.*)"', data)
         if release:
@@ -1271,6 +1365,11 @@ def _parse_distribution_file_suse(name, data, path, collected_facts):
                 else:
                     facts['distribution_release'] = '0'
     elif path == '/etc/SuSE-release':
+        # Kept in its own name. Ansible rebinds `data` to the line list in the
+        # openSUSE branch below and then hands it to the VARIANT_ID re.search at the
+        # end of the function, which raises a TypeError. Unreachable in Ansible's own
+        # tests because every openSUSE carrying this file also carries an
+        # /etc/os-release, which comes first in OSDIST_LIST.
         lines = data.splitlines()
         if 'open' in data.lower():
             facts['distribution'] = lines[0].split()[0]
@@ -1519,10 +1618,14 @@ def get_distribution_facts():
     - All keys except `os_info` carry the same meaning as the `ansible_facts` of the
       same name. In particular, `distribution_release` is the release name such as
       `Plow` or `noble`, not the kernel release.
-    - On anything other than Linux, only the `platform` module is consulted.
     - `distribution_release` is empty where a distribution states that it has no
       release name, which Fedora does by setting `VERSION_CODENAME=""`. It is `NA`
       where no source carries one at all.
+    - On anything other than Linux, only the `platform` module is consulted, and the
+      three facts it fills mean something else: `distribution` is the system name,
+      `distribution_release` is the kernel release and `distribution_version` is the
+      kernel version. `distribution_major_version` is absent there. This is Ansible's
+      baseline for a system it has no dedicated code for.
 
     ### Example
     >>> get_distribution_facts()

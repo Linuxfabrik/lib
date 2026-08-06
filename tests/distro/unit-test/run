@@ -17,10 +17,16 @@ file content taken from the distributions in question.
 
 The end-to-end tests in TestProcessDistFiles double as regression tests: every one of
 them used to be misclassified before the module was aligned with Ansible.
+
+TestAnsibleFixtures runs the module against the fixture corpus of ansible/ansible and
+is skipped unless LF_ANSIBLE_SRC points at a checkout. It is the tool for the next
+sync with upstream.
 """
 
 import contextlib
+import glob
 import io
+import json
 import os
 import sys
 import tempfile
@@ -165,12 +171,15 @@ UBUNTU_CODENAME=noble
 ALPINE_RELEASE = '3.21.7\n'
 ALMA_RELEASE = 'AlmaLinux release 9.8 (Olive Jaguar)\n'
 AMAZON_SYSTEM_RELEASE = 'Amazon Linux release 2 (Karoo)\n'
+CENTOS_RELEASE_8 = 'CentOS Linux release 8.4.2105 (Core)\n'
 CENTOS_STREAM_RELEASE = 'CentOS Stream release 9\n'
+CLOUDLINUX_RELEASE = 'CloudLinux Server release 6.10 (Vladislav Volkov)\n'
 FEDORA_RELEASE = 'Fedora release 41 (Container Image)\n'
 GENTOO_RELEASE = 'Gentoo Base System release 2.18\n'
 OPENEULER_RELEASE = 'openEuler release 24.03 (LTS-SP1)\n'
 ORACLE_RELEASE = 'Oracle Linux Server release 9.8\n'
 REDHAT_RELEASE = 'Red Hat Enterprise Linux release 9.7 (Plow)\n'
+REDHAT_RELEASE_6 = 'Red Hat Enterprise Linux Server release 6.7 (Santiago)\n'
 REDHAT_RELEASE_ON_ORACLE = 'Red Hat Enterprise Linux release 9.8 (Plow)\n'
 REDHAT_RELEASE_ON_TENCENTOS = 'CentOS Linux release 8.4.2105 (Core)\n'
 ROCKY_RELEASE = 'Rocky Linux release 9.3 (Blue Onyx)\n'
@@ -248,6 +257,102 @@ def fake_fs(files, links=()):
         mock.patch('builtins.open', side_effect=fake_open),
     ):
         yield
+
+
+# Path to an ansible/ansible checkout. Set it to run the module against Ansible's own
+# fixture corpus, which is the reference this module is ported from:
+#   LF_ANSIBLE_SRC=~/git/other/ansible/ansible tools/run-unit-tests --no-container distro
+# The fixtures are not vendored: they are GPL-3.0+, this repository is The Unlicense.
+_ANSIBLE_FIXTURE_DIR = os.path.join(
+    os.environ.get('LF_ANSIBLE_SRC', ''),
+    'test/units/module_utils/facts/system/distribution/fixtures',
+)
+
+# Fixtures where this module knowingly disagrees with Ansible's expected result, keyed
+# by the fixture's own "name". Anything not listed here has to match field for field.
+_ANSIBLE_FIXTURE_DEVIATIONS = {
+    'Archlinux rolling': 'lsb_release reports the release name "n/a", the file does not',
+    'Debian 10': 'stale fixture: version_best predates /etc/debian_version as a candidate',
+    'Debian 7.9': 'lsb_release reports the more precise version, the file does not',
+    'Debian stretch/sid': 'lsb_release reports version and release name, the file does not',
+    'Fedora 25': 'stale fixture: the frozen os_release_info is empty',
+    'Flatcar Container Linux by Kinvolk 3139.2.0': (
+        'the file carries the release name "Oklo", lsb_release is not installed there'
+    ),
+    'Gentoo 2.18': 'lsb_release reports the release name "n/a", the file does not',
+    'OSMC': 'stale fixture: the frozen os_release_info is empty',
+    'SteamOS 2.0': 'stale fixture: the frozen version predates the os-release candidate',
+    'Virtuozzo 7.3': 'stale fixture: the frozen os_release_info is empty',
+}
+
+
+def _load_ansible_fixtures():
+    """Read Ansible's fixture corpus, Linux cases only.
+
+    Returns a list of (name, files, expected). The non-Linux cases are left out: this
+    module is Linux-only by design, see its docstring.
+    """
+    testcases = []
+    for path in sorted(glob.glob(os.path.join(_ANSIBLE_FIXTURE_DIR, '*.json'))):
+        with open(path, encoding='utf-8') as f:
+            testcase = json.load(f)
+        if testcase.get('platform.system', 'Linux') != 'Linux':
+            continue
+        files = {path: content.strip() for path, content in testcase['input'].items()}
+        testcases.append((testcase['name'], files, testcase['result']))
+    return testcases
+
+
+@unittest.skipUnless(
+    os.path.isdir(_ANSIBLE_FIXTURE_DIR), 'set LF_ANSIBLE_SRC to an ansible checkout'
+)
+class TestAnsibleFixtures(unittest.TestCase):
+    """get_distribution_facts against the fixture corpus of ansible/ansible.
+
+    Keeps the port honest across Ansible updates. Both directions are checked, so a
+    fixture Ansible repairs upstream shows up here instead of silently agreeing.
+    """
+
+    @staticmethod
+    def _deviating_fields(files, expected):
+        with (
+            fake_fs(files),
+            mock.patch('lib.distro.platform.system', return_value='Linux'),
+            mock.patch('lib.distro.platform.release', return_value=''),
+            mock.patch('lib.distro.platform.version', return_value=''),
+        ):
+            facts = distro.get_distribution_facts()
+        return {
+            key: (want, facts.get(key))
+            for key, want in expected.items()
+            if facts.get(key) != want
+        }
+
+    def test_corpus_is_present(self):
+        # Guards against a silently empty run, for example after an upstream move.
+        self.assertGreater(len(_load_ansible_fixtures()), 50)
+
+    def test_no_unexpected_deviation(self):
+        for name, files, expected in _load_ansible_fixtures():
+            if name in _ANSIBLE_FIXTURE_DEVIATIONS:
+                continue
+            with self.subTest(fixture=name):
+                self.assertEqual(self._deviating_fields(files, expected), {})
+
+    def test_every_known_deviation_still_deviates(self):
+        for name, files, expected in _load_ansible_fixtures():
+            if name not in _ANSIBLE_FIXTURE_DEVIATIONS:
+                continue
+            with self.subTest(fixture=name):
+                self.assertNotEqual(
+                    self._deviating_fields(files, expected),
+                    {},
+                    'agrees with Ansible now, drop it from _ANSIBLE_FIXTURE_DEVIATIONS',
+                )
+
+    def test_deviation_list_has_no_stale_entries(self):
+        known = {name for name, _files, _expected in _load_ansible_fixtures()}
+        self.assertEqual(set(_ANSIBLE_FIXTURE_DEVIATIONS) - known, set())
 
 
 class TestFileExists(unittest.TestCase):
@@ -415,8 +520,52 @@ class TestGetDistributionFacts(unittest.TestCase):
         self.assertIsInstance(self._run({}), dict)
 
 
+class TestGetDistroId(unittest.TestCase):
+    """_get_distro_id: the distribution ID, asked for in Ansible's order."""
+
+    def test_os_release_wins(self):
+        os_release = {'id': 'fedora'}
+        lsb_release = {'distrib_id': 'Ubuntu'}
+        release_info = {'id': 'redhat'}
+        self.assertEqual(
+            distro._get_distro_id(os_release, lsb_release, release_info), 'fedora'
+        )
+
+    def test_os_release_id_is_normalised(self):
+        # Oracle Linux says "ol", newer openSUSE says "opensuse-leap".
+        self.assertEqual(distro._get_distro_id({'id': 'ol'}, {}, {}), 'oracle')
+        self.assertEqual(
+            distro._get_distro_id({'id': 'opensuse-leap'}, {}, {}), 'opensuse'
+        )
+
+    def test_lsb_release_is_second(self):
+        self.assertEqual(
+            distro._get_distro_id({}, {'distrib_id': 'Ubuntu'}, {'id': 'redhat'}),
+            'ubuntu',
+        )
+
+    def test_lsb_release_id_is_normalised(self):
+        # RHEL 6 and 7 report their edition as the distributor.
+        self.assertEqual(
+            distro._get_distro_id({}, {'distrib_id': 'RedHatEnterpriseServer'}, {}),
+            'rhel',
+        )
+
+    def test_release_file_is_last(self):
+        # RHEL 6 ships neither an os-release nor an lsb-release file.
+        self.assertEqual(distro._get_distro_id({}, {}, {'id': 'redhat'}), 'rhel')
+
+    def test_blanks_become_underscores(self):
+        self.assertEqual(
+            distro._get_distro_id({'id': 'Kylin Linux'}, {}, {}), 'kylin_linux'
+        )
+
+    def test_no_source_yields_empty(self):
+        self.assertEqual(distro._get_distro_id({}, {}, {}), '')
+
+
 class TestGetDistroReleaseInfo(unittest.TestCase):
-    """_get_distro_release_info: name, version and release name from /etc."""
+    """_get_distro_release_info: ID, name, version and release name from /etc."""
 
     def test_redhat_release_with_codename(self):
         with fake_fs({'/etc/redhat-release': REDHAT_RELEASE}):
@@ -424,6 +573,17 @@ class TestGetDistroReleaseInfo(unittest.TestCase):
         self.assertEqual(info['name'], 'Red Hat Enterprise Linux')
         self.assertEqual(info['version'], '9.7')
         self.assertEqual(info['codename'], 'Plow')
+        self.assertEqual(info['id'], 'redhat')
+
+    def test_id_comes_from_the_basename(self):
+        with fake_fs({'/etc/rocky-release': ROCKY_RELEASE}):
+            self.assertEqual(distro._get_distro_release_info()['id'], 'rocky')
+
+    def test_cloudlinux_keeps_its_own_id(self):
+        # CloudLinux before 7 names itself in an /etc/redhat-release, whose basename
+        # would otherwise leave it with the ID of Red Hat.
+        with fake_fs({'/etc/redhat-release': CLOUDLINUX_RELEASE}):
+            self.assertEqual(distro._get_distro_release_info()['id'], 'cloudlinux')
 
     def test_release_without_codename(self):
         with fake_fs({'/etc/oracle-release': ORACLE_RELEASE}):
@@ -667,6 +827,25 @@ class TestGuessDistribution(unittest.TestCase):
     def test_missing_codename_becomes_na(self):
         with fake_fs({'/etc/os-release': OS_RELEASE_ALPINE}):
             self.assertEqual(distro._guess_distribution()['distribution_release'], 'NA')
+
+    def test_release_file_alone_identifies_the_distribution(self):
+        # RHEL 6 ships neither an os-release nor an lsb-release file. Without the
+        # release file basename as an ID source, this reported 'OtherLinux'.
+        with fake_fs({'/etc/redhat-release': REDHAT_RELEASE_6}):
+            guess = distro._guess_distribution()
+        self.assertEqual(guess['distribution'], 'Redhat')
+        self.assertEqual(guess['distribution_version'], '6.7')
+        self.assertEqual(guess['distribution_major_version'], '6')
+        self.assertEqual(guess['distribution_release'], 'Santiago')
+
+    def test_centos_without_os_release_gets_the_best_version(self):
+        # The best-version rule only fires when the ID resolves to 'centos', which
+        # on CentOS 8 without an os-release only the basename can say. It cuts the
+        # build number off the three part version of the release file.
+        with fake_fs({'/etc/centos-release': CENTOS_RELEASE_8}):
+            guess = distro._guess_distribution()
+        self.assertEqual(guess['distribution'], 'Centos')
+        self.assertEqual(guess['distribution_version'], '8.4')
 
     def test_no_files_at_all(self):
         with fake_fs({}):

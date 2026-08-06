@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: Table and column names that are SQL keywords work in every operation, not just in some of them.
 * db_sqlite.py: Table names containing a dash or other punctuation are used as given, instead of being silently stripped down to letters, digits and underscores.
 * db_sqlite.py: The journal and write-ahead log files belonging to a discarded database are removed with it, instead of piling up in the temporary directory.
+* distro.py: A distribution shipping no `/etc/os-release`, such as RHEL 6, CentOS 6 or SLES 11, is named instead of being reported as "OtherLinux", and CentOS reports the two-part version admins expect rather than the build number the release file carries.
 * distro.py: Alpine Linux is recognised by its own release file, so its version is reported.
 * distro.py: Amazon Linux recognised through `/etc/system-release` reports its major version instead of "NA".
 * distro.py: CentOS Stream is reported as Stream.
