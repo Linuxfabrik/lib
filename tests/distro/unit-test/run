@@ -10,13 +10,17 @@
 
 """Unit tests for lib.distro.
 
-The module reads host release files (/etc/os-release and friends) and shells
-out via lib.shell.shell_exec to source /etc/os-release. To stay hermetic and
-host-independent, every filesystem touch (os.path.isfile, os.path.getsize,
-the open() in _get_file_content) and the single shell_exec call are mocked.
-Parser tests are driven by realistic sample release-file content.
+The module reads host release files (/etc/os-release and friends). To stay hermetic
+and host-independent, every filesystem touch is mocked through `fake_fs`, which maps
+absolute paths to file content. Parser tests are driven by realistic sample release
+file content taken from the distributions in question.
+
+The end-to-end tests in TestProcessDistFiles double as regression tests: every one of
+them used to be misclassified before the module was aligned with Ansible.
 """
 
+import contextlib
+import io
 import os
 import sys
 import tempfile
@@ -27,16 +31,29 @@ sys.path.insert(0, '..')
 
 import lib.distro as distro
 
-# --- Realistic release-file fixtures ---
+# --- Realistic release file fixtures ---
 
-OS_RELEASE_UBUNTU = """\
-NAME="Ubuntu"
-VERSION="22.04.2 LTS (Jammy Jellyfish)"
-ID=ubuntu
-ID_LIKE=debian
-PRETTY_NAME="Ubuntu 22.04.2 LTS"
-VERSION_ID="22.04"
-VERSION_CODENAME=jammy
+OS_RELEASE_ALPINE = """\
+NAME="Alpine Linux"
+ID=alpine
+VERSION_ID=3.21.7
+PRETTY_NAME="Alpine Linux v3.21"
+"""
+
+OS_RELEASE_AMAZON = """\
+NAME="Amazon Linux"
+VERSION="2023"
+ID="amzn"
+VERSION_ID="2023"
+PRETTY_NAME="Amazon Linux 2023"
+"""
+
+OS_RELEASE_CLEARLINUX = """\
+NAME="Clear Linux OS"
+VERSION=1
+ID=clear-linux-os
+VERSION_ID=41750
+PRETTY_NAME="Clear Linux OS"
 """
 
 OS_RELEASE_DEBIAN = """\
@@ -50,38 +67,118 @@ ID=debian
 
 OS_RELEASE_FEDORA = """\
 NAME="Fedora Linux"
-VERSION="41 (Workstation Edition)"
+VERSION="41 (Container Image)"
 ID=fedora
 VERSION_ID=41
-PRETTY_NAME="Fedora Linux 41 (Workstation Edition)"
+VERSION_CODENAME=""
+PRETTY_NAME="Fedora Linux 41 (Container Image)"
 """
 
-OS_RELEASE_AMAZON = """\
-NAME="Amazon Linux"
-VERSION="2"
-ID="amzn"
-VERSION_ID="2"
-PRETTY_NAME="Amazon Linux 2"
+OS_RELEASE_GENTOO = """\
+NAME='Gentoo'
+ID='gentoo'
+PRETTY_NAME='Gentoo Linux'
+VERSION='2.18'
+VERSION_ID='2.18'
 """
 
-OS_RELEASE_CLEARLINUX = """\
-NAME="Clear Linux OS"
-VERSION=1
-ID=clear-linux-os
-VERSION_ID=41750
-PRETTY_NAME="Clear Linux OS"
+OS_RELEASE_RHEL = """\
+NAME="Red Hat Enterprise Linux"
+VERSION="9.7 (Plow)"
+ID="rhel"
+VERSION_ID="9.7"
+PRETTY_NAME="Red Hat Enterprise Linux 9.7 (Plow)"
 """
 
-REDHAT_RELEASE = 'Red Hat Enterprise Linux release 8.5 (Ootpa)\n'
-CENTOS_RELEASE = 'CentOS Linux release 7.9.2009 (Core)\n'
-ORACLE_RELEASE = 'Oracle Linux Server release 8.7\n'
-ALPINE_RELEASE = '3.18.4\n'
-LSB_RELEASE = """\
+OS_RELEASE_SLES = """\
+NAME="SLES"
+VERSION="15-SP7"
+VERSION_ID="15.7"
+PRETTY_NAME="SUSE Linux Enterprise Server 15 SP7"
+ID="sles"
+ID_LIKE="suse"
+"""
+
+OS_RELEASE_SUSE_LEAP = """\
+NAME="openSUSE Leap"
+VERSION="16.0"
+ID="opensuse-leap"
+ID_LIKE="suse opensuse"
+VERSION_ID="16.0"
+PRETTY_NAME="openSUSE Leap 16.0"
+"""
+
+OS_RELEASE_UBUNTU = """\
+NAME="Ubuntu"
+VERSION="24.04.4 LTS (Noble Numbat)"
+ID=ubuntu
+ID_LIKE=debian
+PRETTY_NAME="Ubuntu 24.04.4 LTS"
+VERSION_ID="24.04"
+VERSION_CODENAME=noble
+UBUNTU_CODENAME=noble
+"""
+
+ALPINE_RELEASE = '3.21.7\n'
+ALMA_RELEASE = 'AlmaLinux release 9.8 (Olive Jaguar)\n'
+CENTOS_STREAM_RELEASE = 'CentOS Stream release 9\n'
+FEDORA_RELEASE = 'Fedora release 41 (Container Image)\n'
+GENTOO_RELEASE = 'Gentoo Base System release 2.18\n'
+ORACLE_RELEASE = 'Oracle Linux Server release 9.8\n'
+REDHAT_RELEASE = 'Red Hat Enterprise Linux release 9.7 (Plow)\n'
+REDHAT_RELEASE_ON_ORACLE = 'Red Hat Enterprise Linux release 9.8 (Plow)\n'
+ROCKY_RELEASE = 'Rocky Linux release 9.3 (Blue Onyx)\n'
+
+LSB_RELEASE_UBUNTU = """\
 DISTRIB_ID=Ubuntu
-DISTRIB_RELEASE=20.04
-DISTRIB_CODENAME=focal
-DISTRIB_DESCRIPTION="Ubuntu 20.04.6 LTS"
+DISTRIB_RELEASE=24.04
+DISTRIB_CODENAME=noble
+DISTRIB_DESCRIPTION="Ubuntu 24.04.4 LTS"
 """
+
+
+@contextlib.contextmanager
+def fake_fs(files, links=()):
+    """Run the enclosed block against a simulated filesystem.
+
+    `files` maps an absolute path to its content. Any path not in the mapping is
+    treated as missing. `links` lists paths that report as symlinks.
+    """
+
+    def fake_isfile(path):
+        return path in files
+
+    def fake_getsize(path):
+        return len(files[path])
+
+    def fake_access(path, _mode):
+        return path in files
+
+    def fake_islink(path):
+        return path in links
+
+    def fake_listdir(path):
+        prefix = path.rstrip('/') + '/'
+        return [
+            entry[len(prefix) :]
+            for entry in files
+            if entry.startswith(prefix) and '/' not in entry[len(prefix) :]
+        ]
+
+    def fake_open(path, *args, **kwargs):
+        if path not in files:
+            raise FileNotFoundError(path)
+        return io.StringIO(files[path])
+
+    with (
+        mock.patch('lib.distro.os.path.isfile', side_effect=fake_isfile),
+        mock.patch('lib.distro.os.path.getsize', side_effect=fake_getsize),
+        mock.patch('lib.distro.os.path.islink', side_effect=fake_islink),
+        mock.patch('lib.distro.os.access', side_effect=fake_access),
+        mock.patch('lib.distro.os.listdir', side_effect=fake_listdir),
+        mock.patch('builtins.open', side_effect=fake_open),
+    ):
+        yield
 
 
 class TestFileExists(unittest.TestCase):
@@ -119,468 +216,859 @@ class TestFileExists(unittest.TestCase):
 
 
 class TestGetFileContent(unittest.TestCase):
-    """_get_file_content: read whole file as text."""
+    """_get_file_content: read whole file as text, never raise."""
 
-    def setUp(self):
-        self.dir = tempfile.mkdtemp(prefix='lftest-distro-')
+    def test_reads_and_strips(self):
+        with fake_fs({'/etc/alpine-release': ALPINE_RELEASE}):
+            self.assertEqual(distro._get_file_content('/etc/alpine-release'), '3.21.7')
 
-    def test_reads_full_content(self):
-        path = os.path.join(self.dir, 'f')
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(OS_RELEASE_UBUNTU)
-        self.assertEqual(distro._get_file_content(path), OS_RELEASE_UBUNTU)
+    def test_keeps_whitespace_when_asked(self):
+        with fake_fs({'/etc/alpine-release': ALPINE_RELEASE}):
+            self.assertEqual(
+                distro._get_file_content('/etc/alpine-release', strip=False),
+                ALPINE_RELEASE,
+            )
 
-    def test_reads_utf8(self):
-        path = os.path.join(self.dir, 'u')
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write('Pop!_OS äöü\n')
-        self.assertEqual(distro._get_file_content(path), 'Pop!_OS äöü\n')
+    def test_missing_file_returns_default(self):
+        with fake_fs({}):
+            self.assertIsNone(distro._get_file_content('/etc/os-release'))
+            self.assertEqual(distro._get_file_content('/etc/os-release', 'x'), 'x')
 
-    def test_missing_file_raises(self):
-        with self.assertRaises(OSError):
-            distro._get_file_content(os.path.join(self.dir, 'absent'))
+    def test_empty_file_returns_default(self):
+        with fake_fs({'/etc/arch-release': '   \n'}):
+            self.assertIsNone(distro._get_file_content('/etc/arch-release'))
 
-
-class TestGuessLinuxDistribution(unittest.TestCase):
-    """_guess_linux_distribution: platform-module fallback facts."""
-
-    def test_returns_expected_keys(self):
-        facts = distro._guess_linux_distribution()
-        for key in (
-            'distribution',
-            'distribution_version',
-            'distribution_release',
-            'distribution_major_version',
+    def test_unreadable_file_returns_default(self):
+        with (
+            mock.patch('lib.distro.os.path.isfile', return_value=True),
+            mock.patch('lib.distro.os.access', return_value=False),
         ):
-            self.assertIn(key, facts)
+            self.assertIsNone(distro._get_file_content('/etc/shadow-release'))
 
-    @mock.patch('lib.distro.platform.version', return_value='5.15.0-1')
-    @mock.patch('lib.distro.platform.release', return_value='5.15.0-86-generic')
-    @mock.patch('lib.distro.platform.system', return_value='Linux')
-    def test_linux_with_dotted_version(self, _sys, _rel, _ver):
-        facts = distro._guess_linux_distribution()
-        self.assertEqual(facts['distribution'], 'Linux')
-        self.assertEqual(facts['distribution_version'], '5.15.0-1')
-        self.assertEqual(facts['distribution_release'], '5.15.0-86-generic')
-        self.assertEqual(facts['distribution_major_version'], '5')
-
-    @mock.patch('lib.distro.platform.version', return_value='nodothere')
-    @mock.patch('lib.distro.platform.release', return_value='rel')
-    @mock.patch('lib.distro.platform.system', return_value='Linux')
-    def test_version_without_dot_yields_na_major(self, _sys, _rel, _ver):
-        facts = distro._guess_linux_distribution()
-        self.assertEqual(facts['distribution_major_version'], 'NA')
-
-    @mock.patch('lib.distro.platform.version', return_value='')
-    @mock.patch('lib.distro.platform.release', return_value='')
-    @mock.patch('lib.distro.platform.system', return_value='')
-    def test_empty_system_yields_na(self, _sys, _rel, _ver):
-        facts = distro._guess_linux_distribution()
-        self.assertEqual(facts['distribution'], 'NA')
-        self.assertEqual(facts['distribution_version'], 'NA')
-        self.assertEqual(facts['distribution_release'], 'NA')
+    def test_oserror_returns_default(self):
+        with (
+            mock.patch('lib.distro.os.path.isfile', return_value=True),
+            mock.patch('lib.distro.os.access', return_value=True),
+            mock.patch('builtins.open', side_effect=OSError('boom')),
+        ):
+            self.assertIsNone(distro._get_file_content('/etc/os-release'))
 
 
-class TestParseDistributionFile(unittest.TestCase):
-    """_parse_distribution_file: per-variety release-file parsing."""
+class TestGetFileLines(unittest.TestCase):
+    """_get_file_lines: line list, empty on failure."""
 
-    # --- SEARCH_STRING varieties ---
+    def test_splits_lines(self):
+        with fake_fs({'/etc/debian_version': '12.14\n'}):
+            self.assertEqual(distro._get_file_lines('/etc/debian_version'), ['12.14'])
 
-    def test_redhat_match(self):
-        ok, facts = distro._parse_distribution_file('RedHat', REDHAT_RELEASE)
+    def test_missing_file_returns_empty_list(self):
+        with fake_fs({}):
+            self.assertEqual(distro._get_file_lines('/etc/debian_version'), [])
+
+
+class TestGetOsReleaseInfo(unittest.TestCase):
+    """_get_os_release_info: os-release into a lowercased dict."""
+
+    def test_parses_keys_and_strips_quotes(self):
+        with fake_fs({'/etc/os-release': OS_RELEASE_UBUNTU}):
+            values = distro._get_os_release_info()
+        self.assertEqual(values['name'], 'Ubuntu')
+        self.assertEqual(values['id'], 'ubuntu')
+        self.assertEqual(values['version_id'], '24.04')
+        self.assertEqual(values['version_codename'], 'noble')
+
+    def test_single_quotes_are_stripped(self):
+        with fake_fs({'/etc/os-release': OS_RELEASE_GENTOO}):
+            values = distro._get_os_release_info()
+        self.assertEqual(values['name'], 'Gentoo')
+        self.assertEqual(values['id'], 'gentoo')
+
+    def test_falls_back_to_usr_lib(self):
+        with fake_fs({'/usr/lib/os-release': OS_RELEASE_CLEARLINUX}):
+            values = distro._get_os_release_info()
+        self.assertEqual(values['name'], 'Clear Linux OS')
+
+    def test_etc_wins_over_usr_lib(self):
+        files = {
+            '/etc/os-release': OS_RELEASE_UBUNTU,
+            '/usr/lib/os-release': OS_RELEASE_CLEARLINUX,
+        }
+        with fake_fs(files):
+            self.assertEqual(distro._get_os_release_info()['name'], 'Ubuntu')
+
+    def test_comments_and_blank_lines_are_ignored(self):
+        data = '# a comment\n\nNAME="X"\ngarbage\n'
+        with fake_fs({'/etc/os-release': data}):
+            self.assertEqual(distro._get_os_release_info(), {'name': 'X'})
+
+    def test_missing_file_returns_empty(self):
+        with fake_fs({}):
+            self.assertEqual(distro._get_os_release_info(), {})
+
+
+class TestGetLsbReleaseInfo(unittest.TestCase):
+    """_get_lsb_release_info: lsb-release into a lowercased dict."""
+
+    def test_parses_keys(self):
+        with fake_fs({'/etc/lsb-release': LSB_RELEASE_UBUNTU}):
+            values = distro._get_lsb_release_info()
+        self.assertEqual(values['distrib_id'], 'Ubuntu')
+        self.assertEqual(values['distrib_release'], '24.04')
+        self.assertEqual(values['distrib_codename'], 'noble')
+
+    def test_missing_file_returns_empty(self):
+        with fake_fs({}):
+            self.assertEqual(distro._get_lsb_release_info(), {})
+
+
+class TestGetDistroReleaseInfo(unittest.TestCase):
+    """_get_distro_release_info: name, version and release name from /etc."""
+
+    def test_redhat_release_with_codename(self):
+        with fake_fs({'/etc/redhat-release': REDHAT_RELEASE}):
+            info = distro._get_distro_release_info()
+        self.assertEqual(info['name'], 'Red Hat Enterprise Linux')
+        self.assertEqual(info['version'], '9.7')
+        self.assertEqual(info['codename'], 'Plow')
+
+    def test_release_without_codename(self):
+        with fake_fs({'/etc/oracle-release': ORACLE_RELEASE}):
+            info = distro._get_distro_release_info()
+        self.assertEqual(info['version'], '9.8')
+        self.assertNotIn('codename', info)
+
+    def test_multiword_codename(self):
+        with fake_fs({'/etc/rocky-release': ROCKY_RELEASE}):
+            self.assertEqual(distro._get_distro_release_info()['codename'], 'Blue Onyx')
+
+    def test_candidates_are_sorted(self):
+        # Oracle ships both. Sorting makes oracle-release win, which is what keeps
+        # the Red Hat release name from leaking into an Oracle Linux fact set.
+        files = {
+            '/etc/oracle-release': ORACLE_RELEASE,
+            '/etc/redhat-release': REDHAT_RELEASE_ON_ORACLE,
+        }
+        with fake_fs(files):
+            info = distro._get_distro_release_info()
+        self.assertEqual(info['name'], 'Oracle Linux Server')
+        self.assertNotIn('codename', info)
+
+    def test_ignored_basenames_are_skipped(self):
+        # /etc/system-release repeats the product name in the parentheses and would
+        # otherwise be reported as the release name of Amazon Linux.
+        files = {
+            '/etc/os-release': OS_RELEASE_AMAZON,
+            '/etc/system-release': 'Amazon Linux release 2023.9.1 (Amazon Linux)\n',
+        }
+        with fake_fs(files):
+            self.assertEqual(distro._get_distro_release_info(), {})
+
+    def test_unparsable_file_is_skipped(self):
+        # /etc/alpine-release holds a bare version and identifies nothing.
+        with fake_fs({'/etc/alpine-release': ALPINE_RELEASE}):
+            self.assertEqual(distro._get_distro_release_info(), {})
+
+    def test_unreadable_etc_returns_empty(self):
+        with mock.patch('lib.distro.os.listdir', side_effect=OSError('boom')):
+            self.assertEqual(distro._get_distro_release_info(), {})
+
+
+class TestGetBestVersion(unittest.TestCase):
+    """_get_best_version: the two distributions whose os-release is too coarse."""
+
+    def test_debian_gains_minor_version(self):
+        with fake_fs({'/etc/debian_version': '12.14\n'}):
+            self.assertEqual(distro._get_best_version('debian', '12', {}), '12.14')
+
+    def test_debian_testing_keeps_os_release_version(self):
+        with fake_fs({'/etc/debian_version': 'trixie/sid\n'}):
+            self.assertEqual(distro._get_best_version('debian', '13', {}), '13')
+
+    def test_centos_is_cut_to_two_components(self):
+        info = {'version': '7.9.2009'}
+        self.assertEqual(distro._get_best_version('centos', '7', info), '7.9')
+
+    def test_other_distributions_are_untouched(self):
+        self.assertEqual(distro._get_best_version('fedora', '41', {}), '41')
+
+
+class TestGuessDistribution(unittest.TestCase):
+    """_guess_distribution: the baseline facts before any release file is parsed."""
+
+    def test_ubuntu(self):
+        files = {
+            '/etc/lsb-release': LSB_RELEASE_UBUNTU,
+            '/etc/os-release': OS_RELEASE_UBUNTU,
+        }
+        with fake_fs(files):
+            guess = distro._guess_distribution()
+        self.assertEqual(guess['distribution'], 'Ubuntu')
+        self.assertEqual(guess['distribution_version'], '24.04')
+        self.assertEqual(guess['distribution_major_version'], '24')
+        self.assertEqual(guess['distribution_release'], 'noble')
+
+    def test_rhel_is_normalised_and_takes_codename_from_release_file(self):
+        files = {
+            '/etc/os-release': OS_RELEASE_RHEL,
+            '/etc/redhat-release': REDHAT_RELEASE,
+        }
+        with fake_fs(files):
+            guess = distro._guess_distribution()
+        # 'Rhel' is normalised so that the OS family map has something to match.
+        self.assertEqual(guess['distribution'], 'Redhat')
+        self.assertEqual(guess['distribution_version'], '9.7')
+        self.assertEqual(guess['distribution_release'], 'Plow')
+
+    def test_amazon_is_normalised(self):
+        with fake_fs({'/etc/os-release': OS_RELEASE_AMAZON}):
+            self.assertEqual(distro._guess_distribution()['distribution'], 'Amazon')
+
+    def test_empty_version_codename_survives(self):
+        # Fedora sets VERSION_CODENAME to the empty string. That is an answer, so
+        # the release name from /etc/fedora-release must not override it.
+        files = {
+            '/etc/fedora-release': FEDORA_RELEASE,
+            '/etc/os-release': OS_RELEASE_FEDORA,
+        }
+        with fake_fs(files):
+            self.assertEqual(distro._guess_distribution()['distribution_release'], '')
+
+    def test_missing_codename_becomes_na(self):
+        with fake_fs({'/etc/os-release': OS_RELEASE_ALPINE}):
+            self.assertEqual(distro._guess_distribution()['distribution_release'], 'NA')
+
+    def test_no_files_at_all(self):
+        with fake_fs({}):
+            guess = distro._guess_distribution()
+        self.assertEqual(guess['distribution'], 'OtherLinux')
+        self.assertEqual(guess['distribution_version'], 'NA')
+        self.assertEqual(guess['distribution_major_version'], 'NA')
+        self.assertEqual(guess['distribution_release'], 'NA')
+
+
+class TestParseDistFile(unittest.TestCase):
+    """_parse_dist_file: dispatch by variety name."""
+
+    def test_search_string_match(self):
+        ok, facts = distro._parse_dist_file(
+            'RedHat', REDHAT_RELEASE, '/etc/redhat-release', {}
+        )
         self.assertTrue(ok)
         self.assertEqual(facts['distribution'], 'RedHat')
+        self.assertEqual(facts['distribution_file_search_string'], 'Red Hat')
 
-    def test_redhat_no_match_falls_back_to_first_token(self):
-        # A redhat-release file that is actually CentOS: first token wins.
-        ok, facts = distro._parse_distribution_file('RedHat', CENTOS_RELEASE)
+    def test_search_string_miss_falls_back_to_first_word(self):
+        ok, facts = distro._parse_dist_file(
+            'RedHat', ROCKY_RELEASE, '/etc/redhat-release', {}
+        )
         self.assertTrue(ok)
-        self.assertEqual(facts['distribution'], 'CentOS')
+        self.assertEqual(facts['distribution'], 'Rocky')
+        self.assertNotIn('distribution_file_search_string', facts)
 
-    def test_oraclelinux_match(self):
-        ok, facts = distro._parse_distribution_file('OracleLinux', ORACLE_RELEASE)
-        self.assertTrue(ok)
-        self.assertEqual(facts['distribution'], 'OracleLinux')
-
-    def test_altlinux_search_string(self):
-        ok, facts = distro._parse_distribution_file('Altlinux', 'ALT Linux 10\n')
-        self.assertTrue(ok)
-        self.assertEqual(facts['distribution'], 'Altlinux')
-
-    def test_smgl_search_string(self):
-        ok, facts = distro._parse_distribution_file('SMGL', 'Source Mage GNU/Linux x\n')
-        self.assertTrue(ok)
-        self.assertEqual(facts['distribution'], 'SMGL')
-
-    # --- Archlinux ---
-
-    def test_archlinux_match(self):
-        ok, facts = distro._parse_distribution_file('Archlinux', 'Arch Linux\n')
-        self.assertTrue(ok)
-        self.assertEqual(facts['distribution'], 'Archlinux')
-
-    def test_archlinux_no_match(self):
-        ok, facts = distro._parse_distribution_file('Archlinux', 'something else')
-        self.assertFalse(ok)
-        self.assertEqual(facts, {})
-
-    def test_archlinux_empty_data(self):
-        # An empty arch-release file (allowempty in OSDIST_LIST) does not match
-        # here because there is no 'Arch Linux' marker.
-        ok, _facts = distro._parse_distribution_file('Archlinux', '')
-        self.assertFalse(ok)
-
-    # --- os-release based varieties ---
-
-    def test_ubuntu_name_extracted(self):
-        ok, facts = distro._parse_distribution_file('Ubuntu', OS_RELEASE_UBUNTU)
-        self.assertTrue(ok)
-        self.assertEqual(facts['distribution'], 'Ubuntu')
-
-    def test_debian_name_with_spaces(self):
-        ok, facts = distro._parse_distribution_file('Debian', OS_RELEASE_DEBIAN)
-        self.assertTrue(ok)
-        self.assertEqual(facts['distribution'], 'Debian GNU/Linux')
-
-    def test_amazon_name_extracted(self):
-        ok, facts = distro._parse_distribution_file('Amazon', OS_RELEASE_AMAZON)
-        self.assertTrue(ok)
-        self.assertEqual(facts['distribution'], 'Amazon Linux')
-
-    def test_clearlinux_name_extracted(self):
-        ok, facts = distro._parse_distribution_file('ClearLinux', OS_RELEASE_CLEARLINUX)
-        self.assertTrue(ok)
-        self.assertEqual(facts['distribution'], 'Clear Linux OS')
-
-    def test_os_release_variety_pretty_name_only_no_name(self):
-        # 'PRETTY_NAME' present but no NAME= line: parses True but without
-        # a distribution key (regex on NAME= fails).
-        data = 'PRETTY_NAME="Whatever 1"\nVERSION_ID="1"\n'
-        ok, facts = distro._parse_distribution_file('Debian', data)
+    def test_search_string_miss_on_blank_data(self):
+        ok, facts = distro._parse_dist_file('RedHat', '"', '/etc/redhat-release', {})
         self.assertTrue(ok)
         self.assertNotIn('distribution', facts)
 
-    def test_os_release_variety_without_markers_returns_empty(self):
-        # Neither PRETTY_NAME nor NAME= present.
-        ok, facts = distro._parse_distribution_file('Ubuntu', 'ID=ubuntu\n')
+    def test_oraclelinux_search_string(self):
+        ok, facts = distro._parse_dist_file(
+            'OracleLinux', ORACLE_RELEASE, '/etc/oracle-release', {}
+        )
         self.assertTrue(ok)
-        self.assertEqual(facts, {})
+        self.assertEqual(facts['distribution'], 'OracleLinux')
 
-    # --- Alpine ---
-
-    def test_alpine_match_when_marker_present(self):
-        ok, facts = distro._parse_distribution_file('Alpine', 'Alpine Linux 3.18')
+    def test_os_release_alias_match(self):
+        ok, facts = distro._parse_dist_file(
+            'Archlinux', 'NAME="Arch Linux"', '/etc/os-release', {}
+        )
         self.assertTrue(ok)
-        self.assertEqual(facts['distribution'], 'Alpine')
+        self.assertEqual(facts['distribution'], 'Archlinux')
 
-    def test_alpine_no_match_for_bare_version(self):
-        # /etc/alpine-release contains only a version like '3.18.4' with no
-        # 'Alpine' marker, so the variety parser reports no match.
-        ok, facts = distro._parse_distribution_file('Alpine', ALPINE_RELEASE)
+    def test_os_release_alias_miss(self):
+        ok, _facts = distro._parse_dist_file(
+            'Archlinux', OS_RELEASE_UBUNTU, '/etc/os-release', {}
+        )
+        self.assertFalse(ok)
+
+    def test_variety_without_parser_reports_no_match(self):
+        # Gentoo has no parser, here or in Ansible. It is picked up by the generic
+        # 'NA' entry at the end of OSDIST_LIST instead.
+        ok, facts = distro._parse_dist_file(
+            'Gentoo', GENTOO_RELEASE, '/etc/gentoo-release', {}
+        )
         self.assertFalse(ok)
         self.assertEqual(facts, {})
 
-    # --- generic / unknown ---
-
-    def test_unknown_variety_returns_true_empty(self):
-        ok, facts = distro._parse_distribution_file('Gentoo', 'Gentoo Base System\n')
-        self.assertTrue(ok)
-        self.assertEqual(facts, {})
-
     def test_quotes_are_stripped_before_parsing(self):
-        # Leading/trailing quote/backslash chars are stripped (STRIP_QUOTES).
-        ok, facts = distro._parse_distribution_file('RedHat', '"Red Hat ..."')
+        ok, facts = distro._parse_dist_file(
+            'RedHat', '"Red Hat ..."', '/etc/redhat-release', {}
+        )
         self.assertTrue(ok)
         self.assertEqual(facts['distribution'], 'RedHat')
 
+    def test_every_osdist_list_name_is_resolvable(self):
+        # A name that is neither a marker, an alias, allowempty nor backed by a
+        # parser can never match. Gentoo is the documented exception.
+        allow_empty = {
+            entry['name'] for entry in distro.OSDIST_LIST if entry.get('allowempty')
+        }
+        for entry in distro.OSDIST_LIST:
+            name = entry['name']
+            resolvable = (
+                name in distro.SEARCH_STRING
+                or name in distro.OS_RELEASE_ALIAS
+                or name in distro._DIST_FILE_PARSERS
+                or name in allow_empty
+            )
+            self.assertTrue(resolvable or name == 'Gentoo', name)
 
-class TestParseOsRelease(unittest.TestCase):
-    """_parse_os_release: VERSION_ID extraction."""
 
-    def test_ubuntu_version(self):
+class TestParsers(unittest.TestCase):
+    """The individual release file parsers."""
+
+    def test_alpine(self):
+        ok, facts = distro._parse_distribution_file_alpine(
+            'Alpine', '3.21.7', '/etc/alpine-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Alpine')
+        # The file holds nothing but the version, so there is no marker to look for.
+        self.assertEqual(facts['distribution_version'], '3.21.7')
+
+    def test_amazon_os_release(self):
+        ok, facts = distro._parse_distribution_file_amazon(
+            'Amazon', OS_RELEASE_AMAZON, '/etc/os-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Amazon')
+        self.assertEqual(facts['distribution_version'], '2023')
+        self.assertEqual(facts['distribution_major_version'], '2023')
+        self.assertEqual(facts['distribution_minor_version'], 'NA')
+
+    def test_amazon_two_part_version(self):
+        data = 'NAME="Amazon Linux"\nVERSION_ID="2.0"\n'
+        _ok, facts = distro._parse_distribution_file_amazon(
+            'Amazon', data, '/etc/os-release', {}
+        )
+        self.assertEqual(facts['distribution_major_version'], '2')
+        self.assertEqual(facts['distribution_minor_version'], '0')
+
+    def test_amazon_three_part_version_does_not_raise(self):
+        data = 'NAME="Amazon Linux"\nVERSION_ID="2.0.1"\n'
+        _ok, facts = distro._parse_distribution_file_amazon(
+            'Amazon', data, '/etc/os-release', {}
+        )
+        self.assertEqual(facts['distribution_major_version'], '2')
+        self.assertEqual(facts['distribution_minor_version'], '0')
+
+    def test_amazon_system_release(self):
+        data = 'Amazon Linux release 2 (Karoo)'
+        ok, facts = distro._parse_distribution_file_amazon(
+            'Amazon', data, '/etc/system-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution_version'], '2')
+
+    def test_amazon_rejects_foreign_content(self):
+        ok, _facts = distro._parse_distribution_file_amazon(
+            'Amazon', OS_RELEASE_UBUNTU, '/etc/os-release', {}
+        )
+        self.assertFalse(ok)
+
+    def test_centos_stream(self):
+        ok, facts = distro._parse_distribution_file_centos(
+            'CentOS', CENTOS_STREAM_RELEASE, '/etc/centos-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution_release'], 'Stream')
+
+    def test_centos_tencentos(self):
+        ok, facts = distro._parse_distribution_file_centos(
+            'CentOS', 'TencentOS Server 3.1', '/etc/centos-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'TencentOS')
+
+    def test_centos_plain_reports_no_match(self):
+        # Plain CentOS defers to /etc/redhat-release, which derives the name from
+        # the file content.
+        ok, _facts = distro._parse_distribution_file_centos(
+            'CentOS', 'CentOS Linux release 7.9.2009 (Core)', '/etc/centos-release', {}
+        )
+        self.assertFalse(ok)
+
+    def test_clearlinux(self):
+        ok, facts = distro._parse_distribution_file_clearlinux(
+            'ClearLinux', OS_RELEASE_CLEARLINUX, '/usr/lib/os-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Clear Linux OS')
+        self.assertEqual(facts['distribution_version'], '41750')
+
+    def test_clearlinux_rejects_foreign_content(self):
+        ok, _facts = distro._parse_distribution_file_clearlinux(
+            'ClearLinux', OS_RELEASE_UBUNTU, '/usr/lib/os-release', {}
+        )
+        self.assertFalse(ok)
+
+    def test_coreos(self):
+        collected = {'distribution': 'Coreos'}
+        ok, facts = distro._parse_distribution_file_coreos(
+            'Coreos', 'GROUP=stable', '/etc/coreos/update.conf', collected
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution_release'], 'stable')
+
+    def test_coreos_rejects_other_distributions(self):
+        ok, _facts = distro._parse_distribution_file_coreos(
+            'Coreos', 'GROUP=stable', '/etc/coreos/update.conf', {'distribution': 'X'}
+        )
+        self.assertFalse(ok)
+
+    def test_debian(self):
+        with fake_fs({'/etc/debian_version': '12.14\n'}):
+            ok, facts = distro._parse_distribution_file_debian(
+                'Debian', OS_RELEASE_DEBIAN, '/etc/os-release', {}
+            )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Debian')
+        self.assertEqual(facts['distribution_release'], 'bookworm')
+        self.assertEqual(facts['distribution_minor_version'], '14')
+
+    def test_debian_ubuntu(self):
+        ok, facts = distro._parse_distribution_file_debian(
+            'Debian', OS_RELEASE_UBUNTU, '/etc/os-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Ubuntu')
+
+    def test_debian_kali(self):
+        data = 'NAME="Kali GNU/Linux"\nDISTRIB_RELEASE=2024.1\n'
+        ok, facts = distro._parse_distribution_file_debian(
+            'Debian', data, '/etc/os-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Kali')
+        self.assertEqual(facts['distribution_release'], '2024.1')
+
+    def test_debian_mint(self):
+        data = 'NAME="Linux Mint"\nVERSION_ID="21.3"\n'
+        ok, facts = distro._parse_distribution_file_debian(
+            'Debian', data, '/etc/os-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Linux Mint')
+        self.assertEqual(facts['distribution_major_version'], '21')
+
+    def test_debian_devuan(self):
+        data = 'PRETTY_NAME="Devuan GNU/Linux 5 (daedalus)"\nVERSION_ID="5"\n'
+        ok, facts = distro._parse_distribution_file_debian(
+            'Debian', data, '/etc/os-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Devuan')
+
+    def test_debian_uos_defers_to_uniontech(self):
+        # The RHEL based UOS Server carries a PLATFORM_ID and is not a Debian.
+        data = 'NAME="UOS Server"\nPLATFORM_ID="platform:uel20"\n'
+        ok, _facts = distro._parse_distribution_file_debian(
+            'Debian', data, '/etc/os-release', {}
+        )
+        self.assertFalse(ok)
+
+    def test_debian_cumulus_short_version_does_not_raise(self):
+        data = 'NAME="Cumulus Linux"\nVERSION_ID=4.2\n'
+        ok, facts = distro._parse_distribution_file_debian(
+            'Debian', data, '/etc/os-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution_major_version'], '4')
+
+    def test_debian_rejects_foreign_content(self):
+        # This is the regression that used to classify every os-release based
+        # distribution as Debian.
+        for data in (OS_RELEASE_SUSE_LEAP, OS_RELEASE_ALPINE, OS_RELEASE_AMAZON):
+            ok, _facts = distro._parse_distribution_file_debian(
+                'Debian', data, '/etc/os-release', {}
+            )
+            self.assertFalse(ok, data.splitlines()[0])
+
+    def test_flatcar(self):
+        collected = {'distribution': 'Flatcar'}
+        ok, facts = distro._parse_distribution_file_flatcar(
+            'Flatcar', 'VERSION="3975.2.0"', '/etc/os-release', collected
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution_version'], '3975.2.0')
+        self.assertEqual(facts['distribution_major_version'], '3975')
+
+    def test_mandriva(self):
+        data = 'DISTRIB_ID=Mandriva\nDISTRIB_RELEASE="2011"\n'
+        ok, facts = distro._parse_distribution_file_mandriva(
+            'Mandriva', data, '/etc/lsb-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Mandriva')
+        self.assertEqual(facts['distribution_version'], '2011')
+
+    def test_na(self):
+        collected = {'distribution_version': 'NA'}
+        ok, facts = distro._parse_distribution_file_na(
+            'NA', OS_RELEASE_GENTOO, '/etc/os-release', collected
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Gentoo')
+        self.assertEqual(facts['distribution_version'], '2.18')
+
+    def test_na_keeps_a_version_that_was_already_found(self):
+        collected = {'distribution_version': '2.18'}
+        _ok, facts = distro._parse_distribution_file_na(
+            'NA', OS_RELEASE_GENTOO, '/etc/os-release', collected
+        )
+        self.assertNotIn('distribution_version', facts)
+
+    def test_openwrt(self):
+        data = 'DISTRIB_ID="OpenWrt"\nDISTRIB_RELEASE="23.05.5"\n'
+        ok, facts = distro._parse_distribution_file_openwrt(
+            'OpenWrt', data, '/etc/openwrt_release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution_version'], '23.05.5')
+
+    def test_slackware(self):
+        ok, facts = distro._parse_distribution_file_slackware(
+            'Slackware', 'Slackware 15.0', '/etc/slackware-version', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'Slackware')
+        self.assertEqual(facts['distribution_version'], '15.0')
+
+    def test_suse_leap(self):
+        with fake_fs({}):
+            ok, facts = distro._parse_distribution_file_suse(
+                'SUSE', OS_RELEASE_SUSE_LEAP, '/etc/os-release', {}
+            )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'openSUSE Leap')
+        self.assertEqual(facts['distribution_version'], '16.0')
+        self.assertEqual(facts['distribution_major_version'], '16')
+
+    def test_suse_sles(self):
+        with fake_fs({}):
+            ok, facts = distro._parse_distribution_file_suse(
+                'SUSE', OS_RELEASE_SLES, '/etc/os-release', {}
+            )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'SLES')
+        self.assertEqual(facts['distribution_version'], '15.7')
+        # SLES has no release names, so the minor version stands in for one.
+        self.assertEqual(facts['distribution_release'], '7')
+
+    def test_suse_sles_non_numeric_version_id_does_not_raise(self):
+        data = (
+            'NAME="SLES"\n'
+            'VERSION_ID="rolling"\n'
+            'PRETTY_NAME="SUSE Linux Enterprise Server"\n'
+        )
+        with fake_fs({}):
+            ok, facts = distro._parse_distribution_file_suse(
+                'SUSE', data, '/etc/os-release', {}
+            )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution_release'], '0')
+
+    def test_suse_sap_via_variant_id(self):
+        data = OS_RELEASE_SLES + 'VARIANT_ID="sles-sap"\n'
+        with fake_fs({}):
+            _ok, facts = distro._parse_distribution_file_suse(
+                'SUSE', data, '/etc/os-release', {}
+            )
+        self.assertEqual(facts['distribution'], 'SLES_SAP')
+
+    def test_suse_sap_via_baseproduct_link(self):
         with (
-            mock.patch('lib.distro._file_exists', return_value=True),
-            mock.patch('lib.distro._get_file_content', return_value=OS_RELEASE_UBUNTU),
-        ):
-            facts = distro._parse_os_release('/etc/os-release')
-        self.assertEqual(facts['distribution_version'], '22.04')
-        self.assertEqual(facts['distribution_major_version'], '22')
-
-    def test_fedora_version_unquoted(self):
-        with (
-            mock.patch('lib.distro._file_exists', return_value=True),
-            mock.patch('lib.distro._get_file_content', return_value=OS_RELEASE_FEDORA),
-        ):
-            facts = distro._parse_os_release('/etc/os-release')
-        self.assertEqual(facts['distribution_version'], '41')
-        self.assertEqual(facts['distribution_major_version'], '41')
-
-    def test_missing_file_returns_empty(self):
-        with mock.patch('lib.distro._file_exists', return_value=False):
-            self.assertEqual(distro._parse_os_release('/etc/os-release'), {})
-
-    def test_read_exception_returns_empty(self):
-        with (
-            mock.patch('lib.distro._file_exists', return_value=True),
-            mock.patch('lib.distro._get_file_content', side_effect=OSError('boom')),
-        ):
-            self.assertEqual(distro._parse_os_release('/etc/os-release'), {})
-
-    def test_no_version_id_returns_empty(self):
-        with (
-            mock.patch('lib.distro._file_exists', return_value=True),
-            mock.patch('lib.distro._get_file_content', return_value='ID=foo\n'),
-        ):
-            self.assertEqual(distro._parse_os_release('/etc/os-release'), {})
-
-
-class TestParseLsbRelease(unittest.TestCase):
-    """_parse_lsb_release: DISTRIB_RELEASE extraction."""
-
-    def test_release_extracted(self):
-        with (
-            mock.patch('lib.distro._file_exists', return_value=True),
-            mock.patch('lib.distro._get_file_content', return_value=LSB_RELEASE),
-        ):
-            facts = distro._parse_lsb_release('/etc/lsb-release')
-        self.assertEqual(facts['distribution_version'], '20.04')
-        self.assertEqual(facts['distribution_major_version'], '20')
-
-    def test_missing_file_returns_empty(self):
-        with mock.patch('lib.distro._file_exists', return_value=False):
-            self.assertEqual(distro._parse_lsb_release('/etc/lsb-release'), {})
-
-    def test_read_exception_returns_empty(self):
-        with (
-            mock.patch('lib.distro._file_exists', return_value=True),
-            mock.patch('lib.distro._get_file_content', side_effect=OSError('boom')),
-        ):
-            self.assertEqual(distro._parse_lsb_release('/etc/lsb-release'), {})
-
-    def test_no_release_line_returns_empty(self):
-        with (
-            mock.patch('lib.distro._file_exists', return_value=True),
+            fake_fs({}, links=('/etc/products.d/baseproduct',)),
             mock.patch(
-                'lib.distro._get_file_content', return_value='DISTRIB_ID=Ubuntu\n'
+                'lib.distro.os.path.realpath',
+                return_value='/etc/products.d/SLES_SAP.prod',
             ),
         ):
-            self.assertEqual(distro._parse_lsb_release('/etc/lsb-release'), {})
+            _ok, facts = distro._parse_distribution_file_suse(
+                'SUSE', OS_RELEASE_SLES, '/etc/os-release', {}
+            )
+        self.assertEqual(facts['distribution'], 'SLES_SAP')
+
+    def test_suse_rejects_foreign_content(self):
+        ok, _facts = distro._parse_distribution_file_suse(
+            'SUSE', OS_RELEASE_UBUNTU, '/etc/os-release', {}
+        )
+        self.assertFalse(ok)
+
+    def test_uniontech_redhat_release_style(self):
+        data = 'UnionTech OS Server release 20 (kongzi)'
+        ok, facts = distro._parse_distribution_file_uniontech(
+            'UnionTech', data, '/etc/redhat-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution'], 'UnionTech')
+        self.assertEqual(facts['distribution_release'], 'kongzi')
+        self.assertEqual(facts['distribution_version'], '20')
+
+    def test_uniontech_os_release_style(self):
+        data = 'PLATFORM_ID="platform:uel20"\nVERSION_ID="20"\n'
+        ok, facts = distro._parse_distribution_file_uniontech(
+            'UnionTech', data, '/etc/os-release', {}
+        )
+        self.assertTrue(ok)
+        self.assertEqual(facts['distribution_version'], '20')
+
+    def test_uniontech_rejects_foreign_content(self):
+        ok, _facts = distro._parse_distribution_file_uniontech(
+            'UnionTech', REDHAT_RELEASE, '/etc/redhat-release', {}
+        )
+        self.assertFalse(ok)
 
 
 class TestMapOsFamily(unittest.TestCase):
-    """_map_os_family: distribution -> os_family mapping."""
+    """_map_os_family: distribution -> os_family."""
 
-    def test_redhat_family_members(self):
+    def test_redhat_family(self):
         for member in (
-            'RedHat',
+            'AlmaLinux',
+            'Amazon',
             'CentOS',
             'Fedora',
             'OracleLinux',
+            'RedHat',
             'Rocky',
-            'AlmaLinux',
+            'UnionTech',
         ):
             self.assertEqual(distro._map_os_family(member), 'RedHat')
 
-    def test_debian_family_members(self):
-        for member in ('Debian', 'Ubuntu', 'Mint', 'Pop!_OS', 'Kali'):
+    def test_debian_family(self):
+        for member in ('Debian', 'Kali', 'Linux Mint', 'Pop!_OS', 'Ubuntu', 'Uos'):
             self.assertEqual(distro._map_os_family(member), 'Debian')
 
     def test_suse_family(self):
-        self.assertEqual(distro._map_os_family('openSUSE'), 'Suse')
+        for member in (
+            'SLED',
+            'SLES',
+            'SLES_SAP',
+            'openSUSE Leap',
+            'openSUSE Tumbleweed',
+        ):
+            self.assertEqual(distro._map_os_family(member), 'Suse')
 
-    def test_archlinux_family(self):
-        self.assertEqual(distro._map_os_family('Manjaro'), 'Archlinux')
-
-    def test_gentoo_family(self):
-        self.assertEqual(distro._map_os_family('Funtoo'), 'Gentoo')
-
-    def test_alpine_family(self):
+    def test_other_families(self):
         self.assertEqual(distro._map_os_family('Alpine'), 'Alpine')
+        self.assertEqual(distro._map_os_family('Manjaro'), 'Archlinux')
+        self.assertEqual(distro._map_os_family('Funtoo'), 'Gentoo')
+        self.assertEqual(distro._map_os_family('Clear Linux OS'), 'ClearLinux')
 
     def test_unknown_returns_input(self):
         self.assertEqual(distro._map_os_family('TotallyUnknown'), 'TotallyUnknown')
 
+    def test_no_distribution_belongs_to_two_families(self):
+        seen = set()
+        for members in distro.OS_FAMILY_MAP.values():
+            for member in members:
+                self.assertNotIn(member, seen, member)
+                seen.add(member)
+
 
 class TestProcessDistFiles(unittest.TestCase):
-    """_process_dist_files: walks OSDIST_LIST and improves facts."""
+    """_process_dist_files: end to end against simulated filesystems.
 
-    def _run_with_fs(self, files, sizes=None):
-        """Run _process_dist_files against a simulated filesystem.
+    Every case here was misclassified before the module was aligned with Ansible.
+    """
 
-        `files` maps absolute path -> content. Paths not in the mapping are
-        treated as missing. `sizes` optionally overrides getsize (defaults to
-        content length).
-        """
-        sizes = sizes or {}
-
-        def fake_isfile(path):
-            return path in files
-
-        def fake_getsize(path):
-            return sizes.get(path, len(files.get(path, '')))
-
-        def fake_get_content(path):
-            return files[path]
-
-        with (
-            mock.patch('lib.distro.os.path.isfile', side_effect=fake_isfile),
-            mock.patch('lib.distro.os.path.getsize', side_effect=fake_getsize),
-            mock.patch('lib.distro._get_file_content', side_effect=fake_get_content),
-            mock.patch('lib.distro.platform.system', return_value='Linux'),
-            mock.patch('lib.distro.platform.version', return_value='5.0.0'),
-            mock.patch('lib.distro.platform.release', return_value='5.0.0-x'),
-        ):
+    def _run(self, files, links=()):
+        with fake_fs(files, links=links):
             return distro._process_dist_files()
 
-    def test_redhat_release_detected(self):
-        facts = self._run_with_fs({'/etc/redhat-release': REDHAT_RELEASE})
+    def test_rhel(self):
+        facts = self._run(
+            {'/etc/os-release': OS_RELEASE_RHEL, '/etc/redhat-release': REDHAT_RELEASE}
+        )
         self.assertEqual(facts['distribution'], 'RedHat')
         self.assertEqual(facts['distribution_file_path'], '/etc/redhat-release')
-        self.assertEqual(facts['distribution_file_variety'], 'RedHat')
+        self.assertEqual(facts['distribution_version'], '9.7')
+        self.assertEqual(facts['distribution_release'], 'Plow')
         self.assertTrue(facts['distribution_file_parsed'])
 
-    def test_centos_release_detected(self):
-        facts = self._run_with_fs({'/etc/centos-release': CENTOS_RELEASE})
-        self.assertEqual(facts['distribution'], 'CentOS')
-        self.assertEqual(facts['distribution_file_variety'], 'CentOS')
+    def test_almalinux_name_comes_from_file_content(self):
+        facts = self._run({'/etc/redhat-release': ALMA_RELEASE})
+        self.assertEqual(facts['distribution'], 'AlmaLinux')
+        self.assertEqual(facts['distribution_file_variety'], 'RedHat')
 
-    def test_ubuntu_via_os_release_with_version(self):
-        facts = self._run_with_fs({'/etc/os-release': OS_RELEASE_UBUNTU})
-        # First os-release entry in OSDIST_LIST has variety 'Debian'.
-        self.assertEqual(facts['distribution_file_variety'], 'Debian')
-        # _parse_distribution_file extracted the NAME, then _parse_os_release
-        # improved the version from VERSION_ID.
-        self.assertEqual(facts['distribution_version'], '22.04')
-        self.assertEqual(facts['distribution_major_version'], '22')
-
-    def test_fedora_full_chain(self):
-        facts = self._run_with_fs(
+    def test_oracle_wins_over_redhat(self):
+        # Oracle Linux ships a /etc/redhat-release naming Red Hat. Without the
+        # ordering in OSDIST_LIST it would be reported as RedHat.
+        facts = self._run(
             {
-                '/etc/redhat-release': 'Fedora release 41 (Workstation Edition)\n',
-                '/etc/os-release': OS_RELEASE_FEDORA,
+                '/etc/oracle-release': ORACLE_RELEASE,
+                '/etc/redhat-release': REDHAT_RELEASE_ON_ORACLE,
+                '/etc/system-release': ORACLE_RELEASE,
             }
         )
-        # redhat-release comes before os-release in OSDIST_LIST, so variety is
-        # RedHat, but os-release still improves the version.
-        self.assertEqual(facts['distribution_file_variety'], 'RedHat')
-        self.assertEqual(facts['distribution_version'], '41')
+        self.assertEqual(facts['distribution'], 'OracleLinux')
+        self.assertEqual(facts['distribution_file_path'], '/etc/oracle-release')
 
-    def test_archlinux_allowempty_breaks_early(self):
-        # An empty arch-release file is accepted via allowempty and short
-        # circuits without calling _parse_distribution_file.
-        facts = self._run_with_fs({'/etc/arch-release': ''})
+    def test_suse_leap(self):
+        facts = self._run({'/etc/os-release': OS_RELEASE_SUSE_LEAP})
+        self.assertEqual(facts['distribution'], 'openSUSE Leap')
+        self.assertEqual(facts['distribution_file_variety'], 'SUSE')
+
+    def test_sles(self):
+        facts = self._run({'/etc/os-release': OS_RELEASE_SLES})
+        self.assertEqual(facts['distribution'], 'SLES')
+        self.assertEqual(facts['distribution_file_variety'], 'SUSE')
+
+    def test_alpine_matches_its_own_release_file(self):
+        facts = self._run(
+            {
+                '/etc/alpine-release': ALPINE_RELEASE,
+                '/etc/os-release': OS_RELEASE_ALPINE,
+            }
+        )
+        self.assertEqual(facts['distribution'], 'Alpine')
+        self.assertEqual(facts['distribution_file_path'], '/etc/alpine-release')
+        self.assertEqual(facts['distribution_version'], '3.21.7')
+
+    def test_amazon(self):
+        facts = self._run({'/etc/os-release': OS_RELEASE_AMAZON})
+        self.assertEqual(facts['distribution'], 'Amazon')
+        self.assertEqual(facts['distribution_file_variety'], 'Amazon')
+
+    def test_ubuntu(self):
+        facts = self._run(
+            {
+                '/etc/lsb-release': LSB_RELEASE_UBUNTU,
+                '/etc/os-release': OS_RELEASE_UBUNTU,
+            }
+        )
+        self.assertEqual(facts['distribution'], 'Ubuntu')
+        self.assertEqual(facts['distribution_file_variety'], 'Debian')
+        self.assertEqual(facts['distribution_release'], 'noble')
+
+    def test_debian(self):
+        facts = self._run(
+            {
+                '/etc/debian_version': '12.14\n',
+                '/etc/os-release': OS_RELEASE_DEBIAN,
+            }
+        )
+        self.assertEqual(facts['distribution'], 'Debian')
+        self.assertEqual(facts['distribution_version'], '12.14')
+        self.assertEqual(facts['distribution_minor_version'], '14')
+
+    def test_centos_stream(self):
+        facts = self._run(
+            {
+                '/etc/centos-release': CENTOS_STREAM_RELEASE,
+                '/etc/redhat-release': CENTOS_STREAM_RELEASE,
+            }
+        )
+        self.assertEqual(facts['distribution'], 'CentOS')
+        self.assertEqual(facts['distribution_release'], 'Stream')
+
+    def test_gentoo_falls_through_to_the_generic_entry(self):
+        facts = self._run(
+            {
+                '/etc/gentoo-release': GENTOO_RELEASE,
+                '/etc/os-release': OS_RELEASE_GENTOO,
+            }
+        )
+        self.assertEqual(facts['distribution'], 'Gentoo')
+        self.assertEqual(facts['distribution_file_variety'], 'NA')
+
+    def test_archlinux_allowempty_short_circuits(self):
+        facts = self._run({'/etc/arch-release': ''})
         self.assertEqual(facts['distribution'], 'Archlinux')
         self.assertEqual(facts['distribution_file_variety'], 'Archlinux')
+        # The empty file is the marker, so nothing was parsed.
         self.assertNotIn('distribution_file_parsed', facts)
 
-    def test_alpine_release_no_marker_does_not_match(self):
-        # alpine-release holds only '3.18.4'; parser returns False, so no
-        # distribution_file_variety is set, but guessed facts remain.
-        facts = self._run_with_fs({'/etc/alpine-release': ALPINE_RELEASE})
-        self.assertNotIn('distribution_file_variety', facts)
-        self.assertEqual(facts['distribution'], 'Linux')
-
-    def test_no_files_returns_guessed_facts(self):
-        facts = self._run_with_fs({})
-        self.assertEqual(facts['distribution'], 'Linux')
+    def test_no_files_returns_the_guess(self):
+        facts = self._run({})
+        self.assertEqual(facts['distribution'], 'OtherLinux')
         self.assertNotIn('distribution_file_path', facts)
 
-    def test_first_match_wins(self):
-        # Both centos-release and redhat-release present; centos comes first.
-        facts = self._run_with_fs(
-            {
-                '/etc/centos-release': CENTOS_RELEASE,
-                '/etc/redhat-release': REDHAT_RELEASE,
-            }
-        )
-        self.assertEqual(facts['distribution_file_variety'], 'CentOS')
+    def test_unreadable_file_is_skipped(self):
+        def fake_access(path, _mode):
+            return path != '/etc/redhat-release'
 
-    def test_read_exception_is_skipped(self):
-        # redhat-release exists but reading raises; loop continues, os-release
-        # is then used.
-        def fake_isfile(path):
-            return path in ('/etc/redhat-release', '/etc/os-release')
-
-        def fake_getsize(path):
-            return 10
-
-        def fake_get_content(path):
-            if path == '/etc/redhat-release':
-                raise OSError('unreadable')
-            return OS_RELEASE_UBUNTU
-
-        with (
-            mock.patch('lib.distro.os.path.isfile', side_effect=fake_isfile),
-            mock.patch('lib.distro.os.path.getsize', side_effect=fake_getsize),
-            mock.patch('lib.distro._get_file_content', side_effect=fake_get_content),
-            mock.patch('lib.distro.platform.system', return_value='Linux'),
-            mock.patch('lib.distro.platform.version', return_value='5.0.0'),
-            mock.patch('lib.distro.platform.release', return_value='5.0.0-x'),
-        ):
+        files = {
+            '/etc/os-release': OS_RELEASE_RHEL,
+            '/etc/redhat-release': REDHAT_RELEASE,
+        }
+        with fake_fs(files), mock.patch('lib.distro.os.access', fake_access):
             facts = distro._process_dist_files()
-        # redhat-release was skipped, os-release ('Debian' variety) matched.
-        self.assertEqual(facts['distribution_file_variety'], 'Debian')
-        self.assertEqual(facts['distribution_version'], '22.04')
+        # redhat-release was skipped, so the generic entry took over.
+        self.assertEqual(facts['distribution_file_variety'], 'NA')
 
 
 class TestGetDistributionFacts(unittest.TestCase):
-    """get_distribution_facts: public entry point, os_family + os_info."""
+    """get_distribution_facts: the public entry point."""
 
-    def _run(self, dist_facts, os_release=None):
-        import io
-
-        def fake_open(*args, **kwargs):
-            if os_release is None:
-                raise OSError('no /etc/os-release')
-            return io.StringIO(os_release)
-
+    def _run(self, files, system='Linux'):
         with (
-            mock.patch('lib.distro._process_dist_files', return_value=dict(dist_facts)),
-            mock.patch('builtins.open', side_effect=fake_open),
+            fake_fs(files),
+            mock.patch('lib.distro.platform.system', return_value=system),
+        ):
+            return distro.get_distribution_facts()
+
+    def test_rhel(self):
+        facts = self._run(
+            {'/etc/os-release': OS_RELEASE_RHEL, '/etc/redhat-release': REDHAT_RELEASE}
+        )
+        self.assertEqual(facts['os_family'], 'RedHat')
+        self.assertEqual(facts['os_info'], 'Red Hat Enterprise Linux 9.7 (Plow)')
+
+    def test_os_family_of_the_families_plugins_branch_on(self):
+        cases = (
+            ({'/etc/os-release': OS_RELEASE_SUSE_LEAP}, 'Suse'),
+            ({'/etc/os-release': OS_RELEASE_AMAZON}, 'RedHat'),
+            ({'/etc/os-release': OS_RELEASE_UBUNTU}, 'Debian'),
+            ({'/etc/arch-release': ''}, 'Archlinux'),
+            (
+                {
+                    '/etc/alpine-release': ALPINE_RELEASE,
+                    '/etc/os-release': OS_RELEASE_ALPINE,
+                },
+                'Alpine',
+            ),
+        )
+        for files, expected in cases:
+            self.assertEqual(self._run(files)['os_family'], expected, expected)
+
+    def test_os_info_is_name_plus_version(self):
+        facts = self._run({'/etc/os-release': OS_RELEASE_UBUNTU})
+        self.assertEqual(facts['os_info'], 'Ubuntu 24.04.4 LTS (Noble Numbat)')
+
+    def test_os_info_absent_without_os_release(self):
+        facts = self._run({'/etc/redhat-release': REDHAT_RELEASE})
+        self.assertNotIn('os_info', facts)
+
+    def test_os_family_falls_back_to_the_distribution(self):
+        facts = self._run({})
+        self.assertEqual(facts['distribution'], 'OtherLinux')
+        self.assertEqual(facts['os_family'], 'OtherLinux')
+
+    def test_non_linux_skips_the_release_files(self):
+        with (
+            fake_fs({'/etc/os-release': OS_RELEASE_UBUNTU}),
+            mock.patch('lib.distro.platform.system', return_value='Windows'),
+            mock.patch('lib.distro.platform.release', return_value='10'),
+            mock.patch('lib.distro.platform.version', return_value='10.0.19041'),
         ):
             facts = distro.get_distribution_facts()
-        return facts
-
-    def test_redhat_full_facts(self):
-        dist_facts = {
-            'distribution': 'RedHat',
-            'distribution_version': '8.5',
-            'distribution_major_version': '8',
-            'distribution_release': '4.18.0-348.el8.x86_64',
-            'distribution_file_path': '/etc/redhat-release',
-            'distribution_file_variety': 'RedHat',
-            'distribution_file_parsed': True,
-        }
-        os_release = 'NAME="Red Hat Enterprise Linux"\nVERSION="8.5 (Ootpa)"\n'
-        facts = self._run(dist_facts, os_release)
-        self.assertEqual(facts['os_family'], 'RedHat')
-        self.assertEqual(facts['os_info'], 'Red Hat Enterprise Linux 8.5 (Ootpa)')
-
-    def test_os_info_from_os_release(self):
-        dist_facts = {'distribution_file_variety': 'Debian'}
-        facts = self._run(dist_facts, OS_RELEASE_UBUNTU)
-        self.assertEqual(facts['os_info'], 'Ubuntu 22.04.2 LTS (Jammy Jellyfish)')
-
-    def test_os_family_from_variety(self):
-        facts = self._run({'distribution_file_variety': 'Fedora'}, OS_RELEASE_FEDORA)
-        self.assertEqual(facts['os_family'], 'RedHat')
-
-    def test_os_family_falls_back_to_distribution_literal(self):
-        # No distribution_file_variety key -> default 'distribution' string is
-        # mapped, which has no family, so it is returned unchanged.
-        facts = self._run({}, OS_RELEASE_UBUNTU)
-        self.assertEqual(facts['os_family'], 'distribution')
-
-    def test_unreadable_os_release_returns_facts_without_os_info(self):
-        dist_facts = {'distribution_file_variety': 'Debian'}
-        facts = self._run(dist_facts, None)
-        self.assertNotIn('os_info', facts)
-        # os_family is still set before /etc/os-release is read.
-        self.assertEqual(facts['os_family'], 'Debian')
+        self.assertEqual(facts['distribution'], 'Windows')
+        self.assertEqual(facts['os_family'], 'Windows')
+        self.assertNotIn('distribution_file_path', facts)
 
     def test_returns_dict_type(self):
-        facts = self._run({}, OS_RELEASE_UBUNTU)
-        self.assertIsInstance(facts, dict)
+        self.assertIsInstance(self._run({}), dict)
 
 
 if __name__ == '__main__':

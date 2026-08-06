@@ -11,9 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
+* distro.py: Clear Linux, CoreOS, Flatcar, Mandriva, OpenWrt, Slackware, SUSE, UnionTech and the Debian derivatives Cumulus Linux, Deepin, Devuan, Kali, Linux Mint, Parrot, SteamOS and Uos are recognised. Anything else still unknown is now identified from `/etc/os-release` instead of being reported as plain "Linux".
 * huawei_dorado.py: `get_account_state()` translates the password status the appliance reports at login into readable text.
 * huawei_pacific.py: `get_data()` takes URL parameters in a separate argument, the way the Dorado library already does.
 * huawei_pacific.py: `get_password_status()` translates the password status the appliance reports at login into readable text.
+
+### Changed
+
+* distro.py: `distribution_release` holds the release name of the distribution (`Plow`, `noble`, `bookworm`), the same as the Ansible fact of the same name. It used to hold the running kernel release. Anything reading that field needs to be checked.
 
 ### Fixed
 
@@ -34,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: Per-second rate counters whose name contains a dash or other punctuation are recorded, instead of silently never producing a value.
 * db_sqlite.py: Table and column names that are SQL keywords work in every operation, not just in some of them.
 * db_sqlite.py: Table names containing a dash or other punctuation are used as given, instead of being silently stripped down to letters, digits and underscores.
+* distro.py: Alpine Linux is recognised by its own release file, so its version is reported.
+* distro.py: CentOS Stream is reported as Stream.
+* distro.py: Oracle Linux is reported as Oracle Linux instead of Red Hat.
+* distro.py: The OS family of Alpine, Amazon Linux and the whole SUSE family is correct. All three were reported as Debian, so checks branching on the OS family ran the Debian code path on them.
 * huawei_dorado.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
 * huawei_dorado.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
 * huawei_dorado.py: An appliance answering with an HTTP error, a load balancer in front of it answering for it, or a connection that fails no longer ends the check on the spot. The check retries, logs in again if needed, and reports the appliance's own error text rather than a bare status code.
