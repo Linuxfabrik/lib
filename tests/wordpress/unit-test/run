@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.wordpress, driven by a throwaway WordPress installation tree.
+
+The module reads a local installation from the filesystem, so the suite builds a real
+directory layout in a temp directory instead of patching the reads. The file headers are
+the ones a stock WordPress ships, taken verbatim from an installation, including the
+traps they contain:
+
+- `index.php` placeholders that WordPress puts into every directory and that carry no
+  header, so they must not count as a plugin or a theme,
+- a single-file plugin (`hello.php`) next to directory plugins,
+- a plugin whose docblock carries an `@version` tag without a colon above the real
+  `Version:` header, so the tag must not win,
+- further source files inside a plugin directory that carry no `Plugin Name` header,
+- a `Requires PHP:` line, so a header lookup must not match a neighbouring field.
+"""
+
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.wordpress as wordpress
+
+VERSION_PHP = """<?php
+
+/**
+ * WordPress Version
+ *
+ * @global string $wp_version
+ */
+$wp_version = '7.0.2';
+"""
+
+PLACEHOLDER = '<?php\n// Silence is golden.\n'
+
+HELLO_PHP = """<?php
+/**
+ * @package Hello_Dolly
+ * @version 9.9.9
+ */
+/*
+Plugin Name: Hello Dolly
+Plugin URI: http://wordpress.org/plugins/hello-dolly/
+Description: This is not just a plugin.
+Author: Matt Mullenweg
+Version: 1.7.2
+Author URI: http://ma.tt/
+Text Domain: hello-dolly
+*/
+"""
+
+AKISMET_PHP = """<?php
+/**
+ * @package Akismet
+ */
+/*
+Plugin Name: Akismet Anti-spam: Spam Protection
+Plugin URI: https://akismet.com/
+Description: Protects your blog from spam.
+Version: 5.7
+Requires at least: 5.8
+Requires PHP: 7.2
+Author: Automattic - Anti-spam Team
+License: GPLv2 or later
+Text Domain: akismet
+*/
+"""
+
+NO_HEADER_PHP = '<?php\nclass Akismet_Admin {}\n'
+
+UNVERSIONED_PLUGIN_PHP = """<?php
+/*
+Plugin Name: Homegrown Snippet
+Description: A plugin that declares no version at all.
+*/
+"""
+
+STYLE_CSS = """/*
+Theme Name: Twenty Twenty-Five
+Theme URI: https://wordpress.org/themes/twentytwentyfive/
+Author: the WordPress team
+Description: Twenty Twenty-Five emphasizes simplicity and adaptability.
+Requires at least: 6.7
+Requires PHP: 7.2
+Version: 1.5
+License: GNU General Public License v2 or later
+Text Domain: twentytwentyfive
+*/
+"""
+
+UNVERSIONED_STYLE_CSS = """/*
+Theme Name: Homegrown Theme
+Author: Linuxfabrik
+*/
+"""
+
+
+def write(path, content):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+
+class TestWordPress(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.root = tempfile.mkdtemp(prefix='lftest-wordpress-')
+        cls.wp = os.path.join(cls.root, 'wordpress')
+        plugins = os.path.join(cls.wp, 'wp-content', 'plugins')
+        themes = os.path.join(cls.wp, 'wp-content', 'themes')
+        write(os.path.join(cls.wp, 'wp-includes', 'version.php'), VERSION_PHP)
+        write(os.path.join(plugins, 'index.php'), PLACEHOLDER)
+        write(os.path.join(plugins, 'hello.php'), HELLO_PHP)
+        write(os.path.join(plugins, 'akismet', 'akismet.php'), AKISMET_PHP)
+        write(os.path.join(plugins, 'akismet', 'class.admin.php'), NO_HEADER_PHP)
+        write(os.path.join(plugins, 'snippet', 'snippet.php'), UNVERSIONED_PLUGIN_PHP)
+        write(os.path.join(themes, 'index.php'), PLACEHOLDER)
+        write(os.path.join(themes, 'twentytwentyfive', 'style.css'), STYLE_CSS)
+        write(os.path.join(themes, 'homegrown', 'style.css'), UNVERSIONED_STYLE_CSS)
+        # a directory that exists but holds no WordPress
+        cls.empty = os.path.join(cls.root, 'empty')
+        os.makedirs(cls.empty)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.root, ignore_errors=True)
+
+    def test_is_installation(self):
+        self.assertTrue(wordpress.is_installation(self.wp))
+
+    def test_is_installation_on_unrelated_directory(self):
+        self.assertFalse(wordpress.is_installation(self.empty))
+
+    def test_is_installation_on_missing_path(self):
+        self.assertFalse(wordpress.is_installation(os.path.join(self.root, 'nope')))
+
+    def test_get_version(self):
+        self.assertEqual(wordpress.get_version(self.wp), (True, '7.0.2'))
+
+    def test_get_version_on_missing_installation(self):
+        success, result = wordpress.get_version(self.empty)
+        self.assertFalse(success)
+        self.assertIn('version.php', result)
+
+    def test_get_plugins(self):
+        self.assertEqual(
+            wordpress.get_plugins(self.wp),
+            {
+                'akismet': '5.7',
+                'hello': '1.7.2',
+                'snippet': 'unknown',
+            },
+        )
+
+    def test_get_plugins_ignores_placeholder(self):
+        self.assertNotIn('index', wordpress.get_plugins(self.wp))
+
+    def test_get_plugins_on_missing_installation(self):
+        self.assertEqual(wordpress.get_plugins(self.empty), {})
+
+    def test_get_themes(self):
+        self.assertEqual(
+            wordpress.get_themes(self.wp),
+            {
+                'homegrown': 'unknown',
+                'twentytwentyfive': '1.5',
+            },
+        )
+
+    def test_get_themes_ignores_placeholder(self):
+        self.assertNotIn('index', wordpress.get_themes(self.wp))
+
+    def test_get_themes_on_missing_installation(self):
+        self.assertEqual(wordpress.get_themes(self.empty), {})
+
+
+class TestHeaderValue(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.mkdtemp(prefix='lftest-wordpress-header-')
+        cls.plugin = os.path.join(cls.dir, 'akismet.php')
+        write(cls.plugin, AKISMET_PHP)
+        cls.hello = os.path.join(cls.dir, 'hello.php')
+        write(cls.hello, HELLO_PHP)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.dir, ignore_errors=True)
+
+    def test_plain_field(self):
+        self.assertEqual(wordpress.get_header_value(self.plugin, 'Version'), '5.7')
+
+    def test_field_with_space(self):
+        self.assertEqual(
+            wordpress.get_header_value(self.plugin, 'Plugin Name'),
+            'Akismet Anti-spam: Spam Protection',
+        )
+
+    def test_case_insensitive(self):
+        self.assertEqual(wordpress.get_header_value(self.plugin, 'version'), '5.7')
+
+    def test_neighbouring_field_does_not_leak(self):
+        self.assertEqual(wordpress.get_header_value(self.plugin, 'Requires PHP'), '7.2')
+
+    # `@version 9.9.9` sits above `Version: 1.7.2` and carries no colon, so it is not a
+    # header field and must not win.
+    def test_docblock_tag_is_not_a_header(self):
+        self.assertEqual(wordpress.get_header_value(self.hello, 'Version'), '1.7.2')
+
+    def test_absent_field(self):
+        self.assertEqual(wordpress.get_header_value(self.plugin, 'Network'), '')
+
+    def test_unreadable_file(self):
+        self.assertEqual(
+            wordpress.get_header_value(os.path.join(self.dir, 'nope.php'), 'Version'),
+            '',
+        )
+
+    # A field name is taken literally, so regex metacharacters cannot change the match.
+    def test_field_name_is_literal(self):
+        self.assertEqual(wordpress.get_header_value(self.plugin, 'Versio.'), '')
+
+
+if __name__ == '__main__':
+    unittest.main()

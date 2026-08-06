@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_pacific.py: `get_password_status()` translates the password status the appliance reports at login into readable text.
 * huawei_pacific.py: `get_result_code()` reads the status code out of either response envelope the appliance uses, so a consumer does not have to know which endpoint generation it is talking to.
 * nextcloud.py: `run_occ()` accepts a `timeout`, so a hanging `occ` no longer keeps a check running forever.
+* wordpress.py: new module reading a local WordPress installation from the filesystem: `get_version()`, `get_plugins()`, `get_themes()`, `is_installation()` and `get_header_value()`, without a database connection, an HTTP request or `wp-cli`.
 
 ### Changed
 
