@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080602'
+__version__ = '2026080603'
 
 import csv
 import functools
@@ -54,6 +54,11 @@ from . import disk, time, txt
 # the first run, and `create_table()` uses `IF NOT EXISTS`, so nothing has to be discarded to
 # recover. Matching it would let one plugin's first query wipe the tables of every other plugin
 # sharing the default database file.
+#
+# SQLite words the arity error differently when the statement names its columns ("3 values for 2
+# columns"), and that spelling is absent as well. `insert()` and `replace()` build the column list
+# and the bind list from one and the same dict, so the counts cannot disagree and the message is
+# unreachable from here.
 SCHEMA_ERRORS = (
     'has no column named',
     'no such column',
@@ -71,7 +76,13 @@ SCHEMA_ERRORS = (
 # recognized. A real column that happens to be named `oid` and disappeared between two releases is
 # covered by this too and no longer discards the database, which is the safe direction to err in:
 # deleting a healthy cache is worse than keeping a stale one for one more run.
-HEALTHY_SCHEMA_ERROR_RE = re.compile(r'no such column: (?:.*\.)?(?:rowid|oid|_rowid_)')
+#
+# A few statements report the name in double quotes instead ("no such column: \"rowid\"", see
+# `renameColumnFunc()` in SQLite's `alter.c`). This library never emits those, but the quotes are
+# optional in the pattern so a caller's own SQL is judged the same way.
+HEALTHY_SCHEMA_ERROR_RE = re.compile(
+    r'no such column: "?(?:.*\.)?(?:rowid|oid|_rowid_)"?'
+)
 
 # Substrings identifying an `sqlite3.IntegrityError` (SQLITE_CONSTRAINT, SQLITE_MISMATCH) that
 # means the on-disk schema no longer matches the data being written, for example a NOT NULL column
@@ -83,13 +94,18 @@ HEALTHY_SCHEMA_ERROR_RE = re.compile(r'no such column: (?:.*\.)?(?:rowid|oid|_ro
 # about the row, not about the file.
 INTEGRITY_SCHEMA_ERRORS = ('not null constraint failed',)
 
-# Substrings identifying a database file that is unusable no matter what is queried. sqlite3
-# reports these as a plain `sqlite3.DatabaseError`, not as an `OperationalError`, so the case
-# where discarding the file is most clearly right needs to be matched separately.
+# Substrings identifying a database file that is unusable no matter what is queried. These
+# describe the file, not the statement, so they are matched for every exception class rather
+# than for one in particular: the first three arrive as a plain `sqlite3.DatabaseError`
+# (SQLITE_CORRUPT and SQLITE_NOTADB), while a schema format number the release cannot read is
+# reported as SQLITE_ERROR and therefore as an `OperationalError` (`sqlite3LockAndPrepare()` in
+# SQLite's `prepare.c`). Matching that one by exception class alone would keep an unusable file
+# forever and let every following run fail the same way.
 CORRUPT_ERRORS = (
     'database disk image is malformed',
     'file is not a database',
     'malformed database schema',
+    'unsupported file format',
 )
 
 
@@ -162,7 +178,9 @@ def __compile_regex(expr):
 
     A `REGEXP` comparison is evaluated once per row, always with the same pattern. Caching the
     compiled pattern mirrors what SQLite's own `regexp()` implementation does by stashing the
-    compiled expression via `sqlite3_set_auxdata()`.
+    compiled expression via `sqlite3_set_auxdata()`. SQLite's cache holds one pattern per
+    prepared statement and is dropped as soon as the pattern argument changes, whereas this one
+    is process-wide and keeps the last 128 patterns for as long as the process runs.
 
     ### Parameters
     - **expr** (`str`):
@@ -300,8 +318,9 @@ def __table_columns(conn, table):
     >>> __table_columns(conn, 'perfdata')
     ['name', 'timestamp', 'rx_bytes']
     """
-    # `table_xinfo` rather than `table_info`: the latter omits generated columns, which SQLite
-    # selects and indexes like any other column, so validating against it would reject a name that
+    # `table_xinfo` rather than `table_info`: the latter omits the hidden columns of a virtual
+    # table, and from SQLite 3.31.0 on the generated columns too. SQLite selects and indexes
+    # those like any other column, so validating against `table_info` would reject a name that
     # is perfectly usable. `table_xinfo` needs SQLite 3.26.0, hence the fallback.
     # Both pragmas yield (cid, name, type, notnull, dflt_value, pk), `table_xinfo` plus `hidden`.
     for pragma in ('table_xinfo', 'table_info'):
@@ -315,9 +334,14 @@ def __table_columns(conn, table):
         # used". Returning here unconditionally would therefore end the loop with an empty result
         # on a build without `table_xinfo` and never try `table_info`, turning the validation off
         # instead of falling back. Every existing table has at least one column, so an empty
-        # result means "ask the next pragma"; if that one is empty too, the table does not exist.
+        # result means "ask the next pragma".
         if rows:
             return [row[1] for row in rows]
+    # Both pragmas came back empty. Usually that means the table does not exist yet, but an
+    # unreadable file produces the same answer: both carry SQLite's `NeedSchema` flag and load
+    # the schema first, and the `except` above swallows the resulting error. Either way the
+    # callers skip their validation and let the statement itself report what is wrong, which is
+    # the safe direction: SQLite's own message is more accurate than a guess made here.
     return []
 
 
@@ -351,8 +375,17 @@ def __is_unusable_db(e):
 
     >>> __is_unusable_db(sqlite3.IntegrityError('UNIQUE constraint failed: t.a'))
     False
+
+    >>> __is_unusable_db(sqlite3.OperationalError('unsupported file format'))
+    True
     """
     msg = str(e).lower()
+
+    # Checked first and independently of the exception class, because a broken file is a broken
+    # file whichever statement stumbled over it. See `CORRUPT_ERRORS` for why the class alone
+    # does not identify these.
+    if any(pattern in msg for pattern in CORRUPT_ERRORS):
+        return True
 
     # `sqlite3.DataError` is raised for SQLITE_TOOBIG only ("string or blob too big"). That is a
     # value the caller must not store, and says nothing about the file. Checked before
@@ -365,8 +398,8 @@ def __is_unusable_db(e):
         if HEALTHY_SCHEMA_ERROR_RE.fullmatch(msg):
             return False
         return any(pattern in msg for pattern in SCHEMA_ERRORS)
-    if isinstance(e, sqlite3.DatabaseError):
-        return any(pattern in msg for pattern in CORRUPT_ERRORS)
+    # A `DatabaseError` that names none of the `CORRUPT_ERRORS` says nothing specific about the
+    # file, so the database is kept and the caller decides what to do.
     return False
 
 
@@ -869,7 +902,7 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     - **table** (`str`, optional):
       Name of the table to prune. Defaults to `'perfdata'`.
     - **_max** (`int`, optional):
-      Number of most recent records to keep. Must not be negative. Defaults to `5`.
+      Number of most recent records to keep. Must be a non-negative `int`. Defaults to `5`.
     - **delete_db_on_operational_error** (`bool`, optional):
       If `True`, deletes the database file when the on-disk database turns out
       to be unusable (e.g. a schema mismatch between releases).
@@ -883,15 +916,16 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
         - Error message (`str`) describing the failure.
 
     ### Notes
-    - The function relies on the implicit `rowid` column for ordering. A `WITHOUT ROWID` table has
-      no such column and cannot be pruned this way; the call reports `no such column: rowid` and
-      leaves the database alone.
+    - The function relies on the implicit `rowid` column for ordering. A `WITHOUT ROWID` table
+      normally has no such column and cannot be pruned this way; the call reports
+      `no such column: rowid` and leaves the database alone. If such a table declares a real
+      column named `rowid`, the name resolves to that column and the table is pruned by it.
     - The table name is quoted, so keywords and names containing punctuation work.
     - If an `OperationalError` occurs (e.g., due to schema mismatch), the database file can
       be deleted automatically.
     - Uses `LIMIT -1 OFFSET :_max` to delete everything after the most recent `_max` records.
-    - A negative `_max` is rejected, because SQLite would read it as an offset of 0 and delete
-      every row while reporting success.
+    - Anything but a non-negative `int` is rejected, because SQLite would delete every row while
+      reporting success.
 
     ### Example
     >>> cut(conn, table='logs', _max=1000)
@@ -900,11 +934,17 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     # SQLite skips no row at all for a non-positive OFFSET: `codeOffset()` in `select.c` emits
     # an `OP_IfPos` on the offset register, which only decrements and jumps while the value is
     # greater than zero. A negative `_max` therefore deletes every row instead of keeping some,
-    # and still reports success. Refuse it rather than emptying a healthy table behind the
-    # caller's back. Any other unusable value is left to SQLite's own `OP_MustBeInt` check,
-    # which reports "datatype mismatch".
-    if isinstance(_max, (int, float)) and _max < 0:
-        return False, f'Refusing to cut table {table} to a negative size: {_max}'
+    # and still reports success.
+    #
+    # Rejecting only negative numbers is not enough, because SQLite does not reject a string
+    # either: `OP_MustBeInt` first applies numeric affinity (`applyAffinity()` in `vdbe.c`), so
+    # `'-5'` becomes the integer -5 and empties the table just the same. Only a real `int` is
+    # accepted therefore, and `bool` is excluded because `True` as a row count is a caller bug,
+    # not a request to keep one row. A value SQLite cannot use at all (`None`, a non-integral
+    # float, a blob) would be caught by `OP_MustBeInt` with "datatype mismatch", but is rejected
+    # here as well so every unusable value fails the same way.
+    if isinstance(_max, bool) or not isinstance(_max, int) or _max < 0:
+        return False, f'Refusing to cut table {table} to an invalid size: {_max!r}'
 
     table = __quote_ident(table)
 
@@ -1230,8 +1270,9 @@ def get_tables(conn):
     """
     List all user-defined tables in the SQLite database.
 
-    This function retrieves the names of all tables in the database,
-    excluding SQLite internal tables (e.g., those starting with `'sqlite_'`).
+    This function retrieves the names of all tables in the database, excluding the ones SQLite
+    keeps for itself under the reserved `'sqlite_'` prefix (`sqlite_sequence`, `sqlite_stat1`
+    and friends).
 
     ### Parameters
     - **conn** (`sqlite3.Connection`):
@@ -1245,8 +1286,10 @@ def get_tables(conn):
         - An error message (`str`) on failure.
 
     ### Notes
-    - Only user-created tables are returned.
-    - Tables created internally by SQLite (e.g., for indices or schema tracking) are excluded.
+    - The filter goes by name, so it covers exactly the `sqlite_` prefix that SQLite reserves for
+      itself. The shadow tables an extension creates for a virtual table are ordinary tables with
+      ordinary names (`<name>_content` and `<name>_segments` for FTS, `<name>_node` for R-Tree,
+      and so on) and are returned like any other table.
     - Only the `main` database is listed. Temporary tables live in `sqlite_temp_master` and
       attached databases have their own `sqlite_master`, so neither shows up here.
     - Views are not tables and are not returned either.
@@ -1659,13 +1702,18 @@ def regexp(expr, item):
     - Must be registered on the SQLite connection using `create_function('REGEXP', 2, regexp)`.
     - SQLite passes the pattern as the first and the value as the second argument: `X REGEXP Y`
       is evaluated as `regexp(Y, X)`.
-    - Regular expressions use Python's `re` module syntax.
-    - Values that are not TEXT (INTEGER, REAL, BLOB) are converted to text first, the same way
-      SQLite's own `regexp()` implementation applies `sqlite3_value_text()` to its argument.
-      Without that conversion, matching against a numeric column raises inside the function and
-      the whole query fails. The conversion is Python's, not SQLite's, so the text form of a
-      REAL can differ from what SQLite itself would render (`1e+20` versus `1.0e+20`). Anchor a
-      pattern on the stored digits rather than on an exponent notation.
+    - Regular expressions use Python's `re` module syntax. That is deliberately not the syntax of
+      SQLite's own `regexp()`, whose NFA engine knows no backreferences, no lookaround and no
+      lazy quantifiers, matches a newline with `.`, and recognizes `$` only at the very end of a
+      pattern. A pattern written for one of the two does not necessarily mean the same in the
+      other.
+    - Arguments that are not TEXT (INTEGER, REAL, BLOB) are converted to text first, both the
+      pattern and the value, the same way SQLite's own `regexp()` implementation applies
+      `sqlite3_value_text()` to both of its arguments. Without that conversion, matching against
+      a numeric column raises inside the function and the whole query fails. The conversion is
+      Python's, not SQLite's, so the text form of a REAL can differ from what SQLite itself would
+      render (`1e+20` versus `1.0e+20`). Anchor a pattern on the stored digits rather than on an
+      exponent notation.
     - A `NULL` pattern or value yields `NULL`, not `False`, matching SQLite's own `regexp()`,
       which leaves its result unset for a `NULL` argument. The difference is visible in a negated
       comparison: `WHERE NOT (col REGEXP 'x')` skips a `NULL` row, whereas `False` would select
@@ -1687,9 +1735,17 @@ def regexp(expr, item):
 
     >>> regexp('^9', 9000)
     True
+
+    >>> regexp(9, 9000)
+    True
     """
     if expr is None or item is None:
         return None
+    # Both arguments get the same treatment, so `__compile_regex()` is always keyed on a string.
+    if isinstance(expr, bytes):
+        expr = expr.decode('utf-8', 'replace')
+    elif not isinstance(expr, str):
+        expr = str(expr)
     if isinstance(item, bytes):
         item = item.decode('utf-8', 'replace')
     elif not isinstance(item, str):
@@ -1726,9 +1782,18 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
         - Error message (`str`) describing the failure.
 
     ### Notes
-    - `REPLACE` first deletes the existing conflicting row, then attempts to insert the new one.
-    - If any constraint violation (e.g., `NOT NULL`) occurs during the second step, the operation
-      aborts and rolls back.
+    - `REPLACE` deletes the existing conflicting row, then inserts the new one.
+    - `NOT NULL` and `CHECK` constraints are evaluated before that, on the row being inserted, so
+      a violation aborts without anything having been deleted.
+    - `REPLACE` changes what a `NOT NULL` violation means: a column that has a `DEFAULT` gets the
+      default value silently instead of raising, and only a `NOT NULL` column without a `DEFAULT`
+      aborts with `NOT NULL constraint failed`. Do not rely on `replace()` to reject a `None`.
+    - An abort rolls back the statement, not an enclosing transaction. Everything committed or
+      written before it stays.
+    - Deleting the conflicting row fires `DELETE` triggers only when `PRAGMA recursive_triggers`
+      is on, and honours `ON DELETE` foreign key actions only when `PRAGMA foreign_keys` is on.
+      Both are off by default in Python's `sqlite3` and this library does not turn them on, so a
+      row is normally replaced without either taking effect.
     - Field names and values are safely parameterized to prevent SQL injection.
     - The table name is quoted, so keywords and names containing punctuation work.
 

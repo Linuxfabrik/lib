@@ -181,6 +181,33 @@ class TestCrud(unittest.TestCase):
         _, rows = db.select(self.conn, 'SELECT v FROM t WHERE k = :k', {'k': 'h'})
         self.assertEqual(rows, [{'v': 'two'}])
 
+    def test_replace_fills_in_the_default_of_a_not_null_column(self):
+        # REPLACE sets the conflict resolution for every constraint of the statement, so a NULL
+        # for a NOT NULL column that has a DEFAULT is silently replaced by that default instead
+        # of raising. Only a NOT NULL column without a DEFAULT aborts.
+        db.create_table(
+            self.conn,
+            "k INTEGER PRIMARY KEY, v TEXT NOT NULL DEFAULT 'linuxfabrik'",
+            table='withdefault',
+        )
+        ok, _ = db.replace(self.conn, {'k': 1, 'v': None}, table='withdefault')
+        self.assertTrue(ok)
+        db.commit(self.conn)
+        _, rows = db.select(self.conn, 'SELECT v FROM withdefault')
+        self.assertEqual(rows, [{'v': 'linuxfabrik'}])
+
+        db.create_table(
+            self.conn, 'k INTEGER PRIMARY KEY, v TEXT NOT NULL', table='nodefault'
+        )
+        ok, msg = db.replace(
+            self.conn,
+            {'k': 1, 'v': None},
+            table='nodefault',
+            delete_db_on_operational_error=False,
+        )
+        self.assertFalse(ok)
+        self.assertIn('NOT NULL constraint failed', msg)
+
     def test_delete_returns_rowcount(self):
         db.create_table(self.conn, 'n INTEGER NOT NULL', table='t')
         for n in range(3):
@@ -359,7 +386,7 @@ class TestDbDiscardPolicy(unittest.TestCase):
         self.assertTrue(os.path.isfile(self.path))
 
     def test_delete_db_on_operational_error_false_is_honoured(self):
-        ok, msg = db.insert(
+        ok, _ = db.insert(
             self.conn, {'n': 2, 'newcol': 3}, delete_db_on_operational_error=False
         )
         self.assertFalse(ok)
@@ -432,18 +459,47 @@ class TestDbDiscardPolicy(unittest.TestCase):
         self.assertFalse(ok)
         self.assertFalse(os.path.isfile(self.path))
 
-    def test_cut_refuses_negative_max(self):
-        # SQLite clamps a negative OFFSET to 0, so this used to delete every row and report
-        # success.
+    def test_cut_refuses_anything_but_a_non_negative_int(self):
+        # SQLite skips no row for a non-positive OFFSET, so a negative _max used to delete every
+        # row and report success. A string is just as dangerous: numeric affinity turns '-3' into
+        # the integer -3 before OP_MustBeInt ever sees it, so the type check has to be strict.
         for i in range(5):
             db.insert(self.conn, {'n': i})
         db.commit(self.conn)
         _, before = db.select(self.conn, 'SELECT count(*) AS c FROM perfdata')
-        ok, msg = db.cut(self.conn, _max=-3)
-        self.assertFalse(ok)
-        self.assertIn('negative', msg)
+        for bad in (-3, '-3', '3', True, 2.5, 3.0, None, b'3'):
+            ok, msg = db.cut(self.conn, _max=bad)
+            self.assertFalse(ok, f'{bad!r} was accepted')
+            self.assertIn('invalid size', msg)
+            _, after = db.select(self.conn, 'SELECT count(*) AS c FROM perfdata')
+            self.assertEqual(after[0]['c'], before[0]['c'], f'rows lost to {bad!r}')
+        self.assertTrue(os.path.isfile(self.path))
+
+    def test_cut_accepts_zero(self):
+        # Zero is a legitimate request to empty the table, unlike the values rejected above.
+        for i in range(5):
+            db.insert(self.conn, {'n': i})
+        db.commit(self.conn)
+        self.assertEqual(db.cut(self.conn, _max=0), (True, True))
         _, after = db.select(self.conn, 'SELECT count(*) AS c FROM perfdata')
-        self.assertEqual(after[0]['c'], before[0]['c'])
+        self.assertEqual(after[0]['c'], 0)
+
+    def test_unsupported_file_format_deletes_database(self):
+        # A schema format number this SQLite cannot read arrives as SQLITE_ERROR, so it surfaces
+        # as an OperationalError rather than a DatabaseError like the other corruption cases. It
+        # used to match no pattern at all, and the unusable file stayed behind forever.
+        db.close(self.conn)
+        with open(self.path, 'r+b') as f:
+            f.seek(44)  # schema format number, valid values are 1 to 4
+            f.write(b'\x00\x00\x00\x05')
+        ok, self.conn = db.connect(path=self.base, filename='d.db')
+        self.assertTrue(ok, self.conn)
+        ok, msg = db.create_table(self.conn, 'n INTEGER NOT NULL', table='perfdata')
+        self.assertFalse(ok)
+        self.assertIn('unsupported file format', msg)
+        self.assertFalse(
+            os.path.isfile(self.path), 'unreadable file format was not discarded'
+        )
 
     def test_is_unusable_db_classification(self):
         # sqlite3.DataError is raised for SQLITE_TOOBIG only, which is a value the caller may not
@@ -459,8 +515,17 @@ class TestDbDiscardPolicy(unittest.TestCase):
                 True,
             ),
             (sqlite3.OperationalError('no such column: rowid'), False),
+            (sqlite3.OperationalError('no such column: main.t.rowid'), False),
+            (sqlite3.OperationalError('no such column: "rowid"'), False),
+            (sqlite3.OperationalError('no such column: user_rowid'), True),
             (sqlite3.OperationalError('no such table: foo'), False),
             (sqlite3.OperationalError('database is locked'), False),
+            (sqlite3.OperationalError('database table is locked'), False),
+            (sqlite3.OperationalError('attempt to write a readonly database'), False),
+            (sqlite3.OperationalError('disk I/O error'), False),
+            # SQLITE_ERROR, so an OperationalError rather than a DatabaseError, but it describes
+            # the file and not the statement.
+            (sqlite3.OperationalError('unsupported file format'), True),
             (sqlite3.IntegrityError('NOT NULL constraint failed: t.a'), True),
             (sqlite3.IntegrityError('UNIQUE constraint failed: t.a'), False),
             (sqlite3.IntegrityError('CHECK constraint failed: t'), False),
@@ -469,6 +534,8 @@ class TestDbDiscardPolicy(unittest.TestCase):
             (sqlite3.DataError('string or blob too big'), False),
             (sqlite3.DatabaseError('file is not a database'), True),
             (sqlite3.DatabaseError('database disk image is malformed'), True),
+            (sqlite3.DatabaseError('malformed database schema (t)'), True),
+            (sqlite3.DatabaseError('not authorized'), False),
         ]:
             with self.subTest(error=str(exc)):
                 self.assertIs(is_unusable(exc), expected)
@@ -634,6 +701,14 @@ class TestPureHelpers(unittest.TestCase):
         self.assertTrue(db.regexp(r'^1\.5$', 1.5))
         self.assertTrue(db.regexp('^ab', b'abc'))
 
+    def test_regexp_coerces_non_text_patterns(self):
+        # sqlite3_value_text() is applied to both arguments, not just to the value, so a pattern
+        # taken from a non-TEXT column has to work as well instead of raising inside the function
+        # and failing the whole query.
+        self.assertTrue(db.regexp(9, 9000))
+        self.assertTrue(db.regexp(b'^ab', 'abc'))
+        self.assertFalse(db.regexp(7, 9000))
+
     def test_sha1sum_docstring_example(self):
         sha1sum = getattr(db, '__sha1sum')
         self.assertEqual(
@@ -710,7 +785,7 @@ class TestRmDb(unittest.TestCase):
         self.base = tempfile.mkdtemp(prefix='lftest-rmdb-')
 
     def test_removes_file_and_closes_connection(self):
-        ok, conn = db.connect(path=self.base, filename='r.db')
+        _, conn = db.connect(path=self.base, filename='r.db')
         _, path = db.get_db_path(path=self.base, filename='r.db')
         self.assertTrue(os.path.isfile(path))
         self.assertTrue(db.rm_db(conn))

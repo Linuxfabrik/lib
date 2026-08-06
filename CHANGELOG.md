@@ -28,15 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * db_sqlite.py: A cached database is no longer thrown away because of a lock held by a concurrently running check, a full or read-only disk, a bad query, a duplicate record, a table that does not exist yet, or a value that is too large to store. Only a schema that no longer matches the installed release, and now also an unreadable database file, trigger the rebuild. Checks that share the default database file therefore no longer discard each other's cached data.
 * db_sqlite.py: A corrupt database file is actually removed on RHEL 8 and other systems running SQLite older than 3.39, where it used to be reported as unusable but left on disk, so every following run failed the same way.
+* db_sqlite.py: A database file written in a format the installed SQLite cannot read is discarded, so the next run starts from a healthy cache. It used to be kept and every following run failed the same way.
 * db_sqlite.py: A regular expression comparison against an empty value behaves the way SQLite itself does, so a negated match no longer reports rows that have no value at all.
-* db_sqlite.py: A regular expression match against a numeric column works instead of failing the whole query.
+* db_sqlite.py: A regular expression match against a numeric column, or using a pattern taken from one, works instead of failing the whole query.
 * db_sqlite.py: A single unusable row no longer aborts a CSV import with a misleading "error reading file" and deletes the database. The offending line number is reported and the imported rows are kept.
 * db_sqlite.py: A table without a row ID is left alone when a query addresses its row ID by one of the other names SQLite accepts for it, instead of the database being thrown away as broken.
 * db_sqlite.py: A unique index is created when a check asks for one, even if a non-unique index over the same columns already exists. The check used to be told the unique index was there while it was not.
 * db_sqlite.py: An index can be created on a generated column.
 * db_sqlite.py: An unreadable database file is discarded when a check creates or drops its table, not only when it reads or writes rows. Since creating the table is usually the first thing a check does, such a file used to survive and every following run failed the same way.
 * db_sqlite.py: Asking for a load over fewer than two samples is refused with a clear message, instead of aborting the check with a traceback.
-* db_sqlite.py: Asking to keep a negative number of records is refused, instead of silently emptying the table and reporting success.
+* db_sqlite.py: Asking to keep a negative number of records, or passing that number as text, is refused, instead of silently emptying the table and reporting success.
 * db_sqlite.py: Column definitions containing a comma, such as `DECIMAL(10,2)`, and table constraints such as `PRIMARY KEY (a, b)` are read correctly, so CSV imports using them put the values in the right columns.
 * db_sqlite.py: Column names containing a doubled quote character are read as written, so a CSV import using them puts the values in the right columns.
 * db_sqlite.py: Databases can be opened again on RHEL 8's default Python 3.6, where every connection attempt used to fail with an unrelated argument error.
