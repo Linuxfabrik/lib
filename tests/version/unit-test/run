@@ -77,13 +77,5 @@ class TestVersion2Float(unittest.TestCase):
             version.version2float('abc')
 
 
-class TestGetOsInfo(unittest.TestCase):
-    def test_returns_non_empty_string(self):
-        # Reads the host's /etc/os-release; assert only the shape so the test
-        # stays portable across distributions.
-        info = version.get_os_info()
-        self.assertIsInstance(info, str)
-
-
 if __name__ == '__main__':
     unittest.main()

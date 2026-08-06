@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_dorado.py: `get_logic_type()` is now `get_enclosure_logic_type()` and `get_role()` is now `get_controller_role()`. Both only ever translated the codes of one object type, and the appliance numbers the same fields differently on ports, disks and HyperMetro domains. **Breaking:** consumers must rename their calls.
 * huawei_dorado.py: A component being rebuilt is reported as "Rebuilding", the word V700 appliances use for it, instead of the older firmware's "Reconstruction".
 
+### Removed
+
+* version.py: `get_os_info()` is gone. It was a second copy of a read that `distro.py` has been doing for years. **Breaking:** consumers read the `os_info` key of `distro.get_distribution_facts()` instead.
+
 ### Fixed
 
 * db_sqlite.py: A cached database is no longer thrown away because of a lock held by a concurrently running check, a full or read-only disk, a bad query, a duplicate record, a table that does not exist yet, or a value that is too large to store. Only a schema that no longer matches the installed release, and now also an unreadable database file, trigger the rebuild. Checks that share the default database file therefore no longer discard each other's cached data.

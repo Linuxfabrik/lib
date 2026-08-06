@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070901'
+__version__ = '2026080601'
 
 import datetime
 import json
@@ -180,41 +180,6 @@ def check_eol(
 
     state = base.get_worst(state, unreachable_state)
     return state, ''.join(msg) + unreachable_note
-
-
-def get_os_info():
-    """
-    Return OS version information.
-
-    This function reads the operating system name and version from the `NAME` and `VERSION`
-    fields of `/etc/os-release`.
-
-    ### Parameters
-    None
-
-    ### Returns
-    - **str**:
-      The OS name and version as a string, or an empty string if `/etc/os-release` cannot be read.
-
-    ### Example
-    >>> get_os_info()
-    'Ubuntu 22.04.1 LTS'
-    """
-    values = {}
-    try:
-        with open('/etc/os-release', encoding='utf-8') as os_release:
-            for line in os_release:
-                line = line.strip()
-                if not line or line.startswith('#') or '=' not in line:
-                    continue
-                key, value = line.split('=', 1)
-                values[key] = value.strip().strip('"').strip("'")
-    except OSError:
-        return ''
-
-    return ' '.join(
-        part for part in (values.get('NAME'), values.get('VERSION')) if part
-    )
 
 
 def version(ver, maxlen=3):
