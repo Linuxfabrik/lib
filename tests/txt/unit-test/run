@@ -139,6 +139,30 @@ class TestPluralize(unittest.TestCase):
 
 
 class TestSanitizeSensitiveData(unittest.TestCase):
+    # A credential sitting in its own element of a stringified argument list, the shape
+    # an argv takes in an error message. The dict form was already covered, the list
+    # form was not.
+    def test_redacts_sshpass_in_argv(self):
+        out = txt.sanitize_sensitive_data(
+            "while calling command \"['sshpass', '-p', 'secret123', 'ssh']\""
+        )
+        self.assertNotIn('secret123', out)
+        self.assertIn("'sshpass', '-p', '******'", out)
+
+    def test_redacts_long_option_in_argv(self):
+        out = txt.sanitize_sensitive_data("['restic', '--password', 'secret123']")
+        self.assertNotIn('secret123', out)
+
+    def test_redacts_double_quoted_argv(self):
+        out = txt.sanitize_sensitive_data('["sshpass", "-p", "secret123"]')
+        self.assertNotIn('secret123', out)
+
+    # "-p" is the port option of ssh and scp, so it is only redacted behind sshpass.
+    # Blanking every "-p" value would hide a port number for no gain.
+    def test_keeps_ssh_port_readable(self):
+        out = txt.sanitize_sensitive_data("['ssh', '-p', '22', 'root@203.0.113.1']")
+        self.assertIn("'-p', '22'", out)
+
     def test_redacts_password(self):
         self.assertEqual(
             txt.sanitize_sensitive_data('user=admin&password=secret123'),

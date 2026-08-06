@@ -85,8 +85,9 @@ class TestRun(unittest.TestCase):
     def _capture(self):
         captured = {}
 
-        def fake(cmd, timeout=None):
+        def fake(cmd, env=None, timeout=None):
             captured['cmd'] = cmd
+            captured['env'] = env
             captured['timeout'] = timeout
             return (True, ('out', '', 0))
 
@@ -104,12 +105,24 @@ class TestRun(unittest.TestCase):
             captured['cmd'], ['ssh', '-q', '-p', '2222', 'root@myhost', 'true']
         )
 
-    def test_password_prefixes_sshpass(self):
+    # The password goes into the environment, never into the argument list: an argv
+    # is world-readable through /proc/<pid>/cmdline, and shell_exec() puts it into its
+    # error message when the process cannot be started.
+    def test_password_uses_sshpass_env(self):
         captured, fake = self._capture()
         with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
             ssh.run('myhost', 'true', password='linuxfabrik')
-        self.assertEqual(captured['cmd'][:3], ['sshpass', '-p', 'linuxfabrik'])
-        self.assertEqual(captured['cmd'][3], 'ssh')
+        self.assertEqual(captured['cmd'][:2], ['sshpass', '-e'])
+        self.assertEqual(captured['cmd'][2], 'ssh')
+        self.assertEqual(captured['env'], {'SSHPASS': 'linuxfabrik'})
+        self.assertNotIn('linuxfabrik', captured['cmd'])
+
+    def test_without_password_no_sshpass_and_no_env(self):
+        captured, fake = self._capture()
+        with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+            ssh.run('myhost', 'true')
+        self.assertEqual(captured['cmd'][0], 'ssh')
+        self.assertIsNone(captured['env'])
 
     def test_rejects_option_like_host(self):
         with mock.patch('lib.ssh.shell.shell_exec') as m:
@@ -130,8 +143,8 @@ class TestScp(unittest.TestCase):
         captured = {}
         with mock.patch(
             'lib.ssh.shell.shell_exec',
-            side_effect=lambda cmd, timeout=None: (
-                captured.update(cmd=cmd) or (True, ('', '', 0))
+            side_effect=lambda cmd, env=None, timeout=None: (
+                captured.update(cmd=cmd, env=env) or (True, ('', '', 0))
             ),
         ):
             ssh.scp('myhost', '/local/dir', '/remote/dir', recursive=True)
@@ -145,8 +158,8 @@ class TestRsync(unittest.TestCase):
         captured = {}
         with mock.patch(
             'lib.ssh.shell.shell_exec',
-            side_effect=lambda cmd, timeout=None: (
-                captured.update(cmd=cmd) or (True, ('', '', 0))
+            side_effect=lambda cmd, env=None, timeout=None: (
+                captured.update(cmd=cmd, env=env) or (True, ('', '', 0))
             ),
         ):
             ssh.rsync('myhost', '/local/dir', '/remote/dir', options=['-q'], sudo=True)
@@ -162,8 +175,8 @@ class TestRsync(unittest.TestCase):
         captured = {}
         with mock.patch(
             'lib.ssh.shell.shell_exec',
-            side_effect=lambda cmd, timeout=None: (
-                captured.update(cmd=cmd) or (True, ('', '', 0))
+            side_effect=lambda cmd, env=None, timeout=None: (
+                captured.update(cmd=cmd, env=env) or (True, ('', '', 0))
             ),
         ):
             ssh.rsync('myhost', '/local/dir', '/remote/dir')

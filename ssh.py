@@ -19,7 +19,7 @@ subject to local shell interpretation. All functions return the same
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061201'
+__version__ = '2026080601'
 
 from . import shell
 
@@ -34,6 +34,27 @@ def _check_target(host, username):
             return False, msg
     return True, None
 
+
+def _with_password(cmd, password):
+    """Prefix a command with `sshpass` and return the `(cmd, env)` pair to run it with.
+
+    The password travels in the `SSHPASS` environment variable rather than in
+    `sshpass -p`, which sshpass itself labels "security unwise": an argv is world-
+    readable through `/proc/<pid>/cmdline` for the lifetime of the process, and it also
+    ends up in the error message `shell.shell_exec()` builds out of the command when the
+    process cannot be started at all. An environment is only readable by the owner of
+    the process and by root.
+
+    ### Parameters
+    - **cmd** (`list`): The command to run, as an argument list.
+    - **password** (`str` or `None`): The SSH password. Falsy means no `sshpass` wrapper.
+
+    ### Returns
+    - **tuple**: `(cmd, env)`, where `env` is `None` unless a password is given.
+    """
+    if not password:
+        return cmd, None
+    return ['sshpass', '-e', *cmd], {'SSHPASS': password}
 
 def build_options(
     configfile=None,
@@ -139,8 +160,9 @@ def run(
     - **port** (`int` or `str`, optional): Remote port (`-p`).
     - **options** (`list`, optional): Option tokens from `build_options()`.
     - **disable_pseudo_terminal** (`bool`, optional): Add `-T`.
-    - **password** (`str`, optional): If set, prefix with `sshpass -p` (requires
-      `sshpass`; the password is visible in the process list).
+    - **password** (`str`, optional): If set, run the command through `sshpass`
+      (requires `sshpass`). The password is handed over in the environment, so it
+      does not show up in the process list.
     - **timeout** (`int`, optional): Overall timeout in seconds.
 
     ### Returns
@@ -156,9 +178,8 @@ def run(
     if disable_pseudo_terminal:
         cmd.append('-T')
     cmd += [target(host, username), command]
-    if password:
-        cmd = ['sshpass', '-p', password, *cmd]
-    return shell.shell_exec(cmd, timeout=timeout)
+    cmd, env = _with_password(cmd, password)
+    return shell.shell_exec(cmd, env=env, timeout=timeout)
 
 
 def scp(
@@ -185,7 +206,9 @@ def scp(
     - **username** (`str`, optional): Login user (see `target()`).
     - **port** (`int` or `str`, optional): Remote port (`-P`).
     - **options** (`list`, optional): Option tokens from `build_options()`.
-    - **password** (`str`, optional): If set, prefix with `sshpass -p`.
+    - **password** (`str`, optional): If set, run the command through `sshpass`
+      (requires `sshpass`). The password is handed over in the environment, so it
+      does not show up in the process list.
     - **timeout** (`int`, optional): Overall timeout in seconds.
     - **recursive** (`bool`, optional): Copy a directory tree (`-r`), preserving
       modes (`-p`). Useful when the target lacks `tar`. Defaults to `False`.
@@ -204,9 +227,8 @@ def scp(
     if port:
         cmd += ['-P', str(port)]
     cmd += [local, f'{target(host, username)}:{remote}']
-    if password:
-        cmd = ['sshpass', '-p', password, *cmd]
-    return shell.shell_exec(cmd, timeout=timeout)
+    cmd, env = _with_password(cmd, password)
+    return shell.shell_exec(cmd, env=env, timeout=timeout)
 
 
 def rsync(
@@ -236,7 +258,9 @@ def rsync(
     - **port** (`int` or `str`, optional): Remote port.
     - **options** (`list`, optional): ssh option tokens from `build_options()`,
       passed through to rsync via `--rsh`.
-    - **password** (`str`, optional): If set, prefix with `sshpass -p`.
+    - **password** (`str`, optional): If set, run the command through `sshpass`
+      (requires `sshpass`). The password is handed over in the environment, so it
+      does not show up in the process list.
     - **timeout** (`int`, optional): Overall timeout in seconds.
     - **sudo** (`bool`, optional): Run the remote rsync via `sudo`
       (`--rsync-path="sudo rsync"`), so files land root-owned and writes are
@@ -255,6 +279,5 @@ def rsync(
     if sudo:
         cmd += ['--rsync-path', 'sudo rsync']
     cmd += ['--rsh', rsh, f'{local}/', f'{target(host, username)}:{remote}/']
-    if password:
-        cmd = ['sshpass', '-p', password, *cmd]
-    return shell.shell_exec(cmd, timeout=timeout)
+    cmd, env = _with_password(cmd, password)
+    return shell.shell_exec(cmd, env=env, timeout=timeout)

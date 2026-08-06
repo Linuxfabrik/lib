@@ -18,7 +18,7 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080501'
+__version__ = '2026080601'
 
 import operator
 import re
@@ -80,6 +80,21 @@ SENSITIVE_AUTH_PATTERN = re.compile(
 #   Authorization: Bearer abc123
 #   Authorization: Basic dXNlcjpwYXNz
 # Captures the prefix (group 1), replacing the credential value.
+
+SENSITIVE_ARGV_PATTERN = re.compile(
+    r'(?i)((?:[\'"]sshpass[\'"]\s*,\s*[\'"]-p[\'"]'
+    r'|[\'"]--(?:password|pass|token|secret|api[_-]?key|access[_-]?token)[\'"])'
+    r'\s*,\s*[\'"])[^\'"]*([\'"])'
+)
+# Matches a credential that sits in its own element of a stringified argument list, the
+# form an argv takes once it is interpolated into a message:
+#   ['sshpass', '-p', 'secret123', 'ssh', '-p', '22', 'user@host']
+#   ['restic', '--password', 'secret123']
+# The plain "-p" is only redacted behind "sshpass", because "-p" is the port option for
+# ssh and scp and redacting a port number would hide useful information for nothing.
+# Long option names are unambiguous and are therefore matched on their own.
+# Captures the prefix (group 1) and the closing quote (group 2), replacing the value
+# between them.
 
 
 def compile_regex(regex, key='', flags=0):
@@ -450,6 +465,8 @@ def sanitize_sensitive_data(msg, replacement='******'):
     - Only parameters in the format key=value are sanitized.
     - Fields sanitized: 'password', 'pass', 'token', 'key', 'secret', 'api-key',
       'access_token', and similar variants.
+    - A credential that sits in its own element of a stringified argument list is
+      redacted too, which is the shape an argv takes in an error message.
 
     ### Example
     >>> sanitize_sensitive_data('user=admin&password=secret123')
@@ -469,6 +486,7 @@ def sanitize_sensitive_data(msg, replacement='******'):
     msg = SENSITIVE_JSON_PATTERN.sub(rf'\1{replacement}\2', msg)
     msg = SENSITIVE_MAPPING_PATTERN.sub(rf'\1{replacement}\2', msg)
     msg = SENSITIVE_AUTH_PATTERN.sub(rf'\1{replacement}', msg)
+    msg = SENSITIVE_ARGV_PATTERN.sub(rf'\1{replacement}\2', msg)
     return msg
 
 

@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070301'
+__version__ = '2026080601'
 
 
 import os
@@ -133,7 +133,13 @@ def shell_exec(
             cwd=cwd,
         )
     except (OSError, ValueError, Exception) as e:
-        return False, f'Error "{e}" while calling command "{cmd}"'
+        # The command is reported so the caller can see what failed to start, but it is
+        # redacted first: an argument list can carry a credential, and this message is
+        # routinely printed as part of a check result.
+        return (
+            False,
+            f'Error "{e}" while calling command "{txt.sanitize_sensitive_data(str(cmd))}"',
+        )
 
     try:
         stdout, stderr = p.communicate(

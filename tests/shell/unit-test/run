@@ -356,5 +356,20 @@ class TestWhich(unittest.TestCase):
             self.assertIsNone(shell.which('does-not-exist'))
 
 
+class TestShellExecRedactsCommandOnSpawnFailure(unittest.TestCase):
+    """A command that cannot be started at all is reported back with its argument list,
+    which may carry a credential. The message is routinely printed as part of a check
+    result, so the credential has to be gone from it.
+    """
+
+    def test_argv_credential_is_redacted(self):
+        ok, msg = shell.shell_exec(['/nonexistent-binary', '--password', 'secret123'])
+        self.assertFalse(ok)
+        self.assertNotIn('secret123', msg)
+        self.assertIn('******', msg)
+        # the program name stays readable, otherwise the message is useless
+        self.assertIn('/nonexistent-binary', msg)
+
+
 if __name__ == '__main__':
     unittest.main()

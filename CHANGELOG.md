@@ -120,7 +120,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * db_sqlite.py: Table, index and column names are quoted when a statement is built, so a column name carrying SQL syntax can no longer alter the statement it appears in.
 * Python 3.9 lockfile bumps the cryptography library to a release that is not vulnerable to a padding oracle in its PKCS#7 decryption, for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11.
+* shell.py: A command that could not be started at all is reported with its arguments redacted, so a credential sitting in the argument list cannot reach the plugin output.
+* ssh.py: An SSH password is handed to `sshpass` through the environment instead of its command line, so it is no longer readable in the host's process list for as long as the check runs.
 * txt.py: Passwords, tokens and API keys are also redacted when a message embeds them as a Python mapping, not only in the `key=value` and JSON forms.
+* txt.py: Passwords, tokens and API keys are also redacted when a message embeds them as a stringified argument list, which is the shape a command takes in an error message.
 * url.py: A failed request no longer echoes the request body, so login credentials cannot reach the plugin output. Only the field names are reported.
 
 
