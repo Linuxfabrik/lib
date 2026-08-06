@@ -321,6 +321,43 @@ class TestDbDiscardPolicy(unittest.TestCase):
         self.assertIn('file is not a database', msg)
         self.assertFalse(os.path.isfile(self.path), 'corrupt file was not discarded')
 
+    def test_corrupt_file_deletes_database_on_create_table(self):
+        # create_table() is the first statement the documented usage pattern runs, so this is
+        # where an unusable file shows up. It used to report the error and leave the file in
+        # place, and every following run failed the same way.
+        db.close(self.conn)
+        with open(self.path, 'wb') as f:
+            f.write(b'this is not a database' * 50)
+        ok, self.conn = db.connect(path=self.base, filename='d.db')
+        self.assertTrue(ok, self.conn)
+        ok, msg = db.create_table(self.conn, 'n INTEGER')
+        self.assertFalse(ok)
+        self.assertIn('file is not a database', msg)
+        self.assertFalse(os.path.isfile(self.path), 'corrupt file was not discarded')
+
+    def test_corrupt_file_deletes_database_on_drop_table(self):
+        db.close(self.conn)
+        with open(self.path, 'wb') as f:
+            f.write(b'this is not a database' * 50)
+        ok, self.conn = db.connect(path=self.base, filename='d.db')
+        self.assertTrue(ok, self.conn)
+        ok, msg = db.drop_table(self.conn)
+        self.assertFalse(ok)
+        self.assertIn('file is not a database', msg)
+        self.assertFalse(os.path.isfile(self.path), 'corrupt file was not discarded')
+
+    def test_create_table_honours_delete_db_on_operational_error_false(self):
+        db.close(self.conn)
+        with open(self.path, 'wb') as f:
+            f.write(b'this is not a database' * 50)
+        ok, self.conn = db.connect(path=self.base, filename='d.db')
+        self.assertTrue(ok, self.conn)
+        ok, _ = db.create_table(
+            self.conn, 'n INTEGER', delete_db_on_operational_error=False
+        )
+        self.assertFalse(ok)
+        self.assertTrue(os.path.isfile(self.path))
+
     def test_delete_db_on_operational_error_false_is_honoured(self):
         ok, msg = db.insert(
             self.conn, {'n': 2, 'newcol': 3}, delete_db_on_operational_error=False
@@ -517,6 +554,27 @@ class TestIdentifierQuoting(unittest.TestCase):
         )
         self.assertEqual(db.create_index(self.conn, 'b', table='g'), (True, True))
 
+    def test_create_index_unique_is_part_of_the_index_name(self):
+        # `IF NOT EXISTS` makes a second CREATE INDEX with the same name a no-op. With the
+        # uniqueness left out of the generated name, a UNIQUE index requested after a plain one
+        # was reported as created while the constraint never existed.
+        db.create_table(self.conn, 'a INTEGER', table='t')
+        self.assertEqual(db.create_index(self.conn, 'a', table='t'), (True, True))
+        self.assertEqual(
+            db.create_index(self.conn, 'a', table='t', unique=True), (True, True)
+        )
+        _, rows = db.select(
+            self.conn, "SELECT sql FROM sqlite_master WHERE type = 'index'"
+        )
+        statements = sorted(row['sql'] for row in rows)
+        self.assertEqual(len(statements), 2, statements)
+        self.assertIn('CREATE UNIQUE INDEX', statements[1])
+        # The constraint is real, not just declared.
+        db.insert(self.conn, {'a': 1}, table='t')
+        db.commit(self.conn)
+        ok, _ = db.insert(self.conn, {'a': 1}, table='t')
+        self.assertFalse(ok, 'the unique index does not constrain anything')
+
     def test_create_index_normalizes_column_list(self):
         # 'a, b' and 'a,b' describe the same index and must not create two.
         db.create_table(self.conn, 'a INTEGER, b INTEGER', table='t')
@@ -660,6 +718,20 @@ class TestRmDb(unittest.TestCase):
         with self.assertRaises(sqlite3.ProgrammingError):
             conn.execute('SELECT 1')
 
+    def test_removes_journal_wal_and_shm(self):
+        # A rollback journal, a write-ahead log or its shared-memory index describes a database
+        # that is being thrown away. They used to be left behind in the per-user temp directory.
+        ok, conn = db.connect(path=self.base, filename='s.db')
+        self.assertTrue(ok, conn)
+        _, path = db.get_db_path(path=self.base, filename='s.db')
+        siblings = [path + suffix for suffix in ('-journal', '-shm', '-wal')]
+        for sibling in siblings:
+            with open(sibling, 'wb') as f:
+                f.write(b'')
+        self.assertTrue(db.rm_db(conn))
+        for leftover in [path, *siblings]:
+            self.assertFalse(os.path.isfile(leftover), leftover)
+
     def test_in_memory_database_is_closed(self):
         # An in-memory database has no filename; the connection still has to be closed.
         conn = sqlite3.connect(':memory:')
@@ -703,6 +775,28 @@ class TestPerSecondDeltas(unittest.TestCase):
         self.assertIsNone(first)
         self.assertIsNotNone(rates)
         self.assertAlmostEqual(rates['rx_bytes'], 20.0)  # (300-100) / (1010-1000)
+
+    def test_two_names_can_share_one_cache_file(self):
+        # The table used to be capped at two rows in total, so with two names each was left
+        # with a single sample and neither ever produced a rate.
+        saved_now = db.time.now
+        ticks = iter([1000, 1000, 1010, 1010])
+        db.time.now = lambda: next(ticks)
+        try:
+            for name, value in (('eth0', 100), ('eth1', 500)):
+                self.assertIsNone(
+                    db.per_second_deltas('lftest-psd-share.db', name, {'rx': value})
+                )
+            rates = {
+                name: db.per_second_deltas('lftest-psd-share.db', name, {'rx': value})
+                for name, value in (('eth0', 300), ('eth1', 1500))
+            }
+        finally:
+            db.time.now = saved_now
+        self.assertIsNotNone(rates['eth0'], 'eth1 pruned the baseline of eth0')
+        self.assertIsNotNone(rates['eth1'], 'eth0 pruned the baseline of eth1')
+        self.assertAlmostEqual(rates['eth0']['rx'], 20.0)  # (300-100) / 10
+        self.assertAlmostEqual(rates['eth1']['rx'], 100.0)  # (1500-500) / 10
 
     def test_counter_name_needing_sanitizing_still_works(self):
         # The column name was sanitized for the CREATE but not for the INSERT, so a counter like

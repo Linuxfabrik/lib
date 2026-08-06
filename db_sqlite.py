@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026080602'
 
 import csv
 import functools
@@ -727,7 +727,9 @@ def create_index(
 
     ### Notes
     - The table name is sanitized to only allow safe characters.
-    - The index name is automatically generated as `idx_<sha1sum>`, based on table and column names.
+    - The index name is automatically generated as `idx_<sha1sum>`, based on the table name, the
+      column names and whether the index is unique. A unique and a non-unique index over the
+      same columns are therefore two separate indices.
     - Index creation uses `IF NOT EXISTS` to avoid errors if the index already exists.
 
     ### Example
@@ -753,7 +755,15 @@ def create_index(
     # Normalize the column list before hashing it, so 'a, b' and 'a,b' describe the same index
     # instead of creating two identical ones.
     columns = ','.join(requested)
-    index_name = f'idx_{__sha1sum(table + columns)}'
+    # `unique` is part of the name because `IF NOT EXISTS` below turns the statement into a
+    # no-op once an index of that name exists. Hashing only table and columns would let a
+    # UNIQUE index requested after a plain one report success without ever being created, and
+    # the caller would rely on a constraint that is not there.
+    #
+    # The parts are joined with a character that cannot occur in an identifier, so table `ab`
+    # with column `c` and table `a` with columns `b,c` do not hash to the same name.
+    index_key = '\0'.join((table, columns, str(int(unique))))
+    index_name = f'idx_{__sha1sum(index_key)}'
     unique_kw = 'UNIQUE ' if unique else ''
     sql = (
         f'CREATE {unique_kw}INDEX IF NOT EXISTS {__quote_ident(index_name)} '
@@ -770,7 +780,13 @@ def create_index(
         return False, f'Query failed: {sql}, Error: {e}'
 
 
-def create_table(conn, definition, table='perfdata', drop_table_first=False):
+def create_table(
+    conn,
+    definition,
+    table='perfdata',
+    drop_table_first=False,
+    delete_db_on_operational_error=True,
+):
     """
     Create a database table if it does not exist.
 
@@ -786,6 +802,10 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
       Name of the table to create. Defaults to `'perfdata'`.
     - **drop_table_first** (`bool`, optional):
       If `True`, drops the table before creating it. Defaults to `False`.
+    - **delete_db_on_operational_error** (`bool`, optional):
+      If `True`, deletes the database file when the on-disk database turns out
+      to be unusable (e.g. a file that is not a database at all).
+      Defaults to `True`. Passed on to the `drop_table()` call as well.
 
     ### Returns
     - **tuple** (`bool`, `bool or str`):
@@ -803,6 +823,9 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
     - If `drop_table_first=True`, the function will attempt to drop the existing table before
       creating it.
     - The table creation uses `IF NOT EXISTS` to avoid errors if the table already exists.
+    - This is usually the first statement a plugin runs, so it is also where an unusable
+      database file first shows up. Such a file is discarded here, and the next run starts from
+      a healthy one.
 
     ### Example
     Create a new table with three columns:
@@ -813,7 +836,11 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
         CREATE TABLE IF NOT EXISTS "test" (a TEXT, b TEXT, c INTEGER NOT NULL);
     """
     if drop_table_first:
-        success, result = drop_table(conn, table)
+        success, result = drop_table(
+            conn,
+            table,
+            delete_db_on_operational_error=delete_db_on_operational_error,
+        )
         if not success:
             return success, result
 
@@ -823,6 +850,8 @@ def create_table(conn, definition, table='perfdata', drop_table_first=False):
     try:
         c.execute(sql)
         return True, True
+    except sqlite3.Error as e:
+        return __handle_db_error(conn, e, sql, delete_db=delete_db_on_operational_error)
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}'
 
@@ -868,11 +897,12 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     >>> cut(conn, table='logs', _max=1000)
     (True, True)
     """
-    # SQLite replaces a negative OFFSET with 0: `OP_OffsetLimit` in `vdbe.c` adds
-    # `pIn3->u.i > 0 ? pIn3->u.i : 0` to the limit. A negative `_max` therefore deletes every row
-    # instead of keeping some, and still reports success. Refuse it rather than emptying a
-    # healthy table behind the caller's back. Any other unusable value is left to SQLite's own
-    # `OP_MustBeInt` check, which reports "datatype mismatch".
+    # SQLite skips no row at all for a non-positive OFFSET: `codeOffset()` in `select.c` emits
+    # an `OP_IfPos` on the offset register, which only decrements and jumps while the value is
+    # greater than zero. A negative `_max` therefore deletes every row instead of keeping some,
+    # and still reports success. Refuse it rather than emptying a healthy table behind the
+    # caller's back. Any other unusable value is left to SQLite's own `OP_MustBeInt` check,
+    # which reports "datatype mismatch".
     if isinstance(_max, (int, float)) and _max < 0:
         return False, f'Refusing to cut table {table} to a negative size: {_max}'
 
@@ -956,7 +986,7 @@ def delete(conn, sql, data=None, delete_db_on_operational_error=True):
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
 
-def drop_table(conn, table='perfdata'):
+def drop_table(conn, table='perfdata', delete_db_on_operational_error=True):
     """
     Drop a table from the SQLite database.
 
@@ -969,6 +999,10 @@ def drop_table(conn, table='perfdata'):
     - **table** (`str`, optional):
       Name of the table to drop.
       Defaults to `'perfdata'`.
+    - **delete_db_on_operational_error** (`bool`, optional):
+      If `True`, deletes the database file when the on-disk database turns out
+      to be unusable (e.g. a file that is not a database at all).
+      Defaults to `True`.
 
     ### Returns
     - **tuple** (`bool`, `bool or str`):
@@ -992,6 +1026,8 @@ def drop_table(conn, table='perfdata'):
     try:
         c.execute(sql)
         return True, True
+    except sqlite3.Error as e:
+        return __handle_db_error(conn, e, sql, delete_db=delete_db_on_operational_error)
     except Exception as e:
         return False, f'Query failed: {sql}, Error: {e}'
 
@@ -1225,7 +1261,8 @@ def get_tables(conn):
     """
     # `ESCAPE '_'` makes the doubled underscore a literal one. Without it `_` is a LIKE wildcard
     # matching any single character, so a user table named `sqliteXfoo` would be hidden as well.
-    # This is the same spelling SQLite's own shell uses.
+    # SQLite's own shell writes the pattern without the escape and does hide such a table; the
+    # extra strictness here is deliberate, because a user table is never ours to hide.
     sql = (
         "SELECT name FROM sqlite_master WHERE type='table' "
         "AND name NOT LIKE 'sqlite__%' ESCAPE '_';"
@@ -1447,10 +1484,11 @@ def per_second_deltas(filename, name, counters):
     The cache table schema is derived from the keys of `counters`: each
     key becomes an `INT NOT NULL` column alongside the bookkeeping columns
     `name TEXT NOT NULL` and `timestamp INT NOT NULL`. The table is kept
-    to the two most recent rows. If the schema changes between releases
-    (the caller adds or removes a counter), the helper drops and rebuilds
-    the table once; the previous baseline is lost but the next run
-    produces a valid delta again.
+    to the two most recent rows per `name`, so several names can share one
+    cache file without pruning each other's baseline. If the schema changes
+    between releases (the caller adds or removes a counter), the helper
+    drops and rebuilds the table once; the previous baseline is lost but
+    the next run produces a valid delta again.
 
     ### Parameters
     - **filename** (`str`):
@@ -1528,9 +1566,17 @@ def per_second_deltas(filename, name, counters):
         # Schema mismatch from a previous release (different counter
         # columns or NOT NULL constraints). Rebuild the table from the
         # current schema; we lose the previous baseline but auto-recover on
-        # the next run.
-        drop_table(conn)
-        ok, _ = create_table(conn, definition, drop_table_first=False)
+        # the next run. `delete_db_on_operational_error=False` throughout,
+        # for the same reason as the insert above: removing the database
+        # closes the connection and every following step would fail with
+        # "Cannot operate on a closed database".
+        drop_table(conn, delete_db_on_operational_error=False)
+        ok, _ = create_table(
+            conn,
+            definition,
+            drop_table_first=False,
+            delete_db_on_operational_error=False,
+        )
         if not ok:
             close(conn)
             return None
@@ -1540,7 +1586,24 @@ def per_second_deltas(filename, name, counters):
             close(conn)
             return None
 
-    cut(conn, _max=2)
+    # Not `cut()`: that keeps the newest rows of the whole table. Two callers sharing one cache
+    # file under different names would leave each other with a single row, and a delta needs
+    # two. Prune per name instead. The `rowid DESC` tie-break keeps the pair deterministic when
+    # two samples share a timestamp, which `cut()` got from ordering by `rowid` alone.
+    delete(
+        conn,
+        """
+        DELETE FROM perfdata
+        WHERE name = :name
+          AND rowid NOT IN (
+            SELECT rowid FROM perfdata
+            WHERE name = :name
+            ORDER BY timestamp DESC, rowid DESC
+            LIMIT 2
+          );
+        """,
+        {'name': name},
+    )
     commit(conn)
 
     ok, rows = select(
@@ -1549,7 +1612,7 @@ def per_second_deltas(filename, name, counters):
         SELECT *
         FROM perfdata
         WHERE name = :name
-        ORDER BY timestamp DESC
+        ORDER BY timestamp DESC, rowid DESC
         """,
         {'name': name},
     )
@@ -1607,6 +1670,11 @@ def regexp(expr, item):
       which leaves its result unset for a `NULL` argument. The difference is visible in a negated
       comparison: `WHERE NOT (col REGEXP 'x')` skips a `NULL` row, whereas `False` would select
       it.
+    - A pattern that does not compile aborts the query with the generic
+      `OperationalError: user-defined function raised exception`; Python does not pass the
+      reason on, unlike SQLite's own `regexp()`, which reports the compile error itself. That
+      message matches none of the patterns this library treats as a broken database, so the
+      cached database survives a bad pattern.
     - Commonly used in queries like:
       `SELECT * FROM table WHERE column REGEXP 'pattern'`.
 
@@ -1711,7 +1779,9 @@ def rm_db(conn):
     ### Notes
     - Useful when the on-disk database turns out to be unusable, for example because its schema
       no longer matches what the current release writes.
-    - Only the `main` database file is deleted (ignores attached databases).
+    - Only the `main` database is deleted (attached databases are ignored). Its rollback
+      journal, write-ahead log and shared-memory index (`-journal`, `-wal`, `-shm`) go with it,
+      because they describe a database that no longer exists.
     - Works on a connection opened by `connect()` even when the file is too corrupt for SQLite
       to answer questions about it. A connection the caller opened itself is queried with
       `PRAGMA database_list`, which SQLite refuses on such a file before release 3.39.0; there
@@ -1742,6 +1812,13 @@ def rm_db(conn):
     close(conn)
     if filename:
         disk.rm_file(filename)
+        # A rollback journal, a write-ahead log or its shared-memory index describes a database
+        # that no longer exists. SQLite does not read the data back from them once the main file
+        # is gone, so leaving them behind only litters the per-user temporary directory. This
+        # library never enables WAL itself, but a caller may. `rm_file()` reports a missing file
+        # instead of raising, so unlinking one that was never there costs nothing.
+        for suffix in ('-journal', '-shm', '-wal'):
+            disk.rm_file(filename + suffix)
     return True
 
 

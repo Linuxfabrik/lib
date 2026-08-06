@@ -28,7 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: A regular expression match against a numeric column works instead of failing the whole query.
 * db_sqlite.py: A single unusable row no longer aborts a CSV import with a misleading "error reading file" and deletes the database. The offending line number is reported and the imported rows are kept.
 * db_sqlite.py: A table without a row ID is left alone when a query addresses its row ID by one of the other names SQLite accepts for it, instead of the database being thrown away as broken.
+* db_sqlite.py: A unique index is created when a check asks for one, even if a non-unique index over the same columns already exists. The check used to be told the unique index was there while it was not.
 * db_sqlite.py: An index can be created on a generated column.
+* db_sqlite.py: An unreadable database file is discarded when a check creates or drops its table, not only when it reads or writes rows. Since creating the table is usually the first thing a check does, such a file used to survive and every following run failed the same way.
 * db_sqlite.py: Asking for a load over fewer than two samples is refused with a clear message, instead of aborting the check with a traceback.
 * db_sqlite.py: Asking to keep a negative number of records is refused, instead of silently emptying the table and reporting success.
 * db_sqlite.py: Column definitions containing a comma, such as `DECIMAL(10,2)`, and table constraints such as `PRIMARY KEY (a, b)` are read correctly, so CSV imports using them put the values in the right columns.
@@ -37,8 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: Listing the tables of a database no longer hides user tables whose name begins with `sqlite`.
 * db_sqlite.py: On SQLite releases older than 3.26 a misspelled column name is caught again, instead of the query silently indexing or grouping by a constant.
 * db_sqlite.py: Per-second rate counters whose name contains a dash or other punctuation are recorded, instead of silently never producing a value.
+* db_sqlite.py: Several checks can share one cache file for per-second rates. Each keeps its own history instead of pruning the others', which used to leave all of them without a rate.
 * db_sqlite.py: Table and column names that are SQL keywords work in every operation, not just in some of them.
 * db_sqlite.py: Table names containing a dash or other punctuation are used as given, instead of being silently stripped down to letters, digits and underscores.
+* db_sqlite.py: The journal and write-ahead log files belonging to a discarded database are removed with it, instead of piling up in the temporary directory.
 * distro.py: Alpine Linux is recognised by its own release file, so its version is reported.
 * distro.py: CentOS Stream is reported as Stream.
 * distro.py: Oracle Linux is reported as Oracle Linux instead of Red Hat.
