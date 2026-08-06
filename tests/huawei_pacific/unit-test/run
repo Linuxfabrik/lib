@@ -17,9 +17,13 @@ so no network call, no real cache file, and no real sleep ever happens.
 
 Public functions under test:
 
+- get_component_status_state()    -> fan / power supply status -> STATE_*
 - get_creds()           -> login (POST /api/v2/aa/sessions) + X-Auth-Token caching
 - get_data()            -> authenticated GET/POST, re-login on a rejected request
+- get_disk_status_state()         -> code -> STATE_* mapping
 - get_management_ips()  -> node enumeration for the node-scoped hwm/* endpoints
+- get_node_running_status_state() -> node running status -> STATE_*
+- get_pool_status_state()         -> code -> STATE_* mapping
 """
 
 import sys
@@ -30,6 +34,7 @@ from unittest import mock
 sys.path.insert(0, '..')
 
 import lib.huawei_pacific as huawei_pacific
+from lib.globals import STATE_CRIT, STATE_OK, STATE_WARN
 
 
 class Args:
@@ -204,6 +209,118 @@ class TestStringCodeHelpers(unittest.TestCase):
             for value in (None, '', '   '):
                 with self.subTest(func=func.__name__, value=value):
                     self.assertEqual(func(value), 'Unknown')
+
+
+# ---------------------------------------------------------------------------
+# The severity mappers. Unlike the text mappers these decide what a check
+# reports, so every branch is pinned, including the fallback that must never
+# silently pass as OK.
+# ---------------------------------------------------------------------------
+
+
+class TestComponentStatusState(unittest.TestCase):
+    def test_normal_is_ok(self):
+        self.assertEqual(huawei_pacific.get_component_status_state('normal'), STATE_OK)
+
+    def test_fault_is_critical(self):
+        self.assertEqual(huawei_pacific.get_component_status_state('fault'), STATE_CRIT)
+
+    def test_value_is_normalised(self):
+        # A firmware that capitalises the value differently must not turn a
+        # healthy fan into a warning.
+        self.assertEqual(huawei_pacific.get_component_status_state(' Normal '), STATE_OK)
+        self.assertEqual(huawei_pacific.get_component_status_state('FAULT'), STATE_CRIT)
+
+    def test_undocumented_value_warns(self):
+        self.assertEqual(huawei_pacific.get_component_status_state('absent'), STATE_WARN)
+
+    def test_missing_value_warns(self):
+        for value in (None, '', '   '):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    huawei_pacific.get_component_status_state(value), STATE_WARN
+                )
+
+
+class TestDiskStatusState(unittest.TestCase):
+    def test_healthy_is_ok(self):
+        self.assertEqual(huawei_pacific.get_disk_status_state(0), STATE_OK)
+
+    def test_faulty_is_critical(self):
+        self.assertEqual(huawei_pacific.get_disk_status_state(1), STATE_CRIT)
+
+    def test_sub_healthy_and_removed_warn(self):
+        # The pool has already rebuilt around a removed disk, so what is left
+        # is a slot to attend to rather than a redundancy loss.
+        for code in (2, 101):
+            with self.subTest(code=code):
+                self.assertEqual(huawei_pacific.get_disk_status_state(code), STATE_WARN)
+
+    def test_accepts_string_codes(self):
+        self.assertEqual(huawei_pacific.get_disk_status_state('1'), STATE_CRIT)
+        self.assertEqual(huawei_pacific.get_disk_status_state('0'), STATE_OK)
+
+    def test_unmapped_code_warns(self):
+        self.assertEqual(huawei_pacific.get_disk_status_state(42), STATE_WARN)
+
+    def test_missing_value_warns(self):
+        self.assertEqual(huawei_pacific.get_disk_status_state(None), STATE_WARN)
+
+
+class TestNodeRunningStatusState(unittest.TestCase):
+    def test_online_is_ok(self):
+        self.assertEqual(
+            huawei_pacific.get_node_running_status_state('online'), STATE_OK
+        )
+
+    def test_offline_is_critical(self):
+        # A node that left the cluster took its share of the storage with it.
+        self.assertEqual(
+            huawei_pacific.get_node_running_status_state('offline'), STATE_CRIT
+        )
+
+    def test_value_is_normalised(self):
+        self.assertEqual(
+            huawei_pacific.get_node_running_status_state(' Online '), STATE_OK
+        )
+
+    def test_undocumented_value_warns(self):
+        self.assertEqual(
+            huawei_pacific.get_node_running_status_state('upgrading'), STATE_WARN
+        )
+
+    def test_missing_value_warns(self):
+        for value in (None, '', '   '):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    huawei_pacific.get_node_running_status_state(value), STATE_WARN
+                )
+
+
+class TestPoolStatusState(unittest.TestCase):
+    def test_normal_is_ok(self):
+        self.assertEqual(huawei_pacific.get_pool_status_state(0), STATE_OK)
+
+    def test_faulty_and_stopped_are_critical(self):
+        for code in (1, 3, 4):
+            with self.subTest(code=code):
+                self.assertEqual(
+                    huawei_pacific.get_pool_status_state(code), STATE_CRIT
+                )
+
+    def test_recoverable_states_warn(self):
+        # The pool still serves reads, and the last three work themselves out.
+        for code in (2, 5, 7, 8):
+            with self.subTest(code=code):
+                self.assertEqual(
+                    huawei_pacific.get_pool_status_state(code), STATE_WARN
+                )
+
+    def test_unmapped_code_warns(self):
+        self.assertEqual(huawei_pacific.get_pool_status_state(6), STATE_WARN)
+
+    def test_missing_value_warns(self):
+        self.assertEqual(huawei_pacific.get_pool_status_state(None), STATE_WARN)
 
 
 class PacificHttpTestBase(unittest.TestCase):

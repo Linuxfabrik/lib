@@ -59,6 +59,7 @@ HELP_TEXTS = {
     '--critical': 'CRIT threshold in percent.',
     '--critical-count': 'CRIT threshold for the number of matching items.',
     '--critical-seconds': 'CRIT threshold in seconds.',
+    '--critical-temperature': 'CRIT threshold in degrees Celsius.',
     '--defaults-file': (
         'Specifies a cnf file to read parameters like user, host and password from '
         '(for MySQL/MariaDB cnf-style files).'
@@ -84,6 +85,11 @@ HELP_TEXTS = {
     ),
     '--insecure': 'This option explicitly allows insecure SSL connections.',
     '--lengthy': 'Extended reporting.',
+    '--link-down-severity': (
+        'State to report for a port whose link is down. '
+        'A port that is simply not cabled reports the same thing, which is why this '
+        'defaults to not alerting.'
+    ),
     '--match': (
         'Filter by this Python regular expression. '
         'Case-sensitive by default; use `(?i)` for case-insensitive matching. '
@@ -141,6 +147,7 @@ HELP_TEXTS = {
     '--warning': 'WARN threshold in percent.',
     '--warning-count': 'WARN threshold for the number of matching items.',
     '--warning-seconds': 'WARN threshold in seconds.',
+    '--warning-temperature': 'WARN threshold in degrees Celsius.',
 }
 
 

@@ -22,18 +22,25 @@ Public functions under test:
 - get_controller_role()      -> code -> text mapping
 - get_cp_type()              -> code -> text mapping
 - get_creds()                -> login + session caching (HTTP via fetch_json)
+- get_all_data()             -> paged walk over a list endpoint (HTTP)
 - get_data()                 -> authenticated GET, re-login on a rejected request (HTTP)
+- get_error_code()           -> status code out of a response envelope
 - get_enclosure_logic_type() -> code -> text mapping
 - get_enclosure_model()      -> code -> text mapping
 - get_health_status()        -> code -> text mapping
+- get_health_status_state()  -> code -> STATE_* mapping
 - get_host_access_state()    -> code -> text mapping
+- get_hypermetro_domain_running_status_state()
+                             -> code -> STATE_* mapping, domain-scoped
 - get_interface_model()      -> code -> text mapping
 - get_interface_runmode()    -> code -> text mapping
 - get_led_status()           -> code -> text mapping
 - get_os()                   -> code -> text mapping
+- get_performance()          -> current counters, endpoint-spelling fallback (HTTP)
 - get_product_mode()         -> code -> text mapping
 - get_runlevel()             -> code -> text mapping
 - get_running_status()       -> code -> text mapping
+- get_running_status_state() -> code -> STATE_* mapping, healthy set per object
 - get_switch_status()        -> code -> text mapping
 - get_uuid()                 -> '{TYPE}:{ID}' builder
 
@@ -55,6 +62,7 @@ from unittest import mock
 sys.path.insert(0, '..')
 
 import lib.huawei_dorado as huawei
+from lib.globals import STATE_CRIT, STATE_OK, STATE_WARN
 
 # ---------------------------------------------------------------------------
 # Test double for the args object passed to get_creds / get_data.
@@ -153,6 +161,8 @@ class TestMappingHelpers(unittest.TestCase):
             122,
             '2 U 2-controller 25-slot 2.5-inch NVMe controller enclosure',
         ),
+        (huawei.get_alarm_severity, 2, 'Informational (2)'),
+        (huawei.get_alarm_severity, 6, 'Critical (6)'),
         (huawei.get_health_status, 1, 'Normal (1)'),
         (huawei.get_health_status, 5, 'Degraded (5)'),
         # Code 17 is worded per object: a disk reports 'single link', a host
@@ -278,6 +288,122 @@ class TestStatusFormatting(unittest.TestCase):
 
     def test_product_mode_appends_code_in_brackets(self):
         self.assertEqual(huawei.get_product_mode(813), 'Dorado 6000 V6 (SAS) (813)')
+
+
+# ---------------------------------------------------------------------------
+# The severity mappers. Unlike the text mappers these decide what a check
+# reports, so every branch is pinned, including the fallback that must never
+# silently pass as OK.
+# ---------------------------------------------------------------------------
+
+
+class TestAlarmSeverityState(unittest.TestCase):
+    def test_informational_is_ok(self):
+        # A note, not a fault. The 2017-era external check crashed on it.
+        self.assertEqual(huawei.get_alarm_severity_state(2), STATE_OK)
+
+    def test_critical_is_critical(self):
+        self.assertEqual(huawei.get_alarm_severity_state(6), STATE_CRIT)
+
+    def test_warning_and_major_warn(self):
+        # Major degrades the array without stopping it.
+        for code in (3, 5):
+            with self.subTest(code=code):
+                self.assertEqual(huawei.get_alarm_severity_state(code), STATE_WARN)
+
+    def test_accepts_string_codes(self):
+        self.assertEqual(huawei.get_alarm_severity_state('6'), STATE_CRIT)
+
+    def test_unmapped_code_warns(self):
+        # Minor (4) exists on other Huawei product lines but not on Dorado.
+        self.assertEqual(huawei.get_alarm_severity_state(4), STATE_WARN)
+
+    def test_missing_value_warns(self):
+        self.assertEqual(huawei.get_alarm_severity_state(None), STATE_WARN)
+
+
+class TestHealthStatusState(unittest.TestCase):
+    def test_normal_is_ok(self):
+        self.assertEqual(huawei.get_health_status_state(1), STATE_OK)
+
+    def test_failed_codes_are_critical(self):
+        for code in (2, 14, 18):
+            self.assertEqual(huawei.get_health_status_state(code), STATE_CRIT)
+
+    def test_degradations_warn(self):
+        for code in (3, 4, 5, 7, 9, 11, 12, 15, 17):
+            self.assertEqual(huawei.get_health_status_state(code), STATE_WARN)
+
+    def test_accepts_string_codes(self):
+        self.assertEqual(huawei.get_health_status_state('2'), STATE_CRIT)
+        self.assertEqual(huawei.get_health_status_state('1'), STATE_OK)
+
+    def test_unmapped_code_warns(self):
+        # A code this firmware invented is not evidence that everything is
+        # fine, so it must not fall through to OK.
+        self.assertEqual(huawei.get_health_status_state(99), STATE_WARN)
+
+    def test_missing_value_warns(self):
+        self.assertEqual(huawei.get_health_status_state(None), STATE_WARN)
+        self.assertEqual(huawei.get_health_status_state(''), STATE_WARN)
+
+
+class TestRunningStatusState(unittest.TestCase):
+    def test_caller_supplied_ok_codes(self):
+        self.assertEqual(huawei.get_running_status_state(27, (1, 27)), STATE_OK)
+        self.assertEqual(huawei.get_running_status_state(1, (1, 27)), STATE_OK)
+
+    def test_same_code_differs_per_object(self):
+        # Charging is the resting state of a backup power module and nonsense
+        # anywhere else, which is the whole reason ok_codes is a parameter.
+        self.assertEqual(huawei.get_running_status_state(48, (1, 2, 27, 48, 49)), STATE_OK)
+        self.assertEqual(huawei.get_running_status_state(48, (1, 27)), STATE_WARN)
+
+    def test_failed_codes_are_critical(self):
+        for code in (28, 35, 74, 94, 103, 105, 112):
+            self.assertEqual(huawei.get_running_status_state(code, (1, 27)), STATE_CRIT)
+
+    def test_transitional_codes_warn(self):
+        for code in (12, 23, 47, 51):
+            self.assertEqual(huawei.get_running_status_state(code, (1, 27)), STATE_WARN)
+
+    def test_accepts_string_codes(self):
+        self.assertEqual(huawei.get_running_status_state('27', (1, 27)), STATE_OK)
+        self.assertEqual(huawei.get_running_status_state('94', (1, 27)), STATE_CRIT)
+
+    def test_unmapped_code_warns(self):
+        self.assertEqual(huawei.get_running_status_state(200, (1, 27)), STATE_WARN)
+
+    def test_missing_value_warns(self):
+        # None must not match an ok_codes entry through some coercion path.
+        self.assertEqual(huawei.get_running_status_state(None, (1, 27)), STATE_WARN)
+
+
+class TestHypermetroDomainRunningStatusState(unittest.TestCase):
+    def test_normal_is_ok(self):
+        # The domain renumbers from 0 up, so 0 is its normal, not 1.
+        self.assertEqual(huawei.get_hypermetro_domain_running_status_state(0), STATE_OK)
+
+    def test_faulty_and_invalid_are_critical(self):
+        for code in (2, 5):
+            self.assertEqual(
+                huawei.get_hypermetro_domain_running_status_state(code), STATE_CRIT
+            )
+
+    def test_recovering_split_and_forced_warn(self):
+        for code in (1, 3, 4):
+            self.assertEqual(
+                huawei.get_hypermetro_domain_running_status_state(code), STATE_WARN
+            )
+
+    def test_does_not_share_the_general_enumeration(self):
+        # Read through the shared mapper code 1 would be 'Normal' and come out
+        # OK; on a domain it means the mirror is still recovering.
+        self.assertEqual(huawei.get_running_status_state(1, (1,)), STATE_OK)
+        self.assertEqual(huawei.get_hypermetro_domain_running_status_state(1), STATE_WARN)
+
+    def test_missing_value_warns(self):
+        self.assertEqual(huawei.get_hypermetro_domain_running_status_state(None), STATE_WARN)
 
 
 # ---------------------------------------------------------------------------
@@ -702,6 +828,204 @@ class TestGetData(HuaweiHttpTestBase):
         result = huawei.get_data('disk', self.args)
         self.assertEqual(result['error']['code'], -401)
         self.assertEqual(result['error']['description'], 'authentication failed')
+
+
+# ---------------------------------------------------------------------------
+# get_error_code(), get_all_data() and get_performance()
+# ---------------------------------------------------------------------------
+
+
+class TestGetErrorCode(unittest.TestCase):
+    def test_reads_the_documented_object(self):
+        self.assertEqual(huawei.get_error_code({'error': {'code': 0}}), 0)
+        self.assertEqual(huawei.get_error_code({'error': {'code': '-401'}}), '-401')
+
+    def test_reads_a_scalar_error(self):
+        # Not documented, but a firmware that answers with a bare value must not
+        # make the caller crash on .get().
+        self.assertEqual(huawei.get_error_code({'error': 0}), 0)
+
+    def test_missing_error_key_is_none(self):
+        self.assertIsNone(huawei.get_error_code({}))
+
+
+class TestGetAllData(HuaweiHttpTestBase):
+    def setUp(self):
+        super().setUp()
+        self._p_creds = mock.patch.object(
+            huawei, 'get_creds', return_value=('TOKEN', 'COOKIE')
+        )
+        self._p_creds.start()
+        self.addCleanup(self._p_creds.stop)
+
+    @staticmethod
+    def page(count, start=0):
+        return (
+            True,
+            {
+                'data': [{'ID': str(start + i)} for i in range(count)],
+                'error': {'code': 0},
+            },
+        )
+
+    def test_single_short_page_ends_the_walk(self):
+        self.fetch_json.return_value = self.page(3)
+        result, truncated = huawei.get_all_data('lun', self.args, page_size=100)
+        self.assertEqual(len(result['data']), 3)
+        self.assertFalse(truncated)
+        self.assertEqual(self.fetch_json.call_count, 1)
+
+    def test_full_page_is_followed_by_another_request(self):
+        self.fetch_json.side_effect = [self.page(2), self.page(1, start=2)]
+        result, truncated = huawei.get_all_data('lun', self.args, page_size=2)
+        self.assertEqual([item['ID'] for item in result['data']], ['0', '1', '2'])
+        self.assertFalse(truncated)
+
+    def test_range_parameter_counts_up_per_page(self):
+        self.fetch_json.side_effect = [self.page(2), self.page(0)]
+        huawei.get_all_data('lun', self.args, page_size=2)
+        uris = [call.args[0] for call in self.fetch_json.call_args_list]
+        self.assertTrue(uris[0].endswith('lun?range=[0-2]'), uris[0])
+        self.assertTrue(uris[1].endswith('lun?range=[2-4]'), uris[1])
+
+    def test_range_is_appended_to_an_existing_query_string(self):
+        self.fetch_json.return_value = self.page(0)
+        huawei.get_all_data('alarm/currentalarm?filter=level::6', self.args)
+        self.assertTrue(
+            self.sent_uri().endswith(
+                'alarm/currentalarm?filter=level::6&range=[0-100]'
+            ),
+            self.sent_uri(),
+        )
+
+    def test_page_cap_reports_truncation(self):
+        # A firmware that ignores `range` hands out the same full page forever.
+        # The cap is what keeps the check from running until its own timeout.
+        self.fetch_json.return_value = self.page(2)
+        result, truncated = huawei.get_all_data(
+            'lun', self.args, page_size=2, max_pages=3
+        )
+        self.assertTrue(truncated)
+        self.assertEqual(self.fetch_json.call_count, 3)
+        self.assertEqual(len(result['data']), 6)
+
+    def test_failed_request_is_handed_back_whole(self):
+        # Reporting the objects collected so far would present a partial
+        # inventory as a complete one.
+        failed = (True, {'error': {'code': -401, 'description': 'no session'}})
+        # get_data() retries a rejected request, so the failing page costs three
+        # requests rather than one.
+        self.fetch_json.side_effect = [self.page(2), failed, failed, failed]
+        result, truncated = huawei.get_all_data('lun', self.args, page_size=2)
+        self.assertEqual(huawei.get_error_code(result), -401)
+        self.assertFalse(truncated)
+        self.assertNotIn('ID', str(result.get('data', '')))
+
+    def test_single_object_response_is_not_paged(self):
+        self.fetch_json.return_value = (True, {'data': {'ID': '0'}, 'error': {'code': 0}})
+        result, truncated = huawei.get_all_data('system/', self.args)
+        self.assertEqual(result['data'], {'ID': '0'})
+        self.assertFalse(truncated)
+        self.assertEqual(self.fetch_json.call_count, 1)
+
+
+class TestGetPerformance(HuaweiHttpTestBase):
+    SAMPLE = (
+        True,
+        {
+            'data': [
+                {
+                    'CMO_STATISTIC_DATA_ID_LIST': '21,22,370',
+                    'CMO_STATISTIC_DATA_LIST': '132,4711,385',
+                    'CMO_STATISTIC_UUID': '207:0A',
+                }
+            ],
+            'error': {'code': 0},
+        },
+    )
+
+    def setUp(self):
+        super().setUp()
+        self._p_creds = mock.patch.object(
+            huawei, 'get_creds', return_value=('TOKEN', 'COOKIE')
+        )
+        self._p_creds.start()
+        self.addCleanup(self._p_creds.stop)
+        # The working endpoint spelling is remembered for the whole run, so it
+        # has to be reset or the tests would depend on their order.
+        huawei._performance_path = None
+        self.addCleanup(setattr, huawei, '_performance_path', None)
+
+    def test_zips_ids_and_values_back_together(self):
+        self.fetch_json.return_value = self.SAMPLE
+        self.assertEqual(
+            huawei.get_performance('207:0A', (21, 22, 370), self.args),
+            {'21': '132', '22': '4711', '370': '385'},
+        )
+
+    def test_request_carries_uuid_and_id_list(self):
+        self.fetch_json.return_value = self.SAMPLE
+        huawei.get_performance('207:0A', (21, 22, 370), self.args)
+        self.assertIn('CMO_STATISTIC_UUID=207:0A', self.sent_uri())
+        self.assertIn('CMO_STATISTIC_DATA_ID_LIST=21,22,370', self.sent_uri())
+
+    def test_prefers_the_corrected_endpoint_spelling(self):
+        self.fetch_json.return_value = self.SAMPLE
+        huawei.get_performance('207:0A', (21,), self.args)
+        self.assertIn('/performance_statistic/cur_statistic_data', self.sent_uri())
+
+    def test_falls_back_to_the_misspelled_endpoint(self):
+        # 6.1.0 spells it 'performace_statistic'. Nothing in a response says
+        # which spelling an appliance answers to, so it has to be tried.
+        self.fetch_json.side_effect = [
+            (True, {'error': {'code': -1, 'description': 'not found'}}),
+            self.SAMPLE,
+        ]
+        result = huawei.get_performance('207:0A', (21, 22, 370), self.args)
+        self.assertEqual(result, {'21': '132', '22': '4711', '370': '385'})
+        self.assertIn(
+            '/performace_statistic/cur_statistic_data',
+            self.fetch_json.call_args_list[1].args[0],
+        )
+
+    def test_working_spelling_is_reused_for_the_rest_of_the_run(self):
+        self.fetch_json.side_effect = [
+            (True, {'error': {'code': -1, 'description': 'not found'}}),
+            self.SAMPLE,
+            self.SAMPLE,
+        ]
+        huawei.get_performance('207:0A', (21,), self.args)
+        huawei.get_performance('207:0B', (21,), self.args)
+        self.assertEqual(self.fetch_json.call_count, 3)
+        self.assertIn(
+            '/performace_statistic/cur_statistic_data',
+            self.fetch_json.call_args_list[2].args[0],
+        )
+
+    def test_probe_does_not_retry(self):
+        # A wrong spelling answers with an error, which is the expected answer
+        # rather than a fault. Retrying it would cost two further requests and a
+        # forced re-login that drops the session the rest of the check reuses.
+        self.fetch_json.side_effect = [
+            (True, {'error': {'code': -1, 'description': 'not found'}}),
+            self.SAMPLE,
+        ]
+        huawei.get_performance('207:0A', (21,), self.args)
+        self.assertEqual(self.fetch_json.call_count, 2)
+        self.assertFalse(self.sleep.called)
+
+    def test_no_sample_returns_an_empty_mapping(self):
+        # The normal answer for an object whose counters are not collected.
+        self.fetch_json.return_value = (True, {'data': [], 'error': {'code': 0}})
+        self.assertEqual(huawei.get_performance('207:0A', (21,), self.args), {})
+
+    def test_both_spellings_failing_returns_an_empty_mapping(self):
+        self.fetch_json.return_value = (
+            True,
+            {'error': {'code': -1, 'description': 'not found'}},
+        )
+        self.assertEqual(huawei.get_performance('207:0A', (21,), self.args), {})
+        self.assertEqual(self.fetch_json.call_count, 2)
 
 
 if __name__ == '__main__':

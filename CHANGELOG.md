@@ -20,13 +20,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* args.py: `--warning-temperature` and `--critical-temperature` join the shared help texts, so every check that alerts on a temperature names the parameter the same way.
 * base.py: `verbose()` prints a progress message only when verbose output is switched on, so long-running consumers stop copying the same two-line helper.
 * db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
 * distro.py: Clear Linux, CoreOS, Flatcar, Mandriva, OpenWrt, Slackware, SUSE, UnionTech and the Debian derivatives Cumulus Linux, Deepin, Devuan, Kali, Linux Mint, Parrot, SteamOS and Uos are recognised. Anything else still unknown is now identified from `/etc/os-release` instead of being reported as plain "Linux".
 * huawei_dorado.py: `get_account_state()` translates the password status the appliance reports at login into readable text.
 * huawei_dorado.py: `get_dr_star_running_status()` and `get_hypermetro_domain_running_status()` translate the running status of DR Star trios and HyperMetro domains, which the appliance numbers differently from every other object.
+* huawei_dorado.py: `get_alarm_severity()` and `get_alarm_severity_state()` translate an alarm severity into readable text and into the state a check reports for it, including the informational severity that used to be unhandled.
+* huawei_dorado.py: `get_all_data()` walks a list endpoint page by page and reports whether it had to stop early, so an appliance with more objects than fit in one response is still covered completely.
+* huawei_dorado.py: `get_error_code()` reads the status code out of the response envelope, whether the appliance wraps it in an object or sends it bare.
+* huawei_dorado.py: `get_health_status_state()`, `get_running_status_state()` and `get_hypermetro_domain_running_status_state()` translate a status code into the state a check reports for it, so a failed component is told apart from a degraded one in one place instead of in every consumer.
+* huawei_dorado.py: `get_performance()` reads the current performance counters of a managed object and copes with both endpoint spellings the vendor shipped.
 * huawei_pacific.py: `get_base_board()` translates a node's base board code into the product line it names, and hands an undocumented code back unchanged.
 * huawei_pacific.py: `get_data()` reaches the appliance's older endpoint generation below `/dsware/service/` and `/dfv/service/` through its `base_path` argument. Some information, the disk inventory among it, is not served anywhere else.
+* huawei_pacific.py: `get_all_data()` walks a list endpoint page by page, in either of the two incompatible range syntaxes the API uses.
+* huawei_pacific.py: `get_component_status_state()`, `get_disk_status_state()`, `get_node_running_status_state()` and `get_pool_status_state()` translate a status into the state a check reports for it.
+* huawei_pacific.py: `get_pool_status()` translates a storage or disk pool status into readable text.
 * huawei_pacific.py: `get_disk_role()`, `get_disk_status()` and `get_disk_type()` translate the role, status and media type of a disk into readable text.
 * huawei_pacific.py: `get_password_status()` translates the password status the appliance reports at login into readable text.
 * huawei_pacific.py: `get_result_code()` reads the status code out of either response envelope the appliance uses, so a consumer does not have to know which endpoint generation it is talking to.
@@ -38,7 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_dorado.py, huawei_pacific.py: `--cache-expire 0` switches session caching off. It used to store a session that expired about a second later, which is neither caching nor not caching.
 * huawei_dorado.py, huawei_pacific.py: session tokens are kept in the library's own cache file instead of the one every plugin on the host shares, so parallel checks no longer wait on each other's cache writes. The first run after the update logs in once to fill the new file.
 * huawei_dorado.py, huawei_pacific.py: `get_data()` returns the appliance's response as it is. It used to add a `counter` field holding the number of attempts, which would overwrite an API field of that name.
+* huawei_dorado.py: `get_data()` takes a `max_attempts`, so a caller asking a question whose expected answer may be an error does not spend two further requests and a forced re-login on it, which used to drop a perfectly good cached session.
 * huawei_dorado.py: A component being rebuilt is reported as "Rebuilding", the word V700 appliances use for it, instead of the older firmware's "Reconstruction".
+* README.md: the module table lists `huawei_dorado.py` and `huawei_pacific.py`, which replaced the former `huawei.py` some time ago.
 * lftest.py: `assert-retc` is optional in a testcase, like every other assertion already was. A test can now cover the output a fixture controls without pinning a state that depends on something else, such as an end-of-life date that turns OK into WARNING as the calendar advances.
 * nextcloud.py: `occ` is called without `sudo` when the check already runs as the owner of `config/config.php`. No sudoers entry is needed in that case, and the checks work inside the official Nextcloud container, which ships without `sudo`.
 

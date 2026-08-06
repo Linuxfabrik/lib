@@ -23,12 +23,13 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080602'
+__version__ = '2026080604'
 
 import json
 from time import sleep as _sleep
 
 from . import base, cache, time, url
+from .globals import STATE_CRIT, STATE_OK, STATE_WARN
 
 # Own cache file, following `lib.redfish`. The shared default file is written by every
 # plugin on the host, and `lib.cache` sweeps expired rows on the read path, so a session
@@ -98,6 +99,155 @@ def get_account_state(st):
         11: 'RADIUS challenge response required (11)',
     }
     return mapping.get(_as_code(st), 'Unknown')
+
+
+def get_alarm_severity(sev):
+    """
+    Convert a Huawei alarm severity code into a human-readable description.
+
+    ### Parameters
+    - **sev** (`int` or `str`):
+      The alarm severity code.
+      A missing or malformed value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Notes
+    - `alarm/currentalarm` documents only warning, major and critical. Informational (`2`)
+      comes from the alarm type table, where an appliance may define an alarm at that
+      severity, so it is carried here: a listing that does contain one has to render it
+      rather than fall through to `'Unknown'`.
+    - Code `4` (minor) exists on other Huawei product lines and is deliberately absent,
+      because neither Dorado REST Interface Reference lists it.
+
+    ### Example
+    >>> get_alarm_severity(6)
+    'Critical (6)'
+    """
+    mapping = {
+        2: 'Informational (2)',
+        3: 'Warning (3)',
+        5: 'Major (5)',
+        6: 'Critical (6)',
+    }
+    return mapping.get(_as_code(sev), 'Unknown')
+
+
+def get_alarm_severity_state(sev):
+    """
+    Convert a Huawei alarm severity code into the state a check reports for it.
+
+    ### Parameters
+    - **sev** (`int` or `str`):
+      The alarm severity code.
+
+    ### Returns
+    - **int**:
+      `STATE_OK` for an informational alarm, `STATE_CRIT` for a critical one, `STATE_WARN`
+      for warning, major, a code the enumeration does not know and a missing value.
+
+    ### Notes
+    - An informational alarm is a note, not a fault, so it does not alert. It still appears
+      in the output, where it is what an operator reads after the fact.
+    - Major sits at warning rather than at critical on purpose: it marks a fault that
+      degrades the array without stopping it, and an array full of major alarms that all
+      page someone at night is an array nobody watches any more.
+
+    ### Example
+    >>> get_alarm_severity_state(6) == STATE_CRIT
+    True
+
+    >>> get_alarm_severity_state('2') == STATE_OK
+    True
+    """
+    code = _as_code(sev)
+    if code == 2:
+        return STATE_OK
+    if code == 6:
+        return STATE_CRIT
+    return STATE_WARN
+
+
+def get_all_data(endpoint, args, page_size=100, max_pages=100):
+    """
+    Fetch every object of a list endpoint, one page at a time.
+
+    Most list endpoints return at most 100 objects per request and expect the caller to page
+    through the rest. Without paging an array simply stops being reported past the first page,
+    which reads as a smaller but healthy inventory: exactly the failure a check must not have.
+
+    ### Parameters
+    - **endpoint** (`str`):
+      The endpoint after the device ID, optionally with a query string of its own (for example
+      `alarm/currentalarm?filter=level::6`). The `range` parameter is appended to it, so the
+      caller must not supply one.
+    - **args** (object):
+      The same object `get_data()` reads.
+    - **page_size** (`int`, optional):
+      Objects to request per page. The documented ceiling differs per endpoint: 100 for most,
+      250 for the alarm and event endpoints, 10000 for storage pools. Staying at or below the
+      ceiling is the caller's job, because the appliance rejects a larger range rather than
+      capping it.
+    - **max_pages** (`int`, optional):
+      Hard stop on the number of requests. It bounds the runtime of a check against an array
+      with far more objects than anyone expected, and it keeps a firmware that ignores `range`
+      from looping forever.
+
+    ### Returns
+    - **tuple** (`dict`, `bool`):
+      The envelope of the last request with its `data` replaced by every object collected, and
+      a flag that is `True` when `max_pages` cut the walk short. On a failed request the
+      envelope is handed back unchanged with the flag `False`, so the caller reports the
+      appliance's own error text the same way it would after a single `get_data()`.
+
+    ### Notes
+    - A page shorter than `page_size` ends the walk: the appliance has nothing left to hand
+      out. A page of exactly `page_size` objects is always followed by another request, which
+      costs one empty request when the object count is an exact multiple of the page size.
+    - The port endpoints (`fc_port`, `eth_port`, `sas_port` and their relatives) do not
+      implement `range`. Query those with `get_data()` instead; asking them for a range either
+      errors out or silently returns the full list on every iteration.
+    - The truncation flag is deliberately returned rather than turned into an abort here.
+      Whether an incomplete inventory is worth an UNKNOWN or just a note in the output depends
+      on the check, and this function has no way to tell.
+
+    ### Example
+    >>> result, truncated = get_all_data('lun', args)
+    >>> len(result['data'])
+    237
+    """
+    separator = '&' if '?' in endpoint else '?'
+    collected = []
+    result = {}
+    truncated = False
+
+    for page in range(max_pages):
+        start = page * page_size
+        result = get_data(
+            f'{endpoint}{separator}range=[{start}-{start + page_size}]',
+            args,
+        )
+        if get_error_code(result) not in (0, '0'):
+            # Hand the failed envelope back whole. Reporting the objects collected so far
+            # would present a partial inventory as a complete one.
+            return result, False
+
+        data = result.get('data') or []
+        if not isinstance(data, list):
+            # A single object rather than a list means this endpoint does not page at all.
+            return result, False
+
+        collected += data
+        if len(data) < page_size:
+            break
+    else:
+        truncated = True
+
+    result['data'] = collected
+    return result, truncated
 
 
 def get_controller_model(cm):
@@ -503,7 +653,7 @@ def _as_envelope(success, response):
     }
 
 
-def get_data(endpoint, args):
+def get_data(endpoint, args, max_attempts=3):
     """
     Fetch data from a Huawei appliance endpoint, re-authenticating on a stale session.
 
@@ -527,6 +677,12 @@ def get_data(endpoint, args):
         - `INSECURE` (`bool`): Disable SSL verification.
         - `NO_PROXY` (`bool`): Ignore proxy settings.
         - `TIMEOUT` (`int`): Timeout for API requests.
+    - **max_attempts** (`int`, optional):
+      How often to try before giving up. The default of `3` is what a check wants. Pass `1` to
+      ask a question whose expected answer may well be an error, such as probing which of two
+      endpoint spellings a firmware answers to: the retry loop would then spend two further
+      requests and a forced re-login on establishing what the first answer already said, and
+      the re-login would drop a perfectly good cached session along the way.
 
     ### Returns
     - **dict**:
@@ -561,7 +717,6 @@ def get_data(endpoint, args):
     """
     uri = f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/{endpoint}'
 
-    max_attempts = 3
     result = {}
 
     for attempt in range(1, max_attempts + 1):
@@ -721,6 +876,32 @@ def get_enclosure_model(em):
     return mapping.get(_as_code(em), 'Unknown')
 
 
+def get_error_code(result):
+    """
+    Read the status code out of a response envelope.
+
+    ### Parameters
+    - **result** (`dict`): A response envelope as `get_data()` returns it.
+
+    ### Returns
+    - **int**, **str** or **None**:
+      The value of `error.code`, the bare `error` if the appliance answered with a scalar
+      instead of the documented object, or `None` if the envelope carries neither.
+
+    ### Notes
+    - Success is code `0`. The appliance reports it as a number on some endpoints and as the
+      string `'0'` on others, so compare against both rather than against one of them.
+
+    ### Example
+    >>> get_error_code({'error': {'code': 0}})
+    0
+    """
+    error = result.get('error')
+    if isinstance(error, dict):
+        return error.get('code')
+    return error
+
+
 def get_health_status(hs):
     """
     Convert a Huawei health status code into a human-readable description.
@@ -744,6 +925,11 @@ def get_health_status(hs):
       `no redundant link`. The response carries no marker for which of the two applies, so
       the code renders as `'Single link / No redundant link'`, which holds for both, rather
       than picking one and being wrong on the other object type.
+    - The table is the complete union of the codes both REST Interface References list. The
+      appliance's SNMP MIB defines a larger enumeration, among it bad sectors found, busy
+      and single link fault, and those codes look like an omission when the two interfaces
+      are compared. They are not: the REST API never sends them, and carrying them here
+      would document behaviour this module cannot produce.
 
     ### Example
     >>> get_health_status(1)
@@ -769,6 +955,54 @@ def get_health_status(hs):
         18: 'Offline (18)',
     }
     return mapping.get(_as_code(hs), 'Unknown')
+
+
+# `HEALTHSTATUS` codes that mean the object has failed outright, as opposed to still serving
+# I/O in a reduced state. Everything else the enumeration knows describes a degradation, and
+# everything it does not know is a code this firmware invented; both are worth a look but
+# neither justifies waking someone, so they end up as a warning.
+_FAILED_HEALTH_STATES = frozenset({2, 14, 18})
+
+
+def get_health_status_state(hs):
+    """
+    Convert a Huawei health status code into the state a check reports for it.
+
+    ### Parameters
+    - **hs** (`int` or `str`):
+      The health status code to interpret.
+
+    ### Returns
+    - **int**:
+      `STATE_OK` for a normal object, `STATE_CRIT` for a failed one, `STATE_WARN` for every
+      other code, including one the enumeration does not know and a missing value.
+
+    ### Notes
+    - Faulty (`2`), Invalid (`14`) and Offline (`18`) are the codes that report an object which
+      has stopped doing its job, so they are the ones that reach `STATE_CRIT`.
+    - An unrecognised code cannot be assumed to be harmless, so it warns rather than passing as
+      OK. It renders as `'Unknown'` through `get_health_status()`, which tells the reader that
+      the code, not the object, is what the check could not place.
+    - `HEALTHSTATUS` is shared across object types, which is why this mapping needs no
+      per-object parameter. `RUNNINGSTATUS` is not, hence the `ok_codes` argument on
+      `get_running_status_state()`.
+
+    ### Example
+    >>> get_health_status_state(1) == STATE_OK
+    True
+
+    >>> get_health_status_state('2') == STATE_CRIT
+    True
+
+    >>> get_health_status_state(5) == STATE_WARN
+    True
+    """
+    code = _as_code(hs)
+    if code == 1:
+        return STATE_OK
+    if code in _FAILED_HEALTH_STATES:
+        return STATE_CRIT
+    return STATE_WARN
 
 
 def get_host_access_state(has):
@@ -840,6 +1074,43 @@ def get_hypermetro_domain_running_status(rs):
         5: 'Invalid (5)',
     }
     return mapping.get(_as_code(rs), 'Unknown')
+
+
+def get_hypermetro_domain_running_status_state(rs):
+    """
+    Convert a HyperMetro domain's `RUNNINGSTATUS` code into the state a check reports for it.
+
+    ### Parameters
+    - **rs** (`int` or `str`):
+      The running status code to interpret.
+
+    ### Returns
+    - **int**:
+      `STATE_OK` for a normal domain, `STATE_CRIT` for a faulty or invalid one, `STATE_WARN`
+      for every other code, including one the enumeration does not know and a missing value.
+
+    ### Notes
+    - Scoped to the `HyperMetroDomain` object for the same reason as
+      `get_hypermetro_domain_running_status()`: the codes are renumbered from `0` up and every
+      one of them collides with the shared enumeration, so `get_running_status_state()` cannot
+      be used here.
+    - Split (`3`) warns rather than going critical. A split domain no longer mirrors, but each
+      side still serves its own I/O, and an administrator splits a domain deliberately during
+      maintenance.
+
+    ### Example
+    >>> get_hypermetro_domain_running_status_state(0) == STATE_OK
+    True
+
+    >>> get_hypermetro_domain_running_status_state('2') == STATE_CRIT
+    True
+    """
+    code = _as_code(rs)
+    if code == 0:
+        return STATE_OK
+    if code in (2, 5):
+        return STATE_CRIT
+    return STATE_WARN
 
 
 def get_interface_model(im):
@@ -1161,6 +1432,85 @@ def get_os(os):
     return mapping.get(_as_code(os), 'Unknown')
 
 
+# The vendor misspelled the performance endpoint as `performace_statistic` and corrected it to
+# `performance_statistic` in a later firmware generation. Both spellings are live in the field,
+# and nothing in a response says which one an appliance answers to, so the working one is found
+# by trying and then remembered for the rest of the run.
+_PERFORMANCE_PATHS = (
+    'performance_statistic/cur_statistic_data',
+    'performace_statistic/cur_statistic_data',
+)
+_performance_path = None
+
+
+def get_performance(uuid, data_ids, args):
+    """
+    Fetch the current performance counters of one managed object.
+
+    ### Parameters
+    - **uuid** (`str`):
+      The object's UUID in the appliance's own `TYPE:ID` notation, as `get_uuid()` builds it.
+      For example `'207:0A'` for a controller.
+    - **data_ids** (iterable of `int`):
+      The performance indicators to read. The vendor numbers them per indicator, not per
+      object: `18` utilisation in percent, `19` queue length, `21` block bandwidth in MB/s,
+      `22` IOPS, `23` and `26` read and write bandwidth, `25` and `28` read and write IOPS,
+      `370` average I/O response time. Not every object supports every indicator.
+    - **args** (object):
+      The same object `get_data()` reads.
+
+    ### Returns
+    - **dict**:
+      Indicator number to reported value, both as strings, in the order the appliance listed
+      them. Empty if the request failed or the appliance returned no sample, which is the
+      normal answer for an object whose counters are not being collected.
+
+    ### Notes
+    - The appliance answers with two parallel comma-separated lists, one of indicator numbers
+      and one of values. They are zipped back together here so a caller reads a counter by its
+      number instead of by its position.
+    - Every value is a gauge (a rate, a percentage or a time), not a cumulative counter, so it
+      can go into performance data as it is. See
+      [#320](https://github.com/Linuxfabrik/monitoring-plugins/issues/320).
+    - The first call of a run may cost two requests while the endpoint spelling is being
+      determined; every later call in the same run goes straight to the one that answered.
+
+    ### Example
+    >>> get_performance('207:0A', (21, 22, 370), args)
+    {'21': '132', '22': '4711', '370': '385'}
+    """
+    global _performance_path
+
+    ids = ','.join(str(data_id) for data_id in data_ids)
+    query = f'?CMO_STATISTIC_UUID={uuid}&CMO_STATISTIC_DATA_ID_LIST={ids}'
+    paths = (_performance_path,) if _performance_path else _PERFORMANCE_PATHS
+    # While probing, an error is an expected answer rather than a fault, so it is taken at
+    # face value. Retrying would cost two more requests and a forced re-login per wrong
+    # spelling, and the re-login would drop the cached session the rest of the check reuses.
+    attempts = 1 if len(paths) > 1 else 3
+
+    for path in paths:
+        result = get_data(f'{path}{query}', args, max_attempts=attempts)
+        if get_error_code(result) not in (0, '0'):
+            continue
+        _performance_path = path
+
+        data = result.get('data') or []
+        if isinstance(data, dict):
+            data = [data]
+        if not data:
+            return {}
+
+        sample = data[0]
+        keys = str(sample.get('CMO_STATISTIC_DATA_ID_LIST', '')).split(',')
+        values = str(sample.get('CMO_STATISTIC_DATA_LIST', '')).split(',')
+        return {
+            key: value for key, value in zip(keys, values) if key != '' and value != ''
+        }
+
+    return {}
+
+
 def get_product_mode(pm):
     """
     Convert a Huawei product mode code into a human-readable description.
@@ -1316,6 +1666,9 @@ def get_running_status(rs):
     >>> get_running_status('47')
     'Powering off (47)'
     """
+    # The table is the union of the codes both REST Interface References list. The
+    # appliance's SNMP MIB defines about twice as many, which makes this look incomplete
+    # when the two interfaces are compared. The REST API never sends the extra ones.
     # RUNNINGSTATUS is a shared enumeration across many object types, so a
     # single object only ever reports a subset of these codes. The union is
     # kept complete here so that every documented state renders a readable
@@ -1379,6 +1732,56 @@ def get_running_status(rs):
         119: 'Creating (119)',
     }
     return mapping.get(_as_code(rs), 'Unknown')
+
+
+# `RUNNINGSTATUS` codes that report a failure whatever object they are read from. The rest of
+# the enumeration is object-dependent - `Powered off (13)` is a fault on a controller and the
+# resting state of a spare power module, `Charging (48)` is routine on a BBU and nonsense
+# elsewhere - so a caller states its own healthy codes through `ok_codes` and everything left
+# over warns.
+_FAILED_RUNNING_STATES = frozenset({28, 35, 74, 94, 103, 105, 112})
+
+
+def get_running_status_state(rs, ok_codes):
+    """
+    Convert a Huawei running status code into the state a check reports for it.
+
+    ### Parameters
+    - **rs** (`int` or `str`):
+      The running status code to interpret.
+    - **ok_codes** (iterable of `int`):
+      The codes that count as healthy for the object being checked. A disk passes `(1, 27)`,
+      a controller `(1, 2, 27)`, a backup power module `(1, 2, 27, 48, 49)`.
+
+    ### Returns
+    - **int**:
+      `STATE_OK` for a code the caller listed as healthy, `STATE_CRIT` for a code that reports
+      a failure on any object, `STATE_WARN` for every other code, including one the enumeration
+      does not know and a missing value.
+
+    ### Notes
+    - Unlike `HEALTHSTATUS`, this enumeration is not shared: the same code means different
+      things on different objects, and there is no code that is healthy everywhere. That is why
+      the healthy set is the caller's to state and cannot live in this function.
+    - A code the enumeration does not know warns rather than passing as OK, for the same reason
+      as in `get_health_status_state()`.
+
+    ### Example
+    >>> get_running_status_state(27, (1, 27)) == STATE_OK
+    True
+
+    >>> get_running_status_state('94', (1, 27)) == STATE_CRIT
+    True
+
+    >>> get_running_status_state(51, (1, 27)) == STATE_WARN
+    True
+    """
+    code = _as_code(rs)
+    if code is not None and code in ok_codes:
+        return STATE_OK
+    if code in _FAILED_RUNNING_STATES:
+        return STATE_CRIT
+    return STATE_WARN
 
 
 def get_switch_status(st):
