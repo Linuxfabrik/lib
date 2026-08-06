@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
+* huawei_dorado.py: `get_account_state()` translates the password status the appliance reports at login into readable text.
+* huawei_pacific.py: `get_data()` takes URL parameters in a separate argument, the way the Dorado library already does.
+* huawei_pacific.py: `get_password_status()` translates the password status the appliance reports at login into readable text.
 
 ### Fixed
 
@@ -26,12 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: Table names containing a dash or other punctuation are used as given, instead of being silently stripped down to letters, digits and underscores.
 * huawei_dorado.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
 * huawei_dorado.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
+* huawei_dorado.py: An appliance answering with an HTTP error, a load balancer in front of it answering for it, or a connection that fails no longer ends the check on the spot. The check retries, logs in again if needed, and reports the appliance's own error text rather than a bare status code.
+* huawei_dorado.py: An expired monitoring password is now reported as such. Until now the login was accepted, every request behind it failed, and the check blamed the API.
 * huawei_dorado.py: An interface module running in RDMA or NoF mode is named correctly on V700 appliances, and a 100 Gbit/s RoCE module no longer reports 10 Gbit/s.
-* huawei_dorado.py: Checks no longer abort with a traceback when the appliance omits a status field.
+* huawei_dorado.py: Checks no longer abort with a traceback when the appliance omits a status field, and an unexpected API response is reported instead of ending in a traceback.
+* huawei_dorado.py: Checks running under different accounts against the same appliance no longer share one session, which made them query the appliance with the wrong user's privileges.
 * huawei_dorado.py: Controller boards, enclosures, interface modules, appliance models and health and running states introduced with V700 are named instead of shown as "Unknown".
+* huawei_pacific.py: A cluster node the appliance reports without a management IP address is now flagged. Until now such a node was skipped without notice, so a fan or power supply failing on it stayed invisible and the check still reported OK.
 * huawei_pacific.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
 * huawei_pacific.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
+* huawei_pacific.py: An appliance answering with an HTTP error, a load balancer in front of it answering for it, or a connection that fails no longer ends the check on the spot. The check retries, logs in again if needed, and reports the appliance's own error text rather than a bare status code.
+* huawei_pacific.py: An expired monitoring password is now reported as such. Until now the login was accepted, every request behind it failed, and the check blamed the API.
 * huawei_pacific.py: Checks no longer abort with a traceback when the appliance omits a status field.
+* huawei_pacific.py: Checks running under different accounts against the same appliance no longer share one session, which made them query the appliance with the wrong user's privileges.
 * huawei_pacific.py: Minor alarms are reported with their severity instead of as "Unknown".
 
 ### Security

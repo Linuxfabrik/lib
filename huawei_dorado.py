@@ -23,8 +23,9 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080501'
+__version__ = '2026080502'
 
+import json
 from time import sleep as _sleep
 
 from . import base, cache, time, url
@@ -55,6 +56,43 @@ def _as_code(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def get_account_state(st):
+    """
+    Convert a Huawei password status code into a human-readable description.
+
+    The appliance reports this as `accountstate` in the login response. It describes the state
+    of the login account's password, not the outcome of the login itself: a login can succeed
+    while the account is still unusable for anything but changing the password.
+
+    ### Parameters
+    - **st** (`int` or `str`):
+      The password status code.
+      A missing or malformed value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Example
+    >>> get_account_state(3)
+    'password expired (3)'
+    """
+    mapping = {
+        1: 'normal (1)',
+        3: 'password expired (3)',
+        4: 'initial password, which must be reset (4)',
+        5: 'password about to expire (5)',
+        6: 'password must be changed upon the next login (6)',
+        7: 'password never expires (7)',
+        8: 'email one-time password authentication required (8)',
+        9: 'first login, password must be initialized (9)',
+        10: 'RADIUS one-time password authentication required (10)',
+        11: 'RADIUS challenge response required (11)',
+    }
+    return mapping.get(_as_code(st), 'Unknown')
 
 
 def get_controller_model(cm):
@@ -140,6 +178,14 @@ def get_cp_type(cp):
     return mapping.get(_as_code(cp), 'Unknown')
 
 
+# Password states in which a login succeeds but the resulting session cannot query
+# anything: the appliance then only accepts the password and security-policy endpoints
+# (an expired, initial or must-be-changed password), or the login is not finished at all
+# (a pending one-time-password or challenge-response step). The states left out are the
+# ones a session survives: normal, about to expire, and never expires.
+_UNUSABLE_ACCOUNT_STATES = frozenset({3, 4, 6, 8, 9, 10, 11})
+
+
 def get_creds(args, force_relogin=False):
     """
     Retrieve and cache Huawei appliance credentials.
@@ -173,8 +219,13 @@ def get_creds(args, force_relogin=False):
 
     ### Notes
     - Tokens are stored in cache keys:
-      - `huawei-{DEVICE_ID}-ibasetoken`
-      - `huawei-{DEVICE_ID}-cookie`
+      - `huawei-{URL}-{DEVICE_ID}-{USERNAME}-ibasetoken`
+      - `huawei-{URL}-{DEVICE_ID}-{USERNAME}-cookie`
+      The user name is part of the key because a session carries that user's role: without it
+      a check running as a different account would silently reuse the first account's session
+      and query the appliance with the wrong privileges. The URL is part of it because the
+      device ID is caller-supplied and the appliance accepts any string for it on the initial
+      login, so it does not reliably identify an appliance on its own.
     - If login is required, the request is sent as serialized JSON with headers.
     - A rejected login aborts the caller (UNKNOWN) instead of returning an empty token.
       The appliance answers a wrong password, an expired password or a locked account with
@@ -182,12 +233,20 @@ def get_creds(args, force_relogin=False):
       into the next request header and surface as an unrelated type error. Failing here also
       keeps a wrong password from being replayed, which would drive the account towards the
       appliance's lockout threshold.
+    - An accepted login whose `accountstate` marks the password as expired, initial or due for
+      a change also aborts the caller, as does one that still waits for a one-time password.
+      Such a session is only good for changing the password, so every later request would fail
+      with an unrelated API error instead of naming the actual cause.
+    - The session is deliberately never deleted. Because the token is cached and reused across
+      runs, a logout at the end of a run would force a login on every single run and multiply
+      the login rate the appliance sees. The one session that `force_relogin` replaces lingers
+      until the appliance's own session timeout expires it.
 
     ### Example
     >>> ibasetoken, cookie = get_creds(args)
     """
-    token_key = f'huawei-{args.DEVICE_ID}-ibasetoken'
-    cookie_key = f'huawei-{args.DEVICE_ID}-cookie'
+    token_key = f'huawei-{args.URL}-{args.DEVICE_ID}-{args.USERNAME}-ibasetoken'
+    cookie_key = f'huawei-{args.URL}-{args.DEVICE_ID}-{args.USERNAME}-cookie'
 
     if not force_relogin:
         ibasetoken = cache.get(token_key)
@@ -219,21 +278,79 @@ def get_creds(args, force_relogin=False):
     )
 
     response_json = result.get('response_json', {})
-    ibasetoken = response_json.get('data', {}).get('iBaseToken')
+    session_data = response_json.get('data', {})
+    ibasetoken = session_data.get('iBaseToken')
     # lib.url lower-cases all response header names (RFC 9110, section 5.1).
     cookie = result.get('response_header', {}).get('set-cookie')
 
     if not ibasetoken or not cookie:
         error = response_json.get('error', {})
-        reason = error.get('description') or 'no session token returned'
-        code = error.get('code', 'n/a')
-        base.cu(f'Login at {args.URL} failed: {reason} (code {code}).')
+        base.cu(
+            f'Login at {args.URL} failed: '
+            f'{error.get("description") or "no session token returned"} '
+            f'(code {error.get("code", "n/a")}).'
+        )
+
+    accountstate = _as_code(session_data.get('accountstate'))
+    if accountstate in _UNUSABLE_ACCOUNT_STATES:
+        base.cu(
+            f'Login at {args.URL} succeeded, but the account cannot query anything: '
+            f'{get_account_state(accountstate)}.'
+        )
 
     expire = time.now() + args.CACHE_EXPIRE * 60
     cache.set(token_key, ibasetoken, expire)
     cache.set(cookie_key, cookie, expire)
 
     return ibasetoken, cookie
+
+
+def _as_envelope(success, response):
+    """
+    Normalise whatever `url.fetch_json()` returned into the documented response envelope.
+
+    `get_data()` promises its caller a `{'error': {'code': ...}, 'data': ...}` document. Three
+    things can arrive instead: a transport failure (the message string), an HTTP error status
+    (the unparsed response body, because `url.fetch_json()` only decodes JSON on success), and
+    an appliance answering with something other than a JSON object. Wrapping all of them in the
+    envelope keeps a single bad response from turning into a type error inside the retry loop,
+    and lets the caller print the appliance's own error text.
+
+    ### Parameters
+    - **success** (`bool`): The first element of the `url.fetch_json()` result tuple.
+    - **response** (`any`): The second element of that tuple.
+
+    ### Returns
+    - **dict**: The response envelope, either as the appliance sent it or synthesised.
+
+    ### Example
+    >>> _as_envelope(True, {'error': {'code': 0}, 'data': []})
+    {'error': {'code': 0}, 'data': []}
+    >>> _as_envelope(False, 'URL error "timed out"')['error']['code']
+    'n/a'
+    """
+    if success and isinstance(response, dict):
+        return response
+
+    # An HTTP error status still carries the appliance's own JSON body, which names the
+    # actual cause (`-401` for a session it no longer accepts, for example). Only the
+    # status made `url.fetch_json()` skip the decode, so decode it here.
+    if not success and isinstance(response, str):
+        try:
+            parsed = json.loads(response)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict) and isinstance(parsed.get('error'), dict):
+            return parsed
+
+    return {
+        'error': {
+            'code': 'n/a',
+            # Bounded: the body of an error status can be a full HTML page, and this
+            # ends up in the check's plugin output.
+            'description': f'{response}'[:200],
+        },
+    }
 
 
 def get_data(endpoint, args, params=''):
@@ -269,10 +386,17 @@ def get_data(endpoint, args, params=''):
 
     ### Notes
     - Makes at most three attempts, forcing a fresh login before the second one, and waits one
-      second between attempts. The retry count is kept low on purpose so the total runtime stays
-      within the monitoring server's check timeout.
-    - The API reference documents no dedicated "session expired" status code, so a fresh login is
-      triggered on any non-zero error rather than by matching a specific code.
+      second between attempts. The retry count is kept low on purpose, so one call stays within
+      the monitoring server's check timeout: the worst case is three requests plus one login,
+      plus two seconds of waiting. This budget is per call. A caller that chains several calls
+      has to size its own timeout for the sum.
+    - A rejected request is retried instead of aborting the caller: a transport failure, an HTTP
+      error status and a response that is not the documented `{'error': {'code': ...}}` envelope
+      all count as a failed attempt and are handed back in that envelope. The caller therefore
+      always receives the documented return value and can report the appliance's own error text.
+    - The appliance answers a missing or no longer accepted `Cookie` and `iBaseToken` pair with
+      code `-401`. The fresh login is not tied to that code: it is triggered on any non-zero
+      error, so a firmware that reports an expired session differently still recovers.
 
     ### Example
     >>> get_data('disk/list', args)
@@ -300,16 +424,23 @@ def get_data(endpoint, args, params=''):
             'iBaseToken': ibasetoken,
             'Cookie': cookie,
         }
-        result = base.coe(
-            url.fetch_json(
+        # `response_on_error` keeps the appliance's own error body readable when it
+        # answers with a 4xx/5xx status. Without it the body is dropped in favour of
+        # the status line, and the request would abort the check on the spot instead
+        # of becoming a failed attempt the forced re-login can still recover from.
+        result = _as_envelope(
+            *url.fetch_json(
                 uri,
                 header=header,
                 insecure=args.INSECURE,
                 no_proxy=args.NO_PROXY,
+                response_on_error=True,
                 timeout=args.TIMEOUT,
             )
         )
-        if result.get('error', {}).get('code') in (0, '0'):
+        error = result.get('error')
+        code = error.get('code') if isinstance(error, dict) else error
+        if code in (0, '0'):
             break
         if attempt < max_attempts:
             _sleep(1)
