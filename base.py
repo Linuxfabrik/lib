@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026071201'
+__version__ = '2026080601'
 
 import html
 import numbers
@@ -916,3 +916,31 @@ def sum_lod(mylist):
                 total[key] = total.get(key, 0) + value
 
     return total
+
+
+def verbose(enabled, msg):
+    """
+    Print a progress message, but only when verbose output is switched on.
+
+    Long-running consumers (a scan over a subnet, an external tool that runs for
+    minutes) otherwise give no sign of life while they work. Guarding every such message
+    with an `if` at the call site is what this replaces, so the condition and the
+    destination are decided in one place.
+
+    Output goes to STDOUT, never to STDERR, because the monitoring protocol only
+    captures STDOUT. The message therefore becomes part of the check result and is meant
+    for interactive debugging, not for a scheduled run.
+
+    ### Parameters
+    - **enabled** (`bool`): Whether verbose output is switched on. Pass the value of the
+      consumer's own verbose switch.
+    - **msg** (`str`): The message to print.
+
+    ### Returns
+    - **None**
+
+    ### Example
+    >>> verbose(args.VERBOSE, f'Scanning {url}...')
+    """
+    if enabled:
+        print(msg)

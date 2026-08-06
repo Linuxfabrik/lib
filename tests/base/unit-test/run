@@ -635,5 +635,35 @@ class TestSumLod(unittest.TestCase):
         self.assertEqual(base.sum_lod([{'a': True}, {'a': 1}]), {'a': 2})
 
 
+class TestVerbose(unittest.TestCase):
+    def _capture(self, enabled, msg):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            base.verbose(enabled, msg)
+        return out.getvalue()
+
+    def test_enabled_prints(self):
+        self.assertEqual(self._capture(True, 'scanning'), 'scanning\n')
+
+    def test_disabled_stays_silent(self):
+        self.assertEqual(self._capture(False, 'scanning'), '')
+
+    # The switch is whatever the consumer passes, so anything falsy has to stay silent
+    # and anything truthy has to print.
+    def test_falsy_switch_stays_silent(self):
+        self.assertEqual(self._capture(None, 'scanning'), '')
+
+    def test_truthy_switch_prints(self):
+        self.assertEqual(self._capture(1, 'scanning'), 'scanning\n')
+
+    # Verbose output must never go to STDERR: the monitoring protocol only captures
+    # STDOUT, so a message written there would be lost.
+    def test_writes_nothing_to_stderr(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            base.verbose(True, 'scanning')
+        self.assertEqual(err.getvalue(), '')
+
+
 if __name__ == '__main__':
     unittest.main()
