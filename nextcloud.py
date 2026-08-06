@@ -11,7 +11,7 @@
 """This library collects some Nextcloud related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061201'
+__version__ = '2026080601'
 
 import json
 import os
@@ -21,15 +21,19 @@ import shutil
 from . import disk, shell
 
 
-def run_occ(path, cmd, _format='json'):
+def run_occ(path, cmd, _format='json', timeout=None):
     """
     Run a Nextcloud `occ` command as the owner of `config/config.php`.
 
     The function locates the PHP interpreter on the system and invokes `occ` explicitly as
-    `php <occ> <cmd>`, running via `sudo -u` under the numeric UID that owns
-    `config/config.php`. Calling PHP directly avoids relying on `occ` being marked executable
-    or on its shebang resolving to a working interpreter, which is not always the case on
-    hardened or SCL-based installations.
+    `php <occ> --no-warnings <cmd>`. Calling PHP directly avoids relying on `occ` being
+    marked executable or on its shebang resolving to a working interpreter, which is not
+    always the case on hardened or SCL-based installations.
+
+    Nextcloud's `console.php` aborts unless the calling process runs under the UID that
+    owns `config/config.php`. If the current process is not that owner, the command is
+    prefixed with `sudo -u '#<uid>'`; if it already is, `sudo` is skipped, so no sudoers
+    entry is needed and the call also works in containers that ship without `sudo`.
 
     ### Parameters
     - **path** *(str | os.PathLike)*:
@@ -38,28 +42,40 @@ def run_occ(path, cmd, _format='json'):
     - **cmd** *(str)*:
       The `occ` subcommand and arguments to execute (e.g., `"status"`, `"user:list --output=json"`).
     - **_format** *(str, optional)*:
-      Expected output format. Use `"json"` to parse `stdout` as JSON and return a Python object,
-      or any other value (e.g., `"text"`) to return the raw string output. Defaults to `"json"`.
+      Use `"json"` to parse `stdout` as JSON and return a Python object, or any other value
+      (e.g., `"text"`) to return the raw string output. Defaults to `"json"`.
+    - **timeout** *(int | float | None, optional)*:
+      Seconds to wait for `occ` before killing it. `None` (the default) waits indefinitely,
+      which is what long-running commands such as `app:update` need.
 
     ### Returns
     - **tuple[bool, Any]**:
       - On success: `(True, result)` where `result` is a Python object if `_format == "json"`,
         otherwise a trimmed `str` of `stdout`.
-      - On failure: `(False, error)` where `error` is the captured `stderr` text or an error
-        message.
+      - On failure: `(False, error)` where `error` is a message describing the failed
+        precondition, the failure reported by `shell.shell_exec()` (interpreter not found,
+        timeout), the captured output of a non-zero exit, or the JSON decode error.
 
     ### Notes
+    - `_format` only selects how the output is parsed. It does not add `--output=json` to the
+      command; the caller has to do that. Not every `occ` command accepts that option, and the
+      only valid values are `plain`, `json` and `json_pretty`. Some commands, `config:list`
+      among them, already emit JSON without the option.
     - PHP is resolved via `shutil.which('php')`. If no `php` binary is found in `PATH`, the
       call fails with a descriptive error.
-    - Requires passwordless or otherwise configured `sudo` permissions for `sudo -u <uid>` to
-      succeed.
-    - The command runs as the numeric UID of `config/config.php`’s owner, not by username.
-      On some systems, shells require escaping `#` in `sudo -u \\#<uid>`.
-    - If JSON parsing fails while `_format == "json"`, the function returns
-      `(False, "ValueError: No JSON object could be decoded")`.
+    - `--no-warnings` keeps Nextcloud's startup banners (missing PCNTL extension, environment
+      complaints, upgrade and maintenance notices) out of the output. `console.php` writes
+      several of them to stdout, where they would otherwise break JSON parsing. The option is
+      global and does not silence the command's own output.
+    - `occ` is run with the Nextcloud root as its working directory, which is where
+      `console.php` chdirs to anyway. Doing it up front avoids the complaint it emits when the
+      inherited working directory is unreadable.
+    - A few failure paths inside Nextcloud print an error and exit with code 0. In JSON mode
+      those are caught by the failing parse. In text mode they are indistinguishable from
+      regular output, and one of them is translated, so no attempt is made to detect them.
 
     ### Example
-    >>> ok, result = run_occ('/var/www/nextcloud', 'status', _format='json')
+    >>> ok, result = run_occ('/var/www/nextcloud', 'status --output=json')
     >>> ok
     True
     >>> isinstance(result, dict)
@@ -79,35 +95,44 @@ def run_occ(path, cmd, _format='json'):
         )
 
     # get the owner of config.php
-    user = disk.get_owner(os.path.join(path, 'config/config.php'))
-    occ = os.path.join(path, 'occ')
-    # Run occ as the numeric UID of the config.php owner. `sudo -u '#<uid>'` selects
-    # the user by UID; the `#` only needs escaping for a shell, which we do not use.
-    sudo_cmd = ['sudo', '-u', f'#{user}', php, occ, *shlex.split(cmd)]
+    config = os.path.join(path, 'config/config.php')
+    user = disk.get_owner(config)
+    if user == -1:
+        return False, (
+            f'Could not determine the owner of `{config}`. Make sure the path points to a '
+            'Nextcloud installation and that the file is readable.'
+        )
 
-    success, result = shell.shell_exec(sudo_cmd)
+    occ = os.path.join(path, 'occ')
+    # `--no-warnings` goes in front of the subcommand so it cannot be swallowed as the value
+    # of a preceding optional-value option. Symfony parses global options anywhere.
+    occ_cmd = [php, occ, '--no-warnings', *shlex.split(cmd)]
+
+    # Only switch users if we are not the owner already. `sudo -u '#<uid>'` selects the user
+    # by UID; the `#` only needs escaping for a shell, which we do not use. geteuid() is
+    # POSIX-only, so probe for it instead of testing the platform.
+    if not hasattr(os, 'geteuid') or os.geteuid() != user:
+        occ_cmd = ['sudo', '-u', f'#{user}', *occ_cmd]
+
+    success, result = shell.shell_exec(occ_cmd, cwd=path, timeout=timeout)
+    # shell_exec() reports its own failures (spawn error, timeout) as (False, <message>),
+    # so the result is only a triple once success is confirmed.
+    if not success:
+        return False, result
+
     stdout, stderr, rc = result
 
     # Prefer the return code to decide success/failure, not stderr presence
-    if not success or rc != 0:
-        cmd_display = ' '.join(sudo_cmd)
+    if rc != 0:
+        cmd_display = ' '.join(occ_cmd)
         return False, f'Error running `{cmd_display}`: rc={rc}\n{stderr or stdout}'
 
     # If we expect JSON, try to parse it; otherwise return text
     if str(_format).lower() == 'json':
         try:
-            # If bytes, decode first; json.loads also accepts bytes, but being explicit helps
-            data = json.loads(
-                stdout.decode() if isinstance(stdout, (bytes, bytearray)) else stdout
-            )
-            return True, data
+            return True, json.loads(stdout)
         except json.JSONDecodeError as e:
             # Fall back to text with a clear error
             return False, f'JSON decode error: {e}\nRaw stdout:\n{stdout}'
-    else:
-        text = (
-            stdout.decode().strip()
-            if isinstance(stdout, (bytes, bytearray))
-            else stdout.strip()
-        )
-        return True, text
+
+    return True, stdout.strip()

@@ -11,25 +11,29 @@
 """Unit tests for lib.nextcloud.
 
 The module exposes a single public function, `run_occ`, which shells out to
-Nextcloud's `occ` admin CLI as the owner of `config/config.php`. It has three
+Nextcloud's `occ` admin CLI as the owner of `config/config.php`. It has four
 external touch points, all of which are patched so the suite is fully
 hermetic (no PHP, no `occ`, no `sudo`, no filesystem stat, no subprocess):
 
 - `shutil.which('php')`  -> locate the PHP interpreter
-- `disk.get_owner(...)`  -> numeric UID / name owning config/config.php
+- `disk.get_owner(...)`  -> numeric UID owning config/config.php, -1 on failure
+- `os.geteuid()`         -> decide whether the sudo prefix is needed at all
 - `shell.shell_exec(...)` -> run the assembled `sudo ... php occ <cmd>` line
 
 We assert the full command-building contract (PHP lookup, owner lookup path,
-the exact `['sudo', '-u', '#<uid>', <php>, <occ>, *<cmd>]` argument list) and the full
-response-handling contract: JSON parsing (incl. bytes stdout and
-case-insensitive `_format`), raw-text mode (incl. stripping and bytes),
-the missing-PHP error, the return-code / success-flag failure path with its
-stderr-then-stdout fallback, and malformed / empty JSON handling.
+the exact `['sudo', '-u', '#<uid>', <php>, <occ>, '--no-warnings', *<cmd>]`
+argument list, the dropped sudo prefix when the process already runs as the
+owner, and the `cwd` / `timeout` handover) and the full response-handling
+contract: JSON parsing (incl. case-insensitive `_format`), raw-text mode,
+the missing-PHP and unknown-owner errors, both failure shapes `shell_exec`
+can return, the return-code path with its stderr-then-stdout fallback, and
+malformed / empty JSON handling.
 
 Captured-style `occ` payloads (`occ status`, `occ user:list --output=json`)
 live in fixtures and are fed through the JSON path end to end.
 """
 
+import contextlib
 import json
 import os
 import sys
@@ -46,6 +50,26 @@ FIXTURE_DIR = os.path.join(os.path.dirname(__file__), 'fixtures')
 NC_PATH = '/var/www/nextcloud'
 PHP_BIN = '/usr/bin/php'
 UID = 33  # typical www-data UID on Debian-family
+OTHER_UID = 1000  # the monitoring user, i.e. not the owner of config.php
+
+# The argument list that follows the (optional) sudo prefix.
+OCC_ARGV = [PHP_BIN, '/var/www/nextcloud/occ', '--no-warnings']
+
+
+@contextlib.contextmanager
+def without_geteuid():
+    """
+    Run the block on an `os` that has no `geteuid()`, as on Windows.
+
+    `run_occ` probes for the function instead of testing the platform, so this is the
+    only way to reach the "cannot tell who we are, always sudo" branch on Linux.
+    """
+    saved = os.geteuid
+    del os.geteuid
+    try:
+        yield
+    finally:
+        os.geteuid = saved
 
 
 def load_fixture_text(name):
@@ -59,33 +83,49 @@ def load_fixture(name):
     return json.loads(load_fixture_text(name))
 
 
-def patched(which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0))):
+def patched(which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0)), euid=OTHER_UID):
     """
-    Build the three patchers that isolate run_occ from the host.
+    Build the four patchers that isolate run_occ from the host.
 
     Returns a context-manager list to be entered via ExitStack, and the
     shell_exec mock so call assertions can be made. `which=None` simulates a
-    host without PHP. `shell_ret` is the (success, (stdout, stderr, rc)) tuple
-    that shell_exec returns.
+    host without PHP. `shell_ret` is what shell_exec returns, either
+    (True, (stdout, stderr, rc)) or (False, <message>). `euid` is the effective
+    UID of the calling process and defaults to something other than `owner`, so
+    the sudo prefix is on unless a test says otherwise.
     """
     which_p = mock.patch.object(nextcloud.shutil, 'which', return_value=which)
     owner_p = mock.patch.object(nextcloud.disk, 'get_owner', return_value=owner)
+    euid_p = mock.patch.object(nextcloud.os, 'geteuid', return_value=euid)
     shell_mock = mock.Mock(return_value=shell_ret)
     shell_p = mock.patch.object(nextcloud.shell, 'shell_exec', shell_mock)
-    return (which_p, owner_p, shell_p), shell_mock
+    return (which_p, owner_p, euid_p, shell_p), shell_mock
 
 
 class _Base(unittest.TestCase):
-    """Shared helper to run run_occ under the three patches."""
+    """Shared helper to run run_occ under the four patches."""
 
     def run_occ(
-        self, *args, which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0)), **kwargs
+        self,
+        *args,
+        which=PHP_BIN,
+        owner=UID,
+        shell_ret=(True, ('{}', '', 0)),
+        euid=OTHER_UID,
+        **kwargs,
     ):
-        (which_p, owner_p, shell_p), shell_mock = patched(which, owner, shell_ret)
-        with which_p, owner_p, shell_p:
+        (which_p, owner_p, euid_p, shell_p), shell_mock = patched(
+            which, owner, shell_ret, euid
+        )
+        with which_p, owner_p, euid_p, shell_p:
             result = nextcloud.run_occ(*args, **kwargs)
         self.shell_mock = shell_mock
         return result
+
+    def argv(self):
+        """Return the argument list handed to the last shell_exec call."""
+        (cmd,), _kwargs = self.shell_mock.call_args
+        return cmd
 
 
 # -----------------------------------------------------------------------------
@@ -143,6 +183,7 @@ class TestCommandConstruction(_Base):
         with (
             mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN),
             mock.patch.object(nextcloud.disk, 'get_owner', return_value=UID) as go,
+            mock.patch.object(nextcloud.os, 'geteuid', return_value=OTHER_UID),
             mock.patch.object(
                 nextcloud.shell, 'shell_exec', return_value=(True, ('{}', '', 0))
             ),
@@ -152,56 +193,117 @@ class TestCommandConstruction(_Base):
 
     def test_full_command_list(self):
         self.run_occ(NC_PATH, 'status')
-        (cmd,), _ = self.shell_mock.call_args
-        self.assertEqual(
-            cmd,
-            ['sudo', '-u', '#33', '/usr/bin/php', '/var/www/nextcloud/occ', 'status'],
-        )
+        self.assertEqual(self.argv(), ['sudo', '-u', '#33', *OCC_ARGV, 'status'])
 
     def test_command_uses_sudo_u_with_uid(self):
         self.run_occ(NC_PATH, 'status')
-        (cmd,), _ = self.shell_mock.call_args
-        self.assertEqual(cmd[:3], ['sudo', '-u', '#33'])
+        self.assertEqual(self.argv()[:3], ['sudo', '-u', '#33'])
 
     def test_command_uses_resolved_php_path(self):
         self.run_occ(NC_PATH, 'status', which='/opt/php8/bin/php')
-        (cmd,), _ = self.shell_mock.call_args
-        self.assertIn('/opt/php8/bin/php', cmd)
+        self.assertIn('/opt/php8/bin/php', self.argv())
 
     def test_command_points_at_occ_in_path(self):
         self.run_occ('/srv/nc', 'status')
-        (cmd,), _ = self.shell_mock.call_args
-        self.assertIn('/srv/nc/occ', cmd)
+        self.assertIn('/srv/nc/occ', self.argv())
 
     def test_subcommand_with_args_passed_verbatim(self):
         self.run_occ(NC_PATH, 'user:list --output=json')
-        (cmd,), _ = self.shell_mock.call_args
+        self.assertEqual(self.argv()[-2:], ['user:list', '--output=json'])
+
+    def test_no_warnings_is_injected(self):
+        # Keeps Nextcloud's startup banners out of stdout, where they would break
+        # the JSON parse.
+        self.run_occ(NC_PATH, 'status')
+        self.assertIn('--no-warnings', self.argv())
+
+    def test_no_warnings_precedes_the_subcommand(self):
+        # An optional-value option in front of it would otherwise swallow it as its
+        # value; Symfony accepts global options anywhere.
+        self.run_occ(NC_PATH, 'user:list --output json')
+        argv = self.argv()
+        self.assertLess(argv.index('--no-warnings'), argv.index('user:list'))
+
+    def test_no_warnings_follows_the_occ_path(self):
+        self.run_occ(NC_PATH, 'status')
+        argv = self.argv()
         self.assertEqual(
-            cmd[-3:],
-            ['/var/www/nextcloud/occ', 'user:list', '--output=json'],
+            argv[argv.index('--no-warnings') - 1], '/var/www/nextcloud/occ'
         )
 
-    def test_owner_as_username(self):
-        # get_owner may return a name rather than a numeric UID.
-        self.run_occ(NC_PATH, 'status', owner='www-data')
-        (cmd,), _ = self.shell_mock.call_args
-        self.assertEqual(
-            cmd,
-            [
-                'sudo',
-                '-u',
-                '#www-data',
-                '/usr/bin/php',
-                '/var/www/nextcloud/occ',
-                'status',
-            ],
-        )
+    def test_sudo_dropped_when_already_the_owner(self):
+        # No sudoers entry needed, and it works in containers that ship without sudo.
+        self.run_occ(NC_PATH, 'status', owner=UID, euid=UID)
+        self.assertEqual(self.argv(), [*OCC_ARGV, 'status'])
 
-    def test_shell_exec_called_once_positionally(self):
+    def test_sudo_used_when_not_the_owner(self):
+        self.run_occ(NC_PATH, 'status', owner=UID, euid=OTHER_UID)
+        self.assertEqual(self.argv()[0], 'sudo')
+
+    def test_sudo_used_when_geteuid_is_unavailable(self):
+        # On a platform without geteuid() we cannot tell, so keep the prefix. Patched
+        # by hand because the shared helper would try to patch the absent function.
+        shell_mock = mock.Mock(return_value=(True, ('{}', '', 0)))
+        with (
+            without_geteuid(),
+            mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN),
+            mock.patch.object(nextcloud.disk, 'get_owner', return_value=UID),
+            mock.patch.object(nextcloud.shell, 'shell_exec', shell_mock),
+        ):
+            nextcloud.run_occ(NC_PATH, 'status')
+        (cmd,), _kwargs = shell_mock.call_args
+        self.assertEqual(cmd[:3], ['sudo', '-u', '#33'])
+
+    def test_root_still_sudoes_down_to_the_owner(self):
+        self.run_occ(NC_PATH, 'status', owner=UID, euid=0)
+        self.assertEqual(self.argv()[:3], ['sudo', '-u', '#33'])
+
+    def test_cwd_is_the_nextcloud_root(self):
+        # console.php chdirs there itself; doing it up front avoids its complaint
+        # about an unreadable inherited working directory.
+        self.run_occ(NC_PATH, 'status')
+        _args, kwargs = self.shell_mock.call_args
+        self.assertEqual(kwargs['cwd'], NC_PATH)
+
+    def test_timeout_defaults_to_none(self):
+        self.run_occ(NC_PATH, 'status')
+        _args, kwargs = self.shell_mock.call_args
+        self.assertIsNone(kwargs['timeout'])
+
+    def test_timeout_is_handed_over(self):
+        self.run_occ(NC_PATH, 'status', timeout=7)
+        _args, kwargs = self.shell_mock.call_args
+        self.assertEqual(kwargs['timeout'], 7)
+
+    def test_shell_exec_gets_the_argv_positionally(self):
         self.run_occ(NC_PATH, 'status')
         self.shell_mock.assert_called_once()
-        _, kwargs = self.shell_mock.call_args
-        self.assertEqual(kwargs, {})
+        args, kwargs = self.shell_mock.call_args
+        self.assertEqual(len(args), 1)
+        self.assertIsInstance(args[0], list)
+        self.assertEqual(set(kwargs), {'cwd', 'timeout'})
+
+
+# -----------------------------------------------------------------------------
+# Unresolvable config.php owner
+# -----------------------------------------------------------------------------
+
+
+class TestUnknownOwner(_Base):
+    """disk.get_owner() returns -1 when config.php is missing or unreadable."""
+
+    def test_returns_false(self):
+        ok, _ = self.run_occ(NC_PATH, 'status', owner=-1)
+        self.assertFalse(ok)
+
+    def test_message_names_the_file(self):
+        _ok, msg = self.run_occ(NC_PATH, 'status', owner=-1)
+        self.assertIn('/var/www/nextcloud/config/config.php', msg)
+
+    def test_occ_is_not_executed(self):
+        # Without a UID there is nothing sensible to pass to sudo -u.
+        self.run_occ(NC_PATH, 'status', owner=-1)
+        self.shell_mock.assert_not_called()
 
 
 # -----------------------------------------------------------------------------
@@ -245,19 +347,16 @@ class TestJsonResponse(_Base):
         self.assertTrue(ok)
         self.assertEqual(data, {'a': 1})
 
-    def test_bytes_stdout_decoded_and_parsed(self):
+    def test_parses_bare_scalar(self):
+        # `occ config:app:get --output=json` emits a bare JSON string; consumers
+        # rely on getting a str back.
         ok, data = self.run_occ(
-            NC_PATH, 'status', shell_ret=(True, (b'{"a": 1}', '', 0))
+            NC_PATH,
+            'config:app:get --output=json support subscription_key',
+            shell_ret=(True, ('"linuxfabrik"', '', 0)),
         )
         self.assertTrue(ok)
-        self.assertEqual(data, {'a': 1})
-
-    def test_bytearray_stdout_decoded_and_parsed(self):
-        ok, data = self.run_occ(
-            NC_PATH, 'status', shell_ret=(True, (bytearray(b'{"a": 1}'), '', 0))
-        )
-        self.assertTrue(ok)
-        self.assertEqual(data, {'a': 1})
+        self.assertEqual(data, 'linuxfabrik')
 
     def test_format_json_is_case_insensitive(self):
         ok, data = self.run_occ(
@@ -336,23 +435,6 @@ class TestTextResponse(_Base):
         self.assertTrue(ok)
         self.assertEqual(text, 'hello')
 
-    def test_bytes_text_decoded_and_stripped(self):
-        ok, text = self.run_occ(
-            NC_PATH, 'status', _format='text', shell_ret=(True, (b'  hi \n', '', 0))
-        )
-        self.assertTrue(ok)
-        self.assertEqual(text, 'hi')
-
-    def test_bytearray_text_decoded_and_stripped(self):
-        ok, text = self.run_occ(
-            NC_PATH,
-            'status',
-            _format='text',
-            shell_ret=(True, (bytearray(b' x '), '', 0)),
-        )
-        self.assertTrue(ok)
-        self.assertEqual(text, 'x')
-
     def test_text_does_not_parse_json(self):
         # In text mode JSON-looking output stays a raw string.
         ok, text = self.run_occ(
@@ -384,7 +466,9 @@ class TestFailurePath(_Base):
 
     def test_failure_message_contains_command(self):
         _ok, msg = self.run_occ(NC_PATH, 'status', shell_ret=(True, ('', 'boom', 1)))
-        self.assertIn('sudo -u #33 /usr/bin/php /var/www/nextcloud/occ status', msg)
+        self.assertIn(
+            'sudo -u #33 /usr/bin/php /var/www/nextcloud/occ --no-warnings status', msg
+        )
 
     def test_failure_message_contains_rc(self):
         _ok, msg = self.run_occ(NC_PATH, 'status', shell_ret=(True, ('', 'boom', 7)))
@@ -405,18 +489,6 @@ class TestFailurePath(_Base):
         self.assertIn('the stdout', msg)
         self.assertIn('rc=5', msg)
 
-    def test_success_flag_false_is_failure(self):
-        # shell_exec itself failing (success=False) is a failure even at rc 0.
-        ok, msg = self.run_occ(
-            NC_PATH, 'status', shell_ret=(False, ('', 'exec failed', 0))
-        )
-        self.assertFalse(ok)
-        self.assertIn('exec failed', msg)
-
-    def test_success_flag_false_with_rc_zero_still_fails(self):
-        ok, _ = self.run_occ(NC_PATH, 'status', shell_ret=(False, ('out', '', 0)))
-        self.assertFalse(ok)
-
     def test_failure_short_circuits_before_json_parse(self):
         # Valid JSON in stdout must not turn an rc!=0 run into a success.
         ok, msg = self.run_occ(
@@ -424,6 +496,47 @@ class TestFailurePath(_Base):
         )
         self.assertFalse(ok)
         self.assertIn('err', msg)
+
+
+# -----------------------------------------------------------------------------
+# shell_exec reporting its own failure
+# -----------------------------------------------------------------------------
+
+
+class TestShellExecFailure(_Base):
+    """
+    shell_exec() signals its own failures as (False, <message string>), not as a
+    triple. run_occ has to hand that through instead of trying to unpack it.
+    """
+
+    def test_timeout_returns_false(self):
+        ok, _ = self.run_occ(
+            NC_PATH, 'status', shell_ret=(False, 'Timeout after 5 seconds.')
+        )
+        self.assertFalse(ok)
+
+    def test_timeout_message_passed_through(self):
+        _ok, msg = self.run_occ(
+            NC_PATH, 'status', shell_ret=(False, 'Timeout after 5 seconds.')
+        )
+        self.assertEqual(msg, 'Timeout after 5 seconds.')
+
+    def test_spawn_error_passed_through(self):
+        # What shell_exec reports when Popen() raises, e.g. sudo not installed.
+        raw = 'Error "[Errno 2] No such file or directory: \'sudo\'" while calling command'
+        ok, msg = self.run_occ(NC_PATH, 'status', shell_ret=(False, raw))
+        self.assertFalse(ok)
+        self.assertEqual(msg, raw)
+
+    def test_text_format_also_reports_the_failure(self):
+        ok, msg = self.run_occ(
+            NC_PATH,
+            'app:update --showonly',
+            _format='text',
+            shell_ret=(False, 'Timeout after 5 seconds.'),
+        )
+        self.assertFalse(ok)
+        self.assertEqual(msg, 'Timeout after 5 seconds.')
 
 
 # -----------------------------------------------------------------------------
@@ -443,13 +556,6 @@ class TestCapturedPayloads(_Base):
         self.assertIs(data['installed'], True)
         self.assertIs(data['maintenance'], False)
         self.assertEqual(data['versionstring'], '29.0.4')
-
-    def test_occ_status_payload_as_bytes(self):
-        raw = load_fixture_text('status.json').encode('utf-8')
-        expected = load_fixture('status.json')
-        ok, data = self.run_occ(NC_PATH, 'status', shell_ret=(True, (raw, '', 0)))
-        self.assertTrue(ok)
-        self.assertEqual(data, expected)
 
     def test_occ_user_list_payload(self):
         raw = load_fixture_text('user-list.json')

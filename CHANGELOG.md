@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_dorado.py: `get_account_state()` translates the password status the appliance reports at login into readable text.
 * huawei_dorado.py: `get_dr_star_running_status()` and `get_hypermetro_domain_running_status()` translate the running status of DR Star trios and HyperMetro domains, which the appliance numbers differently from every other object.
 * huawei_pacific.py: `get_password_status()` translates the password status the appliance reports at login into readable text.
+* nextcloud.py: `run_occ()` accepts a `timeout`, so a hanging `occ` no longer keeps a check running forever.
 
 ### Changed
 
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_dorado.py: `get_data()` no longer takes URL parameters in a separate argument. They go on the endpoint, which is what every consumer already did. **Breaking:** consumers passing `params` must append it to the endpoint instead.
 * huawei_dorado.py: `get_logic_type()` is now `get_enclosure_logic_type()` and `get_role()` is now `get_controller_role()`. Both only ever translated the codes of one object type, and the appliance numbers the same fields differently on ports, disks and HyperMetro domains. **Breaking:** consumers must rename their calls.
 * huawei_dorado.py: A component being rebuilt is reported as "Rebuilding", the word V700 appliances use for it, instead of the older firmware's "Reconstruction".
+* nextcloud.py: `occ` is called without `sudo` when the check already runs as the owner of `config/config.php`. No sudoers entry is needed in that case, and the checks work inside the official Nextcloud container, which ships without `sudo`.
 
 ### Removed
 
@@ -90,6 +92,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_pacific.py: Checks running under different accounts against the same appliance no longer share one session, which made them query the appliance with the wrong user's privileges.
 * huawei_pacific.py: Events are listed with a readable status instead of "Unknown". Only alarms carry a recovery state, so every single event used to be rendered as if its status could not be read.
 * huawei_pacific.py: Minor alarms are reported with their severity instead of as "Unknown".
+* nextcloud.py: A missing or unreadable `config/config.php` is reported with the path, instead of the check trying to run `occ` as a user that does not exist.
+* nextcloud.py: An `occ` call that cannot be started at all, most commonly because `sudo` is not installed, is reported as an error. It used to end the check with a traceback.
+* nextcloud.py: Nextcloud's own startup warnings, which it writes to standard output, are kept out of the evaluated result. A host missing the PHP process control extension used to fail every Nextcloud check with an unreadable parsing error.
 
 ### Security
 
