@@ -13,12 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
 * distro.py: Clear Linux, CoreOS, Flatcar, Mandriva, OpenWrt, Slackware, SUSE, UnionTech and the Debian derivatives Cumulus Linux, Deepin, Devuan, Kali, Linux Mint, Parrot, SteamOS and Uos are recognised. Anything else still unknown is now identified from `/etc/os-release` instead of being reported as plain "Linux".
 * huawei_dorado.py: `get_account_state()` translates the password status the appliance reports at login into readable text.
-* huawei_pacific.py: `get_data()` takes URL parameters in a separate argument, the way the Dorado library already does.
 * huawei_pacific.py: `get_password_status()` translates the password status the appliance reports at login into readable text.
 
 ### Changed
 
 * distro.py: `distribution_release` holds the release name of the distribution (`Plow`, `noble`, `bookworm`), the same as the Ansible fact of the same name. It used to hold the running kernel release. Anything reading that field needs to be checked.
+* huawei_dorado.py, huawei_pacific.py: `--cache-expire 0` switches session caching off. It used to store a session that expired about a second later, which is neither caching nor not caching.
+* huawei_dorado.py, huawei_pacific.py: session tokens are kept in the library's own cache file instead of the one every plugin on the host shares, so parallel checks no longer wait on each other's cache writes. The first run after the update logs in once to fill the new file.
+* huawei_dorado.py, huawei_pacific.py: `get_data()` returns the appliance's response as it is. It used to add a `counter` field holding the number of attempts, which would overwrite an API field of that name.
+* huawei_dorado.py: `get_data()` no longer takes URL parameters in a separate argument. They go on the endpoint, which is what every consumer already did. **Breaking:** consumers passing `params` must append it to the endpoint instead.
+* huawei_dorado.py: `get_logic_type()` is now `get_enclosure_logic_type()` and `get_role()` is now `get_controller_role()`. Both only ever translated the codes of one object type, and the appliance numbers the same fields differently on ports, disks and HyperMetro domains. **Breaking:** consumers must rename their calls.
 
 ### Fixed
 
@@ -50,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * distro.py: SLES 11 and older, which ship no `/etc/os-release`, report their version instead of "NA".
 * distro.py: The release name is reported on AlmaLinux, Kali, Kylin, openEuler, Parrot and TencentOS. It used to be missing, and on TencentOS it was taken from the CentOS release file the distribution also ships.
 * distro.py: The OS family of Alpine, Amazon Linux and the whole SUSE family is correct. All three were reported as Debian, so checks branching on the OS family ran the Debian code path on them.
+* huawei_dorado.py: A HyperMetro pair in the faulty state is named on V700 appliances, which use a different word for it than the older firmware.
+* huawei_dorado.py: A component whose rollback failed is reported as such. It used to be labelled "faulty restoration", which reads as a recovery in progress and hides that something went wrong.
+* huawei_dorado.py: A host that has lost path redundancy is named the way the appliance documents it for hosts, not the way it documents the same code for disks.
+* huawei_dorado.py: A host that never reported its operating system is named as such instead of as "Unknown".
 * huawei_dorado.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
 * huawei_dorado.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
 * huawei_dorado.py: An appliance answering with an HTTP error, a load balancer in front of it answering for it, or a connection that fails no longer ends the check on the spot. The check retries, logs in again if needed, and reports the appliance's own error text rather than a bare status code.
@@ -58,7 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_dorado.py: Checks no longer abort with a traceback when the appliance omits a status field, and an unexpected API response is reported instead of ending in a traceback.
 * huawei_dorado.py: Checks running under different accounts against the same appliance no longer share one session, which made them query the appliance with the wrong user's privileges.
 * huawei_dorado.py: Controller boards, enclosures, interface modules, appliance models and health and running states introduced with V700 are named instead of shown as "Unknown".
-* huawei_pacific.py: A cluster node the appliance reports without a management IP address is now flagged. Until now such a node was skipped without notice, so a fan or power supply failing on it stayed invisible and the check still reported OK.
+* huawei_pacific.py: A cluster node the appliance reports without a management IP address is now flagged, unless it is not (yet) part of the cluster. Until now such a node was skipped without notice, so a fan or power supply failing on it stayed invisible and the check still reported OK.
+* huawei_pacific.py: A cluster with more nodes than the appliance returns in one response is detected, instead of the check quietly covering only the nodes it was told about and still reporting OK.
+* huawei_pacific.py: A node whose OAM client is not monitored is reported as such instead of as "--".
 * huawei_pacific.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
 * huawei_pacific.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
 * huawei_pacific.py: An appliance answering with an HTTP error, a load balancer in front of it answering for it, or a connection that fails no longer ends the check on the spot. The check retries, logs in again if needed, and reports the appliance's own error text rather than a bare status code.

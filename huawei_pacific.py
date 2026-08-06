@@ -14,12 +14,17 @@ string- and integer-valued status fields).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080502'
+__version__ = '2026080601'
 
 import json
 from time import sleep as _sleep
 
 from . import base, cache, time, url
+
+# Own cache file, following `lib.redfish`. The shared default file is written by every
+# plugin on the host, and `lib.cache` sweeps expired rows on the read path, so a session
+# token that is read on every single check would sit in the middle of that lock traffic.
+CACHE_FILENAME = 'linuxfabrik-monitoring-plugins-huawei-pacific.db'
 
 
 def _as_code(value):
@@ -63,6 +68,12 @@ def get_alarm_severity(sev):
       A human-readable description including the original code in brackets.
       Returns `'Unknown'` if the code is not recognized.
 
+    ### Notes
+    - Scoped to the `/api/v2/` alarm and event endpoints. The older
+      `/dsware/service/${version}/alarm/list` endpoint numbers its `level` field the other way
+      round (`1` critical, `2` major, `3` minor, `4` warning), where this mapping would render
+      a critical alarm as `'Unknown'` and a major one as `'Information (2)'`.
+
     ### Example
     >>> get_alarm_severity(6)
     'Critical (6)'
@@ -91,6 +102,10 @@ def get_alarm_status(st):
       A human-readable description including the original code in brackets.
       Returns `'Unknown'` if the code is not recognized.
 
+    ### Notes
+    - Scoped to the field named `alarmStatus`. The `status` field of `fms/alarms` shares the
+      codes `1` and `2` but words them as uncleared and cleared, and never reports `4`.
+
     ### Example
     >>> get_alarm_status(1)
     'Unrecovered (1)'
@@ -103,10 +118,18 @@ def get_alarm_status(st):
     return mapping.get(_as_code(st), 'Unknown')
 
 
-# Password states in which a login succeeds but the resulting session cannot query
-# anything: the appliance then only accepts the password endpoints. The states left out
-# are the ones a session survives: normal, and about to expire.
-_UNUSABLE_PASSWORD_STATES = frozenset({3, 4, 6})
+# Password states that make a login pointless to continue from. Only an expired password
+# qualifies: the account is out of its validity period, so the session it hands out cannot
+# be relied on for anything.
+#
+# Kept deliberately narrow. Neither REST Interface Reference states which password states
+# restrict a session, so every entry here is an assumption about the appliance rather than
+# a documented rule. States 4 (initial password) and 6 (must be changed at the next login)
+# used to abort as well, which took every check on a freshly deployed appliance to UNKNOWN
+# before anyone had logged in to set a password. They now run: if the appliance really does
+# refuse their requests, `get_data()` reports its error text, which names the cause better
+# than a guess made here.
+_UNUSABLE_PASSWORD_STATES = frozenset({3})
 
 
 def get_creds(args, force_relogin=False):
@@ -139,10 +162,12 @@ def get_creds(args, force_relogin=False):
       The `x_auth_token` session token.
 
     ### Notes
-    - The token is stored in the cache key `huaweipacific-{URL}-{USERNAME}-xauthtoken`.
-      The user name is part of the key because a session carries that user's role: without it
-      a check running as a different account would silently reuse the first account's session
-      and query the appliance with the wrong privileges.
+    - The token is stored in the cache key `huaweipacific-{URL}-{USERNAME}-xauthtoken`, in the
+      module's own cache file. The user name is part of the key because a session carries that
+      user's role: without it a check running as a different account would silently reuse the
+      first account's session and query the appliance with the wrong privileges.
+    - A `CACHE_EXPIRE` of `0` turns caching off, rather than writing an entry that expires a
+      moment later. Every call then logs in, which is what an operator asks for by setting it.
     - The password is sent as plaintext over HTTPS (`isEncrypt` is `False`); the token is returned
       in the response body, not in a response header.
     - A rejected login aborts the caller (UNKNOWN) instead of returning an empty token.
@@ -151,14 +176,15 @@ def get_creds(args, force_relogin=False):
       into the next request header and surface as an unrelated type error. Failing here also
       keeps a wrong password from being replayed, which would drive the account towards the
       appliance's lockout threshold.
-    - An accepted login whose `password_status` marks the password as expired, initial or due
-      for a change also aborts the caller. Such a session is only good for changing the
-      password, so every later request would fail with an unrelated API error instead of naming
-      the actual cause.
-    - The login response also carries an `x_csrf_token`. The `/api/v2/` endpoints used here
-      authenticate on `X-Auth-Token` alone, so it is not sent. Endpoints below the
-      `/deviceManager/rest/{system_esn}/` prefix additionally require the CSRF token as a
-      request header and would have to pick it up from the login response.
+    - An accepted login whose `password_status` marks the password as expired aborts the
+      caller: the account is past its validity period, so nothing useful follows. Which
+      password states actually restrict a session is not documented, so no other state is
+      treated as fatal; see `_UNUSABLE_PASSWORD_STATES`.
+    - The login response also carries an `x_csrf_token`, which is not sent. The mandatory
+      request-header table lists `X-Auth-Token` alone, and every `/api/v2/` example in the
+      vendor's documentation authenticates with that header only. The prose does mention the
+      CSRF token, but without saying which endpoints require it, so a firmware that starts
+      demanding it would have to pick the token up from the login response here.
     - The session is deliberately never deleted. Because the token is cached and reused across
       runs, a logout at the end of a run would force a login on every single run and multiply
       the login rate the appliance sees. The one session that `force_relogin` replaces lingers
@@ -168,9 +194,10 @@ def get_creds(args, force_relogin=False):
     >>> x_auth_token = get_creds(args)
     """
     token_key = f'huaweipacific-{args.URL}-{args.USERNAME}-xauthtoken'
+    caching = args.CACHE_EXPIRE > 0
 
-    if not force_relogin:
-        x_auth_token = cache.get(token_key)
+    if caching and not force_relogin:
+        x_auth_token = cache.get(token_key, filename=CACHE_FILENAME)
         if x_auth_token:
             return x_auth_token
 
@@ -194,11 +221,19 @@ def get_creds(args, force_relogin=False):
         )
     )
 
-    session_data = result.get('data', {})
-    x_auth_token = session_data.get('x_auth_token')
+    if not isinstance(result, dict):
+        base.cu(
+            f'Login at {args.URL} returned {type(result).__name__} instead of the documented '
+            'response object.'
+        )
+
+    session_data = result.get('data') or {}
+    x_auth_token = (
+        session_data.get('x_auth_token') if isinstance(session_data, dict) else None
+    )
 
     if not x_auth_token:
-        res = result.get('result', {})
+        res = result.get('result') or {}
         reason = res.get('description') or 'no session token returned'
         code = res.get('code', 'n/a')
         base.cu(f'Login at {args.URL} failed: {reason} (code {code}).')
@@ -206,12 +241,13 @@ def get_creds(args, force_relogin=False):
     password_status = _as_code(session_data.get('password_status'))
     if password_status in _UNUSABLE_PASSWORD_STATES:
         base.cu(
-            f'Login at {args.URL} succeeded, but the account cannot query anything: '
+            f'Login at {args.URL} succeeded, but the account is unusable: '
             f'{get_password_status(password_status)}.'
         )
 
-    expire = time.now() + args.CACHE_EXPIRE * 60
-    cache.set(token_key, x_auth_token, expire)
+    if caching:
+        expire = time.now() + args.CACHE_EXPIRE * 60
+        cache.set(token_key, x_auth_token, expire, filename=CACHE_FILENAME)
 
     return x_auth_token
 
@@ -264,7 +300,7 @@ def _as_envelope(success, response):
     }
 
 
-def get_data(endpoint, args, payload=None, method=None, params=''):
+def get_data(endpoint, args, payload=None, method=None):
     """
     Fetch data from a Huawei OceanStor Pacific endpoint, re-authenticating on a stale session.
 
@@ -280,24 +316,24 @@ def get_data(endpoint, args, payload=None, method=None, params=''):
 
     ### Parameters
     - **endpoint** (`str`):
-      The API endpoint after `/api/v2/` (for example `hwm/fan`).
+      The API endpoint after `/api/v2/` (for example `hwm/fan`), including the query string if
+      the endpoint takes one. The string is appended to the request URL verbatim, so the caller
+      is responsible for percent-encoding it; never build it from data the appliance itself
+      returned. Note that the API knows two incompatible query syntaxes: the general one is
+      `?range={"offset":0,"limit":100}`, while the alarm and event endpoints expect
+      `?range=[0-100]&filter=alarmStatus::1`.
     - **args** (object):
       An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT` (plus the credentials read
       by `get_creds()`).
     - **payload** (`dict`, optional):
       Request body. A truthy body turns the request into a `POST`; otherwise it is a `GET`.
     - **method** (`str`, optional):
-      Force the HTTP method regardless of the body, for endpoints that require a bodyless `POST`.
-    - **params** (`str`, optional):
-      Additional URL parameters (starting with `?`, if any). Default is empty. The string is
-      appended to the request URL verbatim, so the caller is responsible for percent-encoding
-      it; never build it from data the appliance itself returned. Appending the query string to
-      `endpoint` instead has the same effect and the same caveat.
+      Force the HTTP method regardless of the body, for endpoints that require a bodyless `POST`
+      or a `GET` that carries one.
 
     ### Returns
     - **dict**:
-      The parsed JSON response from the API, plus an extra `counter` key showing how many attempts
-      were made.
+      The parsed JSON response from the API.
 
     ### Notes
     - Success is indicated by `result.code == 0` in the response envelope.
@@ -311,26 +347,24 @@ def get_data(endpoint, args, payload=None, method=None, params=''):
       error status and a response that is not the documented `{'result': {'code': ...}}` envelope
       all count as a failed attempt and are handed back in that envelope. The caller therefore
       always receives the documented return value and can report the appliance's own error text.
-    - The appliance answers a missing or no longer accepted `X-Auth-Token` with code `-401`. The
-      fresh login is not tied to that code: it is triggered on any non-zero error, so a firmware
-      that reports an expired session differently still recovers.
+    - A request without the `X-Auth-Token` header is documented to answer with code `-401`.
+      Whether an appliance reports a session it no longer accepts the same way is not
+      documented, so the fresh login is not tied to that code: it is triggered on any non-zero
+      error, which covers however a given firmware chooses to report it.
 
     ### Example
     >>> get_data('hwm/fan', args, payload={'server_list': ['192.0.2.10']})
     {
         'data': [...],
-        'result': {'code': 0},
-        'counter': 1
+        'result': {'code': 0}
     }
     """
-    uri = f'{args.URL}/api/v2/{endpoint}{params}'
+    uri = f'{args.URL}/api/v2/{endpoint}'
 
     max_attempts = 3
-    counter = 0
     result = {}
 
     for attempt in range(1, max_attempts + 1):
-        counter = attempt
         # On the second attempt, drop the cached session and log in again; a
         # rejected request is most likely an expired session that retrying
         # with the same token cannot fix. The third attempt then reuses that
@@ -338,11 +372,11 @@ def get_data(endpoint, args, payload=None, method=None, params=''):
         x_auth_token = get_creds(args, force_relogin=attempt == 2)
         header = {'X-Auth-Token': x_auth_token}
         if payload or not method:
-            # Announce a JSON body only when the request can carry one. A caller that
-            # forces the method without a body wants a bare verb, and the content type
-            # would announce a body that is not there - which is the very case
-            # `lib.url.fetch()` offers the forced method for. On a plain GET the header
-            # is kept, because the vendor's own examples send it.
+            # Announce a JSON body when the request carries one, and on a request whose
+            # method is left to `lib.url` - that is the plain GET, where the vendor's own
+            # examples send the header too. A caller that forces the method without a body
+            # wants a bare verb, so the header is left off there rather than announcing a
+            # body that is not there.
             header['Content-Type'] = 'application/json'
         # `response_on_error` keeps the appliance's own error body readable when it
         # answers with a 4xx/5xx status. Without it the body is dropped in favour of
@@ -368,8 +402,38 @@ def get_data(endpoint, args, payload=None, method=None, params=''):
         if attempt < max_attempts:
             _sleep(1)
 
-    result['counter'] = counter
     return result
+
+
+def _assert_all_nodes_listed(listed, args):
+    """
+    Abort unless `cluster/servers` listed every node the cluster says it has.
+
+    Used by `get_management_ips()`. Split out to keep the node loop readable.
+
+    ### Parameters
+    - **listed** (`int`): Number of nodes `cluster/servers` returned.
+    - **args** (object): The argument object read by `get_data()`.
+
+    ### Notes
+    - A failing count query is not fatal. It is a cross-check, not the data itself, and a
+      firmware that does not offer the endpoint must not take the hardware check down with it.
+    """
+    result = get_data('cluster/servers/count', args)
+    if result.get('result', {}).get('code') not in (0, '0'):
+        return
+
+    data = result.get('data')
+    if not isinstance(data, dict):
+        return
+
+    total = _as_code(data.get('count'))
+    if total is not None and total > listed:
+        base.cu(
+            f'The cluster reports {total} nodes, but only {listed} were listed. The hardware '
+            'of the remaining ones cannot be queried, so the check would silently cover part '
+            'of the cluster only.'
+        )
 
 
 def get_management_ips(args):
@@ -390,13 +454,21 @@ def get_management_ips(args):
       The `management_ip` of every cluster node.
 
     ### Notes
-    - Nodes that report `in_cluster` as `False` are left out: they hold no cluster hardware to
-      query. A node that does not report the field at all is kept, so a firmware that omits it
-      does not narrow the result.
+    - `in_cluster` has three documented values, not two: `True` (added), `False` (not added)
+      and `null` (about to be added). Only a node that reports `True` is queried. A node still
+      being added holds no cluster hardware yet, and treating its missing management IP as a
+      fault would take the whole check to UNKNOWN while the cluster is perfectly healthy.
+      A node that does not report the field at all is kept, so a firmware that omits it does
+      not narrow the result.
     - Aborts the plugin (UNKNOWN) if the node query fails, if a node that is in the cluster has
       no management IP address, or if no node has one at all. Returning the remaining addresses
       instead would let a hardware check cover part of the cluster and still report OK, which
       hides a failed component on the nodes that were dropped.
+    - The node list is compared against `cluster/servers/count` for the same reason. The
+      endpoint documents no paging parameters, but the API-wide default caps a list response
+      at 100 entries, and the documentation does not say which endpoints that applies to. On a
+      cluster above that size a silently truncated list would leave nodes unmonitored while
+      the check still reports OK, so a mismatch aborts instead.
 
     ### Example
     >>> get_management_ips(args)
@@ -410,10 +482,15 @@ def get_management_ips(args):
             f'{res.get("description") or "no description"} (code {res.get("code", "n/a")}).'
         )
 
+    nodes = result.get('data') or []
+    _assert_all_nodes_listed(len(nodes), args)
+
     ips = []
     without_ip = []
-    for node in result.get('data', []):
-        if node.get('in_cluster') is False:
+    for node in nodes:
+        # Anything but True means the node is not (yet) part of the cluster. Absent means
+        # a firmware that does not report the field, which must not narrow the result.
+        if 'in_cluster' in node and node['in_cluster'] is not True:
             continue
         if node.get('management_ip'):
             ips.append(node['management_ip'])
@@ -450,7 +527,9 @@ def get_oam_agent_status(s):
     'healthy (0)'
     """
     mapping = {
-        -1: '-- (-1)',
+        # 8.2.0 prints this state as a bare '--'; V800R001C20 spells it out as
+        # 'not monitored', which is the wording a plugin's output can be read from.
+        -1: 'not monitored (-1)',
         0: 'healthy (0)',
         1: 'faulty (1)',
     }

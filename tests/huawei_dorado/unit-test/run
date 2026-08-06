@@ -18,24 +18,24 @@ file, and no real sleep ever happens.
 
 Public functions under test:
 
-- get_controller_model()  -> code -> text mapping
-- get_cp_type()           -> code -> text mapping
-- get_creds()             -> login + token/cookie caching (HTTP via fetch_json)
-- get_data()              -> authenticated GET, re-login on a rejected request (HTTP)
-- get_enclosure_model()   -> code -> text mapping
-- get_health_status()     -> code -> text mapping
-- get_host_access_state() -> code -> text mapping
-- get_interface_model()   -> code -> text mapping
-- get_interface_runmode() -> code -> text mapping
-- get_led_status()        -> code -> text mapping
-- get_logic_type()        -> code -> text mapping
-- get_os()                -> code -> text mapping
-- get_product_mode()      -> code -> text mapping
-- get_role()              -> code -> text mapping
-- get_runlevel()          -> code -> text mapping
-- get_running_status()    -> code -> text mapping
-- get_switch_status()     -> code -> text mapping
-- get_uuid()              -> '{TYPE}:{ID}' builder
+- get_controller_model()     -> code -> text mapping
+- get_controller_role()      -> code -> text mapping
+- get_cp_type()              -> code -> text mapping
+- get_creds()                -> login + session caching (HTTP via fetch_json)
+- get_data()                 -> authenticated GET, re-login on a rejected request (HTTP)
+- get_enclosure_logic_type() -> code -> text mapping
+- get_enclosure_model()      -> code -> text mapping
+- get_health_status()        -> code -> text mapping
+- get_host_access_state()    -> code -> text mapping
+- get_interface_model()      -> code -> text mapping
+- get_interface_runmode()    -> code -> text mapping
+- get_led_status()           -> code -> text mapping
+- get_os()                   -> code -> text mapping
+- get_product_mode()         -> code -> text mapping
+- get_runlevel()             -> code -> text mapping
+- get_running_status()       -> code -> text mapping
+- get_switch_status()        -> code -> text mapping
+- get_uuid()                 -> '{TYPE}:{ID}' builder
 
 The mapping helpers all share the same contract (int/str coercion, known
 codes, 'Unknown' fallback, ValueError on non-numeric input), so they are
@@ -46,6 +46,7 @@ how they parse responses and behave under error / missing-key / empty-body
 conditions.
 """
 
+import json
 import sys
 import typing
 import unittest
@@ -134,9 +135,14 @@ class TestMappingHelpers(unittest.TestCase):
         (huawei.get_controller_model, 4127, '2U2C PALM control board'),
         (huawei.get_controller_model, 4144, '2U2C NVMe control board'),
         (huawei.get_controller_model, 4174, '4U4C4P control board'),
+        (huawei.get_controller_role, 0, 'Member'),
+        (huawei.get_controller_role, 1, 'Primary'),
+        (huawei.get_controller_role, 2, 'Secondary'),
         (huawei.get_cp_type, 1, 'Quorum Server'),
         (huawei.get_cp_type, 2, 'Quorum Disk'),
         (huawei.get_cp_type, 3, 'None'),
+        (huawei.get_enclosure_logic_type, 1, 'Controller Enclosure'),
+        (huawei.get_enclosure_logic_type, 3, 'Management Switch'),
         (
             huawei.get_enclosure_model,
             39,
@@ -149,6 +155,10 @@ class TestMappingHelpers(unittest.TestCase):
         ),
         (huawei.get_health_status, 1, 'Normal (1)'),
         (huawei.get_health_status, 5, 'Degraded (5)'),
+        # Code 17 is worded per object: a disk reports 'single link', a host
+        # 'no redundant link'. Nothing in the response says which applies, so
+        # the label has to hold for both.
+        (huawei.get_health_status, 17, 'Single link / No redundant link (17)'),
         (huawei.get_host_access_state, 2, 'Read-only'),
         (huawei.get_host_access_state, 3, 'Read/write'),
         (
@@ -167,15 +177,13 @@ class TestMappingHelpers(unittest.TestCase):
         (huawei.get_interface_runmode, 10, 'RoCE'),
         (huawei.get_led_status, 0, 'Off'),
         (huawei.get_led_status, 1, 'On'),
-        (huawei.get_logic_type, 1, 'Controller Enclosure'),
-        (huawei.get_logic_type, 3, 'Management Switch'),
         (huawei.get_os, 0, 'Linux'),
         (huawei.get_os, 7, 'VMware ESX'),
+        # Not an operating system: the appliance substitutes 255 when the host
+        # never reported one, so it must not fall through to 'Unknown'.
+        (huawei.get_os, 255, 'not specified (255)'),
         (huawei.get_product_mode, 812, 'Dorado 5000 V6 (NVMe) (812)'),
         (huawei.get_product_mode, 818, 'Dorado 18000 V6 (NVMe) (818)'),
-        (huawei.get_role, 0, 'Member'),
-        (huawei.get_role, 1, 'Primary'),
-        (huawei.get_role, 2, 'Secondary'),
         (huawei.get_runlevel, 0, 'low (0)'),
         (huawei.get_runlevel, 1, 'normal (1)'),
         (huawei.get_runlevel, 2, 'high (2)'),
@@ -184,6 +192,12 @@ class TestMappingHelpers(unittest.TestCase):
         (huawei.get_running_status, 47, 'Powering off (47)'),
         (huawei.get_running_status, 48, 'Charging (48)'),
         (huawei.get_running_status, 49, 'Charging completed (49)'),
+        # 94 is 'error' on 6.1.0 and 'faulty' on V700, with no firmware marker
+        # in the response, so the label has to hold under both.
+        (huawei.get_running_status, 94, 'Error/Faulty (94)'),
+        # V700 words 112 as a failed rollback throughout. 6.1.0 also calls it
+        # 'faulty restoration', which reads as the opposite of what it means.
+        (huawei.get_running_status, 112, 'Rollback failure (112)'),
         (huawei.get_switch_status, 1, 'On'),
         (huawei.get_switch_status, 2, 'Off'),
     ]
@@ -191,17 +205,17 @@ class TestMappingHelpers(unittest.TestCase):
     # Functions that fall back to a literal 'Unknown' string for unknown codes.
     UNKNOWN_FALLBACK: typing.ClassVar = [
         huawei.get_controller_model,
+        huawei.get_controller_role,
         huawei.get_cp_type,
+        huawei.get_enclosure_logic_type,
         huawei.get_enclosure_model,
         huawei.get_health_status,
         huawei.get_host_access_state,
         huawei.get_interface_model,
         huawei.get_interface_runmode,
         huawei.get_led_status,
-        huawei.get_logic_type,
         huawei.get_os,
         huawei.get_product_mode,
-        huawei.get_role,
         huawei.get_runlevel,
         huawei.get_running_status,
         huawei.get_switch_status,
@@ -413,16 +427,20 @@ class TestGetCreds(HuaweiHttpTestBase):
         self.assertEqual(kw['timeout'], 42)
 
     def test_login_caches_token_and_cookie(self):
+        # One key, not two: the request header needs both values, so a write that
+        # only half succeeds would leave a cache that can never be reused and force
+        # a login on every single run.
         huawei.get_creds(self.args)
-        self.cache_set.assert_any_call(
-            'huawei-DEV0001-ibasetoken',
-            '1234567890123456789012345678901234567890',
+        self.cache_set.assert_called_once_with(
+            'huaweidorado-https://storage.example.com-DEV0001-linuxfabrik-session',
+            json.dumps(
+                [
+                    '1234567890123456789012345678901234567890',
+                    'session=abc123def456; Path=/deviceManager; HttpOnly',
+                ]
+            ),
             1_000_000 + 15 * 60,
-        )
-        self.cache_set.assert_any_call(
-            'huawei-DEV0001-cookie',
-            'session=abc123def456; Path=/deviceManager; HttpOnly',
-            1_000_000 + 15 * 60,
+            filename=huawei.CACHE_FILENAME,
         )
 
     def test_cache_expiry_uses_cache_expire_minutes(self):
@@ -432,39 +450,60 @@ class TestGetCreds(HuaweiHttpTestBase):
         for call in self.cache_set.call_args_list:
             self.assertEqual(call.args[2], 1_000_000 + 30 * 60)
 
-    def test_cache_keys_include_device_id(self):
-        self.args = Args(DEVICE_ID='OTHERBOX')
-        self.cache_get.return_value = None
-        huawei.get_creds(self.args)
-        # Both reads and both writes must be namespaced by the device id.
-        read_keys = [c.args[0] for c in self.cache_get.call_args_list]
-        self.assertIn('huawei-OTHERBOX-ibasetoken', read_keys)
-        self.assertIn('huawei-OTHERBOX-cookie', read_keys)
+    def test_cache_expire_zero_disables_caching(self):
+        # Not "expires in zero seconds": lib.cache reads the expire argument as an
+        # absolute timestamp, so passing now() would store an entry that lives for
+        # about a second. An operator setting 0 asks for no caching at all.
+        self.args = Args(CACHE_EXPIRE=0)
+        token, _ = huawei.get_creds(self.args)
+        self.assertEqual(token, '1234567890123456789012345678901234567890')
+        self.assertFalse(self.cache_get.called)
+        self.assertFalse(self.cache_set.called)
 
-    def test_cached_token_short_circuits_login(self):
-        # cache.get returns token first, cookie second; no HTTP login happens.
-        self.cache_get.side_effect = ['CACHED-TOKEN', 'CACHED-COOKIE']
+    def test_own_cache_file_is_used(self):
+        huawei.get_creds(self.args)
+        self.assertEqual(
+            self.cache_get.call_args.kwargs['filename'], huawei.CACHE_FILENAME
+        )
+
+    def test_cache_key_includes_url_device_id_and_username(self):
+        # The device id alone does not identify an appliance: it is caller-supplied
+        # and the appliance accepts any string for it on the initial login. The user
+        # name is in the key because a session carries that user's role.
+        self.args = Args(DEVICE_ID='OTHERBOX', USERNAME='readonly')
+        huawei.get_creds(self.args)
+        read_keys = [c.args[0] for c in self.cache_get.call_args_list]
+        self.assertIn(
+            'huaweidorado-https://storage.example.com-OTHERBOX-readonly-session',
+            read_keys,
+        )
+
+    def test_cached_session_short_circuits_login(self):
+        self.cache_get.return_value = json.dumps(['CACHED-TOKEN', 'CACHED-COOKIE'])
         token, cookie = huawei.get_creds(self.args)
         self.assertEqual(token, 'CACHED-TOKEN')
         self.assertEqual(cookie, 'CACHED-COOKIE')
         self.assertFalse(self.fetch_json.called)
         self.assertFalse(self.cache_set.called)
 
-    def test_cached_token_without_cookie_triggers_relogin(self):
-        # Both are needed to build the request header, so a half-populated
-        # cache must not be reused: it would send 'Cookie: False'.
-        self.cache_get.side_effect = ['CACHED-TOKEN', False]
-        self.fetch_json.return_value = (
-            True,
-            {
-                'response_json': {'data': {'iBaseToken': 'FRESH-TOKEN'}},
-                'response_header': {'set-cookie': 'FRESH-COOKIE'},
-            },
-        )
-        token, cookie = huawei.get_creds(self.args)
-        self.assertEqual(token, 'FRESH-TOKEN')
-        self.assertEqual(cookie, 'FRESH-COOKIE')
-        self.assertTrue(self.fetch_json.called)
+    def test_unusable_cache_entry_triggers_relogin(self):
+        # Written by an older version, truncated, or missing half the pair. All
+        # three have the same answer: log in again rather than build a request
+        # header out of it.
+        for cached in (
+            'not-json',
+            json.dumps('CACHED-TOKEN'),
+            json.dumps(['CACHED-TOKEN']),
+            json.dumps(['CACHED-TOKEN', '']),
+            json.dumps({'ibasetoken': 'CACHED-TOKEN'}),
+        ):
+            with self.subTest(cached=cached):
+                self.fetch_json.reset_mock()
+                self.fetch_json.return_value = LOGIN_OK
+                self.cache_get.return_value = cached
+                token, _ = huawei.get_creds(self.args)
+                self.assertTrue(self.fetch_json.called)
+                self.assertEqual(token, '1234567890123456789012345678901234567890')
 
     def test_empty_login_response_aborts(self):
         # Malformed / empty body: no token to work with. Aborting here beats
@@ -513,11 +552,16 @@ class TestGetData(HuaweiHttpTestBase):
         self.addCleanup(self._p_creds.stop)
         self.fetch_json.return_value = DATA_OK
 
-    def test_success_first_try_returns_payload_with_counter(self):
+    def test_success_first_try_returns_payload(self):
         result = huawei.get_data('disk', self.args)
         self.assertEqual(result['error']['code'], 0)
         self.assertEqual(result['data'][0]['ID'], '0')
-        self.assertEqual(result['counter'], 1)
+
+    def test_response_is_not_decorated_with_extra_keys(self):
+        # The return value is the appliance's own document. Adding a key to it
+        # would overwrite an API field that happens to share the name.
+        result = huawei.get_data('disk', self.args)
+        self.assertEqual(set(result), {'data', 'error'})
 
     def test_success_first_try_does_not_sleep(self):
         huawei.get_data('disk', self.args)
@@ -531,16 +575,12 @@ class TestGetData(HuaweiHttpTestBase):
             'https://storage.example.com/deviceManager/rest/DEV0001/disk',
         )
 
-    def test_params_appended_to_uri(self):
-        huawei.get_data('disk', self.args, params='?range=[0-100]')
+    def test_query_string_is_passed_through_on_the_endpoint(self):
+        huawei.get_data('disk?range=[0-100]', self.args)
         self.assertEqual(
             self.sent_uri(),
             'https://storage.example.com/deviceManager/rest/DEV0001/disk?range=[0-100]',
         )
-
-    def test_default_params_is_empty(self):
-        huawei.get_data('controller', self.args)
-        self.assertTrue(self.sent_uri().endswith('/controller'))
 
     def test_auth_headers_carry_token_and_cookie(self):
         huawei.get_data('disk', self.args)
@@ -560,9 +600,8 @@ class TestGetData(HuaweiHttpTestBase):
     def test_retries_until_max_on_persistent_error(self):
         # Every attempt is rejected; the loop runs its three bounded attempts.
         self.fetch_json.return_value = (True, {'error': {'code': -401}})
-        result = huawei.get_data('disk', self.args)
+        huawei.get_data('disk', self.args)
         self.assertEqual(self.fetch_json.call_count, 3)
-        self.assertEqual(result['counter'], 3)
         # sleep runs only between attempts, so one fewer than the attempt count.
         self.assertEqual(self.sleep.call_count, 2)
 
@@ -584,13 +623,12 @@ class TestGetData(HuaweiHttpTestBase):
         for call in self.sleep.call_args_list:
             self.assertEqual(call.args, (1,))
 
-    def test_recovers_mid_loop_and_reports_attempt_count(self):
+    def test_recovers_mid_loop(self):
         self.fetch_json.side_effect = [
             (True, {'error': {'code': -401}}),
             (True, {'error': {'code': 0}, 'data': ['recovered']}),
         ]
         result = huawei.get_data('disk', self.args)
-        self.assertEqual(result['counter'], 2)
         self.assertEqual(self.fetch_json.call_count, 2)
         # One sleep for the single failed attempt; the success breaks the loop.
         self.assertEqual(self.sleep.call_count, 1)
@@ -599,14 +637,12 @@ class TestGetData(HuaweiHttpTestBase):
     def test_missing_error_key_is_treated_as_failure_and_retried(self):
         # .get('error', {}).get('code') -> None, which is != 0, so it retries.
         self.fetch_json.return_value = (True, {'data': 'x'})
-        result = huawei.get_data('disk', self.args)
+        huawei.get_data('disk', self.args)
         self.assertEqual(self.fetch_json.call_count, 3)
-        self.assertEqual(result['counter'], 3)
 
     def test_empty_dict_response_retried_to_max(self):
         self.fetch_json.return_value = (True, {})
-        result = huawei.get_data('disk', self.args)
-        self.assertEqual(result['counter'], 3)
+        huawei.get_data('disk', self.args)
         self.assertEqual(self.fetch_json.call_count, 3)
 
     def test_calls_get_creds_with_cached_session_first(self):
@@ -615,11 +651,25 @@ class TestGetData(HuaweiHttpTestBase):
         huawei.get_data('disk', self.args)
         self.get_creds.assert_called_once_with(self.args, force_relogin=False)
 
-    def test_fetch_failure_exits_via_coe(self):
-        # A transport failure (False, msg) makes base.coe abort.
+    def test_fetch_failure_is_reported_in_the_documented_envelope(self):
+        # get_data() never aborts: a transport failure becomes a failed attempt and
+        # is handed back in the envelope, so the caller can report the reason itself.
         self.fetch_json.return_value = (False, 'timeout')
-        with self.assertRaises(SystemExit):
-            huawei.get_data('disk', self.args)
+        result = huawei.get_data('disk', self.args)
+        self.assertEqual(result['error']['code'], 'n/a')
+        self.assertIn('timeout', result['error']['description'])
+
+    def test_http_error_body_is_decoded_into_the_envelope(self):
+        # An HTTP error status still carries the appliance's own JSON body, which
+        # names the actual cause. lib.url skips the decode on a non-2xx status, so
+        # the module has to do it or the reason is lost behind the status line.
+        self.fetch_json.return_value = (
+            False,
+            '{"error": {"code": -401, "description": "authentication failed"}}',
+        )
+        result = huawei.get_data('disk', self.args)
+        self.assertEqual(result['error']['code'], -401)
+        self.assertEqual(result['error']['description'], 'authentication failed')
 
 
 if __name__ == '__main__':

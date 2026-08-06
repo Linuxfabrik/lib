@@ -23,12 +23,17 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080502'
+__version__ = '2026080601'
 
 import json
 from time import sleep as _sleep
 
 from . import base, cache, time, url
+
+# Own cache file, following `lib.redfish`. The shared default file is written by every
+# plugin on the host, and `lib.cache` sweeps expired rows on the read path, so a session
+# token that is read on every single check would sit in the middle of that lock traffic.
+CACHE_FILENAME = 'linuxfabrik-monitoring-plugins-huawei-dorado.db'
 
 
 def _as_code(value):
@@ -146,6 +151,41 @@ def get_controller_model(cm):
     return mapping.get(_as_code(cm), 'Unknown')
 
 
+def get_controller_role(role):
+    """
+    Convert a controller's `ROLE` code into a human-readable description.
+
+    ### Parameters
+    - **role** (`int` or `str`):
+      The role code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description of the role.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Notes
+    - Scoped to the controller object on purpose. `ROLE` is reused with entirely different
+      meanings elsewhere: on a logical port `1` is a management port, on a HyperMetro domain
+      `0` is the preferred site. Applied to those objects this mapping would print a
+      confident but wrong label, which is why the function name names its object.
+
+    ### Example
+    >>> get_controller_role(1)
+    'Primary'
+
+    >>> get_controller_role('2')
+    'Secondary'
+    """
+    mapping = {
+        0: 'Member',
+        1: 'Primary',
+        2: 'Secondary',
+    }
+    return mapping.get(_as_code(role), 'Unknown')
+
+
 def get_cp_type(cp):
     """
     Convert a consistency protection (CP) type code into a human-readable description.
@@ -186,6 +226,34 @@ def get_cp_type(cp):
 _UNUSABLE_ACCOUNT_STATES = frozenset({3, 4, 6, 8, 9, 10, 11})
 
 
+def _cached_session(session_key):
+    """
+    Read a cached `(iBaseToken, Cookie)` pair, or `None` if there is no usable one.
+
+    Used by `get_creds()`.
+
+    ### Parameters
+    - **session_key** (`str`): The cache key the pair is stored under.
+
+    ### Returns
+    - **tuple** (`str`, `str`) or **None**: The pair, or `None` if the cache holds nothing,
+      something an older version wrote, or a half-populated entry. All three cases have the
+      same answer: log in again rather than build a request header out of it.
+    """
+    cached = cache.get(session_key, filename=CACHE_FILENAME)
+    if not cached:
+        return None
+
+    try:
+        pair = json.loads(cached)
+    except (TypeError, ValueError):
+        return None
+
+    if isinstance(pair, list) and len(pair) == 2 and all(pair):
+        return pair[0], pair[1]
+    return None
+
+
 def get_creds(args, force_relogin=False):
     """
     Retrieve and cache Huawei appliance credentials.
@@ -202,7 +270,9 @@ def get_creds(args, force_relogin=False):
         - `DEVICE_ID` (`str`): Unique device identifier.
         - `USERNAME` (`str`): Login username.
         - `PASSWORD` (`str`): Login password.
-        - `SCOPE` (`str`): Authentication scope.
+        - `SCOPE` (`str`): User type (`'0'` local user, `'1'` LDAP user, `'8'` RADIUS user).
+          `'8'` is only documented from V700R001C10 on. The value is passed through
+          unvalidated, so a firmware that knows further types works without a code change.
         - `INSECURE` (`bool`): Whether to disable SSL verification.
         - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
         - `TIMEOUT` (`int`): Request timeout in seconds.
@@ -218,14 +288,18 @@ def get_creds(args, force_relogin=False):
       - `cookie` (str): The session cookie.
 
     ### Notes
-    - Tokens are stored in cache keys:
-      - `huawei-{URL}-{DEVICE_ID}-{USERNAME}-ibasetoken`
-      - `huawei-{URL}-{DEVICE_ID}-{USERNAME}-cookie`
+    - Token and cookie are stored together, JSON-encoded, under the single cache key
+      `huaweidorado-{URL}-{DEVICE_ID}-{USERNAME}-session`, in the module's own cache file.
+      One key rather than two because the header needs both: split over two keys, a write
+      that only half succeeds leaves a cache that can never be reused, and the resulting
+      login on every single run is exactly what the caching is there to avoid.
       The user name is part of the key because a session carries that user's role: without it
       a check running as a different account would silently reuse the first account's session
       and query the appliance with the wrong privileges. The URL is part of it because the
       device ID is caller-supplied and the appliance accepts any string for it on the initial
       login, so it does not reliably identify an appliance on its own.
+    - A `CACHE_EXPIRE` of `0` turns caching off, rather than writing an entry that expires a
+      moment later. Every call then logs in, which is what an operator asks for by setting it.
     - If login is required, the request is sent as serialized JSON with headers.
     - A rejected login aborts the caller (UNKNOWN) instead of returning an empty token.
       The appliance answers a wrong password, an expired password or a locked account with
@@ -241,21 +315,23 @@ def get_creds(args, force_relogin=False):
       runs, a logout at the end of a run would force a login on every single run and multiply
       the login rate the appliance sees. The one session that `force_relogin` replaces lingers
       until the appliance's own session timeout expires it.
+    - The complete `Set-Cookie` field is sent back as the `Cookie` request header, attributes
+      and all, because that is what the vendor's own example does. The limit of that approach
+      is an appliance sending more than one `Set-Cookie` header: `lib.url` exposes the response
+      headers as a flat mapping, in which repeated fields arrive comma-joined and can no longer
+      be told apart. Should a firmware ever do that, `lib.url` has to expose the raw header list
+      first.
 
     ### Example
     >>> ibasetoken, cookie = get_creds(args)
     """
-    token_key = f'huawei-{args.URL}-{args.DEVICE_ID}-{args.USERNAME}-ibasetoken'
-    cookie_key = f'huawei-{args.URL}-{args.DEVICE_ID}-{args.USERNAME}-cookie'
+    session_key = f'huaweidorado-{args.URL}-{args.DEVICE_ID}-{args.USERNAME}-session'
+    caching = args.CACHE_EXPIRE > 0
 
-    if not force_relogin:
-        ibasetoken = cache.get(token_key)
-        cookie = cache.get(cookie_key)
-        # Both are required to build the request header, and both are cached with the same
-        # expiry. Reuse them only as a complete pair, so a half-populated cache re-logs in
-        # instead of sending an unusable header.
-        if ibasetoken and cookie:
-            return ibasetoken, cookie
+    if caching and not force_relogin:
+        cached = _cached_session(session_key)
+        if cached:
+            return cached
 
     uri = f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/sessions'
     header = {'Content-Type': 'application/json'}
@@ -277,14 +353,22 @@ def get_creds(args, force_relogin=False):
         )
     )
 
-    response_json = result.get('response_json', {})
-    session_data = response_json.get('data', {})
+    response_json = result.get('response_json')
+    if not isinstance(response_json, dict):
+        base.cu(
+            f'Login at {args.URL} returned {type(response_json).__name__} instead of the '
+            'documented response object.'
+        )
+
+    session_data = response_json.get('data')
+    if not isinstance(session_data, dict):
+        session_data = {}
     ibasetoken = session_data.get('iBaseToken')
     # lib.url lower-cases all response header names (RFC 9110, section 5.1).
     cookie = result.get('response_header', {}).get('set-cookie')
 
     if not ibasetoken or not cookie:
-        error = response_json.get('error', {})
+        error = response_json.get('error') or {}
         base.cu(
             f'Login at {args.URL} failed: '
             f'{error.get("description") or "no session token returned"} '
@@ -298,9 +382,13 @@ def get_creds(args, force_relogin=False):
             f'{get_account_state(accountstate)}.'
         )
 
-    expire = time.now() + args.CACHE_EXPIRE * 60
-    cache.set(token_key, ibasetoken, expire)
-    cache.set(cookie_key, cookie, expire)
+    if caching:
+        cache.set(
+            session_key,
+            json.dumps([ibasetoken, cookie]),
+            time.now() + args.CACHE_EXPIRE * 60,
+            filename=CACHE_FILENAME,
+        )
 
     return ibasetoken, cookie
 
@@ -353,7 +441,7 @@ def _as_envelope(success, response):
     }
 
 
-def get_data(endpoint, args, params=''):
+def get_data(endpoint, args):
     """
     Fetch data from a Huawei appliance endpoint, re-authenticating on a stale session.
 
@@ -366,7 +454,10 @@ def get_data(endpoint, args, params=''):
 
     ### Parameters
     - **endpoint** (`str`):
-      The API endpoint to call (relative path after the device ID).
+      The API endpoint to call (relative path after the device ID), including the query string
+      if the endpoint takes one. The string is appended to the request URL verbatim, so the
+      caller is responsible for percent-encoding it; never build it from data the appliance
+      itself returned.
     - **args** (object):
       An object containing:
         - `URL` (`str`): Base API URL.
@@ -374,15 +465,10 @@ def get_data(endpoint, args, params=''):
         - `INSECURE` (`bool`): Disable SSL verification.
         - `NO_PROXY` (`bool`): Ignore proxy settings.
         - `TIMEOUT` (`int`): Timeout for API requests.
-    - **params** (`str`, optional):
-      Additional URL parameters (starting with `?`, if any). Default is empty. The string is
-      appended to the request URL verbatim, so the caller is responsible for percent-encoding
-      it; never build it from data the appliance itself returned.
 
     ### Returns
     - **dict**:
-      The parsed JSON response from the API, plus an extra `counter` key showing how many attempts
-      were made.
+      The parsed JSON response from the API.
 
     ### Notes
     - Makes at most three attempts, forcing a fresh login before the second one, and waits one
@@ -394,26 +480,24 @@ def get_data(endpoint, args, params=''):
       error status and a response that is not the documented `{'error': {'code': ...}}` envelope
       all count as a failed attempt and are handed back in that envelope. The caller therefore
       always receives the documented return value and can report the appliance's own error text.
-    - The appliance answers a missing or no longer accepted `Cookie` and `iBaseToken` pair with
-      code `-401`. The fresh login is not tied to that code: it is triggered on any non-zero
-      error, so a firmware that reports an expired session differently still recovers.
+    - A request without the `Cookie` and `iBaseToken` headers is documented to answer with code
+      `-401`. Whether an appliance reports a session it no longer accepts the same way is not
+      documented, so the fresh login is not tied to that code: it is triggered on any non-zero
+      error, which covers however a given firmware chooses to report it.
 
     ### Example
     >>> get_data('disk/list', args)
     {
         'error': {'code': 0},
-        'data': {...},
-        'counter': 1
+        'data': {...}
     }
     """
-    uri = f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/{endpoint}{params}'
+    uri = f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/{endpoint}'
 
     max_attempts = 3
-    counter = 0
     result = {}
 
     for attempt in range(1, max_attempts + 1):
-        counter = attempt
         # On the second attempt, drop the cached session and log in again; a
         # rejected request is most likely an expired session that retrying
         # with the same token cannot fix. The third attempt then reuses that
@@ -445,8 +529,44 @@ def get_data(endpoint, args, params=''):
         if attempt < max_attempts:
             _sleep(1)
 
-    result['counter'] = counter
     return result
+
+
+def get_enclosure_logic_type(lt):
+    """
+    Convert an enclosure's `LOGICTYPE` code into a human-readable description.
+
+    ### Parameters
+    - **lt** (`int` or `str`):
+      The logic type code to interpret.
+      A missing or malformed value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description of the logic type.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Notes
+    - Scoped to the enclosure object on purpose. `LOGICTYPE` is reused with entirely
+      different meanings elsewhere: on a port `2` is a management port, on a disk `2` is a
+      member disk. Applied to those objects this mapping would print a confident but wrong
+      label, which is why the function name names its object.
+
+    ### Example
+    >>> get_enclosure_logic_type(1)
+    'Controller Enclosure'
+
+    >>> get_enclosure_logic_type('3')
+    'Management Switch'
+    """
+    mapping = {
+        0: 'Expansion Enclosure (Disk Enclosure)',
+        1: 'Controller Enclosure',
+        2: 'Data Switch',
+        3: 'Management Switch',
+        4: 'Management Server',
+    }
+    return mapping.get(_as_code(lt), 'Unknown')
 
 
 def get_enclosure_model(em):
@@ -508,6 +628,13 @@ def get_health_status(hs):
       A human-readable description of the health status, including the original code in brackets.
       Returns `'Unknown'` if the code is not recognized.
 
+    ### Notes
+    - `HEALTHSTATUS` is a shared enumeration, and code `17` is the one value whose wording
+      depends on the object it is read from: a disk reports it as `single link`, a host as
+      `no redundant link`. The response carries no marker for which of the two applies, so
+      the code renders as `'Single link / No redundant link'`, which holds for both, rather
+      than picking one and being wrong on the other object type.
+
     ### Example
     >>> get_health_status(1)
     'Normal (1)'
@@ -528,7 +655,7 @@ def get_health_status(hs):
         12: 'Low Battery (12)',
         14: 'Invalid (14)',
         15: 'Write-protected (15)',
-        17: 'Single link (17)',
+        17: 'Single link / No redundant link (17)',
         18: 'Offline (18)',
     }
     return mapping.get(_as_code(hs), 'Unknown')
@@ -779,6 +906,9 @@ def get_interface_runmode(rm):
       so the code cannot be disambiguated from a single interface module. It therefore renders
       as `'RDMA/RoCE'`, which holds under both revisions, rather than picking one and being
       wrong on the other half of the fleet.
+    - Scoped to the interface module (`intf_module`). Controllers and expansion modules carry
+      their own, much shorter `RUNMODE` with only `1` for Fibre Channel and `2` for Ethernet,
+      where this mapping would render `2` as `'FCoE/iSCSI'`.
 
     ### Example
     >>> get_interface_runmode(1)
@@ -825,40 +955,6 @@ def get_led_status(st):
     return led_status.get(_as_code(st), 'Unknown')
 
 
-def get_logic_type(lt):
-    """
-    Convert a Huawei logic type code into a human-readable description.
-
-    This function translates numeric logic type codes reported by Huawei storage appliances
-    into descriptive text to identify enclosure and system types.
-
-    ### Parameters
-    - **lt** (`int` or `str`):
-      The logic type code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
-
-    ### Returns
-    - **str**:
-      A human-readable description of the logic type.
-      Returns `'Unknown'` if the code is not recognized.
-
-    ### Example
-    >>> get_logic_type(1)
-    'Controller Enclosure'
-
-    >>> get_logic_type('3')
-    'Management Switch'
-    """
-    mapping = {
-        0: 'Expansion Enclosure (Disk Enclosure)',
-        1: 'Controller Enclosure',
-        2: 'Data Switch',
-        3: 'Management Switch',
-        4: 'Management Server',
-    }
-    return mapping.get(_as_code(lt), 'Unknown')
-
-
 def get_os(os):
     """
     Convert an operating system (OS) code into a human-readable description.
@@ -876,12 +972,19 @@ def get_os(os):
       A human-readable description of the operating system.
       Returns `'Unknown'` if the code is not recognized.
 
+    ### Notes
+    - The appliance substitutes code `255` when the host never reported an operating system,
+      so that code stands for "none was delivered" rather than for a system of its own.
+
     ### Example
     >>> get_os(7)
     'VMware ESX'
 
     >>> get_os('0')
     'Linux'
+
+    >>> get_os(255)
+    'not specified (255)'
     """
     mapping = {
         0: 'Linux',
@@ -898,6 +1001,10 @@ def get_os(os):
         11: 'OpenVMS',
         12: 'Oracle_VM_Server_for_x86',
         13: 'Oracle_VM_Server_for_SPARC',
+        # Not a real operating system: the appliance substitutes 255 when the host
+        # never reported one, so it has to render as such rather than as 'Unknown',
+        # which is what an undocumented code means everywhere else in this module.
+        255: 'not specified (255)',
     }
     return mapping.get(_as_code(os), 'Unknown')
 
@@ -986,38 +1093,6 @@ def get_product_mode(pm):
     return mapping.get(_as_code(pm), 'Unknown')
 
 
-def get_role(role):
-    """
-    Convert a role code into a human-readable description.
-
-    This function translates numeric role codes from Huawei storage systems into descriptive
-    labels representing the role of a device or component.
-
-    ### Parameters
-    - **role** (`int` or `str`):
-      The role code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
-
-    ### Returns
-    - **str**:
-      A human-readable description of the role.
-      Returns `'Unknown'` if the code is not recognized.
-
-    ### Example
-    >>> get_role(1)
-    'Primary'
-
-    >>> get_role('2')
-    'Secondary'
-    """
-    mapping = {
-        0: 'Member',
-        1: 'Primary',
-        2: 'Secondary',
-    }
-    return mapping.get(_as_code(role), 'Unknown')
-
-
 def get_runlevel(rl):
     """
     Convert a Huawei device run level code into a human-readable description.
@@ -1066,6 +1141,14 @@ def get_running_status(rs):
     - **str**:
       A human-readable description of the running status, including the original code in brackets.
       Returns `'Unknown'` if the code is not recognized.
+
+    ### Notes
+    - Code `94` is the one value whose meaning differs between the two documented firmware
+      generations: 6.1.0 defines it as error, V700R001C10 as faulty. The response carries no
+      firmware marker, so it renders as `'Error/Faulty'`, which holds under both revisions.
+    - Code `112` renders as `'Rollback failure'`. V700R001C10 uses that wording throughout,
+      and 6.1.0 uses it alongside its own `faulty restoration`, which reads as "restoring
+      after a fault" and therefore states the opposite of what the code means.
 
     ### Example
     >>> get_running_status(1)
@@ -1119,7 +1202,7 @@ def get_running_status(rs):
         76: 'Migration completed (76)',
         89: 'Overloaded (89)',
         93: 'Forcibly started (93)',
-        94: 'Error (94)',
+        94: 'Error/Faulty (94)',
         96: 'Partition migrating (96)',
         100: 'To be synchronized (100)',
         101: 'Connecting (101)',
@@ -1129,7 +1212,7 @@ def get_running_status(rs):
         107: 'Modifying (107)',
         110: 'Standby (110)',
         111: 'Stopping (111)',
-        112: 'Faulty restoration (112)',
+        112: 'Rollback failure (112)',
         114: 'Erasing (114)',
         115: 'Verifying (115)',
         117: 'Removing (117)',
@@ -1141,10 +1224,7 @@ def get_running_status(rs):
 
 def get_switch_status(st):
     """
-    Convert a switch status code into a human-readable description.
-
-    This function translates numeric switch status codes from Huawei systems into descriptive
-    text for easier interpretation.
+    Convert a `SWITCHSTATUS` code into a human-readable description.
 
     ### Parameters
     - **st** (`int` or `str`):
@@ -1155,6 +1235,12 @@ def get_switch_status(st):
     - **str**:
       A human-readable description of the switch status.
       Returns `'Unknown'` if the code is not recognized.
+
+    ### Notes
+    - Scoped to the field named `SWITCHSTATUS`, not to on/off fields in general. Other
+      switch-like fields number their states differently and would be rendered wrongly:
+      `QUOTASWITCHSTATUS`, for example, uses `0` for off, `1` for on and `2` for
+      initializing, so `2` would come out as `'Off'` here.
 
     ### Example
     >>> get_switch_status(1)
