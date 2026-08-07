@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080703'
+__version__ = '2026080704'
 
 import json
 from time import sleep as _sleep
@@ -1535,10 +1535,7 @@ def get_interface_runmode(rm):
 
 def get_led_status(st):
     """
-    Convert an LED status ID into a human-readable LED state.
-
-    This function translates numeric LED status codes into readable status descriptions
-    (e.g., On, Off).
+    Convert a `LIGHTSTATUS` code into a human-readable LED state.
 
     ### Parameters
     - **st** (`int` or `str`):
@@ -1547,6 +1544,18 @@ def get_led_status(st):
     ### Returns
     - **str**:
       A human-readable LED status. Returns `'Unknown'` if the ID is not recognized.
+
+    ### Notes
+    - Scoped to the field named `LIGHTSTATUS`, which the interface module and the expansion
+      board report as `0` for off and `1` for on.
+    - It does **not** apply to the controller's `LIGHT_STATUS`, spelled with an underscore,
+      which numbers its states from `1` up. Worse, the vendor contradicts itself on which
+      way round: in both REST Interface References the batch controller query documents
+      `1: off, 2: on` and the single controller query documents `1: on, 2: off`, and
+      appliances additionally send a `0` that neither table lists. A consumer therefore
+      cannot decode that field at all and should report the bare code, which is what
+      `huawei-dorado-controller` does. There is deliberately no helper for it: one would
+      have to pick one of the vendor's two answers and be wrong about half the fleet.
 
     ### Example
     >>> get_led_status(1)
@@ -1635,7 +1644,11 @@ def get_performance(uuid, data_ids, args):
     ### Parameters
     - **uuid** (`str`):
       The object's UUID in the appliance's own `TYPE:ID` notation, as `get_uuid()` builds it.
-      For example `'207:0A'` for a controller.
+      For example `'207:0A'` for a controller. The type numbers the performance indicator
+      tables list are `11` LUN, `21` host, `207` controller, `212` FC port, `213` Ethernet
+      port, `216` storage pool, `230` SmartQoS policy, `235` bond port, `252` FCoE port,
+      `266` disk domain and `279` LIF, but a consumer builds the UUID from the object's own
+      `TYPE` rather than naming one of them.
     - **data_ids** (iterable of `int`):
       The performance indicators to read. The vendor numbers them per indicator, not per
       object: `18` utilisation in percent, `19` queue length, `21` block bandwidth in MB/s,
@@ -1726,16 +1739,6 @@ PERFORMANCE_INDICATORS = {
     384: ('avg_read_io_response_time', 's', 1 / 1_000_000),
     385: ('avg_write_io_response_time', 's', 1 / 1_000_000),
 }
-
-# Object type numbers of the performance API, from the "Statistics Type" columns of the
-# performance indicator tables. They are the `TYPE` an object reports, so a consumer
-# normally builds its UUID with `get_uuid()` rather than naming the number here.
-PERFORMANCE_TYPE_CONTROLLER = 207
-PERFORMANCE_TYPE_ETH_PORT = 213
-PERFORMANCE_TYPE_FC_PORT = 212
-PERFORMANCE_TYPE_LUN = 11
-PERFORMANCE_TYPE_STORAGE_POOL = 216
-
 
 def get_performance_perfdata(prefix, samples, indicators=None):
     """
@@ -2145,14 +2148,19 @@ def sectors2bytes(sectors, sector_size=DEFAULT_SECTOR_SIZE):
     - **sectors** (`int`, `str` or `None`):
       The sector count as the API reported it.
     - **sector_size** (`int`, optional):
-      Bytes per sector. `system/` reports the appliance's own value in its `SECTORSIZE`
-      field; pass that where it is available and leave the default in place otherwise.
+      Bytes per sector. Leave it alone unless a capacity is documented in units of
+      something other than the 512-byte sector.
 
     ### Returns
     - **int** or **None**:
       The capacity in bytes, or `None` for a value that cannot be used.
 
     ### Notes
+    - A sector is 512 bytes, which is what the REST Interface References state next to the
+      capacity fields themselves ("Note: The size of a sector is 512 bytes"). The
+      `SECTORSIZE` a LUN or a disk reports is a different number: the block size that
+      object presents, not the unit its capacity is counted in. Multiplying a capacity by
+      it overstates a 4K LUN eightfold.
     - A negative sector count is `None` rather than a negative capacity. The appliance uses
       `-1` for a capacity it does not report, and `4294967295` and its 64-bit sibling for
       the same purpose on other fields; a consumer that graphs those gets a spike instead
