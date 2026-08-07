@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080702'
+__version__ = '2026080703'
 
 import json
 from time import sleep as _sleep
@@ -119,6 +119,50 @@ def as_code(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def as_temperature(value):
+    """
+    Normalise a reported temperature into an `int`, or `None` if it is not a reading.
+
+    A component without a temperature sensor still reports the field. Which placeholder it
+    uses depends on the object: a controller answers with `-1`, a power module and a disk
+    with `0`, and a firmware may leave the field out altogether. None of the three is a
+    measurement, and all three have to be kept out of the performance data and away from
+    the thresholds.
+
+    ### Parameters
+    - **value** (`any`): The raw field value taken from the API response.
+
+    ### Returns
+    - **int** or **None**: The temperature in degrees Celsius, or `None` when the object
+      reported no reading.
+
+    ### Notes
+    - The placeholders are what the vendor's own response examples show: the controller
+      example of the V700R001C10 REST Interface Reference carries `"TEMPERATURE": "-1"`,
+      the power module example `"TEMPERATURE": "0"`.
+    - `-1` in particular must not reach a threshold. A Nagios range such as `55` means
+      `0:55`, so a value below zero is outside it, and a controller with no sensor would
+      report CRITICAL as soon as an operator sets a temperature threshold at all.
+    - Zero is discarded rather than kept as a reading. An appliance sitting at or below
+      0 °C is outside every documented operating range, so the value is a placeholder
+      rather than a measurement worth graphing.
+
+    ### Example
+    >>> as_temperature('42')
+    42
+
+    >>> as_temperature('-1') is None
+    True
+
+    >>> as_temperature('0') is None
+    True
+    """
+    code = as_code(value)
+    if code is None or code <= 0:
+        return None
+    return code
 
 
 def field(data, *names, default=None):
@@ -1096,7 +1140,12 @@ def get_health_status(hs):
 # I/O in a reduced state. Everything else the enumeration knows describes a degradation, and
 # everything it does not know is a code this firmware invented; both are worth a look but
 # neither justifies waking someone, so they end up as a warning.
-_FAILED_HEALTH_STATES = frozenset({2, 14, 18})
+#
+# `No Input (11)` is in this set because of where it is reported: it is what a power module
+# answers when its feed is dead, which the vendor's own `power` response example shows next
+# to an offline running status. A power supply without a feed is not degraded, it is gone,
+# and a second one failing the same way takes the array with it.
+_FAILED_HEALTH_STATES = frozenset({2, 11, 14, 18})
 
 
 def get_health_status_state(hs):
@@ -1113,8 +1162,9 @@ def get_health_status_state(hs):
       other code, including one the enumeration does not know and a missing value.
 
     ### Notes
-    - Faulty (`2`), Invalid (`14`) and Offline (`18`) are the codes that report an object which
-      has stopped doing its job, so they are the ones that reach `STATE_CRIT`.
+    - Faulty (`2`), No Input (`11`), Invalid (`14`) and Offline (`18`) are the codes that
+      report an object which has stopped doing its job, so they are the ones that reach
+      `STATE_CRIT`.
     - An unrecognised code cannot be assumed to be harmless, so it warns rather than passing as
       OK. It renders as `'Unknown'` through `get_health_status()`, which tells the reader that
       the code, not the object, is what the check could not place.
@@ -1967,7 +2017,17 @@ def get_running_status(rs):
 # resting state of a spare power module, `Charging (48)` is routine on a BBU and nonsense
 # elsewhere - so a caller states its own healthy codes through `ok_codes` and everything left
 # over warns.
-_FAILED_RUNNING_STATES = frozenset({28, 35, 74, 94, 103, 105, 112})
+#
+# `ok_codes` is consulted before this set, so an object for which one of these codes really is
+# healthy can still declare it as such.
+#
+# Three of them are less obvious than the rest. `Not running (3)` is the plain statement that
+# the object is not doing its job. `Sleep in High Temperature (5)` is a disk the array parked
+# because it got too hot, so it reports both a component out of service and a cooling problem
+# behind it. `To be synchronized (100)` is a replication or HyperMetro relationship that is
+# not mirroring, which means the second copy an operator relies on for a site failure does
+# not exist right now.
+_FAILED_RUNNING_STATES = frozenset({3, 5, 28, 35, 74, 94, 100, 103, 105, 112})
 
 
 def get_running_status_state(rs, ok_codes):

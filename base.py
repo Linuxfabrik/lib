@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080701'
+__version__ = '2026080702'
 
 import numbers
 import operator
@@ -246,7 +246,13 @@ def get_state(value, warn, crit, _operator='ge'):
 
 
 def get_table(
-    data, cols, header=None, strip=True, sort_by_key=None, sort_order_reverse=False
+    data,
+    cols,
+    header=None,
+    strip=True,
+    sort_by_key=None,
+    sort_order_reverse=False,
+    missing=None,
 ):
     """
     Format a list of dictionaries into a simple ASCII table.
@@ -255,8 +261,9 @@ def get_table(
     (like `│`, `┼`, `─`) to guarantee correct rendering on any platform, locale, terminal,
     and transport layer regardless of encoding.
 
-    Each dictionary must contain the specified columns (`cols`). Optionally supports a custom
-    header, sorting by a given key, and stripping whitespace from values.
+    Each dictionary must contain the specified columns (`cols`), unless `missing` states
+    what to print for the ones it does not. Optionally supports a custom header, sorting by
+    a given key, and stripping whitespace from values.
 
     ### Parameters
     - **data** (`list`): List of dictionaries representing the table rows.
@@ -265,9 +272,21 @@ def get_table(
     - **strip** (`bool`, optional): Whether to strip whitespace from values. Defaults to True.
     - **sort_by_key** (`str`, optional): Column key to sort the table by. Defaults to None.
     - **sort_order_reverse** (`bool`, optional): Sort descending if True. Defaults to False.
+    - **missing** (`str`, optional):
+      What to print in a cell whose key the row does not have. Defaults to `None`, which
+      reports the missing column instead of printing the table at all.
 
     ### Returns
     - **str**: A string containing the formatted table.
+
+    ### Notes
+    - Without `missing`, a column no row carries is treated as a mistake in the calling
+      code and reported as `Unknown column "..."`, which is what a mistyped column name
+      deserves. That is the default because most consumers build their rows themselves and
+      a silently empty column would hide the typo.
+    - A consumer whose rows come from somewhere else, such as an API that only sends the
+      fields it has something to say about, passes `missing='--'` instead. One optional
+      field a firmware leaves out then costs that one cell rather than the whole table.
 
     ### Example
     >>> data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]
@@ -277,6 +296,9 @@ def get_table(
     ------+----
     Alice ! 30
     Bob   ! 25
+
+    >>> print(get_table([{'name': 'Alice'}], ['name', 'age'], missing='--'))
+    Alice ! --
     """
     if not data:
         return ''
@@ -298,7 +320,11 @@ def get_table(
         processed_row = {}
         for col in cols:
             if col not in row:
-                return f'Unknown column "{col}"'
+                if missing is None:
+                    return f'Unknown column "{col}"'
+                processed_row[col] = missing
+                column_widths[col] = max(column_widths.get(col, 0), len(missing))
+                continue
             value = str(row[col])
             if strip:
                 value = value.strip()
