@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080702'
+__version__ = '2026080703'
 
 import numbers
 import operator
@@ -245,6 +245,14 @@ def get_state(value, warn, crit, _operator='ge'):
     return STATE_OK
 
 
+def _is_empty_cell(value):
+    """Whether a rendered cell carries no information: empty, or one of the hyphen
+    placeholders consumers print for "this object has no such field". A value that only
+    starts with a hyphen, `-1` for instance, is a value and is not matched.
+    """
+    return str(value).strip().strip('-') == ''
+
+
 def get_table(
     data,
     cols,
@@ -253,6 +261,7 @@ def get_table(
     sort_by_key=None,
     sort_order_reverse=False,
     missing=None,
+    hide_empty=False,
 ):
     """
     Format a list of dictionaries into a simple ASCII table.
@@ -275,6 +284,9 @@ def get_table(
     - **missing** (`str`, optional):
       What to print in a cell whose key the row does not have. Defaults to `None`, which
       reports the missing column instead of printing the table at all.
+    - **hide_empty** (`bool`, optional):
+      Leave out every column that no row filled in, that is one whose cells are all empty
+      or all a hyphen placeholder. Defaults to False.
 
     ### Returns
     - **str**: A string containing the formatted table.
@@ -287,6 +299,13 @@ def get_table(
     - A consumer whose rows come from somewhere else, such as an API that only sends the
       fields it has something to say about, passes `missing='--'` instead. One optional
       field a firmware leaves out then costs that one cell rather than the whole table.
+    - `hide_empty` is for the consumer whose column set is fixed but whose rows are not:
+      a check listing several kinds of object prints the columns that apply to none of the
+      objects it actually found as a wall of hyphens, pushing the text that matters off to
+      the right. It is off by default, because a column that is empty today and filled
+      tomorrow would otherwise make the table change shape between runs.
+    - When `hide_empty` would leave nothing at all, every column is kept. A table of
+      headers says more than a blank line.
 
     ### Example
     >>> data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]
@@ -299,6 +318,13 @@ def get_table(
 
     >>> print(get_table([{'name': 'Alice'}], ['name', 'age'], missing='--'))
     Alice ! --
+
+    >>> data = [{'name': 'Alice', 'age': '-'}, {'name': 'Bob', 'age': '-'}]
+    >>> print(get_table(data, ['name', 'age'], header=['Name', 'Age'], hide_empty=True))
+    Name
+    -----
+    Alice
+    Bob
     """
     if not data:
         return ''
@@ -308,6 +334,19 @@ def get_table(
         data = sorted(
             data, key=operator.itemgetter(sort_by_key), reverse=sort_order_reverse
         )
+
+    if hide_empty:
+        # Judged on the rows only, before the header joins them: the header text would
+        # otherwise fill every column and nothing would ever be dropped.
+        kept = [
+            index
+            for index, col in enumerate(cols)
+            if any(not _is_empty_cell(row.get(col, missing or '')) for row in data)
+        ]
+        if kept:
+            if header:
+                header = [header[index] for index in kept]
+            cols = [cols[index] for index in kept]
 
     if header:
         data.insert(0, dict(zip(cols, header)))

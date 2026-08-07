@@ -269,6 +269,50 @@ class TestGetTable(unittest.TestCase):
         base.get_table(data, ['a'], header=['A'])
         self.assertEqual(data, [{'a': 1}])
 
+    # A column no row filled in is a wall of hyphens that pushes the text that matters
+    # off to the right. Off by default, so a table does not change shape between runs
+    # unless the consumer asks for it.
+    def test_hide_empty_drops_a_column_nobody_filled(self):
+        data = [{'n': 'Alice', 'v': '-'}, {'n': 'Bob', 'v': ''}]
+        out = base.get_table(data, ['n', 'v'], header=['Name', 'Val'], hide_empty=True)
+        self.assertNotIn('Val', out)
+        self.assertIn('Alice', out)
+
+    def test_hide_empty_is_off_by_default(self):
+        data = [{'n': 'Alice', 'v': '-'}]
+        self.assertIn('Val', base.get_table(data, ['n', 'v'], header=['Name', 'Val']))
+
+    def test_hide_empty_keeps_a_column_with_one_value(self):
+        data = [{'n': 'Alice', 'v': '-'}, {'n': 'Bob', 'v': '5.0'}]
+        out = base.get_table(data, ['n', 'v'], header=['Name', 'Val'], hide_empty=True)
+        self.assertIn('Val', out)
+        self.assertIn('5.0', out)
+
+    # A value that only starts with a hyphen is a value.
+    def test_hide_empty_keeps_a_negative_number(self):
+        data = [{'n': 'Alice', 'v': '-1'}]
+        out = base.get_table(data, ['n', 'v'], header=['Name', 'Val'], hide_empty=True)
+        self.assertIn('Val', out)
+
+    # A cell the row does not carry at all renders as `missing` and counts as empty.
+    def test_hide_empty_counts_a_missing_cell(self):
+        data = [{'n': 'Alice'}]
+        out = base.get_table(
+            data, ['n', 'v'], header=['Name', 'Val'], missing='--', hide_empty=True
+        )
+        self.assertNotIn('Val', out)
+
+    # Dropping everything would leave a blank line, which says less than the headers.
+    def test_hide_empty_keeps_all_when_all_are_empty(self):
+        data = [{'n': '-', 'v': '-'}]
+        out = base.get_table(data, ['n', 'v'], header=['Name', 'Val'], hide_empty=True)
+        self.assertIn('Name', out)
+        self.assertIn('Val', out)
+
+    def test_hide_empty_without_a_header(self):
+        data = [{'n': 'Alice', 'v': '-'}]
+        self.assertEqual(base.get_table(data, ['n', 'v'], hide_empty=True), 'Alice\n')
+
 
 class TestGetWorst(unittest.TestCase):
     def test_no_args_is_ok(self):

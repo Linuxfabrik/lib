@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * args.py: `--password-file` joins the shared help texts, and `load_secret()` reads a secret out of a file so it does not have to be passed on the command line, where it is visible to every user on the host.
 * args.py: `--warning-temperature` and `--critical-temperature` join the shared help texts, so every check that alerts on a temperature names the parameter the same way.
 * args.py: `--warning-voltage` and `--critical-voltage` join the shared help texts, mirroring the temperature pair, so a hardware check that alerts on a voltage names the parameter the same way.
+* base.py: `get_table()` takes a `hide_empty`, which leaves out every column no row filled in, so a check listing several kinds of object no longer prints a wall of hyphens that pushes the text that matters off to the right. Off by default.
 * base.py: `get_table()` takes a `missing`, so a consumer whose rows come from an API that only sends the fields it has something to say about prints a placeholder in that one cell instead of losing the whole table. Without it, a missing column is still reported as a mistake in the calling code.
 * base.py: `verbose()` prints a progress message only when verbose output is switched on, so long-running consumers stop copying the same two-line helper.
 * db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
