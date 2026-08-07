@@ -20,9 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* args.py: `--brief` joins the shared help texts, so every check that can hide the rows within its thresholds describes the switch the same way, including that performance data and alerting stay unaffected.
 * args.py: `--no-vuln-data-severity` joins the shared help texts, so every check that can end up without vulnerability data names the parameter the same way.
-* args.py: `--warning-temperature` and `--critical-temperature` join the shared help texts, so every check that alerts on a temperature names the parameter the same way.
 * args.py: `--password-file` joins the shared help texts, and `load_secret()` reads a secret out of a file so it does not have to be passed on the command line, where it is visible to every user on the host.
+* args.py: `--warning-temperature` and `--critical-temperature` join the shared help texts, so every check that alerts on a temperature names the parameter the same way.
+* args.py: `--warning-voltage` and `--critical-voltage` join the shared help texts, mirroring the temperature pair, so a hardware check that alerts on a voltage names the parameter the same way.
 * base.py: `get_table()` takes a `missing`, so a consumer whose rows come from an API that only sends the fields it has something to say about prints a placeholder in that one cell instead of losing the whole table. Without it, a missing column is still reported as a mistake in the calling code.
 * base.py: `verbose()` prints a progress message only when verbose output is switched on, so long-running consumers stop copying the same two-line helper.
 * db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
@@ -52,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_pacific.py: `get_performance()` reads CPU, memory, throughput and latency counters of the cluster and its nodes through the batch performance interface.
 * huawei_pacific.py: `get_pool_status()` translates a storage or disk pool status into readable text.
 * huawei_pacific.py: `get_result_code()` reads the status code out of either response envelope the appliance uses, so a consumer does not have to know which endpoint generation it is talking to.
+* huawei_pacific.py: `get_warranty_status()` translates how much of a cluster node's warranty is left into readable text.
 * lftest.py: `test_json()` reads one of several test fixtures of a run and returns the JSON it holds, so a consumer querying several endpoints stops copying the same fixture read and the same two error messages.
 * nextcloud.py: `run_occ()` accepts a `timeout`, so a hanging `occ` no longer keeps a check running forever.
 * txt.py: `unescape()` resolves the HTML character references some sources put into plain text, so a hardware model reads as `Expansion Module(24 Cores)` instead of `Expansion Module&#40;24 Cores&#41;`.
