@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * base.py: `verbose()` prints a progress message only when verbose output is switched on, so long-running consumers stop copying the same two-line helper.
 * db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
 * disk.py: `read_file()` accepts a `max_bytes`, so a consumer interested only in the head of a file stops reading the whole of it.
+* txt.py: `shorten()` cuts a long value down for display, out of the middle, so one oversized entry no longer widens a whole table column and two values differing only at the end stay distinguishable.
 * distro.py: Clear Linux, CoreOS, Flatcar, Mandriva, OpenWrt, Slackware, SUSE, UnionTech and the Debian derivatives Cumulus Linux, Deepin, Devuan, Kali, Linux Mint, Parrot, SteamOS and Uos are recognised. Anything else still unknown is now identified from `/etc/os-release` instead of being reported as plain "Linux".
 * huawei_dorado.py, huawei_pacific.py: `as_code()` turns a status code the appliance sends as a string, or does not send at all, into a number a consumer can compare. Consumers used to carry a copy of it each.
 * huawei_dorado.py, huawei_pacific.py: `assert_ok()` ends a check with UNKNOWN and the appliance's own error text unless the response reports success, so every consumer recognises a rejected query the same way instead of each checking the envelope slightly differently.

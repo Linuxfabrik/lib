@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026072301'
+__version__ = '2026080701'
 
 import csv
 import glob as _glob
@@ -23,7 +23,7 @@ import re
 import shutil
 import tempfile
 
-from . import shell
+from . import shell, txt
 
 
 def bd2dmd(device):
@@ -980,11 +980,8 @@ def shorten_path(path, max_len=None):
     head, _, tail = path.rpartition('/')
     abbrev = '/'.join(part[:1] for part in head.split('/'))
     result = f'{abbrev}/{tail}'
-    if max_len is not None and len(result) > max_len:
-        keep = max_len - 3
-        head_len = keep // 2
-        tail_len = keep - head_len
-        result = f'{result[:head_len]}...{result[-tail_len:]}'
+    if max_len is not None:
+        result = txt.shorten(result, max_len)
     return result
 
 

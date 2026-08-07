@@ -309,5 +309,40 @@ class TestUniq(unittest.TestCase):
         self.assertEqual(txt.uniq(''), '')
 
 
+class TestShorten(unittest.TestCase):
+    def test_fits_already(self):
+        self.assertEqual(txt.shorten('short enough', 40), 'short enough')
+
+    def test_exactly_max_len(self):
+        self.assertEqual(txt.shorten('abcde', 5), 'abcde')
+
+    def test_cuts_out_of_the_middle(self):
+        result = txt.shorten('alice, bob, carol, dave, erin, frank', 20)
+        self.assertEqual(result, 'alice, b...in, frank')
+        self.assertEqual(len(result), 20)
+
+    # Head and tail are both kept, so two values differing only at the end stay
+    # distinguishable. That is the reason for cutting out of the middle at all.
+    def test_keeps_head_and_tail(self):
+        first = txt.shorten('prefix-' + 'x' * 50 + '-alpha', 20)
+        second = txt.shorten('prefix-' + 'x' * 50 + '-omega', 20)
+        self.assertTrue(first.startswith('prefix'))
+        self.assertTrue(first.endswith('alpha'))
+        self.assertTrue(second.endswith('omega'))
+        self.assertNotEqual(first, second)
+
+    def test_custom_ellipsis(self):
+        self.assertEqual(txt.shorten('abcdefghij', 5, ellipsis='*'), 'ab*ij')
+
+    # A result made only of the marker would carry nothing, so it degrades to a plain
+    # head-truncation instead.
+    def test_max_len_too_small_for_the_marker(self):
+        self.assertEqual(txt.shorten('abcdefghij', 3), 'abc')
+        self.assertEqual(txt.shorten('abcdefghij', 2), 'ab')
+
+    def test_empty_input(self):
+        self.assertEqual(txt.shorten('', 10), '')
+
+
 if __name__ == '__main__':
     unittest.main()

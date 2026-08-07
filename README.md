@@ -73,7 +73,7 @@ These libraries are built with a clear set of priorities:
 | **lftest.py** | Test harness for data-driven plugin unit tests, spinning up throwaway containers (including MySQL/MariaDB) as fixtures. | `attach_each()`, `attach_tests()`, `run()`, `run_container()`, `run_mysql_compatible_from_containerfile()`, `test()`, `test_json()` |
 | **openmetrics.py** | Reads the OpenMetrics and Prometheus text exposition formats served by a `/metrics` endpoint into plain samples, and selects a metric by name and labels. | `get_samples()`, `get_value()`, `parse()` |
 | **time.py** | Date/time conversions between UNIX epochs, ISO strings, and datetime objects, plus time-macro expansion and time differences. Timezone-aware. | `epoch2iso()`, `now()`, `timestr2datetime()`, `timestrdiff()` |
-| **txt.py** | Text processing: regex compilation, substring extraction, multi-line parsing, sensitive data redaction, pluralization, HTML character reference resolution, and byte/text encoding conversion. | `compile_regex()`, `extract_str()`, `match_regex()`, `mltext2array()`, `pluralize()`, `to_bytes()`, `to_text()`, `unescape()` |
+| **txt.py** | Text processing: regex compilation, substring extraction, multi-line parsing, sensitive data redaction, pluralization, shortening for display, HTML character reference resolution, and byte/text encoding conversion. | `compile_regex()`, `extract_str()`, `match_regex()`, `mltext2array()`, `pluralize()`, `shorten()`, `to_bytes()`, `to_text()`, `unescape()` |
 | **version.py** | Software version parsing, comparison, and End-of-Life checking against [endoflife.date](https://endoflife.date). | `check_eol()`, `version()`, `version2float()` |
 
 

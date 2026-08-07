@@ -495,6 +495,44 @@ def sanitize_sensitive_data(msg, replacement='******'):
 # with the object-oriented and typing scaffolding stripped for our Python 3.9+
 # use-case. Look here if upstream behaviour ever needs to be re-checked or synced:
 #   ansible/lib/ansible/module_utils/common/text/converters.py  (to_bytes, to_text)
+def shorten(text, max_len, ellipsis='...'):
+    """
+    Shorten a string for display, keeping its head and its tail.
+
+    Cuts out of the middle rather than off the end, so two values that differ only in
+    their tail stay distinguishable. Meant for text that goes into a fixed-width column,
+    where one long value would otherwise widen the whole table: a list of names, a
+    command line, an identifier.
+
+    ### Parameters
+    - **text** (`str`): The string to shorten.
+    - **max_len** (`int`): Maximum length of the result, including the marker.
+    - **ellipsis** (`str`, optional): The marker put in place of what was cut.
+      Defaults to `'...'`, plain ASCII, so it renders in a monospace table on any
+      terminal and survives any transport.
+
+    ### Returns
+    - **str**: The shortened string, or the original when it already fits. A `max_len`
+      too small to hold the marker yields a plain head-truncation, since a result
+      consisting only of a marker would carry no information.
+
+    ### Example
+    >>> shorten('alice, bob, carol, dave, erin, frank', 20)
+    'alice, b...in, frank'
+
+    >>> shorten('short enough', 40)
+    'short enough'
+    """
+    if not text or len(text) <= max_len:
+        return text
+    keep = max_len - len(ellipsis)
+    if keep <= 0:
+        return text[:max_len]
+    head_len = keep // 2
+    tail_len = keep - head_len
+    return f'{text[:head_len]}{ellipsis}{text[-tail_len:]}'
+
+
 # Original under the Simplified BSD License, (c) 2016 Toshio Kuratomi / Ansible
 # project. Deliberate omissions vs. upstream: the Python 2 fallback for when the
 # `surrogateescape` error handler is unavailable (it always is on Python 3), and
