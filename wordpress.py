@@ -18,7 +18,7 @@ them take the path to the installation root, the directory holding `wp-includes/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080701'
+__version__ = '2026080702'
 
 import glob as _glob
 import os
@@ -46,11 +46,32 @@ HEADER_BYTES = 8192
 # unbounded.
 CONFIG_BYTES = 65536
 
+# The same for the version file, which is smaller still: a licence header and a handful
+# of assignments, with `$wp_version` among the first of them.
+VERSION_BYTES = 16384
+
 # Order in which the site URL is taken from the configuration. `WP_HOME` is the address
 # visitors use, `WP_SITEURL` the one WordPress itself is reached under. They differ on
 # installations that keep the core in a subdirectory, and the visitor-facing one is what
 # a consumer wants.
 SITE_URL_CONSTANTS = ('WP_HOME', 'WP_SITEURL')
+
+# What closes a comment block on the same line as a header field. WordPress removes this
+# from every value it reads (`_cleanup_header_comment()`), so a one-line header does not
+# carry its own terminator into the value.
+COMMENT_TAIL = re.compile(r'\s*(?:\*/|\?>).*')
+
+# A PHP block comment. Removed before the configuration is searched, so a constant
+# commented out with `/* */` cannot win over the one that is actually in effect.
+BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.DOTALL)
+
+# How a definition that PHP actually evaluates begins: at the start of a line, with no
+# line comment in front of it. PHP ignores a commented-out definition, so this library
+# has to as well - switching an installation between a staging and a production address
+# by commenting one of the two out is a common hand-edit, and reading the commented one
+# would send a consumer to the wrong site. Anchoring is used rather than stripping the
+# comments, because `//` also occurs inside every URL this module is looking for.
+LINE_START = r'(?m)^[^\S\n]*(?!//|#|\*)'
 
 
 def _read_header(filename):
@@ -65,9 +86,17 @@ def _read_header(filename):
 
 
 def _header_value(header, field):
-    """Extract a single field from an already-read header block."""
-    match = re.search(rf'(?im)^[ \t*#/]*{re.escape(field)}\s*:\s*(.+)$', header)
-    return match.group(1).strip() if match else ''
+    """Extract a single field from an already-read header block.
+
+    The character class and the trailing cleanup mirror WordPress's own
+    `get_file_data()` and `_cleanup_header_comment()`, so a value reads here exactly as
+    WordPress reads it. Without the cleanup a header written as a single-line comment,
+    `/* Version: 1.2 */`, would yield `1.2 */`.
+    """
+    match = re.search(rf'(?im)^[ \t*#/@]*{re.escape(field)}\s*:\s*(.+)$', header)
+    if not match:
+        return ''
+    return COMMENT_TAIL.sub('', match.group(1)).strip()
 
 
 def get_header_value(filename, field):
@@ -127,6 +156,11 @@ def get_plugins(path):
       yields an empty dict.
 
     ### Notes
+    - WordPress lists every header-bearing file separately and has no notion of a main
+      file. One entry per directory is more useful to a consumer, so where a directory
+      holds several such files the one named after the directory supplies the version,
+      that being the convention every plugin follows. Failing that, the first in sorted
+      order wins.
     - Symlinks are followed. The plugin directory is writable by the web server on
       installations that allow updates through the admin interface, so anyone able to
       write there can point an entry at a file outside the installation and have its
@@ -150,16 +184,21 @@ def get_plugins(path):
         if not _header_value(header, 'Plugin Name'):
             continue
         parent = os.path.dirname(candidate)
+        basename = os.path.basename(candidate)
         if os.path.normcase(os.path.normpath(parent)) == os.path.normcase(
             os.path.normpath(plugin_dir)
         ):
-            slug = os.path.splitext(os.path.basename(candidate))[0]
+            slug = os.path.splitext(basename)[0]
         else:
             slug = os.path.basename(parent)
-        # A plugin directory can hold more than one file with a header; the first one
-        # wins, which is the order WordPress uses.
-        if slug not in plugins:
-            plugins[slug] = get_header_value(candidate, 'Version') or 'unknown'
+        version = _header_value(header, 'Version') or 'unknown'
+        # A plugin directory can hold more than one file with a header, an admin page
+        # of the plugin among them. WordPress lists each of them separately and has no
+        # notion of a main file at all, so there is nothing to mirror here; the file
+        # named after its directory is the convention every plugin follows and is
+        # therefore preferred. Otherwise the first one in sorted order wins.
+        if slug not in plugins or os.path.splitext(basename)[0] == slug:
+            plugins[slug] = version
     return plugins
 
 
@@ -178,6 +217,11 @@ def get_themes(path):
       name. The version is the value of the `Version` header, or `'unknown'` when the
       theme declares none. An installation without a readable theme directory yields an
       empty dict.
+
+    ### Notes
+    - Symlinks are followed, and the theme directory carries the same web server write
+      permissions as the plugin directory. See `get_plugins()` for what that means for
+      a consumer.
 
     ### Example
     >>> get_themes('/var/www/html/wordpress')
@@ -220,6 +264,8 @@ def get_site_url(path):
       only other place WordPress itself accepts the file in.
     - A value assembled at runtime, such as `'https://' . $_SERVER['HTTP_HOST']`, is not
       a fixed URL and is skipped rather than returned half-read.
+    - `define()`, `@define()` and `const` are all read, and a definition PHP would skip
+      because it sits in a comment is skipped here too.
     - `wp-config.php` holds the database credentials. Only the two constants above are
       ever extracted; no other part of the file is returned to the caller. On a typical
       installation the file is not world-readable, so an unprivileged consumer will
@@ -241,18 +287,24 @@ def get_site_url(path):
         if not success:
             error = error or config
             continue
-        config = txt.to_text(config, errors='strict_or_latin1')
+        config = BLOCK_COMMENT.sub('', txt.to_text(config, errors='strict_or_latin1'))
         for constant in SITE_URL_CONSTANTS:
             # Matches both PHP quoting styles and tolerates whitespace anywhere the
             # language does. The closing quote must be followed by the end of the
-            # argument, so a concatenated expression does not match at all.
+            # argument, so a concatenated expression does not match at all. `@define()`
+            # is the same call with its warnings suppressed, and `const` is the other
+            # spelling PHP makes visible to `defined()`, so WordPress honours all three.
             match = re.search(
-                rf"""define\s*\(\s*(['"]){constant}\1\s*,\s*"""
-                r"""(['"])(https?://[^'"]+)\2\s*[,)]""",
+                LINE_START + rf"""@?define\s*\(\s*(['"]){constant}\1\s*,\s*"""
+                r"""(['"])(?P<url>https?://[^'"]+)\2\s*[,)]""",
+                config,
+            ) or re.search(
+                LINE_START + rf"""const\s+{constant}\s*=\s*"""
+                r"""(['"])(?P<url>https?://[^'"]+)\1\s*;""",
                 config,
             )
             if match:
-                return (True, match.group(3).rstrip('/'))
+                return (True, match.group('url').rstrip('/'))
         return (True, '')
     return (False, error or f'No "{CONFIG_FILE}" found below "{path}".')
 
@@ -273,14 +325,24 @@ def get_version(path):
         is present but carries no recognizable version assignment.
       - On failure: `(False, error)` when the file cannot be opened or read.
 
+    ### Notes
+    - Read the same bounded, encoding-tolerant way as everything else in this module.
+      The file is a few kilobytes of ASCII on every installation, but a consumer must
+      not be handed a decoding error dressed up as a missing installation.
+
     ### Example
     >>> get_version('/var/www/html/wordpress')
     (True, '7.0.2')
     """
-    return disk.grep_file(
-        os.path.join(path, VERSION_FILE),
-        r"wp_version\s*=\s*'([^']*)'",
+    success, raw = disk.read_file(
+        os.path.join(path, VERSION_FILE), binary=True, max_bytes=VERSION_BYTES
     )
+    if not success:
+        return (False, raw)
+    match = re.search(
+        r"wp_version\s*=\s*'([^']*)'", txt.to_text(raw, errors='strict_or_latin1')
+    )
+    return (True, match.group(1) if match else '')
 
 
 def is_installation(path):

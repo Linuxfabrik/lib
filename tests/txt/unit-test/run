@@ -189,10 +189,50 @@ class TestSanitizeSensitiveData(unittest.TestCase):
         self.assertIn('admin', out)
 
     def test_redacts_mapping_token_and_key_variants(self):
-        for field in ('token', 'secret', 'api_key', 'access-token'):
+        for field in ('token', 'secret', 'api_key', 'access-token', 'http_auth'):
             with self.subTest(field=field):
                 out = txt.sanitize_sensitive_data(f"{{'{field}': 'linuxfabrik'}}")
                 self.assertNotIn('linuxfabrik', out)
+
+    # A `login:password` pair handed to a command line, the only way tools such as
+    # curl and wpscan accept HTTP basic credentials.
+    def test_redacts_http_auth_option(self):
+        out = txt.sanitize_sensitive_data(
+            'wpscan --url=https://www.example.com --http-auth=admin:linuxfabrik'
+        )
+        self.assertNotIn('linuxfabrik', out)
+        self.assertIn('--http-auth=******', out)
+        self.assertIn('--url=https://www.example.com', out)
+
+    # An option naming a credential *file* holds a path, not a secret. Blanking it
+    # would hide the one thing an admin needs to check.
+    def test_keeps_credential_file_path_readable(self):
+        out = txt.sanitize_sensitive_data('--http-auth-file=/etc/icinga2/wpscan.auth')
+        self.assertIn('/etc/icinga2/wpscan.auth', out)
+
+    # A credential inside a URL is preceded by no sensitive name at all, so only the
+    # userinfo pattern catches it.
+    def test_redacts_url_userinfo(self):
+        out = txt.sanitize_sensitive_data(
+            '--proxy=http://admin:linuxfabrik@192.0.2.1:3128'
+        )
+        self.assertNotIn('linuxfabrik', out)
+        self.assertEqual(out, '--proxy=http://admin:******@192.0.2.1:3128')
+
+    def test_redacts_url_userinfo_without_login(self):
+        out = txt.sanitize_sensitive_data('redis://:linuxfabrik@localhost')
+        self.assertNotIn('linuxfabrik', out)
+
+    # A URL carries userinfo only in front of an '@'. A port, a path and a bare
+    # login have to survive untouched, or every URL in every message turns to noise.
+    def test_keeps_ordinary_urls_readable(self):
+        for url in (
+            'https://www.example.com:8443/path',
+            'https://github.com/Linuxfabrik/monitoring-plugins/blob/main/x',
+            'https://admin@www.example.com/path',
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(txt.sanitize_sensitive_data(url), url)
 
 
 class TestToBytes(unittest.TestCase):

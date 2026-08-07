@@ -138,6 +138,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * nextcloud.py: A missing or unreadable `config/config.php` is reported with the path, instead of the check trying to run `occ` as a user that does not exist.
 * nextcloud.py: An `occ` call that cannot be started at all, most commonly because `sudo` is not installed, is reported as an error. It used to end the check with a traceback.
 * nextcloud.py: Nextcloud's own startup warnings, which it writes to standard output, are kept out of the evaluated result. A host missing the PHP process control extension used to fail every Nextcloud check with an unreadable parsing error.
+* wordpress.py: A plugin shipping more than one plugin file reports the version of its main file.
+* wordpress.py: A site URL pinned with `const` instead of `define()` is read.
+* wordpress.py: A site URL that is only defined inside a comment is ignored, as PHP ignores it. An installation switched between a staging and a production address by commenting one of the two out used to report the commented address, sending a consumer to the wrong site.
+* wordpress.py: A version written as a one-line comment reads as the version alone, instead of carrying the end of the comment with it.
 
 ### Security
 
@@ -147,6 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * ssh.py: An SSH password is handed to `sshpass` through the environment instead of its command line, so it is no longer readable in the host's process list for as long as the check runs.
 * txt.py: Passwords, tokens and API keys are also redacted when a message embeds them as a Python mapping, not only in the `key=value` and JSON forms.
 * txt.py: Passwords, tokens and API keys are also redacted when a message embeds them as a stringified argument list, which is the shape a command takes in an error message.
+* txt.py: HTTP basic credentials and a credential carried inside a URL, such as in a proxy address, are redacted too. Both used to reach the plugin output unmasked.
 * url.py: A failed request no longer echoes the request body, so login credentials cannot reach the plugin output. Only the field names are reported.
 
 

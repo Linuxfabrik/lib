@@ -81,6 +81,30 @@ Text Domain: akismet
 
 NO_HEADER_PHP = '<?php\nclass Akismet_Admin {}\n'
 
+# A header written as single-line comments, which WordPress reads by stripping the
+# comment terminator off the value. Without that step the version reads `1.2 */`.
+ONELINE_HEADER_PHP = """<?php
+/* Plugin Name: One Liner */
+/* Version: 1.2 */
+"""
+
+# A second header-bearing file inside a plugin directory, sorting before the file named
+# after the directory. WordPress has no notion of a main file, so the one carrying the
+# directory name has to win or the admin page supplies the version.
+ADMIN_PAGE_PHP = """<?php
+/*
+Plugin Name: Toolkit Admin Page
+Version: 0.0.1
+*/
+"""
+
+TOOLKIT_PHP = """<?php
+/*
+Plugin Name: Toolkit
+Version: 3.4
+*/
+"""
+
 UNVERSIONED_PLUGIN_PHP = """<?php
 /*
 Plugin Name: Homegrown Snippet
@@ -134,6 +158,36 @@ define( 'DB_NAME', 'wordpress' );
 define( 'DB_PASSWORD', 'linuxfabrik' );
 """
 
+# Switching an installation between a staging and a production address by commenting one
+# of the two out is a common hand-edit. PHP evaluates none of the three commented forms,
+# so neither may win over the definition that is actually in effect.
+WP_CONFIG_COMMENTED_PHP = """<?php
+/**
+ * The base configuration.
+ *
+ * @package WordPress
+ */
+define( 'DB_PASSWORD', 'linuxfabrik' );
+// define( 'WP_HOME', 'https://staging.example.com' );
+# define( 'WP_HOME', 'https://old.example.com' );
+/*
+define( 'WP_HOME', 'https://retired.example.com' );
+*/
+define( 'WP_HOME', 'https://www.example.com/' );
+"""
+
+# `const` is the other spelling PHP makes visible to `defined()`, and `@define()` the
+# same call with its warnings suppressed. WordPress honours all three.
+WP_CONFIG_CONST_PHP = """<?php
+define( 'DB_PASSWORD', 'linuxfabrik' );
+const WP_HOME = 'https://const.example.com';
+"""
+
+WP_CONFIG_AT_DEFINE_PHP = """<?php
+define( 'DB_PASSWORD', 'linuxfabrik' );
+@define( 'WP_HOME', 'https://at.example.com' );
+"""
+
 # A body line that looks like a header field but sits far beyond the 8 KiB WordPress
 # itself reads, so it is not a header field and must not create a phantom plugin.
 LATE_HEADER_PHP = (
@@ -162,6 +216,9 @@ class TestWordPress(unittest.TestCase):
         write(os.path.join(plugins, 'akismet', 'akismet.php'), AKISMET_PHP)
         write(os.path.join(plugins, 'akismet', 'class.admin.php'), NO_HEADER_PHP)
         write(os.path.join(plugins, 'snippet', 'snippet.php'), UNVERSIONED_PLUGIN_PHP)
+        write(os.path.join(plugins, 'oneliner', 'oneliner.php'), ONELINE_HEADER_PHP)
+        write(os.path.join(plugins, 'toolkit', 'admin-page.php'), ADMIN_PAGE_PHP)
+        write(os.path.join(plugins, 'toolkit', 'toolkit.php'), TOOLKIT_PHP)
         write(os.path.join(themes, 'index.php'), PLACEHOLDER)
         write(os.path.join(themes, 'twentytwentyfive', 'style.css'), STYLE_CSS)
         write(os.path.join(themes, 'homegrown', 'style.css'), UNVERSIONED_STYLE_CSS)
@@ -201,12 +258,24 @@ class TestWordPress(unittest.TestCase):
             {
                 'akismet': '5.7',
                 'hello': '1.7.2',
+                'oneliner': '1.2',
                 'snippet': 'unknown',
+                'toolkit': '3.4',
             },
         )
 
     def test_get_plugins_ignores_placeholder(self):
         self.assertNotIn('index', wordpress.get_plugins(self.wp))
+
+    # A header written as `/* Version: 1.2 */` must not carry its own comment terminator
+    # into the value, which is what WordPress strips in _cleanup_header_comment().
+    def test_get_plugins_strips_comment_terminator(self):
+        self.assertEqual(wordpress.get_plugins(self.wp)['oneliner'], '1.2')
+
+    # `admin-page.php` sorts before `toolkit.php` and declares a version of its own. The
+    # file named after the directory is the plugin's main file and has to win.
+    def test_get_plugins_prefers_the_file_named_after_its_directory(self):
+        self.assertEqual(wordpress.get_plugins(self.wp)['toolkit'], '3.4')
 
     def test_get_plugins_on_missing_installation(self):
         self.assertEqual(wordpress.get_plugins(self.empty), {})
@@ -227,25 +296,20 @@ class TestWordPress(unittest.TestCase):
         self.assertEqual(wordpress.get_themes(self.empty), {})
 
     # A `[` in the path is a glob metacharacter. Without quoting, the inventory would
-    # silently come back empty while the installation is plainly there.
+    # silently come back empty while the installation is plainly there. The quoted tree
+    # is a copy of the plain one, so the two inventories have to be identical; comparing
+    # them rather than a literal keeps this test about the path and nothing else.
     def test_get_plugins_with_glob_metacharacters_in_path(self):
         self.assertEqual(
-            wordpress.get_plugins(self.quoted),
-            {
-                'akismet': '5.7',
-                'hello': '1.7.2',
-                'snippet': 'unknown',
-            },
+            wordpress.get_plugins(self.quoted), wordpress.get_plugins(self.wp)
         )
+        self.assertTrue(wordpress.get_plugins(self.quoted))
 
     def test_get_themes_with_glob_metacharacters_in_path(self):
         self.assertEqual(
-            wordpress.get_themes(self.quoted),
-            {
-                'homegrown': 'unknown',
-                'twentytwentyfive': '1.5',
-            },
+            wordpress.get_themes(self.quoted), wordpress.get_themes(self.wp)
         )
+        self.assertTrue(wordpress.get_themes(self.quoted))
 
     def test_is_installation_with_glob_metacharacters_in_path(self):
         self.assertTrue(wordpress.is_installation(self.quoted))
@@ -270,6 +334,9 @@ class TestSiteUrl(unittest.TestCase):
         cls.no_url = install('nourl', WP_CONFIG_NO_URL_PHP)
         cls.no_config = install('noconfig')
         cls.parent = install('parent', WP_CONFIG_PHP, in_parent=True)
+        cls.commented = install('commented', WP_CONFIG_COMMENTED_PHP)
+        cls.const = install('const', WP_CONFIG_CONST_PHP)
+        cls.at_define = install('atdefine', WP_CONFIG_AT_DEFINE_PHP)
 
     @classmethod
     def tearDownClass(cls):
@@ -304,9 +371,33 @@ class TestSiteUrl(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn('wp-config.php', result)
 
+    # PHP evaluates none of the commented forms, so a stale staging address must not be
+    # handed back in place of the address the site is actually served under.
+    def test_commented_out_definitions_are_skipped(self):
+        self.assertEqual(
+            wordpress.get_site_url(self.commented), (True, 'https://www.example.com')
+        )
+
+    def test_const_is_read(self):
+        self.assertEqual(
+            wordpress.get_site_url(self.const), (True, 'https://const.example.com')
+        )
+
+    def test_at_define_is_read(self):
+        self.assertEqual(
+            wordpress.get_site_url(self.at_define), (True, 'https://at.example.com')
+        )
+
     # The file holds the database credentials; none of them may come back to the caller.
     def test_credentials_are_not_returned(self):
-        for path in (self.both, self.siteurl_only, self.no_url):
+        for path in (
+            self.both,
+            self.siteurl_only,
+            self.no_url,
+            self.commented,
+            self.const,
+            self.at_define,
+        ):
             self.assertNotIn('linuxfabrik', wordpress.get_site_url(path)[1])
 
 
@@ -320,6 +411,10 @@ class TestHeaderValue(unittest.TestCase):
         write(cls.hello, HELLO_PHP)
         cls.late = os.path.join(cls.dir, 'late.php')
         write(cls.late, LATE_HEADER_PHP)
+        cls.oneliner = os.path.join(cls.dir, 'oneliner.php')
+        write(cls.oneliner, ONELINE_HEADER_PHP)
+        cls.hashed = os.path.join(cls.dir, 'hashed.php')
+        write(cls.hashed, '<?php\n# Plugin Name: Hashed\n# Version: 2.0 ?>\n')
 
     @classmethod
     def tearDownClass(cls):
@@ -344,6 +439,19 @@ class TestHeaderValue(unittest.TestCase):
     # header field and must not win.
     def test_docblock_tag_is_not_a_header(self):
         self.assertEqual(wordpress.get_header_value(self.hello, 'Version'), '1.7.2')
+
+    # A one-line comment block closes on the same line as the value. WordPress strips
+    # that terminator, so `/* Version: 1.2 */` is version 1.2, not `1.2 */`.
+    def test_comment_terminator_is_stripped(self):
+        self.assertEqual(wordpress.get_header_value(self.oneliner, 'Version'), '1.2')
+        self.assertEqual(
+            wordpress.get_header_value(self.oneliner, 'Plugin Name'), 'One Liner'
+        )
+
+    # `?>` closes the PHP block rather than the comment, and WordPress strips it the
+    # same way.
+    def test_php_close_tag_is_stripped(self):
+        self.assertEqual(wordpress.get_header_value(self.hashed, 'Version'), '2.0')
 
     def test_absent_field(self):
         self.assertEqual(wordpress.get_header_value(self.plugin, 'Network'), '')
