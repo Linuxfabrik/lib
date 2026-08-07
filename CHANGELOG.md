@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_pacific.py: `get_password_status()` translates the password status the appliance reports at login into readable text.
 * huawei_pacific.py: `get_performance()` reads CPU, memory, throughput and latency counters of the cluster and its nodes through the batch performance interface.
 * huawei_pacific.py: `get_pool_status()` translates a storage or disk pool status into readable text.
+* huawei_pacific.py: `get_quota_bytes()` reads a quota in the unit the appliance states next to it, so a consumer no longer takes a quota counted in gibibytes for the same number of bytes.
 * huawei_pacific.py: `get_result_code()` reads the status code out of either response envelope the appliance uses, so a consumer does not have to know which endpoint generation it is talking to.
 * huawei_pacific.py: `get_warranty_status()` translates how much of a cluster node's warranty is left into readable text.
 * lftest.py: `test_json()` reads one of several test fixtures of a run and returns the JSON it holds, so a consumer querying several endpoints stops copying the same fixture read and the same two error messages.

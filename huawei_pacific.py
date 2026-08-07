@@ -15,7 +15,7 @@ generation of endpoints below /dsware/service/ and /dfv/service/.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080703'
+__version__ = '2026080704'
 
 import json
 from time import sleep as _sleep
@@ -988,7 +988,7 @@ def _assert_all_nodes_listed(listed, args):
       firmware that does not offer the endpoint must not take the hardware check down with it.
     """
     result = get_data('cluster/servers/count', args)
-    if result.get('result', {}).get('code') not in (0, '0'):
+    if get_result_code(result) not in (0, '0'):
         return
 
     data = result.get('data')
@@ -1043,12 +1043,7 @@ def get_management_ips(args):
     ['192.0.2.11', '192.0.2.12']
     """
     result = get_data('cluster/servers', args)
-    res = result.get('result', {})
-    if res.get('code') not in (0, '0'):
-        base.cu(
-            'Failed to query cluster nodes for their management IP addresses: '
-            f'{res.get("description") or "no description"} (code {res.get("code", "n/a")}).'
-        )
+    assert_ok(result, 'the cluster nodes for their management IP addresses')
 
     nodes = result.get('data') or []
     _assert_all_nodes_listed(len(nodes), args)
@@ -1377,6 +1372,60 @@ def get_pool_status_state(st):
     if code in (1, 3, 4):
         return STATE_CRIT
     return STATE_WARN
+
+
+# What a quota's `space_unit_type` counts its space in. The API sends the quota itself as a
+# bare number and this field next to it, so a quota of "1" can mean one byte or one gibibyte.
+_QUOTA_SPACE_UNITS = {
+    0: 1,
+    1: 1024,
+    2: 1024**2,
+    3: 1024**3,
+}
+
+# The uint64 and uint32 placeholders the API sends where a value is not configured or not
+# measured. They are the largest value of their type, not a measurement.
+QUOTA_INVALID_VALUE64 = 18446744073709551615
+QUOTA_INVALID_VALUE32 = 4294967295
+
+
+def get_quota_bytes(value, space_unit_type):
+    """
+    Convert a Huawei OceanStor Pacific quota space value into bytes.
+
+    ### Parameters
+    - **value** (`int`, `str` or `None`):
+      The quota or usage as the API reported it.
+    - **space_unit_type** (`int`, `str` or `None`):
+      The unit the value is counted in, as the API reported it alongside:
+      `0` bytes, `1` KB, `2` MB, `3` GB. A missing or unknown unit is taken as bytes,
+      which is the default the vendor documents.
+
+    ### Returns
+    - **int** or **None**:
+      The value in bytes, or `None` for a missing value, a negative one and for the
+      `18446744073709551615` placeholder the API sends where nothing is configured.
+
+    ### Notes
+    - The unit is per quota, not per appliance: two shares on the same file system can
+      report their quota in different units. Reading the bare number as bytes understates
+      a quota expressed in gibibytes by a factor of 1073741824, and any fill level computed
+      from it is wrong by the same factor.
+
+    ### Example
+    >>> get_quota_bytes('1', 3)
+    1073741824
+
+    >>> get_quota_bytes('1048576', 0)
+    1048576
+
+    >>> get_quota_bytes('18446744073709551615', 0) is None
+    True
+    """
+    code = as_code(value)
+    if code is None or code < 0 or code == QUOTA_INVALID_VALUE64:
+        return None
+    return code * _QUOTA_SPACE_UNITS.get(as_code(space_unit_type), 1)
 
 
 def get_result_code(result):
