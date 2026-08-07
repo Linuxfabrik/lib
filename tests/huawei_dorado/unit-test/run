@@ -18,6 +18,9 @@ file, and no real sleep ever happens.
 
 Public functions under test:
 
+- assert_ok()                -> abort unless the appliance reported success
+- as_code()                  -> API status code -> int or None
+- field()                    -> field lookup across the spellings a firmware may use
 - get_controller_model()     -> code -> text mapping
 - get_controller_role()      -> code -> text mapping
 - get_cp_type()              -> code -> text mapping
@@ -43,6 +46,7 @@ Public functions under test:
 - get_running_status_state() -> code -> STATE_* mapping, healthy set per object
 - get_switch_status()        -> code -> text mapping
 - get_uuid()                 -> '{TYPE}:{ID}' builder
+- sectors2bytes()            -> sector count -> bytes, sentinels dropped
 
 The mapping helpers all share the same contract (int/str coercion, known
 codes, 'Unknown' fallback, ValueError on non-numeric input), so they are
@@ -53,6 +57,8 @@ how they parse responses and behave under error / missing-key / empty-body
 conditions.
 """
 
+import contextlib
+import io
 import json
 import sys
 import typing
@@ -62,7 +68,7 @@ from unittest import mock
 sys.path.insert(0, '..')
 
 import lib.huawei_dorado as huawei
-from lib.globals import STATE_CRIT, STATE_OK, STATE_WARN
+from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 # ---------------------------------------------------------------------------
 # Test double for the args object passed to get_creds / get_data.
@@ -455,6 +461,135 @@ class TestGetUuid(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# as_code(), assert_ok(), field() and sectors2bytes()
+# ---------------------------------------------------------------------------
+
+
+class TestAssertOk(unittest.TestCase):
+    def test_success_returns(self):
+        self.assertIsNone(huawei.assert_ok({'error': {'code': 0}, 'data': []}, 'the fans'))
+
+    def test_success_as_a_string_returns(self):
+        # Some endpoints report the code as a string. Treating that as an error would take
+        # every check on such a firmware to UNKNOWN.
+        self.assertIsNone(huawei.assert_ok({'error': {'code': '0'}}, 'the fans'))
+
+    def test_error_aborts(self):
+        with self.assertRaises(SystemExit) as ctx:
+            huawei.assert_ok({'error': {'code': -401}}, 'the fans')
+        self.assertEqual(ctx.exception.code, STATE_UNKNOWN)
+
+    def test_error_text_names_the_query_and_the_appliance_reason(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()) as out:
+            huawei.assert_ok(
+                {
+                    'error': {
+                        'code': -401,
+                        'description': 'REST unauthorized',
+                        'suggestion': 'log in again',
+                    }
+                },
+                'the fans',
+            )
+        printed = out.getvalue()
+        self.assertIn('the fans', printed)
+        self.assertIn('-401', printed)
+        self.assertIn('REST unauthorized', printed)
+        self.assertIn('log in again', printed)
+
+    def test_empty_response_aborts(self):
+        # get_data() always answers with an envelope, so nothing at all means the check
+        # never reached the appliance.
+        with self.assertRaises(SystemExit):
+            huawei.assert_ok({}, 'the fans')
+
+    def test_scalar_error_aborts_without_a_type_error(self):
+        # A firmware answering with a bare code rather than the documented object must end
+        # in a clean UNKNOWN, not in an AttributeError inside the check.
+        with self.assertRaises(SystemExit) as ctx:
+            huawei.assert_ok({'error': -401}, 'the fans')
+        self.assertEqual(ctx.exception.code, STATE_UNKNOWN)
+
+    def test_missing_error_object_aborts(self):
+        with self.assertRaises(SystemExit):
+            huawei.assert_ok({'data': []}, 'the fans')
+
+
+class TestAsCode(unittest.TestCase):
+    def test_parses_the_strings_the_api_sends(self):
+        self.assertEqual(huawei.as_code('27'), 27)
+
+    def test_passes_an_integer_through(self):
+        self.assertEqual(huawei.as_code(27), 27)
+
+    def test_parses_a_negative_sentinel(self):
+        self.assertEqual(huawei.as_code('-1'), -1)
+
+    def test_unusable_values_are_none(self):
+        # A missing field, the appliance's own '--' placeholder and an empty string all
+        # mean "nothing to report". Raising here would end a check in a traceback over
+        # one unexpected field.
+        for value in (None, '', '--', 'n/a', [], {}):
+            with self.subTest(value=value):
+                self.assertIsNone(huawei.as_code(value))
+
+
+class TestField(unittest.TestCase):
+    def test_reads_the_exact_name(self):
+        self.assertEqual(huawei.field({'MODEL': 'x'}, 'MODEL'), 'x')
+
+    def test_prefers_the_first_name_that_is_present(self):
+        # A firmware that reports both an old field and its replacement has to yield the
+        # preferred one, not whichever the dict happens to iterate first.
+        data = {'allocatedPoolQuota': '10', 'ALLOCCAPACITY': '20'}
+        self.assertEqual(
+            huawei.field(data, 'allocatedPoolQuota', 'ALLOCCAPACITY'), '10'
+        )
+
+    def test_matches_a_different_case(self):
+        # The sfp object is documented in camelCase and answered in upper case on the
+        # same page of the REST Interface Reference.
+        self.assertEqual(huawei.field({'RXPOWER': '[12]'}, 'rxPowerReal', 'RXPOWER'), '[12]')
+        self.assertEqual(huawei.field({'healthStatus': '1'}, 'HEALTHSTATUS'), '1')
+
+    def test_exact_match_wins_over_a_case_insensitive_one(self):
+        data = {'SPEED': 'upper', 'speed': 'lower'}
+        self.assertEqual(huawei.field(data, 'speed'), 'lower')
+
+    def test_missing_field_yields_the_default(self):
+        self.assertIsNone(huawei.field({}, 'MODEL'))
+        self.assertEqual(huawei.field({}, 'MODEL', default='--'), '--')
+
+    def test_present_but_empty_counts_as_found(self):
+        # '--' and '' are what the appliance sends for "no value". Falling back to the
+        # default would hide the difference between a field a firmware does not have and
+        # one it has nothing to say about.
+        self.assertEqual(huawei.field({'MODEL': ''}, 'MODEL', default='--'), '')
+
+
+class TestSectors2Bytes(unittest.TestCase):
+    def test_converts_with_the_default_sector_size(self):
+        self.assertEqual(huawei.sectors2bytes('2048'), 1048576)
+
+    def test_converts_with_a_reported_sector_size(self):
+        self.assertEqual(huawei.sectors2bytes('2048', 4096), 8388608)
+
+    def test_zero_stays_zero(self):
+        # An empty pool is a real reading, not a missing one.
+        self.assertEqual(huawei.sectors2bytes(0), 0)
+
+    def test_negative_sentinels_are_none(self):
+        # The appliance reports -1 for a capacity it does not have; graphing that gives a
+        # spike where a gap belongs.
+        self.assertIsNone(huawei.sectors2bytes('-1'))
+
+    def test_unusable_values_are_none(self):
+        for value in (None, '', '--'):
+            with self.subTest(value=value):
+                self.assertIsNone(huawei.sectors2bytes(value))
+
+
+# ---------------------------------------------------------------------------
 # Shared base for the HTTP functions: patches cache, time, time.sleep,
 # url.fetch_json and url.fetch so nothing escapes the process.
 # ---------------------------------------------------------------------------
@@ -516,11 +651,12 @@ class HuaweiHttpTestBase(unittest.TestCase):
 
 
 class TestGetCreds(HuaweiHttpTestBase):
-    def test_login_returns_token_and_cookie(self):
+    def test_login_returns_token_cookie_and_device_id(self):
         self.fetch_json.return_value = LOGIN_OK
-        token, cookie = huawei.get_creds(self.args)
+        token, cookie, device_id = huawei.get_creds(self.args)
         self.assertEqual(token, '1234567890123456789012345678901234567890')
         self.assertEqual(cookie, 'session=abc123def456; Path=/deviceManager; HttpOnly')
+        self.assertEqual(device_id, 'DEV0001')
 
     def test_login_uri_includes_device_id(self):
         huawei.get_creds(self.args)
@@ -528,6 +664,29 @@ class TestGetCreds(HuaweiHttpTestBase):
             self.sent_uri(),
             'https://storage.example.com/deviceManager/rest/DEV0001/sessions',
         )
+
+    def test_login_without_a_device_id_uses_the_placeholder_path(self):
+        # The vendor's own login example addresses the placeholder, and the appliance
+        # answers with its real device id. An operator therefore does not have to look
+        # the id up before the check can run.
+        self.args = Args(DEVICE_ID='')
+        huawei.get_creds(self.args)
+        self.assertEqual(
+            self.sent_uri(),
+            'https://storage.example.com/deviceManager/rest/xxxxx/sessions',
+        )
+
+    def test_login_without_a_device_id_takes_it_from_the_response(self):
+        self.args = Args(DEVICE_ID='')
+        _, _, device_id = huawei.get_creds(self.args)
+        self.assertEqual(device_id, 'DEV0001')
+
+    def test_supplied_device_id_wins_over_the_response(self):
+        # An operator can read the id off DeviceManager, so an appliance answering with
+        # something unexpected stays addressable.
+        self.args = Args(DEVICE_ID='OPERATOR-SUPPLIED')
+        _, _, device_id = huawei.get_creds(self.args)
+        self.assertEqual(device_id, 'OPERATOR-SUPPLIED')
 
     def test_login_body_carries_credentials_and_scope(self):
         huawei.get_creds(self.args)
@@ -559,17 +718,18 @@ class TestGetCreds(HuaweiHttpTestBase):
         self.assertTrue(kw['no_proxy'])
         self.assertEqual(kw['timeout'], 42)
 
-    def test_login_caches_token_and_cookie(self):
-        # One key, not two: the request header needs both values, so a write that
-        # only half succeeds would leave a cache that can never be reused and force
-        # a login on every single run.
+    def test_login_caches_token_cookie_and_device_id(self):
+        # One key, not three: a request needs all of them, so a write that only partly
+        # succeeds would leave a cache that can never be reused and force a login on
+        # every single run.
         huawei.get_creds(self.args)
         self.cache_set.assert_called_once_with(
-            'huaweidorado-https://storage.example.com-DEV0001-linuxfabrik-session',
+            'huaweidorado-https://storage.example.com-linuxfabrik-session',
             json.dumps(
                 [
                     '1234567890123456789012345678901234567890',
                     'session=abc123def456; Path=/deviceManager; HttpOnly',
+                    'DEV0001',
                 ]
             ),
             1_000_000 + 15 * 60,
@@ -588,7 +748,7 @@ class TestGetCreds(HuaweiHttpTestBase):
         # absolute timestamp, so passing now() would store an entry that lives for
         # about a second. An operator setting 0 asks for no caching at all.
         self.args = Args(CACHE_EXPIRE=0)
-        token, _ = huawei.get_creds(self.args)
+        token, _, _ = huawei.get_creds(self.args)
         self.assertEqual(token, '1234567890123456789012345678901234567890')
         self.assertFalse(self.cache_get.called)
         self.assertFalse(self.cache_set.called)
@@ -599,23 +759,26 @@ class TestGetCreds(HuaweiHttpTestBase):
             self.cache_get.call_args.kwargs['filename'], huawei.CACHE_FILENAME
         )
 
-    def test_cache_key_includes_url_device_id_and_username(self):
-        # The device id alone does not identify an appliance: it is caller-supplied
-        # and the appliance accepts any string for it on the initial login. The user
-        # name is in the key because a session carries that user's role.
+    def test_cache_key_includes_url_and_username(self):
+        # The device id is not in the key: it is optional and the appliance accepts any
+        # string for it on the initial login, so it does not identify an appliance. The
+        # URL does. The user name is in the key because a session carries that user's role.
         self.args = Args(DEVICE_ID='OTHERBOX', USERNAME='readonly')
         huawei.get_creds(self.args)
         read_keys = [c.args[0] for c in self.cache_get.call_args_list]
         self.assertIn(
-            'huaweidorado-https://storage.example.com-OTHERBOX-readonly-session',
+            'huaweidorado-https://storage.example.com-readonly-session',
             read_keys,
         )
 
     def test_cached_session_short_circuits_login(self):
-        self.cache_get.return_value = json.dumps(['CACHED-TOKEN', 'CACHED-COOKIE'])
-        token, cookie = huawei.get_creds(self.args)
+        self.cache_get.return_value = json.dumps(
+            ['CACHED-TOKEN', 'CACHED-COOKIE', 'CACHED-DEV']
+        )
+        token, cookie, device_id = huawei.get_creds(self.args)
         self.assertEqual(token, 'CACHED-TOKEN')
         self.assertEqual(cookie, 'CACHED-COOKIE')
+        self.assertEqual(device_id, 'CACHED-DEV')
         self.assertFalse(self.fetch_json.called)
         self.assertFalse(self.cache_set.called)
 
@@ -623,20 +786,37 @@ class TestGetCreds(HuaweiHttpTestBase):
         # The cache is still read on this path, but not to reuse the session: the old
         # one has to be handed back to the appliance, otherwise it occupies a slot in
         # the session pool until its timeout expires.
-        self.cache_get.return_value = json.dumps(['CACHED-TOKEN', 'CACHED-COOKIE'])
-        token, _ = huawei.get_creds(self.args, force_relogin=True)
+        self.cache_get.return_value = json.dumps(
+            ['CACHED-TOKEN', 'CACHED-COOKIE', 'CACHED-DEV']
+        )
+        token, _, _ = huawei.get_creds(self.args, force_relogin=True)
         self.assertTrue(self.cache_get.called)
         self.assertTrue(self.fetch_json.called)
         self.assertEqual(token, '1234567890123456789012345678901234567890')
 
     def test_force_relogin_logs_the_cached_session_out(self):
-        self.cache_get.return_value = json.dumps(['CACHED-TOKEN', 'CACHED-COOKIE'])
+        self.cache_get.return_value = json.dumps(
+            ['CACHED-TOKEN', 'CACHED-COOKIE', 'CACHED-DEV']
+        )
         huawei.get_creds(self.args, force_relogin=True)
         self.assertTrue(self.fetch.called, 'the old session was never logged out')
         self.assertEqual(self.fetch.call_args.kwargs['method'], 'DELETE')
         self.assertEqual(
             self.fetch.call_args.kwargs['header'],
             {'Cookie': 'CACHED-COOKIE', 'iBaseToken': 'CACHED-TOKEN'},
+        )
+
+    def test_logout_addresses_the_device_id_of_the_session(self):
+        # Not args.DEVICE_ID: a session opened without one carries the appliance's own
+        # answer, and that is the only path the logout is accepted on.
+        self.args = Args(DEVICE_ID='')
+        self.cache_get.return_value = json.dumps(
+            ['CACHED-TOKEN', 'CACHED-COOKIE', 'CACHED-DEV']
+        )
+        huawei.get_creds(self.args, force_relogin=True)
+        self.assertEqual(
+            self.fetch.call_args.args[0],
+            'https://storage.example.com/deviceManager/rest/CACHED-DEV/sessions',
         )
 
     def test_force_relogin_without_a_cached_session_logs_nothing_out(self):
@@ -652,14 +832,15 @@ class TestGetCreds(HuaweiHttpTestBase):
             'not-json',
             json.dumps('CACHED-TOKEN'),
             json.dumps(['CACHED-TOKEN']),
-            json.dumps(['CACHED-TOKEN', '']),
+            json.dumps(['CACHED-TOKEN', 'CACHED-COOKIE']),
+            json.dumps(['CACHED-TOKEN', 'CACHED-COOKIE', '']),
             json.dumps({'ibasetoken': 'CACHED-TOKEN'}),
         ):
             with self.subTest(cached=cached):
                 self.fetch_json.reset_mock()
                 self.fetch_json.return_value = LOGIN_OK
                 self.cache_get.return_value = cached
-                token, _ = huawei.get_creds(self.args)
+                token, _, _ = huawei.get_creds(self.args)
                 self.assertTrue(self.fetch_json.called)
                 self.assertEqual(token, '1234567890123456789012345678901234567890')
 
@@ -704,7 +885,7 @@ class TestGetData(HuaweiHttpTestBase):
         # get_data calls get_creds internally; stub it so these tests focus on
         # the data request and retry loop, not on the login round-trip.
         self._p_creds = mock.patch.object(
-            huawei, 'get_creds', return_value=('TOKEN', 'COOKIE')
+            huawei, 'get_creds', return_value=('TOKEN', 'COOKIE', 'DEV0001')
         )
         self.get_creds = self._p_creds.start()
         self.addCleanup(self._p_creds.stop)
@@ -853,7 +1034,7 @@ class TestGetAllData(HuaweiHttpTestBase):
     def setUp(self):
         super().setUp()
         self._p_creds = mock.patch.object(
-            huawei, 'get_creds', return_value=('TOKEN', 'COOKIE')
+            huawei, 'get_creds', return_value=('TOKEN', 'COOKIE', 'DEV0001')
         )
         self._p_creds.start()
         self.addCleanup(self._p_creds.stop)
@@ -947,7 +1128,7 @@ class TestGetPerformance(HuaweiHttpTestBase):
     def setUp(self):
         super().setUp()
         self._p_creds = mock.patch.object(
-            huawei, 'get_creds', return_value=('TOKEN', 'COOKIE')
+            huawei, 'get_creds', return_value=('TOKEN', 'COOKIE', 'DEV0001')
         )
         self._p_creds.start()
         self.addCleanup(self._p_creds.stop)

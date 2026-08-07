@@ -11,6 +11,7 @@
 """Provides test functions for unit tests."""
 
 import contextlib
+import json
 import os
 import re
 import shlex
@@ -20,7 +21,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026080701'
 
 
 def run(test_instance, plugin, testcase):
@@ -671,6 +672,56 @@ def test(args):
     stderr = _read_fixture(stderr)
 
     return stdout, stderr, retc
+
+
+def test_json(args, path=None):
+    """
+    Read one `--test` fixture and return the JSON document it holds.
+
+    A consumer that queries several endpoints in one run needs one fixture per endpoint,
+    named after the base path its `--test` argument carries. This resolves such a fixture
+    and parses it, so the consumer does not have to spell out the same read, the same
+    "fixture not found" and the same "not valid JSON" handling for every endpoint.
+
+    ### Parameters
+    - **args** (`list`):
+      The `--test` argument as `lib.args.csv` parsed it. It is not modified, so the
+      caller's own value keeps pointing at the base path and stays usable for the next
+      fixture.
+    - **path** (`str`, optional):
+      The fixture to read instead of the one in `args`. Typically the base path with an
+      endpoint-specific suffix, for example `stdout/two-nodes-capacity`. Defaults to the
+      fixture `args` already names.
+
+    ### Returns
+    - The parsed JSON document.
+
+    ### Notes
+    - Aborts the calling process (UNKNOWN) when the fixture does not exist or does not
+      hold valid JSON. Both are developer errors in a test fixture, and a clear message
+      beats the traceback `json.loads()` would raise.
+    - A missing fixture is recognised by `test()` handing the path back unchanged, which
+      is what it does for anything that does not resolve to a contained fixture file. The
+      path is deliberately not checked against the file system here: fixtures are anchored
+      to the consumer's own `unit-test/` directory, not to the current working directory.
+
+    ### Example
+    >>> test_json(['stdout/two-nodes'], 'stdout/two-nodes-capacity')
+    {'data': {...}, 'result': {'code': 0}}
+    """
+    args = list(args)
+    if path is not None:
+        args[0] = path
+    wanted = args[0]
+
+    stdout, _stderr, _retc = test(args)
+    if stdout == wanted:
+        base.cu(f'Test fixture not found: "{wanted}".')
+    try:
+        return json.loads(stdout)
+    except ValueError as e:
+        base.cu(f'Test fixture "{wanted}" does not hold valid JSON: {e}')
+        return None
 
 
 def _read_fixture(value):

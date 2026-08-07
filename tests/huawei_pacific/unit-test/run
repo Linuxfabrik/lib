@@ -17,15 +17,20 @@ so no network call, no real cache file, and no real sleep ever happens.
 
 Public functions under test:
 
+- assert_ok()           -> abort unless the appliance reported success
+- get_alarm_severity_state()      -> alarm severity -> STATE_*
 - get_component_status_state()    -> fan / power supply status -> STATE_*
 - get_creds()           -> login (POST /api/v2/aa/sessions) + X-Auth-Token caching
 - get_data()            -> authenticated GET/POST, re-login on a rejected request
 - get_disk_status_state()         -> code -> STATE_* mapping
 - get_management_ips()  -> node enumeration for the node-scoped hwm/* endpoints
+- get_performance()     -> newest sample per object and indicator (POST)
 - get_node_running_status_state() -> node running status -> STATE_*
 - get_pool_status_state()         -> code -> STATE_* mapping
 """
 
+import contextlib
+import io
 import sys
 import typing
 import unittest
@@ -34,7 +39,7 @@ from unittest import mock
 sys.path.insert(0, '..')
 
 import lib.huawei_pacific as huawei_pacific
-from lib.globals import STATE_CRIT, STATE_OK, STATE_WARN
+from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 
 class Args:
@@ -321,6 +326,87 @@ class TestPoolStatusState(unittest.TestCase):
 
     def test_missing_value_warns(self):
         self.assertEqual(huawei_pacific.get_pool_status_state(None), STATE_WARN)
+
+
+class TestAssertOk(unittest.TestCase):
+    def test_success_returns(self):
+        self.assertIsNone(
+            huawei_pacific.assert_ok({'result': {'code': 0}, 'data': []}, 'the fans')
+        )
+
+    def test_success_as_a_string_returns(self):
+        self.assertIsNone(huawei_pacific.assert_ok({'result': {'code': '0'}}, 'the fans'))
+
+    def test_bare_result_of_the_older_endpoints_returns(self):
+        # The endpoints below /dsware/service/ send the code bare instead of wrapped in an
+        # object. A consumer must not have to know which generation it is talking to.
+        self.assertIsNone(
+            huawei_pacific.assert_ok({'result': 0, 'nodeInfo': []}, 'the disks')
+        )
+
+    def test_error_aborts(self):
+        with self.assertRaises(SystemExit) as ctx:
+            huawei_pacific.assert_ok({'result': {'code': -401}}, 'the fans')
+        self.assertEqual(ctx.exception.code, STATE_UNKNOWN)
+
+    def test_bare_error_of_the_older_endpoints_aborts(self):
+        with self.assertRaises(SystemExit):
+            huawei_pacific.assert_ok({'result': 1}, 'the disks')
+
+    def test_error_text_names_the_query_and_the_appliance_reason(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()) as out:
+            huawei_pacific.assert_ok(
+                {
+                    'result': {
+                        'code': -401,
+                        'description': 'authentication failed',
+                        'suggestion': 'log in again',
+                    }
+                },
+                'the fans',
+            )
+        printed = out.getvalue()
+        self.assertIn('the fans', printed)
+        self.assertIn('-401', printed)
+        self.assertIn('authentication failed', printed)
+        self.assertIn('log in again', printed)
+
+    def test_empty_response_aborts(self):
+        with self.assertRaises(SystemExit):
+            huawei_pacific.assert_ok({}, 'the fans')
+
+    def test_missing_result_aborts(self):
+        with self.assertRaises(SystemExit):
+            huawei_pacific.assert_ok({'data': []}, 'the fans')
+
+
+class TestAlarmSeverityState(unittest.TestCase):
+    def test_informational_is_ok(self):
+        # A note, not a fault. It stays in the output, where an operator reads it after
+        # the fact, but it does not alert.
+        self.assertEqual(huawei_pacific.get_alarm_severity_state(2), STATE_OK)
+
+    def test_critical_is_critical(self):
+        self.assertEqual(huawei_pacific.get_alarm_severity_state(6), STATE_CRIT)
+
+    def test_warning_minor_and_major_warn(self):
+        # Major degrades the appliance without stopping it. An appliance full of major
+        # alarms that all page someone at night is one nobody watches any more.
+        for code in (3, 4, 5):
+            with self.subTest(code=code):
+                self.assertEqual(
+                    huawei_pacific.get_alarm_severity_state(code), STATE_WARN
+                )
+
+    def test_accepts_the_strings_the_api_sends(self):
+        self.assertEqual(huawei_pacific.get_alarm_severity_state('6'), STATE_CRIT)
+        self.assertEqual(huawei_pacific.get_alarm_severity_state('2'), STATE_OK)
+
+    def test_unmapped_code_warns(self):
+        self.assertEqual(huawei_pacific.get_alarm_severity_state(99), STATE_WARN)
+
+    def test_missing_value_warns(self):
+        self.assertEqual(huawei_pacific.get_alarm_severity_state(None), STATE_WARN)
 
 
 class PacificHttpTestBase(unittest.TestCase):
@@ -784,6 +870,148 @@ class TestGetManagementIps(PacificHttpTestBase):
         )
         with self.assertRaises(SystemExit):
             huawei_pacific.get_management_ips(self.args)
+
+
+class TestGetPerformance(PacificHttpTestBase):
+    """get_performance() reads the newest sample of each indicator."""
+
+    def setUp(self):
+        super().setUp()
+        self._p_creds = mock.patch.object(
+            huawei_pacific, 'get_creds', return_value='TOKEN'
+        )
+        self._p_creds.start()
+        self.addCleanup(self._p_creds.stop)
+
+    def respond(self, rows):
+        self.fetch_json.return_value = (
+            True,
+            {'data': rows, 'result': {'code': 0}},
+        )
+
+    def test_returns_the_newest_value_per_object_and_indicator(self):
+        # The window holds several samples so that a skipped collection cycle does not
+        # leave the check with nothing. Only the newest of them is the current state.
+        self.respond(
+            [
+                {
+                    'id': '1',
+                    'indicator': '68',
+                    'indicator_values': ['17.0', '9.0'],
+                    'object_type': '16385',
+                    'timestamp': [1000, 1010],
+                },
+                {
+                    'id': '1',
+                    'indicator': '69',
+                    'indicator_values': ['45.0'],
+                    'object_type': '16385',
+                    'timestamp': [1010],
+                },
+                {
+                    'id': '2',
+                    'indicator': '68',
+                    'indicator_values': ['50.0', '41.0'],
+                    'object_type': '16385',
+                    'timestamp': [1000, 1010],
+                },
+            ]
+        )
+        self.assertEqual(
+            huawei_pacific.get_performance(
+                huawei_pacific.PERFORMANCE_OBJECT_NODE, (68, 69), self.args, ids=(1, 2)
+            ),
+            {'1': {'68': '9.0', '69': '45.0'}, '2': {'68': '41.0'}},
+        )
+
+    def test_posts_the_documented_body(self):
+        self.respond([])
+        huawei_pacific.get_performance(
+            huawei_pacific.PERFORMANCE_OBJECT_NODE, (68,), self.args, ids=(1,), window=60
+        )
+        payload = self.sent_kwargs()['data']
+        self.assertEqual(payload['begin_time'], 1_000_000 - 60)
+        self.assertEqual(payload['end_time'], 1_000_000)
+        self.assertEqual(
+            payload['objects'],
+            [{'object_type': '16385', 'indicators': ['68'], 'ids': [1]}],
+        )
+
+    def test_cluster_query_carries_no_ids(self):
+        # The cluster is the one object type that takes none, because there is only ever
+        # one of it; sending an empty list is rejected.
+        self.respond([])
+        huawei_pacific.get_performance(
+            huawei_pacific.PERFORMANCE_OBJECT_CLUSTER, (123, 124), self.args
+        )
+        self.assertNotIn('ids', self.sent_kwargs()['data']['objects'][0])
+
+    def test_uses_the_documented_endpoint(self):
+        self.respond([])
+        huawei_pacific.get_performance(
+            huawei_pacific.PERFORMANCE_OBJECT_CLUSTER, (68,), self.args
+        )
+        self.assertEqual(
+            self.sent_uri(),
+            'https://storage.example.com/api/v2/pms/performance_data',
+        )
+
+    def test_does_not_retry(self):
+        # One of several calls in a run: an appliance that collects no performance data
+        # answers with an error, and retrying spends the check's remaining budget on
+        # learning what the first answer already said.
+        self.fetch_json.return_value = (
+            True,
+            {'result': {'code': 1, 'description': 'not collecting'}},
+        )
+        huawei_pacific.get_performance(
+            huawei_pacific.PERFORMANCE_OBJECT_CLUSTER, (68,), self.args
+        )
+        self.assertEqual(self.fetch_json.call_count, 1)
+
+    def test_failed_request_yields_no_samples(self):
+        self.fetch_json.return_value = (
+            True,
+            {'result': {'code': 1, 'description': 'not collecting'}},
+        )
+        self.assertEqual(
+            huawei_pacific.get_performance(
+                huawei_pacific.PERFORMANCE_OBJECT_CLUSTER, (68,), self.args
+            ),
+            {},
+        )
+
+    def test_rows_without_a_value_are_dropped(self):
+        # A row with an empty value list is what the appliance answers with while
+        # collection is warming up. Reporting it as a metric would graph an empty string.
+        self.respond(
+            [
+                {'id': '1', 'indicator': '68', 'indicator_values': []},
+                {'id': '1', 'indicator': '69', 'indicator_values': ['45.0']},
+            ]
+        )
+        self.assertEqual(
+            huawei_pacific.get_performance(
+                huawei_pacific.PERFORMANCE_OBJECT_NODE, (68, 69), self.args, ids=(1,)
+            ),
+            {'1': {'69': '45.0'}},
+        )
+
+    def test_malformed_rows_are_skipped(self):
+        self.respond(
+            [
+                'not-a-row',
+                {'indicator': '68', 'indicator_values': ['1']},
+                {'id': '1', 'indicator_values': ['2']},
+                {'id': '1', 'indicator': '68', 'indicator_values': ['3']},
+            ]
+        )
+        self.assertEqual(
+            huawei_pacific.get_performance(
+                huawei_pacific.PERFORMANCE_OBJECT_NODE, (68,), self.args, ids=(1,)
+            ),
+            {'1': {'68': '3'}},
+        )
 
 
 if __name__ == '__main__':

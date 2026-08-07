@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080604'
+__version__ = '2026080701'
 
 import json
 from time import sleep as _sleep
@@ -36,8 +36,65 @@ from .globals import STATE_CRIT, STATE_OK, STATE_WARN
 # token that is read on every single check would sit in the middle of that lock traffic.
 CACHE_FILENAME = 'linuxfabrik-monitoring-plugins-huawei-dorado.db'
 
+# Bytes per sector, for the capacities the API counts in sectors. The appliance reports its
+# own value as `SECTORSIZE` in the `system/` response, and that is what a consumer should
+# hand to `sectors2bytes()` where it has it. This default covers the consumers that do not
+# query `system/` just to learn it, and it is what every documented response example shows.
+# It is not the per-LUN `SECTORSIZE`, which is the block size a LUN exposes to the host and
+# is a different number on the same appliance.
+DEFAULT_SECTOR_SIZE = 512
 
-def _as_code(value):
+# The device ID the vendor's own login example sends. The appliance accepts any string here
+# and answers with the real one, so a consumer that does not know its appliance's ID logs in
+# with this placeholder and reads `data.deviceid` out of the response.
+DEVICE_ID_PLACEHOLDER = 'xxxxx'
+
+
+def assert_ok(result, what):
+    """
+    Abort the calling process (UNKNOWN) unless the appliance reported success.
+
+    Every consumer has to check the response envelope before it reads anything out of it,
+    and the check is easy to get subtly wrong: the appliance reports success as the number
+    `0` on some endpoints and as the string `'0'` on others, and a response that carries no
+    `error` object at all turns a naive `result['error']['code']` into an `AttributeError`
+    instead of a clean UNKNOWN.
+
+    ### Parameters
+    - **result** (`dict`): A response envelope as `get_data()` returns it.
+    - **what** (`str`):
+      What was being queried, as a noun phrase for the message ("the fans", "the storage
+      pools"). It is the only part of the output that tells an operator which of a check's
+      several requests failed.
+
+    ### Returns
+    - **None**: Returns on success, and does not return otherwise.
+
+    ### Notes
+    - An empty response is an error as well. `get_data()` always answers with an envelope,
+      so nothing at all means the consumer never reached the appliance.
+    - The appliance's own description and suggestion are printed where it sends them. They
+      name the cause far better than anything a consumer could infer from the code.
+
+    ### Example
+    >>> assert_ok({'error': {'code': 0}, 'data': []}, 'the fans')
+    """
+    if not result:
+        base.cu('Got no response from the appliance.')
+
+    code = get_error_code(result)
+    if code in (0, '0'):
+        return
+
+    error = result.get('error') if isinstance(result, dict) else None
+    if not isinstance(error, dict):
+        error = {}
+    description = error.get('description') or 'no description'
+    suggestion = error.get('suggestion') or ''
+    base.cu(f'Failed to query {what} (code {code}): {description} {suggestion}'.strip())
+
+
+def as_code(value):
     """
     Normalise an API status code into an `int`, or `None` if it is unusable.
 
@@ -53,15 +110,64 @@ def _as_code(value):
     - **int** or **None**: The code as an integer, or `None` if it cannot be converted.
 
     ### Example
-    >>> _as_code('27')
+    >>> as_code('27')
     27
-    >>> _as_code(None) is None
+    >>> as_code(None) is None
     True
     """
     try:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def field(data, *names, default=None):
+    """
+    Read a field whose name the appliance spells differently depending on the firmware.
+
+    Most objects report their fields in upper case (`HEALTHSTATUS`), a few in camelCase
+    (`healthStatus`), and the `sfp` object is documented both ways on the same page of the
+    REST Interface Reference: its parameter table lists `rxPowerReal` and `sfpModeType`
+    while its response example shows `RXPOWER` and `SFPMODETYPE`. A consumer that picks one
+    spelling reads an empty field on half the fleet.
+
+    ### Parameters
+    - **data** (`dict`): One object as the API returned it.
+    - **names** (`str`): The field names to try, in order of preference.
+    - **default** (any, optional): What to return when none of them is present.
+
+    ### Returns
+    - The first value found under any of `names`, matched case-insensitively, or `default`.
+
+    ### Notes
+    - The exact spellings are tried first and in the order given, so a firmware that reports
+      two of the names (an old field and its replacement) still yields the preferred one.
+      Only then does the case-insensitive pass run.
+    - A key that is present but empty counts as found. The appliance uses `'--'` and `''`
+      for "no value", and turning those into the default would hide the difference between
+      a field a firmware does not have and one it has nothing to say about.
+
+    ### Example
+    >>> field({'RXPOWER': '[1234]'}, 'rxPowerReal', 'RXPOWER')
+    '[1234]'
+
+    >>> field({'healthStatus': '1'}, 'HEALTHSTATUS')
+    '1'
+
+    >>> field({}, 'MODEL', default='--')
+    '--'
+    """
+    for name in names:
+        if name in data:
+            return data[name]
+
+    lowered = {str(key).lower(): key for key in data}
+    for name in names:
+        key = lowered.get(str(name).lower())
+        if key is not None:
+            return data[key]
+
+    return default
 
 
 def get_account_state(st):
@@ -98,7 +204,7 @@ def get_account_state(st):
         10: 'RADIUS one-time password authentication required (10)',
         11: 'RADIUS challenge response required (11)',
     }
-    return mapping.get(_as_code(st), 'Unknown')
+    return mapping.get(as_code(st), 'Unknown')
 
 
 def get_alarm_severity(sev):
@@ -133,7 +239,7 @@ def get_alarm_severity(sev):
         5: 'Major (5)',
         6: 'Critical (6)',
     }
-    return mapping.get(_as_code(sev), 'Unknown')
+    return mapping.get(as_code(sev), 'Unknown')
 
 
 def get_alarm_severity_state(sev):
@@ -163,7 +269,7 @@ def get_alarm_severity_state(sev):
     >>> get_alarm_severity_state('2') == STATE_OK
     True
     """
-    code = _as_code(sev)
+    code = as_code(sev)
     if code == 2:
         return STATE_OK
     if code == 6:
@@ -204,6 +310,9 @@ def get_all_data(endpoint, args, page_size=100, max_pages=100):
       appliance's own error text the same way it would after a single `get_data()`.
 
     ### Notes
+    - `range=[i-j]` is half-open: the appliance documents it as "objects subscripted in
+      sequence from i to j-1". Consecutive pages therefore start where the previous one
+      ended, and no object is read twice.
     - A page shorter than `page_size` ends the walk: the appliance has nothing left to hand
       out. A page of exactly `page_size` objects is always followed by another request, which
       costs one empty request when the object count is an exact multiple of the page size.
@@ -298,7 +407,7 @@ def get_controller_model(cm):
         4170: '1P2 2U2C PALM control board (100GE extension board)',
         4174: '4U4C4P control board',
     }
-    return mapping.get(_as_code(cm), 'Unknown')
+    return mapping.get(as_code(cm), 'Unknown')
 
 
 def get_controller_role(role):
@@ -333,7 +442,7 @@ def get_controller_role(role):
         1: 'Primary',
         2: 'Secondary',
     }
-    return mapping.get(_as_code(role), 'Unknown')
+    return mapping.get(as_code(role), 'Unknown')
 
 
 def get_cp_type(cp):
@@ -365,7 +474,7 @@ def get_cp_type(cp):
         2: 'Quorum Disk',
         3: 'None',
     }
-    return mapping.get(_as_code(cp), 'Unknown')
+    return mapping.get(as_code(cp), 'Unknown')
 
 
 # Password states that make a login pointless to continue from. Two groups qualify: an
@@ -386,29 +495,34 @@ _UNUSABLE_ACCOUNT_STATES = frozenset({3, 8, 9, 10, 11})
 
 def _cached_session(session_key):
     """
-    Read a cached `(iBaseToken, Cookie)` pair, or `None` if there is no usable one.
+    Read a cached `(iBaseToken, Cookie, deviceId)` triple, or `None` if there is no usable one.
 
     Used by `get_creds()`.
 
     ### Parameters
-    - **session_key** (`str`): The cache key the pair is stored under.
+    - **session_key** (`str`): The cache key the triple is stored under.
 
     ### Returns
-    - **tuple** (`str`, `str`) or **None**: The pair, or `None` if the cache holds nothing,
-      something an older version wrote, or a half-populated entry. All three cases have the
-      same answer: log in again rather than build a request header out of it.
+    - **tuple** (`str`, `str`, `str`) or **None**: The triple, or `None` if the cache holds
+      nothing, something an older version wrote, or a half-populated entry. All three cases
+      have the same answer: log in again rather than build a request header out of it.
+
+    ### Notes
+    - An entry of any other length is discarded rather than padded. An older version stored
+      the token pair alone, and a device ID guessed for such an entry would send every
+      request of the run to the wrong path.
     """
     cached = cache.get(session_key, filename=CACHE_FILENAME)
     if not cached:
         return None
 
     try:
-        pair = json.loads(cached)
+        session = json.loads(cached)
     except (TypeError, ValueError):
         return None
 
-    if isinstance(pair, list) and len(pair) == 2 and all(pair):
-        return pair[0], pair[1]
+    if isinstance(session, list) and len(session) == 3 and all(session):
+        return session[0], session[1], session[2]
     return None
 
 
@@ -426,14 +540,17 @@ def _logout(args, session):
     including an operator's login to DeviceManager.
 
     ### Parameters
-    - **args** (object): An object containing `URL`, `DEVICE_ID`, `INSECURE`, `NO_PROXY` and
-      `TIMEOUT`.
-    - **session** (`tuple` (`str`, `str`)): The `(iBaseToken, Cookie)` pair to end.
+    - **args** (object): An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT`.
+    - **session** (`tuple` (`str`, `str`, `str`)): The `(iBaseToken, Cookie, deviceId)`
+      triple to end.
 
     ### Returns
     - **None**
 
     ### Notes
+    - The device ID comes from the session being ended, not from `args`. A session opened
+      without a caller-supplied device ID carries the one the appliance answered with, and
+      that is the only path the logout is accepted on.
     - Every outcome is discarded, errors included. This is housekeeping on the way to a fresh
       login, and the session most likely to be logged out here is one the appliance has
       already dropped, which is exactly the case that answers with an error. Letting that
@@ -441,9 +558,9 @@ def _logout(args, session):
       reports failures through its return value rather than by raising, so no exception can
       escape either.
     """
-    ibasetoken, cookie = session
+    ibasetoken, cookie, device_id = session
     url.fetch(
-        f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/sessions',
+        f'{args.URL}/deviceManager/rest/{device_id}/sessions',
         # No `Content-Type`: this is a bare verb with no body, and announcing a JSON one
         # that is not there is what `get_data()` avoids for the same reason.
         header={
@@ -470,7 +587,9 @@ def get_creds(args, force_relogin=False):
     - **args** (object):
       An argument object containing:
         - `URL` (`str`): Base URL of the Huawei API.
-        - `DEVICE_ID` (`str`): Unique device identifier.
+        - `DEVICE_ID` (`str`): Unique device identifier. May be left empty, in which case the
+          login is sent to the placeholder path the vendor's own example uses and the
+          appliance answers with its real device ID.
         - `USERNAME` (`str`): Login username.
         - `PASSWORD` (`str`): Login password.
         - `SCOPE` (`str`): User type (`'0'` local user, `'1'` LDAP user, `'8'` RADIUS user).
@@ -486,21 +605,27 @@ def get_creds(args, force_relogin=False):
       after a controller reboot, a manual session reset, or the server-side 20-minute timeout).
 
     ### Returns
-    - **tuple** (`str`, `str`):
+    - **tuple** (`str`, `str`, `str`):
       - `ibase_token` (str): The API session token (iBaseToken).
       - `cookie` (str): The session cookie.
+      - `device_id` (str): The device ID every further request is addressed to.
 
     ### Notes
-    - Token and cookie are stored together, JSON-encoded, under the single cache key
-      `huaweidorado-{URL}-{DEVICE_ID}-{USERNAME}-session`, in the module's own cache file.
-      One key rather than two because the header needs both: split over two keys, a write
-      that only half succeeds leaves a cache that can never be reused, and the resulting
+    - Token, cookie and device ID are stored together, JSON-encoded, under the single cache
+      key `huaweidorado-{URL}-{USERNAME}-session`, in the module's own cache file. One key
+      rather than three because a request needs all of them: split over several keys, a write
+      that only partly succeeds leaves a cache that can never be reused, and the resulting
       login on every single run is exactly what the caching is there to avoid.
       The user name is part of the key because a session carries that user's role: without it
       a check running as a different account would silently reuse the first account's session
-      and query the appliance with the wrong privileges. The URL is part of it because the
-      device ID is caller-supplied and the appliance accepts any string for it on the initial
-      login, so it does not reliably identify an appliance on its own.
+      and query the appliance with the wrong privileges. The device ID is deliberately not
+      part of it: it is optional, and the appliance accepts any string for it on the initial
+      login, so it does not identify an appliance on its own. The URL does.
+    - The device ID does not have to be supplied. The login is documented against the
+      placeholder path `/deviceManager/rest/xxxxx/sessions`, and the response carries the
+      appliance's own `deviceid`, which is what the rest of the run then uses. A caller that
+      does supply one keeps it, so an appliance that answers with something unexpected can
+      still be addressed explicitly.
     - A `CACHE_EXPIRE` of `0` turns caching off, rather than writing an entry that expires a
       moment later. Every call then logs in, which is what an operator asks for by setting it.
     - If login is required, the request is sent as serialized JSON with headers.
@@ -528,9 +653,9 @@ def get_creds(args, force_relogin=False):
       first.
 
     ### Example
-    >>> ibasetoken, cookie = get_creds(args)
+    >>> ibasetoken, cookie, device_id = get_creds(args)
     """
-    session_key = f'huaweidorado-{args.URL}-{args.DEVICE_ID}-{args.USERNAME}-session'
+    session_key = f'huaweidorado-{args.URL}-{args.USERNAME}-session'
     caching = args.CACHE_EXPIRE > 0
 
     if caching:
@@ -542,7 +667,8 @@ def get_creds(args, force_relogin=False):
             # leaving it to occupy a slot in the session pool until its timeout expires.
             _logout(args, cached)
 
-    uri = f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/sessions'
+    login_device_id = getattr(args, 'DEVICE_ID', '') or DEVICE_ID_PLACEHOLDER
+    uri = f'{args.URL}/deviceManager/rest/{login_device_id}/sessions'
     header = {'Content-Type': 'application/json'}
     data = {
         'username': args.USERNAME,
@@ -587,22 +713,31 @@ def get_creds(args, force_relogin=False):
             f'(code {error.get("code", "n/a")}).'
         )
 
-    accountstate = _as_code(session_data.get('accountstate'))
+    accountstate = as_code(session_data.get('accountstate'))
     if accountstate in _UNUSABLE_ACCOUNT_STATES:
         base.cu(
             f'Login at {args.URL} succeeded, but the account cannot query anything: '
             f'{get_account_state(accountstate)}.'
         )
 
+    # A caller-supplied device ID wins. It is the one an operator can look up in
+    # DeviceManager, so an appliance whose answer does not match it is still addressable.
+    device_id = getattr(args, 'DEVICE_ID', '') or session_data.get('deviceid')
+    if not device_id:
+        base.cu(
+            f'Login at {args.URL} succeeded, but the response carries no device ID and none '
+            'was supplied. Pass the appliance device ID explicitly.'
+        )
+
     if caching:
         cache.set(
             session_key,
-            json.dumps([ibasetoken, cookie]),
+            json.dumps([ibasetoken, cookie, device_id]),
             time.now() + args.CACHE_EXPIRE * 60,
             filename=CACHE_FILENAME,
         )
 
-    return ibasetoken, cookie
+    return ibasetoken, cookie, device_id
 
 
 def _as_envelope(success, response):
@@ -673,7 +808,7 @@ def get_data(endpoint, args, max_attempts=3):
     - **args** (object):
       An object containing:
         - `URL` (`str`): Base API URL.
-        - `DEVICE_ID` (`str`): Device ID.
+        - `DEVICE_ID` (`str`): Device ID. Optional; see `get_creds()`.
         - `INSECURE` (`bool`): Disable SSL verification.
         - `NO_PROXY` (`bool`): Ignore proxy settings.
         - `TIMEOUT` (`int`): Timeout for API requests.
@@ -715,8 +850,6 @@ def get_data(endpoint, args, max_attempts=3):
         'data': {...}
     }
     """
-    uri = f'{args.URL}/deviceManager/rest/{args.DEVICE_ID}/{endpoint}'
-
     result = {}
 
     for attempt in range(1, max_attempts + 1):
@@ -724,7 +857,11 @@ def get_data(endpoint, args, max_attempts=3):
         # rejected request is most likely an expired session that retrying
         # with the same token cannot fix. The third attempt then reuses that
         # fresh token to absorb a remaining transient error.
-        ibasetoken, cookie = get_creds(args, force_relogin=attempt == 2)
+        ibasetoken, cookie, device_id = get_creds(args, force_relogin=attempt == 2)
+        # The device ID comes from the session, not from `args`: it may have been the
+        # appliance's own answer rather than a caller-supplied value, and a re-login can
+        # in principle hand back a different one.
+        uri = f'{args.URL}/deviceManager/rest/{device_id}/{endpoint}'
         header = {
             'Content-Type': 'application/json',
             'iBaseToken': ibasetoken,
@@ -748,10 +885,8 @@ def get_data(endpoint, args, max_attempts=3):
             # Caching is off, so this session was created for this one request and nothing
             # will ever reuse it. Hand it back instead of leaving it to occupy a slot in the
             # appliance's session pool until its own timeout expires it.
-            _logout(args, (ibasetoken, cookie))
-        error = result.get('error')
-        code = error.get('code') if isinstance(error, dict) else error
-        if code in (0, '0'):
+            _logout(args, (ibasetoken, cookie, device_id))
+        if get_error_code(result) in (0, '0'):
             break
         if attempt < max_attempts:
             _sleep(1)
@@ -790,7 +925,7 @@ def get_dr_star_running_status(rs):
         2: 'Disabled (2)',
         3: 'Invalid (3)',
     }
-    return mapping.get(_as_code(rs), 'Unknown')
+    return mapping.get(as_code(rs), 'Unknown')
 
 
 def get_enclosure_logic_type(lt):
@@ -827,7 +962,7 @@ def get_enclosure_logic_type(lt):
         3: 'Management Switch',
         4: 'Management Server',
     }
-    return mapping.get(_as_code(lt), 'Unknown')
+    return mapping.get(as_code(lt), 'Unknown')
 
 
 def get_enclosure_model(em):
@@ -873,7 +1008,7 @@ def get_enclosure_model(em):
         131: '2 U 2-controller 12-slot 3.5-inch SAS controller enclosure',
         132: '4 U 2-controller 10-slot 3.5-inch controller enclosure',
     }
-    return mapping.get(_as_code(em), 'Unknown')
+    return mapping.get(as_code(em), 'Unknown')
 
 
 def get_error_code(result):
@@ -954,7 +1089,7 @@ def get_health_status(hs):
         17: 'Single link / No redundant link (17)',
         18: 'Offline (18)',
     }
-    return mapping.get(_as_code(hs), 'Unknown')
+    return mapping.get(as_code(hs), 'Unknown')
 
 
 # `HEALTHSTATUS` codes that mean the object has failed outright, as opposed to still serving
@@ -997,7 +1132,7 @@ def get_health_status_state(hs):
     >>> get_health_status_state(5) == STATE_WARN
     True
     """
-    code = _as_code(hs)
+    code = as_code(hs)
     if code == 1:
         return STATE_OK
     if code in _FAILED_HEALTH_STATES:
@@ -1034,7 +1169,7 @@ def get_host_access_state(has):
         2: 'Read-only',
         3: 'Read/write',
     }
-    return mapping.get(_as_code(has), 'Unknown')
+    return mapping.get(as_code(has), 'Unknown')
 
 
 def get_hypermetro_domain_running_status(rs):
@@ -1073,7 +1208,7 @@ def get_hypermetro_domain_running_status(rs):
         4: 'Force started (4)',
         5: 'Invalid (5)',
     }
-    return mapping.get(_as_code(rs), 'Unknown')
+    return mapping.get(as_code(rs), 'Unknown')
 
 
 def get_hypermetro_domain_running_status_state(rs):
@@ -1105,7 +1240,7 @@ def get_hypermetro_domain_running_status_state(rs):
     >>> get_hypermetro_domain_running_status_state('2') == STATE_CRIT
     True
     """
-    code = _as_code(rs)
+    code = as_code(rs)
     if code == 0:
         return STATE_OK
     if code in (2, 5):
@@ -1300,7 +1435,7 @@ def get_interface_model(im):
         4134: 'management module',
     }
 
-    return models.get(_as_code(im), 'Unknown')
+    return models.get(as_code(im), 'Unknown')
 
 
 def get_interface_runmode(rm):
@@ -1345,7 +1480,7 @@ def get_interface_runmode(rm):
         10: 'RoCE',
     }
 
-    return runmodes.get(_as_code(rm), 'Unknown')
+    return runmodes.get(as_code(rm), 'Unknown')
 
 
 def get_led_status(st):
@@ -1372,7 +1507,7 @@ def get_led_status(st):
         1: 'On',
     }
 
-    return led_status.get(_as_code(st), 'Unknown')
+    return led_status.get(as_code(st), 'Unknown')
 
 
 def get_os(os):
@@ -1429,7 +1564,7 @@ def get_os(os):
         # as a gap in this mapping rather than as the absence of an answer.
         255: 'not specified (255)',
     }
-    return mapping.get(_as_code(os), 'Unknown')
+    return mapping.get(as_code(os), 'Unknown')
 
 
 # The vendor misspelled the performance endpoint as `performace_statistic` and corrected it to
@@ -1592,7 +1727,7 @@ def get_product_mode(pm):
         923: 'OceanStor 5310 Capacity Flash Storage (923)',
         924: 'OceanStor 5510 Capacity Flash Storage (924)',
     }
-    return mapping.get(_as_code(pm), 'Unknown')
+    return mapping.get(as_code(pm), 'Unknown')
 
 
 def get_runlevel(rl):
@@ -1624,7 +1759,7 @@ def get_runlevel(rl):
         1: 'normal (1)',
         2: 'high (2)',
     }
-    return mapping.get(_as_code(rl), 'Unknown')
+    return mapping.get(as_code(rl), 'Unknown')
 
 
 def get_running_status(rs):
@@ -1731,7 +1866,7 @@ def get_running_status(rs):
         118: 'Air Gap link down (118)',
         119: 'Creating (119)',
     }
-    return mapping.get(_as_code(rs), 'Unknown')
+    return mapping.get(as_code(rs), 'Unknown')
 
 
 # `RUNNINGSTATUS` codes that report a failure whatever object they are read from. The rest of
@@ -1776,7 +1911,7 @@ def get_running_status_state(rs, ok_codes):
     >>> get_running_status_state(51, (1, 27)) == STATE_WARN
     True
     """
-    code = _as_code(rs)
+    code = as_code(rs)
     if code is not None and code in ok_codes:
         return STATE_OK
     if code in _FAILED_RUNNING_STATES:
@@ -1815,7 +1950,7 @@ def get_switch_status(st):
         1: 'On',
         2: 'Off',
     }
-    return mapping.get(_as_code(st), 'Unknown')
+    return mapping.get(as_code(st), 'Unknown')
 
 
 def get_uuid(data):
@@ -1844,3 +1979,45 @@ def get_uuid(data):
     '207:--'
     """
     return f'{data.get("TYPE", "--")}:{data.get("ID", "--")}'
+
+
+def sectors2bytes(sectors, sector_size=DEFAULT_SECTOR_SIZE):
+    """
+    Convert a sector count reported by the appliance into bytes.
+
+    Every capacity in the API is counted in sectors. A consumer that reports one has to
+    convert it, so that a dashboard can label its axis without knowing the sector size.
+
+    ### Parameters
+    - **sectors** (`int`, `str` or `None`):
+      The sector count as the API reported it.
+    - **sector_size** (`int`, optional):
+      Bytes per sector. `system/` reports the appliance's own value in its `SECTORSIZE`
+      field; pass that where it is available and leave the default in place otherwise.
+
+    ### Returns
+    - **int** or **None**:
+      The capacity in bytes, or `None` for a value that cannot be used.
+
+    ### Notes
+    - A negative sector count is `None` rather than a negative capacity. The appliance uses
+      `-1` for a capacity it does not report, and `4294967295` and its 64-bit sibling for
+      the same purpose on other fields; a consumer that graphs those gets a spike instead
+      of a gap.
+    - `None` is also what a missing field yields, which is what `lib.base.get_perfdata()`
+      turns into no metric at all.
+
+    ### Example
+    >>> sectors2bytes('2048')
+    1048576
+
+    >>> sectors2bytes('2048', 4096)
+    8388608
+
+    >>> sectors2bytes('-1') is None
+    True
+    """
+    value = as_code(sectors)
+    if value is None or value < 0:
+        return None
+    return value * sector_size

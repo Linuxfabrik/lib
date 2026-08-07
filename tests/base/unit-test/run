@@ -150,6 +150,23 @@ class TestGetPerfdata(unittest.TestCase):
     def test_trailing_space_always_present(self):
         self.assertTrue(base.get_perfdata('x', 1).endswith(' '))
 
+    def test_none_value_yields_no_metric(self):
+        # A source that did not report the reading hands None through. Interpolating it
+        # emits the literal 'x'=None, which is not a number, and consumers that parse the
+        # perfdata line drop the whole line over it, not just the one broken metric.
+        self.assertEqual(base.get_perfdata('x', None), '')
+
+    def test_none_value_ignores_the_remaining_arguments(self):
+        self.assertEqual(base.get_perfdata('x', None, '%', 10, 20, 0, 100), '')
+
+    def test_zero_is_a_reading_not_a_missing_value(self):
+        self.assertEqual(base.get_perfdata('x', 0), "'x'=0 ")
+
+    def test_empty_string_still_renders(self):
+        # Only None means "nothing to report". An empty string is a caller bug, and
+        # silently swallowing it would hide it.
+        self.assertEqual(base.get_perfdata('x', ''), "'x'= ")
+
 
 class TestGetState(unittest.TestCase):
     def test_ge_warn(self):
@@ -440,10 +457,41 @@ class TestOao(unittest.TestCase):
             base.oao('a|b')
         self.assertIn('a!b', h['out'])
 
-    def test_html_escaped(self):
+    # Comparisons, shell snippets and ampersands are not markup and reach the terminal
+    # as written. A web interface escapes them itself when it renders the output.
+    def test_comparisons_and_ampersands_are_left_alone(self):
         with capture_exit() as h:
             base.oao('value <= 10 & ok > 5')
-        self.assertIn('&lt;= 10 &amp; ok &gt; 5', h['out'])
+        self.assertIn('value <= 10 & ok > 5', h['out'])
+
+    def test_version_range_is_left_alone(self):
+        with capture_exit() as h:
+            base.oao('Contact Form 7 < 5.3.2 - Unrestricted File Upload')
+        self.assertIn('7 < 5.3.2', h['out'])
+
+    def test_shell_redirection_is_left_alone(self):
+        with capture_exit() as h:
+            base.oao('run `echo 1 > /proc/sys/vm/drop_caches`')
+        self.assertIn('echo 1 > /proc/sys/vm/drop_caches', h['out'])
+
+    # A `<` that opens something a web interface would read as a tag is escaped, so the
+    # output stays on the plain-text path and keeps its monospace formatting.
+    def test_tag_start_is_escaped(self):
+        with capture_exit() as h:
+            base.oao('Syntax error in <VirtualHost> block')
+        self.assertIn('&lt;VirtualHost>', h['out'])
+        self.assertNotIn('in <VirtualHost>', h['out'])
+
+    def test_tag_with_attribute_is_escaped(self):
+        with capture_exit() as h:
+            base.oao('got <img src=x onerror=alert(1)> in the title')
+        self.assertIn('&lt;img src=x', h['out'])
+
+    def test_script_tag_is_escaped(self):
+        with capture_exit() as h:
+            base.oao('unexpected <script>alert(1)</script> in the title')
+        self.assertIn('&lt;script>', h['out'])
+        self.assertNotIn('<script>', h['out'])
 
     def test_sanitizes_password(self):
         with capture_exit() as h:

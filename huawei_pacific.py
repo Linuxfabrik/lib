@@ -15,7 +15,7 @@ generation of endpoints below /dsware/service/ and /dfv/service/.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080605'
+__version__ = '2026080701'
 
 import json
 from time import sleep as _sleep
@@ -29,7 +29,52 @@ from .globals import STATE_CRIT, STATE_OK, STATE_WARN
 CACHE_FILENAME = 'linuxfabrik-monitoring-plugins-huawei-pacific.db'
 
 
-def _as_code(value):
+def assert_ok(result, what):
+    """
+    Abort the calling process (UNKNOWN) unless the appliance reported success.
+
+    Every consumer has to check the response envelope before it reads anything out of it,
+    and the check is easy to get subtly wrong: the appliance reports success as the number
+    `0` on some endpoints and as the string `'0'` on others, the older endpoint generation
+    below `/dsware/service/` sends the code bare instead of wrapped in an object, and a
+    response carrying no `result` at all turns a naive `result['result']['code']` into an
+    `AttributeError` instead of a clean UNKNOWN.
+
+    ### Parameters
+    - **result** (`dict`): A response as `get_data()` returns it.
+    - **what** (`str`):
+      What was being queried, as a noun phrase for the message ("the cluster nodes", "the
+      storage pools"). It is the only part of the output that tells an operator which of a
+      check's several requests failed.
+
+    ### Returns
+    - **None**: Returns on success, and does not return otherwise.
+
+    ### Notes
+    - An empty response is an error as well. `get_data()` always answers with an envelope,
+      so nothing at all means the consumer never reached the appliance.
+    - The appliance's own description and suggestion are printed where it sends them. They
+      name the cause far better than anything a consumer could infer from the code.
+
+    ### Example
+    >>> assert_ok({'result': {'code': 0}, 'data': []}, 'the cluster nodes')
+    """
+    if not result:
+        base.cu('Got no response from the appliance.')
+
+    code = get_result_code(result)
+    if code in (0, '0'):
+        return
+
+    res = result.get('result') if isinstance(result, dict) else None
+    if not isinstance(res, dict):
+        res = {}
+    description = res.get('description') or 'no description'
+    suggestion = res.get('suggestion') or ''
+    base.cu(f'Failed to query {what} (code {code}): {description} {suggestion}'.strip())
+
+
+def as_code(value):
     """
     Normalise an API status code into an `int`, or `None` if it is unusable.
 
@@ -45,9 +90,9 @@ def _as_code(value):
     - **int** or **None**: The code as an integer, or `None` if it cannot be converted.
 
     ### Example
-    >>> _as_code('6')
+    >>> as_code('6')
     6
-    >>> _as_code(None) is None
+    >>> as_code(None) is None
     True
     """
     try:
@@ -88,7 +133,46 @@ def get_alarm_severity(sev):
         5: 'Major (5)',
         6: 'Critical (6)',
     }
-    return mapping.get(_as_code(sev), 'Unknown')
+    return mapping.get(as_code(sev), 'Unknown')
+
+
+def get_alarm_severity_state(sev):
+    """
+    Convert an alarm severity code into the state a check reports for it.
+
+    ### Parameters
+    - **sev** (`int` or `str`):
+      The alarm severity code.
+
+    ### Returns
+    - **int**:
+      `STATE_OK` for an informational alarm, `STATE_CRIT` for a critical one, `STATE_WARN`
+      for warning, minor, major, a code the enumeration does not know and a missing value.
+
+    ### Notes
+    - An informational alarm is a note, not a fault, so it does not alert. It still appears
+      in the output, where it is what an operator reads after the fact.
+    - Major sits at warning rather than at critical on purpose: it marks a fault that
+      degrades the appliance without stopping it, and an appliance full of major alarms that
+      all page someone at night is an appliance nobody watches any more. This matches
+      `lib.huawei_dorado.get_alarm_severity_state()`.
+    - Scoped to the `/api/v2/` alarm and event endpoints, for the same reason as
+      `get_alarm_severity()`: the older `/dsware/service/` alarm endpoint numbers its
+      severities the other way round, where code `2` would silently pass as OK.
+
+    ### Example
+    >>> get_alarm_severity_state(6) == STATE_CRIT
+    True
+
+    >>> get_alarm_severity_state('2') == STATE_OK
+    True
+    """
+    code = as_code(sev)
+    if code == 2:
+        return STATE_OK
+    if code == 6:
+        return STATE_CRIT
+    return STATE_WARN
 
 
 def get_alarm_status(st):
@@ -124,7 +208,7 @@ def get_alarm_status(st):
         2: 'Cleared (2)',
         4: 'Recovered (4)',
     }
-    return mapping.get(_as_code(st), 'Unknown')
+    return mapping.get(as_code(st), 'Unknown')
 
 
 def get_all_data(
@@ -483,7 +567,7 @@ def get_creds(args, force_relogin=False):
         code = res.get('code', 'n/a')
         base.cu(f'Login at {args.URL} failed: {reason} (code {code}).')
 
-    password_status = _as_code(session_data.get('password_status'))
+    password_status = as_code(session_data.get('password_status'))
     if password_status in _UNUSABLE_PASSWORD_STATES:
         base.cu(
             f'Login at {args.URL} succeeded, but the account is unusable: '
@@ -545,7 +629,9 @@ def _as_envelope(success, response):
     }
 
 
-def get_data(endpoint, args, payload=None, method=None, base_path='api/v2'):
+def get_data(
+    endpoint, args, payload=None, method=None, base_path='api/v2', max_attempts=3
+):
     """
     Fetch data from a Huawei OceanStor Pacific endpoint, re-authenticating on a stale session.
 
@@ -583,6 +669,11 @@ def get_data(endpoint, args, payload=None, method=None, base_path='api/v2'):
       endpoints below `dsware/service` and `dfv/service`, and some information is only available
       there; a caller reaching for one of those passes its base path here. This is a developer
       constant, not something to build from data the appliance or a user supplied.
+    - **max_attempts** (`int`, optional):
+      How often to try before giving up. The default of `3` is what a check wants. Lower it
+      on a call that is one of several in a run: the budget below is per call, and a check
+      that chains four of them can otherwise spend four times three requests plus four
+      logins before it answers, which is well past the monitoring server's own timeout.
 
     ### Returns
     - **dict**:
@@ -619,7 +710,6 @@ def get_data(endpoint, args, payload=None, method=None, base_path='api/v2'):
     """
     uri = f'{args.URL}/{base_path}/{endpoint}'
 
-    max_attempts = 3
     result = {}
 
     for attempt in range(1, max_attempts + 1):
@@ -717,7 +807,7 @@ def get_disk_status(st):
         2: 'sub-healthy (2)',
         101: 'removed from the storage pool (101)',
     }
-    return mapping.get(_as_code(st), 'Unknown')
+    return mapping.get(as_code(st), 'Unknown')
 
 
 def get_disk_status_state(st):
@@ -745,7 +835,7 @@ def get_disk_status_state(st):
     >>> get_disk_status_state('1') == STATE_CRIT
     True
     """
-    code = _as_code(st)
+    code = as_code(st)
     if code == 0:
         return STATE_OK
     if code == 1:
@@ -805,7 +895,7 @@ def _assert_all_nodes_listed(listed, args):
     if not isinstance(data, dict):
         return
 
-    total = _as_code(data.get('count'))
+    total = as_code(data.get('count'))
     if total is not None and total > listed:
         base.cu(
             f'The cluster reports {total} nodes, but only {listed} were listed. The hardware '
@@ -955,7 +1045,7 @@ def get_oam_agent_status(s):
         0: 'healthy (0)',
         1: 'faulty (1)',
     }
-    return mapping.get(_as_code(s), 'Unknown')
+    return mapping.get(as_code(s), 'Unknown')
 
 
 def get_password_status(st):
@@ -987,7 +1077,102 @@ def get_password_status(st):
         5: 'password about to expire (5)',
         6: 'password must be changed at the next login (6)',
     }
-    return mapping.get(_as_code(st), 'Unknown')
+    return mapping.get(as_code(st), 'Unknown')
+
+
+# Monitored object types of the performance API, from the "Object Type Value" column of the
+# performance indicator tables in the REST Interface Reference. The cluster is the one type
+# that takes no instance IDs, because there is only ever one of it.
+PERFORMANCE_OBJECT_CLUSTER = 57347
+PERFORMANCE_OBJECT_NODE = 16385
+
+# How far back to ask for samples, in seconds. The appliance collects on a ten-second cycle
+# by default, so a window of a few minutes always contains several samples even when a
+# collection cycle was skipped, and the newest of them is what a check reports. The API caps
+# a real-time query at 90 minutes.
+PERFORMANCE_WINDOW = 300
+
+
+def get_performance(object_type, indicators, args, ids=None, window=PERFORMANCE_WINDOW):
+    """
+    Fetch the most recent performance counters of one kind of managed object.
+
+    ### Parameters
+    - **object_type** (`int` or `str`):
+      The monitored object type, for example `PERFORMANCE_OBJECT_CLUSTER` or
+      `PERFORMANCE_OBJECT_NODE`.
+    - **indicators** (iterable of `int`):
+      The performance indicators to read. The vendor numbers them per indicator, not per
+      object: `68` CPU usage in percent, `69` memory usage in percent, `217` maximum CPU
+      usage, `22` IOPS, `25` and `28` read and write IOPS, `123` and `124` read and write
+      bandwidth in KB/s, `811` total bandwidth in KB/s, `1300` to `1302` average, write and
+      read latency in microseconds, `1369` write cache watermark in percent. Not every
+      object supports every indicator.
+    - **args** (object):
+      The same object `get_data()` reads.
+    - **ids** (iterable, optional):
+      The instances to query. Required for every object type except the cluster, which has
+      no instances. The vendor recommends staying below 200 per request.
+    - **window** (`int`, optional):
+      How many seconds back to ask for samples.
+
+    ### Returns
+    - **dict**:
+      Object ID to a mapping of indicator number to reported value, both as strings. Empty
+      if the request failed or the appliance returned no sample, which is the normal answer
+      while collection is still warming up.
+
+    ### Notes
+    - The appliance answers with one row per object and indicator, each carrying parallel
+      lists of timestamps and values. Only the newest value of each row is kept: a check
+      reports the current state, and the older samples in the window exist so that a skipped
+      collection cycle does not leave it with nothing.
+    - Every indicator is a gauge (a rate, a percentage or a time), not a cumulative counter,
+      so the value can go into performance data as it is. See
+      [#320](https://github.com/Linuxfabrik/monitoring-plugins/issues/320).
+    - `break_point` is deliberately not sent. It pads gaps with `'-'`, which is what a
+      graphing front end wants and a check does not: a check would have to parse the padding
+      back out before it could compare anything.
+
+    ### Example
+    >>> get_performance(PERFORMANCE_OBJECT_NODE, (68, 69), args, ids=(1, 2))
+    {'1': {'68': '17.0', '69': '45.0'}, '2': {'68': '9.0', '69': '37.0'}}
+    """
+    end_time = time.now()
+    query = {'object_type': str(object_type), 'indicators': [str(i) for i in indicators]}
+    if ids is not None:
+        query['ids'] = list(ids)
+
+    result = get_data(
+        'pms/performance_data',
+        args,
+        payload={
+            'begin_time': end_time - window,
+            'end_time': end_time,
+            'objects': [query],
+        },
+        # One of several calls in a run, and an appliance that does not collect performance
+        # data answers with an error rather than with an empty list. Retrying that costs the
+        # check its remaining time budget to learn what the first answer already said.
+        max_attempts=1,
+    )
+    if get_result_code(result) not in (0, '0'):
+        return {}
+
+    samples = {}
+    for row in result.get('data') or []:
+        if not isinstance(row, dict):
+            continue
+        values = row.get('indicator_values') or []
+        if not values:
+            continue
+        object_id = str(row.get('id', ''))
+        indicator = str(row.get('indicator', ''))
+        if not object_id or not indicator:
+            continue
+        samples.setdefault(object_id, {})[indicator] = str(values[-1])
+
+    return samples
 
 
 def get_pool_status(st):
@@ -1023,7 +1208,7 @@ def get_pool_status(st):
         7: 'degraded (7)',
         8: 'rebuilding data (8)',
     }
-    return mapping.get(_as_code(st), 'Unknown')
+    return mapping.get(as_code(st), 'Unknown')
 
 
 def get_pool_status_state(st):
@@ -1053,7 +1238,7 @@ def get_pool_status_state(st):
     >>> get_pool_status_state('1') == STATE_CRIT
     True
     """
-    code = _as_code(st)
+    code = as_code(st)
     if code == 0:
         return STATE_OK
     if code in (1, 3, 4):

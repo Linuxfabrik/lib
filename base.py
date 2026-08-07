@@ -11,17 +11,24 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026080701'
 
-import html
 import numbers
 import operator
 import os
+import re
 import sys
 from traceback import format_exc
 
 from . import txt
 from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
+
+# A `<` that opens what a web interface would read as an HTML tag. This mirrors the
+# expression Icinga Web uses to decide whether a plugin output is HTML or plain text
+# (`Icingadb\Util\PluginOutput`, and the same one in the classic monitoring module).
+# Only such a `<` is escaped, so comparisons and shell snippets survive verbatim while
+# the output still cannot be mistaken for markup. See `oao()`.
+TAG_START = re.compile(r'<(?=\w+(?:\s\w+=[^>]*)?>)')
 
 WINDOWS = os.name == 'nt'
 LINUX = sys.platform.startswith('linux')
@@ -143,7 +150,8 @@ def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=N
 
     ### Parameters
     - **label** (`str`): The name of the performance data label.
-    - **value** (`int` or `float`): The measured value.
+    - **value** (`int` or `float`): The measured value. `None` means "nothing to report",
+      and yields an empty string rather than a metric.
     - **uom** (`str`, optional): The unit of measurement (e.g., 's', 'B', '%'). Defaults to None.
     - **warn** (`int` or `float`, optional): Warning threshold. Defaults to None.
     - **crit** (`int` or `float`, optional): Critical threshold. Defaults to None.
@@ -151,12 +159,26 @@ def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=N
     - **_max** (`int` or `float`, optional): Maximum value. Defaults to None.
 
     ### Returns
-    - **str**: A properly formatted Nagios performance data string.
+    - **str**: A properly formatted Nagios performance data string, or an empty string if
+      there is no value to report.
+
+    ### Notes
+    - A `value` of `None` returns an empty string. A source that did not report the reading
+      hands `None` through, and interpolating that would emit the literal `'label'=None`,
+      which is not a number: consumers that parse the perfdata line drop the whole line over
+      it, not just the one broken metric. Callers therefore no longer have to guard every
+      single call.
 
     ### Example
     >>> get_perfdata('load1', 0.42, '', 1.0, 5.0, 0, 10)
     "'load1'=0.42;1.0;5.0;0;10 "
+
+    >>> get_perfdata('load1', None)
+    ''
     """
+    if value is None:
+        return ''
+
     label = str(label).replace("'", '').replace('=', '_')
     msg = f"'{label}'={value}{uom or ''};"
     msg += f'{warn};' if warn is not None else ';'
@@ -615,11 +637,12 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
     ### Notes
     - Any `|` characters inside the message are replaced with `!` to avoid breaking Nagios plugin
       output format.
-    - The characters `&`, `<` and `>` are HTML-escaped (`&amp;`, `&lt;`, `&gt;`) so the plugin
-      output is safe to render in HTML-based web UIs (Icinga Web, Naemon-Adagios, etc.) without
-      destroying the source characters: thresholds like `<= 10` and shell snippets like
-      `echo 1 > /proc/sys/...` survive intact and the web UI decodes the entities back to the
-      original characters when rendering.
+    - A `<` that would open an HTML tag is replaced by `&lt;`, so a web interface cannot
+      mistake the output for markup. Everything else is left as it is: `<= 10`,
+      `< 5.3.2` and `echo 1 > /proc/sys/...` reach the terminal exactly as written, and
+      `&` and `>` are never touched. A web interface escapes those itself when it renders
+      the output as plain text, which is the path this keeps the output on. Rendering it
+      as HTML instead would drop the monospace formatting that tables depend on.
     - Sensitive information like passwords, tokens, and keys is automatically redacted.
     - `perfdata`, if provided, must follow monitoring plugin standards for performance metrics.
     - `no_perfdata` only affects what is printed; the message and the exit code are unchanged, so
@@ -639,10 +662,9 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
     # file or HTTP response) can carry CRLF or stray CR, which a web UI showing
     # the output with `white-space: pre-wrap` would render as an extra line break.
     msg = msg.replace('\r\n', '\n').replace('\r', '\n')
-    msg = html.escape(
-        txt.sanitize_sensitive_data(msg.strip()),
-        quote=False,
-    ).replace('|', '!')
+    msg = TAG_START.sub('&lt;', txt.sanitize_sensitive_data(msg.strip())).replace(
+        '|', '!'
+    )
     if always_ok and msg:
         # Instead of splitlines(), we just split('\n', 1), so only first line is touched.
         parts = msg.split('\n', 1)

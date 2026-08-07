@@ -18,8 +18,9 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026080701'
 
+import html
 import operator
 import re
 import traceback
@@ -655,6 +656,60 @@ def to_text(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     if nonstring == 'strict':
         raise TypeError('obj must be a string type')
     raise TypeError(f"Invalid value {nonstring!r} for to_text's nonstring parameter")
+
+
+def unescape(obj, keys=None):
+    """
+    Resolve HTML character references in text that is meant to be read, not rendered.
+
+    Some sources hand out plain text with its punctuation encoded as HTML character
+    references, for example `&#40;` for an opening parenthesis or `&#39;` for an apostrophe.
+    Printed unresolved, a hardware model reads as `Expansion Module&#40;24 Cores&#41;` instead
+    of `Expansion Module(24 Cores)`.
+
+    ### Parameters
+    - **obj** (`str`, `dict` or any):
+      A string to resolve, or a mapping whose values are resolved in place of a copy.
+      Anything else is returned unchanged, so a consumer can hand a field through without
+      first checking what it holds.
+    - **keys** (iterable of `str`, optional):
+      For a mapping, the keys to resolve. `None` resolves every string value. Naming the
+      keys keeps the resolution off identifiers and serialised payloads, where an ampersand
+      may be part of the value rather than the start of a reference.
+
+    ### Returns
+    - **str**, **dict** or the input unchanged:
+      A resolved string, a new mapping with the selected values resolved, or the input.
+
+    ### Notes
+    - A mapping is copied rather than modified, so the caller's source data keeps its
+      original values and can still be compared against what the source sent.
+    - Text without a `&` is returned as it is. `html.unescape()` also rewrites bare
+      ampersand sequences that were never meant as references, so it is worth not calling
+      it on text that cannot contain one.
+
+    ### Example
+    >>> unescape('Expansion Module&#40;24 Cores&#41;')
+    'Expansion Module(24 Cores)'
+
+    >>> unescape({'MODEL': 'Board&#40;2*8G&#41;', 'ID': '0'}, keys=('MODEL',))
+    {'MODEL': 'Board(2*8G)', 'ID': '0'}
+
+    >>> unescape(None) is None
+    True
+    """
+    if isinstance(obj, str):
+        return html.unescape(obj) if '&' in obj else obj
+
+    if isinstance(obj, dict):
+        resolved = dict(obj)
+        for key in obj if keys is None else keys:
+            value = resolved.get(key)
+            if isinstance(value, str):
+                resolved[key] = unescape(value)
+        return resolved
+
+    return obj
 
 
 def uniq(string):

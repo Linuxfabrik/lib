@@ -248,6 +248,53 @@ class TestToText(unittest.TestCase):
         )
 
 
+class TestUnescape(unittest.TestCase):
+    def test_resolves_numeric_character_references(self):
+        # Some sources encode the punctuation of plain text, so a hardware model reads as
+        # 'Expansion Module&#40;24 Cores&#41;' unless it is resolved.
+        self.assertEqual(
+            txt.unescape('Expansion Module&#40;24 Cores&#41;'),
+            'Expansion Module(24 Cores)',
+        )
+
+    def test_resolves_named_references(self):
+        self.assertEqual(txt.unescape('a &amp; b'), 'a & b')
+
+    def test_text_without_an_ampersand_is_returned_as_it_is(self):
+        self.assertEqual(txt.unescape('CTE0.IOM.L5.P0'), 'CTE0.IOM.L5.P0')
+
+    def test_empty_string(self):
+        self.assertEqual(txt.unescape(''), '')
+
+    def test_resolves_the_named_keys_of_a_mapping(self):
+        self.assertEqual(
+            txt.unescape({'MODEL': 'Board&#40;2*8G&#41;', 'ID': '0'}, keys=('MODEL',)),
+            {'MODEL': 'Board(2*8G)', 'ID': '0'},
+        )
+
+    def test_resolves_every_string_value_without_keys(self):
+        self.assertEqual(
+            txt.unescape({'A': '&#39;x&#39;', 'B': 1}),
+            {'A': "'x'", 'B': 1},
+        )
+
+    def test_a_key_that_is_not_there_is_not_an_error(self):
+        self.assertEqual(txt.unescape({'ID': '0'}, keys=('MODEL',)), {'ID': '0'})
+
+    def test_source_mapping_is_not_modified(self):
+        # The caller keeps the values the source sent, so it can still compare against
+        # them.
+        source = {'MODEL': 'Board&#40;x&#41;'}
+        txt.unescape(source, keys=('MODEL',))
+        self.assertEqual(source, {'MODEL': 'Board&#40;x&#41;'})
+
+    def test_other_types_pass_through(self):
+        # A consumer hands a field through without first checking what it holds.
+        for value in (None, 42, [1, 2], True):
+            with self.subTest(value=value):
+                self.assertEqual(txt.unescape(value), value)
+
+
 class TestUniq(unittest.TestCase):
     def test_dedups_tokens_preserving_order(self):
         self.assertEqual(txt.uniq('a a b a'), 'a b')

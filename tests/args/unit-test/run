@@ -13,6 +13,7 @@
 import argparse
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, '..')
@@ -103,6 +104,48 @@ class TestOrNone(unittest.TestCase):
     def test_range_or_none(self):
         self.assertEqual(args.range_or_none('10'), '10')
         self.assertIsNone(args.range_or_none('none'))
+
+
+class TestLoadSecret(unittest.TestCase):
+    def _write(self, content):
+        handle = tempfile.NamedTemporaryFile('w', delete=False)
+        handle.write(content)
+        handle.close()
+        self.addCleanup(os.unlink, handle.name)
+        return handle.name
+
+    def test_reads_the_secret(self):
+        self.assertEqual(args.load_secret(self._write('linuxfabrik')), 'linuxfabrik')
+
+    def test_strips_the_trailing_newline_an_editor_appends(self):
+        self.assertEqual(args.load_secret(self._write('linuxfabrik\n')), 'linuxfabrik')
+
+    def test_strips_a_windows_line_ending(self):
+        self.assertEqual(args.load_secret(self._write('linuxfabrik\r\n')), 'linuxfabrik')
+
+    def test_only_the_first_line_is_the_secret(self):
+        self.assertEqual(
+            args.load_secret(self._write('linuxfabrik\nnot the secret\n')),
+            'linuxfabrik',
+        )
+
+    def test_surrounding_spaces_are_part_of_the_secret(self):
+        # Stripping them would make a valid password fail with no way to tell why.
+        self.assertEqual(args.load_secret(self._write('  linuxfabrik  \n')), '  linuxfabrik  ')
+
+    def test_empty_file_aborts(self):
+        # An empty secret would be sent to the remote end as an empty password, which
+        # drives the account towards its lockout threshold.
+        with self.assertRaises(SystemExit):
+            args.load_secret(self._write(''))
+
+    def test_file_holding_only_a_newline_aborts(self):
+        with self.assertRaises(SystemExit):
+            args.load_secret(self._write('\n'))
+
+    def test_unreadable_file_aborts(self):
+        with self.assertRaises(SystemExit):
+            args.load_secret('/nonexistent/linuxfabrik')
 
 
 class TestNumberUnitMethod(unittest.TestCase):
