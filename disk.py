@@ -835,7 +835,7 @@ def read_env(filename, delimiter='='):
         return False, f'Unknown error opening or reading {filename}: {e}'
 
 
-def read_file(filename, binary=False):
+def read_file(filename, binary=False, max_bytes=None):
     """
     Read the contents of a file and return them.
 
@@ -843,6 +843,11 @@ def read_file(filename, binary=False):
     - **filename** (`str`): Path to the file to read.
     - **binary** (`bool`, optional): If True, read in binary mode and return the
       contents as `bytes`; otherwise decode as UTF-8 text. Defaults to False.
+    - **max_bytes** (`int`, optional): Stop after this many bytes (characters in text
+      mode) instead of reading the whole file. Use it whenever only a bounded part of
+      the file is of interest, for example a metadata header at the top, so a file that
+      unexpectedly grew to gigabytes cannot exhaust memory. Defaults to None, which
+      reads the file completely.
 
     ### Returns
     - **tuple**:
@@ -852,16 +857,22 @@ def read_file(filename, binary=False):
             `binary` is True).
           - If unsuccessful, an error message string.
 
+    ### Notes
+    - With `max_bytes` in text mode the read may end in the middle of a multi-byte
+      character sequence. Prefer `binary=True` plus an explicit decode when the file's
+      encoding is not reliably known.
+
     ### Example
     >>> success, content = read_file('example.txt')
     >>> success, raw = read_file('cert.der', binary=True)
+    >>> success, header = read_file('plugin.php', binary=True, max_bytes=8192)
     """
     try:
         if binary:
             with open(filename, mode='rb') as f:
-                return True, f.read()
+                return True, f.read() if max_bytes is None else f.read(max_bytes)
         with open(filename, mode='r', encoding='utf-8') as f:
-            return True, f.read()
+            return True, f.read() if max_bytes is None else f.read(max_bytes)
     except OSError as e:
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:

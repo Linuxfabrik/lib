@@ -15,8 +15,10 @@ import os
 import re
 import textwrap
 
+from . import base, disk
+
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080401'
+__version__ = '2026080701'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -113,10 +115,25 @@ HELP_TEXTS = {
         'while trending data is dropped.'
     ),
     '--no-proxy': 'Do not use a proxy.',
+    '--no-vuln-data-severity': (
+        'State to report when the vulnerability database could not be queried and no '
+        'vulnerability data is available. '
+        'The check still reports everything it can determine without that data, but a '
+        'clean result then only means nothing else was found, not that the target is '
+        'free of known vulnerabilities.'
+    ),
     '--offset-eol': (
         'Alert n days before ("-30") or after an EOL date ("30" or "+30").'
     ),
     '--password': 'Password.',
+    '--password-file': (
+        'Path to a file holding the password, read from its first line. '
+        'Keeps the password out of the process list, where a command-line argument is '
+        'visible to every user on the host. '
+        'Takes precedence over `--password`. '
+        'Keep the file readable only by the monitoring user. '
+        'Example: `--password-file=/etc/icinga2/secrets/storage`.'
+    ),
     '--path': 'Local path to the installation.',
     '--port': 'Port number.',
     '--severity': 'Severity for alerting.',
@@ -283,6 +300,47 @@ def int_or_none(arg):
     if isinstance(arg, str) and arg.strip().lower() == 'none':
         return None
     return int(arg)
+
+
+def load_secret(path, param='--password-file'):
+    """
+    Read a secret out of a file, so it does not have to be passed on the command line.
+
+    A command-line argument is visible to every user on the host for as long as the
+    process runs, and a monitoring plugin runs on a schedule. Reading the secret from a
+    file that only the monitoring user can read keeps it out of the process list.
+
+    ### Parameters
+    - **path** (`str`): The file to read.
+    - **param** (`str`, optional): The parameter name to use in an error message.
+
+    ### Returns
+    - **str**: The secret, without the trailing newline a text editor appends.
+
+    ### Notes
+    - Aborts the calling process (UNKNOWN) when the file cannot be read or holds nothing.
+      A secret that silently comes out empty would be sent to the remote end as an empty
+      password, which drives the account towards its lockout threshold.
+    - Only the first line is used, and only its trailing newline is stripped. Leading and
+      trailing spaces are part of a password, and stripping them would make a valid
+      password fail with no way to tell why.
+    - The file permissions are deliberately not enforced here. Which user a check runs as
+      differs per deployment, and refusing to start over a permission bit would take a
+      working check down; keeping the file readable only by the monitoring user is the
+      documented operator's job.
+
+    ### Example
+    >>> load_secret('/etc/icinga2/secrets/storage')
+    'linuxfabrik'
+    """
+    success, content = disk.read_file(path)
+    if not success:
+        base.cu(f'Cannot read the file given in {param}: {content}')
+
+    secret = content.split('\n', 1)[0].rstrip('\r')
+    if not secret:
+        base.cu(f'The file given in {param} is empty.')
+    return secret
 
 
 def number_unit_method(arg, unit='%', method='USED'):

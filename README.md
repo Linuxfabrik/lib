@@ -66,14 +66,14 @@ These libraries are built with a clear set of priorities:
 
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
-| **args.py** | Extends `argparse` with custom input types for monitoring thresholds and a registry of reusable `--help` texts. | `csv()`, `float_or_none()`, `help()`, `int_or_none()`, `number_unit_method()` |
+| **args.py** | Extends `argparse` with custom input types for monitoring thresholds, a registry of reusable `--help` texts, and reading a secret from a file instead of the command line. | `csv()`, `float_or_none()`, `help()`, `int_or_none()`, `load_secret()`, `number_unit_method()` |
 | **base.py** | The central library for plugin development. Provides state evaluation, threshold comparison, performance data formatting, ASCII table output, and the `coe()` error-handling pattern. | `coe()`, `cu()`, `get_perfdata()`, `get_state()`, `get_table()`, `get_worst()`, `oao()`, `state2str()` |
 | **globals.py** | Defines the four Nagios/Icinga plugin states: `STATE_OK` (0), `STATE_WARN` (1), `STATE_CRIT` (2), `STATE_UNKNOWN` (3). | -- |
 | **human.py** | Converts raw numbers, byte sizes, bit rates, and durations to human-readable representations and back. Supports binary/SI prefixes and Nagios range syntax with units. | `bits2human()`, `bps2human()`, `bytes2human()`, `human2bytes()`, `human2seconds()`, `humanrange2bytes()`, `number2human()`, `seconds2human()` |
-| **lftest.py** | Test harness for data-driven plugin unit tests, spinning up throwaway containers (including MySQL/MariaDB) as fixtures. | `attach_each()`, `attach_tests()`, `run()`, `run_container()`, `run_mysql_compatible_from_containerfile()`, `test()` |
+| **lftest.py** | Test harness for data-driven plugin unit tests, spinning up throwaway containers (including MySQL/MariaDB) as fixtures. | `attach_each()`, `attach_tests()`, `run()`, `run_container()`, `run_mysql_compatible_from_containerfile()`, `test()`, `test_json()` |
 | **openmetrics.py** | Reads the OpenMetrics and Prometheus text exposition formats served by a `/metrics` endpoint into plain samples, and selects a metric by name and labels. | `get_samples()`, `get_value()`, `parse()` |
 | **time.py** | Date/time conversions between UNIX epochs, ISO strings, and datetime objects, plus time-macro expansion and time differences. Timezone-aware. | `epoch2iso()`, `now()`, `timestr2datetime()`, `timestrdiff()` |
-| **txt.py** | Text processing: regex compilation, substring extraction, multi-line parsing, sensitive data redaction, pluralization, and byte/text encoding conversion. | `compile_regex()`, `extract_str()`, `match_regex()`, `mltext2array()`, `pluralize()`, `to_bytes()`, `to_text()` |
+| **txt.py** | Text processing: regex compilation, substring extraction, multi-line parsing, sensitive data redaction, pluralization, HTML character reference resolution, and byte/text encoding conversion. | `compile_regex()`, `extract_str()`, `match_regex()`, `mltext2array()`, `pluralize()`, `to_bytes()`, `to_text()`, `unescape()` |
 | **version.py** | Software version parsing, comparison, and End-of-Life checking against [endoflife.date](https://endoflife.date). | `check_eol()`, `version()`, `version2float()` |
 
 
@@ -124,8 +124,8 @@ These libraries are built with a clear set of priorities:
 |--------|-------------|---------------|
 | **bexio.py** | [Bexio](https://www.bexio.com/) business software REST API (contacts, invoices, projects, items, timesheets, and more). | `call_api()`, `fetch_accounts()`, `fetch_contacts()`, `fetch_invoices()`, `fetch_projects()`, `get_all()` |
 | **grassfish.py** | [Grassfish](https://www.grassfish.com/) digital signage REST API. | `fetch_json()`, `set_player_defaults()`, `set_screen_defaults()` |
-| **huawei_dorado.py** | Huawei [OceanStor Dorado](https://www.huawei.com/) storage DeviceManager REST API: session handling, paged list walks, current performance counters, and the numeric status, model and hardware codes it reports. | `get_all_data()`, `get_data()`, `get_health_status()`, `get_health_status_state()`, `get_performance()`, `get_running_status()`, `get_running_status_state()`, `get_uuid()` |
-| **huawei_pacific.py** | Huawei [OceanStor Pacific](https://www.huawei.com/) storage REST API, including the older endpoint generation below `/dsware/service/`, and the status codes it reports as numbers and as strings. | `get_all_data()`, `get_data()`, `get_disk_status()`, `get_disk_status_state()`, `get_management_ips()`, `get_pool_status()`, `get_pool_status_state()`, `get_result_code()` |
+| **huawei_dorado.py** | Huawei [OceanStor Dorado](https://www.huawei.com/) storage DeviceManager REST API: session handling with device ID discovery, paged list walks, current performance counters, sector-to-byte capacity conversion, and the numeric status, model and hardware codes it reports. | `as_code()`, `assert_ok()`, `field()`, `get_all_data()`, `get_data()`, `get_health_status()`, `get_health_status_state()`, `get_performance()`, `get_running_status()`, `get_running_status_state()`, `get_uuid()`, `sectors2bytes()` |
+| **huawei_pacific.py** | Huawei [OceanStor Pacific](https://www.huawei.com/) storage REST API, including the older endpoint generation below `/dsware/service/`, the batch performance interface, and the status codes it reports as numbers and as strings. | `as_code()`, `assert_ok()`, `get_all_data()`, `get_data()`, `get_disk_status()`, `get_disk_status_state()`, `get_management_ips()`, `get_performance()`, `get_pool_status()`, `get_pool_status_state()`, `get_result_code()` |
 | **icinga.py** | [Icinga2](https://icinga.com/) REST API client for querying services and managing acknowledgements and downtimes. | `get_service()`, `remove_ack()`, `remove_downtime()`, `set_ack()`, `set_downtime()` |
 | **infomaniak.py** | [Infomaniak](https://www.infomaniak.com/) Swiss Backup REST API for events, backup products, and slots. | `get_events()`, `get_swiss_backup_products()`, `get_swiss_backup_slots()` |
 | **jitsi.py** | [Jitsi Meet](https://jitsi.org/) server statistics endpoint, with optional HTTP Basic auth. | `get_data()` |
@@ -139,7 +139,7 @@ These libraries are built with a clear set of priorities:
 | **uptimerobot.py** | [UptimeRobot](https://uptimerobot.com/) API for monitors, alert contacts, maintenance windows, and status pages. | `delete_monitor()`, `edit_monitor()`, `get_account_details()`, `get_alert_contacts()`, `get_monitors()`, `get_mwindows()`, `get_psps()`, `new_monitor()` |
 | **veeam.py** | [Veeam](https://www.veeam.com/) Backup & Replication Enterprise Manager REST API. | `get_token()` |
 | **wildfly.py** | [WildFly/JBoss](https://www.wildfly.org/) management API with digest auth (standalone and domain mode). | `get_data()` |
-| **wordpress.py** | [WordPress](https://wordpress.org/) installation read straight from the filesystem: core version, installed plugins and themes, and any file header field. Needs no database, no HTTP request and no `wp-cli`. | `get_header_value()`, `get_plugins()`, `get_themes()`, `get_version()`, `is_installation()` |
+| **wordpress.py** | [WordPress](https://wordpress.org/) installation read straight from the filesystem: core version, installed plugins and themes, the configured site URL, and any file header field. Needs no database, no HTTP request and no `wp-cli`. | `get_header_value()`, `get_plugins()`, `get_site_url()`, `get_themes()`, `get_version()`, `is_installation()` |
 
 
 ## Usage Example

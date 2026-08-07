@@ -18,16 +18,56 @@ them take the path to the installation root, the directory holding `wp-includes/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026080701'
 
+import glob as _glob
 import os
 import re
 
-from . import disk
+from . import disk, txt
 
 # Relative location of the file WordPress keeps its own version in. Present in every
 # installation, which makes it the marker for "this path is a WordPress installation".
 VERSION_FILE = os.path.join('wp-includes', 'version.php')
+
+# Name of the file holding the installation's configuration, including its database
+# credentials. Only the two site URL constants are ever read out of it.
+CONFIG_FILE = 'wp-config.php'
+
+# How much of a plugin or theme file is read to find its metadata header. WordPress
+# itself reads the same 8 KiB in `get_file_data()`, so a `Plugin Name:` line further
+# down the file is not a header field for WordPress either, and must not be treated as
+# one here. Keeping the read bounded also means a single oversized file cannot exhaust
+# memory.
+HEADER_BYTES = 8192
+
+# Upper bound for the configuration read. Every real `wp-config.php` is a few kilobytes;
+# the cap only exists so a file that is not what it claims to be cannot be read
+# unbounded.
+CONFIG_BYTES = 65536
+
+# Order in which the site URL is taken from the configuration. `WP_HOME` is the address
+# visitors use, `WP_SITEURL` the one WordPress itself is reached under. They differ on
+# installations that keep the core in a subdirectory, and the visitor-facing one is what
+# a consumer wants.
+SITE_URL_CONSTANTS = ('WP_HOME', 'WP_SITEURL')
+
+
+def _read_header(filename):
+    """Return the leading `HEADER_BYTES` of a file as text, or the empty string when it
+    cannot be read. Decoded with `strict_or_latin1` because a plugin author is free to
+    save the file in any encoding and the values end up in the consumer's output.
+    """
+    success, raw = disk.read_file(filename, binary=True, max_bytes=HEADER_BYTES)
+    if not success:
+        return ''
+    return txt.to_text(raw, errors='strict_or_latin1')
+
+
+def _header_value(header, field):
+    """Extract a single field from an already-read header block."""
+    match = re.search(rf'(?im)^[ \t*#/]*{re.escape(field)}\s*:\s*(.+)$', header)
+    return match.group(1).strip() if match else ''
 
 
 def get_header_value(filename, field):
@@ -51,8 +91,10 @@ def get_header_value(filename, field):
       the field is absent or the file cannot be read.
 
     ### Notes
-    - Only the first occurrence is returned, which is the header block, because the
-      block sits at the top of the file.
+    - Only the leading `HEADER_BYTES` of the file are searched, the same amount
+      WordPress reads in `get_file_data()`. A matching line further down is therefore
+      not a header field here either, and a large file is never read completely.
+    - Only the first occurrence within that block is returned.
     - A field without a colon, such as the `@version` tag of a docblock, is not a header
       field and is deliberately not matched.
 
@@ -60,13 +102,7 @@ def get_header_value(filename, field):
     >>> get_header_value('wp-content/plugins/akismet/akismet.php', 'Version')
     '5.7'
     """
-    success, value = disk.grep_file(
-        filename,
-        rf'(?im)^[ \t*#/]*{re.escape(field)}\s*:\s*(.+)$',
-    )
-    if not success:
-        return ''
-    return value.strip()
+    return _header_value(_read_header(filename), field)
 
 
 def get_plugins(path):
@@ -90,16 +126,28 @@ def get_plugins(path):
       the plugin declares none. An installation without a readable plugin directory
       yields an empty dict.
 
+    ### Notes
+    - Symlinks are followed. The plugin directory is writable by the web server on
+      installations that allow updates through the admin interface, so anyone able to
+      write there can point an entry at a file outside the installation and have its
+      header fields end up in the caller's output. Where that matters, run the consumer
+      against a path the web server cannot write to, or verify the tree separately.
+
     ### Example
     >>> get_plugins('/var/www/html/wordpress')
     {'akismet': '5.7', 'contact-form-7': '5.0', 'hello': '1.7.2'}
     """
     plugins = {}
     plugin_dir = os.path.join(path, 'wp-content', 'plugins')
-    candidates = disk.glob(os.path.join(plugin_dir, '*.php'), recursive=False)
-    candidates += disk.glob(os.path.join(plugin_dir, '*', '*.php'), recursive=False)
+    # The directory is data, not a pattern: a `[` or `?` in the caller's path would
+    # otherwise be read as a glob metacharacter and silently match nothing.
+    quoted_dir = _glob.escape(plugin_dir)
+    candidates = disk.glob(os.path.join(quoted_dir, '*.php'), recursive=False)
+    candidates += disk.glob(os.path.join(quoted_dir, '*', '*.php'), recursive=False)
     for candidate in candidates:
-        if not get_header_value(candidate, 'Plugin Name'):
+        # One bounded read per file, then both fields out of it.
+        header = _read_header(candidate)
+        if not _header_value(header, 'Plugin Name'):
             continue
         parent = os.path.dirname(candidate)
         if os.path.normcase(os.path.normpath(parent)) == os.path.normcase(
@@ -137,12 +185,76 @@ def get_themes(path):
     """
     themes = {}
     theme_dir = os.path.join(path, 'wp-content', 'themes')
+    # See get_plugins(): the directory is data, not a pattern.
     for stylesheet in disk.glob(
-        os.path.join(theme_dir, '*', 'style.css'), recursive=False
+        os.path.join(_glob.escape(theme_dir), '*', 'style.css'), recursive=False
     ):
         slug = os.path.basename(os.path.dirname(stylesheet))
         themes[slug] = get_header_value(stylesheet, 'Version') or 'unknown'
     return themes
+
+
+def get_site_url(path):
+    """
+    Read the site URL a local WordPress installation is served under.
+
+    WordPress keeps the site URL in its database, but an installation may pin it in
+    `wp-config.php` through the `WP_HOME` and `WP_SITEURL` constants. Where they are
+    set, a consumer can address the site without being told the URL. Where they are not,
+    the URL is simply not knowable from the filesystem and the caller has to ask for it.
+
+    ### Parameters
+    - **path** *(str | os.PathLike)*: Path to the installation root.
+
+    ### Returns
+    - **tuple[bool, str]**:
+      - On success: `(True, url)`, where `url` is the empty string when the
+        configuration is readable but pins neither constant.
+      - On failure: `(False, error)` when no configuration file can be read.
+
+    ### Notes
+    - `WP_HOME` wins over `WP_SITEURL`. The first is the address visitors use, the
+      second the one the core itself is reached under; they differ on installations
+      keeping the core in a subdirectory.
+    - Looked up in `<path>/wp-config.php` first, then one directory above, which is the
+      only other place WordPress itself accepts the file in.
+    - A value assembled at runtime, such as `'https://' . $_SERVER['HTTP_HOST']`, is not
+      a fixed URL and is skipped rather than returned half-read.
+    - `wp-config.php` holds the database credentials. Only the two constants above are
+      ever extracted; no other part of the file is returned to the caller. On a typical
+      installation the file is not world-readable, so an unprivileged consumer will
+      usually get the failure branch, which is a permission problem and not an error in
+      the installation.
+
+    ### Example
+    >>> get_site_url('/var/www/html/wordpress')
+    (True, 'https://www.example.com')
+    """
+    error = ''
+    for candidate in (
+        os.path.join(path, CONFIG_FILE),
+        os.path.join(path, os.pardir, CONFIG_FILE),
+    ):
+        success, config = disk.read_file(
+            candidate, binary=True, max_bytes=CONFIG_BYTES
+        )
+        if not success:
+            error = error or config
+            continue
+        config = txt.to_text(config, errors='strict_or_latin1')
+        for constant in SITE_URL_CONSTANTS:
+            # Matches both PHP quoting styles and tolerates whitespace anywhere the
+            # language does. The closing quote must be followed by the end of the
+            # argument, so a concatenated expression does not match at all.
+            match = re.search(
+                rf"""define\s*\(\s*(['"]){constant}\1\s*,\s*"""
+                r"""(['"])(https?://[^'"]+)\2\s*[,)]""",
+                config,
+            )
+            if match:
+                return (True, match.group(3).rstrip('/'))
+        return (True, '')
+    return (False, error or f'No "{CONFIG_FILE}" found below "{path}".')
 
 
 def get_version(path):
@@ -167,7 +279,7 @@ def get_version(path):
     """
     return disk.grep_file(
         os.path.join(path, VERSION_FILE),
-        r"wp_version\s*=\s*'(.*)'",
+        r"wp_version\s*=\s*'([^']*)'",
     )
 
 

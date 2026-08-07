@@ -107,6 +107,41 @@ Author: Linuxfabrik
 */
 """
 
+WP_CONFIG_PHP = """<?php
+define( 'DB_NAME', 'wordpress' );
+define( 'DB_USER', 'wordpress' );
+define( 'DB_PASSWORD', 'linuxfabrik' );
+define( 'WP_HOME', 'https://www.example.com/' );
+define( 'WP_SITEURL', 'https://www.example.com/blog' );
+
+require_once ABSPATH . 'wp-settings.php';
+"""
+
+# Only the core address is pinned, and in the other PHP quoting style.
+WP_CONFIG_SITEURL_ONLY_PHP = """<?php
+define("DB_PASSWORD", "linuxfabrik");
+define("WP_SITEURL", "https://blog.example.com");
+"""
+
+# A URL assembled at runtime is not a fixed address and must not be returned half-read.
+WP_CONFIG_DYNAMIC_PHP = """<?php
+define( 'DB_PASSWORD', 'linuxfabrik' );
+define( 'WP_HOME', 'https://' . $_SERVER['HTTP_HOST'] );
+"""
+
+WP_CONFIG_NO_URL_PHP = """<?php
+define( 'DB_NAME', 'wordpress' );
+define( 'DB_PASSWORD', 'linuxfabrik' );
+"""
+
+# A body line that looks like a header field but sits far beyond the 8 KiB WordPress
+# itself reads, so it is not a header field and must not create a phantom plugin.
+LATE_HEADER_PHP = (
+    '<?php\n/*\nPlugin Name: Early Bird\nVersion: 1.0\n*/\n'
+    + '// padding\n' * 1200
+    + '// Plugin Name: Phantom\n// Version: 6.6.6\n'
+)
+
 
 def write(path, content):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -130,9 +165,14 @@ class TestWordPress(unittest.TestCase):
         write(os.path.join(themes, 'index.php'), PLACEHOLDER)
         write(os.path.join(themes, 'twentytwentyfive', 'style.css'), STYLE_CSS)
         write(os.path.join(themes, 'homegrown', 'style.css'), UNVERSIONED_STYLE_CSS)
+        write(os.path.join(cls.wp, 'wp-config.php'), WP_CONFIG_PHP)
         # a directory that exists but holds no WordPress
         cls.empty = os.path.join(cls.root, 'empty')
         os.makedirs(cls.empty)
+        # the same installation below a path carrying glob metacharacters, which must be
+        # read as data and not as a pattern
+        cls.quoted = os.path.join(cls.root, 'site[1]')
+        shutil.copytree(cls.wp, cls.quoted)
 
     @classmethod
     def tearDownClass(cls):
@@ -186,6 +226,89 @@ class TestWordPress(unittest.TestCase):
     def test_get_themes_on_missing_installation(self):
         self.assertEqual(wordpress.get_themes(self.empty), {})
 
+    # A `[` in the path is a glob metacharacter. Without quoting, the inventory would
+    # silently come back empty while the installation is plainly there.
+    def test_get_plugins_with_glob_metacharacters_in_path(self):
+        self.assertEqual(
+            wordpress.get_plugins(self.quoted),
+            {
+                'akismet': '5.7',
+                'hello': '1.7.2',
+                'snippet': 'unknown',
+            },
+        )
+
+    def test_get_themes_with_glob_metacharacters_in_path(self):
+        self.assertEqual(
+            wordpress.get_themes(self.quoted),
+            {
+                'homegrown': 'unknown',
+                'twentytwentyfive': '1.5',
+            },
+        )
+
+    def test_is_installation_with_glob_metacharacters_in_path(self):
+        self.assertTrue(wordpress.is_installation(self.quoted))
+
+
+class TestSiteUrl(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.root = tempfile.mkdtemp(prefix='lftest-wordpress-config-')
+
+        def install(name, config=None, in_parent=False):
+            wp = os.path.join(cls.root, name, 'wordpress')
+            write(os.path.join(wp, 'wp-includes', 'version.php'), VERSION_PHP)
+            if config is not None:
+                target = os.path.pardir if in_parent else ''
+                write(os.path.join(wp, target, 'wp-config.php'), config)
+            return wp
+
+        cls.both = install('both', WP_CONFIG_PHP)
+        cls.siteurl_only = install('siteurl', WP_CONFIG_SITEURL_ONLY_PHP)
+        cls.dynamic = install('dynamic', WP_CONFIG_DYNAMIC_PHP)
+        cls.no_url = install('nourl', WP_CONFIG_NO_URL_PHP)
+        cls.no_config = install('noconfig')
+        cls.parent = install('parent', WP_CONFIG_PHP, in_parent=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.root, ignore_errors=True)
+
+    # WP_HOME is the visitor-facing address and wins over WP_SITEURL.
+    def test_wp_home_wins(self):
+        self.assertEqual(
+            wordpress.get_site_url(self.both), (True, 'https://www.example.com')
+        )
+
+    def test_falls_back_to_wp_siteurl(self):
+        self.assertEqual(
+            wordpress.get_site_url(self.siteurl_only),
+            (True, 'https://blog.example.com'),
+        )
+
+    # WordPress accepts the configuration one directory above the installation root.
+    def test_config_one_directory_above(self):
+        self.assertEqual(
+            wordpress.get_site_url(self.parent), (True, 'https://www.example.com')
+        )
+
+    def test_runtime_assembled_url_is_skipped(self):
+        self.assertEqual(wordpress.get_site_url(self.dynamic), (True, ''))
+
+    def test_config_without_url_constants(self):
+        self.assertEqual(wordpress.get_site_url(self.no_url), (True, ''))
+
+    def test_missing_config(self):
+        success, result = wordpress.get_site_url(self.no_config)
+        self.assertFalse(success)
+        self.assertIn('wp-config.php', result)
+
+    # The file holds the database credentials; none of them may come back to the caller.
+    def test_credentials_are_not_returned(self):
+        for path in (self.both, self.siteurl_only, self.no_url):
+            self.assertNotIn('linuxfabrik', wordpress.get_site_url(path)[1])
+
 
 class TestHeaderValue(unittest.TestCase):
     @classmethod
@@ -195,6 +318,8 @@ class TestHeaderValue(unittest.TestCase):
         write(cls.plugin, AKISMET_PHP)
         cls.hello = os.path.join(cls.dir, 'hello.php')
         write(cls.hello, HELLO_PHP)
+        cls.late = os.path.join(cls.dir, 'late.php')
+        write(cls.late, LATE_HEADER_PHP)
 
     @classmethod
     def tearDownClass(cls):
@@ -232,6 +357,14 @@ class TestHeaderValue(unittest.TestCase):
     # A field name is taken literally, so regex metacharacters cannot change the match.
     def test_field_name_is_literal(self):
         self.assertEqual(wordpress.get_header_value(self.plugin, 'Versio.'), '')
+
+    # Only the leading HEADER_BYTES are the header block, the same amount WordPress
+    # reads. A matching line further down is body text, not a header field.
+    def test_only_the_leading_block_is_searched(self):
+        self.assertEqual(
+            wordpress.get_header_value(self.late, 'Plugin Name'), 'Early Bird'
+        )
+        self.assertEqual(wordpress.get_header_value(self.late, 'Version'), '1.0')
 
 
 if __name__ == '__main__':
