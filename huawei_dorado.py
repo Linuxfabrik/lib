@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080701'
+__version__ = '2026080702'
 
 import json
 from time import sleep as _sleep
@@ -1644,6 +1644,99 @@ def get_performance(uuid, data_ids, args):
         }
 
     return {}
+
+
+# The performance indicators, keyed by the number the vendor gives them, as
+# `(label, uom, factor)`. The label is the metric name a consumer emits, `uom` is the
+# Nagios unit of measurement, and `factor` converts the vendor's unit into it.
+#
+# Two conversions are worth naming. The response times are documented in microseconds and
+# go out in seconds, the unit Nagios knows. The bandwidths and I/O sizes are documented as
+# MB/s and KB, and are read as binary multiples: every capacity this API reports is binary
+# (sectors of 512 bytes), and so is what DeviceManager itself displays.
+PERFORMANCE_INDICATORS = {
+    18: ('usage_percent', '%', 1),
+    19: ('queue_length', None, 1),
+    21: ('block_bandwidth', 'B', 1024 * 1024),
+    22: ('total_iops', None, 1),
+    23: ('read_bandwidth', 'B', 1024 * 1024),
+    24: ('avg_read_io_size', 'B', 1024),
+    25: ('read_iops', None, 1),
+    26: ('write_bandwidth', 'B', 1024 * 1024),
+    27: ('avg_write_io_size', 'B', 1024),
+    28: ('write_iops', None, 1),
+    68: ('cpu_usage_percent', '%', 1),
+    69: ('cache_usage_percent', '%', 1),
+    93: ('read_cache_hit_ratio_percent', '%', 1),
+    95: ('write_cache_hit_ratio_percent', '%', 1),
+    110: ('read_cache_usage_percent', '%', 1),
+    120: ('write_cache_usage_percent', '%', 1),
+    303: ('avg_cache_hit_ratio_percent', '%', 1),
+    370: ('avg_io_response_time', 's', 1 / 1_000_000),
+    384: ('avg_read_io_response_time', 's', 1 / 1_000_000),
+    385: ('avg_write_io_response_time', 's', 1 / 1_000_000),
+}
+
+# Object type numbers of the performance API, from the "Statistics Type" columns of the
+# performance indicator tables. They are the `TYPE` an object reports, so a consumer
+# normally builds its UUID with `get_uuid()` rather than naming the number here.
+PERFORMANCE_TYPE_CONTROLLER = 207
+PERFORMANCE_TYPE_ETH_PORT = 213
+PERFORMANCE_TYPE_FC_PORT = 212
+PERFORMANCE_TYPE_LUN = 11
+PERFORMANCE_TYPE_STORAGE_POOL = 216
+
+
+def get_performance_perfdata(prefix, samples, indicators=None):
+    """
+    Turn the samples `get_performance()` returned into performance data.
+
+    ### Parameters
+    - **prefix** (`str`):
+      What every metric name starts with, normally the object's sanitised UUID.
+    - **samples** (`dict`):
+      Indicator number to value, as `get_performance()` returns it.
+    - **indicators** (`dict`, optional):
+      The descriptor table to read the label, unit and conversion factor from. Defaults
+      to `PERFORMANCE_INDICATORS`.
+
+    ### Returns
+    - **str**: The performance data, ready to be appended to a consumer's own.
+
+    ### Notes
+    - An indicator the table does not describe is skipped rather than emitted under its
+      bare number. A number is not a metric name a dashboard can be built on, and the
+      appliance answers with indicators a consumer never asked for on some firmware.
+    - A percentage carries `0` and `100` as its bounds; everything else only a lower bound
+      of `0`. None of these counters can be negative.
+    - A value that does not parse as a number is skipped for the same reason a missing one
+      is: the appliance sends `'--'` for a counter it is not collecting.
+
+    ### Example
+    >>> get_performance_perfdata('207_0A', {'22': '4711', '370': '385'})
+    "'207_0A_total_iops'=4711;;;0 '207_0A_avg_io_response_time'=0.000385s;;;0 "
+    """
+    if indicators is None:
+        indicators = PERFORMANCE_INDICATORS
+
+    perfdata = ''
+    for data_id, raw in samples.items():
+        descriptor = indicators.get(as_code(data_id))
+        if descriptor is None:
+            continue
+        label, uom, factor = descriptor
+        try:
+            value = float(raw) * factor
+        except (TypeError, ValueError):
+            continue
+        perfdata += base.get_perfdata(
+            f'{prefix}_{label}',
+            round(value, 6) if factor < 1 else round(value),
+            uom=uom,
+            _min=0,
+            _max=100 if uom == '%' else None,
+        )
+    return perfdata
 
 
 def get_product_mode(pm):

@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_dorado.py: `get_error_code()` reads the status code out of the response envelope, whether the appliance wraps it in an object or sends it bare.
 * huawei_dorado.py: `get_health_status_state()`, `get_running_status_state()` and `get_hypermetro_domain_running_status_state()` translate a status code into the state a check reports for it, so a failed component is told apart from a degraded one in one place instead of in every consumer.
 * huawei_dorado.py: `get_performance()` reads the current performance counters of a managed object and copes with both endpoint spellings the vendor shipped.
+* huawei_dorado.py: `get_performance_perfdata()` turns those counters into performance data, under the vendor's own indicator names and in the units a dashboard expects.
 * huawei_dorado.py: `sectors2bytes()` converts the sector counts every capacity field carries into bytes, and drops the negative values the appliance uses for a capacity it does not report.
 * huawei_pacific.py: `get_alarm_severity_state()` translates an alarm severity into the state a check reports for it, including the minor severity that used to be unhandled.
 * huawei_pacific.py: `get_all_data()` walks a list endpoint page by page, in either of the two incompatible range syntaxes the API uses.

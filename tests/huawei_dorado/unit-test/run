@@ -40,6 +40,7 @@ Public functions under test:
 - get_led_status()           -> code -> text mapping
 - get_os()                   -> code -> text mapping
 - get_performance()          -> current counters, endpoint-spelling fallback (HTTP)
+- get_performance_perfdata() -> counters -> performance data, in dashboard units
 - get_product_mode()         -> code -> text mapping
 - get_runlevel()             -> code -> text mapping
 - get_running_status()       -> code -> text mapping
@@ -565,6 +566,55 @@ class TestField(unittest.TestCase):
         # default would hide the difference between a field a firmware does not have and
         # one it has nothing to say about.
         self.assertEqual(huawei.field({'MODEL': ''}, 'MODEL', default='--'), '')
+
+
+class TestGetPerformancePerfdata(unittest.TestCase):
+    def test_renders_a_counter_under_its_vendor_name(self):
+        self.assertEqual(
+            huawei.get_performance_perfdata('207_0A', {'22': '4711'}),
+            "'207_0A_total_iops'=4711;;;0 ",
+        )
+
+    def test_percentages_carry_both_bounds(self):
+        self.assertEqual(
+            huawei.get_performance_perfdata('207_0A', {'18': '80'}),
+            "'207_0A_usage_percent'=80%;;;0;100 ",
+        )
+
+    def test_microseconds_become_seconds(self):
+        # The vendor documents the response times in microseconds; a Nagios unit of
+        # measurement knows seconds.
+        self.assertEqual(
+            huawei.get_performance_perfdata('207_0A', {'370': '385'}),
+            "'207_0A_avg_io_response_time'=0.000385s;;;0 ",
+        )
+
+    def test_bandwidth_becomes_bytes(self):
+        # 132 MB/s, read as binary multiples like every other capacity this API reports.
+        self.assertEqual(
+            huawei.get_performance_perfdata('207_0A', {'21': '132'}),
+            "'207_0A_block_bandwidth'=138412032B;;;0 ",
+        )
+
+    def test_unknown_indicator_is_skipped(self):
+        # A bare indicator number is not a metric name a dashboard can be built on, and
+        # some firmware answers with indicators nobody asked for.
+        self.assertEqual(huawei.get_performance_perfdata('207_0A', {'999999': '1'}), '')
+
+    def test_unusable_value_is_skipped(self):
+        # The appliance sends '--' for a counter it is not collecting.
+        self.assertEqual(huawei.get_performance_perfdata('207_0A', {'22': '--'}), '')
+
+    def test_no_samples_yield_no_perfdata(self):
+        self.assertEqual(huawei.get_performance_perfdata('207_0A', {}), '')
+
+    def test_every_documented_indicator_has_a_label_a_unit_and_a_factor(self):
+        for data_id, descriptor in huawei.PERFORMANCE_INDICATORS.items():
+            with self.subTest(data_id=data_id):
+                label, uom, factor = descriptor
+                self.assertTrue(label)
+                self.assertIn(uom, (None, '%', 'B', 's'))
+                self.assertGreater(factor, 0)
 
 
 class TestSectors2Bytes(unittest.TestCase):
