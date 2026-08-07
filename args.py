@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080702'
+__version__ = '2026080703'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -30,6 +30,12 @@ DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
 # Switches (store_true/store_false) don't need a default.
 HELP_TEXTS = {
     '--always-ok': 'Always returns OK.',
+    '--brief': (
+        'Hide the rows that are within the thresholds and show only those in a WARN or '
+        'CRIT state. '
+        'Perfdata and alerting are unaffected: every item still emits performance data '
+        'and still drives the overall check state, so this is safe to leave on.'
+    ),
     '--cache-expire': (
         'The amount of time after which the credential/data cache expires, in minutes.'
     ),

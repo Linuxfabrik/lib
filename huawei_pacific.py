@@ -15,7 +15,7 @@ generation of endpoints below /dsware/service/ and /dfv/service/.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080702'
+__version__ = '2026080703'
 
 import json
 from time import sleep as _sleep
@@ -1273,6 +1273,39 @@ def get_performance(object_type, indicators, args, ids=None, window=PERFORMANCE_
         samples.setdefault(object_id, {})[indicator] = str(values[-1])
 
     return samples
+
+
+def get_warranty_status(st):
+    """
+    Convert a Huawei OceanStor Pacific warranty status code into a human-readable
+    description.
+
+    The `cluster/servers` endpoint reports how much of a node's warranty is left, which
+    is a commercial fact rather than a fault: a node out of warranty runs exactly as well
+    as one in warranty, right up to the point where a part has to be replaced.
+
+    ### Parameters
+    - **st** (`int` or `str`):
+      The warranty status code.
+      A missing or malformed value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Example
+    >>> get_warranty_status(2)
+    'about to expire, less than six months (2)'
+    """
+    mapping = {
+        0: 'non-storage node (0)',
+        1: 'normal, more than six months (1)',
+        2: 'about to expire, less than six months (2)',
+        3: 'expired (3)',
+        4: 'lifecycle information missing (4)',
+    }
+    return mapping.get(as_code(st), 'Unknown')
 
 
 def get_pool_status(st):
