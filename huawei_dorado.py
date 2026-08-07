@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080704'
+__version__ = '2026080705'
 
 import json
 from time import sleep as _sleep
@@ -48,6 +48,103 @@ DEFAULT_SECTOR_SIZE = 512
 # and answers with the real one, so a consumer that does not know its appliance's ID logs in
 # with this placeholder and reads `data.deviceid` out of the response.
 DEVICE_ID_PLACEHOLDER = 'xxxxx'
+
+
+# Field names whose value never reaches a `--verbose` dump, whatever the appliance sends
+# back. The login response is not recorded at all, so a session token cannot get in
+# through the front door; this closes the back door of a firmware echoing one inside a
+# data response. Matched case-insensitively.
+_REDACTED_FIELDS = frozenset(
+    {
+        'cookie',
+        'ibasetoken',
+        'password',
+        'set-cookie',
+        'x-auth-token',
+        'x_auth_token',
+        'x_csrf_token',
+    }
+)
+
+# What the appliance answered, per endpoint, for `--verbose`. Filled by `get_data()` only
+# when the caller asked for it, so a normal run carries no copy of every response.
+_recorded_responses = []
+
+
+def _redact(value):
+    """
+    Return a copy of an API response with every sensitive field's value replaced.
+
+    ### Parameters
+    - **value** (any): A decoded response, or any part of one.
+
+    ### Returns
+    - The same structure, with the value of every field named in `_REDACTED_FIELDS`
+      replaced by `'******'`.
+    """
+    if isinstance(value, dict):
+        return {
+            key: (
+                '******'
+                if str(key).lower() in _REDACTED_FIELDS
+                else _redact(inner)
+            )
+            for key, inner in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    return value
+
+
+def record_response(endpoint, result):
+    """
+    Remember what an endpoint answered, so a check can print it under `--verbose`.
+
+    ### Parameters
+    - **endpoint** (`str`): The endpoint that was queried, as it was requested.
+    - **result** (`dict`): The response envelope, as `get_data()` built it.
+
+    ### Notes
+    - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal check run
+      does not keep a second copy of every response in memory.
+    - The login response is deliberately never recorded. It is the one response that
+      carries a session token, and a token in a check's output is a credential in the
+      monitoring server's database, its notifications and its log files.
+    """
+    _recorded_responses.append((endpoint, _redact(result)))
+
+
+def format_responses():
+    """
+    Render everything `record_response()` collected, for a check's `--verbose` output.
+
+    ### Returns
+    - **str**:
+      One block per request, naming the endpoint and pretty-printing what came back.
+      Empty when nothing was recorded, which is the case on a normal run and in test mode.
+
+    ### Notes
+    - Meant for working out what an appliance actually reports, so a check can be built
+      against it. The output is as long as the appliance's answers are, which on a list
+      endpoint of a large array is very long indeed. It is a command-line tool, not
+      something to switch on in a service definition.
+
+    ### Example
+    >>> print(format_responses())
+    ### GET controller
+    {
+      "data": [
+        ...
+      ],
+      "error": {"code": 0}
+    }
+    """
+    blocks = []
+    for endpoint, result in _recorded_responses:
+        blocks.append(
+            f'### GET {endpoint}\n{json.dumps(result, indent=2, sort_keys=True)}'
+        )
+    return '\n\n'.join(blocks)
 
 
 def assert_ok(result, what):
@@ -934,6 +1031,9 @@ def get_data(endpoint, args, max_attempts=3):
             break
         if attempt < max_attempts:
             _sleep(1)
+
+    if getattr(args, 'VERBOSE', 0):
+        record_response(endpoint, result)
 
     return result
 

@@ -21,6 +21,7 @@ Public functions under test:
 - assert_ok()                -> abort unless the appliance reported success
 - as_code()                  -> API status code -> int or None
 - as_temperature()           -> reported temperature -> int or None (placeholders dropped)
+- format_responses()         -> recorded API responses, with credentials redacted
 - field()                    -> field lookup across the spellings a firmware may use
 - get_controller_model()     -> code -> text mapping
 - get_controller_role()      -> code -> text mapping
@@ -575,6 +576,39 @@ class TestAsTemperature(unittest.TestCase):
         for value in (None, '', '--', 'n/a', [], {}):
             with self.subTest(value=value):
                 self.assertIsNone(huawei.as_temperature(value))
+
+
+class TestFormatResponses(unittest.TestCase):
+    def setUp(self):
+        huawei._recorded_responses.clear()
+
+    tearDown = setUp
+
+    def test_nothing_recorded_is_empty(self):
+        self.assertEqual(huawei.format_responses(), '')
+
+    def test_names_the_endpoint_and_prints_the_response(self):
+        huawei.record_response('controller', {'data': [{'ID': '0A'}]})
+        out = huawei.format_responses()
+        self.assertIn('### GET controller', out)
+        self.assertIn('"ID": "0A"', out)
+
+    def test_redacts_a_session_token_wherever_it_sits(self):
+        # The login response is never recorded, so a token can only get in here if a
+        # firmware echoes one back inside a data response. It must not reach the output
+        # either way: a token in a check's output is a credential in the monitoring
+        # server's database, its notifications and its log files.
+        huawei.record_response(
+            'controller',
+            {
+                'Set-Cookie': 'session=abc',
+                'data': [{'iBaseToken': 'SECRET', 'nested': {'password': 'hunter2'}}],
+            },
+        )
+        out = huawei.format_responses()
+        for secret in ('session=abc', 'SECRET', 'hunter2'):
+            self.assertNotIn(secret, out)
+        self.assertEqual(out.count('******'), 3)
 
 
 class TestField(unittest.TestCase):
