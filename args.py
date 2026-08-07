@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080701'
+__version__ = '2026080702'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -62,6 +62,7 @@ HELP_TEXTS = {
     '--critical-count': 'CRIT threshold for the number of matching items.',
     '--critical-seconds': 'CRIT threshold in seconds.',
     '--critical-temperature': 'CRIT threshold in degrees Celsius.',
+    '--critical-voltage': 'CRIT threshold in volts.',
     '--defaults-file': (
         'Specifies a cnf file to read parameters like user, host and password from '
         '(for MySQL/MariaDB cnf-style files).'
@@ -165,6 +166,7 @@ HELP_TEXTS = {
     '--warning-count': 'WARN threshold for the number of matching items.',
     '--warning-seconds': 'WARN threshold in seconds.',
     '--warning-temperature': 'WARN threshold in degrees Celsius.',
+    '--warning-voltage': 'WARN threshold in volts.',
 }
 
 
