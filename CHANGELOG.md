@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* base.py: `oao()` only escapes a `<` that would open an HTML tag, instead of escaping every `&`, `<` and `>`. A version range like `< 5.3.2`, a threshold like `<= 10` and a shell snippet like `echo 1 > /proc/sys/...` now reach the terminal exactly as written, while a web interface still renders the output as preformatted text rather than as markup.
 * huawei_dorado.py, huawei_pacific.py: `--cache-expire 0` switches session caching off. It used to store a session that expired about a second later, which is neither caching nor not caching.
 * huawei_dorado.py, huawei_pacific.py: session tokens are kept in the library's own cache file instead of the one every plugin on the host shares, so parallel checks no longer wait on each other's cache writes. The first run after the update logs in once to fill the new file.
 * huawei_dorado.py, huawei_pacific.py: `get_data()` returns the appliance's response as it is. It used to add a `counter` field holding the number of attempts, which would overwrite an API field of that name.
