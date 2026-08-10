@@ -124,6 +124,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_dorado.py: Checks running under different accounts against the same appliance no longer share one session, which made them query the appliance with the wrong user's privileges.
 * huawei_dorado.py: Controller boards, enclosures, interface modules, appliance models and health and running states introduced with V700 are named instead of shown as "Unknown".
 * huawei_dorado.py: Four more disk and controller enclosure models shipping with V700 appliances are named instead of shown as "Unknown".
+* huawei_dorado.py: The `get_all_data()` docstring names which list endpoints take a `range` and which do not, so a consumer no longer walks an endpoint that answers with the full list every time and collects the same inventory over and over.
 * huawei_pacific.py: A cluster node the appliance reports without a management IP address is now flagged, unless it is not (yet) part of the cluster. Until now such a node was skipped without notice, so a fan or power supply failing on it stayed invisible and the check still reported OK.
 * huawei_pacific.py: A cluster with more nodes than the appliance returns in one response is detected, instead of the check quietly covering only the nodes it was told about and still reporting OK.
 * huawei_pacific.py: A node list the appliance returns in an unexpected shape ends the check with a clear message instead of a traceback.

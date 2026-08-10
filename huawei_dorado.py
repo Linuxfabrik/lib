@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080705'
+__version__ = '2026081001'
 
 import json
 from time import sleep as _sleep
@@ -457,9 +457,15 @@ def get_all_data(endpoint, args, page_size=100, max_pages=100):
     - A page shorter than `page_size` ends the walk: the appliance has nothing left to hand
       out. A page of exactly `page_size` objects is always followed by another request, which
       costs one empty request when the object count is an exact multiple of the page size.
-    - The port endpoints (`fc_port`, `eth_port`, `sas_port` and their relatives) do not
-      implement `range`. Query those with `get_data()` instead; asking them for a range either
-      errors out or silently returns the full list on every iteration.
+    - Only some list endpoints take `range` at all. Both REST Interface References
+      document it for `host`, `HyperMetroDomain`, `HyperMetroPair`, `lun` and
+      `storagepool`, and for the alarm and event endpoints. The hardware inventory
+      endpoints (`backup_power`, `controller`, `disk`, `enclosure`, `expboard`, `fan`,
+      `intf_module`, `power`, `sfp`) and the port endpoints (`fc_port`, `eth_port`,
+      `sas_port` and their relatives) do not. Query those with `get_data()` instead:
+      asking them for a range either errors out or silently returns the full list on
+      every iteration, which past `page_size` objects turns one walk into `max_pages`
+      copies of the same inventory.
     - The truncation flag is deliberately returned rather than turned into an abort here.
       Whether an incomplete inventory is worth an UNKNOWN or just a note in the output depends
       on the check, and this function has no way to tell.
