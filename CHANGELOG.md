@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * args.py: `--brief` joins the shared help texts, so every check that can hide the rows within its thresholds describes the switch the same way, including that performance data and alerting stay unaffected.
 * args.py: `--fail-severity` joins the shared help texts, so every check that reports what the monitored system itself marks as failed describes the switch the same way.
+* args.py: the shared `--match` help text says how the parameter combines with `--ignore`, and `MATCH_IGNORE_PRECEDENCE` carries that one sentence for the consumers that write their own purpose sentence in front of it.
 * args.py: `--no-vuln-data-severity` joins the shared help texts, so every check that can end up without vulnerability data names the parameter the same way.
 * args.py: `--no-checksum-data-severity` joins the shared help texts, so every check that can end up without published checksums for part of what it verifies names the parameter the same way.
 * args.py: `--password-file` joins the shared help texts, and `load_secret()` reads a secret out of a file so it does not have to be passed on the command line, where it is visible to every user on the host.
@@ -68,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lftest.py: `test_text()` reads one of several test fixtures of a run and returns the text it holds, the counterpart of `test_json()` for a consumer whose data source answers in plain text.
 * nextcloud.py: `run_occ()` accepts a `timeout`, so a hanging `occ` no longer keeps a check running forever.
 * shell.py: `shell_exec()` accepts a `run_as_session`, which runs a command as another user without exporting that user's session runtime directory. A sudo rule that spells out the permitted command with its exact arguments only matches that plain form.
+* shell.py: an `env` entry set to None removes that variable from the command's environment instead of setting it, so a consumer can run a command without a variable it inherited itself.
 * txt.py: `unescape()` resolves the HTML character references some sources put into plain text, so a hardware model reads as `Expansion Module(24 Cores)` instead of `Expansion Module&#40;24 Cores&#41;`.
 * wordpress.py: new module reading a local WordPress installation from the filesystem: `get_version()`, `get_plugins()`, `get_themes()`, `get_site_url()`, `is_installation()` and `get_header_value()`, without a database connection, an HTTP request or `wp-cli`.
 * wordpress.py: `get_locale()` reads which language a core was built for, which is what decides the file list wordpress.org holds it to, and `get_plugin_slugs()` maps a plugin's directory to the slug wordpress.org knows it by, which is not the same for a single-file plugin such as `hello.php`.
@@ -84,6 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_dorado.py: A component being rebuilt is reported as "Rebuilding", the word V700 appliances use for it, instead of the older firmware's "Reconstruction".
 * huawei_dorado.py: A power module whose feed is dead, a component that is not running, a disk parked because it got too hot, and a replication relationship that is not mirroring are reported as CRITICAL instead of WARNING. All four describe a component that has stopped doing its job rather than one working in a reduced state.
 * README.md: the module table lists `huawei_dorado.py` and `huawei_pacific.py`, which replaced the former `huawei.py` some time ago.
+* args.py: the shared help text for `--unreachable-severity` describes any unreachable online source rather than only an end-of-life one, so every consumer offering the parameter can use the same wording.
 * lftest.py: `assert-retc` is optional in a testcase, like every other assertion already was. A test can now cover the output a fixture controls without pinning a state that depends on something else, such as an end-of-life date that turns OK into WARNING as the calendar advances.
 * nextcloud.py: `occ` is called without `sudo` when the check already runs as the owner of `config/config.php`. No sudoers entry is needed in that case, and the checks work inside the official Nextcloud container, which ships without `sudo`.
 

@@ -18,10 +18,21 @@ import textwrap
 from . import base, disk
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081001'
+__version__ = '2026081003'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
+
+# How an include filter and an exclude filter combine, for the consumers that offer both.
+# Kept out of the two help texts themselves and appended by the consumer, because the
+# purpose sentence in front of it names whatever the consumer filters - items, mount
+# points, disks, findings - while this sentence is the same everywhere. It belongs on the
+# include filter alone: it describes the pair, and saying it twice only makes both entries
+# longer.
+MATCH_IGNORE_PRECEDENCE = (
+    'If both `--match` and `--ignore` are given, an item must match `--match` AND not '
+    'match `--ignore` to be reported (include first, exclude second).'
+)
 
 
 # Help text descriptions only - no "Default:" here.
@@ -109,6 +120,7 @@ HELP_TEXTS = {
         'Filter by this Python regular expression. '
         'Case-sensitive by default; use `(?i)` for case-insensitive matching. '
         'Can be specified multiple times. '
+        f'{MATCH_IGNORE_PRECEDENCE} '
         'Examples: '
         '`(?i)example` to match "example" regardless of case. '
         '`^(?!.*example).*$` to match any string except "example" (negative lookahead).'
@@ -171,8 +183,10 @@ HELP_TEXTS = {
     '--test': argparse.SUPPRESS,
     '--timeout': 'Network timeout in seconds.',
     '--unreachable-severity': (
-        'State to report when the online end-of-life source is unreachable and the check falls '
-        'back to the bundled offline data.'
+        'State to report when the online source is unreachable. '
+        'What is used instead - bundled offline data, a cached copy, or nothing at all - '
+        'is named in the output, and a clean result then only covers what that fallback '
+        'could confirm.'
     ),
     '--url': 'URL to the endpoint.',
     '--username': 'Username.',
