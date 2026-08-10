@@ -14,7 +14,7 @@ Time zone handling is not implemented.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026081001'
 
 import sys
 
@@ -29,7 +29,74 @@ except ImportError:
 from . import time, url
 
 
-def parse(feed_url, insecure=False, no_proxy=False, timeout=5, encoding='urlencode'):
+def fetch_soup(
+    feed_url,
+    insecure=False,
+    no_proxy=False,
+    timeout=5,
+    encoding='urlencode',
+    retries=0,
+):
+    """
+    Fetch an Atom or RSS feed from a URL and return it as a parsed XML document.
+
+    Use this instead of `parse()` to work on the feed's own markup, for example to read an
+    element `parse()` does not map or to keep the time zone of a timestamp, which `parse()`
+    drops.
+
+    The response is validated by `parse_soup()`, so a server that answers with HTTP 200 and
+    a feed content type but sends something other than a feed is a failure here rather than
+    a feed without any entries.
+
+    ### Parameters
+    - **feed_url** (`str`):
+      The URL of the feed to fetch.
+    - **insecure** (`bool`, optional):
+      If `True`, disable SSL verification during download. Default is `False`.
+    - **no_proxy** (`bool`, optional):
+      If `True`, ignore any system proxy settings. Default is `False`.
+    - **timeout** (`int`, optional):
+      Timeout in seconds for the download request, per attempt. Default is `5`.
+    - **encoding** (`str`, optional):
+      Encoding to use for the URL fetch operation. Default is `'urlencode'`.
+    - **retries** (`int`, optional):
+      How many extra attempts to make if the request fails or the body is not a feed.
+      `0` (default) means a single attempt. Useful against flaky endpoints (e.g. a status
+      page behind a load balancer) that occasionally answer with something else.
+
+    ### Returns
+    - **tuple**:
+      - `(True, BeautifulSoup)`: On success, the parsed feed document.
+      - `(False, str or Exception)`: On failure (after all retries), an error message or
+        exception.
+
+    ### Example
+    >>> success, soup = fetch_soup('https://linuxfabrik.ch/feed.xml', retries=3)
+    """
+    attempt = 0
+    while True:
+        success, xml = url.fetch(
+            feed_url,
+            encoding=encoding,
+            insecure=insecure,
+            no_proxy=no_proxy,
+            timeout=timeout,
+        )
+        result = parse_soup(xml, feed_url) if success else (False, xml)
+
+        if result[0] or attempt >= retries:
+            return result
+        attempt += 1
+
+
+def parse(
+    feed_url,
+    insecure=False,
+    no_proxy=False,
+    timeout=5,
+    encoding='urlencode',
+    retries=0,
+):
     """
     Parse an Atom or RSS feed from a URL, file, stream, or string.
 
@@ -47,6 +114,9 @@ def parse(feed_url, insecure=False, no_proxy=False, timeout=5, encoding='urlenco
       Timeout in seconds for the download request. Default is `5`.
     - **encoding** (`str`, optional):
       Encoding to use for the URL fetch operation. Default is `'urlencode'`.
+    - **retries** (`int`, optional):
+      How many extra attempts to make if the request fails or the body is not a feed.
+      `0` (default) means a single attempt. See `fetch_soup()`.
 
     ### Returns
     - **tuple**:
@@ -77,28 +147,21 @@ def parse(feed_url, insecure=False, no_proxy=False, timeout=5, encoding='urlenco
         ]
     }
     """
-    success, xml = url.fetch(
+    success, soup = fetch_soup(
         feed_url,
         encoding=encoding,
         insecure=insecure,
         no_proxy=no_proxy,
+        retries=retries,
         timeout=timeout,
     )
     if not success:
-        return False, xml
-
-    try:
-        soup = BeautifulSoup(xml, 'xml')
-    except Exception as e:
-        return False, e
+        return False, soup
 
     if soup.feed:
         return True, parse_atom(soup)
 
-    if soup.rss:
-        return True, parse_rss(soup)
-
-    return False, f'{feed_url} does not seem to be an Atom or RSS feed I understand.'
+    return True, parse_rss(soup)
 
 
 def parse_atom(soup):
@@ -236,3 +299,40 @@ def parse_rss(soup):
         result['entries'].append(tmp)
 
     return result
+
+
+def parse_soup(xml, feed_url=''):
+    """
+    Parse an Atom or RSS document that has already been read into memory.
+
+    Use this for a feed that did not come from `fetch_soup()`, for example one read from a
+    file or from a test fixture, so that both paths apply the same validation.
+
+    ### Parameters
+    - **xml** (`str` | `bytes`):
+      The feed document.
+    - **feed_url** (`str`, optional):
+      Where the document came from. Only used to name the source in the error message.
+
+    ### Returns
+    - **tuple**:
+      - `(True, BeautifulSoup)`: On success, the parsed feed document.
+      - `(False, str or Exception)`: If the document has neither an `<rss>` nor a `<feed>`
+        root, or if it could not be parsed at all.
+
+    ### Example
+    >>> success, soup = parse_soup(open('feed.xml').read())
+    """
+    try:
+        soup = BeautifulSoup(xml, 'xml')
+    except Exception as e:
+        return False, e
+
+    # A feed document has an <rss> or a <feed> root. Anything else means the source
+    # answered with something that is not a feed at all, for example a near-empty body or
+    # an HTML error page. Both parse without raising and would otherwise be mistaken for a
+    # feed that happens to carry no entries.
+    if soup.feed or soup.rss:
+        return True, soup
+
+    return False, f'{feed_url} does not seem to be an Atom or RSS feed I understand.'

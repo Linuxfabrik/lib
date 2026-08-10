@@ -86,6 +86,16 @@ RSS_FEED = """<?xml version="1.0" encoding="UTF-8"?>
 
 NOT_A_FEED = """<?xml version="1.0"?><html><body>nope</body></html>"""
 
+# What a StatusIQ status page really sends several times an hour on its /rss path, while
+# answering HTTP 200 with Content-Type: application/rss+xml. Neither raises in
+# BeautifulSoup, both come out as a document without an <rss> or <feed> root.
+STUB_BODY = '\x01\x01k\n'
+
+HTML_ERROR_PAGE = (
+    '<head><title>StatusIQ</title></head>'
+    '<body>We encountered a problem while processing your request.</body>'
+)
+
 
 def atom_soup(xml=ATOM_FEED):
     return BeautifulSoup(xml, 'xml')
@@ -93,6 +103,93 @@ def atom_soup(xml=ATOM_FEED):
 
 def rss_soup(xml=RSS_FEED):
     return BeautifulSoup(xml, 'xml')
+
+
+# ----------------------------------------------------------------------------
+# parse_soup() - feed validation on a document already in memory.
+# ----------------------------------------------------------------------------
+
+
+@unittest.skipUnless(HAVE_DEPS, 'BeautifulSoup4 not installed: ' + IMPORT_ERROR)
+class TestParseSoup(unittest.TestCase):
+    """parse_soup() accepts feed documents and rejects everything else."""
+
+    def test_accepts_rss(self):
+        ok, soup = feedparser.parse_soup(RSS_FEED)
+        self.assertTrue(ok)
+        self.assertEqual(len(soup.find_all('item')), 2)
+
+    def test_accepts_atom(self):
+        ok, soup = feedparser.parse_soup(ATOM_FEED)
+        self.assertTrue(ok)
+        self.assertTrue(soup.feed)
+
+    def test_rejects_a_near_empty_body(self):
+        ok, result = feedparser.parse_soup(STUB_BODY, 'https://x/rss')
+        self.assertFalse(ok)
+        self.assertIn('does not seem to be an Atom or RSS feed', result)
+        self.assertIn('https://x/rss', result)
+
+    def test_rejects_an_html_error_page(self):
+        ok, result = feedparser.parse_soup(HTML_ERROR_PAGE)
+        self.assertFalse(ok)
+        self.assertIn('does not seem to be an Atom or RSS feed', result)
+
+
+# ----------------------------------------------------------------------------
+# fetch_soup() - fetching, feed validation and retries. lib.url.fetch is patched out.
+# ----------------------------------------------------------------------------
+
+
+@unittest.skipUnless(HAVE_DEPS, 'BeautifulSoup4 not installed: ' + IMPORT_ERROR)
+class TestFetchSoup(unittest.TestCase):
+    """fetch_soup() feed validation and retry behaviour."""
+
+    def test_returns_the_parsed_document(self):
+        with patch.object(feedparser.url, 'fetch', return_value=(True, RSS_FEED)):
+            ok, soup = feedparser.fetch_soup('https://x/rss')
+        self.assertTrue(ok)
+        self.assertEqual(len(soup.find_all('item')), 2)
+
+    def test_no_retry_by_default(self):
+        with patch.object(feedparser.url, 'fetch', return_value=(True, STUB_BODY)) as m:
+            ok, result = feedparser.fetch_soup('https://x/rss')
+        self.assertFalse(ok)
+        self.assertIn('does not seem to be an Atom or RSS feed', result)
+        self.assertEqual(m.call_count, 1)
+
+    def test_retries_until_the_feed_arrives(self):
+        # Two stub bodies, then the real feed: the third attempt has to win.
+        responses = [(True, STUB_BODY), (True, STUB_BODY), (True, RSS_FEED)]
+        with patch.object(feedparser.url, 'fetch', side_effect=responses) as m:
+            ok, soup = feedparser.fetch_soup('https://x/rss', retries=3)
+        self.assertTrue(ok)
+        self.assertEqual(len(soup.find_all('item')), 2)
+        self.assertEqual(m.call_count, 3)
+
+    def test_gives_up_after_the_last_retry(self):
+        with patch.object(
+            feedparser.url, 'fetch', return_value=(True, HTML_ERROR_PAGE)
+        ) as m:
+            ok, result = feedparser.fetch_soup('https://x/rss', retries=2)
+        self.assertFalse(ok)
+        self.assertIn('does not seem to be an Atom or RSS feed', result)
+        self.assertEqual(m.call_count, 3)
+
+    def test_retries_a_failed_request(self):
+        # A retry covers the transport failing, not just a body that is not a feed.
+        responses = [(False, 'boom'), (True, ATOM_FEED)]
+        with patch.object(feedparser.url, 'fetch', side_effect=responses) as m:
+            ok, soup = feedparser.fetch_soup('https://x/atom', retries=1)
+        self.assertTrue(ok)
+        self.assertTrue(soup.feed)
+        self.assertEqual(m.call_count, 2)
+
+    def test_fetch_failure_propagates(self):
+        with patch.object(feedparser.url, 'fetch', return_value=(False, 'boom')):
+            ok, result = feedparser.fetch_soup('https://x/feed')
+        self.assertFalse(ok)
+        self.assertEqual(result, 'boom')
 
 
 # ----------------------------------------------------------------------------
@@ -178,6 +275,14 @@ class TestParse(unittest.TestCase):
         self.assertFalse(kwargs['insecure'])
         self.assertFalse(kwargs['no_proxy'])
         self.assertEqual(kwargs['timeout'], 5)
+
+    def test_forwards_retries(self):
+        responses = [(True, STUB_BODY), (True, RSS_FEED)]
+        with patch.object(feedparser.url, 'fetch', side_effect=responses) as m:
+            ok, result = feedparser.parse('https://x/rss', retries=1)
+        self.assertTrue(ok)
+        self.assertEqual(result['title'], 'My RSS Feed')
+        self.assertEqual(m.call_count, 2)
 
 
 # ----------------------------------------------------------------------------
