@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080901'
+__version__ = '2026081001'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -74,6 +74,12 @@ HELP_TEXTS = {
         '(for MySQL/MariaDB cnf-style files).'
     ),
     '--defaults-group': 'Group/section to read from in the cnf file.',
+    '--fail-severity': (
+        'State to report for an item the monitored system itself marks as failed. '
+        'A failed item means the installation is broken in a way that stops it from '
+        'working correctly, which is worth acting on but rarely worth waking somebody '
+        'up for.'
+    ),
     '--hostname': 'Hostname or IP address.',
     '--ipv6': 'Use IPv6.',
     '--ignore': (

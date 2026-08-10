@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * args.py: `--brief` joins the shared help texts, so every check that can hide the rows within its thresholds describes the switch the same way, including that performance data and alerting stay unaffected.
+* args.py: `--fail-severity` joins the shared help texts, so every check that reports what the monitored system itself marks as failed describes the switch the same way.
 * args.py: `--no-vuln-data-severity` joins the shared help texts, so every check that can end up without vulnerability data names the parameter the same way.
 * args.py: `--no-checksum-data-severity` joins the shared help texts, so every check that can end up without published checksums for part of what it verifies names the parameter the same way.
 * args.py: `--password-file` joins the shared help texts, and `load_secret()` reads a secret out of a file so it does not have to be passed on the command line, where it is visible to every user on the host.
