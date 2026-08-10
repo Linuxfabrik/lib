@@ -25,13 +25,17 @@ False
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041201'
+__version__ = '2026080901'
 
 from . import db_sqlite, time
 
 
 def get(
-    key, as_dict=False, path='', filename='linuxfabrik-monitoring-plugins-cache.db'
+    key,
+    as_dict=False,
+    allow_stale=False,
+    path='',
+    filename='linuxfabrik-monitoring-plugins-cache.db',
 ):
     """
     Retrieve a value from the cache database by key.
@@ -45,6 +49,8 @@ def get(
     - **as_dict** (`bool`, optional): If `True`, return the full database record as a dictionary
       (`key`, `value`, and `timestamp`).
       If `False`, return only the `value`. Defaults to `False`.
+    - **allow_stale** (`bool`, optional): If `True`, an expired record is returned instead of
+      being deleted, and no cleanup is performed. Defaults to `False`.
     - **path** (`str`, optional): Path to the directory containing the cache database.
       Defaults to an empty string (current directory).
     - **filename** (`str`, optional): Name of the cache database file.
@@ -60,6 +66,12 @@ def get(
     - If the key exists but has expired (based on its `timestamp`), it is deleted and `False`
       is returned.
     - All expired keys are cleaned up on lookup when an expired key is found.
+    - `allow_stale` exists for the case where the authoritative source is unreachable and an
+      outdated answer beats no answer at all. The expired entry then survives the lookup, so a
+      source that stays down for days does not leave the caller with an empty cache. Ask for it
+      only after the refresh has actually failed, and read the record with `as_dict=True`: its
+      `timestamp` is the moment the entry expired, which is what tells the caller how old the
+      value is and lets it say so.
     - On database connection or query failure, `False` is returned.
 
     ### Example
@@ -71,6 +83,9 @@ def get(
 
     >>> get('non_existing_key')
     False
+
+    >>> get('checksums', as_dict=True, allow_stale=True)  # endpoint is down
+    {'key': 'checksums', 'value': '...', 'timestamp': 1710000000}
     """
     success, conn = db_sqlite.connect(path=path, filename=filename)
     if not success:
@@ -92,7 +107,7 @@ def get(
         # expire=now+5 is still served at now+5 and first becomes expired at
         # now+6. This matches HTTP Cache-Control max-age and Redis EXPIRE.
         now = time.now()
-        if result['timestamp'] != 0 and result['timestamp'] < now:
+        if not allow_stale and result['timestamp'] != 0 and result['timestamp'] < now:
             # Clean up all expired entries
             db_sqlite.delete(
                 conn,
@@ -103,6 +118,63 @@ def get(
             return False
 
         return result if as_dict else result['value']
+
+    finally:
+        db_sqlite.close(conn)
+
+
+def prune(before=None, path='', filename='linuxfabrik-monitoring-plugins-cache.db'):
+    """
+    Delete expired entries from the cache database.
+
+    `get()` already removes expired entries as it comes across them, which is enough for a
+    cache whose keys stay the same over time. Where the key carries a version, a release or
+    another identifier that moves on, the entry left behind by the previous one is never
+    looked up again and never cleaned up either. Pruning is how that cache stays bounded.
+
+    ### Parameters
+    - **before** (`int`, optional): Delete entries that expired before this Unix timestamp.
+      Defaults to now, which deletes everything currently expired. Pass an earlier timestamp
+      to keep recently expired entries, which is what a caller that serves stale values
+      during an outage (`get(allow_stale=True)`) needs in order to still have something to
+      serve.
+    - **path** (`str`, optional): Path to the directory containing the cache database.
+      Defaults to an empty string (current directory).
+    - **filename** (`str`, optional): Name of the cache database file.
+      Defaults to `'linuxfabrik-monitoring-plugins-cache.db'`.
+
+    ### Returns
+    - **bool**: `True` if the delete succeeded, `False` on any database failure.
+
+    ### Notes
+    - Entries stored without an expiry (`set(expire=0)`) are never pruned.
+    - Prune after a successful refresh, not before one. Dropping the old copy while the
+      source is unreachable is how a cache ends up empty exactly when it is needed.
+
+    ### Example
+    >>> prune()
+    True
+
+    >>> prune(before=time.now() - 30 * 86400)  # keep a month of expired entries
+    True
+    """
+    if before is None:
+        before = time.now()
+
+    success, conn = db_sqlite.connect(path=path, filename=filename)
+    if not success:
+        return False
+
+    try:
+        success, _ = db_sqlite.delete(
+            conn,
+            sql='DELETE FROM cache WHERE timestamp != 0 AND timestamp < :before;',
+            data={'before': before},
+        )
+        if not success:
+            return False
+        success, _ = db_sqlite.commit(conn)
+        return success
 
     finally:
         db_sqlite.close(conn)

@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080701'
+__version__ = '2026080901'
 
 import csv
 import glob as _glob
@@ -318,7 +318,7 @@ def get_cwd():
         return ''
 
 
-def get_fingerprint(filename, length=256):
+def get_fingerprint(filename, length=256, algorithm='sha256'):
     """
     Hash a slice of a file, to recognize the file by its content instead of by its metadata.
 
@@ -353,29 +353,54 @@ def get_fingerprint(filename, length=256):
         two lines of text apart.
       - `< 0`: the last `abs(length)` bytes (the tail).
       - `0`: the whole file, read in chunks.
+    - **algorithm** (`str`, optional):
+      Name of the hash algorithm, as accepted by `hashlib.new()`, for example `'md5'`,
+      `'sha1'`, `'sha256'` or `'sha512'`. Defaults to `'sha256'`.
 
     ### Returns
     - **tuple**:
         - tuple[0] (**bool**): True if reading succeeded, otherwise False.
         - tuple[1] (**tuple | str**):
-          - If successful, a `(fingerprint, hashed)` tuple: the SHA-256 hexdigest of the
-            slice, and the number of bytes it was taken over. `hashed` is less than the
-            requested number of bytes if the file is shorter than that.
+          - If successful, a `(fingerprint, hashed)` tuple: the hexdigest of the slice, and
+            the number of bytes it was taken over. `hashed` is less than the requested number
+            of bytes if the file is shorter than that.
           - If unsuccessful, an error message string.
 
     ### Notes
     - A file shorter than the requested slice is hashed as a whole, so head, tail and whole
       file yield the same fingerprint for it.
+    - Pick `algorithm` to match whatever the fingerprint is compared against. Where the
+      comparison is against a digest somebody else published, the publisher decides; where it
+      is against a digest taken by an earlier call of this function, the default is the right
+      answer. `'md5'` and `'sha1'` are not collision resistant and say nothing about a file an
+      attacker was able to choose the content of, so use them only to reproduce a foreign
+      digest, never to decide on your own that two files are the same.
+    - The algorithm is requested from OpenSSL through `hashlib.new()`. A host in FIPS mode
+      refuses MD5 there, which surfaces as a failure of this function rather than as a wrong
+      answer.
 
     ### Example
     >>> success, (fingerprint, hashed) = get_fingerprint('/var/log/messages')
     >>> success, (fingerprint, hashed) = get_fingerprint('/tmp/export', length=-4096)
     >>> success, (fingerprint, hashed) = get_fingerprint('/tmp/export', length=0)
+    >>> success, (fingerprint, hashed) = get_fingerprint(
+    ...     '/tmp/export', length=0, algorithm='md5'
+    ... )
     """
+    try:
+        # usedforsecurity=False keeps a weak algorithm available on a host that
+        # enforces FIPS, which is correct here: the digest is only ever compared
+        # against one somebody else published, it is not a security decision of
+        # our own. Unknown to Python 3.8 and older, hence the fallback.
+        try:
+            fingerprint = hashlib.new(algorithm, usedforsecurity=False)
+        except TypeError:
+            fingerprint = hashlib.new(algorithm)
+    except ValueError as e:
+        return False, f'Unsupported hash algorithm "{algorithm}": {e}'
     try:
         with open(filename, mode='rb') as f:
             if length == 0:
-                fingerprint = hashlib.sha256()
                 hashed = 0
                 # Read in chunks: the file is hashed as a whole, but never held
                 # as a whole in memory.
@@ -392,7 +417,8 @@ def get_fingerprint(filename, length=256):
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
-    return True, (hashlib.sha256(data).hexdigest(), len(data))
+    fingerprint.update(data)
+    return True, (fingerprint.hexdigest(), len(data))
 
 
 def get_inode_usage(mount):
@@ -1059,8 +1085,6 @@ def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True
     if include_pattern:
         include_pattern = re.compile(include_pattern, re.IGNORECASE)
 
-    path = path.rstrip('/') + '/'
-
     result = []
     for current, _, files in os.walk(path):
         for file in files:
@@ -1069,7 +1093,11 @@ def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True
                 continue
             if include_pattern and not include_pattern.match(full_path):
                 continue
-            result.append(full_path.replace(path, '') if relative else full_path)
+            # relpath() rather than stripping the root off the front as a string: the
+            # latter needs the separator spelled the way the platform spells it, and
+            # removes the root again wherever it occurs a second time further along the
+            # path (`/srv/wp/wp-content/srv/wp/...`).
+            result.append(os.path.relpath(full_path, path) if relative else full_path)
 
     return result
 

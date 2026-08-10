@@ -44,6 +44,20 @@ VERSION_PHP = """<?php
 $wp_version = '7.0.2';
 """
 
+# What a localized build adds to the file above. wordpress.org ships one release per
+# language, and this is the only place the installation says which one it is.
+LOCALIZED_VERSION_PHP = """<?php
+
+/**
+ * WordPress Version
+ *
+ * @global string $wp_version
+ */
+$wp_version = '7.0.2';
+
+$wp_local_package = 'de_DE';
+"""
+
 PLACEHOLDER = '<?php\n// Silence is golden.\n'
 
 HELLO_PHP = """<?php
@@ -226,6 +240,12 @@ class TestWordPress(unittest.TestCase):
         # a directory that exists but holds no WordPress
         cls.empty = os.path.join(cls.root, 'empty')
         os.makedirs(cls.empty)
+        # the same core, but built for a language other than English
+        cls.localized = os.path.join(cls.root, 'localized')
+        write(
+            os.path.join(cls.localized, 'wp-includes', 'version.php'),
+            LOCALIZED_VERSION_PHP,
+        )
         # the same installation below a path carrying glob metacharacters, which must be
         # read as data and not as a pattern
         cls.quoted = os.path.join(cls.root, 'site[1]')
@@ -249,6 +269,17 @@ class TestWordPress(unittest.TestCase):
 
     def test_get_version_on_missing_installation(self):
         success, result = wordpress.get_version(self.empty)
+        self.assertFalse(success)
+        self.assertIn('version.php', result)
+
+    def test_get_locale_of_a_localized_build(self):
+        self.assertEqual(wordpress.get_locale(self.localized), (True, 'de_DE'))
+
+    def test_get_locale_defaults_to_english(self):
+        self.assertEqual(wordpress.get_locale(self.wp), (True, 'en_US'))
+
+    def test_get_locale_on_missing_installation(self):
+        success, result = wordpress.get_locale(self.empty)
         self.assertFalse(success)
         self.assertIn('version.php', result)
 

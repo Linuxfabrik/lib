@@ -11,14 +11,14 @@
 """This library collects some WordPress related functions, reading a local WordPress
 installation directly from the filesystem.
 
-The functions here mirror how WordPress itself discovers its own version, plugins and
-themes, so no database connection, no HTTP request and no `wp-cli` are needed. All of
+The functions here mirror how WordPress itself discovers its own version, locale, plugins
+and themes, so no database connection, no HTTP request and no `wp-cli` are needed. All of
 them take the path to the installation root, the directory holding `wp-includes/` and
 `wp-content/`.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080702'
+__version__ = '2026080901'
 
 import glob as _glob
 import os
@@ -49,6 +49,15 @@ CONFIG_BYTES = 65536
 # The same for the version file, which is smaller still: a licence header and a handful
 # of assignments, with `$wp_version` among the first of them.
 VERSION_BYTES = 16384
+
+# Stand-in for the version of a plugin or theme that declares none. Nothing can be looked up
+# for it, so a consumer has to be able to recognize it rather than pass it on.
+UNKNOWN_VERSION = 'unknown'
+
+# Locale of a build that does not name one. Only the localized builds carry
+# `$wp_local_package`; the original English release has no such line, and this is the
+# spelling wordpress.org uses for it.
+DEFAULT_LOCALE = 'en_US'
 
 # Order in which the site URL is taken from the configuration. `WP_HOME` is the address
 # visitors use, `WP_SITEURL` the one WordPress itself is reached under. They differ on
@@ -134,6 +143,45 @@ def get_header_value(filename, field):
     return _header_value(_read_header(filename), field)
 
 
+def get_locale(path):
+    """
+    Read the locale a local WordPress installation was built for.
+
+    wordpress.org ships one release per language, not one release plus a language pack, and a
+    localized build says which one it is in the same file it keeps its version in. A consumer
+    that compares the installation against anything wordpress.org publishes needs to ask for
+    the matching build.
+
+    ### Parameters
+    - **path** *(str | os.PathLike)*: Path to the installation root.
+
+    ### Returns
+    - **tuple[bool, str]**:
+      - On success: `(True, locale)`, for example `'de_DE'`. The original English release
+        names no locale, and `'en_US'` is returned for it.
+      - On failure: `(False, error)` when the version file cannot be opened or read.
+
+    ### Notes
+    - Read from `$wp_local_package`, the same variable WordPress and `wp-cli` read it from.
+    - A locale reported here is the one the *core* was built for. It says nothing about the
+      language the site is displayed in, which an administrator can change at any time
+      without replacing the core.
+
+    ### Example
+    >>> get_locale('/var/www/html/wordpress')
+    (True, 'de_DE')
+    """
+    success, raw = disk.read_file(
+        os.path.join(path, VERSION_FILE), binary=True, max_bytes=VERSION_BYTES
+    )
+    if not success:
+        return (False, raw)
+    match = re.search(
+        r"wp_local_package\s*=\s*'([^']*)'", txt.to_text(raw, errors='strict_or_latin1')
+    )
+    return (True, match.group(1) if match and match.group(1) else DEFAULT_LOCALE)
+
+
 def get_plugins(path):
     """
     List the plugins installed in a local WordPress installation.
@@ -171,6 +219,55 @@ def get_plugins(path):
     >>> get_plugins('/var/www/html/wordpress')
     {'akismet': '5.7', 'contact-form-7': '5.0', 'hello': '1.7.2'}
     """
+    return {slug: entry['version'] for slug, entry in _scan_plugins(path).items()}
+
+
+def get_plugin_slugs(path):
+    """
+    Map every installed plugin to the slug the wordpress.org plugin directory knows it by.
+
+    A plugin's directory name and its slug in the directory are usually the same, because
+    installing from the directory is what creates the directory. They come apart for a
+    single-file plugin, whose file name is not its slug - `hello.php`, shipped with every
+    WordPress, is `hello-dolly` there - and wherever the directory was renamed by hand.
+    Since anything asked about a plugin on wordpress.org is asked by slug, a consumer that
+    only has the directory name is asking about the wrong plugin, or about none at all.
+
+    ### Parameters
+    - **path** *(str | os.PathLike)*: Path to the installation root.
+
+    ### Returns
+    - **dict**: `{directory_slug: wordpress_org_slug}` for every plugin `get_plugins()`
+      finds, so the keys of both are the same. The value falls back to the directory slug
+      where the plugin names no wordpress.org address.
+
+    ### Notes
+    - Taken from the `Plugin URI` header, which is the plugin's own statement of where it
+      lives. Only an address below `wordpress.org/plugins/` is read as a slug; a plugin
+      hosted on its author's own site keeps its directory name, that being the best guess
+      available and the right one whenever it was installed from the directory anyway.
+    - Both keys and values are needed. The key is the directory on disk and the value is
+      what wordpress.org answers to, and a consumer that conflates them will look in the
+      wrong place for one of the two.
+
+    ### Example
+    >>> get_plugin_slugs('/var/www/html/wordpress')
+    {'akismet': 'akismet', 'hello': 'hello-dolly'}
+    """
+    return {slug: entry['slug'] for slug, entry in _scan_plugins(path).items()}
+
+
+def _scan_plugins(path):
+    """Read every plugin below `path` once and return what the public functions above
+    hand out slices of: `{directory_slug: {'file': ..., 'slug': ..., 'version': ...}}`.
+
+    Mirrors how WordPress discovers plugins: a plugin is a PHP file lying directly in
+    `wp-content/plugins/` or directly in one of its immediate subdirectories and carrying
+    a `Plugin Name` header. Files without that header are not plugins, which excludes the
+    `index.php` placeholder WordPress ships in every directory as well as the remaining
+    source files of a plugin. Nested directories are not searched, matching WordPress,
+    which keeps the scan bounded on installations with many plugins.
+    """
     plugins = {}
     plugin_dir = os.path.join(path, 'wp-content', 'plugins')
     # The directory is data, not a pattern: a `[` or `?` in the caller's path would
@@ -179,7 +276,7 @@ def get_plugins(path):
     candidates = disk.glob(os.path.join(quoted_dir, '*.php'), recursive=False)
     candidates += disk.glob(os.path.join(quoted_dir, '*', '*.php'), recursive=False)
     for candidate in candidates:
-        # One bounded read per file, then both fields out of it.
+        # One bounded read per file, then every field out of it.
         header = _read_header(candidate)
         if not _header_value(header, 'Plugin Name'):
             continue
@@ -191,15 +288,30 @@ def get_plugins(path):
             slug = os.path.splitext(basename)[0]
         else:
             slug = os.path.basename(parent)
-        version = _header_value(header, 'Version') or 'unknown'
         # A plugin directory can hold more than one file with a header, an admin page
         # of the plugin among them. WordPress lists each of them separately and has no
         # notion of a main file at all, so there is nothing to mirror here; the file
         # named after its directory is the convention every plugin follows and is
         # therefore preferred. Otherwise the first one in sorted order wins.
         if slug not in plugins or os.path.splitext(basename)[0] == slug:
-            plugins[slug] = version
+            plugins[slug] = {
+                'file': candidate,
+                'slug': _slug_from_uri(_header_value(header, 'Plugin URI')) or slug,
+                'version': _header_value(header, 'Version') or UNKNOWN_VERSION,
+            }
     return plugins
+
+
+def _slug_from_uri(uri):
+    """Return the plugin slug a `Plugin URI` names, or the empty string when it does not
+    point into the wordpress.org plugin directory. Both the `www` and the bare host occur
+    in the wild, as do both schemes, and the address may or may not end in a slash.
+    """
+    match = re.match(
+        r'(?i)^https?://(?:[a-z-]+\.)?wordpress\.org/(?:extend/)?plugins/([^/?#]+)',
+        uri or '',
+    )
+    return match.group(1) if match else ''
 
 
 def get_themes(path):
@@ -234,7 +346,7 @@ def get_themes(path):
         os.path.join(_glob.escape(theme_dir), '*', 'style.css'), recursive=False
     ):
         slug = os.path.basename(os.path.dirname(stylesheet))
-        themes[slug] = get_header_value(stylesheet, 'Version') or 'unknown'
+        themes[slug] = get_header_value(stylesheet, 'Version') or UNKNOWN_VERSION
     return themes
 
 

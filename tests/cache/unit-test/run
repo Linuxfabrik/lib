@@ -55,6 +55,48 @@ class TestCache(unittest.TestCase):
         cache.set('e', 'x', expire=lftime.now() + 3600, path=self.path)
         self.assertEqual(cache.get('e', path=self.path), 'x')
 
+    def test_expired_key_served_with_allow_stale(self):
+        cache.set('e', 'x', expire=lftime.now() - 10, path=self.path)
+        self.assertEqual(cache.get('e', allow_stale=True, path=self.path), 'x')
+
+    def test_allow_stale_reports_when_the_entry_expired(self):
+        expired_at = lftime.now() - 10
+        cache.set('e', 'x', expire=expired_at, path=self.path)
+        self.assertEqual(
+            cache.get('e', as_dict=True, allow_stale=True, path=self.path)['timestamp'],
+            expired_at,
+        )
+
+    def test_allow_stale_keeps_the_entry(self):
+        cache.set('e', 'x', expire=lftime.now() - 10, path=self.path)
+        cache.get('e', allow_stale=True, path=self.path)
+        self.assertEqual(cache.get('e', allow_stale=True, path=self.path), 'x')
+
+    def test_plain_get_drops_the_expired_entry(self):
+        cache.set('e', 'x', expire=lftime.now() - 10, path=self.path)
+        cache.get('e', path=self.path)
+        self.assertFalse(cache.get('e', allow_stale=True, path=self.path))
+
+    def test_prune_removes_expired_entries(self):
+        cache.set('e', 'x', expire=lftime.now() - 10, path=self.path)
+        self.assertTrue(cache.prune(path=self.path))
+        self.assertFalse(cache.get('e', allow_stale=True, path=self.path))
+
+    def test_prune_keeps_unexpired_and_permanent_entries(self):
+        cache.set('permanent', 'a', path=self.path)
+        cache.set('fresh', 'b', expire=lftime.now() + 3600, path=self.path)
+        cache.prune(path=self.path)
+        self.assertEqual(cache.get('permanent', path=self.path), 'a')
+        self.assertEqual(cache.get('fresh', path=self.path), 'b')
+
+    def test_prune_before_keeps_recently_expired_entries(self):
+        now = lftime.now()
+        cache.set('recent', 'a', expire=now - 86400, path=self.path)
+        cache.set('ancient', 'b', expire=now - 60 * 86400, path=self.path)
+        cache.prune(before=now - 30 * 86400, path=self.path)
+        self.assertEqual(cache.get('recent', allow_stale=True, path=self.path), 'a')
+        self.assertFalse(cache.get('ancient', allow_stale=True, path=self.path))
+
 
 if __name__ == '__main__':
     unittest.main()

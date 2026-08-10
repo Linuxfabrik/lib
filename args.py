@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080703'
+__version__ = '2026080901'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -106,6 +106,12 @@ HELP_TEXTS = {
         'Examples: '
         '`(?i)example` to match "example" regardless of case. '
         '`^(?!.*example).*$` to match any string except "example" (negative lookahead).'
+    ),
+    '--no-checksum-data-severity': (
+        'State to report when no published checksums are available for a component and it '
+        'could not be verified. '
+        'The check still verifies everything it has checksums for, but a clean result then '
+        'only covers those components, not the ones it had to skip.'
     ),
     '--no-insecure': (
         'Verify the TLS certificate against the system trust store, overriding the '

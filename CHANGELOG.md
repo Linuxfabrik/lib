@@ -22,14 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * args.py: `--brief` joins the shared help texts, so every check that can hide the rows within its thresholds describes the switch the same way, including that performance data and alerting stay unaffected.
 * args.py: `--no-vuln-data-severity` joins the shared help texts, so every check that can end up without vulnerability data names the parameter the same way.
+* args.py: `--no-checksum-data-severity` joins the shared help texts, so every check that can end up without published checksums for part of what it verifies names the parameter the same way.
 * args.py: `--password-file` joins the shared help texts, and `load_secret()` reads a secret out of a file so it does not have to be passed on the command line, where it is visible to every user on the host.
 * args.py: `--warning-temperature` and `--critical-temperature` join the shared help texts, so every check that alerts on a temperature names the parameter the same way.
 * args.py: `--warning-voltage` and `--critical-voltage` join the shared help texts, mirroring the temperature pair, so a hardware check that alerts on a voltage names the parameter the same way.
 * base.py: `get_table()` takes a `hide_empty`, which leaves out every column no row filled in, so a check listing several kinds of object no longer prints a wall of hyphens that pushes the text that matters off to the right. Off by default.
 * base.py: `get_table()` takes a `missing`, so a consumer whose rows come from an API that only sends the fields it has something to say about prints a placeholder in that one cell instead of losing the whole table. Without it, a missing column is still reported as a mistake in the calling code.
 * base.py: `verbose()` prints a progress message only when verbose output is switched on, so long-running consumers stop copying the same two-line helper.
+* cache.py: `get()` accepts an `allow_stale`, which serves an expired entry instead of deleting it, so a consumer whose source is unreachable can fall back on the last answer it got rather than on nothing. `prune()` deletes the expired entries a version-keyed cache leaves behind, optionally keeping the recent ones as that fallback.
 * db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
 * disk.py: `read_file()` accepts a `max_bytes`, so a consumer interested only in the head of a file stops reading the whole of it.
+* disk.py: `get_fingerprint()` accepts an `algorithm`, so a digest can be taken in whatever a foreign checksum list published it in, instead of only in SHA-256.
 * txt.py: `shorten()` cuts a long value down for display, out of the middle, so one oversized entry no longer widens a whole table column and two values differing only at the end stay distinguishable.
 * distro.py: Clear Linux, CoreOS, Flatcar, Mandriva, OpenWrt, Slackware, SUSE, UnionTech and the Debian derivatives Cumulus Linux, Deepin, Devuan, Kali, Linux Mint, Parrot, SteamOS and Uos are recognised. Anything else still unknown is now identified from `/etc/os-release` instead of being reported as plain "Linux".
 * huawei_dorado.py, huawei_pacific.py: `as_code()` turns a status code the appliance sends as a string, or does not send at all, into a number a consumer can compare. Consumers used to carry a copy of it each.
@@ -61,10 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * nextcloud.py: `run_occ()` accepts a `timeout`, so a hanging `occ` no longer keeps a check running forever.
 * txt.py: `unescape()` resolves the HTML character references some sources put into plain text, so a hardware model reads as `Expansion Module(24 Cores)` instead of `Expansion Module&#40;24 Cores&#41;`.
 * wordpress.py: new module reading a local WordPress installation from the filesystem: `get_version()`, `get_plugins()`, `get_themes()`, `get_site_url()`, `is_installation()` and `get_header_value()`, without a database connection, an HTTP request or `wp-cli`.
+* wordpress.py: `get_locale()` reads which language a core was built for, which is what decides the file list wordpress.org holds it to, and `get_plugin_slugs()` maps a plugin's directory to the slug wordpress.org knows it by, which is not the same for a single-file plugin such as `hello.php`.
 
 ### Changed
 
 * base.py: `oao()` only escapes a `<` that would open an HTML tag, instead of escaping every `&`, `<` and `>`. A version range like `< 5.3.2`, a threshold like `<= 10` and a shell snippet like `echo 1 > /proc/sys/...` now reach the terminal exactly as written, while a web interface still renders the output as preformatted text rather than as markup.
+* disk.py: `walk_directory()` builds a relative path by actually relativizing it. It used to strip the root off the front as a plain substring, which left the paths absolute on Windows and removed the root a second time wherever its name occurred again further down the tree.
 * huawei_dorado.py, huawei_pacific.py: `--cache-expire 0` switches session caching off. It used to store a session that expired about a second later, which is neither caching nor not caching.
 * huawei_dorado.py, huawei_pacific.py: session tokens are kept in the library's own cache file instead of the one every plugin on the host shares, so parallel checks no longer wait on each other's cache writes. The first run after the update logs in once to fill the new file.
 * huawei_dorado.py, huawei_pacific.py: `get_data()` returns the appliance's response as it is. It used to add a `counter` field holding the number of attempts, which would overwrite an API field of that name.
