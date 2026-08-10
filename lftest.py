@@ -21,7 +21,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080701'
+__version__ = '2026081001'
 
 
 def run(test_instance, plugin, testcase):
@@ -722,6 +722,55 @@ def test_json(args, path=None):
     except ValueError as e:
         base.cu(f'Test fixture "{wanted}" does not hold valid JSON: {e}')
         return None
+
+
+def test_text(args, path=None):
+    """
+    Read one `--test` fixture and return the text it holds.
+
+    The text counterpart of `test_json()`, for a consumer whose data source answers in
+    plain text rather than JSON. A consumer that runs a command several times in one
+    pass needs one fixture per run, named after the base path its `--test` argument
+    carries, so this resolves such a fixture and reports a missing one the same way for
+    everybody instead of leaving each consumer to spell out its own read.
+
+    ### Parameters
+    - **args** (`list`):
+      The `--test` argument as `lib.args.csv` parsed it. It is not modified, so the
+      caller's own value keeps pointing at the base path and stays usable for the next
+      fixture.
+    - **path** (`str`, optional):
+      The fixture to read instead of the one in `args`. Typically the base path with a
+      run-specific suffix, for example `stdout/all-ok-second-pass`. Defaults to the
+      fixture `args` already names.
+
+    ### Returns
+    - **str**: The content of the fixture.
+
+    ### Notes
+    - Aborts the calling process (UNKNOWN) when the fixture does not exist. That is a
+      developer error in a test fixture, and a clear message beats a run that silently
+      parses the path itself as if it were data.
+    - A missing fixture is recognised by `test()` handing the path back unchanged, which
+      is what it does for anything that does not resolve to a contained fixture file. The
+      path is deliberately not checked against the file system here: fixtures are anchored
+      to the consumer's own `unit-test/` directory, not to the current working directory.
+    - An empty fixture is a valid one. It stands for a command that produced no output,
+      which is a case worth testing.
+
+    ### Example
+    >>> test_text(['stdout/all-ok'], 'stdout/all-ok-second-pass')
+    'Checking disk: OK\\n'
+    """
+    args = list(args)
+    if path is not None:
+        args[0] = path
+    wanted = args[0]
+
+    stdout, _stderr, _retc = test(args)
+    if stdout == wanted:
+        base.cu(f'Test fixture not found: "{wanted}".')
+    return stdout
 
 
 def _read_fixture(value):

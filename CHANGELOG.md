@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_pacific.py: `get_result_code()` reads the status code out of either response envelope the appliance uses, so a consumer does not have to know which endpoint generation it is talking to.
 * huawei_pacific.py: `get_warranty_status()` translates how much of a cluster node's warranty is left into readable text.
 * lftest.py: `test_json()` reads one of several test fixtures of a run and returns the JSON it holds, so a consumer querying several endpoints stops copying the same fixture read and the same two error messages.
+* lftest.py: `test_text()` reads one of several test fixtures of a run and returns the text it holds, the counterpart of `test_json()` for a consumer whose data source answers in plain text.
 * nextcloud.py: `run_occ()` accepts a `timeout`, so a hanging `occ` no longer keeps a check running forever.
 * txt.py: `unescape()` resolves the HTML character references some sources put into plain text, so a hardware model reads as `Expansion Module(24 Cores)` instead of `Expansion Module&#40;24 Cores&#41;`.
 * wordpress.py: new module reading a local WordPress installation from the filesystem: `get_version()`, `get_plugins()`, `get_themes()`, `get_site_url()`, `is_installation()` and `get_header_value()`, without a database connection, an HTTP request or `wp-cli`.

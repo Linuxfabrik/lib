@@ -71,6 +71,44 @@ class TestTestHelper(unittest.TestCase):
         self.assertEqual(lftest.test([payload]), (payload, '', 0))
 
 
+class TestTestText(unittest.TestCase):
+    """test_text(): one fixture of a multi-run consumer, as text."""
+
+    def setUp(self):
+        self.cwd = os.getcwd()
+        os.chdir(HERE)
+        self._argv0 = sys.argv[0]
+        sys.argv[0] = os.path.join(os.path.dirname(HERE), 'lftest-plugin')
+
+    def tearDown(self):
+        sys.argv[0] = self._argv0
+        os.chdir(self.cwd)
+
+    def test_reads_the_fixture_the_arguments_name(self):
+        self.assertEqual(lftest.test_text(['stdout/case']), 'hello world')
+
+    def test_reads_the_fixture_the_path_names(self):
+        self.assertEqual(
+            lftest.test_text(['stdout/case'], 'stdout/case-second-pass'),
+            'second pass',
+        )
+
+    def test_arguments_are_left_alone(self):
+        # The caller keeps using its own value for the next fixture.
+        args = ['stdout/case', '', '0']
+        lftest.test_text(args, 'stdout/case-second-pass')
+        self.assertEqual(args, ['stdout/case', '', '0'])
+
+    def test_empty_fixture_is_a_valid_one(self):
+        # A command that produced no output is a case worth testing.
+        self.assertEqual(lftest.test_text(['stdout/empty']), '')
+
+    def test_missing_fixture_aborts(self):
+        with self.assertRaises(SystemExit) as ctx:
+            lftest.test_text(['stdout/does-not-exist'])
+        self.assertEqual(ctx.exception.code, 3)
+
+
 class TestFixtureConfinement(unittest.TestCase):
     """test(): the fixture read stays inside the plugin's own unit-test/ dir,
     even against symlinks a writable plugin directory could plant."""
