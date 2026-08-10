@@ -384,5 +384,53 @@ class TestShorten(unittest.TestCase):
         self.assertEqual(txt.shorten('', 10), '')
 
 
+class TestStripAnsi(unittest.TestCase):
+    def test_plain_text_is_untouched(self):
+        self.assertEqual(txt.strip_ansi('no escapes here'), 'no escapes here')
+
+    def test_empty_input(self):
+        self.assertEqual(txt.strip_ansi(''), '')
+
+    def test_sgr_color(self):
+        self.assertEqual(
+            txt.strip_ansi('[\x1b[0;32mOK\x1b[0m]    Database Connected'),
+            '[OK]    Database Connected',
+        )
+
+    # The same logical color arrives in more than one spelling, which is why the
+    # pattern matches the CSI family instead of a list of known sequences.
+    def test_same_color_in_two_spellings(self):
+        self.assertEqual(txt.strip_ansi('\x1b[32mgreen\x1b[0m'), 'green')
+        self.assertEqual(txt.strip_ansi('\x1b[0;32mgreen\x1b[0m'), 'green')
+
+    # Progress indicators mix in sequences that are not colors at all.
+    def test_non_sgr_csi_sequence(self):
+        self.assertEqual(txt.strip_ansi('\x1b[0DStatus: 50/100'), 'Status: 50/100')
+        self.assertEqual(txt.strip_ansi('\x1b[2K\x1b[1;5Hhere'), 'here')
+
+    def test_two_character_escape(self):
+        self.assertEqual(txt.strip_ansi('\x1bcreset'), 'reset')
+
+    def test_osc_terminated_by_bel(self):
+        self.assertEqual(txt.strip_ansi('\x1b]0;window title\x07body'), 'body')
+
+    def test_osc_terminated_by_string_terminator(self):
+        self.assertEqual(txt.strip_ansi('\x1b]8;;https://example.com\x1b\\link'), 'link')
+
+    def test_multiple_sequences_in_one_line(self):
+        self.assertEqual(
+            txt.strip_ansi('\t[\x1b[1;34mFIX\x1b[0m]: \x1b[1;34mrun me\x1b[0m'),
+            '\t[FIX]: run me',
+        )
+
+    def test_preserves_surrounding_whitespace(self):
+        self.assertEqual(txt.strip_ansi('  \x1b[0;32mx\x1b[0m  '), '  x  ')
+
+    def test_non_string_returned_unchanged(self):
+        self.assertIsNone(txt.strip_ansi(None))
+        self.assertEqual(txt.strip_ansi(42), 42)
+        self.assertEqual(txt.strip_ansi(['\x1b[0;32mx\x1b[0m']), ['\x1b[0;32mx\x1b[0m'])
+
+
 if __name__ == '__main__':
     unittest.main()

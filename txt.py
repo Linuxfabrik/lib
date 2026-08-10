@@ -18,7 +18,7 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080702'
+__version__ = '2026081001'
 
 import html
 import operator
@@ -33,6 +33,29 @@ _SURROGATE_ERRORS = frozenset(
         'surrogate_then_replace',
     )
 )
+
+ANSI_ESCAPE_PATTERN = re.compile(
+    r'\x1b(?:'
+    r'\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]'
+    r'|[\x5d\x50\x58\x5e\x5f].*?(?:\x1b\\|\x07)'
+    r'|[\x20-\x2f]*[\x30-\x7e]'
+    r')',
+    re.DOTALL,
+)
+# Matches an ANSI escape sequence in any of the shapes a terminal understands. The
+# branches are ordered from the most specific to the catch-all, because the shorter form
+# would otherwise swallow the introducer of a longer one:
+#   \[[0-?]*[ -/]*[@-~]        CSI: ESC [ parameters intermediates final byte. Covers SGR
+#                              colors (ESC[0;32m), cursor moves (ESC[0D) and line erasure
+#                              (ESC[2K) alike.
+#   []PX^_].*?(ESC \ | BEL)    OSC, DCS, SOS, PM and APC, which carry a string (a window
+#                              title, a hyperlink) up to their terminator.
+#   [ -/]*[0-~]                every remaining escape: the two-character forms such as
+#                              ESC c (reset) and the nF sequences with intermediate bytes.
+# re.DOTALL lets the string-carrying forms span lines, which is what they are allowed to
+# do. Matching the families rather than a list of known sequences is deliberate: the same
+# logical color is spelled differently by different emitters (ESC[32m vs ESC[0;32m), and
+# a progress indicator mixes in sequences that are not colors at all.
 
 SENSITIVE_FIELDS_PATTERN = re.compile(
     r'(?i)(\b(?:password|pass|token|key|secret|api[_-]?key|access[_-]?token'
@@ -524,10 +547,6 @@ def sanitize_sensitive_data(msg, replacement='******'):
     return msg
 
 
-# `to_bytes` and `to_text` below are an extraction of Ansible's text converters
-# with the object-oriented and typing scaffolding stripped for our Python 3.9+
-# use-case. Look here if upstream behaviour ever needs to be re-checked or synced:
-#   ansible/lib/ansible/module_utils/common/text/converters.py  (to_bytes, to_text)
 def shorten(text, max_len, ellipsis='...'):
     """
     Shorten a string for display, keeping its head and its tail.
@@ -566,6 +585,59 @@ def shorten(text, max_len, ellipsis='...'):
     return f'{text[:head_len]}{ellipsis}{text[-tail_len:]}'
 
 
+def strip_ansi(text):
+    """
+    Remove ANSI escape sequences from text.
+
+    Many command line tools colorize their output whenever they run on a terminal, and
+    a good number of them do so unconditionally, whether or not the receiving end is one.
+    The sequences carry no information for a caller that parses the text, and they break
+    any comparison, regex or column alignment done on it, so they are stripped before the
+    text is examined or printed.
+
+    ### Parameters
+    - **text** (`str` or `any`): The text to clean. Anything that is not a string is
+      returned unchanged, which keeps the function usable in a chain that also handles
+      `None` and numbers.
+
+    ### Returns
+    - **str** or **original type**: The text without escape sequences, or the object
+      itself if it was not a string.
+
+    ### Notes
+    - Matches the whole CSI family (`ESC [ ... final-byte`), not just the color codes.
+      Cursor movement, line erasure and similar sequences show up in progress indicators
+      and would otherwise survive a color-only filter.
+    - Also removes the two-character escapes (`ESC` followed by a single byte) and the
+      string-terminated sequences OSC, DCS, SOS, PM and APC, so a window title or a
+      hyperlink emitted alongside the payload does not end up in the result either.
+    - The same logical color often arrives in different spellings (`ESC[32m` and
+      `ESC[0;32m` are both green). Matching the family rather than a list of known
+      sequences is what makes the function independent of how the source spells them.
+
+    ### Example
+    >>> strip_ansi('[\\x1b[0;32mOK\\x1b[0m]    Database Connected')
+    '[OK]    Database Connected'
+
+    >>> strip_ansi('\\x1b[0DStatus: 50/100')
+    'Status: 50/100'
+
+    >>> strip_ansi('no escapes here')
+    'no escapes here'
+
+    >>> strip_ansi(None) is None
+    True
+    """
+    if not isinstance(text, str):
+        return text
+    return ANSI_ESCAPE_PATTERN.sub('', text)
+
+
+# `to_bytes` and `to_text` below are an extraction of Ansible's text converters
+# with the object-oriented and typing scaffolding stripped for our Python 3.9+
+# use-case. Look here if upstream behaviour ever needs to be re-checked or synced:
+#   ansible/lib/ansible/module_utils/common/text/converters.py  (to_bytes, to_text)
+#
 # Original under the Simplified BSD License, (c) 2016 Toshio Kuratomi / Ansible
 # project. Deliberate omissions vs. upstream: the Python 2 fallback for when the
 # `surrogateescape` error handler is unavailable (it always is on Python 3), and
