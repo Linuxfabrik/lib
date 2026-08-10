@@ -271,6 +271,70 @@ class TestShellExec(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# shell_exec() - running as another user
+# ---------------------------------------------------------------------------
+
+
+@unittest.skipUnless(os.name == 'posix', 'run_as is Unix-only')
+class TestShellExecRunAs(unittest.TestCase):
+    def _run(self, **kwargs):
+        Fake = make_popen()
+        entry = mock.Mock(pw_uid=1234)
+        with (
+            mock.patch('pwd.getpwnam', return_value=entry),
+            mock.patch.object(shell.subprocess, 'Popen', Fake),
+        ):
+            shell.shell_exec(['php', '/opt/app/validate.php', '-s'], **kwargs)
+        return Fake.instances[0]
+
+    def test_session_runtime_directory_is_exported_by_default(self):
+        self.assertEqual(
+            self._run(run_as='appuser').args[0],
+            [
+                'sudo',
+                '-u',
+                'appuser',
+                'env',
+                'XDG_RUNTIME_DIR=/run/user/1234',
+                'php',
+                '/opt/app/validate.php',
+                '-s',
+            ],
+        )
+
+    def test_without_session_the_command_reaches_sudo_verbatim(self):
+        # What a sudo rule naming the permitted command with its exact arguments
+        # matches: no `env` in front of the program the caller asked for.
+        self.assertEqual(
+            self._run(run_as='appuser', run_as_session=False).args[0],
+            ['sudo', '-u', 'appuser', 'php', '/opt/app/validate.php', '-s'],
+        )
+
+    def test_run_as_defaults_the_working_directory_to_root(self):
+        self.assertEqual(self._run(run_as='appuser').kwargs['cwd'], '/')
+
+    def test_run_as_keeps_an_explicit_working_directory(self):
+        self.assertEqual(self._run(run_as='appuser', cwd='/tmp').kwargs['cwd'], '/tmp')
+
+    def test_unknown_user_is_reported_instead_of_run(self):
+        Fake = make_popen()
+        with (
+            mock.patch('pwd.getpwnam', side_effect=KeyError('nope')),
+            mock.patch.object(shell.subprocess, 'Popen', Fake),
+        ):
+            success, result = shell.shell_exec(['true'], run_as='nope')
+        self.assertFalse(success)
+        self.assertIn('nope', result)
+        self.assertEqual(Fake.instances, [])
+
+    def test_run_as_session_alone_does_not_wrap_the_command(self):
+        Fake = make_popen()
+        with mock.patch.object(shell.subprocess, 'Popen', Fake):
+            shell.shell_exec(['true'], run_as_session=False)
+        self.assertEqual(Fake.instances[0].args[0], ['true'])
+
+
+# ---------------------------------------------------------------------------
 # safe_cli_value()
 # ---------------------------------------------------------------------------
 

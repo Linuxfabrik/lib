@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026081001'
 
 
 import os
@@ -32,7 +32,14 @@ RETC_SSHPASS = {
 
 
 def shell_exec(
-    cmd, env=None, stdin='', cwd=None, timeout=None, lc_all='C', run_as=None
+    cmd,
+    env=None,
+    stdin='',
+    cwd=None,
+    timeout=None,
+    lc_all='C',
+    run_as=None,
+    run_as_session=True,
 ):
     """
     Execute a command in a subprocess, given as a list of arguments (argv).
@@ -76,6 +83,15 @@ def shell_exec(
       `cwd` is given, `cwd` defaults to `/` so `sudo` can chdir as the target user
       without a harmless warning. An unknown user yields `(False, error_message)`.
       Defaults to None (run as the current user). Unix-only.
+    - **run_as_session** (`bool`, optional):
+      Only meaningful together with `run_as`. When False, the command is wrapped as
+      `sudo -u <user> ...` without the session runtime directory, so what `sudo` sees is
+      exactly the program and the arguments the caller passed. A sudo rule that spells
+      out the permitted command with its exact arguments (the safe way to grant one
+      specific command instead of an interpreter with free arguments) only matches that
+      plain form; the session wrapper turns the permitted program into `env` and makes
+      the rule miss. Leave it at True wherever a per-user session service such as
+      rootless Podman or `systemctl --user` has to be reached. Defaults to True.
 
     ### Returns
     - **tuple**:
@@ -108,14 +124,8 @@ def shell_exec(
             uid = pwd.getpwnam(run_as).pw_uid
         except KeyError:
             return False, f'Unknown user: {run_as}'
-        cmd = [
-            'sudo',
-            '-u',
-            run_as,
-            'env',
-            f'XDG_RUNTIME_DIR=/run/user/{uid}',
-            *cmd,
-        ]
+        session = ['env', f'XDG_RUNTIME_DIR=/run/user/{uid}'] if run_as_session else []
+        cmd = ['sudo', '-u', run_as, *session, *cmd]
         if cwd is None:
             cwd = '/'
 
