@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080703'
+__version__ = '2026081001'
 
 import numbers
 import operator
@@ -262,6 +262,9 @@ def get_table(
     sort_order_reverse=False,
     missing=None,
     hide_empty=False,
+    max_rows=None,
+    max_rows_label='row',
+    max_rows_suffix='s',
 ):
     """
     Format a list of dictionaries into a simple ASCII table.
@@ -287,6 +290,15 @@ def get_table(
     - **hide_empty** (`bool`, optional):
       Leave out every column that no row filled in, that is one whose cells are all empty
       or all a hyphen placeholder. Defaults to False.
+    - **max_rows** (`int`, optional):
+      Render at most this many data rows and state below the table how many were left out.
+      Defaults to `None`, which renders every row.
+    - **max_rows_label** (`str`, optional):
+      What the rows left out by `max_rows` are called in that sentence, in the singular.
+      It is pluralized as needed. Defaults to `'row'`.
+    - **max_rows_suffix** (`str`, optional):
+      How `max_rows_label` forms its plural, passed to `txt.pluralize()`, so an irregular
+      noun can be spelled out as `'entr'` plus `'y,ies'`. Defaults to `'s'`.
 
     ### Returns
     - **str**: A string containing the formatted table.
@@ -306,6 +318,17 @@ def get_table(
       tomorrow would otherwise make the table change shape between runs.
     - When `hide_empty` would leave nothing at all, every column is kept. A table of
       headers says more than a blank line.
+    - `max_rows` is for the consumer whose row count grows with the very situation the
+      table reports, where the interesting case is also the longest one: a table per
+      affected object turns into thousands of lines exactly when something went wrong,
+      and whatever stores or forwards that text carries all of them. The cap keeps the
+      output readable and says how much it left out, so the number is never silently
+      lost. It shapes the text alone: the caller counts, aggregates and reports on the
+      full `data` it passed in, which the truncated table says nothing about.
+    - Rows are cut after sorting, so `max_rows` together with `sort_by_key` keeps the
+      rows that sort first rather than an arbitrary selection.
+    - Column widths come from the rows that are actually printed. A long value in a row
+      that was cut does not widen the table it no longer appears in.
 
     ### Example
     >>> data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]
@@ -325,6 +348,11 @@ def get_table(
     -----
     Alice
     Bob
+
+    >>> data = [{'n': 'a'}, {'n': 'b'}, {'n': 'c'}]
+    >>> print(get_table(data, ['n'], max_rows=1, max_rows_label='finding'))
+    a
+    ... and 2 more findings.
     """
     if not data:
         return ''
@@ -333,6 +361,20 @@ def get_table(
     if sort_by_key:
         data = sorted(
             data, key=operator.itemgetter(sort_by_key), reverse=sort_order_reverse
+        )
+
+    # Cut before anything is measured, so the rows that are not printed neither widen a
+    # column nor keep a column alive that `hide_empty` would otherwise drop.
+    left_out = 0
+    if max_rows is not None and len(data) > max_rows:
+        left_out = len(data) - max_rows
+        data = data[:max_rows]
+    if not data:
+        # `max_rows=0` asked for the count alone. A header above nothing would be a table
+        # promising rows that follow.
+        return (
+            f'... and {left_out} more '
+            f'{txt.pluralize(max_rows_label, left_out, max_rows_suffix)}.\n'
         )
 
     if hide_empty:
@@ -380,6 +422,12 @@ def get_table(
     for idx, row in enumerate(processed_rows):
         parts = [f'{row[col]:<{column_widths[col]}}' for col in column_widths]
         lines.append(('-+-' if header and idx == 1 else ' ! ').join(parts))
+
+    if left_out:
+        lines.append(
+            f'... and {left_out} more '
+            f'{txt.pluralize(max_rows_label, left_out, max_rows_suffix)}.'
+        )
 
     return '\n'.join(lines) + '\n'
 

@@ -313,6 +313,89 @@ class TestGetTable(unittest.TestCase):
         data = [{'n': 'Alice', 'v': '-'}]
         self.assertEqual(base.get_table(data, ['n', 'v'], hide_empty=True), 'Alice\n')
 
+    def test_max_rows_is_off_by_default(self):
+        data = [{'n': 'a'}, {'n': 'b'}, {'n': 'c'}]
+        self.assertEqual(base.get_table(data, ['n']), 'a\nb\nc\n')
+
+    def test_max_rows_above_the_row_count_changes_nothing(self):
+        data = [{'n': 'a'}, {'n': 'b'}]
+        self.assertEqual(base.get_table(data, ['n'], max_rows=5), 'a\nb\n')
+
+    # Exactly at the limit nothing was left out, so there is nothing to say about it.
+    def test_max_rows_equal_to_the_row_count_says_nothing(self):
+        data = [{'n': 'a'}, {'n': 'b'}]
+        self.assertEqual(base.get_table(data, ['n'], max_rows=2), 'a\nb\n')
+
+    def test_max_rows_cuts_and_counts_what_was_left_out(self):
+        data = [{'n': 'a'}, {'n': 'b'}, {'n': 'c'}]
+        self.assertEqual(
+            base.get_table(data, ['n'], max_rows=2), 'a\nb\n... and 1 more row.\n'
+        )
+
+    def test_max_rows_label_names_the_rows(self):
+        data = [{'n': 'a'}, {'n': 'b'}, {'n': 'c'}]
+        self.assertEqual(
+            base.get_table(data, ['n'], max_rows=1, max_rows_label='finding'),
+            'a\n... and 2 more findings.\n',
+        )
+
+    # A single leftover row is not "1 rows".
+    def test_max_rows_label_stays_singular_for_one(self):
+        data = [{'n': 'a'}, {'n': 'b'}]
+        self.assertEqual(
+            base.get_table(data, ['n'], max_rows=1, max_rows_label='finding'),
+            'a\n... and 1 more finding.\n',
+        )
+
+    def test_max_rows_suffix_spells_an_irregular_plural(self):
+        data = [{'n': 'a'}, {'n': 'b'}, {'n': 'c'}]
+        self.assertEqual(
+            base.get_table(
+                data, ['n'], max_rows=1, max_rows_label='entr', max_rows_suffix='y,ies'
+            ),
+            'a\n... and 2 more entries.\n',
+        )
+
+    # Asking for no rows at all asks for the count, not for a header above nothing.
+    def test_max_rows_zero_leaves_the_count_alone(self):
+        data = [{'n': 'a'}, {'n': 'b'}]
+        self.assertEqual(
+            base.get_table(data, ['n'], header=['Name'], max_rows=0),
+            '... and 2 more rows.\n',
+        )
+
+    def test_max_rows_keeps_the_header_and_the_divider(self):
+        data = [{'n': 'a'}, {'n': 'b'}]
+        out = base.get_table(data, ['n'], header=['Name'], max_rows=1)
+        self.assertEqual(out, 'Name\n----\na   \n... and 1 more row.\n')
+
+    # Cut after sorting, so the rows that survive are the ones that sort first.
+    def test_max_rows_cuts_after_sorting(self):
+        data = [{'n': 'c'}, {'n': 'a'}, {'n': 'b'}]
+        self.assertEqual(
+            base.get_table(data, ['n'], sort_by_key='n', max_rows=1),
+            'a\n... and 2 more rows.\n',
+        )
+
+    # A wide value in a row nobody sees must not widen the table it no longer appears in.
+    def test_max_rows_measures_only_the_printed_rows(self):
+        data = [{'n': 'a'}, {'n': 'a-very-long-value'}]
+        self.assertEqual(
+            base.get_table(data, ['n'], max_rows=1), 'a\n... and 1 more row.\n'
+        )
+
+    # Same for a column that only a cut row filled in.
+    def test_max_rows_and_hide_empty_judge_the_same_rows(self):
+        data = [{'n': 'a', 'v': '-'}, {'n': 'b', 'v': '42'}]
+        out = base.get_table(
+            data, ['n', 'v'], header=['Name', 'Val'], hide_empty=True, max_rows=1
+        )
+        self.assertNotIn('Val', out)
+        self.assertIn('... and 1 more row.', out)
+
+    def test_max_rows_on_empty_data_stays_empty(self):
+        self.assertEqual(base.get_table([], ['n'], max_rows=2), '')
+
 
 class TestGetWorst(unittest.TestCase):
     def test_no_args_is_ok(self):
