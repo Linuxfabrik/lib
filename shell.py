@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081001'
+__version__ = '2026081002'
 
 
 import os
@@ -62,7 +62,9 @@ def shell_exec(
       The first element is the program, the rest are its arguments.
     - **env** (`dict`, optional):
       A dictionary of environment variables to merge with the current OS environment.
-      Defaults to the current environment.
+      An entry whose value is None removes that variable from the child's environment
+      rather than setting it, which is the only way to run a command *without* a
+      variable this process exports. Defaults to the current environment.
     - **stdin** (`str`, optional):
       A string to pass as standard input to the command. Defaults to an empty string.
     - **cwd** (`str`, optional):
@@ -104,8 +106,8 @@ def shell_exec(
         `(False, error_message)` — a string describing the error.
 
     ### Notes
-    - The environment is merged with `env` and always includes `LC_ALL=<lc_all>`, forcing output
-      to the specified locale.
+    - The environment is merged with `env`, entries set to None are removed from it, and it
+      always includes `LC_ALL=<lc_all>`, forcing output to the specified locale.
     - Exceptions such as `OSError`, `ValueError`, or other execution errors during process
       creation are caught and reported as `(False, <error message>)`.
     - If the process exceeds the specified `timeout`, it is killed, and the function returns
@@ -129,7 +131,13 @@ def shell_exec(
         if cwd is None:
             cwd = '/'
 
-    env = {**os.environ.copy(), **(env or {})}
+    # A value of None removes the variable instead of setting it. Merging on its own
+    # cannot express that, and a caller sometimes has to hand a command an environment
+    # *without* a variable this process exports - a credential that was rejected and is
+    # deliberately dropped for the next attempt, above all, where leaving it in place
+    # would repeat the same failure.
+    env = {**os.environ, **(env or {})}
+    env = {key: value for key, value in env.items() if value is not None}
     env['LC_ALL'] = lc_all
 
     try:
