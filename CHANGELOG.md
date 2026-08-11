@@ -56,9 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_pacific.py: `get_alarm_severity_state()` translates an alarm severity into the state a check reports for it, including the minor severity that used to be unhandled.
 * huawei_pacific.py: `get_all_data()` walks a list endpoint page by page, in either of the two incompatible range syntaxes the API uses.
 * huawei_pacific.py: `get_base_board()` translates a node's base board code into the product line it names, and hands an undocumented code back unchanged.
+* huawei_pacific.py: `get_cluster_nodes()` returns the nodes a cluster is made of, so a consumer that queries a node-scoped hardware endpoint and also reports which node a finding sits on reads the node listing once instead of twice.
 * huawei_pacific.py: `get_component_status_state()`, `get_disk_status_state()`, `get_node_running_status_state()` and `get_pool_status_state()` translate a status into the state a check reports for it.
 * huawei_pacific.py: `get_data()` reaches the appliance's older endpoint generation below `/dsware/service/` and `/dfv/service/` through its `base_path` argument. Some information, the disk inventory among it, is not served anywhere else.
 * huawei_pacific.py: `get_disk_role()`, `get_disk_status()` and `get_disk_type()` translate the role, status and media type of a disk into readable text.
+* huawei_pacific.py: `get_node_names_by_ip()` maps the management IP address that a hardware endpoint names a chassis by to the node name an operator knows it as.
 * huawei_pacific.py: `get_password_status()` translates the password status the appliance reports at login into readable text.
 * huawei_pacific.py: `get_performance()` reads CPU, memory, throughput and latency counters of the cluster and its nodes through the batch performance interface.
 * huawei_pacific.py: `get_pool_status()` translates a storage or disk pool status into readable text.

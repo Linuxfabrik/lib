@@ -15,7 +15,7 @@ generation of endpoints below /dsware/service/ and /dfv/service/.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080704'
+__version__ = '2026081101'
 
 import json
 from time import sleep as _sleep
@@ -1004,22 +1004,24 @@ def _assert_all_nodes_listed(listed, args):
         )
 
 
-def get_management_ips(args):
+def get_cluster_nodes(args):
     """
-    Query the cluster nodes and return their internal management IP addresses.
+    Query the cluster and return the nodes that are part of it.
 
     The hardware endpoints (for example `hwm/fan` and `hwm/power`) are node-scoped and require a
-    `server_list` of node management IPs in the request body. This helper enumerates the cluster
-    nodes through `cluster/servers` and collects that list, so a caller can query hardware across
-    the whole cluster without hard-coding node addresses.
+    `server_list` of node management IP addresses in the request body. This helper enumerates the
+    cluster nodes through `cluster/servers`, so a caller can query hardware across the whole
+    cluster without hard-coding node addresses. The full node objects are returned rather than
+    the addresses alone, because a caller that reports per-node findings needs the node name too
+    and would otherwise have to query the same endpoint a second time to get it.
 
     ### Parameters
     - **args** (object):
       The argument object read by `get_data()` / `get_creds()`.
 
     ### Returns
-    - **list** of `str`:
-      The `management_ip` of every cluster node.
+    - **list** of `dict`:
+      One entry per node that is in the cluster and reports a `management_ip`.
 
     ### Notes
     - `in_cluster` has three documented values, not two: `True` (added), `False` (not added)
@@ -1029,7 +1031,7 @@ def get_management_ips(args):
       A node that does not report the field at all is kept, so a firmware that omits it does
       not narrow the result.
     - Aborts the plugin (UNKNOWN) if the node query fails, if a node that is in the cluster has
-      no management IP address, or if no node has one at all. Returning the remaining addresses
+      no management IP address, or if no node has one at all. Returning the remaining nodes
       instead would let a hardware check cover part of the cluster and still report OK, which
       hides a failed component on the nodes that were dropped.
     - The node list is compared against `cluster/servers/count` for the same reason. The
@@ -1039,18 +1041,18 @@ def get_management_ips(args):
       the check still reports OK, so a mismatch aborts instead.
 
     ### Example
-    >>> get_management_ips(args)
-    ['192.0.2.11', '192.0.2.12']
+    >>> [node['name'] for node in get_cluster_nodes(args)]
+    ['node01', 'node02']
     """
     result = get_data('cluster/servers', args)
     assert_ok(result, 'the cluster nodes for their management IP addresses')
 
-    nodes = result.get('data') or []
-    _assert_all_nodes_listed(len(nodes), args)
+    listed = result.get('data') or []
+    _assert_all_nodes_listed(len(listed), args)
 
-    ips = []
+    nodes = []
     without_ip = []
-    for node in nodes:
+    for node in listed:
         # `cluster/servers` documents an array of node objects, but the sibling endpoint for
         # a single node answers with a bare object. A firmware that does the same here would
         # otherwise put the field lookups below on a string and end the check in a traceback
@@ -1062,7 +1064,7 @@ def get_management_ips(args):
         if 'in_cluster' in node and node['in_cluster'] is not True:
             continue
         if node.get('management_ip'):
-            ips.append(node['management_ip'])
+            nodes.append(node)
         else:
             without_ip.append(str(node.get('name') or node.get('id') or '?'))
 
@@ -1071,10 +1073,62 @@ def get_management_ips(args):
             'These cluster nodes report no management IP address, so their hardware cannot '
             f'be queried: {", ".join(without_ip)}.'
         )
-    if not ips:
+    if not nodes:
         base.cu('The cluster reported no node with a management IP address.')
 
-    return ips
+    return nodes
+
+
+def get_management_ips(args):
+    """
+    Query the cluster nodes and return their internal management IP addresses.
+
+    Convenience wrapper around `get_cluster_nodes()` for a caller that needs nothing but the
+    `server_list` of a node-scoped hardware endpoint.
+
+    ### Parameters
+    - **args** (object):
+      The argument object read by `get_data()` / `get_creds()`.
+
+    ### Returns
+    - **list** of `str`:
+      The `management_ip` of every cluster node.
+
+    ### Example
+    >>> get_management_ips(args)
+    ['192.0.2.11', '192.0.2.12']
+    """
+    return [node['management_ip'] for node in get_cluster_nodes(args)]
+
+
+def get_node_names_by_ip(nodes):
+    """
+    Map the management IP address of every node to its name.
+
+    The node-scoped hardware endpoints identify the chassis a component sits in by its serial
+    number and by the management IP addresses of the node in it, but not by the node name an
+    operator knows it as. This turns a node listing into the lookup that closes that gap.
+
+    ### Parameters
+    - **nodes** (`list` of `dict`):
+      Node objects as `get_cluster_nodes()` returns them.
+
+    ### Returns
+    - **dict**: `management_ip` to node name, skipping the nodes that report neither.
+
+    ### Example
+    >>> get_node_names_by_ip([{'management_ip': '192.0.2.11', 'name': 'node01'}])
+    {'192.0.2.11': 'node01'}
+    """
+    names = {}
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        ip = node.get('management_ip')
+        name = node.get('name')
+        if ip and name:
+            names[ip] = name
+    return names
 
 
 def get_node_running_status_state(rs):
