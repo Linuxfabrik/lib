@@ -15,7 +15,7 @@ generation of endpoints below /dsware/service/ and /dfv/service/.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081101'
+__version__ = '2026081102'
 
 import json
 from time import sleep as _sleep
@@ -472,19 +472,26 @@ def get_component_status_state(st):
 
     ### Returns
     - **int**:
-      `STATE_OK` for `'normal'`, `STATE_CRIT` for `'fault'`, `STATE_WARN` for anything else,
-      including a value the vendor's table does not list and a missing one.
+      `STATE_OK` for `'normal'` and `'absent'`, `STATE_CRIT` for `'fault'`, `STATE_WARN` for
+      anything else, including a value the vendor's table does not list and a missing one.
 
     ### Notes
     - The comparison is case-insensitive and ignores surrounding whitespace, so a firmware that
       capitalises the value differently does not silently turn a healthy component into a
       warning.
-    - A value that is neither of the two documented ones warns rather than passing as OK. The
-      vendor's tables for these endpoints are demonstrably incomplete, and a component this
-      check cannot place is worth looking at.
+    - `'absent'` is an empty slot, not a fault. A chassis is sold with more fan and power
+      supply bays than it is usually populated with, so the slots nobody ordered a part for
+      report this on every single run. Treating that as a warning means a permanent alert on
+      hardware that is behaving exactly as bought.
+    - A value none of these covers warns rather than passing as OK. The vendor's tables for
+      these endpoints are demonstrably incomplete, and a component this check cannot place is
+      worth looking at.
 
     ### Example
     >>> get_component_status_state('normal') == STATE_OK
+    True
+
+    >>> get_component_status_state('absent') == STATE_OK
     True
 
     >>> get_component_status_state('fault') == STATE_CRIT
@@ -493,7 +500,7 @@ def get_component_status_state(st):
     if st is None:
         return STATE_WARN
     code = str(st).strip().lower()
-    if code == 'normal':
+    if code in ('absent', 'normal'):
         return STATE_OK
     if code == 'fault':
         return STATE_CRIT
