@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * args.py: `--no-vuln-data-severity` joins the shared help texts, so every check that can end up without vulnerability data names the parameter the same way.
 * args.py: `--no-checksum-data-severity` joins the shared help texts, so every check that can end up without published checksums for part of what it verifies names the parameter the same way.
 * args.py: `--password-file` joins the shared help texts, and `load_secret()` reads a secret out of a file so it does not have to be passed on the command line, where it is visible to every user on the host.
+* args.py: `--unscored-severity` joins the shared help texts, so every check whose source scores only some of its findings grades the unrated ones under the same parameter name.
 * args.py: `--warning-temperature` and `--critical-temperature` join the shared help texts, so every check that alerts on a temperature names the parameter the same way.
 * args.py: `--warning-voltage` and `--critical-voltage` join the shared help texts, mirroring the temperature pair, so a hardware check that alerts on a voltage names the parameter the same way.
 * base.py: `get_table()` takes a `hide_empty`, which leaves out every column no row filled in, so a check listing several kinds of object no longer prints a wall of hyphens that pushes the text that matters off to the right. Off by default.

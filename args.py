@@ -188,6 +188,12 @@ HELP_TEXTS = {
         'is named in the output, and a clean result then only covers what that fallback '
         'could confirm.'
     ),
+    '--unscored-severity': (
+        'State to report for a finding that carries no severity score of its own. '
+        'A source that scores its findings rarely scores all of them, and the unrated '
+        'ones need a state of their own rather than the one a score would have earned '
+        'them.'
+    ),
     '--url': 'URL to the endpoint.',
     '--username': 'Username.',
     '--verbose': (
