@@ -155,9 +155,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * nextcloud.py: An `occ` call that cannot be started at all, most commonly because `sudo` is not installed, is reported as an error. It used to end the check with a traceback.
 * nextcloud.py: Nextcloud's own startup warnings, which it writes to standard output, are kept out of the evaluated result. A host missing the PHP process control extension used to fail every Nextcloud check with an unreadable parsing error.
 * wordpress.py: A plugin shipping more than one plugin file reports the version of its main file.
+* wordpress.py: A plugin whose whole header sits behind the opening PHP tag on the first line is found, the way WordPress finds it. Such a plugin used to be missing from the inventory entirely.
 * wordpress.py: A site URL pinned with `const` instead of `define()` is read.
 * wordpress.py: A site URL that is only defined inside a comment is ignored, as PHP ignores it. An installation switched between a staging and a production address by commenting one of the two out used to report the commented address, sending a consumer to the wrong site.
 * wordpress.py: A version written as a one-line comment reads as the version alone, instead of carrying the end of the comment with it.
+* wordpress.py: Header fields are read from a file saved with carriage returns as its line breaks, where a field used to swallow the rest of the header instead of ending at its own value.
 
 ### Security
 

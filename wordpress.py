@@ -18,7 +18,7 @@ them take the path to the installation root, the directory holding `wp-includes/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080901'
+__version__ = '2026081101'
 
 import glob as _glob
 import os
@@ -87,11 +87,15 @@ def _read_header(filename):
     """Return the leading `HEADER_BYTES` of a file as text, or the empty string when it
     cannot be read. Decoded with `strict_or_latin1` because a plugin author is free to
     save the file in any encoding and the values end up in the consumer's output.
+
+    Carriage returns become newlines, the way WordPress normalizes the same read. A file
+    saved with carriage returns alone would otherwise hold its whole header on one line,
+    where a field would swallow everything behind it instead of ending at its own value.
     """
     success, raw = disk.read_file(filename, binary=True, max_bytes=HEADER_BYTES)
     if not success:
         return ''
-    return txt.to_text(raw, errors='strict_or_latin1')
+    return txt.to_text(raw, errors='strict_or_latin1').replace('\r', '\n')
 
 
 def _header_value(header, field):
@@ -101,8 +105,14 @@ def _header_value(header, field):
     `get_file_data()` and `_cleanup_header_comment()`, so a value reads here exactly as
     WordPress reads it. Without the cleanup a header written as a single-line comment,
     `/* Version: 1.2 */`, would yield `1.2 */`.
+
+    The opening PHP tag is allowed in front of the field for the same reason: a file that
+    puts its whole header on the first line, `<?php /* Plugin Name: Foo */`, is a plugin
+    to WordPress, and a consumer that did not accept the tag would not see it at all.
     """
-    match = re.search(rf'(?im)^[ \t*#/@]*{re.escape(field)}\s*:\s*(.+)$', header)
+    match = re.search(
+        rf'(?im)^(?:[ \t]*<\?php)?[ \t*#/@]*{re.escape(field)}\s*:\s*(.+)$', header
+    )
     if not match:
         return ''
     return COMMENT_TAIL.sub('', match.group(1)).strip()

@@ -102,6 +102,14 @@ ONELINE_HEADER_PHP = """<?php
 /* Version: 1.2 */
 """
 
+# The whole plugin on a single line, opening PHP tag and all. WordPress allows the tag in
+# front of a header field, so this is a plugin to it like any other.
+SAME_LINE_HEADER_PHP = '<?php /* Plugin Name: Same Line */\n'
+
+# A file saved with carriage returns alone, which every editor on classic Mac OS wrote and
+# some still produce. WordPress turns them into newlines before it reads the header.
+CR_ONLY_HEADER_PHP = '<?php\r/*\rPlugin Name: Carriage Return\rVersion: 3.4\r*/\r'
+
 # A second header-bearing file inside a plugin directory, sorting before the file named
 # after the directory. WordPress has no notion of a main file, so the one carrying the
 # directory name has to win or the admin page supplies the version.
@@ -446,6 +454,10 @@ class TestHeaderValue(unittest.TestCase):
         write(cls.oneliner, ONELINE_HEADER_PHP)
         cls.hashed = os.path.join(cls.dir, 'hashed.php')
         write(cls.hashed, '<?php\n# Plugin Name: Hashed\n# Version: 2.0 ?>\n')
+        cls.same_line = os.path.join(cls.dir, 'same-line.php')
+        write(cls.same_line, SAME_LINE_HEADER_PHP)
+        cls.cr_only = os.path.join(cls.dir, 'cr-only.php')
+        write(cls.cr_only, CR_ONLY_HEADER_PHP)
 
     @classmethod
     def tearDownClass(cls):
@@ -483,6 +495,22 @@ class TestHeaderValue(unittest.TestCase):
     # same way.
     def test_php_close_tag_is_stripped(self):
         self.assertEqual(wordpress.get_header_value(self.hashed, 'Version'), '2.0')
+
+    # WordPress allows the opening PHP tag in front of a header field, so a plugin that
+    # fits on one line is still a plugin. Without that the file would carry no name and
+    # would not be recognized at all.
+    def test_field_behind_the_opening_php_tag(self):
+        self.assertEqual(
+            wordpress.get_header_value(self.same_line, 'Plugin Name'), 'Same Line'
+        )
+
+    # Carriage returns are turned into newlines before the header is read, so a field
+    # ends at its own value rather than swallowing everything behind it.
+    def test_carriage_returns_separate_the_fields(self):
+        self.assertEqual(
+            wordpress.get_header_value(self.cr_only, 'Plugin Name'), 'Carriage Return'
+        )
+        self.assertEqual(wordpress.get_header_value(self.cr_only, 'Version'), '3.4')
 
     def test_absent_field(self):
         self.assertEqual(wordpress.get_header_value(self.plugin, 'Network'), '')
