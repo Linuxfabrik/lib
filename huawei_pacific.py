@@ -126,6 +126,23 @@ def format_responses():
     return '\n\n'.join(blocks)
 
 
+def _with_recorded_responses(message):
+    """
+    Append the recorded responses to an abort message, where any were recorded.
+
+    Nothing is recorded unless the caller asked for verbose output, so a normal run gets
+    the message unchanged and a verbose one gets the answers that explain it.
+
+    ### Parameters
+    - **message** (`str`): The message the consumer is about to abort with.
+
+    ### Returns
+    - **str**: The message, followed by what every request returned.
+    """
+    recorded = format_responses()
+    return f'{message}\n\n{recorded}' if recorded else message
+
+
 def assert_ok(result, what):
     """
     Abort the calling process (UNKNOWN) unless the appliance reported success.
@@ -152,12 +169,15 @@ def assert_ok(result, what):
       so nothing at all means the consumer never reached the appliance.
     - The appliance's own description and suggestion are printed where it sends them. They
       name the cause far better than anything a consumer could infer from the code.
+    - Under verbose output the appliance's answers are appended to the abort message. This
+      is the moment they are needed most, and printing them at the end of a successful run
+      only would hide them from exactly the run that has to be explained.
 
     ### Example
     >>> assert_ok({'result': {'code': 0}, 'data': []}, 'the cluster nodes')
     """
     if not result:
-        base.cu('Got no response from the appliance.')
+        base.cu(_with_recorded_responses('Got no response from the appliance.'))
 
     code = get_result_code(result)
     if code in (0, '0'):
@@ -166,7 +186,11 @@ def assert_ok(result, what):
     res = get_status_envelope(result)
     description = res.get('description') or 'no description'
     suggestion = res.get('suggestion') or ''
-    base.cu(f'Failed to query {what} (code {code}): {description} {suggestion}'.strip())
+    base.cu(
+        _with_recorded_responses(
+            f'Failed to query {what} (code {code}): {description} {suggestion}'.strip()
+        )
+    )
 
 
 def as_code(value):

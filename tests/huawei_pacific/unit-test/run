@@ -514,6 +514,27 @@ class TestAssertOk(unittest.TestCase):
         with self.assertRaises(SystemExit):
             huawei_pacific.assert_ok({'data': []}, 'the fans')
 
+    def test_recorded_responses_are_appended_to_the_abort(self):
+        # Nothing is recorded unless the caller asked for verbose output, and an abort is
+        # the moment those answers are needed most: without them the message names a code
+        # and hides the response that explains it.
+        out = io.StringIO()
+        huawei_pacific.record_response('hwm/fan', {'result': {'code': -401}})
+        try:
+            with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+                huawei_pacific.assert_ok({'result': {'code': -401}}, 'the fans')
+            printed = out.getvalue()
+            self.assertIn('### GET hwm/fan', printed)
+            self.assertIn('-401', printed)
+        finally:
+            huawei_pacific._recorded_responses.clear()
+
+    def test_a_quiet_run_aborts_without_a_response_dump(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            huawei_pacific.assert_ok({'result': {'code': -401}}, 'the fans')
+        self.assertNotIn('### GET', out.getvalue())
+
 
 class TestAlarmSeverityState(unittest.TestCase):
     def test_informational_is_ok(self):

@@ -524,6 +524,27 @@ class TestAssertOk(unittest.TestCase):
         with self.assertRaises(SystemExit):
             huawei.assert_ok({}, 'the fans')
 
+    def test_recorded_responses_are_appended_to_the_abort(self):
+        # Nothing is recorded unless the caller asked for verbose output, and an abort is
+        # the moment those answers are needed most: without them the message names a code
+        # and hides the response that explains it.
+        out = io.StringIO()
+        huawei.record_response('fan', {'error': {'code': -401}})
+        try:
+            with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+                huawei.assert_ok({'error': {'code': -401}}, 'the fans')
+            printed = out.getvalue()
+            self.assertIn('### GET fan', printed)
+            self.assertIn('-401', printed)
+        finally:
+            huawei._recorded_responses.clear()
+
+    def test_a_quiet_run_aborts_without_a_response_dump(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            huawei.assert_ok({'error': {'code': -401}}, 'the fans')
+        self.assertNotIn('### GET', out.getvalue())
+
     def test_scalar_error_aborts_without_a_type_error(self):
         # A firmware answering with a bare code rather than the documented object must end
         # in a clean UNKNOWN, not in an AttributeError inside the check.
