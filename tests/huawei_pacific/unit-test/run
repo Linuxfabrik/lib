@@ -361,8 +361,18 @@ class TestComponentStatusState(unittest.TestCase):
         self.assertEqual(huawei_pacific.get_component_status_state(' Normal '), STATE_OK)
         self.assertEqual(huawei_pacific.get_component_status_state('FAULT'), STATE_CRIT)
 
+    def test_absent_is_ok(self):
+        # An empty slot is not a fault. A chassis ships with more fan and power supply
+        # bays than are usually populated, and the ones nobody ordered a part for report
+        # this on every run.
+        self.assertEqual(huawei_pacific.get_component_status_state('absent'), STATE_OK)
+
     def test_undocumented_value_warns(self):
-        self.assertEqual(huawei_pacific.get_component_status_state('absent'), STATE_WARN)
+        # The vendor's tables for these endpoints are demonstrably incomplete, so a value
+        # none of the known ones covers is worth looking at rather than passing as OK.
+        self.assertEqual(
+            huawei_pacific.get_component_status_state('sleeping'), STATE_WARN
+        )
 
     def test_missing_value_warns(self):
         for value in (None, '', '   '):
