@@ -27,6 +27,9 @@ Public functions under test:
 - get_performance()     -> newest sample per object and indicator (POST)
 - get_node_running_status_state() -> node running status -> STATE_*
 - get_pool_status_state()         -> code -> STATE_* mapping
+- get_replication_health_status_state()  -> replication pair health -> STATE_*
+- get_replication_running_status_state() -> replication pair running status -> STATE_*
+- get_status_envelope() -> the object a response reports its outcome in
 """
 
 import contextlib
@@ -165,6 +168,128 @@ class TestGetResultCode(unittest.TestCase):
 
     def test_non_dict_input_is_none(self):
         self.assertIsNone(huawei_pacific.get_result_code(None))
+
+    def test_error_envelope(self):
+        # The batch query for replication pairs names the object `error`, although both
+        # REST Interface References document it as `result`.
+        self.assertEqual(
+            huawei_pacific.get_result_code(
+                {'data': [], 'error': {'code': 0, 'description': '0'}}
+            ),
+            0,
+        )
+
+    def test_error_envelope_reports_a_failure(self):
+        self.assertEqual(
+            huawei_pacific.get_result_code({'error': {'code': 50331651}}), 50331651
+        )
+
+    def test_result_wins_over_error(self):
+        # `result` is the documented one, so a response carrying both is read there.
+        self.assertEqual(
+            huawei_pacific.get_result_code(
+                {'result': {'code': 7}, 'error': {'code': 0}}
+            ),
+            7,
+        )
+
+    def test_empty_result_falls_through_to_error(self):
+        # A firmware that sends the key without filling it must not mask the outcome
+        # next to it.
+        self.assertEqual(
+            huawei_pacific.get_result_code({'result': None, 'error': {'code': 7}}), 7
+        )
+
+
+class TestGetStatusEnvelope(unittest.TestCase):
+    def test_object_envelope(self):
+        self.assertEqual(
+            huawei_pacific.get_status_envelope({'result': {'code': 0, 'a': 'b'}}),
+            {'code': 0, 'a': 'b'},
+        )
+
+    def test_error_envelope(self):
+        self.assertEqual(
+            huawei_pacific.get_status_envelope({'error': {'code': 1}}), {'code': 1}
+        )
+
+    def test_bare_code_has_no_envelope(self):
+        self.assertEqual(huawei_pacific.get_status_envelope({'result': 0}), {})
+
+    def test_missing_and_non_dict_have_no_envelope(self):
+        for value in ({'data': []}, None, 'nope'):
+            with self.subTest(value=value):
+                self.assertEqual(huawei_pacific.get_status_envelope(value), {})
+
+
+class TestReplicationStatusState(unittest.TestCase):
+    def test_normal_and_synchronizing_are_ok(self):
+        # An asynchronous pair is synchronizing while it transfers, which is the
+        # working state rather than a fault.
+        for code in (1, 23, '1', '23'):
+            with self.subTest(code=code):
+                self.assertEqual(
+                    huawei_pacific.get_replication_running_status_state(code), STATE_OK
+                )
+
+    def test_interrupted_and_invalid_are_critical(self):
+        for code in (34, 35):
+            with self.subTest(code=code):
+                self.assertEqual(
+                    huawei_pacific.get_replication_running_status_state(code),
+                    STATE_CRIT,
+                )
+
+    def test_split_and_to_be_recovered_warn(self):
+        for code in (26, 33):
+            with self.subTest(code=code):
+                self.assertEqual(
+                    huawei_pacific.get_replication_running_status_state(code),
+                    STATE_WARN,
+                )
+
+    def test_unmapped_code_and_missing_value_warn(self):
+        for code in (99, None, ''):
+            with self.subTest(code=code):
+                self.assertEqual(
+                    huawei_pacific.get_replication_running_status_state(code),
+                    STATE_WARN,
+                )
+
+    def test_health_normal_is_ok(self):
+        self.assertEqual(
+            huawei_pacific.get_replication_health_status_state(1), STATE_OK
+        )
+
+    def test_health_faulty_is_critical(self):
+        self.assertEqual(
+            huawei_pacific.get_replication_health_status_state('2'), STATE_CRIT
+        )
+
+    def test_health_invalid_and_unknown_warn(self):
+        for code in (3, 99, None):
+            with self.subTest(code=code):
+                self.assertEqual(
+                    huawei_pacific.get_replication_health_status_state(code),
+                    STATE_WARN,
+                )
+
+    def test_descriptions_carry_the_original_code(self):
+        self.assertEqual(
+            huawei_pacific.get_replication_running_status(23), 'synchronizing (23)'
+        )
+        self.assertEqual(
+            huawei_pacific.get_replication_health_status('2'), 'faulty (2)'
+        )
+
+    def test_unknown_codes_render_as_unknown(self):
+        for func in (
+            huawei_pacific.get_replication_running_status,
+            huawei_pacific.get_replication_health_status,
+        ):
+            with self.subTest(func=func.__name__):
+                self.assertEqual(func(99), 'Unknown')
+                self.assertEqual(func(None), 'Unknown')
 
 
 class TestStringCodeHelpers(unittest.TestCase):

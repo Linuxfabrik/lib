@@ -66,7 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_pacific.py: `get_performance()` reads CPU, memory, throughput and latency counters of the cluster and its nodes through the batch performance interface.
 * huawei_pacific.py: `get_pool_status()` translates a storage or disk pool status into readable text.
 * huawei_pacific.py: `get_quota_bytes()` reads a quota in the unit the appliance states next to it, so a consumer no longer takes a quota counted in gibibytes for the same number of bytes.
-* huawei_pacific.py: `get_result_code()` reads the status code out of either response envelope the appliance uses, so a consumer does not have to know which endpoint generation it is talking to.
+* huawei_pacific.py: `get_replication_health_status()` and `get_replication_running_status()` translate the health and running status of a remote replication pair into readable text, and their `_state()` counterparts into the state a check reports, where a pair that is synchronizing counts as working rather than as broken.
+* huawei_pacific.py: `get_result_code()` reads the status code out of whichever of the three response envelopes the appliance uses, so a consumer does not have to know which endpoint generation it is talking to.
+* huawei_pacific.py: `get_status_envelope()` returns the object a response reports its outcome in, so a consumer that wants the appliance's own error text does not have to work out which envelope it got.
 * huawei_pacific.py: `get_warranty_status()` translates how much of a cluster node's warranty is left into readable text.
 * lftest.py: `test_json()` reads one of several test fixtures of a run and returns the JSON it holds, so a consumer querying several endpoints stops copying the same fixture read and the same two error messages.
 * lftest.py: `test_text()` reads one of several test fixtures of a run and returns the text it holds, the counterpart of `test_json()` for a consumer whose data source answers in plain text.

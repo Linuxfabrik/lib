@@ -133,9 +133,9 @@ def assert_ok(result, what):
     Every consumer has to check the response envelope before it reads anything out of it,
     and the check is easy to get subtly wrong: the appliance reports success as the number
     `0` on some endpoints and as the string `'0'` on others, the older endpoint generation
-    below `/dsware/service/` sends the code bare instead of wrapped in an object, and a
-    response carrying no `result` at all turns a naive `result['result']['code']` into an
-    `AttributeError` instead of a clean UNKNOWN.
+    below `/dsware/service/` sends the code bare instead of wrapped in an object or names the
+    object `error` rather than `result`, and a response carrying no outcome at all turns a
+    naive `result['result']['code']` into an `AttributeError` instead of a clean UNKNOWN.
 
     ### Parameters
     - **result** (`dict`): A response as `get_data()` returns it.
@@ -163,9 +163,7 @@ def assert_ok(result, what):
     if code in (0, '0'):
         return
 
-    res = result.get('result') if isinstance(result, dict) else None
-    if not isinstance(res, dict):
-        res = {}
+    res = get_status_envelope(result)
     description = res.get('description') or 'no description'
     suggestion = res.get('suggestion') or ''
     base.cu(f'Failed to query {what} (code {code}): {description} {suggestion}'.strip())
@@ -1489,28 +1487,199 @@ def get_quota_bytes(value, space_unit_type):
     return code * _QUOTA_SPACE_UNITS.get(as_code(space_unit_type), 1)
 
 
+def get_replication_health_status(hs):
+    """
+    Convert a remote replication pair's health status code into a human-readable description.
+
+    ### Parameters
+    - **hs** (`int` or `str`):
+      The `HEALTHSTATUS` of a replication pair.
+      A missing or malformed value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Notes
+    - Both REST Interface References list these three codes for a replication pair, which is a
+      narrower set than the health status enumeration of the hardware objects.
+
+    ### Example
+    >>> get_replication_health_status('1')
+    'normal (1)'
+    """
+    mapping = {
+        1: 'normal (1)',
+        2: 'faulty (2)',
+        3: 'invalid (3)',
+    }
+    return mapping.get(as_code(hs), 'Unknown')
+
+
+def get_replication_health_status_state(hs):
+    """
+    Convert a replication pair's health status code into the state a check reports.
+
+    ### Parameters
+    - **hs** (`int` or `str`):
+      The `HEALTHSTATUS` of a replication pair.
+
+    ### Returns
+    - **int**:
+      `STATE_OK` for a normal pair, `STATE_CRIT` for a faulty one, `STATE_WARN` for a pair
+      whose health the appliance cannot state, and for a code the enumeration does not know.
+
+    ### Example
+    >>> get_replication_health_status_state(1) == STATE_OK
+    True
+
+    >>> get_replication_health_status_state('2') == STATE_CRIT
+    True
+    """
+    code = as_code(hs)
+    if code == 1:
+        return STATE_OK
+    if code == 2:
+        return STATE_CRIT
+    return STATE_WARN
+
+
+def get_replication_running_status(rs):
+    """
+    Convert a remote replication pair's running status code into a human-readable description.
+
+    ### Parameters
+    - **rs** (`int` or `str`):
+      The `RUNNINGSTATUS` of a replication pair.
+      A missing or malformed value renders as `'Unknown'`.
+
+    ### Returns
+    - **str**:
+      A human-readable description including the original code in brackets.
+      Returns `'Unknown'` if the code is not recognized.
+
+    ### Example
+    >>> get_replication_running_status(23)
+    'synchronizing (23)'
+    """
+    mapping = {
+        1: 'normal (1)',
+        23: 'synchronizing (23)',
+        26: 'split (26)',
+        33: 'to be recovered (33)',
+        34: 'interrupted (34)',
+        35: 'invalid (35)',
+    }
+    return mapping.get(as_code(rs), 'Unknown')
+
+
+def get_replication_running_status_state(rs):
+    """
+    Convert a replication pair's running status code into the state a check reports.
+
+    ### Parameters
+    - **rs** (`int` or `str`):
+      The `RUNNINGSTATUS` of a replication pair.
+
+    ### Returns
+    - **int**:
+      `STATE_OK` for a pair that is mirroring, `STATE_CRIT` for one that has stopped without
+      being told to, `STATE_WARN` for the rest, including a code the enumeration does not know
+      and a missing value.
+
+    ### Notes
+    - Synchronizing (`23`) is the working state of an asynchronous pair while it transfers, not
+      a fault, so it reports OK alongside normal (`1`).
+    - Interrupted (`34`) and invalid (`35`) are the codes of a pair that is no longer protecting
+      anything and did not stop on request.
+    - Split (`26`) and to be recovered (`33`) warn: the first is a pair an administrator
+      detached, the second one waiting to be resumed. Neither is mirroring, and neither is a
+      surprise worth waking somebody for.
+
+    ### Example
+    >>> get_replication_running_status_state(1) == STATE_OK
+    True
+
+    >>> get_replication_running_status_state('34') == STATE_CRIT
+    True
+    """
+    code = as_code(rs)
+    if code in (1, 23):
+        return STATE_OK
+    if code in (34, 35):
+        return STATE_CRIT
+    return STATE_WARN
+
+
+def get_status_envelope(result):
+    """
+    Return the object a Huawei OceanStor Pacific response reports its outcome in.
+
+    Split out of `get_result_code()` so that a consumer which wants the appliance's own
+    description or suggestion does not have to work out which of the envelopes it got.
+
+    ### Parameters
+    - **result** (`dict`): A response as returned by `get_data()`.
+
+    ### Returns
+    - **dict**: The envelope object, or an empty dict where the response carries none or
+      reports its code as a bare value rather than in an object.
+
+    ### Example
+    >>> get_status_envelope({'result': {'code': 0, 'description': 'ok'}})
+    {'code': 0, 'description': 'ok'}
+    >>> get_status_envelope({'result': 0})
+    {}
+    """
+    if not isinstance(result, dict):
+        return {}
+    for key in ('result', 'error'):
+        envelope = result.get(key)
+        if isinstance(envelope, dict):
+            return envelope
+    return {}
+
+
 def get_result_code(result):
     """
     Read the status code out of a Huawei OceanStor Pacific response, whichever envelope it uses.
 
-    The API answers in two shapes. The `/api/v2/` endpoints wrap the code in an object
-    (`{'result': {'code': 0, 'description': ...}}`), while the older `/dsware/service/` and
-    `/dfv/service/` endpoints report it as a bare integer (`{'result': 0, 'nodeInfo': [...]}`).
-    A consumer that has to work with both should not have to know which one it is talking to.
+    The API answers in three shapes. The `/api/v2/` endpoints wrap the code in an object
+    (`{'result': {'code': 0, 'description': ...}}`), the older `/dsware/service/` and
+    `/dfv/service/` endpoints report it as a bare integer (`{'result': 0, 'nodeInfo': [...]}`),
+    and some of those older endpoints name the same object `error` instead
+    (`{'data': [...], 'error': {'code': 0, 'description': '0'}}`). A consumer that has to work
+    with all of them should not have to know which one it is talking to.
 
     ### Parameters
     - **result** (`dict`): A response as returned by `get_data()`.
 
     ### Returns
     - **int**, **str** or **None**:
-      The status code as the appliance reported it (`0` means success in both shapes), or
-      `None` if the response carries no `result` at all.
+      The status code as the appliance reported it (`0` means success in every shape), or
+      `None` if the response carries no outcome at all.
+
+    ### Notes
+    - `result` wins over `error` where a response carries both. It is the one the REST
+      Interface References document, and `error` is what some firmware sends in its place.
+    - A response whose `result` is present but empty (`None`) falls through to `error`, so a
+      firmware that sends the key without filling it does not mask the outcome next to it.
 
     ### Example
     >>> get_result_code({'result': {'code': 0}, 'data': []})
     0
     >>> get_result_code({'result': 0, 'nodeInfo': []})
     0
+    >>> get_result_code({'data': [], 'error': {'code': 0, 'description': '0'}})
+    0
     """
-    res = result.get('result') if isinstance(result, dict) else None
-    return res.get('code') if isinstance(res, dict) else res
+    if not isinstance(result, dict):
+        return None
+    res = result.get('result')
+    if isinstance(res, dict):
+        return res.get('code')
+    if res is not None:
+        return res
+    error = result.get('error')
+    return error.get('code') if isinstance(error, dict) else error
