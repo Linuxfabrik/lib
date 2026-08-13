@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080501'
+__version__ = '2026081201'
 
 import base64
 import json
@@ -356,6 +356,160 @@ def _build_timing_transport(ssl_context, http1, http2, trust_env):
         network_backend=backend,
     )
     return transport, backend
+
+
+def _check_github_name(value, name):
+    """Reject anything that is not a GitHub owner or repository name.
+
+    Owner and repository names end up in the path of the API request. Upstream limits
+    them to letters, digits and `.`, `_`, `-`, so anything else is either a typo or an
+    attempt to reach a different endpoint through the path. `..` is refused separately
+    because the regex alone would let it pass and it is exactly what a path traversal
+    needs.
+
+    Returns a `(success, result)` tuple suitable for `lib.base.coe()`.
+    """
+    if (
+        not isinstance(value, str)
+        or '..' in value
+        or not re.match(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$', value)
+    ):
+        return False, f'Refusing {name} that is not a GitHub name: {value}'
+    return True, value
+
+
+def _check_github_ref(value, name):
+    """Reject anything that is not a usable git ref (branch or tag).
+
+    Same reasoning as `_check_github_name()`, except that a ref legitimately carries
+    slashes (`feature/some-branch`), so those stay allowed while `..`, query strings and
+    everything else that would change the shape of the request do not.
+
+    Returns a `(success, result)` tuple suitable for `lib.base.coe()`.
+    """
+    if (
+        not isinstance(value, str)
+        or '..' in value
+        or not re.match(r'^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$', value)
+    ):
+        return False, f'Refusing {name} that is not a git ref: {value}'
+    return True, value
+
+
+def _fetch_github_json(url, insecure, no_proxy, timeout, header):
+    """Fetch a GitHub API endpoint, telling "nothing there" apart from "could not ask".
+
+    GitHub answers 404 both for a repository that does not exist and for one that has no
+    release yet. A consumer cannot tell those apart and does not need to, because both
+    mean there is nothing here to compare against, so that case comes back as `(True,
+    None)`. A request that never got an answer comes back as `(False, errormessage)` and
+    stays distinguishable. The two errors an administrator can act on get a message that
+    names the remedy: 401 is a token GitHub does not accept, 403 and 429 are the
+    exhausted rate limit.
+
+    Returns a `(success, result)` tuple.
+    """
+    success, result = fetch_json(
+        url,
+        extended=True,
+        header=header,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        response_on_error=True,
+        timeout=timeout,
+    )
+    status_code = result.get('status_code') if isinstance(result, dict) else None
+
+    if status_code == 404:
+        return True, None
+    if status_code == 401:
+        return False, (
+            'GitHub rejected the API token. Check that it is still valid and has not'
+            ' expired.'
+        )
+    if status_code in (403, 429):
+        return False, (
+            f'GitHub refused the request with HTTP {status_code}. Without a token'
+            f' the API allows 60 requests per hour and IP address; supply one or'
+            f' ask less often.'
+        )
+    if not success:
+        if isinstance(result, str):
+            return False, result
+        return False, f'GitHub answered with HTTP {status_code}.'
+    if not isinstance(result, dict):
+        return False, 'GitHub answered with an unreadable response.'
+
+    return True, result.get('response_json')
+
+
+def compare_github_refs(
+    user,
+    repo,
+    base,
+    head,
+    insecure=False,
+    no_proxy=False,
+    timeout=8,
+    header=None,
+):
+    """
+    Count how far a GitHub repository's `head` ref is ahead of its `base` ref.
+
+    Answers "how many commits has this branch gained since the release I am running",
+    which is what a consumer needs to say something concrete about an installation
+    tracking a development branch instead of a release.
+
+    Note that GitHub also reports a non-zero count when the two refs have diverged, so
+    the number says how many commits are on `head` and not on `base` - not that `base`
+    is simply an ancestor of `head`.
+
+    ### Parameters
+    - **user** (`str`): The GitHub username or organization name.
+    - **repo** (`str`): The GitHub repository name.
+    - **base** (`str`): The ref to compare from, typically the installed tag.
+    - **head** (`str`): The ref to compare to, typically a branch such as `main`.
+    - **insecure**, **no_proxy**, **timeout**, **header**: See
+        `get_latest_version_from_github()`.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the comparison was successfully fetched, False
+        otherwise.
+      - **result** (`int` | `bool`):
+        - The number of commits `head` carries that `base` does not.
+        - `False` if GitHub did not answer with a comparison, for example because
+          one of the two refs does not exist.
+
+    ### Example
+    >>> compare_github_refs('Linuxfabrik', 'monitoring-plugins', 'v1.2.3', 'main')
+    (True, 38)
+    """
+    success, result = _check_github_name(user, 'GitHub user')
+    if not success:
+        return success, result
+    success, result = _check_github_name(repo, 'GitHub repository')
+    if not success:
+        return success, result
+    success, result = _check_github_ref(base, 'GitHub base ref')
+    if not success:
+        return success, result
+    success, result = _check_github_ref(head, 'GitHub head ref')
+    if not success:
+        return success, result
+
+    url = f'https://api.github.com/repos/{user}/{repo}/compare/{base}...{head}'
+    success, result = _fetch_github_json(url, insecure, no_proxy, timeout, header)
+
+    if not success:
+        return success, result
+    if not isinstance(result, dict) or 'ahead_by' not in result:
+        return True, False
+
+    try:
+        return True, int(result['ahead_by'])
+    except (TypeError, ValueError):
+        return True, False
 
 
 def fetch(
@@ -751,18 +905,84 @@ def fetch_json(
         attempt += 1
 
 
-def get_latest_version_from_github(user, repo, key='tag_name'):
+def get_latest_tag_from_github(
+    user,
+    repo,
+    insecure=False,
+    no_proxy=False,
+    timeout=8,
+    header=None,
+):
+    """
+    Get the newest tag from a GitHub repository.
+
+    The fallback for repositories that tag their versions but never publish a GitHub
+    release, where `get_latest_version_from_github()` answers with HTTP 404. GitHub
+    returns the tags newest first, so the first entry is the newest one.
+
+    ### Parameters
+    See `get_latest_version_from_github()`.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the tag list was successfully fetched,
+        False otherwise.
+      - **result** (`str` | `bool`):
+        - The name of the newest tag if successful.
+        - `False` if the repository has no tags at all.
+
+    ### Example
+    >>> get_latest_tag_from_github('Icinga', 'icingaweb2-theme-company')
+    (True, 'v1.0.0')
+    """
+    success, result = _check_github_name(user, 'GitHub user')
+    if not success:
+        return success, result
+    success, result = _check_github_name(repo, 'GitHub repository')
+    if not success:
+        return success, result
+
+    url = f'https://api.github.com/repos/{user}/{repo}/tags'
+    success, result = _fetch_github_json(url, insecure, no_proxy, timeout, header)
+
+    if not success:
+        return success, result
+    if not isinstance(result, list) or not result:
+        return True, False
+    if not isinstance(result[0], dict):
+        return True, False
+
+    return True, result[0].get('name', False)
+
+
+def get_latest_version_from_github(
+    user,
+    repo,
+    key='tag_name',
+    insecure=False,
+    no_proxy=False,
+    timeout=8,
+    header=None,
+):
     """
     Get the newest release tag from a GitHub repository.
 
-    This function fetches the latest release information from the GitHub API and retrieves
-    the release tag.
+    This function fetches the latest release information from the GitHub API and
+    retrieves the release tag. A repository that publishes tags but no releases answers
+    with HTTP 404 here; use `get_latest_tag_from_github()` as the fallback for those.
 
     ### Parameters
     - **user** (`str`): The GitHub username or organization name.
     - **repo** (`str`): The GitHub repository name.
     - **key** (`str`, optional): The key to retrieve from the JSON response (default is
         `'tag_name'`).
+    - **insecure** (`bool`, optional): Allow an untrusted certificate. Defaults to
+      False.
+    - **no_proxy** (`bool`, optional): Ignore the environment's proxy settings.
+      Defaults to False.
+    - **timeout** (`int`, optional): Network timeout in seconds. Defaults to 8.
+    - **header** (`dict`, optional): Additional request headers, for example the
+      one built by `github_token_header()`.
 
     ### Returns
     - **tuple**:
@@ -776,8 +996,15 @@ def get_latest_version_from_github(user, repo, key='tag_name'):
     >>> get_latest_version_from_github('Linuxfabrik', 'monitoring-plugins')
     (True, 'v1.2.3')
     """
+    success, result = _check_github_name(user, 'GitHub user')
+    if not success:
+        return success, result
+    success, result = _check_github_name(repo, 'GitHub repository')
+    if not success:
+        return success, result
+
     url = f'https://api.github.com/repos/{user}/{repo}/releases/latest'
-    success, result = fetch_json(url)
+    success, result = _fetch_github_json(url, insecure, no_proxy, timeout, header)
 
     if not success:
         return success, result
@@ -785,6 +1012,30 @@ def get_latest_version_from_github(user, repo, key='tag_name'):
         return True, False
 
     return True, result.get(key, False)
+
+
+def github_token_header(token):
+    """
+    Build the `Authorization` header for a GitHub API token.
+
+    Anonymous GitHub API access is rate limited to 60 requests per hour and IP address;
+    a token raises that to 5000. Pass the result as the `header` of the
+    `*_from_github()` functions. Returns an empty dict for an empty or missing token, so
+    a caller can hand its optional token straight through without a branch of its own.
+
+    ### Parameters
+    - **token** (`str` | `None`): The API token.
+
+    ### Returns
+    - **dict**: `{'Authorization': 'Bearer <token>'}`, or `{}` when there is no token.
+
+    ### Example
+    >>> github_token_header('linuxfabrik')
+    {'Authorization': 'Bearer linuxfabrik'}
+    """
+    if not token:
+        return {}
+    return {'Authorization': f'Bearer {token}'}
 
 
 def split_basic_auth(url):

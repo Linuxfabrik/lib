@@ -929,7 +929,27 @@ class TestFetchJson(unittest.TestCase):
 
 
 # -----------------------------------------------------------------------------
-# get_latest_version_from_github()
+# github_token_header()
+# -----------------------------------------------------------------------------
+
+
+class TestGithubTokenHeader(unittest.TestCase):
+    def test_builds_bearer_header(self):
+        self.assertEqual(
+            url.github_token_header('linuxfabrik'),
+            {'Authorization': 'Bearer linuxfabrik'},
+        )
+
+    def test_no_token_yields_no_header(self):
+        # A caller hands its optional token straight through, so both spellings of
+        # "there is none" have to come back as something fetch() can be given.
+        self.assertEqual(url.github_token_header(None), {})
+        self.assertEqual(url.github_token_header(''), {})
+
+
+# -----------------------------------------------------------------------------
+# get_latest_version_from_github(), get_latest_tag_from_github(),
+# compare_github_refs()
 # -----------------------------------------------------------------------------
 
 # Realistic trimmed GitHub "latest release" API payload.
@@ -942,13 +962,32 @@ GITHUB_RELEASE_FIXTURE = {
     'published_at': '2026-01-15T12:00:00Z',
 }
 
+# Realistic trimmed GitHub "tags" API payload. GitHub returns them newest first.
+GITHUB_TAGS_FIXTURE = [
+    {'name': 'v1.0.0', 'commit': {'sha': 'a' * 40}},
+    {'name': 'v0.9.0', 'commit': {'sha': 'b' * 40}},
+]
+
+
+def github_answer(status_code, payload=None):
+    """Build what `fetch_json(extended=True, response_on_error=True)` hands back.
+
+    The GitHub helpers ask for the extended response so they can tell a repository
+    without a release (404) apart from a request that never got an answer, so a test
+    that mocks `fetch_json` has to hand back that shape rather than the bare document.
+    """
+    answer = {'status_code': status_code, 'response': '', 'response_header': {}}
+    if payload is not None:
+        answer['response_json'] = payload
+    return (200 <= status_code < 300, answer)
+
 
 class TestGetLatestVersionFromGithub(unittest.TestCase):
     def test_returns_tag_name_by_default(self):
         with mock.patch.object(
             url,
             'fetch_json',
-            return_value=(True, dict(GITHUB_RELEASE_FIXTURE)),
+            return_value=github_answer(200, dict(GITHUB_RELEASE_FIXTURE)),
         ) as m:
             ok, res = url.get_latest_version_from_github(
                 'Linuxfabrik', 'monitoring-plugins'
@@ -961,12 +1000,30 @@ class TestGetLatestVersionFromGithub(unittest.TestCase):
             called_url,
             'https://api.github.com/repos/Linuxfabrik/monitoring-plugins/releases/latest',
         )
+        # The 404 handling only works when the response metadata comes back too.
+        self.assertTrue(m.call_args[1]['extended'])
+        self.assertTrue(m.call_args[1]['response_on_error'])
+
+    def test_forwards_connection_settings(self):
+        header = {'Authorization': 'Bearer linuxfabrik'}
+        with mock.patch.object(
+            url,
+            'fetch_json',
+            return_value=github_answer(200, dict(GITHUB_RELEASE_FIXTURE)),
+        ) as m:
+            url.get_latest_version_from_github(
+                'u', 'r', insecure=True, no_proxy=True, timeout=3, header=header
+            )
+        self.assertTrue(m.call_args[1]['insecure'])
+        self.assertTrue(m.call_args[1]['no_proxy'])
+        self.assertEqual(m.call_args[1]['timeout'], 3)
+        self.assertEqual(m.call_args[1]['header'], header)
 
     def test_custom_key(self):
         with mock.patch.object(
             url,
             'fetch_json',
-            return_value=(True, dict(GITHUB_RELEASE_FIXTURE)),
+            return_value=github_answer(200, dict(GITHUB_RELEASE_FIXTURE)),
         ):
             ok, res = url.get_latest_version_from_github('u', 'r', key='name')
         self.assertTrue(ok)
@@ -976,29 +1033,183 @@ class TestGetLatestVersionFromGithub(unittest.TestCase):
         with mock.patch.object(
             url,
             'fetch_json',
-            return_value=(True, dict(GITHUB_RELEASE_FIXTURE)),
+            return_value=github_answer(200, dict(GITHUB_RELEASE_FIXTURE)),
         ):
             ok, res = url.get_latest_version_from_github('u', 'r', key='does_not_exist')
         self.assertTrue(ok)
         self.assertFalse(res)
 
     def test_empty_dict_returns_false(self):
-        with mock.patch.object(url, 'fetch_json', return_value=(True, {})):
+        with mock.patch.object(
+            url, 'fetch_json', return_value=github_answer(200, {})
+        ):
             ok, res = url.get_latest_version_from_github('u', 'r')
         self.assertTrue(ok)
         self.assertFalse(res)
 
     def test_non_dict_payload_returns_false(self):
-        with mock.patch.object(url, 'fetch_json', return_value=(True, ['unexpected'])):
+        with mock.patch.object(
+            url, 'fetch_json', return_value=github_answer(200, ['unexpected'])
+        ):
             ok, res = url.get_latest_version_from_github('u', 'r')
         self.assertTrue(ok)
         self.assertFalse(res)
+
+    def test_no_release_is_not_an_error(self):
+        # A repository that tags its versions but publishes no release answers 404
+        # here. That is "nothing to compare against", not a failed request, so the
+        # caller can fall back on the tag list.
+        with mock.patch.object(url, 'fetch_json', return_value=github_answer(404)):
+            ok, res = url.get_latest_version_from_github('u', 'r')
+        self.assertTrue(ok)
+        self.assertFalse(res)
+
+    def test_rejected_token_names_the_token(self):
+        with mock.patch.object(url, 'fetch_json', return_value=github_answer(401)):
+            ok, res = url.get_latest_version_from_github('u', 'r')
+        self.assertFalse(ok)
+        self.assertIn('token', res)
+
+    def test_exhausted_rate_limit_names_the_limit(self):
+        for status_code in (403, 429):
+            with mock.patch.object(
+                url, 'fetch_json', return_value=github_answer(status_code)
+            ):
+                ok, res = url.get_latest_version_from_github('u', 'r')
+            self.assertFalse(ok)
+            self.assertIn('60 requests per hour', res)
 
     def test_fetch_failure_is_propagated(self):
         with mock.patch.object(url, 'fetch_json', return_value=(False, 'network down')):
             ok, res = url.get_latest_version_from_github('u', 'r')
         self.assertFalse(ok)
         self.assertEqual(res, 'network down')
+
+    def test_refuses_a_name_that_would_change_the_endpoint(self):
+        for user, repo in (('../../evil', 'r'), ('u', '../../evil'), ('-u', 'r')):
+            with mock.patch.object(url, 'fetch_json') as m:
+                ok, res = url.get_latest_version_from_github(user, repo)
+            self.assertFalse(ok)
+            self.assertIn('Refusing', res)
+            m.assert_not_called()
+
+
+class TestGetLatestTagFromGithub(unittest.TestCase):
+    def test_returns_the_newest_tag(self):
+        with mock.patch.object(
+            url,
+            'fetch_json',
+            return_value=github_answer(200, list(GITHUB_TAGS_FIXTURE)),
+        ) as m:
+            ok, res = url.get_latest_tag_from_github('Icinga', 'icingaweb2-theme-company')
+        self.assertTrue(ok)
+        self.assertEqual(res, 'v1.0.0')
+        self.assertEqual(
+            m.call_args[0][0],
+            'https://api.github.com/repos/Icinga/icingaweb2-theme-company/tags',
+        )
+
+    def test_forwards_connection_settings(self):
+        header = {'Authorization': 'Bearer linuxfabrik'}
+        with mock.patch.object(
+            url, 'fetch_json', return_value=github_answer(200, [])
+        ) as m:
+            url.get_latest_tag_from_github(
+                'u', 'r', insecure=True, no_proxy=True, timeout=3, header=header
+            )
+        self.assertTrue(m.call_args[1]['insecure'])
+        self.assertTrue(m.call_args[1]['no_proxy'])
+        self.assertEqual(m.call_args[1]['timeout'], 3)
+        self.assertEqual(m.call_args[1]['header'], header)
+
+    def test_repository_without_tags_returns_false(self):
+        with mock.patch.object(url, 'fetch_json', return_value=github_answer(200, [])):
+            ok, res = url.get_latest_tag_from_github('u', 'r')
+        self.assertTrue(ok)
+        self.assertFalse(res)
+
+    def test_unknown_repository_returns_false(self):
+        with mock.patch.object(url, 'fetch_json', return_value=github_answer(404)):
+            ok, res = url.get_latest_tag_from_github('u', 'r')
+        self.assertTrue(ok)
+        self.assertFalse(res)
+
+    def test_unexpected_payload_returns_false(self):
+        for payload in ({'not': 'a list'}, ['not a dict']):
+            with mock.patch.object(
+                url, 'fetch_json', return_value=github_answer(200, payload)
+            ):
+                ok, res = url.get_latest_tag_from_github('u', 'r')
+            self.assertTrue(ok)
+            self.assertFalse(res)
+
+
+class TestCompareGithubRefs(unittest.TestCase):
+    def test_returns_commits_ahead(self):
+        payload = {'status': 'ahead', 'ahead_by': 38, 'behind_by': 0}
+        with mock.patch.object(
+            url, 'fetch_json', return_value=github_answer(200, payload)
+        ) as m:
+            ok, res = url.compare_github_refs('u', 'r', 'v1.2.3', 'main')
+        self.assertTrue(ok)
+        self.assertEqual(res, 38)
+        self.assertEqual(
+            m.call_args[0][0],
+            'https://api.github.com/repos/u/r/compare/v1.2.3...main',
+        )
+
+    def test_allows_a_ref_with_a_slash(self):
+        payload = {'ahead_by': 1}
+        with mock.patch.object(
+            url, 'fetch_json', return_value=github_answer(200, payload)
+        ) as m:
+            ok, res = url.compare_github_refs('u', 'r', 'v1.2.3', 'feature/some-branch')
+        self.assertTrue(ok)
+        self.assertEqual(res, 1)
+        self.assertTrue(m.call_args[0][0].endswith('v1.2.3...feature/some-branch'))
+
+    def test_forwards_connection_settings(self):
+        header = {'Authorization': 'Bearer linuxfabrik'}
+        with mock.patch.object(
+            url, 'fetch_json', return_value=github_answer(200, {'ahead_by': 1})
+        ) as m:
+            url.compare_github_refs(
+                'u',
+                'r',
+                'v1.2.3',
+                'main',
+                insecure=True,
+                no_proxy=True,
+                timeout=3,
+                header=header,
+            )
+        self.assertTrue(m.call_args[1]['insecure'])
+        self.assertTrue(m.call_args[1]['no_proxy'])
+        self.assertEqual(m.call_args[1]['timeout'], 3)
+        self.assertEqual(m.call_args[1]['header'], header)
+
+    def test_unknown_ref_returns_false(self):
+        with mock.patch.object(url, 'fetch_json', return_value=github_answer(404)):
+            ok, res = url.compare_github_refs('u', 'r', 'v1.2.3', 'main')
+        self.assertTrue(ok)
+        self.assertFalse(res)
+
+    def test_missing_or_unreadable_count_returns_false(self):
+        for payload in ({'status': 'identical'}, {'ahead_by': 'many'}):
+            with mock.patch.object(
+                url, 'fetch_json', return_value=github_answer(200, payload)
+            ):
+                ok, res = url.compare_github_refs('u', 'r', 'v1.2.3', 'main')
+            self.assertTrue(ok)
+            self.assertFalse(res)
+
+    def test_refuses_a_ref_that_would_change_the_endpoint(self):
+        for base, head in (('../../evil', 'main'), ('v1.2.3', 'main?x=1')):
+            with mock.patch.object(url, 'fetch_json') as m:
+                ok, res = url.compare_github_refs('u', 'r', base, head)
+            self.assertFalse(ok)
+            self.assertIn('Refusing', res)
+            m.assert_not_called()
 
 
 # -----------------------------------------------------------------------------

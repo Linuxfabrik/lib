@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
 * disk.py: `read_file()` accepts a `max_bytes`, so a consumer interested only in the head of a file stops reading the whole of it.
 * disk.py: `get_fingerprint()` accepts an `algorithm`, so a digest can be taken in whatever a foreign checksum list published it in, instead of only in SHA-256.
+* disk.py: `get_package()` names the package a path belongs to, which tells software the distribution installed apart from software an administrator put there by hand. A path that a package manager would read as one of its own options is refused, so the answer cannot be the tool's version string instead of a package name.
 * feedparser.py: `fetch_soup()` and `parse_soup()` hand back the feed's own markup, and `retries` repeats a download that came back as something other than a feed.
 * txt.py: `shorten()` cuts a long value down for display, out of the middle, so one oversized entry no longer widens a whole table column and two values differing only at the end stay distinguishable.
 * txt.py: `strip_ansi()` removes the escape sequences a command line tool colorizes its output with, which many emit whether or not anything is listening on a terminal, so a consumer parsing that output is no longer thrown off by them.
@@ -76,6 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * shell.py: `shell_exec()` accepts a `run_as_session`, which runs a command as another user without exporting that user's session runtime directory. A sudo rule that spells out the permitted command with its exact arguments only matches that plain form.
 * shell.py: an `env` entry set to None removes that variable from the command's environment instead of setting it, so a consumer can run a command without a variable it inherited itself.
 * txt.py: `unescape()` resolves the HTML character references some sources put into plain text, so a hardware model reads as `Expansion Module(24 Cores)` instead of `Expansion Module&#40;24 Cores&#41;`.
+* url.py: `compare_github_refs()` counts how many commits a branch carries that a given tag does not, so a consumer can say how far an installation following a development branch has fallen behind instead of only whether a newer release exists.
+* url.py: `get_latest_tag_from_github()` reads the newest tag of a repository, the fallback for projects that tag their versions but never publish a GitHub release.
+* url.py: `get_latest_version_from_github()` accepts `insecure`, `no_proxy`, `timeout` and `header`, so a consumer reaches GitHub through its own proxy and timeout settings and can authenticate. `github_token_header()` builds that header and raises the limit of 60 requests per hour and IP address to 5000.
 * wordpress.py: new module reading a local WordPress installation from the filesystem: `get_version()`, `get_plugins()`, `get_themes()`, `get_site_url()`, `is_installation()` and `get_header_value()`, without a database connection, an HTTP request or `wp-cli`.
 * wordpress.py: `get_locale()` reads which language a core was built for, which is what decides the file list wordpress.org holds it to, and `get_plugin_slugs()` maps a plugin's directory to the slug wordpress.org knows it by, which is not the same for a single-file plugin such as `hello.php`.
 
@@ -94,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * args.py: the shared help text for `--unreachable-severity` describes any unreachable online source rather than only an end-of-life one, so every consumer offering the parameter can use the same wording.
 * lftest.py: `assert-retc` is optional in a testcase, like every other assertion already was. A test can now cover the output a fixture controls without pinning a state that depends on something else, such as an end-of-life date that turns OK into WARNING as the calendar advances.
 * nextcloud.py: `occ` is called without `sudo` when the check already runs as the owner of `config/config.php`. No sudoers entry is needed in that case, and the checks work inside the official Nextcloud container, which ships without `sudo`.
+* url.py: a GitHub repository that has published no release is reported as having none, instead of as a request that failed. A rejected token and an exhausted rate limit are named as such, so the message says what to do about them. An owner, repository or ref that could redirect the request to another endpoint is refused.
 
 ### Fixed
 

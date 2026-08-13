@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080901'
+__version__ = '2026081301'
 
 import csv
 import glob as _glob
@@ -552,6 +552,63 @@ def glob(pattern, recursive=True):
     []
     """
     return sorted(_glob.glob(pattern, recursive=recursive))
+
+
+def get_package(path):
+    """
+    Return the package a path belongs to, or the empty string when none does.
+
+    Tells software the distribution installed apart from software an administrator
+    put there by hand, which is what decides whether a version is the package
+    manager's business or the operator's.
+
+    Asks `rpm` or `dpkg`, whichever the host has. Both answer an unowned path with
+    a non-zero return code, so "no package" and "the lookup failed" are the same
+    answer here on purpose: neither means the path belongs to a package. A host
+    with neither package manager also yields the empty string.
+
+    ### Parameters
+    - **path** (`str`): The path to ask about, for example
+      `/usr/share/icingaweb2/modules/director`.
+
+    ### Returns
+    - **str**: The package name, or the empty string.
+
+    ### Notes
+    - The path is refused when a package manager could read it as one of its own
+      options. `rpm --query --file --version` prints the rpm version and succeeds,
+      so an unguarded lookup on a path named that way would report the tool's
+      version string as a package name. Verified against rpm 6.0.2 on Fedora 43.
+
+    ### Example
+    >>> get_package('/usr/share/icingaweb2/modules/director')
+    'icinga-director-php-1.11.9-1.fc43.noarch'
+
+    >>> get_package('/usr/share/icingaweb2/modules/reporting')
+    ''
+    """
+    if not path:
+        return ''
+    success, _ = shell.safe_cli_value(path, 'path')
+    if not success:
+        return ''
+
+    if shell.which('rpm'):
+        cmd = ['rpm', '--query', '--file', path]
+    elif shell.which('dpkg'):
+        cmd = ['dpkg', '--search', path]
+    else:
+        return ''
+
+    success, result = shell.shell_exec(cmd)
+    if not success:
+        return ''
+    stdout, _stderr, retc = result
+    if retc != 0 or not stdout.strip():
+        return ''
+
+    # rpm answers with the package name alone, dpkg with "package: /path".
+    return stdout.splitlines()[0].split(':')[0].strip()
 
 
 def get_real_disks():
