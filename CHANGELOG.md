@@ -164,6 +164,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * nextcloud.py: A missing or unreadable `config/config.php` is reported with the path, instead of the check trying to run `occ` as a user that does not exist.
 * nextcloud.py: An `occ` call that cannot be started at all, most commonly because `sudo` is not installed, is reported as an error. It used to end the check with a traceback.
 * nextcloud.py: Nextcloud's own startup warnings, which it writes to standard output, are kept out of the evaluated result. A host missing the PHP process control extension used to fail every Nextcloud check with an unreadable parsing error.
+* time.py: An ISO 8601 timestamp with nanosecond precision, the form every Go-based tool writes, is parsed on RHEL 8 and RHEL 9 instead of being rejected. Consumers had to cut such a value down to whole seconds, which threw away its time zone offset and moved the result by the offset of the host.
 * wordpress.py: A plugin shipping more than one plugin file reports the version of its main file.
 * wordpress.py: A plugin whose whole header sits behind the opening PHP tag on the first line is found, the way WordPress finds it. Such a plugin used to be missing from the inventory entirely.
 * wordpress.py: A site URL pinned with `const` instead of `define()` is read.

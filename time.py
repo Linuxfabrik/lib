@@ -11,7 +11,7 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070101'
+__version__ = '2026081301'
 
 import datetime
 import re
@@ -227,6 +227,38 @@ def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
     return datetime.datetime.strptime(timestr, pattern)
 
 
+# Matches the fractional seconds of an ISO 8601 / RFC 3339 timestamp. A date or
+# time never carries another dot, so the first match is the fraction.
+_ISO8601_FRACTION_REGEX = re.compile(r'\.(\d+)')
+
+
+def _normalize_iso8601_fraction(timestr):
+    """
+    Rewrites the fractional seconds of an ISO 8601 string to exactly six digits.
+
+    `datetime.fromisoformat()` accepts only three or six fractional digits before Python 3.11,
+    while tools written in Go emit RFC 3339 with nanosecond precision and drop trailing zeros
+    (`time.RFC3339Nano`). Both ends of that range therefore fail on the interpreters shipped with
+    RHEL 9 and RHEL 8: `.076976146` has too many digits, `.07` too few. Padding and trimming to
+    six digits keeps the value within a microsecond and makes the string parse everywhere.
+
+    ### Parameters
+    - **timestr** (`str`): An ISO 8601 / RFC 3339 timestamp, with or without fractional seconds.
+
+    ### Returns
+    - **str**: The timestamp with its fractional seconds normalized, unchanged if it carries none.
+
+    ### Notes
+    - Verified against Python 3.9, 3.10, 3.11 and 3.14: only 3.11 and newer accept the raw
+      nanosecond form.
+    """
+    return _ISO8601_FRACTION_REGEX.sub(
+        lambda match: '.' + match.group(1)[:6].ljust(6, '0'),
+        timestr,
+        count=1,
+    )
+
+
 def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
     """
     Converts a time string to a UNIX epoch timestamp.
@@ -240,8 +272,10 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
       timestamps (date, `T`, time, and a `Z` or `+hh:mm` offset) and date-only values, but rejects
       other valid ISO 8601 forms such as ordinal dates (`2024-015`). Which further layouts are
       accepted depends on the Python version, because `fromisoformat()` was narrow before 3.11 and
-      broad from 3.11 on; RFC 3339 works consistently on 3.7+. A value that carries an offset (or
-      `Z`) keeps it; a value without one is treated per `tzinfo` (local time if `tzinfo` is None).
+      broad from 3.11 on; RFC 3339 works consistently on 3.7+, including the nanosecond precision
+      of Go-based tools, whose fractional seconds are normalized to microseconds first. A value
+      that carries an offset (or `Z`) keeps it; a value without one is treated per `tzinfo`
+      (local time if `tzinfo` is None).
     - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.
       If provided, the parsed datetime is set to this timezone.
       If None, the time is assumed to be local time.
@@ -267,11 +301,12 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
     """
     if pattern == 'iso8601':
         # fromisoformat() accepts a trailing 'Z' only from Python 3.11, so
-        # normalize it first.
+        # normalize it first. Same for fractional seconds that are not exactly
+        # three or six digits long.
         iso = timestr.strip()
         if iso.endswith('Z'):
             iso = iso[:-1] + '+00:00'
-        dt = datetime.datetime.fromisoformat(iso)
+        dt = datetime.datetime.fromisoformat(_normalize_iso8601_fraction(iso))
         # A value that already carries an offset keeps it; a naive value is
         # tagged with `tzinfo` when one is given.
         if dt.tzinfo is None and tzinfo is not None:
