@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 tbd
 
 
+## [v7.1.0] - 2026-08-14
+
+### Added
+
+* base.py: `cu()` takes a `traceback`, so a consumer reporting a situation it expects, the socket of a service that is not installed for example, prints its sentence without a Python stack trace below it.
+
+### Fixed
+
+* base.py: a table cell holding something that reads like an HTML tag, `<unknown>` for example, keeps the table in shape instead of shifting its row against all the others.
+
+
 ## [v7.0.0] - 2026-08-14
 
 **Highlights:** The SQLite cache layer stops discarding a database over transient problems such as a lock held by a parallel check, so checks sharing a cache file no longer wipe each other's data. Huawei Dorado and Pacific sessions are closed on the appliance instead of piling up until its session pool is full and it refuses every login, including an administrator's login to the management GUI. Distribution detection is corrected for Alpine, Amazon Linux and the whole SUSE family, which were all reported as Debian. Several function renames and one removed function need consumer changes, see Breaking Changes.
@@ -951,7 +962,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v7.0.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v7.1.0...HEAD
+[v7.1.0]: https://github.com/Linuxfabrik/lib/compare/v7.0.0...v7.1.0
 [v7.0.0]: https://github.com/Linuxfabrik/lib/compare/v6.1.0...v7.0.0
 [v6.1.0]: https://github.com/Linuxfabrik/lib/compare/v6.0.0...v6.1.0
 [v6.0.0]: https://github.com/Linuxfabrik/lib/compare/v5.1.0...v6.0.0

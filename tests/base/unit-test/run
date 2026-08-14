@@ -117,6 +117,19 @@ class TestCu(unittest.TestCase):
         self.assertIn('Traceback (most recent call last)', h['out'])
         self.assertIn('inner', h['out'])
 
+    # An exception that is the expected answer, a socket of a service that is not
+    # installed for example, gets the sentence and nothing else.
+    def test_traceback_false_keeps_the_message_alone(self):
+        with capture_exit() as h:
+            try:
+                raise FileNotFoundError('no such socket')
+            except FileNotFoundError:
+                base.cu('strongSwan is not running here.', traceback=False)
+        self.assertEqual(h['code'], STATE_UNKNOWN)
+        self.assertIn('strongSwan is not running here.', h['out'])
+        self.assertNotIn('Traceback for debugging', h['out'])
+        self.assertNotIn('no such socket', h['out'])
+
 
 class TestGetPerfdata(unittest.TestCase):
     def test_full(self):
@@ -395,6 +408,27 @@ class TestGetTable(unittest.TestCase):
 
     def test_max_rows_on_empty_data_stays_empty(self):
         self.assertEqual(base.get_table([], ['n'], max_rows=2), '')
+
+    # A cell that looks like an HTML tag is escaped here and not in oao(), so the column
+    # is measured on the text that is printed and every row breaks at the same offset.
+    def test_tag_start_in_a_cell_is_escaped_before_the_column_is_measured(self):
+        data = [{'n': 'one', 'repo': '<unknown>'}, {'n': 'two', 'repo': 'updates'}]
+        rows = base.get_table(data, ['n', 'repo']).splitlines()
+        self.assertIn('&lt;unknown>', rows[0])
+        self.assertNotIn('<unknown>', rows[0])
+        self.assertEqual(len(rows[0]), len(rows[1]))
+
+    # The same for the placeholder of a column a row does not carry.
+    def test_tag_start_in_the_missing_placeholder_is_escaped(self):
+        data = [{'n': 'one'}, {'n': 'two', 'repo': 'updates'}]
+        rows = base.get_table(data, ['n', 'repo'], missing='<none>').splitlines()
+        self.assertIn('&lt;none>', rows[0])
+        self.assertEqual(len(rows[0]), len(rows[1]))
+
+    # A comparison keeps its `<`, in a cell as everywhere else.
+    def test_comparison_in_a_cell_survives(self):
+        data = [{'n': 'one', 'v': '<= 10'}]
+        self.assertIn('<= 10', base.get_table(data, ['n', 'v']))
 
 
 class TestGetWorst(unittest.TestCase):

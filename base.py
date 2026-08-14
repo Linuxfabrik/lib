@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081001'
+__version__ = '2026081401'
 
 import numbers
 import operator
@@ -95,7 +95,7 @@ def coe(result, state=STATE_UNKNOWN):
     sys.exit(state)
 
 
-def cu(msg=None):
+def cu(msg=None, traceback=True):
     """
     See you (cu)
 
@@ -108,6 +108,12 @@ def cu(msg=None):
     ### Parameters
     - **msg** (`str`, optional): An optional message to print before exiting.
       If provided, it will be stripped, sanitized, and printed.
+    - **traceback** (`bool`, optional):
+      Whether to attach the stack trace of the exception being handled. Defaults to
+      `True`. Pass `False` where the exception is the expected answer rather than a
+      defect: a socket that is not there because the service is not installed, a
+      command that is absent on this platform. The admin gets the sentence that says
+      so, and no Python stack trace for a situation nobody needs to debug.
 
     ### Returns
     - **None**: This function does not return; it always exits the script with `STATE_UNKNOWN`.
@@ -121,8 +127,10 @@ def cu(msg=None):
     >>> cu('Unable to connect to server')
 
     >>> cu()
+
+    >>> cu('strongSwan is not running here.', traceback=False)
     """
-    has_traceback = sys.exc_info()[0] is not None
+    has_traceback = traceback and sys.exc_info()[0] is not None
     tb = format_exc() if has_traceback else None
 
     if msg is not None:
@@ -253,6 +261,19 @@ def _is_empty_cell(value):
     return str(value).strip().strip('-') == ''
 
 
+def _escape_tag_start(text):
+    """Replace a `<` that a web interface would read as the start of an HTML tag by
+    `&lt;`. See `TAG_START` for which `<` that is.
+
+    Both `oao()` and `get_table()` apply this. A table has to do it before it measures
+    its columns: the replacement is three characters longer than what it replaces, so a
+    cell escaped afterwards pushes the delimiters of its row out of line, and a value
+    such as `<unknown>` bends the whole table. Escaping the cell first also leaves
+    nothing for `oao()` to escape a second time.
+    """
+    return TAG_START.sub('&lt;', text)
+
+
 def get_table(
     data,
     cols,
@@ -327,6 +348,10 @@ def get_table(
       full `data` it passed in, which the truncated table says nothing about.
     - Rows are cut after sorting, so `max_rows` together with `sort_by_key` keeps the
       rows that sort first rather than an arbitrary selection.
+    - A cell carrying a `<` that a web interface would read as the start of an HTML tag,
+      `<unknown>` for example, is escaped here rather than in `oao()`, so the column
+      widths are measured on the text that is actually printed and the table keeps its
+      shape. See `TAG_START`.
     - Column widths come from the rows that are actually printed. A long value in a row
       that was cut does not widen the table it no longer appears in.
 
@@ -403,12 +428,14 @@ def get_table(
             if col not in row:
                 if missing is None:
                     return f'Unknown column "{col}"'
-                processed_row[col] = missing
-                column_widths[col] = max(column_widths.get(col, 0), len(missing))
+                value = _escape_tag_start(missing)
+                processed_row[col] = value
+                column_widths[col] = max(column_widths.get(col, 0), len(value))
                 continue
             value = str(row[col])
             if strip:
                 value = value.strip()
+            value = _escape_tag_start(value)
             processed_row[col] = value
             column_widths[col] = max(column_widths.get(col, 0), len(value))
         processed_rows.append(processed_row)
@@ -775,9 +802,7 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
     # file or HTTP response) can carry CRLF or stray CR, which a web UI showing
     # the output with `white-space: pre-wrap` would render as an extra line break.
     msg = msg.replace('\r\n', '\n').replace('\r', '\n')
-    msg = TAG_START.sub('&lt;', txt.sanitize_sensitive_data(msg.strip())).replace(
-        '|', '!'
-    )
+    msg = _escape_tag_start(txt.sanitize_sensitive_data(msg.strip())).replace('|', '!')
     if always_ok and msg:
         # Instead of splitlines(), we just split('\n', 1), so only first line is touched.
         parts = msg.split('\n', 1)
