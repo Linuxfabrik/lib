@@ -38,10 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * disk.py: `read_file()` accepts a `max_bytes`, so a consumer interested only in the head of a file stops reading the whole of it.
 * disk.py: `get_fingerprint()` accepts an `algorithm`, so a digest can be taken in whatever a foreign checksum list published it in, instead of only in SHA-256.
 * disk.py: `get_package()` names the package a path belongs to, which tells software the distribution installed apart from software an administrator put there by hand. A path that a package manager would read as one of its own options is refused, so the answer cannot be the tool's version string instead of a package name.
-* feedparser.py: `fetch_soup()` and `parse_soup()` hand back the feed's own markup, and `retries` repeats a download that came back as something other than a feed.
-* txt.py: `shorten()` cuts a long value down for display, out of the middle, so one oversized entry no longer widens a whole table column and two values differing only at the end stay distinguishable.
-* txt.py: `strip_ansi()` removes the escape sequences a command line tool colorizes its output with, which many emit whether or not anything is listening on a terminal, so a consumer parsing that output is no longer thrown off by them.
 * distro.py: Clear Linux, CoreOS, Flatcar, Mandriva, OpenWrt, Slackware, SUSE, UnionTech and the Debian derivatives Cumulus Linux, Deepin, Devuan, Kali, Linux Mint, Parrot, SteamOS and Uos are recognised. Anything else still unknown is now identified from `/etc/os-release` instead of being reported as plain "Linux".
+* feedparser.py: `fetch_soup()` and `parse_soup()` hand back the feed's own markup, and `retries` repeats a download that came back as something other than a feed.
 * huawei_dorado.py, huawei_pacific.py: `as_code()` turns a status code the appliance sends as a string, or does not send at all, into a number a consumer can compare. Consumers used to carry a copy of it each.
 * huawei_dorado.py, huawei_pacific.py: `assert_ok()` ends a check with UNKNOWN and the appliance's own error text unless the response reports success, so every consumer recognises a rejected query the same way instead of each checking the envelope slightly differently. Under verbose output it also prints what the appliance answered, which used to be shown after a successful run only and was therefore missing from exactly the run that had to be explained.
 * huawei_dorado.py: `as_temperature()` tells a reading apart from the placeholder a component without a temperature sensor reports, so a check no longer has to know which of the three placeholders a given object type uses.
@@ -76,6 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * nextcloud.py: `run_occ()` accepts a `timeout`, so a hanging `occ` no longer keeps a check running forever.
 * shell.py: `shell_exec()` accepts a `run_as_session`, which runs a command as another user without exporting that user's session runtime directory. A sudo rule that spells out the permitted command with its exact arguments only matches that plain form.
 * shell.py: an `env` entry set to None removes that variable from the command's environment instead of setting it, so a consumer can run a command without a variable it inherited itself.
+* txt.py: `shorten()` cuts a long value down for display, out of the middle, so one oversized entry no longer widens a whole table column and two values differing only at the end stay distinguishable.
+* txt.py: `strip_ansi()` removes the escape sequences a command line tool colorizes its output with, which many emit whether or not anything is listening on a terminal, so a consumer parsing that output is no longer thrown off by them.
 * txt.py: `unescape()` resolves the HTML character references some sources put into plain text, so a hardware model reads as `Expansion Module(24 Cores)` instead of `Expansion Module&#40;24 Cores&#41;`.
 * url.py: `compare_github_refs()` counts how many commits a branch carries that a given tag does not, so a consumer can say how far an installation following a development branch has fallen behind instead of only whether a newer release exists.
 * url.py: `get_latest_tag_from_github()` reads the newest tag of a repository, the fallback for projects that tag their versions but never publish a GitHub release.
@@ -85,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* args.py: the shared help text for `--unreachable-severity` describes any unreachable online source rather than only an end-of-life one, so every consumer offering the parameter can use the same wording.
 * base.py: `oao()` only escapes a `<` that would open an HTML tag, instead of escaping every `&`, `<` and `>`. A version range like `< 5.3.2`, a threshold like `<= 10` and a shell snippet like `echo 1 > /proc/sys/...` now reach the terminal exactly as written, while a web interface still renders the output as preformatted text rather than as markup.
 * disk.py: `walk_directory()` builds a relative path by actually relativizing it. It used to strip the root off the front as a plain substring, which left the paths absolute on Windows and removed the root a second time wherever its name occurred again further down the tree.
 * huawei_dorado.py, huawei_pacific.py: `--cache-expire 0` switches session caching off. It used to store a session that expired about a second later, which is neither caching nor not caching.
@@ -94,14 +95,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_dorado.py: The appliance device ID is optional. Without one the login goes to the placeholder path the vendor documents and the appliance answers with its own ID, so an operator no longer has to look it up before a check can run. A supplied ID still wins.
 * huawei_dorado.py: A component being rebuilt is reported as "Rebuilding", the word V700 appliances use for it, instead of the older firmware's "Reconstruction".
 * huawei_dorado.py: A power module whose feed is dead, a component that is not running, a disk parked because it got too hot, and a replication relationship that is not mirroring are reported as CRITICAL instead of WARNING. All four describe a component that has stopped doing its job rather than one working in a reduced state.
-* README.md: the module table lists `huawei_dorado.py` and `huawei_pacific.py`, which replaced the former `huawei.py` some time ago.
-* args.py: the shared help text for `--unreachable-severity` describes any unreachable online source rather than only an end-of-life one, so every consumer offering the parameter can use the same wording.
 * lftest.py: `assert-retc` is optional in a testcase, like every other assertion already was. A test can now cover the output a fixture controls without pinning a state that depends on something else, such as an end-of-life date that turns OK into WARNING as the calendar advances.
 * nextcloud.py: `occ` is called without `sudo` when the check already runs as the owner of `config/config.php`. No sudoers entry is needed in that case, and the checks work inside the official Nextcloud container, which ships without `sudo`.
+* README.md: the module table lists `huawei_dorado.py` and `huawei_pacific.py`, which replaced the former `huawei.py` some time ago.
 * url.py: a GitHub repository that has published no release is reported as having none, instead of as a request that failed. A rejected token and an exhausted rate limit are named as such, so the message says what to do about them. An owner, repository or ref that could redirect the request to another endpoint is refused.
 
 ### Fixed
 
+* base.py: `get_perfdata()` reports no metric at all for a reading a source did not deliver, instead of emitting a literal `None` as its value. Consumers that parse the performance data used to drop the whole line over that, losing every other metric on it as well.
 * db_sqlite.py: A cached database is no longer thrown away because of a lock held by a concurrently running check, a full or read-only disk, a bad query, a duplicate record, a table that does not exist yet, or a value that is too large to store. Only a schema that no longer matches the installed release, and now also an unreadable database file, trigger the rebuild. Checks that share the default database file therefore no longer discard each other's cached data.
 * db_sqlite.py: A corrupt database file is actually removed on RHEL 8 and other systems running SQLite older than 3.39, where it used to be reported as unusable but left on disk, so every following run failed the same way.
 * db_sqlite.py: A database file written in a format the installed SQLite cannot read is discarded, so the next run starts from a healthy cache. It used to be kept and every following run failed the same way.
@@ -133,7 +134,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * distro.py: The release name is reported on AlmaLinux, Kali, Kylin, openEuler, Parrot and TencentOS. It used to be missing, and on TencentOS it was taken from the CentOS release file the distribution also ships.
 * distro.py: The OS family of Alpine, Amazon Linux and the whole SUSE family is correct. All three were reported as Debian, so checks branching on the OS family ran the Debian code path on them.
 * huawei_dorado.py, huawei_pacific.py: Sessions are closed on the appliance instead of being left open until they time out. This covers the session a failed request replaces, and every session at all when `--cache-expire 0` switches caching off. A check used to leave one session behind per run, or up to three with caching off, and could fill the appliance's session pool, which on a Dorado holds 32 by default. Once it was full the appliance refused every login, including an administrator's login to the management GUI.
-* base.py: `get_perfdata()` reports no metric at all for a reading a source did not deliver, instead of emitting a literal `None` as its value. Consumers that parse the performance data used to drop the whole line over that, losing every other metric on it as well.
 * huawei_dorado.py: A HyperMetro pair in the faulty state is named on V700 appliances, which use a different word for it than the older firmware.
 * huawei_dorado.py: A component whose rollback failed is reported as such. It used to be labelled "faulty restoration", which reads as a recovery in progress and hides that something went wrong.
 * huawei_dorado.py: A host that has lost path redundancy is named the way the appliance documents it for hosts, not the way it documents the same code for disks.
@@ -174,14 +174,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-* db_sqlite.py: Table, index and column names are quoted when a statement is built, so a column name carrying SQL syntax can no longer alter the statement it appears in.
 * Lockfiles pin the build-time packages as well, so vendoring them with `pip install --require-hashes` no longer depends on what a build host happens to have installed already ([#156](https://github.com/Linuxfabrik/lib/issues/156)).
 * Python 3.9 lockfile bumps the cryptography library to a release that is not vulnerable to a padding oracle in its PKCS#7 decryption, for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11.
+* db_sqlite.py: Table, index and column names are quoted when a statement is built, so a column name carrying SQL syntax can no longer alter the statement it appears in.
 * shell.py: A command that could not be started at all is reported with its arguments redacted, so a credential sitting in the argument list cannot reach the plugin output.
 * ssh.py: An SSH password is handed to `sshpass` through the environment instead of its command line, so it is no longer readable in the host's process list for as long as the check runs.
+* txt.py: HTTP basic credentials and a credential carried inside a URL, such as in a proxy address, are redacted too. Both used to reach the plugin output unmasked.
 * txt.py: Passwords, tokens and API keys are also redacted when a message embeds them as a Python mapping, not only in the `key=value` and JSON forms.
 * txt.py: Passwords, tokens and API keys are also redacted when a message embeds them as a stringified argument list, which is the shape a command takes in an error message.
-* txt.py: HTTP basic credentials and a credential carried inside a URL, such as in a proxy address, are redacted too. Both used to reach the plugin output unmasked.
 * url.py: A failed request no longer echoes the request body, so login credentials cannot reach the plugin output. Only the field names are reported.
 
 
