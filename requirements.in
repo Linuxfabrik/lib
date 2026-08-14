@@ -19,7 +19,8 @@
 #     ./.venv-py${v//.}/bin/python -m pip install 'pip<25.1' pip-tools \
 #         typing_extensions
 #     mkdir -p lockfiles/py${v//.}
-#     ./.venv-py${v//.}/bin/python -m piptools compile --generate-hashes \
+#     ./.venv-py${v//.}/bin/python -m piptools compile --allow-unsafe \
+#         --generate-hashes --strip-extras \
 #         --output-file=lockfiles/py${v//.}/requirements.txt requirements.in
 #   done
 #
@@ -32,6 +33,12 @@
 # the resolver honour both constraints and lands on pip 25.0.x.
 # `typing_extensions` is listed because pip-tools imports it without
 # declaring it as a dependency.
+#
+# `--strip-extras` becomes the pip-tools 8.0.0 default and is passed
+# explicitly so the lockfiles keep their shape when that release lands.
+# `--allow-unsafe` pins the build-time packages pip-tools leaves out by
+# default, `setuptools` above all. Left unpinned, they make `pip install
+# --require-hashes` fail on every host that does not carry them already.
 #
 # That `piptools compile` run only adds and removes packages.
 # pip-compile reads the existing lockfile as a constraint and never

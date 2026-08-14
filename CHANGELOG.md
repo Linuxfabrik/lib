@@ -175,6 +175,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 * db_sqlite.py: Table, index and column names are quoted when a statement is built, so a column name carrying SQL syntax can no longer alter the statement it appears in.
+* Lockfiles pin the build-time packages as well, so vendoring them with `pip install --require-hashes` no longer depends on what a build host happens to have installed already ([#156](https://github.com/Linuxfabrik/lib/issues/156)).
 * Python 3.9 lockfile bumps the cryptography library to a release that is not vulnerable to a padding oracle in its PKCS#7 decryption, for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11.
 * shell.py: A command that could not be started at all is reported with its arguments redacted, so a credential sitting in the argument list cannot reach the plugin output.
 * ssh.py: An SSH password is handed to `sshpass` through the environment instead of its command line, so it is no longer readable in the host's process list for as long as the check runs.
