@@ -108,9 +108,8 @@ class TestOrNone(unittest.TestCase):
 
 class TestLoadSecret(unittest.TestCase):
     def _write(self, content):
-        handle = tempfile.NamedTemporaryFile('w', delete=False)
-        handle.write(content)
-        handle.close()
+        with tempfile.NamedTemporaryFile('w', delete=False) as handle:
+            handle.write(content)
         self.addCleanup(os.unlink, handle.name)
         return handle.name
 

@@ -540,7 +540,7 @@ class TestObtainAdminToken(unittest.TestCase):
         with mock.patch.object(
             keycloak.url, 'fetch_json', return_value=(True, {})
         ) as m:
-            success, result = keycloak.obtain_admin_token(args, {'token_endpoint': ''})
+            success, _ = keycloak.obtain_admin_token(args, {'token_endpoint': ''})
         self.assertFalse(success)
         self.assertEqual(m.call_count, 0)
 
