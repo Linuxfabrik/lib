@@ -8,8 +8,6 @@
 
 
 import argparse  # pylint: disable=C0413
-import pprint  # pylint: disable=C0413
-import subprocess  # pylint: disable=C0413
 import sys  # pylint: disable=C0413
 
 sys.path.append('../..')
@@ -20,9 +18,7 @@ import lib.globals  # pylint: disable=C0413
 import lib.url  # pylint: disable=C0413
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = (
-    '2026061001'  # adapt this if something in this script changed fundamentally
-)
+__version__ = '2026081401'
 
 DESCRIPTION = (
     """Simply creates the file "endoflifedate.py" for a given list of products."""
@@ -30,7 +26,7 @@ DESCRIPTION = (
 
 DEFAULT_FILE = 'lib/endoflifedate.py'
 
-VERSION = '2026062301'  # adapt this if one of PRODUCTS was added/deleted
+DATA_VERSION = '2026062301'  # adapt this if one of PRODUCTS was added/deleted
 PRODUCTS = [
     'https://endoflife.date/api/apache-http-server.json',
     'https://endoflife.date/api/composer.json',
@@ -63,6 +59,71 @@ PRODUCTS = [
     'https://endoflife.date/api/wordpress.json',
 ]
 
+# The single brace of `ENDOFLIFE_DATE = {` has to be doubled, this is an f-string.
+HEADER = f'''#! /usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+
+"""This library stores information from https://endoflife.date/api/ for offline usage
+and therefore needs to be updated periodically when version checks don't have access to the
+Internet."""
+
+# pylint: disable=C0302
+
+__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
+__version__ = (
+    '{DATA_VERSION}'  # adapt this if something in this script changed fundamentally
+)
+
+ENDOFLIFE_DATE = {{
+'''
+
+
+def render(data):
+    """
+    Render the fetched product data as the source of `endoflifedate.py`.
+
+    The output is already in the layout `ruff format` produces, so this script does not
+    have to shell out to `ruff` and cannot be made to write a differently formatted file
+    by a host that happens to have no `ruff` installed.
+
+    ### Parameters
+    - **data** (`dict`): Maps a product API URL to the list of release cycles the API
+      returned for it. Each cycle is a flat `dict` of scalar values.
+
+    ### Returns
+    - **str**: The complete file content, ending in a newline.
+
+    ### Notes
+    - Every collection is written one element per line and closed with a trailing comma.
+      `ruff format` honours that trailing comma (its "magic trailing comma") and keeps the
+      collection expanded no matter how short it is, so the layout stays stable even if a
+      future product returns a cycle small enough to fit on one line.
+    - Keys are sorted because the API does not promise a stable key order, and an unstable
+      one would show up as noise in the diff of every refresh.
+    - `repr()` quotes the way this repository configures `ruff format` to (`quote-style =
+      'single'`): single quotes, switching to double only where that avoids an escape, as
+      in the codename "Schrödinger's Cat".
+    - Verified byte-for-byte against `ruff format` 0.15.9 on Fedora 44.
+    """
+    out = [HEADER]
+    for url, cycles in data.items():
+        out.append(f'    {url!r}: [\n')
+        for cycle in cycles:
+            out.append('        {\n')
+            for key in sorted(cycle):
+                out.append(f'            {key!r}: {cycle[key]!r},\n')
+            out.append('        },\n')
+        out.append('    ],\n')
+    out.append('}\n')
+    return ''.join(out)
+
 
 def parse_args():
     """Parse command line arguments using argparse."""
@@ -94,49 +155,10 @@ def main():
     except SystemExit:
         sys.exit(lib.globals.STATE_UNKNOWN)
 
-    endoflifedate_py = '''#! /usr/bin/env python3
-# -*- coding: utf-8; py-indent-offset: 4 -*-
-#
-# Author:  Linuxfabrik GmbH, Zurich, Switzerland
-# Contact: info (at) linuxfabrik (dot) ch
-#          https://www.linuxfabrik.ch/
-# License: The Unlicense, see LICENSE file.
-
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
-
-"""This library stores information from https://endoflife.date/api/ for offline usage
-and therefore needs to be updated periodically when version checks don't have access to the
-Internet."""
-
-# pylint: disable=C0302
-
-__author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061001'  # adapt this if something in this script changed fundamentally
-
-ENDOFLIFE_DATE = {
-
-'''.replace('VERSION', VERSION)
-
     # fetch data
-    for product in PRODUCTS:
-        j = lib.base.coe(lib.url.fetch_json(product))
-        eol_data = pprint.pformat(j, indent=4, sort_dicts=True)
-        endoflifedate_py += f"    '{product}': {eol_data},\n\n\n"
+    data = {product: lib.base.coe(lib.url.fetch_json(product)) for product in PRODUCTS}
 
-    endoflifedate_py += '}\n'
-
-    lib.disk.write_file(args.FILE, endoflifedate_py)
-
-    # `pprint` does not emit the layout `ruff format` enforces on this repo, so
-    # the raw output would show up as a large unrelated diff next to the actual
-    # data change. Formatting here keeps a data refresh reviewable.
-    try:
-        subprocess.run(['ruff', 'format', args.FILE], check=True)
-    except (OSError, subprocess.CalledProcessError):
-        print(
-            f'Could not run `ruff format {args.FILE}`. Format it before committing.',
-            file=sys.stderr,
-        )
+    lib.disk.write_file(args.FILE, render(data))
 
 
 if __name__ == '__main__':

@@ -16,7 +16,7 @@ Internet."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = (
-    '2026061001'  # adapt this if something in this script changed fundamentally
+    '2026062301'  # adapt this if something in this script changed fundamentally
 )
 
 ENDOFLIFE_DATE = {
