@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - 'main'
+  # The release commit carries `[skip ci]`, so the push trigger above never fires
+  # for it and a release used to leave the published documentation one commit
+  # behind until some later push happened to rebuild it.
+  release:
+    types:
+      - 'published'
 
 permissions:
   contents: 'read'
