@@ -1350,5 +1350,76 @@ class TestBodyHint(unittest.TestCase):
         self.assertEqual(url._body_hint({1: 'a', 'b': 'c'}), 'body fields: 1, b')
 
 
+class TestTlsVerifyMessage(unittest.TestCase):
+    """The message a certificate that does not verify produces.
+
+    The OpenSSL codes are the ones measured against real endpoints: an
+    incomplete chain (20), an expired certificate (10), a self-signed
+    certificate (18), an untrusted issuer (19) and a name mismatch (62).
+    """
+
+    @staticmethod
+    def _error(code, message):
+        exc = ssl.SSLCertVerificationError(message)
+        exc.verify_code = code
+        exc.verify_message = message
+        return exc
+
+    def test_incomplete_chain_names_the_missing_intermediate(self):
+        exc = self._error(20, 'unable to get local issuer certificate')
+        msg = url._tls_verify_message(exc, 'https://example.com')
+        self.assertIn('TLS certificate verification failed', msg)
+        self.assertIn('unable to get local issuer certificate', msg)
+        self.assertIn('no intermediate certificate', msg)
+        self.assertIn('openssl s_client', msg)
+
+    def test_expired_certificate_says_to_renew_it(self):
+        exc = self._error(10, 'certificate has expired')
+        msg = url._tls_verify_message(exc, 'https://example.com')
+        self.assertIn('has expired', msg)
+        self.assertIn('renewed on the server', msg)
+
+    def test_self_signed_certificate_points_at_the_trust_store(self):
+        exc = self._error(18, 'self-signed certificate')
+        msg = url._tls_verify_message(exc, 'https://example.com')
+        self.assertIn('trust store', msg)
+
+    def test_untrusted_issuer_points_at_the_trust_store(self):
+        exc = self._error(19, 'self-signed certificate in certificate chain')
+        msg = url._tls_verify_message(exc, 'https://example.com')
+        self.assertIn('certificate authority this host does not trust', msg)
+
+    def test_name_mismatch_says_which_name_to_use(self):
+        exc = self._error(62, "Hostname mismatch, certificate is not valid for 'x'.")
+        msg = url._tls_verify_message(exc, 'https://example.com')
+        self.assertIn('not issued for the name', msg)
+        # The trailing period of the reason must not produce a double period.
+        self.assertNotIn('..', msg)
+
+    def test_unknown_code_still_names_the_reason(self):
+        exc = self._error(999, 'some new failure')
+        msg = url._tls_verify_message(exc, 'https://example.com')
+        self.assertIn('some new failure', msg)
+
+    def test_wrapped_exception_is_found_through_the_cause_chain(self):
+        inner = self._error(20, 'unable to get local issuer certificate')
+        outer = OSError('connection failed')
+        outer.__cause__ = inner
+        msg = url._tls_verify_message(outer, 'https://example.com')
+        self.assertIn('no intermediate certificate', msg)
+
+    def test_unrelated_error_produces_no_message(self):
+        self.assertIsNone(
+            url._tls_verify_message(OSError('boom'), 'https://example.com'),
+        )
+
+    def test_cycle_in_the_cause_chain_terminates(self):
+        first = OSError('a')
+        second = OSError('b')
+        first.__cause__ = second
+        second.__cause__ = first
+        self.assertIsNone(url._tls_verify_message(first, 'https://example.com'))
+
+
 if __name__ == '__main__':
     unittest.main()

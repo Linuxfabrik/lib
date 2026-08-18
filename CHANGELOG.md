@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Changed
+
+* url.py: `fetch()` says what is wrong with a certificate that does not verify and what to do about it, instead of repeating the library's own wording. An incomplete chain, an expired certificate, a private issuer and a name mismatch are told apart.
+* url.py: `fetch()` points out that a plaintext request may have been sent to a port that speaks TLS, instead of only reporting that the server disconnected.
 
 
 ## [v7.1.1] - 2026-08-18

@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081201'
+__version__ = '2026081801'
 
 import base64
 import json
@@ -69,6 +69,81 @@ _REDIRECT_SAFE_HEADERS = frozenset(
         'user-agent',
     }
 )
+
+
+# Certificate verification failures an operator runs into in practice, keyed by
+# the OpenSSL X509_V_ERR_* code that `ssl.SSLCertVerificationError` reports in
+# `verify_code`. The code is matched instead of the message text, which is not
+# stable across OpenSSL releases. Codes measured against OpenSSL 3.5 with the
+# badssl.com endpoints plus a real host serving an incomplete chain.
+_TLS_CHAIN_HINT = (
+    'The server sends no intermediate certificate to link its own certificate to '
+    'a trusted root, or the issuing authority is not in this host\'s trust store. '
+    'A browser papers over this by fetching the missing certificate itself, other '
+    'clients do not. Compare with '
+    '"openssl s_client -connect HOST:PORT -servername HOST": a chain listing only '
+    'the server certificate has to be completed on the server, a private issuer '
+    'has to be added to this host\'s trust store.'
+)
+TLS_VERIFY_HINTS = {
+    2: _TLS_CHAIN_HINT,  # unable to get issuer certificate
+    9: (
+        'The server certificate is not valid yet. Compare the clock on this host '
+        'with the clock on the server.'
+    ),
+    10: 'The server certificate has expired and has to be renewed on the server.',
+    18: (
+        'The server presents a self-signed certificate. Add it to this host\'s '
+        'trust store, or accept an unverified connection for this endpoint on '
+        'purpose.'
+    ),
+    19: (
+        'The chain ends in a certificate authority this host does not trust. Add '
+        'that authority\'s certificate to this host\'s trust store.'
+    ),
+    20: _TLS_CHAIN_HINT,  # unable to get local issuer certificate
+    21: _TLS_CHAIN_HINT,  # unable to verify the first certificate
+    62: (
+        'The certificate was not issued for the name that was requested. Use a '
+        'name the certificate covers, or have one issued for the name you check.'
+    ),
+}
+
+
+def _tls_verify_error(exc):
+    """Return the certificate verification error behind an exception, if any.
+
+    Transport libraries wrap the original `ssl` exception, so the cause chain is
+    walked rather than the outermost type inspected. Returns None when the
+    failure was not a certificate verification failure.
+    """
+    import ssl
+
+    seen = []
+    while exc is not None and exc not in seen:
+        if isinstance(exc, ssl.SSLCertVerificationError):
+            return exc
+        seen.append(exc)
+        exc = exc.__cause__ or exc.__context__
+    return None
+
+
+def _tls_verify_message(exc, url_safe):
+    """Return a full error message for a certificate that does not verify.
+
+    Replaces the raw library wording, which names the failure twice and buries
+    what an operator has to do about it. Returns None when the request failed
+    for another reason.
+    """
+    verify_error = _tls_verify_error(exc)
+    if verify_error is None:
+        return None
+    reason = (getattr(verify_error, 'verify_message', '') or '').strip().rstrip('.')
+    hint = TLS_VERIFY_HINTS.get(verify_error.verify_code, '')
+    message = f'TLS certificate verification failed for {url_safe}'
+    if reason:
+        message += f': {reason}'
+    return message + '.' + (f' {hint}' if hint else '')
 
 
 def _default_port(url):
@@ -779,7 +854,21 @@ def fetch(
         else:
             success = False
     except httpx.HTTPError as e:
-        return False, f'URL error "{e}" for {url_safe}'
+        verify_message = _tls_verify_message(e, url_safe)
+        if verify_message:
+            return False, verify_message
+        message = f'URL error "{e}" for {url_safe}'
+        # A port that speaks TLS answers a plaintext request with a TLS record or
+        # closes the connection, which surfaces as a protocol error naming
+        # neither TLS nor the scheme.
+        if url.lower().startswith('http://') and isinstance(
+            e, (httpx.RemoteProtocolError, httpx.ConnectError)
+        ):
+            message += (
+                '. If this endpoint speaks TLS, request it with "https://" '
+                'instead of "http://"'
+            )
+        return False, message
     except TypeError as e:
         return False, (
             f'Type error "{e}" while fetching {url_safe} ({_body_hint(data)})'
