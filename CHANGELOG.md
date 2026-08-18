@@ -8,21 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-* base.py: `match_range()` accepts a threshold with a percent sign (`90%:`) or an exponent (`1e3`).
-* base.py: `match_range()` compares a very large threshold correctly instead of reading the value as below it.
-* base.py: `match_range()` reports a mistyped threshold (`1,5`) instead of raising a stack trace.
-* human.py: `humanrange2bytes()` and `humanrange2seconds()` keep the catch-all range `:`.
-* human.py: `humanrange2bytes()` and `humanrange2seconds()` report an unreadable bound (`1,5M`) instead of turning it into the threshold zero, which alerted on everything.
+tbd
 
 
 ## [v7.1.1] - 2026-08-18
 
 ### Fixed
 
+* base.py: `match_range()` accepts a threshold with a percent sign (`90%:`) or an exponent (`1e3`).
+* base.py: `match_range()` compares a very large threshold correctly instead of reading the value as below it.
+* base.py: `match_range()` reports a mistyped threshold (`1,5`) instead of raising a stack trace.
 * human.py: `human2bytes()` reads a size without a qualifier (`1048576` instead of `1M`) as a byte count instead of zero, which alerted on everything. Same for plain integers out of config files.
-* human.py: `humanrange2bytes()` and `humanrange2seconds()` keep an open lower bound (`~:1M`) and a bare `@`. Both came out mangled and left the check UNKNOWN.
+* human.py: `humanrange2bytes()` and `humanrange2seconds()` keep an open lower bound (`~:1M`), a bare `@` and the catch-all `:`. All three came out mangled and left the check UNKNOWN.
+* human.py: `humanrange2bytes()` and `humanrange2seconds()` report an unreadable bound (`1,5M`) instead of turning it into the threshold zero, which alerted on everything.
 
 
 ## [v7.1.0] - 2026-08-14
