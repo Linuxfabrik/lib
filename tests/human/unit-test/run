@@ -19,6 +19,7 @@ import unittest
 
 sys.path.insert(0, '..')
 
+import lib.base as base
 import lib.human as human
 
 
@@ -115,6 +116,17 @@ class TestHuman2Bytes(unittest.TestCase):
         # Documented graceful behaviour: unparseable input yields 0.
         self.assertEqual(human.human2bytes('xyz'), 0)
         self.assertEqual(human.human2bytes(123), 0)
+        self.assertEqual(human.human2bytes(''), 0)
+        self.assertEqual(human.human2bytes('N/A'), 0)
+
+    def test_value_without_a_unit_is_a_byte_count(self):
+        # Configuration files and thresholds carry plain byte counts.
+        self.assertEqual(human.human2bytes('1024'), 1024)
+        self.assertEqual(human.human2bytes('134217728'), 134217728)
+        self.assertEqual(human.human2bytes('  2048  '), 2048)
+        self.assertEqual(human.human2bytes('-1'), -1)
+        # Truncates like every other branch of the function.
+        self.assertEqual(human.human2bytes('3.7'), 3)
 
 
 class TestHuman2Seconds(unittest.TestCase):
@@ -139,6 +151,89 @@ class TestHumanRange(unittest.TestCase):
 
     def test_humanrange2seconds(self):
         self.assertEqual(human.humanrange2seconds('1m:2m'), '60:120')
+
+    def test_open_bounds_survive(self):
+        # An omitted bound is not a value to convert.
+        self.assertEqual(human.humanrange2bytes(':1K'), ':1024')
+        self.assertEqual(human.humanrange2bytes('1K:'), '1024:')
+
+    def test_markers_without_a_number_pass_through(self):
+        # `~` and a bare `@` carry no number. They have to survive untouched,
+        # so that a range parser still sees a bound it accepts.
+        self.assertEqual(human.humanrange2bytes('~:1K'), '~:1024')
+        self.assertEqual(human.humanrange2bytes('@~:1K'), '@~:1024')
+        self.assertEqual(human.humanrange2bytes('~:'), '~:')
+        self.assertEqual(human.humanrange2bytes('@'), '@')
+        self.assertEqual(human.humanrange2seconds('~:1m'), '~:60')
+
+    def test_negative_bound_keeps_its_sign(self):
+        self.assertEqual(human.humanrange2bytes('-1K:1K'), '-1024:1024')
+
+    def test_inverted_range_keeps_its_marker(self):
+        self.assertEqual(human.humanrange2bytes('@1K:2K'), '@1024:2048')
+
+    def test_unitless_bounds_survive_as_byte_counts(self):
+        # A threshold typed without a qualifier used to collapse to 0, which
+        # made a range read as "alert on anything above zero".
+        self.assertEqual(human.humanrange2bytes('1024'), '1024')
+        self.assertEqual(human.humanrange2bytes('1024:2048'), '1024:2048')
+
+    def test_range_that_is_only_an_omitted_bound_on_both_sides(self):
+        # `:` is the range 0..inf and never alerts. Losing the colon, or growing a
+        # second one, turns "accept everything" into a range no parser can read.
+        self.assertEqual(human.humanrange2bytes(':'), ':')
+        self.assertEqual(human.humanrange2seconds(':'), ':')
+        self.assertEqual(human.humanrange2bytes('@:'), '@:')
+
+    def test_bound_the_converters_cannot_read_is_left_for_the_range_parser(self):
+        # The converters answer 0 for anything they cannot read. As a range bound that
+        # is the threshold zero, not "no threshold", so a typo must not become `0:0`.
+        for text in ['abc', '1,5M', '1.5,2M', '90%', '1_000M']:
+            with self.subTest(text=text):
+                self.assertEqual(human.humanrange2bytes(text), text)
+        self.assertEqual(human.humanrange2bytes('1K:abc'), '1024:abc')
+        self.assertEqual(human.humanrange2bytes('1K:1,5M'), '1024:1,5M')
+        self.assertEqual(human.humanrange2seconds('abc'), 'abc')
+        self.assertEqual(human.humanrange2seconds('1,5h'), '1,5h')
+
+    def test_a_bound_that_really_is_zero_still_converts(self):
+        self.assertEqual(human.humanrange2bytes('0'), '0')
+        self.assertEqual(human.humanrange2bytes('0K:1K'), '0:1024')
+
+    def test_multi_unit_duration_bound(self):
+        self.assertEqual(human.humanrange2seconds('1Y1D'), '31622400')
+        self.assertEqual(human.humanrange2seconds('@10m:1Y1D'), '@600:31622400')
+
+
+class TestHumanRangeFeedsTheRangeParser(unittest.TestCase):
+    """A converted range is only useful if `lib.base` can still read it back."""
+
+    def assert_range(self, converted, expected):
+        success, result = base._parse_range(converted)
+        self.assertTrue(success, f'{converted!r}: {result}')
+        self.assertEqual(result, expected)
+
+    def test_converted_ranges_stay_readable(self):
+        cases = [
+            ('1K', (0, 1024.0, False)),
+            (':1K', (0, 1024.0, False)),
+            ('1K:', (1024.0, float('inf'), False)),
+            (':', (0, float('inf'), False)),
+            ('~:1M', (float('-inf'), 1048576.0, False)),
+            ('~:', (float('-inf'), float('inf'), False)),
+            ('@', (0, float('inf'), True)),
+            ('@4K:5 MiB', (4096.0, 5242880.0, True)),
+            ('-10:-5', (-10.0, -5.0, False)),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assert_range(human.humanrange2bytes(text), expected)
+
+    def test_unreadable_bound_reaches_the_parser_as_unreadable(self):
+        for text in ['abc', '1K:abc', '1,5M', '1_000M', '1K:1,5M']:
+            with self.subTest(text=text):
+                success, _ = base._parse_range(human.humanrange2bytes(text))
+                self.assertFalse(success)
 
 
 class TestExtractHrNumbers(unittest.TestCase):

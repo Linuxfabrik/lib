@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081401'
+__version__ = '2026081801'
 
 import numbers
 import operator
@@ -625,10 +625,41 @@ def lookup_lod(haystack, key, needle):
     return -1, None
 
 
+# One bound of a range: an optional sign, digits with an optional decimal point, an
+# optional exponent, and an optional percent sign.
+_RANGE_ATOM = re.compile(r'^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?%?$')
+
+
 def _parse_range_atom(atom, default):
+    """Turns one bound of a range into a float, or raises `ValueError` if it is not a
+    number. An empty bound is the omitted one and yields `default`.
+
+    A trailing `%` is dropped: a percentage sign in a threshold repeats the unit of the
+    value and carries nothing the comparison needs, so `90%:` means what `90:` means.
+    Verified against monitoring-plugins 2.4.x, whose `lib/tests/test_utils.c` asserts
+    the same for `1:12%`.
+
+    Every bound is a float, never an int, because the reference implementation holds the
+    whole range in C doubles and the value is a float here too. A bound kept as an exact
+    Python int is compared exactly against a value that has already been rounded to a
+    float, so `12345678901234567890` reads as greater than the very value it was written
+    for and the check alerts on it. Both sides have to be rounded the same way, which is
+    what `lib/tests/test_utils.c` asserts for that bound.
+
+    Deliberately stricter than the reference implementation, which reads a bound with
+    `strtod()`: that takes the longest numeric prefix and silently answers 0 for a bound
+    with no numeric prefix at all, so `1,5` becomes the threshold 1 and `abc` becomes 0.
+    Guessing a number out of a typo gives an admin a check that alerts forever without
+    saying why, so anything outside this grammar is refused and reported instead. The
+    same refusal covers what Python would read but the range syntax does not define:
+    `1_000`, `inf`, `nan`, `0x10`.
+    """
+    atom = atom.strip()
     if not atom:
         return default
-    return float(atom) if '.' in atom else int(atom)
+    if not _RANGE_ATOM.match(atom):
+        raise ValueError(f'{atom!r} is not a number')
+    return float(atom.rstrip('%'))
 
 
 def _parse_range(spec_):
@@ -676,13 +707,20 @@ def _parse_range(spec_):
     else:
         start, end = '', spec_
 
-    start = float('-inf') if start == '~' else _parse_range_atom(start, 0)
-    end = _parse_range_atom(end, float('inf'))
+    try:
+        start = float('-inf') if start.strip() == '~' else _parse_range_atom(start, 0)
+        end = _parse_range_atom(end, float('inf'))
+    except ValueError:
+        # An unparseable bound is reported the way an unparseable range has always been
+        # reported, as a message the caller turns into UNKNOWN. Letting the `ValueError`
+        # escape instead hands the admin a Python traceback in place of the threshold
+        # they mistyped.
+        return False, 'Range format incorrect'
 
     if start > end:
         return (
             False,
-            f'Start {start} must not be greater than end {end}',
+            f'Start {start:g} must not be greater than end {end:g}',
         )
     return True, (start, end, invert)
 
@@ -697,38 +735,49 @@ def match_range(value, spec):
     - **spec** (`str`): The Nagios range specification string.
 
     ### Returns
-    - **bool**:
-      - True if `value` is inside the bounds for a non-inverted
-        `spec`, or outside the bounds for an inverted `spec`.
-      - Otherwise, False.
+    - **tuple** of (`bool`, `bool` or `str`):
+      - On a `spec` that parses: (True, matched), where `matched` is True if `value` is
+        inside the bounds for a non-inverted `spec`, or outside the bounds for an
+        inverted one. Callers alert when `matched` is False.
+      - On a `spec` that does not parse: (False, reason). Callers turn this into UNKNOWN.
+
+    ### Notes
+    - Both bounds are inclusive.
+    - A trailing `%` on a bound is ignored, so `90:` and `90%:` mean the same.
 
     ### Example
-    >>> match_range(15, '10')
-    0 10 False
+    >>> match_range(15, '10')  # outside 0..10
+    (True, False)
+
+    >>> match_range(5, '10')  # inside 0..10
+    (True, True)
 
     >>> match_range(15, '-10')
     (False, 'Start 0 must not be greater than end -10')
 
-    >>> match_range(15, '10:')
-    10 inf False
+    >>> match_range(15, '1,5')
+    (False, 'Range format incorrect')
 
-    >>> match_range(15, ':')
-    0 inf False
+    >>> match_range(15, '10:')  # inside 10..inf
+    (True, True)
 
-    >>> match_range(15, '~:10')
-    -inf 10 False
+    >>> match_range(15, ':')  # inside 0..inf
+    (True, True)
 
-    >>> match_range(15, '10:20')
-    10 20 False
+    >>> match_range(15, '~:10')  # outside -inf..10
+    (True, False)
 
-    >>> match_range(15, '@10')
-    0 10 True
+    >>> match_range(15, '10:20')  # inside 10..20
+    (True, True)
 
-    >>> match_range(15, '@~:20')
-    -inf 20 True
+    >>> match_range(15, '@10:20')  # inside 10..20, and the range is inverted
+    (True, False)
 
-    >>> match_range(15, '@')
-    0 inf True
+    >>> match_range(15, '@~:20')  # inside -inf..20, and the range is inverted
+    (True, False)
+
+    >>> match_range(15, '@')  # inside 0..inf, and the range is inverted
+    (True, False)
     """
     if isinstance(spec, str):
         spec = spec.lstrip('\\')

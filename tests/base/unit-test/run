@@ -600,6 +600,189 @@ class TestMatchRange(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class TestMatchRangeUpstreamCorpus(unittest.TestCase):
+    """The range assertions of `lib/tests/test_utils.c` in monitoring-plugins, the
+    project that defines the range syntax. Its `parse_range_string()` and
+    `check_range()` are what every other implementation is measured against, so its
+    test cases are carried here verbatim rather than paraphrased.
+
+    `check_range()` answers "should this alert", `match_range()` answers "does this
+    match", so the expectations are the upstream ones inverted.
+    """
+
+    def assert_alert(self, spec, value):
+        success, matched = base.match_range(value, spec)
+        self.assertTrue(success, f'{spec!r} should parse')
+        self.assertFalse(matched, f'{spec!r} should alert on {value}')
+
+    def assert_no_alert(self, spec, value):
+        success, matched = base.match_range(value, spec)
+        self.assertTrue(success, f'{spec!r} should parse')
+        self.assertTrue(matched, f'{spec!r} should not alert on {value}')
+
+    def test_plain_upper_bound(self):
+        self.assert_no_alert('6', 5)
+        self.assert_no_alert('6', 6)
+        self.assert_alert('6', 7)
+
+    def test_percentages_are_ignored(self):
+        # Upstream: "'1:12%' is valid - percentages are ignored".
+        self.assert_alert('1:12%', 0)
+        self.assert_no_alert('1:12%', 5)
+        self.assert_alert('1:12%', 13)
+
+    def test_the_doubled_percent_of_the_upstream_case_is_refused(self):
+        """The one upstream case not carried over. Its input literal is `1:12%%` with
+        two percent signs, which reads as a `printf` escape copied from the assertion
+        message on the line below it, where it belongs. A bound carries one unit, so a
+        second percent sign is a typo and is reported rather than ignored.
+        """
+        success, _ = base.match_range(5, '1:12%%')
+        self.assertFalse(success)
+
+    def test_negative_start(self):
+        self.assert_no_alert('-7:23', 0)
+        self.assert_alert('-7:23', -8)
+
+    def test_omitted_start(self):
+        self.assert_no_alert(':5.75', 5)
+        self.assert_alert(':5.75', 6)
+
+    def test_neg_infinity_to_negative_end(self):
+        self.assert_no_alert('~:-95.99', -100)
+        self.assert_alert('~:-95.99', 0)
+
+    def test_bound_too_wide_for_exact_arithmetic(self):
+        # A bound that loses precision as a float has to lose it the same way the value
+        # does, or the value reads as below the threshold it is.
+        huge = 12345678901234567890.0
+        self.assert_alert('12345678901234567890:', huge / 1.1)
+        self.assert_no_alert('12345678901234567890:', huge)
+        self.assert_no_alert('12345678901234567890:', huge * 2)
+
+    def test_neg_infinity_to_zero(self):
+        self.assert_alert('~:0', 0.5)
+        self.assert_no_alert('~:0', -10)
+        self.assert_no_alert('~:0', 0)
+
+    def test_inverted_with_float_end(self):
+        self.assert_alert('@0:657.8210567', 32.88)
+        self.assert_no_alert('@0:657.8210567', -2)
+        self.assert_alert('@0:657.8210567', 657.8210567)
+        self.assert_alert('@0:657.8210567', 0)
+
+    def test_inverted_single_point(self):
+        self.assert_no_alert('@1:1', 0.5)
+        self.assert_alert('@1:1', 1)
+        self.assert_no_alert('@1:1', 5.2)
+
+    def test_single_point(self):
+        self.assert_alert('1:1', 0.5)
+        self.assert_no_alert('1:1', 1)
+        self.assert_alert('1:1', 5.2)
+
+    def test_start_after_end_is_rejected(self):
+        success, _ = base.match_range(0, '2:1')
+        self.assertFalse(success)
+
+    def test_get_state_thresholds(self):
+        self.assertEqual(base.get_state(15.3, '30', '60', _operator='range'), STATE_OK)
+        self.assertEqual(
+            base.get_state(30.0001, '30', '60', _operator='range'), STATE_WARN
+        )
+        self.assertEqual(base.get_state(69, '30', '60', _operator='range'), STATE_CRIT)
+
+    def test_get_state_warn_nested_in_crit(self):
+        warn, crit = '-10:-2', '-30:20'
+        expected = [
+            (-31, STATE_CRIT),
+            (-29, STATE_WARN),
+            (-11, STATE_WARN),
+            (-10, STATE_OK),
+            (-2, STATE_OK),
+            (-1, STATE_WARN),
+            (19, STATE_WARN),
+            (21, STATE_CRIT),
+        ]
+        for value, state in expected:
+            self.assertEqual(
+                base.get_state(value, warn, crit, _operator='range'), state, f'{value}'
+            )
+
+    def test_get_state_with_only_one_threshold(self):
+        self.assertEqual(base.get_state(50, None, '80', _operator='range'), STATE_OK)
+        self.assertEqual(base.get_state(90, None, '80', _operator='range'), STATE_CRIT)
+        self.assertEqual(base.get_state(10, '5:33', None, _operator='range'), STATE_OK)
+        self.assertEqual(base.get_state(2, '5:33', None, _operator='range'), STATE_WARN)
+        self.assertEqual(base.get_state(999, None, None, _operator='range'), STATE_OK)
+
+
+class TestMatchRangeMalformed(unittest.TestCase):
+    """A range that cannot be read has to come back as a message the caller turns into
+    UNKNOWN. It must never raise: the plugin would answer the admin with a Python
+    traceback in place of the threshold they mistyped.
+    """
+
+    UNREADABLE = (
+        '1,5',  # decimal comma
+        'abc',
+        '10abc',
+        'abc10',
+        '@abc',
+        '1_000',  # Python reads underscores in numbers, the range syntax does not
+        'inf',
+        'nan',
+        '0x10',
+        '~',  # only meaningful as the start of a range
+        '10:20:30',
+        '::',
+    )
+
+    def test_unreadable_ranges_are_reported_not_raised(self):
+        for spec in self.UNREADABLE:
+            with self.subTest(spec=spec):
+                success, reason = base.match_range(5, spec)
+                self.assertFalse(success)
+                self.assertIsInstance(reason, str)
+
+    def test_unreadable_threshold_yields_unknown(self):
+        for spec in self.UNREADABLE:
+            with self.subTest(spec=spec):
+                self.assertEqual(
+                    base.get_state(5, spec, None, _operator='range'), STATE_UNKNOWN
+                )
+                self.assertEqual(
+                    base.get_state(5, None, spec, _operator='range'), STATE_UNKNOWN
+                )
+
+
+class TestMatchRangeNumberFormats(unittest.TestCase):
+    def test_exponent_notation(self):
+        self.assertEqual(base.match_range(95, '1e3'), (True, True))
+        self.assertEqual(base.match_range(95, '1E3'), (True, True))
+        self.assertEqual(base.match_range(95, '1.5e3'), (True, True))
+        self.assertEqual(base.match_range(95, '5e-1'), (True, False))
+
+    def test_percent_sign_is_a_single_trailing_one(self):
+        self.assertEqual(base.match_range(95, '90%'), (True, False))
+        ok, _ = base.match_range(95, '90%%')
+        self.assertFalse(ok)
+        ok, _ = base.match_range(95, '9%0')
+        self.assertFalse(ok)
+
+    def test_percent_sign_on_either_bound(self):
+        self.assertEqual(base.match_range(95, '90%:'), (True, True))
+        self.assertEqual(base.match_range(85, '@80%:90%'), (True, False))
+        self.assertEqual(base.match_range(95, '@80%:90%'), (True, True))
+
+    def test_surrounding_whitespace(self):
+        self.assertEqual(base.match_range(15, ' 10 : 20 '), (True, True))
+
+    def test_bounds_that_omit_a_digit(self):
+        self.assertEqual(base.match_range(5, '10.'), (True, True))
+        self.assertEqual(base.match_range(0.25, '.5'), (True, True))
+
+
 class TestOao(unittest.TestCase):
     def test_basic_ok(self):
         with capture_exit() as h:

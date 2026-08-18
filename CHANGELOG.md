@@ -8,18 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Fixed
+
+* base.py: `match_range()` accepts a threshold with a percent sign (`90%:`) or an exponent (`1e3`).
+* base.py: `match_range()` compares a very large threshold correctly instead of reading the value as below it.
+* base.py: `match_range()` reports a mistyped threshold (`1,5`) instead of raising a stack trace.
+* human.py: `humanrange2bytes()` and `humanrange2seconds()` keep the catch-all range `:`.
+* human.py: `humanrange2bytes()` and `humanrange2seconds()` report an unreadable bound (`1,5M`) instead of turning it into the threshold zero, which alerted on everything.
+
+
+## [v7.1.1] - 2026-08-18
+
+### Fixed
+
+* human.py: `human2bytes()` reads a size without a qualifier (`1048576` instead of `1M`) as a byte count instead of zero, which alerted on everything. Same for plain integers out of config files.
+* human.py: `humanrange2bytes()` and `humanrange2seconds()` keep an open lower bound (`~:1M`) and a bare `@`. Both came out mangled and left the check UNKNOWN.
 
 
 ## [v7.1.0] - 2026-08-14
 
 ### Added
 
-* base.py: `cu()` takes a `traceback`, so a consumer reporting a situation it expects, the socket of a service that is not installed for example, prints its sentence without a Python stack trace below it.
+* base.py: `cu()` takes a `traceback`, so a consumer reporting an expected situation prints its sentence without a stack trace below it.
 
 ### Fixed
 
-* base.py: a table cell holding something that reads like an HTML tag, `<unknown>` for example, keeps the table in shape instead of shifting its row against all the others.
+* base.py: `get_table()` keeps its rows aligned when a cell reads like an HTML tag (`<unknown>`).
 
 
 ## [v7.0.0] - 2026-08-14
@@ -962,7 +976,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v7.1.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v7.1.1...HEAD
+[v7.1.1]: https://github.com/Linuxfabrik/lib/compare/v7.1.0...v7.1.1
 [v7.1.0]: https://github.com/Linuxfabrik/lib/compare/v7.0.0...v7.1.0
 [v7.0.0]: https://github.com/Linuxfabrik/lib/compare/v6.1.0...v7.0.0
 [v6.1.0]: https://github.com/Linuxfabrik/lib/compare/v6.0.0...v6.1.0

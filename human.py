@@ -13,9 +13,10 @@ back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026081801'
 
 import math
+import re
 
 # Pre-computed thresholds for bits2human (descending order)
 _BITS_THRESHOLDS = (
@@ -319,12 +320,16 @@ def human2bytes(string, binary=True):
 
     ### Parameters
     - **string** (`str`): A string representing the size to convert. It can include any of the
-      common size units like 'GiB', 'GB', 'MB', 'kB', etc.
+      common size units like 'GiB', 'GB', 'MB', 'kB', etc. A string carrying no unit at all is
+      read as a plain byte count.
     - **binary** (`bool`, optional): If True (default), the function will use binary units
       (base 1024). If False, it will use decimal units (base 1000).
 
     ### Returns
     - **int**: The equivalent size in bytes, or 0 if the conversion fails.
+
+    ### Notes
+    - The result is truncated towards zero, so '3.7' and '3.7B' both yield 3.
 
     ### Example
     >>> human2bytes('3.072GiB')
@@ -332,6 +337,9 @@ def human2bytes(string, binary=True):
 
     >>> human2bytes('3.072G', binary=False)
     3072000000
+
+    >>> human2bytes('1024')
+    1024
     """
     try:
         string_lower = string.lower()
@@ -351,8 +359,14 @@ def human2bytes(string, binary=True):
         if 'b' in string_lower:
             return int(float(string_lower.replace('b', '').strip()))
 
-        return 0
+        # No unit at all: the value is already a byte count. Consumers hand this
+        # function raw counts from configuration files (`gcache.size = 134217728`,
+        # a php.ini directive written as a plain integer) and thresholds an
+        # administrator typed without a qualifier. Returning 0 for those turns a
+        # threshold into "alert on anything above zero" without saying so.
+        return int(float(string_lower.strip()))
     except Exception:
+        # Not a size at all. Callers treat 0 as "nothing to compare against".
         return 0
 
 
@@ -452,19 +466,40 @@ def humanduration2seconds(text):
     return sum(human2seconds(duration) for duration in extract_hrnumbers(text))
 
 
+# A bound the converters can read: one or more groups of a number followed by its unit,
+# so `4K`, `5 MiB` and the `1Y1D` of a duration. Kept in step with the numbers
+# `lib.base._parse_range()` accepts, so that a bound this module converts and a bound an
+# administrator writes without a unit are held to the same grammar: no decimal comma, no
+# thousands separator, nothing Python would read as a number but the range syntax does
+# not define. Exponent notation is not one grammar here: in a size, `e` is exa, and
+# `1e3` is three exabytes rather than the thousand it would be in a bare threshold.
+_QUANTITY = re.compile(r'^(?:\s*\d+(?:\.\d+)?\s*[A-Za-z]*\s*)+$')
+
+
 def _convert_range(text, convert_fn):
     parts = []
     for part in text.split(':'):
-        if not part:
-            continue
         raw = part.replace('-', '').replace('~', '').replace('@', '')
+        if not raw:
+            # The bound carries no number, it is only a marker: an omitted bound, `~`
+            # for negative infinity, or a bare `@` for an inverted range. There is
+            # nothing to convert, and `str.replace('', x)` would splice `x` between
+            # every character and turn `~` into `0~0`, which no range parser accepts.
+            # An omitted bound is kept in place rather than dropped: it is what tells
+            # the range parser which side is open, and a `:` that lost it becomes a
+            # range nobody can read.
+            parts.append(part)
+            continue
+        if not _QUANTITY.match(raw):
+            # Not a quantity the converters can read. They answer 0 for anything they
+            # cannot, which as a range bound is not "nothing to compare against" but the
+            # threshold zero: `1,5M` with a decimal comma would silently become `0:0`
+            # and alert on every value but zero. Handing the bound on unconverted lets
+            # the range parser reject it and the plugin report UNKNOWN.
+            parts.append(part)
+            continue
         parts.append(part.replace(raw, str(convert_fn(raw))))
-    result = ':'.join(parts)
-    if text.startswith(':'):
-        result = ':' + result
-    if text.endswith(':'):
-        result += ':'
-    return result
+    return ':'.join(parts)
 
 
 def humanrange2bytes(text):
@@ -474,16 +509,25 @@ def humanrange2bytes(text):
 
     ### Parameters
     - **text** (`str`): A Nagios-style range string, such as
-      '@4K:5 MiB', where units like K, M, or B are used.
+      '@4K:5 MiB', where units like K, M, or B are used. A bound
+      without a unit is taken as a byte count.
 
     ### Returns
     - **str**: The range with each value converted into bytes,
       using 1024 as the base for conversions.
 
+    ### Notes
+    - The markers of the range syntax are preserved: an omitted
+      bound, `~` for negative infinity, the `@` of an inverted
+      range, and the sign of a negative bound.
+
     ### Example
     >>> text = '@4K:5 MiB'
     >>> humanrange2bytes(text)
     '@4096:5242880'
+
+    >>> humanrange2bytes('~:1M')
+    '~:1048576'
     """
     return _convert_range(text, human2bytes)
 
