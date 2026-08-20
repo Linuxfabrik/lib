@@ -22,7 +22,7 @@ Typical use case:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026073001'
+__version__ = '2026082001'
 
 from . import url
 
@@ -106,6 +106,45 @@ def get_data(args, token_data, uri):
         no_proxy=args.NO_PROXY,
         timeout=args.TIMEOUT,
     )
+
+
+def get_server_info_section(server_info, section):
+    """
+    Return one section of a Keycloak `/admin/serverinfo` document.
+
+    Keycloak reports the `cpuInfo`, `memoryInfo` and `systemInfo` sections only to an
+    account that is allowed to manage the realm it authenticates against, and reports
+    them in full only in the administration realm (`master`). Every other account gets a
+    document without those sections, so a consumer reading one of them ends up with
+    nothing to evaluate and has to say why.
+
+    ### Parameters
+    - **server_info** (`dict`): The parsed `/admin/serverinfo` response.
+    - **section** (`str`): Name of the section to return, for example `memoryInfo`.
+
+    ### Returns
+    - **tuple** (`bool`, `dict` or `str`):
+      - `success` (`bool`): True if the section holds data, False otherwise.
+      - `result` (`dict` or `str`): The section or an error message naming the role that
+        makes Keycloak report it.
+
+    ### Notes
+    - Verified against Keycloak 26.7.2. Up to 26.6 an account authenticating against the
+      administration realm received these sections regardless of its roles; since 26.7.0
+      the `manage-realm` role decides.
+
+    ### Example
+    >>> success, memory_info = get_server_info_section(server_info, 'memoryInfo')
+    """
+    data = server_info.get(section)
+    if not data:
+        return False, (
+            f'Keycloak reports no "{section}" for this account.\n'
+            f'Keycloak hands out that section only to an account holding the '
+            f'"manage-realm" role in its administration realm ("master"). Grant that '
+            f'role to the account used here, or use one that already has it.'
+        )
+    return True, data
 
 
 def obtain_admin_token(args, oidc_config):

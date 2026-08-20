@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it when the section is missing.
+
 ### Changed
 
 * url.py: `fetch()` says what is wrong with a certificate that does not verify and what to do about it, instead of repeating the library's own wording. An incomplete chain, an expired certificate, a private issuer and a name mismatch are told apart.
