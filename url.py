@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081801'
+__version__ = '2026082001'
 
 import base64
 import json
@@ -368,21 +368,34 @@ def _build_timing_classes():
                 raise httpcore.ConnectError(str(e)) from e
             self.timings['dns'] = time.monotonic() - t
 
-            family, socktype, proto, _, sockaddr = addrs[0]
-            sock = socket.socket(family, socktype, proto)
-            if local_address is not None:
-                sock.bind((local_address, 0))
-            if socket_options is not None:
-                for opt in socket_options:
-                    sock.setsockopt(*opt)
-            sock.settimeout(timeout)
-
+            # A name usually resolves to more than one address, and only one of
+            # them may be listening. "localhost" on a dual-stacked host is the
+            # everyday case: it yields ::1 before 127.0.0.1, while a service
+            # bound to 0.0.0.0 answers on the second address only. Walk the
+            # whole list the way socket.create_connection() does, so a refused
+            # or unreachable first address does not end the attempt.
+            sock = None
+            last_error = None
             t = time.monotonic()
-            try:
-                sock.connect(sockaddr)
-            except (OSError, socket.timeout) as e:
-                sock.close()
-                raise httpcore.ConnectError(str(e)) from e
+            for family, socktype, proto, _, sockaddr in addrs:
+                try:
+                    sock = socket.socket(family, socktype, proto)
+                    if local_address is not None:
+                        sock.bind((local_address, 0))
+                    if socket_options is not None:
+                        for opt in socket_options:
+                            sock.setsockopt(*opt)
+                    sock.settimeout(timeout)
+                    sock.connect(sockaddr)
+                except (OSError, socket.timeout) as e:
+                    last_error = e
+                    if sock is not None:
+                        sock.close()
+                        sock = None
+                    continue
+                break
+            if sock is None:
+                raise httpcore.ConnectError(str(last_error)) from last_error
             self.timings['connect'] = time.monotonic() - t
 
             # Wrap the raw socket in httpcore's standard sync stream so that read/write

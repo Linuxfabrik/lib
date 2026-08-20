@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * url.py: `fetch()` says what is wrong with a certificate that does not verify and what to do about it, instead of repeating the library's own wording. An incomplete chain, an expired certificate, a private issuer and a name mismatch are told apart.
 * url.py: `fetch()` points out that a plaintext request may have been sent to a port that speaks TLS, instead of only reporting that the server disconnected.
 
+### Fixed
+
+* url.py: `fetch(extended=True)` tries every address a hostname resolves to instead of only the first one. On a dual-stacked host, `http://localhost` resolves to `::1` first and a service listening on `0.0.0.0` was reported as refusing the connection.
+
 
 ## [v7.1.1] - 2026-08-18
 
