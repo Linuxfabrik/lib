@@ -120,7 +120,9 @@ class TestLoadSecret(unittest.TestCase):
         self.assertEqual(args.load_secret(self._write('linuxfabrik\n')), 'linuxfabrik')
 
     def test_strips_a_windows_line_ending(self):
-        self.assertEqual(args.load_secret(self._write('linuxfabrik\r\n')), 'linuxfabrik')
+        self.assertEqual(
+            args.load_secret(self._write('linuxfabrik\r\n')), 'linuxfabrik'
+        )
 
     def test_only_the_first_line_is_the_secret(self):
         self.assertEqual(
@@ -130,7 +132,9 @@ class TestLoadSecret(unittest.TestCase):
 
     def test_surrounding_spaces_are_part_of_the_secret(self):
         # Stripping them would make a valid password fail with no way to tell why.
-        self.assertEqual(args.load_secret(self._write('  linuxfabrik  \n')), '  linuxfabrik  ')
+        self.assertEqual(
+            args.load_secret(self._write('  linuxfabrik  \n')), '  linuxfabrik  '
+        )
 
     def test_empty_file_aborts(self):
         # An empty secret would be sent to the remote end as an empty password, which

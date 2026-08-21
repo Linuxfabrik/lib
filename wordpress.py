@@ -403,9 +403,7 @@ def get_site_url(path):
         os.path.join(path, CONFIG_FILE),
         os.path.join(path, os.pardir, CONFIG_FILE),
     ):
-        success, config = disk.read_file(
-            candidate, binary=True, max_bytes=CONFIG_BYTES
-        )
+        success, config = disk.read_file(candidate, binary=True, max_bytes=CONFIG_BYTES)
         if not success:
             error = error or config
             continue

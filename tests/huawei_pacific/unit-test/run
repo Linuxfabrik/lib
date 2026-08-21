@@ -358,7 +358,9 @@ class TestComponentStatusState(unittest.TestCase):
     def test_value_is_normalised(self):
         # A firmware that capitalises the value differently must not turn a
         # healthy fan into a warning.
-        self.assertEqual(huawei_pacific.get_component_status_state(' Normal '), STATE_OK)
+        self.assertEqual(
+            huawei_pacific.get_component_status_state(' Normal '), STATE_OK
+        )
         self.assertEqual(huawei_pacific.get_component_status_state('FAULT'), STATE_CRIT)
 
     def test_absent_is_ok(self):
@@ -444,17 +446,13 @@ class TestPoolStatusState(unittest.TestCase):
     def test_faulty_and_stopped_are_critical(self):
         for code in (1, 3, 4):
             with self.subTest(code=code):
-                self.assertEqual(
-                    huawei_pacific.get_pool_status_state(code), STATE_CRIT
-                )
+                self.assertEqual(huawei_pacific.get_pool_status_state(code), STATE_CRIT)
 
     def test_recoverable_states_warn(self):
         # The pool still serves reads, and the last three work themselves out.
         for code in (2, 5, 7, 8):
             with self.subTest(code=code):
-                self.assertEqual(
-                    huawei_pacific.get_pool_status_state(code), STATE_WARN
-                )
+                self.assertEqual(huawei_pacific.get_pool_status_state(code), STATE_WARN)
 
     def test_unmapped_code_warns(self):
         self.assertEqual(huawei_pacific.get_pool_status_state(6), STATE_WARN)
@@ -470,7 +468,9 @@ class TestAssertOk(unittest.TestCase):
         )
 
     def test_success_as_a_string_returns(self):
-        self.assertIsNone(huawei_pacific.assert_ok({'result': {'code': '0'}}, 'the fans'))
+        self.assertIsNone(
+            huawei_pacific.assert_ok({'result': {'code': '0'}}, 'the fans')
+        )
 
     def test_bare_result_of_the_older_endpoints_returns(self):
         # The endpoints below /dsware/service/ send the code bare instead of wrapped in an
@@ -489,7 +489,10 @@ class TestAssertOk(unittest.TestCase):
             huawei_pacific.assert_ok({'result': 1}, 'the disks')
 
     def test_error_text_names_the_query_and_the_appliance_reason(self):
-        with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()) as out:
+        with (
+            self.assertRaises(SystemExit),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
             huawei_pacific.assert_ok(
                 {
                     'result': {
@@ -1083,7 +1086,11 @@ class TestGetPerformance(PacificHttpTestBase):
     def test_posts_the_documented_body(self):
         self.respond([])
         huawei_pacific.get_performance(
-            huawei_pacific.PERFORMANCE_OBJECT_NODE, (68,), self.args, ids=(1,), window=60
+            huawei_pacific.PERFORMANCE_OBJECT_NODE,
+            (68,),
+            self.args,
+            ids=(1,),
+            window=60,
         )
         payload = self.sent_kwargs()['data']
         self.assertEqual(payload['begin_time'], 1_000_000 - 60)

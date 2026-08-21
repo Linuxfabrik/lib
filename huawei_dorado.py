@@ -84,11 +84,7 @@ def _redact(value):
     """
     if isinstance(value, dict):
         return {
-            key: (
-                '******'
-                if str(key).lower() in _REDACTED_FIELDS
-                else _redact(inner)
-            )
+            key: ('******' if str(key).lower() in _REDACTED_FIELDS else _redact(inner))
             for key, inner in value.items()
         }
     if isinstance(value, list):
@@ -1869,6 +1865,7 @@ PERFORMANCE_INDICATORS = {
     384: ('avg_read_io_response_time', 's', 1 / 1_000_000),
     385: ('avg_write_io_response_time', 's', 1 / 1_000_000),
 }
+
 
 def get_performance_perfdata(prefix, samples, indicators=None):
     """
