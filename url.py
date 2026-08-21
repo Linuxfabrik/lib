@@ -78,12 +78,12 @@ _REDIRECT_SAFE_HEADERS = frozenset(
 # badssl.com endpoints plus a real host serving an incomplete chain.
 _TLS_CHAIN_HINT = (
     'The server sends no intermediate certificate to link its own certificate to '
-    'a trusted root, or the issuing authority is not in this host\'s trust store. '
+    "a trusted root, or the issuing authority is not in this host's trust store. "
     'A browser papers over this by fetching the missing certificate itself, other '
     'clients do not. Compare with '
     '"openssl s_client -connect HOST:PORT -servername HOST": a chain listing only '
     'the server certificate has to be completed on the server, a private issuer '
-    'has to be added to this host\'s trust store.'
+    "has to be added to this host's trust store."
 )
 TLS_VERIFY_HINTS = {
     2: _TLS_CHAIN_HINT,  # unable to get issuer certificate
@@ -93,13 +93,13 @@ TLS_VERIFY_HINTS = {
     ),
     10: 'The server certificate has expired and has to be renewed on the server.',
     18: (
-        'The server presents a self-signed certificate. Add it to this host\'s '
+        "The server presents a self-signed certificate. Add it to this host's "
         'trust store, or accept an unverified connection for this endpoint on '
         'purpose.'
     ),
     19: (
         'The chain ends in a certificate authority this host does not trust. Add '
-        'that authority\'s certificate to this host\'s trust store.'
+        "that authority's certificate to this host's trust store."
     ),
     20: _TLS_CHAIN_HINT,  # unable to get local issuer certificate
     21: _TLS_CHAIN_HINT,  # unable to verify the first certificate

@@ -63,11 +63,7 @@ def _redact(value):
     """
     if isinstance(value, dict):
         return {
-            key: (
-                '******'
-                if str(key).lower() in _REDACTED_FIELDS
-                else _redact(inner)
-            )
+            key: ('******' if str(key).lower() in _REDACTED_FIELDS else _redact(inner))
             for key, inner in value.items()
         }
     if isinstance(value, list):
@@ -1317,7 +1313,10 @@ def get_performance(object_type, indicators, args, ids=None, window=PERFORMANCE_
     {'1': {'68': '17.0', '69': '45.0'}, '2': {'68': '9.0', '69': '37.0'}}
     """
     end_time = time.now()
-    query = {'object_type': str(object_type), 'indicators': [str(i) for i in indicators]}
+    query = {
+        'object_type': str(object_type),
+        'indicators': [str(i) for i in indicators],
+    }
     if ids is not None:
         query['ids'] = list(ids)
 

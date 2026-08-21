@@ -415,7 +415,9 @@ class TestStripAnsi(unittest.TestCase):
         self.assertEqual(txt.strip_ansi('\x1b]0;window title\x07body'), 'body')
 
     def test_osc_terminated_by_string_terminator(self):
-        self.assertEqual(txt.strip_ansi('\x1b]8;;https://example.com\x1b\\link'), 'link')
+        self.assertEqual(
+            txt.strip_ansi('\x1b]8;;https://example.com\x1b\\link'), 'link'
+        )
 
     def test_multiple_sequences_in_one_line(self):
         self.assertEqual(

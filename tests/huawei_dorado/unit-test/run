@@ -371,7 +371,9 @@ class TestRunningStatusState(unittest.TestCase):
     def test_same_code_differs_per_object(self):
         # Charging is the resting state of a backup power module and nonsense
         # anywhere else, which is the whole reason ok_codes is a parameter.
-        self.assertEqual(huawei.get_running_status_state(48, (1, 2, 27, 48, 49)), STATE_OK)
+        self.assertEqual(
+            huawei.get_running_status_state(48, (1, 2, 27, 48, 49)), STATE_OK
+        )
         self.assertEqual(huawei.get_running_status_state(48, (1, 27)), STATE_WARN)
 
     def test_failed_codes_are_critical(self):
@@ -427,10 +429,14 @@ class TestHypermetroDomainRunningStatusState(unittest.TestCase):
         # Read through the shared mapper code 1 would be 'Normal' and come out
         # OK; on a domain it means the mirror is still recovering.
         self.assertEqual(huawei.get_running_status_state(1, (1,)), STATE_OK)
-        self.assertEqual(huawei.get_hypermetro_domain_running_status_state(1), STATE_WARN)
+        self.assertEqual(
+            huawei.get_hypermetro_domain_running_status_state(1), STATE_WARN
+        )
 
     def test_missing_value_warns(self):
-        self.assertEqual(huawei.get_hypermetro_domain_running_status_state(None), STATE_WARN)
+        self.assertEqual(
+            huawei.get_hypermetro_domain_running_status_state(None), STATE_WARN
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -488,7 +494,9 @@ class TestGetUuid(unittest.TestCase):
 
 class TestAssertOk(unittest.TestCase):
     def test_success_returns(self):
-        self.assertIsNone(huawei.assert_ok({'error': {'code': 0}, 'data': []}, 'the fans'))
+        self.assertIsNone(
+            huawei.assert_ok({'error': {'code': 0}, 'data': []}, 'the fans')
+        )
 
     def test_success_as_a_string_returns(self):
         # Some endpoints report the code as a string. Treating that as an error would take
@@ -501,7 +509,10 @@ class TestAssertOk(unittest.TestCase):
         self.assertEqual(ctx.exception.code, STATE_UNKNOWN)
 
     def test_error_text_names_the_query_and_the_appliance_reason(self):
-        with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()) as out:
+        with (
+            self.assertRaises(SystemExit),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
             huawei.assert_ok(
                 {
                     'error': {
@@ -647,7 +658,9 @@ class TestField(unittest.TestCase):
     def test_matches_a_different_case(self):
         # The sfp object is documented in camelCase and answered in upper case on the
         # same page of the REST Interface Reference.
-        self.assertEqual(huawei.field({'RXPOWER': '[12]'}, 'rxPowerReal', 'RXPOWER'), '[12]')
+        self.assertEqual(
+            huawei.field({'RXPOWER': '[12]'}, 'rxPowerReal', 'RXPOWER'), '[12]'
+        )
         self.assertEqual(huawei.field({'healthStatus': '1'}, 'HEALTHSTATUS'), '1')
 
     def test_exact_match_wins_over_a_case_insensitive_one(self):
@@ -1250,7 +1263,10 @@ class TestGetAllData(HuaweiHttpTestBase):
         self.assertNotIn('ID', str(result.get('data', '')))
 
     def test_single_object_response_is_not_paged(self):
-        self.fetch_json.return_value = (True, {'data': {'ID': '0'}, 'error': {'code': 0}})
+        self.fetch_json.return_value = (
+            True,
+            {'data': {'ID': '0'}, 'error': {'code': 0}},
+        )
         result, truncated = huawei.get_all_data('system/', self.args)
         self.assertEqual(result['data'], {'ID': '0'})
         self.assertFalse(truncated)

@@ -56,6 +56,7 @@ def _with_password(cmd, password):
         return cmd, None
     return ['sshpass', '-e', *cmd], {'SSHPASS': password}
 
+
 def build_options(
     configfile=None,
     identity=None,

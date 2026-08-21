@@ -1040,9 +1040,7 @@ class TestGetLatestVersionFromGithub(unittest.TestCase):
         self.assertFalse(res)
 
     def test_empty_dict_returns_false(self):
-        with mock.patch.object(
-            url, 'fetch_json', return_value=github_answer(200, {})
-        ):
+        with mock.patch.object(url, 'fetch_json', return_value=github_answer(200, {})):
             ok, res = url.get_latest_version_from_github('u', 'r')
         self.assertTrue(ok)
         self.assertFalse(res)
@@ -1101,7 +1099,9 @@ class TestGetLatestTagFromGithub(unittest.TestCase):
             'fetch_json',
             return_value=github_answer(200, list(GITHUB_TAGS_FIXTURE)),
         ) as m:
-            ok, res = url.get_latest_tag_from_github('Icinga', 'icingaweb2-theme-company')
+            ok, res = url.get_latest_tag_from_github(
+                'Icinga', 'icingaweb2-theme-company'
+            )
         self.assertTrue(ok)
         self.assertEqual(res, 'v1.0.0')
         self.assertEqual(
