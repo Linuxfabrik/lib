@@ -242,9 +242,7 @@ class TestFileHelpers(unittest.TestCase):
     def test_walk_directory_relative_paths_keep_their_subdirectory(self):
         disk.mkdir(os.path.join(self.dir, 'sub'))
         disk.write_file(os.path.join(self.dir, 'sub', 'y.txt'), 'y')
-        self.assertEqual(
-            disk.walk_directory(os.path.join(self.dir, 'sub')), ['y.txt']
-        )
+        self.assertEqual(disk.walk_directory(os.path.join(self.dir, 'sub')), ['y.txt'])
         self.assertEqual(disk.walk_directory(self.dir), [os.path.join('sub', 'y.txt')])
 
     def test_walk_directory_relative_paths_tolerate_a_trailing_separator(self):
@@ -257,9 +255,7 @@ class TestFileHelpers(unittest.TestCase):
         root = os.path.join(self.dir, 'wp')
         disk.mkdir(os.path.join(root, 'a', 'wp'))
         disk.write_file(os.path.join(root, 'a', 'wp', 'b.txt'), 'b')
-        self.assertEqual(
-            disk.walk_directory(root), [os.path.join('a', 'wp', 'b.txt')]
-        )
+        self.assertEqual(disk.walk_directory(root), [os.path.join('a', 'wp', 'b.txt')])
 
     def test_walk_directory_absolute_paths(self):
         disk.write_file(self.file, 'x')
@@ -346,8 +342,10 @@ class TestHostHelpers(unittest.TestCase):
 class TestGetOwningPackage(unittest.TestCase):
     def test_rpm_answer_is_the_package_name(self):
         answer = (True, ('icinga-director-php-1.11.9-1.fc43.noarch\n', '', 0))
-        with mock.patch.object(disk.shell, 'which', side_effect=lambda n: n == 'rpm'), \
-                mock.patch.object(disk.shell, 'shell_exec', return_value=answer) as m:
+        with (
+            mock.patch.object(disk.shell, 'which', side_effect=lambda n: n == 'rpm'),
+            mock.patch.object(disk.shell, 'shell_exec', return_value=answer) as m,
+        ):
             self.assertEqual(
                 disk.get_package('/usr/share/icingaweb2/modules/director'),
                 'icinga-director-php-1.11.9-1.fc43.noarch',
@@ -358,9 +356,14 @@ class TestGetOwningPackage(unittest.TestCase):
         )
 
     def test_dpkg_answer_is_split_off_its_path(self):
-        answer = (True, ('icinga-director: /usr/share/icingaweb2/modules/director\n', '', 0))
-        with mock.patch.object(disk.shell, 'which', side_effect=lambda n: n == 'dpkg'), \
-                mock.patch.object(disk.shell, 'shell_exec', return_value=answer):
+        answer = (
+            True,
+            ('icinga-director: /usr/share/icingaweb2/modules/director\n', '', 0),
+        )
+        with (
+            mock.patch.object(disk.shell, 'which', side_effect=lambda n: n == 'dpkg'),
+            mock.patch.object(disk.shell, 'shell_exec', return_value=answer),
+        ):
             self.assertEqual(
                 disk.get_package('/usr/share/icingaweb2/modules/director'),
                 'icinga-director',
@@ -369,8 +372,10 @@ class TestGetOwningPackage(unittest.TestCase):
     def test_unowned_path_yields_no_package(self):
         # both package managers answer an unowned path with a non-zero return code
         answer = (True, ('file /opt/thing is not owned by any package\n', '', 1))
-        with mock.patch.object(disk.shell, 'which', side_effect=lambda n: n == 'rpm'), \
-                mock.patch.object(disk.shell, 'shell_exec', return_value=answer):
+        with (
+            mock.patch.object(disk.shell, 'which', side_effect=lambda n: n == 'rpm'),
+            mock.patch.object(disk.shell, 'shell_exec', return_value=answer),
+        ):
             self.assertEqual(disk.get_package('/opt/thing'), '')
 
     def test_host_without_a_package_manager_yields_no_package(self):
