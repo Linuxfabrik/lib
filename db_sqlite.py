@@ -532,13 +532,18 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     - **tuple** (`bool`, `list or bool or str`):
       - First element (`bool`): `True` if the calculation succeeded, `False` if a database error occurred.
       - Second element:
-        - A `list` of dictionaries containing per-sensor load values on success.
-        - `False` if there is not enough data to compute the load.
+        - A `list` of dictionaries containing per-sensor load values on success. Only the
+          sensors that already have `count` entries appear in it.
+        - `False` if not one sensor has enough data yet.
         - Error message (`str`) on database failure.
 
     ### Notes
     - The table must contain a `timestamp` column (UNIX epoch seconds).
-    - Data must exist for each sensor with at least `count` historical entries.
+    - A sensor with fewer than `count` entries is left out of the result rather than
+      blanking out the whole call. Sensors come and go while a consumer runs (an interface
+      is brought up, a virtual machine is started), and one of them being new is no reason
+      to stop reporting the ones that have been measured all along. A consumer that wants
+      to name them compares the sensors it asked about with the ones it got back.
     - Results include:
       - `<column>1`: Load computed between the two most recent entries.
       - `<column>n`: Load computed between the most recent and the oldest of `count` entries.
@@ -608,8 +613,11 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
         )
         if not success:
             return False, perfdata
+        # Not enough history for this sensor yet. Skip it and keep going: a sensor
+        # that appeared a moment ago must not blank out the ones that have been
+        # measured all along.
         if len(perfdata) < count:
-            return True, False
+            continue
 
         load1_delta = perfdata[0]['timestamp'] - perfdata[1]['timestamp']
         loadn_delta = perfdata[0]['timestamp'] - perfdata[count - 1]['timestamp']
@@ -629,6 +637,8 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
                 )
         load.append(tmp)
 
+    if not load:
+        return True, False
     return True, load
 
 
@@ -957,6 +967,87 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
             SELECT rowid FROM {table}
             ORDER BY rowid DESC
             LIMIT -1 OFFSET :_max
+        );
+    """  # nosec B608
+
+    c = conn.cursor()
+    try:
+        c.execute(sql, {'_max': _max})
+        return True, True
+    except sqlite3.Error as e:
+        return __handle_db_error(conn, e, sql, delete_db=delete_db_on_operational_error)
+    except Exception as e:
+        return False, f'Query failed: {sql}, Error: {e}'
+
+
+def cut_per_sensor(
+    conn,
+    sensorcol,
+    _max=5,
+    table='perfdata',
+    delete_db_on_operational_error=True,
+):
+    """
+    Keep only the latest records **per sensor** in a SQLite table.
+
+    `cut()` trims a table to a total number of rows, which is only ever correct when
+    one sensor owns the table. As soon as several do, whichever of them is written
+    most often evicts the history of the others, and a caller that wanted `_max`
+    samples of each is left with fewer or none. Multiplying `cut()`'s `_max` by the
+    number of sensors does not repair that: it assumes every sensor is written
+    equally often, which stops being true the moment the same check runs twice over
+    the same cache (a manual run next to the scheduled one) or the set of sensors
+    changes between runs.
+
+    ### Parameters
+    - **conn** (`sqlite3.Connection`): An active database connection object.
+    - **sensorcol** (`str`): Column that identifies the sensor, for example
+      `'interface'` or `'name'`.
+    - **_max** (`int`, optional): Number of rows to keep per sensor. Defaults to 5.
+    - **table** (`str`, optional): Name of the table. Defaults to `'perfdata'`.
+    - **delete_db_on_operational_error** (`bool`, optional): Delete the database file
+      on `sqlite3.OperationalError`. Defaults to True.
+
+    ### Returns
+    - **tuple** (`bool`, `bool` or `str`):
+      - `(True, True)` on success.
+      - `(False, error_message)` on failure.
+
+    ### Notes
+    - The table must contain a `timestamp` column. Rows are ranked newest first, with
+      `rowid` breaking a tie, so two samples sharing a timestamp keep a deterministic
+      order.
+    - Deliberately written without a window function, so it also runs on the SQLite
+      versions shipped with older distributions.
+
+    ### Example
+    Keep the five newest samples of every interface:
+    >>> cut_per_sensor(conn, sensorcol='interface', _max=5)
+    """
+    if _max < 1:
+        return False, f'Keeping rows per sensor needs a _max of at least 1, got {_max}'
+
+    known = __table_columns(conn, table)
+    if known and sensorcol not in known:
+        return False, f'No such column {sensorcol} in table {table}'
+
+    quoted_table = __quote_ident(table)
+    quoted_sensorcol = __quote_ident(sensorcol)
+
+    # Delete every row that already has `_max` newer rows of the same sensor.
+    # `table` and `sensorcol` are quoted above, `_max` is bound.
+    sql = f"""
+        DELETE FROM {quoted_table}
+        WHERE rowid IN (
+            SELECT a.rowid FROM {quoted_table} a
+            WHERE (
+                SELECT COUNT(*) FROM {quoted_table} b
+                WHERE b.{quoted_sensorcol} = a.{quoted_sensorcol}
+                  AND (
+                    b.timestamp > a.timestamp
+                    OR (b.timestamp = a.timestamp AND b.rowid > a.rowid)
+                  )
+            ) >= :_max
         );
     """  # nosec B608
 

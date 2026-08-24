@@ -11,11 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * base.py: `range2txt()` says in words what a threshold range demands, and of which value (`age=3D not in (0s..2D)`), so a check no longer has to repeat the range syntax at the reader.
+* db_sqlite.py: `cut_per_sensor()` keeps the newest rows of every sensor instead of trimming a table to a total row count, so the instance written most often no longer evicts the history of the others.
 * keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it when the section is missing.
 * kvm.py: new module for libvirt hosts. `get_domstats()` collects the statistics of every domain in a single `virsh` call, `get_domains()` lists them, filtered by autostart or any other `virsh list` filter, `get_pools()` and `get_pool_info()` cover storage pools. Everything runs over a read-only connection, which needs neither root nor sudo.
 
 ### Changed
 
+* db_sqlite.py: `compute_load()` reports the sensors that already have enough samples instead of answering with nothing at all while a single new sensor warms up.
 * url.py: `fetch()` says what is wrong with a certificate that does not verify and what to do about it, instead of repeating the library's own wording. An incomplete chain, an expired certificate, a private issuer and a name mismatch are told apart.
 * url.py: `fetch()` points out that a plaintext request may have been sent to a port that speaks TLS, instead of only reporting that the server disconnected.
 
