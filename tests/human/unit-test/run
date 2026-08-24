@@ -95,8 +95,15 @@ class TestSeconds2Human(unittest.TestCase):
             '1hour 1minute 1second',
         )
 
-    def test_zero_is_empty(self):
-        self.assertEqual(human.seconds2human(0), '')
+    def test_zero_keeps_its_unit(self):
+        self.assertEqual(human.seconds2human(0), '0s')
+        self.assertEqual(human.seconds2human('0'), '0s')
+        self.assertEqual(human.seconds2human(0, full_name=True), '0seconds')
+
+    def test_negative_is_signed(self):
+        self.assertEqual(human.seconds2human(-5), '-5s')
+        self.assertEqual(human.seconds2human(-3661), '-1h 1m')
+        self.assertEqual(human.seconds2human(-3661, keep_short=False), '-1h 1m 1s')
 
     def test_very_large(self):
         self.assertEqual(human.seconds2human(10**8), '3Y 2M')

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* human.py: `seconds2human()` answers `0s` for a duration of zero instead of an empty string, which dropped the value out of the sentence it was formatted for. A negative duration is signed instead of coming out as `-1Y 12M`.
 * url.py: `fetch(extended=True)` tries every address a hostname resolves to instead of only the first one. On a dual-stacked host, `http://localhost` resolves to `::1` first and a service listening on `0.0.0.0` was reported as refusing the connection.
 
 

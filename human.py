@@ -13,7 +13,7 @@ back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081801'
+__version__ = '2026082401'
 
 import math
 import re
@@ -633,8 +633,25 @@ def seconds2human(seconds, keep_short=True, full_name=False):
 
     >>> seconds2human(1387775, keep_short=False, full_name=True)
     '2weeks 2days 1hour 29minutes 35seconds'
+
+    >>> seconds2human(0)
+    '0s'
+
+    >>> seconds2human(-5)
+    '-5s'
     """
     seconds = float(seconds)
+
+    # No unit of zero is non-zero, so the loop below would return an empty string and
+    # drop the duration out of the sentence it was formatted for.
+    if seconds == 0:
+        return '0seconds' if full_name else '0s'
+
+    # A negative duration is formatted like its positive counterpart and signed. The
+    # floor division below rounds towards minus infinity, which turned -5 into
+    # '-1Y 12M'.
+    sign = '-' if seconds < 0 else ''
+    seconds = abs(seconds)
 
     units = _TIME_UNITS_FULL if full_name else _TIME_UNITS_SHORT
 
@@ -648,5 +665,5 @@ def seconds2human(seconds, keep_short=True, full_name=False):
             result.append(f'{int(value)}{name}')
 
     if keep_short and len(result) > 2:
-        return ' '.join(result[:2])
-    return ' '.join(result)
+        return sign + ' '.join(result[:2])
+    return sign + ' '.join(result)
