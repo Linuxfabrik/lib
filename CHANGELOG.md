@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* base.py: `range2txt()` says in words what a threshold range demands, and of which value (`age=3D not in (0s..2D)`), so a check no longer has to repeat the range syntax at the reader.
 * keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it when the section is missing.
 
 ### Changed
@@ -19,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* base.py: `match_range()` and `get_state()` report a value that is not a number (`11.abc`, `None`) instead of raising a stack trace, and refuse `nan`, which passed as inside every range and was reported OK.
 * human.py: `seconds2human()` answers `0s` for a duration of zero instead of an empty string, which dropped the value out of the sentence it was formatted for. A negative duration is signed instead of coming out as `-1Y 12M`.
 * url.py: `fetch(extended=True)` tries every address a hostname resolves to instead of only the first one. On a dual-stacked host, `http://localhost` resolves to `::1` first and a service listening on `0.0.0.0` was reported as refusing the connection.
 

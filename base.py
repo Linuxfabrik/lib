@@ -11,8 +11,9 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081801'
+__version__ = '2026082401'
 
+import math
 import numbers
 import operator
 import os
@@ -215,7 +216,9 @@ def get_state(value, warn, crit, _operator='ge'):
       - `range`: match Nagios range definition
 
     ### Returns
-    - **int**: `STATE_OK`, `STATE_WARN`, or `STATE_CRIT`.
+    - **int**: `STATE_OK`, `STATE_WARN`, or `STATE_CRIT`. `STATE_UNKNOWN` for a
+      threshold that does not parse, an unknown `_operator`, or a `value` that is not
+      a number.
 
     ### Example
     >>> get_state(15, 10, 20, 'ge')
@@ -224,8 +227,12 @@ def get_state(value, warn, crit, _operator='ge'):
     >>> get_state(10, 10, 20, 'gt')
     0  # STATE_OK
     """
-    # make sure to use float comparison
-    value = float(value)
+    # A value that is not a number is the same kind of unusable input as a threshold
+    # that does not parse, and is answered the same way instead of raising. Float
+    # comparison throughout, so a bound and a value are rounded alike.
+    value = _value2float(value)
+    if value is None:
+        return STATE_UNKNOWN
 
     if _operator == 'range':
         if crit is not None:
@@ -662,6 +669,36 @@ def _parse_range_atom(atom, default):
     return float(atom.rstrip('%'))
 
 
+def _value2float(value):
+    """Reads the value of a threshold comparison as a `float`, or answers `None` when it
+    is not a number the comparison can use.
+
+    A value that is not numeric used to raise out of `match_range()` and reached the
+    admin as a stack trace, the way a mistyped range once did. `None` raised as well,
+    one type later, when it was compared against a bound.
+
+    NaN is refused too, and it is the reason this is a single reader rather than a
+    `try` around every conversion: every comparison against NaN is False, so a NaN
+    value passed both bound checks and was reported as inside the range. A value the
+    check could not read at all came out as OK.
+
+    A trailing `%` is dropped, so a value of `90%` is compared like `90`, the way
+    `_parse_range_atom()` reads a bound of `90%`.
+    """
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode('utf-8')
+        except UnicodeDecodeError:
+            return None
+    if isinstance(value, str):
+        value = value.replace('%', '').strip()
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(value) else value
+
+
 def _parse_range(spec_):
     """
     Inspired by
@@ -731,7 +768,7 @@ def match_range(value, spec):
     specification.
 
     ### Parameters
-    - **value** (`int` or `float`): The numeric value to check.
+    - **value** (`int` or `float` or `str`): The numeric value to check.
     - **spec** (`str`): The Nagios range specification string.
 
     ### Returns
@@ -740,6 +777,7 @@ def match_range(value, spec):
         inside the bounds for a non-inverted `spec`, or outside the bounds for an
         inverted one. Callers alert when `matched` is False.
       - On a `spec` that does not parse: (False, reason). Callers turn this into UNKNOWN.
+      - On a `value` that is not a number: (False, reason), the same way.
 
     ### Notes
     - Both bounds are inclusive.
@@ -757,6 +795,9 @@ def match_range(value, spec):
 
     >>> match_range(15, '1,5')
     (False, 'Range format incorrect')
+
+    >>> match_range('11.abc', '10')
+    (False, "'11.abc' is not a number")
 
     >>> match_range(15, '10:')  # inside 10..inf
     (True, True)
@@ -791,8 +832,10 @@ def match_range(value, spec):
 
     start, end, invert = result
 
-    if isinstance(value, (str, bytes)):
-        value = float(value.replace('%', ''))
+    numeric_value = _value2float(value)
+    if numeric_value is None:
+        return False, f'{value!r} is not a number'
+    value = numeric_value
 
     if value < start or value > end:
         return True, bool(invert)
@@ -859,6 +902,124 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
         msg = '\n'.join(parts)
     print(f'{msg}|{perfdata.strip()}' if perfdata and not no_perfdata else msg)
     sys.exit(STATE_OK if always_ok else state)
+
+
+def _bound2txt(bound, fmt):
+    """Formats one bound of a range for a human reader.
+
+    Infinity keeps its name whatever `fmt` does with it, an integral bound loses the
+    `.0` that every bound carries as a float, and a `fmt` that answers with nothing
+    falls back to the plain number instead of dropping the bound out of the sentence.
+    """
+    if bound == float('inf'):
+        return 'inf'
+    if bound == float('-inf'):
+        return '-inf'
+    plain = str(int(bound)) if float(bound).is_integer() else str(bound)
+    if fmt is None:
+        return plain
+    formatted = fmt(bound)
+    return str(formatted) if formatted else plain
+
+
+def range2txt(spec, value=None, value_name='value', fmt=None, view='alert'):
+    """
+    Puts a Nagios threshold range, and optionally the value compared against it, into
+    the wording of THRESHOLDS.md, so a message can say what was compared instead of
+    repeating the range syntax at the admin.
+
+    What is described is the condition, not where the value lies: by default the
+    `WARN/CRIT if` column of THRESHOLDS.md, so a check that alerts can name what it
+    alerted on. `view='ok'` gives the `OK if result is` column instead.
+
+    ### Parameters
+    - **spec** (`str`): The Nagios range specification string, as `match_range()` takes
+      it. Note the argument order: the range comes first here, the value is optional.
+    - **value** (`int` or `float` or `str`, optional): The value that was compared.
+      Without it, only the condition is returned.
+    - **value_name** (`str`, optional): What to call the value in the text. Defaults to
+      `value`.
+    - **fmt** (`callable`, optional): Turns a number into its human-readable form, for
+      example `human.seconds2human` or `human.bytes2human`. Without it, the numbers are
+      printed as they are.
+    - **view** (`str`, optional): `alert` for the condition that alerts, `ok` for the
+      condition that does not. Defaults to `alert`.
+
+    ### Returns
+    - **tuple** of (`bool`, `str`):
+      - On success: (True, text), where `text` is `not in (start..end)`, or
+        `name=value not in (start..end)` when a `value` was given. Empty for a `spec`
+        of `None`, which is a threshold that was never set.
+      - On a `spec` that does not parse, a `value` that is not a number, or an unknown
+        `view`: (False, reason). Callers turn this into UNKNOWN, the same way they do
+        for `match_range()`.
+
+    ### Notes
+    - Both bounds are inclusive, and a trailing `%` on a bound or on the value is
+      dropped, the way `match_range()` reads them.
+    - The state marker is left to the caller, who can pick its wording with
+      `state2str()`: `f'{text}{state2str(state, prefix=" ")}'`.
+    - An inverted range alerts inside its bounds, so `10:20` and `@10:20` describe
+      opposite conditions and never read alike.
+
+    ### Example
+    >>> range2txt('10')
+    (True, 'not in (0..10)')
+
+    >>> range2txt('10', view='ok')
+    (True, 'in (0..10)')
+
+    >>> range2txt('~:10')
+    (True, 'not in (-inf..10)')
+
+    >>> range2txt('10:20', value=15, value_name='age')
+    (True, 'age=15 not in (10..20)')
+
+    >>> range2txt('@10:20', value=15, value_name='age')
+    (True, 'age=15 in (10..20)')
+
+    >>> range2txt('172800', value=259200, value_name='age', fmt=human.seconds2human)
+    (True, 'age=3D not in (0s..2D)')
+
+    >>> range2txt('10:20', value='11.abc')
+    (False, "'11.abc' is not a number")
+
+    >>> range2txt('1,5')
+    (False, 'Range format incorrect')
+
+    >>> range2txt(None, value=11, value_name='age')
+    (True, '')
+    """
+    if view not in ('alert', 'ok'):
+        return False, f'Unknown view {view!r}'
+
+    if spec is None or str(spec).lower() == 'none':
+        return True, ''
+
+    success, result = _parse_range(spec)
+    if not success:
+        return False, result
+
+    start, end, invert = result
+    rng = f'({_bound2txt(start, fmt)}..{_bound2txt(end, fmt)})'
+    # THRESHOLDS.md tabulates both columns: a plain range alerts outside its bounds,
+    # an inverted one inside them, and the OK column is the other one. Rendering the
+    # condition rather than where the value happens to lie is what keeps `10:20` and
+    # `@10:20` apart, which the bounds alone cannot do.
+    alerts_inside = invert
+    if view == 'alert':
+        condition = 'in' if alerts_inside else 'not in'
+    else:
+        condition = 'not in' if alerts_inside else 'in'
+
+    if value is None:
+        return True, f'{condition} {rng}'
+
+    numeric_value = _value2float(value)
+    if numeric_value is None:
+        return False, f'{value!r} is not a number'
+
+    return True, f'{value_name}={_bound2txt(numeric_value, fmt)} {condition} {rng}'
 
 
 def smartcast(value):

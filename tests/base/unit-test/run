@@ -233,6 +233,14 @@ class TestGetState(unittest.TestCase):
     def test_range_none_thresholds_ok(self):
         self.assertEqual(base.get_state(5, None, None, 'range'), STATE_OK)
 
+    def test_a_value_that_is_not_a_number(self):
+        # the same unusable input as a threshold that does not parse, answered the
+        # same way instead of raising
+        self.assertEqual(base.get_state('11.abc', 10, 20, 'ge'), STATE_UNKNOWN)
+        self.assertEqual(
+            base.get_state(float('nan'), '10', '20', _operator='range'), STATE_UNKNOWN
+        )
+
 
 class TestGetTable(unittest.TestCase):
     def test_empty_data(self):
@@ -717,6 +725,29 @@ class TestMatchRangeUpstreamCorpus(unittest.TestCase):
         self.assertEqual(base.get_state(999, None, None, _operator='range'), STATE_OK)
 
 
+class TestMatchRangeValue(unittest.TestCase):
+    def test_value_that_is_not_a_number(self):
+        ok, reason = base.match_range('11.abc', '10')
+        self.assertFalse(ok)
+        self.assertIn('not a number', reason)
+
+    def test_none_value(self):
+        ok, reason = base.match_range(None, '10')
+        self.assertFalse(ok)
+        self.assertIn('not a number', reason)
+
+    def test_nan_is_refused_instead_of_counting_as_inside(self):
+        # every comparison against NaN is False, so both bound checks passed and the
+        # value was reported as inside the range
+        ok, reason = base.match_range(float('nan'), '10')
+        self.assertFalse(ok)
+        self.assertIn('not a number', reason)
+
+    def test_percent_and_bytes_values_still_read(self):
+        self.assertEqual(base.match_range('90%', '90:'), (True, True))
+        self.assertEqual(base.match_range(b'15', '10:20'), (True, True))
+
+
 class TestMatchRangeMalformed(unittest.TestCase):
     """A range that cannot be read has to come back as a message the caller turns into
     UNKNOWN. It must never raise: the plugin would answer the admin with a Python
@@ -874,6 +905,92 @@ class TestOao(unittest.TestCase):
         with capture_exit() as h:
             base.oao('a\rb', STATE_OK)
         self.assertEqual(h['out'].strip(), 'a\nb')
+
+
+class TestRange2Txt(unittest.TestCase):
+    def test_the_alert_condition_is_the_default_view(self):
+        # THRESHOLDS.md, column `WARN/CRIT if`
+        self.assertEqual(base.range2txt('10'), (True, 'not in (0..10)'))
+        self.assertEqual(base.range2txt('~:10'), (True, 'not in (-inf..10)'))
+        self.assertEqual(base.range2txt('10:'), (True, 'not in (10..inf)'))
+        self.assertEqual(base.range2txt(':'), (True, 'not in (0..inf)'))
+        self.assertEqual(base.range2txt('10:20'), (True, 'not in (10..20)'))
+
+    def test_the_ok_view(self):
+        # THRESHOLDS.md, column `OK if result is`
+        self.assertEqual(base.range2txt('10', view='ok'), (True, 'in (0..10)'))
+        self.assertEqual(base.range2txt('10:20', view='ok'), (True, 'in (10..20)'))
+
+    def test_an_inverted_range_alerts_inside_its_bounds(self):
+        self.assertEqual(base.range2txt('@10:20'), (True, 'in (10..20)'))
+        self.assertEqual(base.range2txt('@10:20', view='ok'), (True, 'not in (10..20)'))
+        self.assertEqual(base.range2txt('@~:20'), (True, 'in (-inf..20)'))
+        self.assertEqual(base.range2txt('@'), (True, 'in (0..inf)'))
+
+    def test_unknown_view(self):
+        ok, reason = base.range2txt('10', view='nope')
+        self.assertFalse(ok)
+        self.assertIn('view', reason)
+
+    def test_the_value_is_named_in_front_of_the_condition(self):
+        self.assertEqual(
+            base.range2txt('10', value=5), (True, 'value=5 not in (0..10)')
+        )
+        self.assertEqual(
+            base.range2txt('10:20', value=11, value_name='age'),
+            (True, 'age=11 not in (10..20)'),
+        )
+        self.assertEqual(
+            base.range2txt('@10:20', value=11, value_name='age'),
+            (True, 'age=11 in (10..20)'),
+        )
+
+    def test_the_caller_appends_the_state(self):
+        # the marker is state2str()'s job, so a plugin stays free to leave it out or
+        # to print one for OK as well
+        self.assertEqual(
+            base.coe(base.range2txt('10', value=11, value_name='age'))
+            + base.state2str(STATE_WARN, prefix=' '),
+            'age=11 not in (0..10) [WARNING]',
+        )
+
+    def test_percent_is_dropped_on_the_bound_and_on_the_value(self):
+        self.assertEqual(base.range2txt('90%:'), (True, 'not in (90..inf)'))
+        self.assertEqual(
+            base.range2txt('90%:', value='95%'), (True, 'value=95 not in (90..inf)')
+        )
+
+    def test_no_threshold(self):
+        self.assertEqual(base.range2txt(None, value=11), (True, ''))
+        self.assertEqual(base.range2txt('None', value=11), (True, ''))
+
+    def test_unparseable_range_is_reported_like_match_range_reports_it(self):
+        self.assertEqual(base.range2txt('1,5', value=11), base.match_range(11, '1,5'))
+
+    def test_a_value_that_is_not_a_number_is_reported(self):
+        ok, reason = base.range2txt('10:20', value='11.abc')
+        self.assertFalse(ok)
+        self.assertIn('not a number', reason)
+
+    def test_fmt_formats_the_value_and_the_bounds(self):
+        self.assertEqual(
+            base.range2txt('10', value=11, fmt=lambda v: f'{v:g}s'),
+            (True, 'value=11s not in (0s..10s)'),
+        )
+
+    def test_fmt_does_not_touch_infinity(self):
+        self.assertEqual(
+            base.range2txt('10:', value=11, fmt=lambda v: f'{v:g}s'),
+            (True, 'value=11s not in (10s..inf)'),
+        )
+
+    def test_fmt_answering_with_nothing_falls_back_to_the_number(self):
+        # human.seconds2human() used to answer '' for a bound of zero, which dropped
+        # the bound out of the text
+        self.assertEqual(
+            base.range2txt('10', value=11, fmt=lambda v: '' if v == 0 else f'{v:g}s'),
+            (True, 'value=11s not in (0..10s)'),
+        )
 
 
 class TestSmartcast(unittest.TestCase):
