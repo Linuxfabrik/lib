@@ -6,8 +6,14 @@ repos:
       - id: 'check-ast'
       - id: 'check-merge-conflict'
       - id: 'debug-statements'
+      # Unit-test fixtures are verbatim captures of what a command, an endpoint or a
+      # configuration file really contains, down to a missing trailing newline or a
+      # line carrying a single space. Both are what the test asserts on, so neither
+      # hook may normalise them.
       - id: 'end-of-file-fixer'
+        exclude: '/unit-test/(config|fixtures|retc|stderr|stdout)/'
       - id: 'trailing-whitespace'
+        exclude: '/unit-test/(config|fixtures|retc|stderr|stdout)/'
 
   - repo: 'https://github.com/astral-sh/ruff-pre-commit'
     rev: 'v0.16.4'
