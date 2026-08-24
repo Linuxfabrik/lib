@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * base.py: `range2txt()` says in words what a threshold range demands, and of which value (`age=3D not in (0s..2D)`), so a check no longer has to repeat the range syntax at the reader.
 * keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it when the section is missing.
+* kvm.py: new module for libvirt hosts. `get_domstats()` collects the statistics of every domain in a single `virsh` call, `get_domains()` lists them, filtered by autostart or any other `virsh list` filter, `get_pools()` and `get_pool_info()` cover storage pools. Everything runs over a read-only connection, which needs neither root nor sudo.
 
 ### Changed
 
