@@ -167,6 +167,15 @@ HELP_TEXTS = {
     ),
     '--path': 'Local path to the installation.',
     '--port': 'Port number.',
+    '--proxy': (
+        'Proxy to reach the target through, overriding the proxy the environment names. '
+        'The scheme defaults to `http` when omitted. '
+        'Without this parameter the environment applies (`http_proxy`, `https_proxy`, '
+        '`all_proxy` and the exceptions in `no_proxy`); `--no-proxy` ignores that too. '
+        'Credentials belong into the environment variable rather than here, because a '
+        'command-line argument is visible to every user on the host. '
+        'Example: `--proxy=http://proxy.example.com:3128`.'
+    ),
     '--severity': 'Severity for alerting.',
     '--stratum': (
         'Warns if the determined stratum of the time server is greater than or equal '

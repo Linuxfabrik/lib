@@ -12,13 +12,15 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060901'
+__version__ = '2026082501'
 
 import ipaddress
 import random
 import re
 import socket
 import ssl
+import urllib.parse
+import urllib.request
 
 try:
     import psutil
@@ -640,6 +642,182 @@ def get_public_ip(services, insecure=False, no_proxy=False, timeout=2):
                 return True, ip
 
     return False, None
+
+
+def _split_no_proxy_entry(entry):
+    """
+    Split one `no_proxy` entry into its scheme, host and port part.
+
+    ### Parameters
+    - **entry** (`str`):
+      A single entry, for example `example.com`, `.example.com`, `[2001:db8::1]:8443`,
+      `192.0.2.0/24` or `https://example.com`.
+
+    ### Returns
+    - **tuple** (`str`, `str`, `int` or `None`):
+      The scheme (empty when the entry names none or names `all`), the host part and the
+      port, if the entry pins one.
+    """
+    scheme = ''
+    if '://' in entry:
+        scheme, _, entry = entry.partition('://')
+        scheme = '' if scheme == 'all' else scheme.lower()
+
+    port = None
+    if entry.startswith('['):
+        # a bracketed IPv6 literal, optionally followed by a port
+        literal, _, rest = entry[1:].partition(']')
+        entry = literal
+        if rest.startswith(':') and rest[1:].isdigit():
+            port = int(rest[1:])
+    elif ':' in entry and not _is_ip_entry(entry):
+        # a bare IPv6 literal is nothing but colons and hex, so only a host that is not one
+        # can carry a trailing port
+        head, _, tail = entry.rpartition(':')
+        if tail.isdigit():
+            entry, port = head, int(tail)
+
+    return scheme, entry, port
+
+
+def _is_ip_entry(entry):
+    """
+    Return whether an entry names an IP address or an IP network rather than a hostname.
+
+    ### Parameters
+    - **entry** (`str`):
+      The host part of a `no_proxy` entry.
+
+    ### Returns
+    - **bool**:
+      `True` for `192.0.2.1`, `2001:db8::1` and `192.0.2.0/24`, `False` for `example.com`.
+    """
+    try:
+        ipaddress.ip_network(entry, strict=False)
+    except ValueError:
+        return False
+    return True
+
+
+def _no_proxy_matches(entry, scheme, host, port):
+    """
+    Return whether a single `no_proxy` entry exempts the given target from the proxy.
+
+    Entries follow the convention curl established, which the common HTTP clients
+    implement alike:
+
+    * `*` exempts every target.
+    * `example.com` exempts `example.com` and `www.example.com`, but not `wwwexample.com`.
+    * `.example.com` exempts `www.example.com`, but not `example.com`.
+    * `192.0.2.1`, `2001:db8::1` and `localhost` exempt exactly that address or name.
+    * `192.0.2.0/24` exempts every address of that network.
+    * An entry may pin a scheme (`https://example.com`) and a port (`example.com:8443`),
+      both of which then have to match as well.
+
+    ### Parameters
+    - **entry** (`str`): One entry of the `no_proxy` list.
+    - **scheme** (`str`): Scheme of the target, lowercase.
+    - **host** (`str`): Hostname or address of the target, lowercase and without brackets.
+    - **port** (`int`): Port of the target.
+
+    ### Returns
+    - **bool**:
+      `True` if the target has to be reached without a proxy.
+    """
+    entry = entry.strip()
+    if not entry:
+        return False
+    if entry == '*':
+        return True
+
+    entry_scheme, entry_host, entry_port = _split_no_proxy_entry(entry)
+    if entry_scheme and entry_scheme != scheme:
+        return False
+    if entry_port is not None and entry_port != port:
+        return False
+    if not entry_host:
+        return False
+
+    entry_host = entry_host.lower().rstrip('.')
+    if _is_ip_entry(entry_host):
+        # an address or a network, so compare numerically instead of by name. A target
+        # given as a name never matches one of these, which is what curl does as well.
+        try:
+            return ipaddress.ip_address(host) in ipaddress.ip_network(
+                entry_host, strict=False
+            )
+        except ValueError:
+            return False
+    if entry_host == 'localhost':
+        return host == 'localhost'
+    if entry_host.startswith('.'):
+        return host.endswith(entry_host)
+    return host == entry_host or host.endswith(f'.{entry_host}')
+
+
+def get_proxy(target_url, no_proxy=False):
+    """
+    Return the proxy the environment wants for a target, or `None` for a direct connection.
+
+    Reads `http_proxy`, `https_proxy` and `all_proxy` (either case) and honours the
+    exceptions listed in `no_proxy`, so that a caller talking to the network on its own
+    reaches a target through the same proxy as one going through an HTTP client library.
+    `_split_no_proxy_entry()` documents how an entry of the exception list is read.
+
+    An entry of `no_proxy` written as a network in CIDR notation covers every address of
+    that network. Some HTTP client libraries silently ignore such an entry and use the
+    proxy anyway; sending traffic to a proxy the operator meant to bypass is the more
+    harmful of the two readings, which is why the network is honoured here.
+
+    ### Parameters
+    - **target_url** (`str`):
+      The target, as a URL. Its scheme selects between `http_proxy` and `https_proxy`, its
+      host and port are matched against `no_proxy`.
+    - **no_proxy** (`bool`, optional):
+      If `True`, ignore the environment entirely and return `None`. Defaults to `False`.
+
+    ### Returns
+    - **tuple** (`bool`, `str` or `None`):
+      - `True` and the proxy URL, always carrying a scheme.
+      - `True` and `None` if the target has to be reached directly.
+      - `False` and an error message if the environment names an unusable proxy.
+
+    ### Example
+    >>> get_proxy('https://www.example.com/')
+    (True, 'http://proxy.example.com:3128')
+    """
+    if no_proxy:
+        return (True, None)
+
+    parsed = urllib.parse.urlsplit(target_url)
+    scheme = (parsed.scheme or 'https').lower()
+    try:
+        host = (parsed.hostname or '').lower()
+        port = parsed.port
+    except ValueError as e:
+        return (False, f'Cannot read host and port from "{target_url}": {e}')
+    if not host:
+        return (False, f'Cannot read a hostname from "{target_url}"')
+    if port is None:
+        port = 443 if scheme == 'https' else 80
+
+    # getproxies() reads the environment and, on Windows and macOS, the system settings.
+    # Its keys are the scheme names without the `_proxy` suffix, plus `no` for the
+    # exception list.
+    proxies = urllib.request.getproxies()
+    for entry in proxies.get('no', '').split(','):
+        if _no_proxy_matches(entry, scheme, host, port):
+            return (True, None)
+
+    proxy = proxies.get(scheme) or proxies.get('all')
+    if not proxy:
+        return (True, None)
+    if '://' not in proxy:
+        # a bare `proxy.example.com:3128` means a plain HTTP proxy
+        proxy = f'http://{proxy}'
+    if not urllib.parse.urlsplit(proxy).hostname:
+        return (False, f'Cannot read a hostname from the configured proxy "{proxy}"')
+    return (True, proxy)
 
 
 def cidr_to_hosts(cidr, max_hosts=65536):

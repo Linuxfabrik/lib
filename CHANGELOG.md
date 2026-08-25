@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* args.py: `HELP_TEXTS` carries `--proxy`, so every consumer offering an explicit proxy describes it alike
 * base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`)
 * db_sqlite.py: `cut_per_sensor()` trims a history table per sensor instead of by total row count
 * keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it
 * kvm.py: new module for libvirt hosts, covering domain statistics and listings, storage pools, their volumes, which pools share a filesystem, and the names of domain states and their reasons. It connects read-only, so it needs neither root nor sudo
+* net.py: `get_proxy()` answers which proxy the environment wants for a target, honouring the exceptions in `no_proxy`, for a consumer that reaches the network without an HTTP client
 * redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
 
 ### Changed
