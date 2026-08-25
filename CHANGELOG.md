@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * psi.py: new module for the pressure stall information the Linux kernel exports below `/proc/pressure`. `read()` returns the `some` and `full` values of one resource, and reports when the kernel keeps no pressure statistics at all
 * redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
 * url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host
+* url.py: `fetch()` takes `retries`, which only `fetch_json()` offered so far, so a consumer reading response headers or issuing a HEAD is covered against a flaky endpoint too
 
 ### Changed
 

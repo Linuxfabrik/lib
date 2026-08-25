@@ -379,6 +379,58 @@ class TestFetchValidation(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('Unknown encoding', msg)
 
+    def test_retries_repeat_a_failed_request(self):
+        attempts = []
+
+        def flaky(*args, **kwargs):
+            attempts.append(1)
+            return (len(attempts) > 2, 'body' if len(attempts) > 2 else 'boom')
+
+        with mock.patch.object(url, '_fetch_once', flaky):
+            ok, result = url.fetch('https://example.com', retries=3)
+        self.assertTrue(ok)
+        self.assertEqual(result, 'body')
+        self.assertEqual(len(attempts), 3)
+
+    def test_without_retries_a_failed_request_is_not_repeated(self):
+        attempts = []
+
+        def failing(*args, **kwargs):
+            attempts.append(1)
+            return (False, 'boom')
+
+        with mock.patch.object(url, '_fetch_once', failing):
+            ok, result = url.fetch('https://example.com')
+        self.assertFalse(ok)
+        self.assertEqual(result, 'boom')
+        self.assertEqual(len(attempts), 1)
+
+    def test_retries_stop_at_the_budget(self):
+        attempts = []
+
+        def failing(*args, **kwargs):
+            attempts.append(1)
+            return (False, 'boom')
+
+        with mock.patch.object(url, '_fetch_once', failing):
+            url.fetch('https://example.com', retries=2)
+        self.assertEqual(len(attempts), 3)
+
+    def test_fetch_json_does_not_multiply_the_attempts(self):
+        # `fetch_json` counts the attempts itself, because it also repeats a body that
+        # arrived intact but holds no JSON. Handing `retries` down as well would square them.
+        attempts = []
+
+        def not_json(*args, **kwargs):
+            attempts.append(kwargs.get('retries'))
+            return (True, 'no json here')
+
+        with mock.patch.object(url, '_fetch_once', not_json):
+            ok, _ = url.fetch_json('https://example.com', retries=2)
+        self.assertFalse(ok)
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual(attempts, [None, None, None])
+
     def test_unreadable_ca_bundle_returns_error_string(self):
         # _build_ssl_context raises ValueError; fetch turns it into (False, msg) before it
         # ever opens a connection.

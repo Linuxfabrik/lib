@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082502'
+__version__ = '2026082503'
 
 import base64
 import json
@@ -638,7 +638,7 @@ def compare_github_refs(
         return True, False
 
 
-def fetch(
+def _fetch_once(
     url,
     insecure=False,
     no_proxy=False,
@@ -658,134 +658,8 @@ def fetch(
     response_on_error=False,
     cacert=None,
 ):
-    """
-    Fetch any URL with optional POST, basic/digest authentication and SSL/TLS handling.
-
-    The HTTP engine is `httpx`. Sync only. HTTP/1.0 and HTTP/1.1 share the same h11 transport
-    and are reported as `HTTP/1.1` by the server; pin TLS versions via `tls_min` / `tls_max`
-    if you need wire-level control.
-
-    HTTP/3 is accepted as a parameter value (`http_version='3'`) but not yet implemented and
-    returns a clean error.
-
-    Flowchart:
-
-        Start
-         |
-         |--> Encode body (urlencode | serialized-json)
-         |
-         |--> Set headers (user first, then forced Connection: close + User-Agent)
-         |
-         |--> Build SSL context (insecure?, cacert, tls_min, tls_max, ALPN)
-         |
-         |--> Build httpx.Client (auth, http1/http2, proxy, timeout)
-         |
-         |--> client.stream(method, url, ...)
-         |    |--> Capture TLS metadata from network stream
-         |    |--> Read body
-         |    |--> raise_for_status() on 4xx/5xx
-         |
-         |--> Decode body via response charset (default UTF-8)
-         |
-         |--> Return (True, body)            if extended is False
-         |    Return (True, extended_dict)   if extended is True
-        End
-
-    ### Parameters
-    - **url** (`str`):
-        The URL to fetch.
-    - **cacert** (`str`, optional):
-        Path to a CA bundle to verify the certificate against, either a file of PEM
-        certificates or a directory of hashed ones, which is what `OS_CACERT`,
-        `REQUESTS_CA_BUNDLE` and `curl --cacert` name as well. It replaces the trust store of
-        the host instead of adding to it, so an endpoint signed by a public CA no longer
-        verifies once a private bundle is named. A bundle that cannot be read is an error
-        rather than a silent fallback to the trust store. Ignored when `insecure` is set,
-        because that switches verification off altogether.
-    - **insecure** (`bool`, optional):
-        If True, disables SSL certificate validation. Defaults to False.
-    - **proxy** (`str`, optional):
-        Proxy URL to reach the target through, for example
-        `http://user:password@proxy.example.com:3128`. The scheme defaults to `http` when
-        omitted. Overrides the proxy the environment names together with the exceptions it
-        lists in `NO_PROXY`, and is itself overridden by `no_proxy`. Defaults to `None`,
-        which leaves the choice to the environment.
-    - **no_proxy** (`bool`, optional):
-        If True, disables environment-based proxy detection (`HTTP_PROXY`, `HTTPS_PROXY`,
-        `NO_PROXY`). Defaults to False.
-    - **timeout** (`int`, optional):
-        Timeout in seconds for the request, applied to all phases (connect, read, write,
-        pool). Defaults to 8 seconds.
-    - **header** (`dict`, optional):
-        Headers to include in the request. Note: `Connection: close` and the
-        `User-Agent: Linuxfabrik Monitoring Plugins` header are always set after the user's
-        headers and override any user-supplied value of the same name. A `Content-Length`
-        header is always dropped; the HTTP engine derives the correct value from the body.
-    - **data** (`dict`, optional):
-        Data to send in the request body. Truthy data triggers a POST.
-    - **method** (`str`, optional):
-        Force the HTTP method (e.g. `'POST'`) regardless of the body. When omitted, the
-        method is inferred from `data`: POST if a truthy body is present, GET otherwise.
-        Use this to issue a bodyless POST (some APIs require POST as a pure verb but reject
-        a request body and the Content-Type that comes with it).
-    - **encoding** (`str`, optional):
-        The encoding type for the request body. Defaults to `'urlencode'`. Also supports
-        `'serialized-json'`.
-    - **digest_auth_user** (`str`, optional):
-        The username for HTTP Digest Authentication. Composes correctly with `insecure`.
-    - **digest_auth_password** (`str`, optional):
-        The password for HTTP Digest Authentication.
-    - **extended** (`bool`, optional):
-        If True, returns a dict with response body, status code, response headers, plus
-        connection telemetry (`timings`, `tls_version`, `alpn`, `peer_cert_der`).
-    - **to_text** (`bool`, optional):
-        If True (default), converts the response body to text via the response charset.
-    - **http_version** (`str`, optional):
-        One of `'1.0'`, `'1.1'`, `'2'`, `'3'`. `'1.0'` is served by the same h11 transport
-        as `'1.1'`. `'3'` is reserved and returns an error until QUIC support lands. Default
-        `'1.1'`.
-    - **tls_min** (`str`, optional):
-        Minimum TLS version, one of `'1.0'`, `'1.1'`, `'1.2'`, `'1.3'`. Default uses the
-        system default (typically TLS 1.2 on modern OpenSSL).
-    - **tls_max** (`str`, optional):
-        Maximum TLS version, same accepted values as `tls_min`.
-    - **response_on_error** (`bool`, optional):
-        If true, return the response for error conditions (useful when the response body of
-        an API contains error details)
-
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the request was successful, False otherwise.
-      - **result** (`str` | `bytes` | `dict`):
-        - On success, the response body (text or bytes depending on `to_text`).
-        - On success with `extended=True`, a dict with keys:
-            - `response`: response body
-            - `status_code`: int
-            - `response_header`: dict of response headers, keys lower-cased
-            - `timings`: dict with at least `total` (seconds, float)
-            - `tls_version`: str like `'TLSv1.3'` or None over plain HTTP
-            - `alpn`: str like `'h2'` or `'http/1.1'` or None
-            - `peer_cert_der`: DER-encoded server certificate as bytes, or None
-        - On failure, an error message string.
-        - On failure with `response_on_error=True`, the response body.
-
-    ### Example
-    >>> result = fetch(
-    ...     'https://api.example.com',
-    ...     timeout=10,
-    ...     header={'Authorization': 'Bearer token'},
-    ... )
-
-    >>> result = fetch('https://api.example.com', data={'key': 'value'}, extended=True)
-
-    >>> # TLS-pinned compliance check, capture peer cert DER
-    >>> ok, info = fetch(
-    ...     'https://api.example.com',
-    ...     tls_min='1.2',
-    ...     tls_max='1.3',
-    ...     http_version='2',
-    ...     extended=True,
-    ... )
+    """Make one attempt of `fetch()`, which documents every parameter and wraps this
+    in its retry loop.
     """
     if header is None:
         header = {}
@@ -1004,6 +878,192 @@ def fetch(
         return False, f'{e} while fetching {url}'
 
 
+
+
+def fetch(
+    url,
+    insecure=False,
+    no_proxy=False,
+    proxy=None,
+    timeout=8,
+    header=None,
+    data=None,
+    encoding='urlencode',
+    digest_auth_user=None,
+    digest_auth_password=None,
+    extended=False,
+    to_text=True,
+    http_version='1.1',
+    tls_min=None,
+    tls_max=None,
+    method=None,
+    response_on_error=False,
+    cacert=None,
+    retries=0,
+):
+    """
+    Fetch any URL with optional POST, basic/digest authentication and SSL/TLS handling.
+
+    The HTTP engine is `httpx`. Sync only. HTTP/1.0 and HTTP/1.1 share the same h11 transport
+    and are reported as `HTTP/1.1` by the server; pin TLS versions via `tls_min` / `tls_max`
+    if you need wire-level control.
+
+    HTTP/3 is accepted as a parameter value (`http_version='3'`) but not yet implemented and
+    returns a clean error.
+
+    Flowchart:
+
+        Start
+         |
+         |--> Retry loop (`retries`), around everything below
+         |
+         |--> Encode body (urlencode | serialized-json)
+         |
+         |--> Set headers (user first, then forced Connection: close + User-Agent)
+         |
+         |--> Build SSL context (insecure?, cacert, tls_min, tls_max, ALPN)
+         |
+         |--> Build httpx.Client (auth, http1/http2, proxy, timeout)
+         |
+         |--> client.stream(method, url, ...)
+         |    |--> Capture TLS metadata from network stream
+         |    |--> Read body
+         |    |--> raise_for_status() on 4xx/5xx
+         |
+         |--> Decode body via response charset (default UTF-8)
+         |
+         |--> Return (True, body)            if extended is False
+         |    Return (True, extended_dict)   if extended is True
+        End
+
+    ### Parameters
+    - **url** (`str`):
+        The URL to fetch.
+    - **cacert** (`str`, optional):
+        Path to a CA bundle to verify the certificate against, either a file of PEM
+        certificates or a directory of hashed ones, which is what `OS_CACERT`,
+        `REQUESTS_CA_BUNDLE` and `curl --cacert` name as well. It replaces the trust store of
+        the host instead of adding to it, so an endpoint signed by a public CA no longer
+        verifies once a private bundle is named. A bundle that cannot be read is an error
+        rather than a silent fallback to the trust store. Ignored when `insecure` is set,
+        because that switches verification off altogether.
+    - **insecure** (`bool`, optional):
+        If True, disables SSL certificate validation. Defaults to False.
+    - **proxy** (`str`, optional):
+        Proxy URL to reach the target through, for example
+        `http://user:password@proxy.example.com:3128`. The scheme defaults to `http` when
+        omitted. Overrides the proxy the environment names together with the exceptions it
+        lists in `NO_PROXY`, and is itself overridden by `no_proxy`. Defaults to `None`,
+        which leaves the choice to the environment.
+    - **no_proxy** (`bool`, optional):
+        If True, disables environment-based proxy detection (`HTTP_PROXY`, `HTTPS_PROXY`,
+        `NO_PROXY`). Defaults to False.
+    - **timeout** (`int`, optional):
+        Timeout in seconds for the request, applied to all phases (connect, read, write,
+        pool). Defaults to 8 seconds.
+    - **header** (`dict`, optional):
+        Headers to include in the request. Note: `Connection: close` and the
+        `User-Agent: Linuxfabrik Monitoring Plugins` header are always set after the user's
+        headers and override any user-supplied value of the same name. A `Content-Length`
+        header is always dropped; the HTTP engine derives the correct value from the body.
+    - **data** (`dict`, optional):
+        Data to send in the request body. Truthy data triggers a POST.
+    - **method** (`str`, optional):
+        Force the HTTP method (e.g. `'POST'`) regardless of the body. When omitted, the
+        method is inferred from `data`: POST if a truthy body is present, GET otherwise.
+        Use this to issue a bodyless POST (some APIs require POST as a pure verb but reject
+        a request body and the Content-Type that comes with it).
+    - **encoding** (`str`, optional):
+        The encoding type for the request body. Defaults to `'urlencode'`. Also supports
+        `'serialized-json'`.
+    - **digest_auth_user** (`str`, optional):
+        The username for HTTP Digest Authentication. Composes correctly with `insecure`.
+    - **digest_auth_password** (`str`, optional):
+        The password for HTTP Digest Authentication.
+    - **extended** (`bool`, optional):
+        If True, returns a dict with response body, status code, response headers, plus
+        connection telemetry (`timings`, `tls_version`, `alpn`, `peer_cert_der`).
+    - **to_text** (`bool`, optional):
+        If True (default), converts the response body to text via the response charset.
+    - **http_version** (`str`, optional):
+        One of `'1.0'`, `'1.1'`, `'2'`, `'3'`. `'1.0'` is served by the same h11 transport
+        as `'1.1'`. `'3'` is reserved and returns an error until QUIC support lands. Default
+        `'1.1'`.
+    - **tls_min** (`str`, optional):
+        Minimum TLS version, one of `'1.0'`, `'1.1'`, `'1.2'`, `'1.3'`. Default uses the
+        system default (typically TLS 1.2 on modern OpenSSL).
+    - **tls_max** (`str`, optional):
+        Maximum TLS version, same accepted values as `tls_min`.
+    - **response_on_error** (`bool`, optional):
+        If true, return the response for error conditions (useful when the response body of
+        an API contains error details)
+    - **retries** (`int`, optional):
+        How many extra attempts to make when the request fails. `0` (default) means a single
+        attempt. Useful against a flaky endpoint (a BMC, a storage controller) that drops the
+        odd request. There is no delay between the attempts, because a check has a limited
+        runtime and a timeout has usually passed already.
+
+    ### Returns
+    - **tuple**:
+      - **success** (`bool`): True if the request was successful, False otherwise.
+      - **result** (`str` | `bytes` | `dict`):
+        - On success, the response body (text or bytes depending on `to_text`).
+        - On success with `extended=True`, a dict with keys:
+            - `response`: response body
+            - `status_code`: int
+            - `response_header`: dict of response headers, keys lower-cased
+            - `timings`: dict with at least `total` (seconds, float)
+            - `tls_version`: str like `'TLSv1.3'` or None over plain HTTP
+            - `alpn`: str like `'h2'` or `'http/1.1'` or None
+            - `peer_cert_der`: DER-encoded server certificate as bytes, or None
+        - On failure, an error message string.
+        - On failure with `response_on_error=True`, the response body.
+
+    ### Example
+    >>> result = fetch(
+    ...     'https://api.example.com',
+    ...     timeout=10,
+    ...     header={'Authorization': 'Bearer token'},
+    ... )
+
+    >>> result = fetch('https://api.example.com', data={'key': 'value'}, extended=True)
+
+    >>> # TLS-pinned compliance check, capture peer cert DER
+    >>> ok, info = fetch(
+    ...     'https://api.example.com',
+    ...     tls_min='1.2',
+    ...     tls_max='1.3',
+    ...     http_version='2',
+    ...     extended=True,
+    ... )
+    """
+    attempt = 0
+    while True:
+        result = _fetch_once(
+            url,
+            cacert=cacert,
+            data=data,
+            digest_auth_password=digest_auth_password,
+            digest_auth_user=digest_auth_user,
+            encoding=encoding,
+            extended=extended,
+            header=header,
+            http_version=http_version,
+            insecure=insecure,
+            method=method,
+            no_proxy=no_proxy,
+            proxy=proxy,
+            response_on_error=response_on_error,
+            timeout=timeout,
+            tls_max=tls_max,
+            tls_min=tls_min,
+            to_text=to_text,
+        )
+        if result[0] or attempt >= retries:
+            return result
+        attempt += 1
+
+
 def fetch_json(
     url,
     insecure=False,
@@ -1035,7 +1095,9 @@ def fetch_json(
     decoder needs a string.
     - **retries** (`int`, optional): How many extra attempts to make if the request fails or
       the body is not valid JSON. `0` (default) means a single attempt. Useful against flaky
-      endpoints (e.g. a slow BMC) that occasionally drop a request.
+      endpoints (e.g. a slow BMC) that occasionally drop a request. This covers more than the
+      `retries` of `fetch()`, which cannot see a body that arrived intact but holds no JSON,
+      and is why the attempts are counted here rather than handed down.
 
     ### Returns
     - **tuple**:
