@@ -32,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: `compute_load()` reports the sensors that have enough samples, and leaves out one whose counter started over
 * lftest.py: the container helpers skip a test instead of failing it when testcontainers is missing or `LFTEST_NO_CONTAINER` is set
 * url.py: `fetch()` says what is wrong with a certificate that does not verify, and points out a plaintext request sent to a port that speaks TLS
-* url.py: `fetch_json()` repeats a failed request through the `retries` of `fetch()` instead of counting attempts of its own. A body that arrived intact but holds no JSON is reported rather than fetched again
 
 ### Fixed
 
