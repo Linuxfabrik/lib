@@ -79,7 +79,7 @@ class FakeArgs:
             setattr(self, key, value)
 
 
-def make_success(token='8a8b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d', extra_headers=None):
+def make_success(token='linuxfabrik', extra_headers=None):
     """Build an `extended=True` style success result with a session token.
 
     `response_header` keys are lower-cased, exactly as `lib.url.fetch_json`
@@ -317,11 +317,11 @@ class TestGetTokenSuccess(unittest.TestCase):
     def test_captured_session_payload(self):
         # Realistic Veeam EM session response with a token header attached.
         session = load_fixture('session.json')
-        payload = make_success(token='8a8b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d')
+        payload = make_success(token='linuxfabrik')
         payload['response_json'] = session
         ok, result = self._run((True, payload))
         self.assertTrue(ok)
-        self.assertEqual(result[TOKEN_HEADER], '8a8b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d')
+        self.assertEqual(result[TOKEN_HEADER], 'linuxfabrik')
         self.assertEqual(result['response_json']['UserName'], 'VEEAM\\administrator')
 
 
