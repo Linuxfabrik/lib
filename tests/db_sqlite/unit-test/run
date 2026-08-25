@@ -141,6 +141,53 @@ class TestConnect(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('symlink', msg)
 
+    def test_connect_in_memory_writes_no_file(self):
+        ok, conn = db.connect(path=self.base, filename='t.db', in_memory=True)
+        self.assertTrue(ok, conn)
+        self.assertTrue(db.create_table(conn, 'package TEXT', table='t')[0])
+        self.assertTrue(db.insert(conn, {'package': 'linuxfabrik'}, table='t')[0])
+        self.assertTrue(db.commit(conn)[0])
+        self.assertEqual(
+            db.select(conn, 'SELECT * FROM t')[1], [{'package': 'linuxfabrik'}]
+        )
+        # `path` and `filename` are ignored, so nothing reaches the disk.
+        _, path = db.get_db_path(path=self.base, filename='t.db')
+        self.assertFalse(os.path.exists(path))
+        self.assertTrue(db.close(conn))
+
+    def test_connect_in_memory_registers_regexp(self):
+        ok, conn = db.connect(in_memory=True)
+        self.assertTrue(ok, conn)
+        db.create_table(conn, 'package TEXT', table='t')
+        db.insert(conn, {'package': 'linuxfabrik'}, table='t')
+        db.commit(conn)
+        self.assertEqual(
+            db.select(conn, "SELECT * FROM t WHERE package REGEXP 'linux'")[1],
+            [{'package': 'linuxfabrik'}],
+        )
+        self.assertTrue(db.close(conn))
+
+    def test_connect_in_memory_is_private_per_connection(self):
+        # Two concurrent runs of the same consumer must not see each other's rows.
+        ok_a, conn_a = db.connect(in_memory=True)
+        ok_b, conn_b = db.connect(in_memory=True)
+        self.assertTrue(ok_a and ok_b)
+        for conn in (conn_a, conn_b):
+            db.create_table(conn, 'package TEXT', table='t', drop_table_first=True)
+        db.insert(conn_a, {'package': 'linuxfabrik'}, table='t')
+        db.commit(conn_a)
+        self.assertEqual(db.select(conn_b, 'SELECT * FROM t')[1], [])
+        db.close(conn_a)
+        db.close(conn_b)
+
+    def test_rm_db_on_in_memory_deletes_nothing(self):
+        ok, conn = db.connect(in_memory=True)
+        self.assertTrue(ok, conn)
+        # No file to remove, but the connection still has to be closed.
+        self.assertTrue(db.rm_db(conn))
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute('SELECT 1')
+
 
 class TestCrud(unittest.TestCase):
     """create_table / insert / select / replace / delete / cut / indexes."""

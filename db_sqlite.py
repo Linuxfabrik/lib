@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082502'
+__version__ = '2026082503'
 
 import csv
 import functools
@@ -681,22 +681,31 @@ class __DbConnection(sqlite3.Connection):
     db_path = ''
 
 
-def connect(path='', filename='', timeout=5.0):
+def connect(path='', filename='', timeout=5.0, in_memory=False):
     """
-    Connect to a SQLite database file.
+    Connect to a SQLite database file, or to a private in-memory database.
 
     This function establishes a connection to a SQLite database file.
     If no path is provided, a temporary directory is used.
     If no filename is provided, the default filename `'linuxfabrik-monitoring-plugins-sqlite.db'`
     is used.
 
+    Pass `in_memory=True` for a database that only has to live as long as the process. It is
+    private to the connection, so two consumers running at the same time cannot see, lock or
+    discard each other's data.
+
     ### Parameters
     - **path** (`str`, optional):
       Path to the directory containing the database file.
       Defaults to the system temporary directory (e.g., `/tmp`).
+      Ignored when `in_memory` is `True`.
     - **filename** (`str`, optional):
       Name of the database file.
       Defaults to `'linuxfabrik-monitoring-plugins-sqlite.db'`.
+      Ignored when `in_memory` is `True`.
+    - **in_memory** (`bool`, optional):
+      If `True`, open a private in-memory database instead of a file. Nothing is written to
+      disk and the data is gone when the connection closes. Defaults to `False`.
     - **timeout** (`float`, optional):
       Seconds to wait for a lock held by another process before giving up with
       `database is locked`. Defaults to `5.0`. Raise it when several consumers share one database
@@ -719,6 +728,11 @@ def connect(path='', filename='', timeout=5.0):
       registered as deterministic where the runtime supports it (Python 3.8 and SQLite 3.8.3),
       and without that flag otherwise, so the connection also works on RHEL 8's default Python.
     - Always check the returned success flag before using the connection.
+    - An in-memory database needs no `timeout`, because no other connection can reach it. It is
+      the right choice for a consumer that only queries the data it gathered in this very run:
+      a file under a fixed name is shared with every concurrent run of the same consumer, which
+      then read each other's rows or drop each other's tables. Anything that has to survive the
+      process, a counter to compute a rate against for example, needs the file.
 
     ### Example
     >>> success, conn = connect()
@@ -727,14 +741,21 @@ def connect(path='', filename='', timeout=5.0):
     >>>     pass
     >>> else:
     >>>     print(conn)
+
+    >>> success, conn = connect(in_memory=True)
     """
-    success, db = get_db_path(path=path, filename=filename)
-    if not success:
-        return False, db
+    if in_memory:
+        # Leave `db_path` at its class default, so `rm_db()` finds no file to delete.
+        db = ':memory:'
+    else:
+        success, db = get_db_path(path=path, filename=filename)
+        if not success:
+            return False, db
 
     try:
         conn = sqlite3.connect(db, timeout=timeout, factory=__DbConnection)
-        conn.db_path = db
+        if not in_memory:
+            conn.db_path = db
         conn.row_factory = sqlite3.Row
         conn.text_factory = str
         # `deterministic=True`: the same pattern and string always yield the same result, so
