@@ -29,11 +29,11 @@ Typical use case:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026082502'
 
 import re
 
-from . import shell
+from . import human, shell
 
 DEFAULT_TIMEOUT = 8
 
@@ -382,6 +382,105 @@ def get_pool_xml(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     if not success:
         return False, pool
     return virsh(['pool-dumpxml', pool], uri=uri, timeout=timeout)
+
+
+def parse_volumes(stdout):
+    """
+    Turn the output of `virsh vol-list --details` into a list of volumes.
+
+    ### Parameters
+    - **stdout** (`str`): Raw `virsh vol-list --details` output.
+
+    ### Returns
+    - **list** of `dict`: One entry per volume, with the keys `allocation`,
+      `capacity`, `name`, `path` and `type`. The two sizes are byte counts.
+
+    ### Notes
+    - The columns are cut at the offsets of the header words rather than split on
+      whitespace, because a volume name may contain spaces and a path then does too.
+      Verified against libvirt 12.0.0 on a volume named `name with spaces.qcow2`,
+      which a whitespace split tears into three columns.
+    - `vol-list` accepts no `--bytes`, unlike `pool-info`, so the sizes arrive
+      rounded to two decimals with a unit (`64.00 GiB`) and are converted back. They
+      are therefore good to about a thousandth of their own magnitude, which is what
+      a ratio between two of them needs and not what a byte-exact figure would need.
+      Asking `vol-info --bytes` per volume would be exact and costs one call per
+      volume; a single pool on an ordinary workstation held 40.
+    - A row whose sizes do not parse is skipped rather than counted as zero, so a
+      column layout that changes cannot quietly turn every volume into an empty one.
+
+    ### Example
+    >>> volumes = parse_volumes(stdout)
+    """
+    lines = [line for line in stdout.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return []
+    header = lines[0]
+    starts = [match.start() for match in re.finditer(r'\S+', header)]
+    # The last column runs to the end of the line, hence the trailing None.
+    bounds = list(zip(starts, [*starts[1:], None]))
+    names = [header[start:end].strip().lower() for start, end in bounds]
+    if 'capacity' not in names or 'allocation' not in names:
+        return []
+
+    volumes = []
+    for line in lines[2:]:
+        cells = dict(zip(names, (line[start:end].strip() for start, end in bounds)))
+        try:
+            capacity = human.human2bytes(cells['capacity'])
+            allocation = human.human2bytes(cells['allocation'])
+        except Exception:
+            continue
+        volumes.append(
+            {
+                'allocation': allocation,
+                'capacity': capacity,
+                'name': cells.get('name', ''),
+                'path': cells.get('path', ''),
+                'type': cells.get('type', ''),
+            }
+        )
+    return volumes
+
+
+def get_volumes(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
+    """
+    Return the volumes of one storage pool, with their sizes.
+
+    ### Parameters
+    - **pool** (`str`): Name of the storage pool.
+    - **uri** (`str`, optional): libvirt connection URI. Defaults to `DEFAULT_URI`.
+    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+
+    ### Returns
+    - **tuple** (`bool`, `list` or `str`):
+      - `success` (`bool`): True if the command succeeded, False otherwise.
+      - `result` (`list` or `str`): One `dict` per volume, see `parse_volumes()`, or
+        an error message.
+
+    ### Notes
+    - This is what a pool really holds, which `pool-info` does not answer: its sizes
+      describe the storage the pool sits on, everything else on that storage
+      included.
+    - A pool that is not running answers with an error, because libvirt cannot list
+      what it has not opened.
+    - The pool name reaches virsh as a positional argument, so a value that looks
+      like an option is refused rather than handed to virsh as one.
+
+    ### Example
+    >>> success, volumes = get_volumes('default')
+    """
+    success, pool = shell.safe_cli_value(pool, 'pool name')
+    if not success:
+        return False, pool
+    success, stdout = virsh(
+        ['vol-list', '--pool', pool, '--details'],
+        uri=uri,
+        timeout=timeout,
+    )
+    if not success:
+        return False, stdout
+    return True, parse_volumes(stdout)
 
 
 def get_pools(uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
