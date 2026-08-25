@@ -13,7 +13,7 @@ back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026082502'
 
 import math
 import re
@@ -473,7 +473,19 @@ def humanduration2seconds(text):
 # thousands separator, nothing Python would read as a number but the range syntax does
 # not define. Exponent notation is not one grammar here: in a size, `e` is exa, and
 # `1e3` is three exabytes rather than the thousand it would be in a bare threshold.
-_QUANTITY = re.compile(r'^(?:\s*\d+(?:\.\d+)?\s*[A-Za-z]*\s*)+$')
+#
+# Every group but the last ends in a unit or in a space, so a run of digits belongs to
+# exactly one group. Where groups may end in a digit, `1234` splits into as many groups
+# as it has digits, and a bound that only fails at its last character costs 2^n to
+# reject: the earlier `(?:\s*\d+(?:\.\d+)?\s*[A-Za-z]*\s*)+` needed 4.8s for 26
+# digits (CPython 3.14, reported by CodeQL as py/redos). It also drops `0.00.0`, read
+# until now as the two numbers `0.0` and `0.0`: no converter can read it, so it came
+# back as the bound 0, which alerts on every value but zero.
+_QUANTITY = re.compile(
+    r'^\s*'
+    r'(?:\d+(?:\.\d+)?\s*[A-Za-z]+\s*|\d+(?:\.\d+)?\s+)*'
+    r'\d+(?:\.\d+)?\s*[A-Za-z]*\s*$'
+)
 
 
 def _convert_range(text, convert_fn):

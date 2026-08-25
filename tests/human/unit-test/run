@@ -15,6 +15,7 @@ very large and negative values, and wrong input types.
 """
 
 import sys
+import time
 import unittest
 
 sys.path.insert(0, '..')
@@ -195,7 +196,7 @@ class TestHumanRange(unittest.TestCase):
     def test_bound_the_converters_cannot_read_is_left_for_the_range_parser(self):
         # The converters answer 0 for anything they cannot read. As a range bound that
         # is the threshold zero, not "no threshold", so a typo must not become `0:0`.
-        for text in ['abc', '1,5M', '1.5,2M', '90%', '1_000M']:
+        for text in ['abc', '1,5M', '1.5,2M', '90%', '1_000M', '0.00.0', '1.52.5']:
             with self.subTest(text=text):
                 self.assertEqual(human.humanrange2bytes(text), text)
         self.assertEqual(human.humanrange2bytes('1K:abc'), '1024:abc')
@@ -206,6 +207,15 @@ class TestHumanRange(unittest.TestCase):
     def test_a_bound_that_really_is_zero_still_converts(self):
         self.assertEqual(human.humanrange2bytes('0'), '0')
         self.assertEqual(human.humanrange2bytes('0K:1K'), '0:1024')
+
+    def test_a_long_digit_bound_is_rejected_without_stalling_the_check(self):
+        # A bound of many digits that fails only at its last character sent the
+        # grammar into exponential backtracking, so one typo in a threshold hung
+        # the check until the monitoring server killed it, printing nothing.
+        text = '0' * 64 + '!'
+        started = time.monotonic()
+        self.assertEqual(human.humanrange2bytes(text), text)
+        self.assertLess(time.monotonic() - started, 1)
 
     def test_multi_unit_duration_bound(self):
         self.assertEqual(human.humanrange2seconds('1Y1D'), '31622400')
