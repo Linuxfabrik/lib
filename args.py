@@ -15,7 +15,7 @@ import os
 import re
 import textwrap
 
-from . import base, disk
+from . import base, disk, human
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026082501'
@@ -90,6 +90,22 @@ HELP_TEXTS = {
         'A failed item means the installation is broken in a way that stops it from '
         'working correctly, which is worth acting on but rarely worth waking somebody '
         'up for.'
+    ),
+    '--grace-security': (
+        'How long a pending security update is tolerated before it counts towards the '
+        'thresholds. '
+        'Starts when the update is first seen, and starts over if the package drops off '
+        'the list and comes back. '
+        'A duration such as `12h`, `8D` or `2W`; `0D` disables the grace period.'
+    ),
+    '--grace-updates': (
+        'How long a pending update is tolerated before it counts towards the '
+        'thresholds. '
+        'Set this to cover the interval between two patch windows, so a host stays '
+        'quiet about updates it has had no chance to install yet. '
+        'Starts when the update is first seen, and starts over if the package drops off '
+        'the list and comes back. '
+        'A duration such as `12h`, `8D` or `2W`; `0D` disables the grace period.'
     ),
     '--hostname': 'Hostname or IP address.',
     '--ipv6': 'Use IPv6.',
@@ -260,6 +276,41 @@ def csv(arg):
     ['apple', 'orange', 'banana', 'grape']
     """
     return [x.strip() for x in arg.split(',')]
+
+
+def duration(arg):
+    """Converts a human-readable duration into seconds, for use as an argparse
+    `type`.
+
+    Wraps `lib.human.human2seconds()`, which returns `0` both for a valid zero
+    and for anything it cannot decode. Reading `8` or `8x` as "no delay at all"
+    is the kind of silent misreading that makes a check quietly stop alerting,
+    so this raises instead.
+
+    ### Parameters
+    - **arg** (`str`): A number followed by a unit: `s`, `m` (minutes), `h`,
+      `d`/`D`, `w`/`W`, `M` (months) or `Y`.
+
+    ### Returns
+    - **int**: The duration in seconds.
+
+    ### Raises
+    - **argparse.ArgumentTypeError**: The value carries no unit or an unknown one.
+
+    ### Example
+    >>> duration('8d')
+    691200
+
+    >>> duration('0d')
+    0
+    """
+    if not re.fullmatch(r'\s*(?:\d+(?:\.\d*)?|\.\d+)\s*[smhdDwWMY]\s*', arg or ''):
+        raise argparse.ArgumentTypeError(
+            f'invalid duration "{arg}": expected a number followed by a unit, '
+            f'one of `s`, `m` (minutes), `h`, `d`, `W`, `M` (months) or `Y`, '
+            f'for example `12h`, `3d` or `2W`'
+        )
+    return human.human2seconds(arg)
 
 
 def epilog(path, section='check-plugins'):

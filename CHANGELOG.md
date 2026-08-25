@@ -11,10 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * every module that talks HTTP takes a `proxy` argument next to `no_proxy`, so a consumer can name the proxy instead of leaving the choice to the environment
-* args.py: `HELP_TEXTS` carries `--proxy`, so every consumer offering an explicit proxy describes it alike
+* args.py: `duration()` reads an `8D` style duration for argparse, and rejects a value whose unit is missing or unknown instead of silently reading it as zero
+* args.py: `HELP_TEXTS` carries `--grace-security`, `--grace-updates` and `--proxy`, so every consumer offering them describes them alike
 * base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`)
 * db_sqlite.py: `connect(in_memory=True)` opens a database private to the process, for data that only has to live as long as the run
 * db_sqlite.py: `cut_per_sensor()` trims a history table per sensor instead of by total row count
+* db_sqlite.py: `first_seen()` records when each item of an observed set turned up and how long it has been around, so a consumer can hold an alert back until an item has persisted
 * keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it
 * kvm.py: new module for libvirt hosts, covering domain statistics and listings, storage pools, their volumes, which pools share a filesystem, and the names of domain states and their reasons. It connects read-only, so it needs neither root nor sudo
 * net.py: `get_proxy()` answers which proxy the environment wants for a target, honouring the exceptions in `no_proxy`, for a consumer that reaches the network without an HTTP client

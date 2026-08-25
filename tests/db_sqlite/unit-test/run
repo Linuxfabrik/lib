@@ -973,5 +973,79 @@ class TestPerSecondDeltas(unittest.TestCase):
         self.assertAlmostEqual(rates['rx-bytes'], 20.0)
 
 
+class TestFirstSeen(unittest.TestCase):
+    """first_seen(): ages an observed set, forgets what disappeared."""
+
+    def setUp(self):
+        # first_seen() has no path= argument and resolves the temp dir via
+        # tempfile.gettempdir(), which caches on first use. Override the cache so
+        # each test gets an isolated, empty database directory.
+        self.tmp = tempfile.mkdtemp(prefix='lftest-fs-')
+        self.saved_tempdir = tempfile.tempdir
+        tempfile.tempdir = self.tmp
+
+    def tearDown(self):
+        tempfile.tempdir = self.saved_tempdir
+
+    def test_first_run_ages_everything_zero(self):
+        ages = db.first_seen('lftest-fs.db', 'demo', ['a', 'b'])
+        self.assertEqual(ages, {'a': 0, 'b': 0})
+
+    def test_age_grows_with_the_clock(self):
+        saved_now = db.time.now
+        ticks = iter([1000, 1000 + 777600])
+        db.time.now = lambda: next(ticks)
+        try:
+            db.first_seen('lftest-fs-age.db', 'demo', ['a'])
+            ages = db.first_seen('lftest-fs-age.db', 'demo', ['a'])
+        finally:
+            db.time.now = saved_now
+        self.assertEqual(ages['a'], 777600)  # 9 days
+
+    def test_a_key_that_returns_starts_over(self):
+        # Otherwise a package that was installed and later needs an update again
+        # would immediately be past a grace period it never actually spent.
+        saved_now = db.time.now
+        ticks = iter([1000, 2000, 3000])
+        db.time.now = lambda: next(ticks)
+        try:
+            db.first_seen('lftest-fs-back.db', 'demo', ['a'])
+            db.first_seen('lftest-fs-back.db', 'demo', [])
+            ages = db.first_seen('lftest-fs-back.db', 'demo', ['a'])
+        finally:
+            db.time.now = saved_now
+        self.assertEqual(ages['a'], 0)
+
+    def test_two_names_do_not_forget_each_other(self):
+        saved_now = db.time.now
+        ticks = iter([1000, 1000, 2000])
+        db.time.now = lambda: next(ticks)
+        try:
+            db.first_seen('lftest-fs-share.db', 'one', ['a'])
+            db.first_seen('lftest-fs-share.db', 'two', ['b'])
+            ages = db.first_seen('lftest-fs-share.db', 'one', ['a'])
+        finally:
+            db.time.now = saved_now
+        self.assertEqual(ages['a'], 1000)
+
+    def test_only_the_keys_asked_for_come_back(self):
+        db.first_seen('lftest-fs-subset.db', 'demo', ['a', 'b', 'c'])
+        ages = db.first_seen('lftest-fs-subset.db', 'demo', ['a', 'b', 'c'])
+        self.assertEqual(sorted(ages), ['a', 'b', 'c'])
+
+    def test_a_clock_that_went_backwards_yields_no_negative_age(self):
+        # An NTP step or a cache restored from a backup would otherwise hand out
+        # a negative age and let a grace period pass that never elapsed.
+        saved_now = db.time.now
+        ticks = iter([2000, 1000])
+        db.time.now = lambda: next(ticks)
+        try:
+            db.first_seen('lftest-fs-back-clock.db', 'demo', ['a'])
+            ages = db.first_seen('lftest-fs-back-clock.db', 'demo', ['a'])
+        finally:
+            db.time.now = saved_now
+        self.assertEqual(ages['a'], 0)
+
+
 if __name__ == '__main__':
     unittest.main()

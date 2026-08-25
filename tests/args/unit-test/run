@@ -163,5 +163,40 @@ class TestNumberUnitMethod(unittest.TestCase):
         )
 
 
+class TestDuration(unittest.TestCase):
+    """duration(): decodes a duration, refuses what it cannot decode."""
+
+    def test_accepts_every_unit(self):
+        self.assertEqual(args.duration('30s'), 30)
+        self.assertEqual(args.duration('90m'), 5400)
+        self.assertEqual(args.duration('12h'), 43200)
+        self.assertEqual(args.duration('8d'), 691200)
+        self.assertEqual(args.duration('2W'), 1209600)
+        self.assertEqual(args.duration('3M'), 7776000)
+        self.assertEqual(args.duration('1Y'), 31536000)
+
+    def test_day_and_week_are_case_insensitive(self):
+        # Only `m` (minutes) and `M` (months) differ by case.
+        self.assertEqual(args.duration('8D'), args.duration('8d'))
+        self.assertEqual(args.duration('2W'), args.duration('2w'))
+        self.assertNotEqual(args.duration('3m'), args.duration('3M'))
+
+    def test_accepts_a_fraction(self):
+        self.assertEqual(args.duration('1.5W'), 907200)
+        self.assertEqual(args.duration('.5D'), 43200)
+
+    def test_zero_is_a_valid_duration(self):
+        self.assertEqual(args.duration('0D'), 0)
+        self.assertEqual(args.duration('0s'), 0)
+
+    def test_rejects_what_human2seconds_would_read_as_zero(self):
+        # human2seconds() returns 0 for garbage as well as for a real zero.
+        # Passing that through would turn `--grace-updates=8` into "no grace at
+        # all", which is exactly the misreading that stops a check alerting.
+        for value in ('8', '8x', '', 'd', 'abc', 'D8', '8dd', '-1d'):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                args.duration(value)
+
+
 if __name__ == '__main__':
     unittest.main()

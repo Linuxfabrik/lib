@@ -1203,6 +1203,114 @@ def drop_table(conn, table='perfdata', delete_db_on_operational_error=True):
         return False, f'Query failed: {sql}, Error: {e}'
 
 
+def first_seen(filename, name, keys):
+    """
+    Persist when each key was first observed in a local SQLite cache and
+    return how long each has been known.
+
+    Generic helper for the "how long has this been the case" pattern. Works
+    for anything a consumer observes as a set that changes between runs and
+    wants to age: pending package updates, open findings of a scanner,
+    machines missing from an inventory, certificates awaiting renewal. Lets
+    a consumer hold back an alert until an item has been around for a while,
+    without the consumer having to keep state of its own.
+
+    Keys that vanish from `keys` are forgotten, so an item that comes back
+    later starts its clock over. Keys are stored per `name`, so several
+    consumers, or one consumer observing several sets, can share one cache
+    file without ageing each other's items.
+
+    ### Parameters
+    - **filename** (`str`):
+      SQLite cache filename, e.g. `'linuxfabrik-monitoring-plugins-<name>.db'`.
+      Lives under `$TEMP`. Pick a per-consumer name so caches do not collide.
+    - **name** (`str`):
+      Set identifier stored in the `name` column (e.g. the consumer's own
+      name). Two consumers writing the same `name` into the same file will
+      delete each other's keys on every run.
+    - **keys** (`iterable[str]`):
+      The keys observed right now. Pick a key that stays stable while the
+      condition lasts: keying a pending package update on the package name
+      keeps the clock running across a newer candidate version, whereas
+      keying it on the version restarts the clock on every rebuild.
+
+    ### Returns
+    - **dict[str, int]**: `{key: age_in_seconds}` for every key passed in.
+      A key seen for the first time has an age of `0`.
+    - **None**: any SQLite operation failed. Callers must treat this as
+      "ages unknown" and fall back to acting on every key, so a cache that
+      cannot be read never silences a consumer.
+
+    ### Example
+    Alert only on updates that have been pending for more than a week:
+
+    >>> ages = lib.db_sqlite.first_seen(
+    ...     'linuxfabrik-monitoring-plugins-rpm-updates.db',
+    ...     'rpm-updates',
+    ...     ['kernel', 'openssl', 'vim-minimal'],
+    ... )
+    >>> if ages is None:
+    ...     overdue = packages
+    ... else:
+    ...     overdue = [p for p in packages if ages[p] >= 7 * 86400]
+    """
+    keys = list(keys)
+    ok, conn = connect(filename=filename)
+    if not ok:
+        return None
+
+    definition = """
+        name TEXT NOT NULL,
+        item TEXT NOT NULL,
+        timestamp INT NOT NULL
+    """
+    ok, _ = create_table(conn, definition, drop_table_first=False)
+    if not ok:
+        close(conn)
+        return None
+    # Unique per set, so two concurrent runs of the same consumer cannot record
+    # one key twice and then disagree on its age depending on which row they read.
+    create_index(conn, 'name, item', unique=True)
+
+    ok, rows = select(
+        conn,
+        'SELECT item, timestamp FROM perfdata WHERE name = :name',
+        {'name': name},
+    )
+    if not ok:
+        close(conn)
+        return None
+    known = {row['item']: row['timestamp'] for row in rows}
+
+    now = time.now()
+    for key in keys:
+        if key in known:
+            continue
+        # A concurrent run may have inserted the same key between the SELECT
+        # above and here. The unique index turns that into an Integrity Error,
+        # which means the key is recorded and its age is 0 either way.
+        insert(conn, {'name': name, 'item': key, 'timestamp': now})
+        known[key] = now
+
+    # Forget what is no longer observed, otherwise the cache grows for the life
+    # of the host and a key that returns keeps the age of its first appearance.
+    current = set(keys)
+    for item in known:
+        if item in current:
+            continue
+        delete(
+            conn,
+            'DELETE FROM perfdata WHERE name = :name AND item = :item',
+            {'name': name, 'item': item},
+        )
+    commit(conn)
+    close(conn)
+
+    # A clock that went backwards (NTP step, a cache restored from a backup)
+    # would hand out a negative age and let a threshold pass that should not.
+    return {key: max(0, now - known[key]) for key in keys}
+
+
 def get_colnames(col_definition):
     """
     Extract a list of column names from a SQL column definition.
