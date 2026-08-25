@@ -11,10 +11,11 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026082502'
 
 import base64
 import json
+import os
 import re
 import socket
 import ssl
@@ -223,13 +224,32 @@ def _body_hint(data):
     return f'body of type {type(data).__name__}'
 
 
-def _build_ssl_context(insecure, tls_min, tls_max):
+def _build_ssl_context(insecure, tls_min, tls_max, cacert=None):
     """Build an SSL context with optional version pinning and ALPN advertised.
 
     ALPN ('h2', 'http/1.1') is advertised regardless of the requested HTTP version so the
     negotiated protocol can be inspected via `extended=True` for a compliance check.
+
+    `cacert` names a CA bundle to verify against, either a file or a directory of hashed
+    certificates. It replaces the trust store of the host rather than adding to it, which is
+    what `curl --cacert` and `REQUESTS_CA_BUNDLE` do as well: an endpoint whose certificate a
+    private CA signed is then the only thing that verifies, and a certificate from a public CA
+    no longer does. Handing the bundle to `create_default_context()` is what makes the
+    difference; `load_verify_locations()` on a context that already holds the trust store
+    would leave every public CA valid. Verified against Python 3.14 on Fedora 44.
+
+    A bundle that cannot be read raises a ValueError rather than leaving the caller with a
+    connection that verifies against something else than it asked for.
     """
-    ctx = ssl.create_default_context()
+    try:
+        if not cacert:
+            ctx = ssl.create_default_context()
+        elif os.path.isdir(cacert):
+            ctx = ssl.create_default_context(capath=cacert)
+        else:
+            ctx = ssl.create_default_context(cafile=cacert)
+    except (OSError, ssl.SSLError) as e:
+        raise ValueError(f'Cannot read the CA bundle "{cacert}": {e}') from e
     if insecure:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -636,6 +656,7 @@ def fetch(
     tls_max=None,
     method=None,
     response_on_error=False,
+    cacert=None,
 ):
     """
     Fetch any URL with optional POST, basic/digest authentication and SSL/TLS handling.
@@ -655,7 +676,7 @@ def fetch(
          |
          |--> Set headers (user first, then forced Connection: close + User-Agent)
          |
-         |--> Build SSL context (insecure?, tls_min, tls_max, ALPN)
+         |--> Build SSL context (insecure?, cacert, tls_min, tls_max, ALPN)
          |
          |--> Build httpx.Client (auth, http1/http2, proxy, timeout)
          |
@@ -673,6 +694,14 @@ def fetch(
     ### Parameters
     - **url** (`str`):
         The URL to fetch.
+    - **cacert** (`str`, optional):
+        Path to a CA bundle to verify the certificate against, either a file of PEM
+        certificates or a directory of hashed ones, which is what `OS_CACERT`,
+        `REQUESTS_CA_BUNDLE` and `curl --cacert` name as well. It replaces the trust store of
+        the host instead of adding to it, so an endpoint signed by a public CA no longer
+        verifies once a private bundle is named. A bundle that cannot be read is an error
+        rather than a silent fallback to the trust store. Ignored when `insecure` is set,
+        because that switches verification off altogether.
     - **insecure** (`bool`, optional):
         If True, disables SSL certificate validation. Defaults to False.
     - **proxy** (`str`, optional):
@@ -812,7 +841,7 @@ def fetch(
     headers['User-Agent'] = 'Linuxfabrik Monitoring Plugins'
 
     try:
-        ctx = _build_ssl_context(insecure, tls_min, tls_max)
+        ctx = _build_ssl_context(insecure, tls_min, tls_max, cacert=cacert)
     except ValueError as e:
         return False, str(e)
 
@@ -993,6 +1022,7 @@ def fetch_json(
     method=None,
     retries=0,
     response_on_error=False,
+    cacert=None,
 ):
     """
     Fetch JSON from a URL with optional POST, authentication and SSL/TLS handling.
@@ -1025,6 +1055,7 @@ def fetch_json(
     while True:
         success, jsonst = fetch(
             url,
+            cacert=cacert,
             data=data,
             digest_auth_password=digest_auth_password,
             digest_auth_user=digest_auth_user,

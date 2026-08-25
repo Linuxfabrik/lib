@@ -22,6 +22,7 @@ test classes skip while the pure-helper tests still run.
 
 import base64
 import datetime
+import os
 import ssl
 import sys
 import unittest
@@ -30,6 +31,12 @@ from unittest import mock
 sys.path.insert(0, '..')
 
 import lib.url as url
+
+FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures')
+
+# A self-signed CA nothing trusts, so a context that carries it can be told apart from one
+# that only has the trust store of the host.
+CA_FILE = os.path.join(FIXTURE_DIR, 'ca.pem')
 
 # httpx may be missing on minimal hosts; lib.url guards the import and so do we.
 try:
@@ -252,6 +259,43 @@ class TestBuildSslContext(unittest.TestCase):
         with self.assertRaises(ValueError):
             url._build_ssl_context(False, None, '9.9')
 
+    def test_a_ca_bundle_replaces_the_trust_store_of_the_host(self):
+        ctx = url._build_ssl_context(False, None, None, cacert=CA_FILE)
+        subjects = [
+            value
+            for cert in ctx.get_ca_certs()
+            for pair in cert['subject']
+            for key, value in pair
+            if key == 'commonName'
+        ]
+        # Nothing but the bundle verifies. A context that had merely added the bundle to the
+        # trust store would still accept every public CA, which is the mistake this guards
+        # against; that difference does not show in `get_ca_certs()`, hence the count.
+        self.assertEqual(subjects, ['Linuxfabrik Test CA'])
+        self.assertTrue(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_a_directory_of_certificates_is_accepted(self):
+        # A `capath` is loaded lazily, so this only asserts that the directory is taken
+        # without complaint, which a `cafile` call would refuse.
+        ctx = url._build_ssl_context(False, None, None, cacert=FIXTURE_DIR)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_a_ca_bundle_that_does_not_exist_raises_value_error(self):
+        with self.assertRaises(ValueError) as caught:
+            url._build_ssl_context(False, None, None, cacert='/nonexistent/ca.pem')
+        self.assertIn('Cannot read the CA bundle', str(caught.exception))
+
+    def test_a_file_that_holds_no_certificate_raises_value_error(self):
+        with self.assertRaises(ValueError) as caught:
+            url._build_ssl_context(False, None, None, cacert=__file__)
+        self.assertIn('Cannot read the CA bundle', str(caught.exception))
+
+    def test_insecure_wins_over_a_ca_bundle(self):
+        ctx = url._build_ssl_context(True, None, None, cacert=CA_FILE)
+        self.assertFalse(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_NONE)
+
     def test_old_interpreter_pinning_raises_runtime_error(self):
         # Simulate Python 3.6 (no ssl.TLSVersion): _TLS_VERSIONS is empty and a
         # pinning request must raise RuntimeError before touching the context.
@@ -334,6 +378,13 @@ class TestFetchValidation(unittest.TestCase):
         ok, msg = url.fetch('https://example.com', data={'a': 'b'}, encoding='xml')
         self.assertFalse(ok)
         self.assertIn('Unknown encoding', msg)
+
+    def test_unreadable_ca_bundle_returns_error_string(self):
+        # _build_ssl_context raises ValueError; fetch turns it into (False, msg) before it
+        # ever opens a connection.
+        ok, msg = url.fetch('https://example.com', cacert='/nonexistent/ca.pem')
+        self.assertFalse(ok)
+        self.assertIn('Cannot read the CA bundle', msg)
 
     def test_invalid_tls_min_returns_error_string(self):
         # _build_ssl_context raises ValueError; fetch turns it into (False, msg).
