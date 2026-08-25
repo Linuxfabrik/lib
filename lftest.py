@@ -21,7 +21,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026082502'
 
 
 def run(test_instance, plugin, testcase):
@@ -239,6 +239,35 @@ def attach_each(test_class, items, action, id_func=str):
         setattr(test_class, method_name, _make(item))
 
 
+# Set by a runner that wants a fast pass without containers, see
+# `tools/run-unit-tests --no-container`.
+NO_CONTAINER_ENV = 'LFTEST_NO_CONTAINER'
+
+
+def require_container_runtime():
+    """Skip the calling test unless it may and can start a container.
+
+    Raises `unittest.SkipTest` when `LFTEST_NO_CONTAINER` is set in the
+    environment, or when testcontainers is not installed. A test that is not
+    allowed to start a container, or has nothing to start it with, has not
+    failed, and reporting it as an error buries the tests that did run.
+
+    Call it before importing anything from testcontainers, so a test file that
+    mixes container tests with ordinary ones stays importable either way, and
+    a fast pass can run the ordinary tests beside them.
+    """
+    import unittest
+
+    if os.environ.get(NO_CONTAINER_ENV):
+        raise unittest.SkipTest(f'{NO_CONTAINER_ENV} is set')
+    try:
+        import testcontainers  # noqa: F401
+    except ImportError as e:
+        raise unittest.SkipTest(
+            'testcontainers is not installed; run `pip install testcontainers`'
+        ) from e
+
+
 @contextlib.contextmanager
 def network():
     """Yield a testcontainers `Network`, removed on exit.
@@ -262,12 +291,8 @@ def network():
     ...     ):
     ...         pass
     """
-    try:
-        from testcontainers.core.network import Network
-    except ImportError as e:
-        raise RuntimeError(
-            'testcontainers is not installed; run `pip install testcontainers`'
-        ) from e
+    require_container_runtime()
+    from testcontainers.core.network import Network
 
     net = Network()
     net.create()
@@ -344,15 +369,11 @@ def run_container(
     ...     )
     ...     # point the executable at this url
     """
-    try:
-        from datetime import timedelta
+    require_container_runtime()
+    from datetime import timedelta
 
-        from testcontainers.core.container import DockerContainer
-        from testcontainers.core.wait_strategies import LogMessageWaitStrategy
-    except ImportError as e:
-        raise RuntimeError(
-            'testcontainers is not installed; run `pip install testcontainers`'
-        ) from e
+    from testcontainers.core.container import DockerContainer
+    from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
     c = DockerContainer(image)
     if env:
@@ -592,12 +613,8 @@ def run_mysql_compatible_from_containerfile(
     ...         text=True,
     ...     )
     """
-    try:
-        from testcontainers.core.image import DockerImage
-    except ImportError as e:
-        raise RuntimeError(
-            'testcontainers is not installed; run `pip install testcontainers`'
-        ) from e
+    require_container_runtime()
+    from testcontainers.core.image import DockerImage
 
     abspath = os.path.abspath(containerfile_path)
     from_image = _dockerfile_from_image(abspath)

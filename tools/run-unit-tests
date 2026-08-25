@@ -27,9 +27,15 @@ Unit tests come in two shapes:
   when its `run` file references testcontainers-python or one of the
   lib.lftest container helpers (see `CONTAINER_TEST_SIGNATURES`).
 
+The classification is per module, and most modules that have a container
+test have fast tests in the same file. `--no-container` therefore runs
+every module and sets `LFTEST_NO_CONTAINER`, which makes the container
+helpers skip: leaving those modules out instead would hide their fast
+tests from the tox matrix, which is the only place they ever run.
+
 Usage:
     tools/run-unit-tests                 # run everything
-    tools/run-unit-tests --no-container  # skip container tests
+    tools/run-unit-tests --no-container  # every module, container tests skipped
     tools/run-unit-tests --only-container  # run only container tests
     tools/run-unit-tests db_sqlite       # run one module
     tools/run-unit-tests db_sqlite txt   # run specific modules
@@ -45,7 +51,13 @@ import tempfile
 import _common
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026082501'
+
+
+# Read by the lib.lftest container helpers, which skip when it is set. Kept in
+# step with `lib.lftest.NO_CONTAINER_ENV`; the tools are standalone scripts and
+# do not import the library.
+NO_CONTAINER_ENV = 'LFTEST_NO_CONTAINER'
 
 
 # Signatures that identify a real container-driven unit test. Precise
@@ -106,7 +118,7 @@ def parse_args():
     group.add_argument(
         '--no-container',
         action='store_true',
-        help='Skip container-based unit tests.',
+        help='Run every module, skipping the container tests inside them.',
     )
     group.add_argument(
         '--only-container',
@@ -131,10 +143,7 @@ def discover_modules(args):
     for module_dir in _common.iter_test_modules():
         if requested is not None and module_dir.name not in requested:
             continue
-        container = is_container_test(module_dir)
-        if args.no_container and container:
-            continue
-        if args.only_container and not container:
+        if args.only_container and not is_container_test(module_dir):
             continue
         modules.append(module_dir)
     return modules
@@ -149,7 +158,9 @@ def main():
         print('No unit tests found.')
         return 0
 
-    if any(is_container_test(m) for m in modules):
+    if args.no_container:
+        os.environ[NO_CONTAINER_ENV] = '1'
+    elif any(is_container_test(m) for m in modules):
         ensure_podman_env()
 
     # Isolate temp state under a unique per-invocation directory so several

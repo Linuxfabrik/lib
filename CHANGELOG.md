@@ -19,12 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: `first_seen()` records when each item of an observed set turned up and how long it has been around, so a consumer can hold an alert back until an item has persisted
 * keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it
 * kvm.py: new module for libvirt hosts, covering domain statistics and listings, storage pools, their volumes, which pools share a filesystem, and the names of domain states and their reasons. It connects read-only, so it needs neither root nor sudo
+* lftest.py: `require_container_runtime()` lets a test that needs a container skip itself where there is none, instead of failing next to the tests that do run
 * net.py: `get_proxy()` answers which proxy the environment wants for a target, honouring the exceptions in `no_proxy`, for a consumer that reaches the network without an HTTP client
 * redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
 
 ### Changed
 
 * db_sqlite.py: `compute_load()` reports the sensors that have enough samples, and leaves out one whose counter started over
+* lftest.py: the container helpers skip a test instead of failing it when testcontainers is missing or `LFTEST_NO_CONTAINER` is set
 * url.py: `fetch()` says what is wrong with a certificate that does not verify, and points out a plaintext request sent to a port that speaks TLS
 
 ### Fixed

@@ -497,10 +497,13 @@ class TestWildflyContainer(unittest.TestCase):
     Builds a WildFly image with a ManagementRealm user and the management
     interface bound to 0.0.0.0, then drives get_data over digest auth.
     Mixing this with the mocked tests classifies the module as a container
-    test (run via tools/run-container-tests).
+    test (run via tools/run-container-tests). The mocked tests beside it still
+    run in a fast pass: this one skips itself when it may not start a container.
     """
 
     def test_management_api(self):
+        lib.lftest.require_container_runtime()
+
         from testcontainers.core.image import DockerImage
 
         with (
