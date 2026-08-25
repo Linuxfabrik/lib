@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082504'
+__version__ = '2026082505'
 
 import base64
 import json
@@ -638,22 +638,6 @@ def compare_github_refs(
         return True, False
 
 
-def _retry(attempt, retries):
-    """Repeat an attempt until it succeeds or the budget is spent.
-
-    `attempt` is a callable returning the usual (success, result) tuple, so what counts as a
-    failed attempt is up to the caller: a request that never arrived for `fetch()`, and a body
-    that holds no JSON for `fetch_json()` on top of that. There is no delay between the
-    attempts, because a check has a limited runtime and a timeout has usually passed already.
-    """
-    count = 0
-    while True:
-        result = attempt()
-        if result[0] or count >= retries:
-            return result
-        count += 1
-
-
 def _fetch_once(
     url,
     insecure=False,
@@ -1053,8 +1037,9 @@ def fetch(
     ...     extended=True,
     ... )
     """
-    return _retry(
-        lambda: _fetch_once(
+    attempt = 0
+    while True:
+        result = _fetch_once(
             url,
             cacert=cacert,
             data=data,
@@ -1073,9 +1058,10 @@ def fetch(
             tls_max=tls_max,
             tls_min=tls_min,
             to_text=to_text,
-        ),
-        retries,
-    )
+        )
+        if result[0] or attempt >= retries:
+            return result
+        attempt += 1
 
 
 def fetch_json(
@@ -1107,11 +1093,9 @@ def fetch_json(
     ### Parameters
     See `fetch()` for the shared parameters. `to_text` is forced to True because the JSON
     decoder needs a string.
-    - **retries** (`int`, optional): How many extra attempts to make if the request fails or
-      the body is not valid JSON. `0` (default) means a single attempt. Useful against flaky
-      endpoints (e.g. a slow BMC) that occasionally drop a request. This covers more than the
-      `retries` of `fetch()`, which cannot see a body that arrived intact but holds no JSON,
-      and is why the attempts are counted here rather than handed down.
+    - **retries** (`int`, optional): Handed to `fetch()`, which repeats a request that
+      failed. A body that arrived intact but holds no JSON is not a failed request and is
+      therefore reported rather than fetched again.
 
     ### Returns
     - **tuple**:
@@ -1127,41 +1111,35 @@ def fetch_json(
     >>> fetch_json('https://192.0.2.74/api/v2/?resource=cpu')
     (True, {'cpu': {'usage': '45%', 'temperature': '50C'}})
     """
-    def attempt():
-        """Fetch once and decode the body, which is what an attempt is here."""
-        success, jsonst = fetch(
-            url,
-            cacert=cacert,
-            data=data,
-            digest_auth_password=digest_auth_password,
-            digest_auth_user=digest_auth_user,
-            encoding=encoding,
-            extended=extended,
-            header=header,
-            http_version=http_version,
-            insecure=insecure,
-            method=method,
-            no_proxy=no_proxy,
-            proxy=proxy,
-            response_on_error=response_on_error,
-            timeout=timeout,
-            tls_max=tls_max,
-            tls_min=tls_min,
-        )
-        if not success:
-            return (False, jsonst)
-        try:
-            if extended:
-                jsonst['response_json'] = json.loads(jsonst['response'])
-                return (True, jsonst)
-            return (True, json.loads(jsonst))
-        except Exception as e:
-            return (False, f'{e}. No JSON object could be decoded.')
-
-    # `fetch()` is called without `retries` on purpose: the attempts are counted here, where a
-    # body that arrived intact but holds no JSON counts as a failure too. Handing them down as
-    # well would square them.
-    return _retry(attempt, retries)
+    success, jsonst = fetch(
+        url,
+        cacert=cacert,
+        data=data,
+        digest_auth_password=digest_auth_password,
+        digest_auth_user=digest_auth_user,
+        encoding=encoding,
+        extended=extended,
+        header=header,
+        http_version=http_version,
+        insecure=insecure,
+        method=method,
+        no_proxy=no_proxy,
+        proxy=proxy,
+        response_on_error=response_on_error,
+        retries=retries,
+        timeout=timeout,
+        tls_max=tls_max,
+        tls_min=tls_min,
+    )
+    if not success:
+        return (False, jsonst)
+    try:
+        if extended:
+            jsonst['response_json'] = json.loads(jsonst['response'])
+            return (True, jsonst)
+        return (True, json.loads(jsonst))
+    except Exception as e:
+        return (False, f'{e}. No JSON object could be decoded.')
 
 
 def get_latest_tag_from_github(
