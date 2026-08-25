@@ -31,6 +31,7 @@ def check_eol(
     extended_support=False,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=8,
     unreachable_severity='ok',
 ):
@@ -86,7 +87,7 @@ def check_eol(
     used_fallback = False
     if not eol:
         success, eol = url.fetch_json(
-            product, insecure=insecure, no_proxy=no_proxy, timeout=timeout
+            product, insecure=insecure, no_proxy=no_proxy, proxy=proxy, timeout=timeout
         )
         if not success or not eol:
             # endoflife.date is unreachable. Fall back to the bundled offline snapshot.

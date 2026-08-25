@@ -11,7 +11,7 @@
 """This library collects some NodeBB related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026082501'
 
 from . import base, url
 
@@ -49,6 +49,7 @@ def get_data(args, uri=''):
             },
             insecure=args.INSECURE,
             no_proxy=args.NO_PROXY,
+            proxy=getattr(args, 'PROXY', None),
             timeout=args.TIMEOUT,
         )
     )

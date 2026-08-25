@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* every module that talks HTTP takes a `proxy` argument next to `no_proxy`, so a consumer can name the proxy instead of leaving the choice to the environment
 * args.py: `HELP_TEXTS` carries `--proxy`, so every consumer offering an explicit proxy describes it alike
 * base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`)
 * db_sqlite.py: `cut_per_sensor()` trims a history table per sensor instead of by total row count
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * base.py: `match_range()` and `get_state()` report a value that is not a number instead of raising, and refuse `nan`
 * human.py: `seconds2human()` answers `0s` for a duration of zero and signs a negative duration
 * redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, closes the previous session before opening a new one, retries a failed login instead of falling back to HTTP Basic, and re-authenticates once on a "401 Unauthorized"
+* url.py: `fetch(extended=True)` takes the proxy it is told to take; it used to connect directly no matter what `no_proxy` or the environment said
 * url.py: `fetch(extended=True)` tries every address a hostname resolves to, not only the first
 
 

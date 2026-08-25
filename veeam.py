@@ -12,7 +12,7 @@
 Credits go to https://github.com/surfer190/veeam/blob/master/veeam/client.py."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060501'
+__version__ = '2026082501'
 
 import base64
 
@@ -71,6 +71,7 @@ def get_token(args):
         extended=True,
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
+        proxy=getattr(args, 'PROXY', None),
         timeout=args.TIMEOUT,
     )
 

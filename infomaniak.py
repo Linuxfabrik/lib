@@ -11,14 +11,14 @@
 """Provides functions using the Infomanik REST-API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026082501'
 
 from . import url
 
 BASE_URL = 'https://api.infomaniak.com'
 
 
-def get_events(token, insecure=False, no_proxy=False, timeout=8):
+def get_events(token, insecure=False, no_proxy=False, proxy=None, timeout=8):
     """
     Get all Infomaniak Events.
 
@@ -55,6 +55,7 @@ def get_events(token, insecure=False, no_proxy=False, timeout=8):
         header=headers,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -69,7 +70,7 @@ def get_events(token, insecure=False, no_proxy=False, timeout=8):
 
 
 def get_swiss_backup_products(
-    account_id, token, insecure=False, no_proxy=False, timeout=8
+    account_id, token, insecure=False, no_proxy=False, proxy=None, timeout=8
 ):
     """
     Get all Infomaniak Swiss Backup products.
@@ -109,6 +110,7 @@ def get_swiss_backup_products(
         header=headers,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -123,7 +125,7 @@ def get_swiss_backup_products(
 
 
 def get_swiss_backup_slots(
-    account_id, token, insecure=False, no_proxy=False, timeout=8
+    account_id, token, insecure=False, no_proxy=False, proxy=None, timeout=8
 ):
     """
     Get all devices/slots for each Infomaniak Swiss Backup product.
@@ -170,6 +172,7 @@ def get_swiss_backup_slots(
             header=headers,
             insecure=insecure,
             no_proxy=no_proxy,
+            proxy=proxy,
             timeout=timeout,
         )
         if not success:

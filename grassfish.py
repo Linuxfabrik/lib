@@ -13,7 +13,7 @@ https://ds.example.com/gv2/webservices/API/swagger/ui/index
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026041201'
+__version__ = '2026082501'
 
 from . import url
 
@@ -21,7 +21,7 @@ from . import url
 
 
 def fetch_json(
-    token, host, port, uri, version, func, insecure=False, no_proxy=False, timeout=8
+    token, host, port, uri, version, func, insecure=False, no_proxy=False, proxy=None, timeout=8
 ):
     """
     Fetch JSON data from a Grassfish API endpoint.
@@ -75,6 +75,7 @@ def fetch_json(
         header={'X-ApiKey': token},
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 

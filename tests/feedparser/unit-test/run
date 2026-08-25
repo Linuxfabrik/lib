@@ -256,6 +256,7 @@ class TestParse(unittest.TestCase):
                 'https://x/feed',
                 insecure=True,
                 no_proxy=True,
+                proxy='http://proxy.example.com:3128',
                 timeout=42,
                 encoding='base64',
             )
@@ -264,6 +265,7 @@ class TestParse(unittest.TestCase):
             encoding='base64',
             insecure=True,
             no_proxy=True,
+            proxy='http://proxy.example.com:3128',
             timeout=42,
         )
 
@@ -274,6 +276,7 @@ class TestParse(unittest.TestCase):
         self.assertEqual(kwargs['encoding'], 'urlencode')
         self.assertFalse(kwargs['insecure'])
         self.assertFalse(kwargs['no_proxy'])
+        self.assertIsNone(kwargs['proxy'])
         self.assertEqual(kwargs['timeout'], 5)
 
     def test_forwards_retries(self):

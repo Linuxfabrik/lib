@@ -574,6 +574,7 @@ def _logout(args, x_auth_token):
         insecure=args.INSECURE,
         method='DELETE',
         no_proxy=args.NO_PROXY,
+        proxy=getattr(args, 'PROXY', None),
         timeout=args.TIMEOUT,
     )
 
@@ -668,6 +669,7 @@ def get_creds(args, force_relogin=False):
             header=header,
             insecure=args.INSECURE,
             no_proxy=args.NO_PROXY,
+            proxy=getattr(args, 'PROXY', None),
             timeout=args.TIMEOUT,
         )
     )
@@ -861,6 +863,7 @@ def get_data(
                 insecure=args.INSECURE,
                 method=method,
                 no_proxy=args.NO_PROXY,
+                proxy=getattr(args, 'PROXY', None),
                 response_on_error=True,
                 timeout=args.TIMEOUT,
             )

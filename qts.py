@@ -13,7 +13,7 @@ operating system via its API.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026082501'
 
 import base64
 
@@ -69,6 +69,7 @@ def get_auth_sid(args):
         data=login_payload,
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
+        proxy=getattr(args, 'PROXY', None),
         timeout=args.TIMEOUT,
     )
 

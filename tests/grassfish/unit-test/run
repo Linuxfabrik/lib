@@ -17,7 +17,7 @@ delegate: no socket, no DNS, no TLS handshake, no httpx dependency ever.
 
 We assert the full request-building contract (URL composition from host,
 port, uri, version and func; the `X-ApiKey` header; pass-through of
-insecure / no_proxy / timeout) and the response-handling contract
+insecure / no_proxy / proxy / timeout) and the response-handling contract
 (success pass-through, transport-failure pass-through, and the
 "empty result" error for every falsy payload).
 
@@ -189,12 +189,12 @@ class TestFetchJsonRequestBuilding(unittest.TestCase):
         self.assertEqual(kw['timeout'], 60)
 
     def test_only_expected_kwargs_passed(self):
-        # The delegate must receive exactly header/insecure/no_proxy/timeout,
+        # The delegate must receive exactly header/insecure/no_proxy/proxy/timeout,
         # nothing more (no leaked positional/keyword surprises).
         captured, _ = self._call()
         self.assertEqual(
             set(captured['kw'].keys()),
-            {'header', 'insecure', 'no_proxy', 'timeout'},
+            {'header', 'insecure', 'no_proxy', 'proxy', 'timeout'},
         )
 
     def test_url_passed_positionally(self):

@@ -14,7 +14,7 @@ Time zone handling is not implemented.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081001'
+__version__ = '2026082501'
 
 import sys
 
@@ -33,6 +33,7 @@ def fetch_soup(
     feed_url,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=5,
     encoding='urlencode',
     retries=0,
@@ -80,6 +81,7 @@ def fetch_soup(
             encoding=encoding,
             insecure=insecure,
             no_proxy=no_proxy,
+            proxy=proxy,
             timeout=timeout,
         )
         result = parse_soup(xml, feed_url) if success else (False, xml)
@@ -93,6 +95,7 @@ def parse(
     feed_url,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=5,
     encoding='urlencode',
     retries=0,
@@ -152,6 +155,7 @@ def parse(
         encoding=encoding,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         retries=retries,
         timeout=timeout,
     )

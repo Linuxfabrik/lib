@@ -66,6 +66,7 @@ def get_data(args, uri=''):
             header=headers,
             insecure=args.INSECURE,
             no_proxy=args.NO_PROXY,
+            proxy=getattr(args, 'PROXY', None),
             timeout=args.TIMEOUT,
         )
     )

@@ -778,6 +778,7 @@ def fetch_collection(
     header=None,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=8,
     retries=0,
     cache_expire=0,
@@ -844,6 +845,7 @@ def fetch_collection(
         header=header,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
         retries=retries,
     )
@@ -860,6 +862,7 @@ def fetch_collection(
             header=header,
             insecure=insecure,
             no_proxy=no_proxy,
+            proxy=proxy,
             timeout=timeout,
             retries=retries,
         )
@@ -885,6 +888,7 @@ def fetch_members(
     header=None,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=8,
     retries=0,
     cache_expire=0,
@@ -954,6 +958,7 @@ def fetch_members(
                 header=header,
                 insecure=insecure,
                 no_proxy=no_proxy,
+                proxy=proxy,
                 timeout=timeout,
                 retries=retries,
             )
@@ -969,6 +974,7 @@ def fetch_resource(
     header=None,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=8,
     retries=0,
     cache_expire=0,
@@ -1011,6 +1017,7 @@ def fetch_resource(
         header=header,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
         retries=retries,
     )
@@ -1776,6 +1783,7 @@ def get_expand_suffix(
     header=None,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=8,
     retries=0,
     cache_expire=0,
@@ -1822,6 +1830,7 @@ def get_expand_suffix(
         header=header,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
         retries=retries,
     )

@@ -11,7 +11,7 @@
 """This module tries to make accessing the Icinga2 API easier."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070901'
+__version__ = '2026082501'
 
 import base64
 import html
@@ -34,6 +34,7 @@ def api_post(
     method_override='',
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=3,
 ):
     """
@@ -96,6 +97,7 @@ def api_post(
         header=headers,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
     time.sleep(DEFAULT_SLEEP)
@@ -210,6 +212,7 @@ def get_service(
     attrs='state',
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=3,
 ):
     """
@@ -270,6 +273,7 @@ def get_service(
         method_override='GET',
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -282,6 +286,7 @@ def remove_ack(
     _type='service',
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=3,
 ):
     """
@@ -333,12 +338,13 @@ def remove_ack(
         data=data,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
 
 def remove_downtime(
-    uri, username, password, downtime, insecure=False, no_proxy=False, timeout=3
+    uri, username, password, downtime, insecure=False, no_proxy=False, proxy=None, timeout=3
 ):
     """
     Remove a downtime in Icinga by its name.
@@ -387,6 +393,7 @@ def remove_downtime(
         data=data,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -493,6 +500,7 @@ def set_ack(
     author='Linuxfabrik lib.icinga',
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=3,
 ):
     """
@@ -551,6 +559,7 @@ def set_ack(
         data=data,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -566,6 +575,7 @@ def set_downtime(
     author='Linuxfabrik lib.icinga',
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=3,
 ):
     """
@@ -633,6 +643,7 @@ def set_downtime(
         data=data,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 

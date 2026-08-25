@@ -18,7 +18,7 @@ with an in-memory fake. No socket, no DNS, no TLS handshake ever happens.
 The tests probe three things for each public function:
 
   * Request construction: the exact URL, headers, POST body and the
-    `insecure` / `no_proxy` / `timeout` keyword arguments handed to
+    `insecure` / `no_proxy` / `proxy` / `timeout` keyword arguments handed to
     `fetch_json`.
   * Response parsing: the `(success, result)` tuple is returned verbatim,
     so realistic captured-style payloads (loaded from `fixtures/`) survive
@@ -210,7 +210,7 @@ class TestDiscoverOidcEndpoints(unittest.TestCase):
             keycloak.discover_oidc_endpoints(args)
         self.assertEqual(
             m.call_args.kwargs,
-            {'insecure': True, 'no_proxy': True, 'timeout': 15},
+            {'insecure': True, 'no_proxy': True, 'proxy': None, 'timeout': 15},
         )
 
     def test_success_payload_returned_verbatim(self):
@@ -399,6 +399,7 @@ class TestGetData(unittest.TestCase):
                 'header': {'Authorization': 'Bearer TOK'},
                 'insecure': True,
                 'no_proxy': True,
+                'proxy': None,
                 'timeout': 20,
             },
         )
@@ -642,6 +643,7 @@ class TestObtainAdminToken(unittest.TestCase):
                 },
                 'insecure': True,
                 'no_proxy': True,
+                'proxy': None,
                 'timeout': 12,
             },
         )

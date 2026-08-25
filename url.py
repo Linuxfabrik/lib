@@ -421,11 +421,18 @@ def _build_timing_classes():
     return _TimingBackend, _TimingNetworkStream
 
 
-def _build_timing_transport(ssl_context, http1, http2, trust_env):
+def _build_timing_transport(ssl_context, http1, http2, proxy):
     """Construct an httpx.HTTPTransport whose underlying connection pool uses our timing
     backend. Returns (transport, backend) or (None, None) if the runtime httpcore API
     does not expose the hooks we need; the caller falls back to default httpx behaviour
     and reports only `total` in the timings dict.
+
+    `proxy` is the proxy URL the request has to take, or None for a direct connection.
+    It has to be handled here rather than by the client: httpx only consults the
+    environment for proxies while it builds the transport itself
+    (`allow_env_proxies = trust_env and transport is None`), and a proxy handed to the
+    client would be served by a mount of its own, which would bypass this transport and
+    with it the phase timings. So the pool itself has to speak to the proxy.
     """
     backend_cls, _ = _build_timing_classes()
     if backend_cls is None:
@@ -435,14 +442,23 @@ def _build_timing_transport(ssl_context, http1, http2, trust_env):
         verify=ssl_context,
         http1=http1,
         http2=http2,
-        trust_env=trust_env,
+        trust_env=False,
     )
-    transport._pool = httpcore.ConnectionPool(
-        ssl_context=ssl_context,
-        http1=http1,
-        http2=http2,
-        network_backend=backend,
-    )
+    if proxy:
+        transport._pool = httpcore.HTTPProxy(
+            proxy_url=proxy,
+            ssl_context=ssl_context,
+            http1=http1,
+            http2=http2,
+            network_backend=backend,
+        )
+    else:
+        transport._pool = httpcore.ConnectionPool(
+            ssl_context=ssl_context,
+            http1=http1,
+            http2=http2,
+            network_backend=backend,
+        )
     return transport, backend
 
 
@@ -484,7 +500,7 @@ def _check_github_ref(value, name):
     return True, value
 
 
-def _fetch_github_json(url, insecure, no_proxy, timeout, header):
+def _fetch_github_json(url, insecure, no_proxy, proxy, timeout, header):
     """Fetch a GitHub API endpoint, telling "nothing there" apart from "could not ask".
 
     GitHub answers 404 both for a repository that does not exist and for one that has no
@@ -503,6 +519,7 @@ def _fetch_github_json(url, insecure, no_proxy, timeout, header):
         header=header,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         response_on_error=True,
         timeout=timeout,
     )
@@ -538,6 +555,7 @@ def compare_github_refs(
     head,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=8,
     header=None,
 ):
@@ -587,7 +605,7 @@ def compare_github_refs(
         return success, result
 
     url = f'https://api.github.com/repos/{user}/{repo}/compare/{base}...{head}'
-    success, result = _fetch_github_json(url, insecure, no_proxy, timeout, header)
+    success, result = _fetch_github_json(url, insecure, no_proxy, proxy, timeout, header)
 
     if not success:
         return success, result
@@ -604,6 +622,7 @@ def fetch(
     url,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=8,
     header=None,
     data=None,
@@ -656,6 +675,12 @@ def fetch(
         The URL to fetch.
     - **insecure** (`bool`, optional):
         If True, disables SSL certificate validation. Defaults to False.
+    - **proxy** (`str`, optional):
+        Proxy URL to reach the target through, for example
+        `http://user:password@proxy.example.com:3128`. The scheme defaults to `http` when
+        omitted. Overrides the proxy the environment names together with the exceptions it
+        lists in `NO_PROXY`, and is itself overridden by `no_proxy`. Defaults to `None`,
+        which leaves the choice to the environment.
     - **no_proxy** (`bool`, optional):
         If True, disables environment-based proxy detection (`HTTP_PROXY`, `HTTPS_PROXY`,
         `NO_PROXY`). Defaults to False.
@@ -795,6 +820,25 @@ def fetch(
     if digest_auth_user and digest_auth_password:
         auth = httpx.DigestAuth(digest_auth_user, digest_auth_password)
 
+    # Which proxy the request takes. `no_proxy` wins over everything, an explicit `proxy`
+    # wins over the environment including the exceptions it lists in `no_proxy`, and
+    # without either the environment applies. The environment is resolved here rather than
+    # left to httpx only because the extended path installs a transport of its own, and
+    # httpx skips its environment handling as soon as a caller does that.
+    effective_proxy = None
+    if not no_proxy:
+        if proxy:
+            # a bare `proxy.example.com:3128` means a plain HTTP proxy
+            effective_proxy = proxy if '://' in proxy else f'http://{proxy}'
+        elif extended:
+            # imported here and not at module scope: lib.net imports this module, so the
+            # dependency only works in this direction at call time
+            from . import net
+
+            success, resolved = net.get_proxy(url)
+            if success:
+                effective_proxy = resolved
+
     # Phase-by-phase timings are only collected when the caller asks for the extended
     # response. The default fast path uses httpx's built-in transport with no
     # instrumentation overhead.
@@ -805,7 +849,7 @@ def fetch(
             ctx,
             http_version in ('1.0', '1.1'),
             http_version == '2',
-            not no_proxy,
+            effective_proxy,
         )
 
     try:
@@ -815,6 +859,11 @@ def fetch(
             'auth': auth,
             'follow_redirects': True,
         }
+        if effective_proxy and timing_transport is None:
+            # An explicit proxy is served by a mount of its own, which is what we want
+            # here. With the timing transport it would bypass that transport, so there the
+            # proxy sits in the transport's own pool instead.
+            client_kwargs['proxy'] = effective_proxy
         if timing_transport is not None:
             client_kwargs['transport'] = timing_transport
         else:
@@ -930,6 +979,7 @@ def fetch_json(
     url,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=8,
     header=None,
     data=None,
@@ -985,6 +1035,7 @@ def fetch_json(
             insecure=insecure,
             method=method,
             no_proxy=no_proxy,
+            proxy=proxy,
             timeout=timeout,
             tls_max=tls_max,
             tls_min=tls_min,
@@ -1012,6 +1063,7 @@ def get_latest_tag_from_github(
     repo,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=8,
     header=None,
 ):
@@ -1045,7 +1097,7 @@ def get_latest_tag_from_github(
         return success, result
 
     url = f'https://api.github.com/repos/{user}/{repo}/tags'
-    success, result = _fetch_github_json(url, insecure, no_proxy, timeout, header)
+    success, result = _fetch_github_json(url, insecure, no_proxy, proxy, timeout, header)
 
     if not success:
         return success, result
@@ -1063,6 +1115,7 @@ def get_latest_version_from_github(
     key='tag_name',
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=8,
     header=None,
 ):
@@ -1106,7 +1159,7 @@ def get_latest_version_from_github(
         return success, result
 
     url = f'https://api.github.com/repos/{user}/{repo}/releases/latest'
-    success, result = _fetch_github_json(url, insecure, no_proxy, timeout, header)
+    success, result = _fetch_github_json(url, insecure, no_proxy, proxy, timeout, header)
 
     if not success:
         return success, result

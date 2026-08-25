@@ -62,6 +62,7 @@ def discover_oidc_endpoints(args):
         uri,
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
+        proxy=getattr(args, 'PROXY', None),
         timeout=args.TIMEOUT,
     )
 
@@ -104,6 +105,7 @@ def get_data(args, token_data, uri):
         header=headers,
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
+        proxy=getattr(args, 'PROXY', None),
         timeout=args.TIMEOUT,
     )
 
@@ -202,5 +204,6 @@ def obtain_admin_token(args, oidc_config):
         data=payload,
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
+        proxy=getattr(args, 'PROXY', None),
         timeout=args.TIMEOUT,
     )

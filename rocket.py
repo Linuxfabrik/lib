@@ -91,6 +91,7 @@ def get_groups_history(
     params=None,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=3,
 ):
     """
@@ -162,6 +163,7 @@ def get_groups_history(
         header=headers,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -172,7 +174,7 @@ def get_groups_history(
 
 
 def get_rooms_get(
-    rc_url, auth_token, user_id, insecure=False, no_proxy=False, timeout=3
+    rc_url, auth_token, user_id, insecure=False, no_proxy=False, proxy=None, timeout=3
 ):
     """
     Retrieve the list of chat rooms accessible to the authenticated user via Rocket.Chat's
@@ -228,6 +230,7 @@ def get_rooms_get(
         header=headers,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -245,6 +248,7 @@ def get_rooms_info(
     room_name=None,
     insecure=False,
     no_proxy=False,
+    proxy=None,
     timeout=3,
 ):
     """
@@ -313,6 +317,7 @@ def get_rooms_info(
         header=headers,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -322,7 +327,7 @@ def get_rooms_info(
     return True, result
 
 
-def get_stats(rc_url, auth_token, user_id, insecure=False, no_proxy=False, timeout=3):
+def get_stats(rc_url, auth_token, user_id, insecure=False, no_proxy=False, proxy=None, timeout=3):
     """
     Retrieve Rocket.Chat statistics using an API token.
 
@@ -366,6 +371,7 @@ def get_stats(rc_url, auth_token, user_id, insecure=False, no_proxy=False, timeo
         header=headers,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -375,7 +381,7 @@ def get_stats(rc_url, auth_token, user_id, insecure=False, no_proxy=False, timeo
     return True, result
 
 
-def get_token(rc_url, user, password, insecure=False, no_proxy=False, timeout=3):
+def get_token(rc_url, user, password, insecure=False, no_proxy=False, proxy=None, timeout=3):
     """
     Retrieve an API token from Rocket.Chat using user credentials.
 
@@ -415,6 +421,7 @@ def get_token(rc_url, user, password, insecure=False, no_proxy=False, timeout=3)
         data=data,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -431,7 +438,7 @@ def get_token(rc_url, user, password, insecure=False, no_proxy=False, timeout=3)
     return True, f'{auth_token}:{user_id}'
 
 
-def send2webhook(rc_url, webhook, data, insecure=False, no_proxy=False, timeout=3):
+def send2webhook(rc_url, webhook, data, insecure=False, no_proxy=False, proxy=None, timeout=3):
     """
     Send a JSON payload to a Rocket.Chat incoming webhook.
 
@@ -471,6 +478,7 @@ def send2webhook(rc_url, webhook, data, insecure=False, no_proxy=False, timeout=
         data=data,
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
     )
 
@@ -481,7 +489,7 @@ def send2webhook(rc_url, webhook, data, insecure=False, no_proxy=False, timeout=
 
 
 def send_message(
-    webhook_url, data, header=None, insecure=False, no_proxy=False, timeout=3
+    webhook_url, data, header=None, insecure=False, no_proxy=False, proxy=None, timeout=3
 ):
     """
     Post a JSON message payload to a Rocket.Chat incoming webhook (complete URL).
@@ -519,6 +527,7 @@ def send_message(
         encoding='serialized-json',
         insecure=insecure,
         no_proxy=no_proxy,
+        proxy=proxy,
         timeout=timeout,
         extended=True,
     )
