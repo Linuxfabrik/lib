@@ -11,10 +11,9 @@
 """Unit tests for lib.openstack.
 
 The module talks to an OpenStack cloud over the Identity v3 REST API and the REST APIs of the
-services in its catalog. Every request goes through `lib.url.fetch_json`, so the suite is made
-fully hermetic by replacing `lib.openstack.url.fetch_json` with an in-memory fake, and the token
-cache by a dictionary. No socket, no DNS, no TLS handshake and no cache database file ever
-happens.
+services in its catalog. Every request goes through `lib.url.fetch`, so the suite is made fully
+hermetic by replacing `lib.openstack.url.fetch` with an in-memory fake, and the token cache by a
+dictionary. No socket, no DNS, no TLS handshake and no cache database file ever happens.
 
 The tests probe:
 
@@ -27,6 +26,7 @@ The tests probe:
     an answer that is not what the API promises, and a time budget that is spent.
 """
 
+import json
 import sys
 import time
 import unittest
@@ -83,23 +83,32 @@ CATALOG = [
 ]
 
 
+def response(body=None, status_code=200, header=None):
+    """Build what `url.fetch(extended=True)` hands back."""
+    return {
+        'response': body if isinstance(body, str) else json.dumps(body or {}),
+        'response_header': header or {},
+        'status_code': status_code,
+    }
+
+
 def token_response(expires_at='2036-01-01T00:00:00.000000Z', catalog=None):
     """Build what the Identity API answers to a token request."""
-    return {
-        'response_header': {'x-subject-token': TOKEN},
-        'response_json': {
+    return response(
+        body={
             'token': {
                 'catalog': CATALOG if catalog is None else catalog,
                 'expires_at': expires_at,
                 'project': {'id': PROJECT_ID},
             }
         },
-        'status_code': 201,
-    }
+        status_code=201,
+        header={'x-subject-token': TOKEN},
+    )
 
 
 class FakeFetch:
-    """Stand-in for `lib.url.fetch_json` that answers from a scripted list.
+    """Stand-in for `lib.url.fetch` that answers from a scripted list.
 
     Every call is recorded, so a test can assert on the URL, the body and the keyword
     arguments the module hands to the HTTP layer.
@@ -139,7 +148,7 @@ class OpenStackTestCase(unittest.TestCase):
         """Route the module through a scripted fetch and an in-memory cache."""
         self.fetch = FakeFetch(answers)
         self.cache = FakeCache(entries)
-        patcher = mock.patch.object(openstack.url, 'fetch_json', self.fetch)
+        patcher = mock.patch.object(openstack.url, 'fetch', self.fetch)
         patcher.start()
         self.addCleanup(patcher.stop)
         patcher = mock.patch.object(openstack, 'cache', self.cache)
@@ -475,7 +484,7 @@ class TestConnect(OpenStackTestCase):
 
     def test_refused_credentials_are_reported_as_such(self):
         for status in (400, 401, 403):
-            self.patch([(False, {'status_code': status, 'response': '{}'})])
+            self.patch([(False, response('{}', status_code=status))])
             success, result = openstack.connect(ENV, ['compute'], cache_name='test')
             self.assertFalse(success)
             self.assertEqual(result, 'Failed to authenticate.')
@@ -539,6 +548,66 @@ class TestConnect(OpenStackTestCase):
         self.assertEqual(self.cache.written, [])
 
 
+class TestFetch(OpenStackTestCase):
+    def connect(self, answers, service_types=None):
+        """Open a connection whose token comes from the cache, then script the rest."""
+        key = openstack._get_cache_key(ENV, 'test')
+        entry = (
+            '{"endpoints": {"object-store": "https://cloud.example.com/object/v1/AUTH_x"}, '
+            f'"project_id": "{PROJECT_ID}", "token": "{TOKEN}"}}'
+        )
+        self.patch(answers, {key: entry})
+        return openstack.connect(
+            ENV, service_types or ['object-store'], cache_name='test'
+        )[1]
+
+    def test_a_head_reaches_the_service_and_the_headers_come_back(self):
+        # An object store answers what a container holds in its headers, with an empty body.
+        conn = self.connect(
+            [
+                (
+                    True,
+                    response(
+                        '',
+                        status_code=204,
+                        header={'x-container-bytes-used': '1568051495913'},
+                    ),
+                )
+            ]
+        )
+        success, result = openstack.fetch(
+            conn, 'object-store', '/backups', method='HEAD'
+        )
+        self.assertTrue(success)
+        self.assertEqual(
+            result['response_header']['x-container-bytes-used'], '1568051495913'
+        )
+        call = self.fetch.calls[0]
+        self.assertEqual(call['method'], 'HEAD')
+        self.assertEqual(
+            call['target'], 'https://cloud.example.com/object/v1/AUTH_x/backups'
+        )
+        self.assertTrue(call['extended'])
+
+    def test_a_body_that_is_not_json_is_no_problem_here(self):
+        conn = self.connect([(True, response('plain text', status_code=200))])
+        success, result = openstack.fetch(conn, 'object-store', '/')
+        self.assertTrue(success)
+        self.assertEqual(result['response'], 'plain text')
+
+    def test_retries_are_handed_to_the_http_layer(self):
+        conn = self.connect([(True, response('', status_code=204))])
+        openstack.fetch(conn, 'object-store', '/backups', method='HEAD', retries=2)
+        self.assertEqual(self.fetch.calls[0]['retries'], 2)
+
+    def test_a_service_the_connection_does_not_hold_is_named(self):
+        conn = self.connect([])
+        success, result = openstack.fetch(conn, 'compute', '/limits')
+        self.assertFalse(success)
+        self.assertIn('compute', result)
+        self.assertEqual(self.fetch.calls, [])
+
+
 class TestFetchJson(OpenStackTestCase):
     def connect(self, answers, entries=None, service_types=None):
         """Open a connection whose token comes from the cache, then script the rest."""
@@ -553,9 +622,7 @@ class TestFetchJson(OpenStackTestCase):
         ]
 
     def test_a_document_is_returned_and_the_token_travels_along(self):
-        conn = self.connect(
-            [(True, {'response_json': {'limits': {}}, 'status_code': 200})]
-        )
+        conn = self.connect([(True, response({'limits': {}}))])
         success, result = openstack.fetch_json(conn, 'compute', '/limits')
         self.assertTrue(success)
         self.assertEqual(result, {'limits': {}})
@@ -566,7 +633,7 @@ class TestFetchJson(OpenStackTestCase):
         self.assertEqual(call['header']['X-Auth-Token'], TOKEN)
 
     def test_a_header_of_the_caller_is_added_to_the_standard_ones(self):
-        conn = self.connect([(True, {'response_json': {}, 'status_code': 200})])
+        conn = self.connect([(True, response({}))])
         openstack.fetch_json(
             conn, 'compute', '/servers', header={'OpenStack-API-Version': 'compute 2.1'}
         )
@@ -587,10 +654,10 @@ class TestFetchJson(OpenStackTestCase):
             [
                 (
                     False,
-                    {
-                        'status_code': 403,
-                        'response': '{"forbidden": {"message": "Policy does not allow"}}',
-                    },
+                    response(
+                        '{"forbidden": {"message": "Policy does not allow"}}',
+                        status_code=403,
+                    ),
                 )
             ]
         )
@@ -601,9 +668,9 @@ class TestFetchJson(OpenStackTestCase):
     def test_a_rejected_cached_token_is_replaced_and_the_request_repeated(self):
         conn = self.connect(
             [
-                (False, {'status_code': 401, 'response': '{}'}),
+                (False, response('{}', status_code=401)),
                 (True, token_response()),
-                (True, {'response_json': {'limits': {}}, 'status_code': 200}),
+                (True, response({'limits': {}})),
             ]
         )
         success, result = openstack.fetch_json(conn, 'compute', '/limits')
@@ -627,6 +694,33 @@ class TestFetchJson(OpenStackTestCase):
         success, result = openstack.fetch_json(conn, 'compute', '/limits')
         self.assertFalse(success)
         self.assertEqual(result, 'timeout after 8s')
+
+    def test_extended_hands_back_the_headers_next_to_the_document(self):
+        # An object store answers the listing of an account in the body and what the account
+        # holds in the headers, both in one request.
+        conn = self.connect(
+            [
+                (
+                    True,
+                    response(
+                        [{'name': 'backups', 'count': 3, 'bytes': 17}],
+                        header={'x-account-container-count': '1'},
+                    ),
+                )
+            ]
+        )
+        success, result = openstack.fetch_json(
+            conn, 'compute', '/?format=json', extended=True
+        )
+        self.assertTrue(success)
+        self.assertEqual(result['response_header']['x-account-container-count'], '1')
+        self.assertEqual(result['response_json'][0]['name'], 'backups')
+
+    def test_a_body_that_is_not_json_is_reported_as_such(self):
+        conn = self.connect([(True, response('<html>gateway timeout</html>'))])
+        success, result = openstack.fetch_json(conn, 'compute', '/limits')
+        self.assertFalse(success)
+        self.assertIn('not JSON', result)
 
     def test_a_spent_time_budget_stops_before_the_request(self):
         conn = self.connect([])

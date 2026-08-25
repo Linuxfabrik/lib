@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * kvm.py: new module for libvirt hosts, covering domain statistics and listings, storage pools, their volumes, which pools share a filesystem, and the names of domain states and their reasons. It connects read-only, so it needs neither root nor sudo
 * lftest.py: `require_container_runtime()` and `container_runtime_available()` let a test that needs a container skip itself where there is none, instead of failing next to the tests that do run
 * net.py: `get_proxy()` answers which proxy the environment wants for a target, honouring the exceptions in `no_proxy`, for a consumer that reaches the network without an HTTP client
-* openstack.py: new module for OpenStack clouds. `connect()` authenticates from an rc file, keeps a whole run inside one time budget and reuses the token across runs, `fetch_json()` reads a REST endpoint of any connected service
+* openstack.py: new module for OpenStack clouds. `connect()` authenticates from an rc file, keeps a whole run inside one time budget and reuses the token across runs, `fetch()` and `fetch_json()` read any endpoint of a connected service, headers included
 * psi.py: new module for the pressure stall information the Linux kernel exports below `/proc/pressure`. `read()` returns the `some` and `full` values of one resource, and reports when the kernel keeps no pressure statistics at all
 * redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
 * url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host

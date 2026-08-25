@@ -198,17 +198,20 @@ def _get_interface(env):
     return interface
 
 
-def _fetch(conn, target, data=None, header=None):
+def _fetch(conn, target, data=None, header=None, method=None, retries=0):
     """Make one request against the cloud, spending what is left of the time budget.
 
     Returns (True, response, status) where the response is the extended answer of `url.fetch()`,
     or (False, errormessage, status). The status is the one the API answered with, and 0 where
     the request never got an answer.
+
+    Nothing is parsed here: a HEAD carries its answer in the headers and has no body at all,
+    so the JSON step belongs to the callers that expect one.
     """
     remaining = conn['deadline'] - time.monotonic()
     if remaining < MIN_REQUEST_TIMEOUT:
         return (False, 'the time budget of this run is spent', 0)
-    success, result = url.fetch_json(
+    success, result = url.fetch(
         target,
         cacert=conn['cacert'],
         data=data,
@@ -216,9 +219,11 @@ def _fetch(conn, target, data=None, header=None):
         extended=True,
         header=dict(conn['header'], **(header or {})),
         insecure=conn['insecure'],
+        method=method,
         no_proxy=conn['no_proxy'],
         proxy=conn['proxy'],
         response_on_error=True,
+        retries=retries,
         # Rounded up, so a fraction of a second is never handed on as a timeout of zero, which
         # an HTTP client reads as "no timeout at all".
         timeout=int(remaining) + 1,
@@ -231,6 +236,17 @@ def _fetch(conn, target, data=None, header=None):
     status = result.get('status_code', 0)
     message = _get_api_message(result.get('response', ''))
     return (False, f'HTTP {status}{": " + message if message else ""}', status)
+
+
+def _get_json(response):
+    """Parse the body of a response as JSON.
+
+    Returns (True, document) or (False, errormessage).
+    """
+    try:
+        return (True, json.loads(response.get('response') or ''))
+    except (AttributeError, TypeError, ValueError) as e:
+        return (False, f'{e}')
 
 
 def _authenticate(conn):
@@ -257,7 +273,13 @@ def _authenticate(conn):
     token_header = result['response_header'].get('x-subject-token')
     if not token_header:
         return (False, 'The Identity API answered without a token.')
-    token = (result['response_json'] or {}).get('token') or {}
+    success, document = _get_json(result)
+    if not success:
+        return (
+            False,
+            f'The Identity API answered with something else than a token: {document}',
+        )
+    token = (document or {}).get('token') or {}
 
     conn['cached'] = False
     conn['endpoints'] = _get_endpoints(
@@ -390,9 +412,76 @@ def connect(
     return _authenticate(conn)
 
 
-def fetch_json(conn, service_type, path, header=None):
+def fetch(conn, service_type, path, header=None, method=None, retries=0):
+    """
+    Make a request against one of the connected services and return the whole answer.
+
+    Use this where the answer of a service is in its headers rather than in its body, which is
+    how an object store reports what a container holds, and where a HEAD is the request that
+    carries it. `fetch_json()` is the one to use for a service that answers with a document.
+
+    ### Parameters
+    - **conn** (`dict`): A connection as returned by `connect()`.
+    - **service_type** (`str`): The catalog service type to talk to, for example
+      `'object-store'`. Has to be one of the service types the connection was opened for.
+    - **path** (`str`): The path below the endpoint, starting with a slash, for example
+      `'/my-container'`. Anything a value contributes to it has to be URL-encoded by the
+      caller.
+    - **header** (`dict`, optional): Request headers on top of the ones every request carries,
+      for example `{'OpenStack-API-Version': 'compute 2.1'}` to pin the microversion of a
+      service that offers several. Defaults to `None`.
+    - **method** (`str`, optional): The HTTP method, for example `'HEAD'`. Defaults to `None`,
+      which is a GET. Defaults to `None`.
+    - **retries** (`int`, optional): How many extra attempts to make when the request fails.
+      Defaults to `0`.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**bool**): True if the request succeeded, otherwise False.
+        - tuple[1] (**dict or str**): The extended answer of `url.fetch()`, whose
+          `response_header` holds the headers with their names in lower case, or an error
+          message string.
+
+    ### Notes
+    - A cached token that the service rejects is replaced by a fresh one and the request is
+      repeated once, so a token revoked between two runs costs one retry instead of an error.
+    - The error message names the reason the service gave, and starts in lower case, so a
+      caller can put it behind whatever it calls the service.
+
+    ### Example
+    >>> success, result = openstack.fetch(
+    ...     conn, 'object-store', '/backups', method='HEAD'
+    ... )
+    >>> result['response_header']['x-container-bytes-used']
+    '1568051495913'
+    """
+    for attempt in (1, 2):
+        endpoint = conn['endpoints'].get(service_type)
+        if not endpoint:
+            return (False, f'the service catalog holds no "{service_type}" endpoint')
+        success, result, status = _fetch(
+            conn,
+            endpoint.rstrip('/') + path,
+            header=header,
+            method=method,
+            retries=retries,
+        )
+        if success:
+            return (True, result)
+        if status != 401 or attempt == 2 or not conn['cached']:
+            return (False, result)
+        # The token from the previous run was revoked or expired early.
+        success, result = _authenticate(conn)
+        if not success:
+            return (False, result)
+    return (False, 'Failed to authenticate.')
+
+
+def fetch_json(conn, service_type, path, header=None, retries=0, extended=False):
     """
     Fetch a JSON document from one of the connected services.
+
+    Everything `fetch()` does, plus the JSON step on the body it answers with.
 
     ### Parameters
     - **conn** (`dict`): A connection as returned by `connect()`.
@@ -403,34 +492,29 @@ def fetch_json(conn, service_type, path, header=None):
     - **header** (`dict`, optional): Request headers on top of the ones every request carries,
       for example `{'OpenStack-API-Version': 'compute 2.1'}` to pin the microversion of a
       service that offers several. Defaults to `None`.
+    - **retries** (`int`, optional): How many extra attempts to make when the request fails.
+      Defaults to `0`.
+    - **extended** (`bool`, optional): Return the whole answer with the parsed document added
+      under `response_json`, rather than the document alone. For a service that says part of
+      what it has to say in its headers and the rest in its body, which an object store does
+      when it lists an account. Defaults to `False`.
 
     ### Returns
     - **tuple**:
         - tuple[0] (**bool**): True if the request succeeded, otherwise False.
-        - tuple[1] (**dict or str**): The parsed document, or an error message string.
-
-    ### Notes
-    - A cached token that the service rejects is replaced by a fresh one and the request is
-      repeated once, so a token revoked between two runs costs one retry instead of an error.
-    - The error message names the reason the service gave, and starts in lower case, so a
-      caller can put it behind whatever it calls the service.
+        - tuple[1] (**dict or str**): The parsed document, the whole answer with
+          `response_json` added when `extended` is set, or an error message string.
 
     ### Example
     >>> success, result = openstack.fetch_json(conn, 'compute', '/limits')
     """
-    for attempt in (1, 2):
-        endpoint = conn['endpoints'].get(service_type)
-        if not endpoint:
-            return (False, f'the service catalog holds no "{service_type}" endpoint')
-        success, result, status = _fetch(
-            conn, endpoint.rstrip('/') + path, header=header
-        )
-        if success:
-            return (True, result['response_json'])
-        if status != 401 or attempt == 2 or not conn['cached']:
-            return (False, result)
-        # The token from the previous run was revoked or expired early.
-        success, result = _authenticate(conn)
-        if not success:
-            return (False, result)
-    return (False, 'Failed to authenticate.')
+    success, result = fetch(conn, service_type, path, header=header, retries=retries)
+    if not success:
+        return (False, result)
+    success, document = _get_json(result)
+    if not success:
+        return (False, f'the answer is not JSON: {document}')
+    if extended:
+        result['response_json'] = document
+        return (True, result)
+    return (True, document)
