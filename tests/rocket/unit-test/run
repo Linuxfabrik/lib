@@ -50,8 +50,8 @@ ADMIN_USER = 'admin'
 ADMIN_PASS = 'Linuxfabrik-Admin-1'
 
 BASE_URL = 'https://chat.example.com/api/v1'
-AUTH_TOKEN = '8h2mKAwxB3AQrFSjLVKMooJyjdCFaA7W45sWlHP8IzO'
-USER_ID = 'ew28DpvKw3R'
+AUTH_TOKEN = 'linuxfabrik'
+USER_ID = 'linuxfabrik'
 
 
 def load_fixture(name):

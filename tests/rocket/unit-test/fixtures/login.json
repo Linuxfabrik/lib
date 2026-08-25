@@ -1,10 +1,10 @@
 {
     "status": "success",
     "data": {
-        "userId": "ew28DpvKw3R",
-        "authToken": "8h2mKAwxB3AQrFSjLVKMooJyjdCFaA7W45sWlHP8IzO",
+        "userId": "linuxfabrik",
+        "authToken": "linuxfabrik",
         "me": {
-            "_id": "ew28DpvKw3R",
+            "_id": "linuxfabrik",
             "username": "admin",
             "name": "Administrator",
             "emails": [

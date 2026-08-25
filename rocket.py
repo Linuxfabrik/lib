@@ -338,8 +338,8 @@ def get_stats(rc_url, auth_token, user_id, insecure=False, no_proxy=False, proxy
 
     ```bash
     # https://rocket.chat/docs/developer-guides/rest-api/miscellaneous/statistics/
-    curl -H "X-Auth-Token: 8h2mKAwxB3AQrFSjLVKMooJyjdCFaA7W45sWlHP8IzO"
-         -H "X-User-Id: ew28DpvKw3R"
+    curl -H "X-Auth-Token: linuxfabrik"
+         -H "X-User-Id: linuxfabrik"
          http://localhost:3000/api/v1/statistics
     ```
 
