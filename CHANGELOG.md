@@ -10,46 +10,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* base.py: `range2txt()` says in words what a threshold range demands, and of which value (`age=3D not in (0s..2D)`), so a check no longer has to repeat the range syntax at the reader.
-* db_sqlite.py: `cut_per_sensor()` keeps the newest rows of every sensor instead of trimming a table to a total row count, so the instance written most often no longer evicts the history of the others.
-* keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it when the section is missing.
-* kvm.py: new module for libvirt hosts. `get_domstats()` collects the statistics of every domain in a single `virsh` call, `get_domains()` lists them, filtered by autostart or any other `virsh list` filter, `get_pools()`, `get_pool_info()`, `get_pool_xml()` and `parse_pool_info()` cover storage pools, and `DOMAIN_STATES` and `DOMAIN_STATE_REASONS` name the state a domain is in and how it got there. Everything runs over a read-only connection, which needs neither root nor sudo.
+* base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`), so a check does not have to repeat the range syntax at the reader
+* db_sqlite.py: `cut_per_sensor()` trims a history table per sensor instead of by total row count, so the instance written most often no longer evicts the others
+* keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it
+* kvm.py: new module for libvirt hosts, covering domain statistics and listings, storage pools, and the names of domain states and their reasons. Runs over a read-only connection, so it needs neither root nor sudo
+* redfish.py: `start_trace()` logs every request, its duration and the authentication path taken to a file, written as the run progresses
 
 ### Changed
 
-* db_sqlite.py: `compute_load()` reports the sensors that already have enough samples instead of answering with nothing at all while a single new sensor warms up.
-* db_sqlite.py: `compute_load()` leaves out a sensor whose counter is lower than it was instead of reporting a negative rate. A counter does not go backwards, it starts over, and a check that divided across a restart alerted on a machine that had simply been rebooted.
-* url.py: `fetch()` says what is wrong with a certificate that does not verify and what to do about it, instead of repeating the library's own wording. An incomplete chain, an expired certificate, a private issuer and a name mismatch are told apart.
-* url.py: `fetch()` points out that a plaintext request may have been sent to a port that speaks TLS, instead of only reporting that the server disconnected.
+* db_sqlite.py: `compute_load()` reports the sensors that already have enough samples, and leaves out one whose counter started over instead of reporting a negative rate
+* url.py: `fetch()` says what is wrong with a certificate that does not verify and what to do about it, and points out a plaintext request sent to a port that speaks TLS
 
 ### Fixed
 
-* base.py: `match_range()` and `get_state()` report a value that is not a number (`11.abc`, `None`) instead of raising a stack trace, and refuse `nan`, which passed as inside every range and was reported OK.
-* human.py: `seconds2human()` answers `0s` for a duration of zero instead of an empty string, which dropped the value out of the sentence it was formatted for. A negative duration is signed instead of coming out as `-1Y 12M`.
-* url.py: `fetch(extended=True)` tries every address a hostname resolves to instead of only the first one. On a dual-stacked host, `http://localhost` resolves to `::1` first and a service listening on `0.0.0.0` was reported as refusing the connection.
+* base.py: `match_range()` and `get_state()` report a value that is not a number instead of raising, and refuse `nan`, which used to pass as inside every range
+* human.py: `seconds2human()` answers `0s` for a duration of zero and signs a negative duration
+* redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, closes the previous session before opening a new one, retries a failed login instead of falling back to HTTP Basic, and re-authenticates once on a "401 Unauthorized"
+* url.py: `fetch(extended=True)` tries every address a hostname resolves to, not only the first
 
 
 ## [v7.1.1] - 2026-08-18
 
 ### Fixed
 
-* base.py: `match_range()` accepts a threshold with a percent sign (`90%:`) or an exponent (`1e3`).
-* base.py: `match_range()` compares a very large threshold correctly instead of reading the value as below it.
-* base.py: `match_range()` reports a mistyped threshold (`1,5`) instead of raising a stack trace.
-* human.py: `human2bytes()` reads a size without a qualifier (`1048576` instead of `1M`) as a byte count instead of zero, which alerted on everything. Same for plain integers out of config files.
-* human.py: `humanrange2bytes()` and `humanrange2seconds()` keep an open lower bound (`~:1M`), a bare `@` and the catch-all `:`. All three came out mangled and left the check UNKNOWN.
-* human.py: `humanrange2bytes()` and `humanrange2seconds()` report an unreadable bound (`1,5M`) instead of turning it into the threshold zero, which alerted on everything.
+* base.py: `match_range()` accepts a threshold with a percent sign (`90%:`) or an exponent (`1e3`), compares a very large threshold correctly, and reports a mistyped threshold instead of raising
+* human.py: `human2bytes()` reads a size without a qualifier (`1048576`) as a byte count instead of zero, which alerted on everything
+* human.py: `humanrange2bytes()` and `humanrange2seconds()` keep an open lower bound (`~:1M`), a bare `@` and the catch-all `:`, and report an unreadable bound instead of turning it into the threshold zero
 
 
 ## [v7.1.0] - 2026-08-14
 
 ### Added
 
-* base.py: `cu()` takes a `traceback`, so a consumer reporting an expected situation prints its sentence without a stack trace below it.
+* base.py: `cu()` takes a `traceback`, so a consumer reporting an expected situation prints its sentence without a stack trace below it
 
 ### Fixed
 
-* base.py: `get_table()` keeps its rows aligned when a cell reads like an HTML tag (`<unknown>`).
+* base.py: `get_table()` keeps its rows aligned when a cell reads like an HTML tag (`<unknown>`)
 
 
 ## [v7.0.0] - 2026-08-14
@@ -58,177 +55,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
-* distro.py: `distribution_release` holds the release name of the distribution (`Plow`, `noble`, `bookworm`), the same as the Ansible fact of the same name, instead of the running kernel release. Anything reading that field needs to be checked.
-* huawei_dorado.py: `get_data()` no longer takes URL parameters in a separate argument. Consumers passing `params` must append it to the endpoint instead, which is what every consumer already did.
-* huawei_dorado.py: `get_logic_type()` is now `get_enclosure_logic_type()` and `get_role()` is now `get_controller_role()`, since both only ever translated the codes of one object type and the appliance numbers the same fields differently on ports, disks and HyperMetro domains. Consumers must rename their calls.
-* huawei_dorado.py: A HyperMetro domain or a DR Star trio is no longer reported through the running states of unrelated objects, where a faulty domain came out as "Running" and a disabled trio did the same. Consumers must call `get_dr_star_running_status()` and `get_hypermetro_domain_running_status()` for these objects.
-* version.py: `get_os_info()` is gone; it was a second copy of a read that `distro.py` has been doing for years. Consumers read the `os_info` key of `distro.get_distribution_facts()` instead.
+* distro.py: `distribution_release` holds the release name (`Plow`, `noble`, `bookworm`), the same as the Ansible fact of the same name, instead of the running kernel release
+* huawei_dorado.py: `get_data()` no longer takes URL parameters in a separate argument; append them to the endpoint instead
+* huawei_dorado.py: `get_logic_type()` is now `get_enclosure_logic_type()` and `get_role()` is now `get_controller_role()`. A HyperMetro domain and a DR Star trio have their own `get_hypermetro_domain_running_status()` and `get_dr_star_running_status()`, because the appliance numbers those fields differently
+* version.py: `get_os_info()` is gone, it duplicated `distro.get_distribution_facts()`. Read its `os_info` key instead
 
 ### Added
 
-* args.py: `--brief` joins the shared help texts, so every check that can hide the rows within its thresholds describes the switch the same way, including that performance data and alerting stay unaffected.
-* args.py: `--fail-severity` joins the shared help texts, so every check that reports what the monitored system itself marks as failed describes the switch the same way.
-* args.py: the shared `--match` help text says how the parameter combines with `--ignore`, and `MATCH_IGNORE_PRECEDENCE` carries that one sentence for the consumers that write their own purpose sentence in front of it.
-* args.py: `--no-vuln-data-severity` joins the shared help texts, so every check that can end up without vulnerability data names the parameter the same way.
-* args.py: `--no-checksum-data-severity` joins the shared help texts, so every check that can end up without published checksums for part of what it verifies names the parameter the same way.
-* args.py: `--password-file` joins the shared help texts, and `load_secret()` reads a secret out of a file so it does not have to be passed on the command line, where it is visible to every user on the host.
-* args.py: `--unscored-severity` joins the shared help texts, so every check whose source scores only some of its findings grades the unrated ones under the same parameter name.
-* args.py: `--warning-temperature` and `--critical-temperature` join the shared help texts, so every check that alerts on a temperature names the parameter the same way.
-* args.py: `--warning-voltage` and `--critical-voltage` join the shared help texts, mirroring the temperature pair, so a hardware check that alerts on a voltage names the parameter the same way.
-* base.py: `get_table()` takes a `hide_empty`, which leaves out every column no row filled in, so a check listing several kinds of object no longer prints a wall of hyphens that pushes the text that matters off to the right. Off by default.
-* base.py: `get_table()` takes a `max_rows`, which prints at most that many rows and states below the table how many were left out, so a consumer whose table grows with the damage it reports stays readable instead of producing thousands of lines that get stored and mailed on. Off by default, and it shapes the text alone: counting and alerting still cover every row.
-* base.py: `get_table()` takes a `missing`, so a consumer whose rows come from an API that only sends the fields it has something to say about prints a placeholder in that one cell instead of losing the whole table. Without it, a missing column is still reported as a mistake in the calling code.
-* base.py: `verbose()` prints a progress message only when verbose output is switched on, so long-running consumers stop copying the same two-line helper.
-* cache.py: `get()` accepts an `allow_stale`, which serves an expired entry instead of deleting it, so a consumer whose source is unreachable can fall back on the last answer it got rather than on nothing. `prune()` deletes the expired entries a version-keyed cache leaves behind, optionally keeping the recent ones as that fallback.
-* db_sqlite.py: `connect()` accepts a `timeout`, so checks that share a database file can wait longer for a lock instead of failing.
-* disk.py: `read_file()` accepts a `max_bytes`, so a consumer interested only in the head of a file stops reading the whole of it.
-* disk.py: `get_fingerprint()` accepts an `algorithm`, so a digest can be taken in whatever a foreign checksum list published it in, instead of only in SHA-256.
-* disk.py: `get_package()` names the package a path belongs to, which tells software the distribution installed apart from software an administrator put there by hand. A path that a package manager would read as one of its own options is refused, so the answer cannot be the tool's version string instead of a package name.
-* distro.py: Clear Linux, CoreOS, Flatcar, Mandriva, OpenWrt, Slackware, SUSE, UnionTech and the Debian derivatives Cumulus Linux, Deepin, Devuan, Kali, Linux Mint, Parrot, SteamOS and Uos are recognised. Anything else still unknown is now identified from `/etc/os-release` instead of being reported as plain "Linux".
-* feedparser.py: `fetch_soup()` and `parse_soup()` hand back the feed's own markup, and `retries` repeats a download that came back as something other than a feed.
-* huawei_dorado.py, huawei_pacific.py: `as_code()` turns a status code the appliance sends as a string, or does not send at all, into a number a consumer can compare. Consumers used to carry a copy of it each.
-* huawei_dorado.py, huawei_pacific.py: `assert_ok()` ends a check with UNKNOWN and the appliance's own error text unless the response reports success, so every consumer recognises a rejected query the same way instead of each checking the envelope slightly differently. Under verbose output it also prints what the appliance answered, which used to be shown after a successful run only and was therefore missing from exactly the run that had to be explained.
-* huawei_dorado.py: `as_temperature()` tells a reading apart from the placeholder a component without a temperature sensor reports, so a check no longer has to know which of the three placeholders a given object type uses.
-* huawei_dorado.py: `field()` reads a field under any of the spellings a firmware may use for it, which the vendor documents in two different cases for the same object.
-* huawei_dorado.py: `get_account_state()` translates the password status the appliance reports at login into readable text.
-* huawei_dorado.py: `get_alarm_severity()` and `get_alarm_severity_state()` translate an alarm severity into readable text and into the state a check reports for it, including the informational severity that used to be unhandled.
-* huawei_dorado.py: `get_all_data()` walks a list endpoint page by page and reports whether it had to stop early, so an appliance with more objects than fit in one response is still covered completely.
-* huawei_dorado.py: `get_dr_star_running_status()` and `get_hypermetro_domain_running_status()` translate the running status of DR Star trios and HyperMetro domains, which the appliance numbers differently from every other object.
-* huawei_dorado.py: `get_error_code()` reads the status code out of the response envelope, whether the appliance wraps it in an object or sends it bare.
-* huawei_dorado.py: `get_health_status_state()`, `get_running_status_state()` and `get_hypermetro_domain_running_status_state()` translate a status code into the state a check reports for it, so a failed component is told apart from a degraded one in one place instead of in every consumer.
-* huawei_dorado.py: `get_performance()` reads the current performance counters of a managed object and copes with both endpoint spellings the vendor shipped.
-* huawei_dorado.py: `get_performance_perfdata()` turns those counters into performance data, under the vendor's own indicator names and in the units a dashboard expects.
-* huawei_dorado.py: `sectors2bytes()` converts the sector counts every capacity field carries into bytes, and drops the negative values the appliance uses for a capacity it does not report.
-* huawei_pacific.py: `get_alarm_severity_state()` translates an alarm severity into the state a check reports for it, including the minor severity that used to be unhandled.
-* huawei_pacific.py: `get_all_data()` walks a list endpoint page by page, in either of the two incompatible range syntaxes the API uses.
-* huawei_pacific.py: `get_base_board()` translates a node's base board code into the product line it names, and hands an undocumented code back unchanged.
-* huawei_pacific.py: `get_cluster_nodes()` returns the nodes a cluster is made of, so a consumer that queries a node-scoped hardware endpoint and also reports which node a finding sits on reads the node listing once instead of twice.
-* huawei_pacific.py: `get_component_status_state()`, `get_disk_status_state()`, `get_node_running_status_state()` and `get_pool_status_state()` translate a status into the state a check reports for it.
-* huawei_pacific.py: `get_data()` reaches the appliance's older endpoint generation below `/dsware/service/` and `/dfv/service/` through its `base_path` argument. Some information, the disk inventory among it, is not served anywhere else.
-* huawei_pacific.py: `get_disk_role()`, `get_disk_status()` and `get_disk_type()` translate the role, status and media type of a disk into readable text.
-* huawei_pacific.py: `get_node_names_by_ip()` maps the management IP address that a hardware endpoint names a chassis by to the node name an operator knows it as.
-* huawei_pacific.py: `get_password_status()` translates the password status the appliance reports at login into readable text.
-* huawei_pacific.py: `get_performance()` reads CPU, memory, throughput and latency counters of the cluster and its nodes through the batch performance interface.
-* huawei_pacific.py: `get_pool_status()` translates a storage or disk pool status into readable text.
-* huawei_pacific.py: `get_quota_bytes()` reads a quota in the unit the appliance states next to it, so a consumer no longer takes a quota counted in gibibytes for the same number of bytes.
-* huawei_pacific.py: `get_replication_health_status()` and `get_replication_running_status()` translate the health and running status of a remote replication pair into readable text, and their `_state()` counterparts into the state a check reports, where a pair that is synchronizing counts as working rather than as broken.
-* huawei_pacific.py: `get_result_code()` reads the status code out of whichever of the three response envelopes the appliance uses, so a consumer does not have to know which endpoint generation it is talking to.
-* huawei_pacific.py: `get_status_envelope()` returns the object a response reports its outcome in, so a consumer that wants the appliance's own error text does not have to work out which envelope it got.
-* huawei_pacific.py: `get_warranty_status()` translates how much of a cluster node's warranty is left into readable text.
-* lftest.py: `test_json()` reads one of several test fixtures of a run and returns the JSON it holds, so a consumer querying several endpoints stops copying the same fixture read and the same two error messages.
-* lftest.py: `test_text()` reads one of several test fixtures of a run and returns the text it holds, the counterpart of `test_json()` for a consumer whose data source answers in plain text.
-* nextcloud.py: `run_occ()` accepts a `timeout`, so a hanging `occ` no longer keeps a check running forever.
-* shell.py: `shell_exec()` accepts a `run_as_session`, which runs a command as another user without exporting that user's session runtime directory. A sudo rule that spells out the permitted command with its exact arguments only matches that plain form.
-* shell.py: an `env` entry set to None removes that variable from the command's environment instead of setting it, so a consumer can run a command without a variable it inherited itself.
-* txt.py: `shorten()` cuts a long value down for display, out of the middle, so one oversized entry no longer widens a whole table column and two values differing only at the end stay distinguishable.
-* txt.py: `strip_ansi()` removes the escape sequences a command line tool colorizes its output with, which many emit whether or not anything is listening on a terminal, so a consumer parsing that output is no longer thrown off by them.
-* txt.py: `unescape()` resolves the HTML character references some sources put into plain text, so a hardware model reads as `Expansion Module(24 Cores)` instead of `Expansion Module&#40;24 Cores&#41;`.
-* url.py: `compare_github_refs()` counts how many commits a branch carries that a given tag does not, so a consumer can say how far an installation following a development branch has fallen behind instead of only whether a newer release exists.
-* url.py: `get_latest_tag_from_github()` reads the newest tag of a repository, the fallback for projects that tag their versions but never publish a GitHub release.
-* url.py: `get_latest_version_from_github()` accepts `insecure`, `no_proxy`, `timeout` and `header`, so a consumer reaches GitHub through its own proxy and timeout settings and can authenticate. `github_token_header()` builds that header and raises the limit of 60 requests per hour and IP address to 5000.
-* wordpress.py: new module reading a local WordPress installation from the filesystem: `get_version()`, `get_plugins()`, `get_themes()`, `get_site_url()`, `is_installation()` and `get_header_value()`, without a database connection, an HTTP request or `wp-cli`.
-* wordpress.py: `get_locale()` reads which language a core was built for, which is what decides the file list wordpress.org holds it to, and `get_plugin_slugs()` maps a plugin's directory to the slug wordpress.org knows it by, which is not the same for a single-file plugin such as `hello.php`.
+* args.py: shared help texts for `--brief`, `--fail-severity`, `--no-checksum-data-severity`, `--no-vuln-data-severity`, `--password-file`, `--unscored-severity`, `--warning-temperature` / `--critical-temperature` and `--warning-voltage` / `--critical-voltage`. `MATCH_IGNORE_PRECEDENCE` carries the one sentence on how `--match` and `--ignore` combine
+* args.py: `load_secret()` reads a secret out of a file, so it does not have to be passed on the command line where every user on the host sees it
+* base.py: `get_table()` takes a `hide_empty` to drop columns no row filled in, a `max_rows` to cap the printed rows and state how many were left out, and a `missing` placeholder for a cell an API did not send. All off by default, and they shape the text alone
+* base.py: `verbose()` prints a progress message only when verbose output is switched on
+* cache.py: `get(allow_stale=True)` serves an expired entry instead of deleting it, so a consumer whose source is unreachable can fall back on the last answer. `prune()` deletes the entries a version-keyed cache leaves behind
+* db_sqlite.py: `connect()` takes a `timeout`, so checks sharing a database file can wait longer for a lock
+* disk.py: `get_fingerprint()` takes an `algorithm`, so a digest can be taken in whatever a foreign checksum list published it in. `read_file()` takes a `max_bytes`
+* disk.py: `get_package()` names the package a path belongs to, which tells software the distribution installed apart from software put there by hand
+* distro.py: Clear Linux, CoreOS, Flatcar, Mandriva, OpenWrt, Slackware, SUSE, UnionTech and the Debian derivatives Cumulus Linux, Deepin, Devuan, Kali, Linux Mint, Parrot, SteamOS and Uos are recognised. Anything else is identified from `/etc/os-release` instead of being reported as plain "Linux"
+* feedparser.py: `fetch_soup()` and `parse_soup()` hand back the feed's own markup, and `retries` repeats a download that came back as something other than a feed
+* huawei_dorado.py, huawei_pacific.py: `as_code()`, `assert_ok()`, `get_all_data()` for paged list endpoints, the envelope readers `get_error_code()` / `get_result_code()` / `get_status_envelope()`, and a full set of status translators including their `_state()` counterparts. Consumers used to carry a copy of each
+* huawei_dorado.py: `get_performance()` and `get_performance_perfdata()` read the current counters of a managed object and turn them into performance data under the vendor's own indicator names. `as_temperature()`, `field()`, `get_account_state()` and `sectors2bytes()` cover placeholder readings, alternate field spellings, the login password status and the sector-counted capacity fields
+* huawei_pacific.py: `get_data(base_path=...)` reaches the older endpoint generation below `/dsware/service/` and `/dfv/service/`, which alone serves the disk inventory
+* huawei_pacific.py: `get_cluster_nodes()`, `get_node_names_by_ip()`, `get_performance()`, `get_quota_bytes()` and `get_warranty_status()`, plus readable translations for base boards, disks, pools, replication pairs and the login password status
+* lftest.py: `test_json()` and `test_text()` read one of several test fixtures of a run
+* nextcloud.py: `run_occ()` takes a `timeout`, so a hanging `occ` no longer keeps a check running forever
+* shell.py: `shell_exec()` takes a `run_as_session` to run as another user without exporting that user's session runtime directory, which a sudo rule spelling out exact arguments requires. An `env` entry set to None removes that variable from the environment
+* txt.py: `shorten()` cuts a long value down out of the middle, `strip_ansi()` removes the escape sequences a CLI tool colorizes with, and `unescape()` resolves HTML character references in plain text
+* url.py: `compare_github_refs()` counts how far a branch is ahead of a tag, `get_latest_tag_from_github()` covers projects that tag but never release, and `get_latest_version_from_github()` takes `insecure`, `no_proxy`, `timeout` and `header`. `github_token_header()` builds that header and raises the limit from 60 to 5000 requests per hour
+* wordpress.py: new module reading a local WordPress installation from the filesystem - core version and locale, plugins with their wordpress.org slugs, themes, site URL - without a database connection, an HTTP request or `wp-cli`
 
 ### Changed
 
-* args.py: the shared help text for `--unreachable-severity` describes any unreachable online source rather than only an end-of-life one, so every consumer offering the parameter can use the same wording.
-* base.py: `oao()` only escapes a `<` that would open an HTML tag, instead of escaping every `&`, `<` and `>`. A version range like `< 5.3.2`, a threshold like `<= 10` and a shell snippet like `echo 1 > /proc/sys/...` now reach the terminal exactly as written, while a web interface still renders the output as preformatted text rather than as markup.
-* disk.py: `walk_directory()` builds a relative path by actually relativizing it. It used to strip the root off the front as a plain substring, which left the paths absolute on Windows and removed the root a second time wherever its name occurred again further down the tree.
-* huawei_dorado.py, huawei_pacific.py: `--cache-expire 0` switches session caching off. It used to store a session that expired about a second later, which is neither caching nor not caching.
-* huawei_dorado.py, huawei_pacific.py: session tokens are kept in the library's own cache file instead of the one every plugin on the host shares, so parallel checks no longer wait on each other's cache writes. The first run after the update logs in once to fill the new file.
-* huawei_dorado.py, huawei_pacific.py: `get_data()` returns the appliance's response as it is. It used to add a `counter` field holding the number of attempts, which would overwrite an API field of that name.
-* huawei_dorado.py, huawei_pacific.py: `get_data()` takes a `max_attempts`, so a caller asking a question whose expected answer may be an error, or chaining several calls within one check timeout, does not spend two further requests and a forced re-login on each of them.
-* huawei_dorado.py: The appliance device ID is optional. Without one the login goes to the placeholder path the vendor documents and the appliance answers with its own ID, so an operator no longer has to look it up before a check can run. A supplied ID still wins.
-* huawei_dorado.py: A component being rebuilt is reported as "Rebuilding", the word V700 appliances use for it, instead of the older firmware's "Reconstruction".
-* huawei_dorado.py: A power module whose feed is dead, a component that is not running, a disk parked because it got too hot, and a replication relationship that is not mirroring are reported as CRITICAL instead of WARNING. All four describe a component that has stopped doing its job rather than one working in a reduced state.
-* lftest.py: `assert-retc` is optional in a testcase, like every other assertion already was. A test can now cover the output a fixture controls without pinning a state that depends on something else, such as an end-of-life date that turns OK into WARNING as the calendar advances.
-* nextcloud.py: `occ` is called without `sudo` when the check already runs as the owner of `config/config.php`. No sudoers entry is needed in that case, and the checks work inside the official Nextcloud container, which ships without `sudo`.
-* README.md: the module table lists `huawei_dorado.py` and `huawei_pacific.py`, which replaced the former `huawei.py` some time ago.
-* url.py: a GitHub repository that has published no release is reported as having none, instead of as a request that failed. A rejected token and an exhausted rate limit are named as such, so the message says what to do about them. An owner, repository or ref that could redirect the request to another endpoint is refused.
+* args.py: the shared `--unreachable-severity` help text describes any unreachable online source rather than only an end-of-life one
+* base.py: `oao()` only escapes a `<` that would open an HTML tag, so `< 5.3.2`, `<= 10` and `echo 1 > /proc/sys/...` reach the terminal exactly as written
+* disk.py: `walk_directory()` relativizes its paths instead of stripping the root off the front as a plain substring
+* huawei_dorado.py, huawei_pacific.py: `--cache-expire 0` switches session caching off, session tokens live in the library's own cache file instead of the one every plugin shares, `get_data()` returns the response as it is instead of adding a `counter` field, and takes a `max_attempts`
+* huawei_dorado.py: the appliance device ID is optional. Without one the login goes to the placeholder path the vendor documents and the appliance answers with its own ID
+* huawei_dorado.py: a dead power feed, a component that is not running, a disk parked for overheating and a replication relationship that is not mirroring are reported as CRITICAL instead of WARNING
+* lftest.py: `assert-retc` is optional in a testcase, like every other assertion already was
+* nextcloud.py: `occ` is called without `sudo` when the check already runs as the owner of `config/config.php`, so no sudoers entry is needed and the checks work inside the official container
+* url.py: a GitHub repository that has published no release is reported as having none instead of as a failed request, and a rejected token and an exhausted rate limit are named as such
 
 ### Fixed
 
-* base.py: `get_perfdata()` reports no metric at all for a reading a source did not deliver, instead of emitting a literal `None` as its value. Consumers that parse the performance data used to drop the whole line over that, losing every other metric on it as well.
-* db_sqlite.py: A cached database is no longer thrown away because of a lock held by a concurrently running check, a full or read-only disk, a bad query, a duplicate record, a table that does not exist yet, or a value that is too large to store. Only a schema that no longer matches the installed release, and now also an unreadable database file, trigger the rebuild. Checks that share the default database file therefore no longer discard each other's cached data.
-* db_sqlite.py: A corrupt database file is actually removed on RHEL 8 and other systems running SQLite older than 3.39, where it used to be reported as unusable but left on disk, so every following run failed the same way.
-* db_sqlite.py: A database file written in a format the installed SQLite cannot read is discarded, so the next run starts from a healthy cache. It used to be kept and every following run failed the same way.
-* db_sqlite.py: A regular expression comparison against an empty value behaves the way SQLite itself does, so a negated match no longer reports rows that have no value at all.
-* db_sqlite.py: A regular expression match against a numeric column, or using a pattern taken from one, works instead of failing the whole query.
-* db_sqlite.py: A single unusable row no longer aborts a CSV import with a misleading "error reading file" and deletes the database. The offending line number is reported and the imported rows are kept.
-* db_sqlite.py: A table without a row ID is left alone when a query addresses its row ID by one of the other names SQLite accepts for it, instead of the database being thrown away as broken.
-* db_sqlite.py: A unique index is created when a check asks for one, even if a non-unique index over the same columns already exists. The check used to be told the unique index was there while it was not.
-* db_sqlite.py: An index can be created on a generated column.
-* db_sqlite.py: An unreadable database file is discarded when a check creates or drops its table, not only when it reads or writes rows. Since creating the table is usually the first thing a check does, such a file used to survive and every following run failed the same way.
-* db_sqlite.py: Asking for a load over fewer than two samples is refused with a clear message, instead of aborting the check with a traceback.
-* db_sqlite.py: Asking to keep a negative number of records, or passing that number as text, is refused, instead of silently emptying the table and reporting success.
-* db_sqlite.py: Column definitions containing a comma, such as `DECIMAL(10,2)`, and table constraints such as `PRIMARY KEY (a, b)` are read correctly, so CSV imports using them put the values in the right columns.
-* db_sqlite.py: Column names containing a doubled quote character are read as written, so a CSV import using them puts the values in the right columns.
-* db_sqlite.py: Databases can be opened again on RHEL 8's default Python 3.6, where every connection attempt used to fail with an unrelated argument error.
-* db_sqlite.py: Listing the tables of a database no longer hides user tables whose name begins with `sqlite`.
-* db_sqlite.py: On SQLite releases older than 3.26 a misspelled column name is caught again, instead of the query silently indexing or grouping by a constant.
-* db_sqlite.py: Per-second rate counters whose name contains a dash or other punctuation are recorded, instead of silently never producing a value.
-* db_sqlite.py: Several checks can share one cache file for per-second rates. Each keeps its own history instead of pruning the others', which used to leave all of them without a rate.
-* db_sqlite.py: Table and column names that are SQL keywords work in every operation, not just in some of them.
-* db_sqlite.py: Table names containing a dash or other punctuation are used as given, instead of being silently stripped down to letters, digits and underscores.
-* db_sqlite.py: The journal and write-ahead log files belonging to a discarded database are removed with it, instead of piling up in the temporary directory.
-* distro.py: A distribution shipping no `/etc/os-release`, such as RHEL 6, CentOS 6 or SLES 11, is named instead of being reported as "OtherLinux", and CentOS reports the two-part version admins expect rather than the build number the release file carries.
-* distro.py: Alpine Linux is recognised by its own release file, so its version is reported.
-* distro.py: Amazon Linux recognised through `/etc/system-release` reports its major version instead of "NA".
-* distro.py: CentOS Stream is reported as Stream.
-* distro.py: Oracle Linux is reported as Oracle Linux instead of Red Hat.
-* distro.py: SLES 11 and older, which ship no `/etc/os-release`, report their version instead of "NA".
-* distro.py: The release name is reported on AlmaLinux, Kali, Kylin, openEuler, Parrot and TencentOS. It used to be missing, and on TencentOS it was taken from the CentOS release file the distribution also ships.
-* distro.py: The OS family of Alpine, Amazon Linux and the whole SUSE family is correct. All three were reported as Debian, so checks branching on the OS family ran the Debian code path on them.
-* huawei_dorado.py, huawei_pacific.py: Sessions are closed on the appliance instead of being left open until they time out. This covers the session a failed request replaces, and every session at all when `--cache-expire 0` switches caching off. A check used to leave one session behind per run, or up to three with caching off, and could fill the appliance's session pool, which on a Dorado holds 32 by default. Once it was full the appliance refused every login, including an administrator's login to the management GUI.
-* huawei_dorado.py: A HyperMetro pair in the faulty state is named on V700 appliances, which use a different word for it than the older firmware.
-* huawei_dorado.py: A component whose rollback failed is reported as such. It used to be labelled "faulty restoration", which reads as a recovery in progress and hides that something went wrong.
-* huawei_dorado.py: A host that has lost path redundancy is named the way the appliance documents it for hosts, not the way it documents the same code for disks.
-* huawei_dorado.py: A host that never reported its operating system is named as such instead of as "Unknown".
-* huawei_dorado.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
-* huawei_dorado.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
-* huawei_dorado.py: An appliance answering with an HTTP error, a load balancer in front of it answering for it, or a connection that fails no longer ends the check on the spot. The check retries, logs in again if needed, and reports the appliance's own error text rather than a bare status code.
-* huawei_dorado.py: An account whose password is still the initial one, or has to be changed at the next login, no longer takes the check to UNKNOWN. Checks against a freshly deployed appliance run before anyone has set a password, which is how the Pacific library already behaves.
-* huawei_dorado.py: An expired monitoring password is now reported as such. Until now the login was accepted, every request behind it failed, and the check blamed the API.
-* huawei_dorado.py: An interface module running in RDMA or NoF mode is named correctly on V700 appliances, and a 100 Gbit/s RoCE module no longer reports 10 Gbit/s.
-* huawei_dorado.py: Checks no longer abort with a traceback when the appliance omits a status field, and an unexpected API response is reported instead of ending in a traceback.
-* huawei_dorado.py: Checks running under different accounts against the same appliance no longer share one session, which made them query the appliance with the wrong user's privileges.
-* huawei_dorado.py: Controller boards, enclosures, interface modules, appliance models and health and running states introduced with V700 are named instead of shown as "Unknown".
-* huawei_dorado.py: Four more disk and controller enclosure models shipping with V700 appliances are named instead of shown as "Unknown".
-* huawei_dorado.py: The `get_all_data()` docstring names which list endpoints take a `range` and which do not, so a consumer no longer walks an endpoint that answers with the full list every time and collects the same inventory over and over.
-* huawei_pacific.py: A cluster node the appliance reports without a management IP address is now flagged, unless it is not (yet) part of the cluster. Until now such a node was skipped without notice, so a fan or power supply failing on it stayed invisible and the check still reported OK.
-* huawei_pacific.py: A cluster with more nodes than the appliance returns in one response is detected, instead of the check quietly covering only the nodes it was told about and still reporting OK.
-* huawei_pacific.py: A node list the appliance returns in an unexpected shape ends the check with a clear message instead of a traceback.
-* huawei_pacific.py: A node whose OAM client is not monitored is reported as such instead of as "--".
-* huawei_pacific.py: A rejected login now reports that the login failed, instead of an unrelated type error further down.
-* huawei_pacific.py: A wrong password is no longer retried, which used to push the account towards the appliance's lockout threshold.
-* huawei_pacific.py: An appliance answering with an HTTP error, a load balancer in front of it answering for it, or a connection that fails no longer ends the check on the spot. The check retries, logs in again if needed, and reports the appliance's own error text rather than a bare status code.
-* huawei_pacific.py: An expired monitoring password is now reported as such. Until now the login was accepted, every request behind it failed, and the check blamed the API.
-* huawei_pacific.py: Checks no longer abort with a traceback when the appliance omits a status field.
-* huawei_pacific.py: Checks running under different accounts against the same appliance no longer share one session, which made them query the appliance with the wrong user's privileges.
-* huawei_pacific.py: Events are listed with a readable status instead of "Unknown". Only alarms carry a recovery state, so every single event used to be rendered as if its status could not be read.
-* huawei_pacific.py: Minor alarms are reported with their severity instead of as "Unknown".
-* nextcloud.py: A missing or unreadable `config/config.php` is reported with the path, instead of the check trying to run `occ` as a user that does not exist.
-* nextcloud.py: An `occ` call that cannot be started at all, most commonly because `sudo` is not installed, is reported as an error. It used to end the check with a traceback.
-* nextcloud.py: Nextcloud's own startup warnings, which it writes to standard output, are kept out of the evaluated result. A host missing the PHP process control extension used to fail every Nextcloud check with an unreadable parsing error.
-* time.py: An ISO 8601 timestamp with nanosecond precision, the form every Go-based tool writes, is parsed on RHEL 8 and RHEL 9 instead of being rejected. Consumers had to cut such a value down to whole seconds, which threw away its time zone offset and moved the result by the offset of the host.
-* wordpress.py: A plugin shipping more than one plugin file reports the version of its main file.
-* wordpress.py: A plugin whose whole header sits behind the opening PHP tag on the first line is found, the way WordPress finds it. Such a plugin used to be missing from the inventory entirely.
-* wordpress.py: A site URL pinned with `const` instead of `define()` is read.
-* wordpress.py: A site URL that is only defined inside a comment is ignored, as PHP ignores it. An installation switched between a staging and a production address by commenting one of the two out used to report the commented address, sending a consumer to the wrong site.
-* wordpress.py: A version written as a one-line comment reads as the version alone, instead of carrying the end of the comment with it.
-* wordpress.py: Header fields are read from a file saved with carriage returns as its line breaks, where a field used to swallow the rest of the header instead of ending at its own value.
+* base.py: `get_perfdata()` reports no metric at all for a reading a source did not deliver, instead of emitting a literal `None` that made consumers drop the whole line
+* db_sqlite.py: a cached database is only rebuilt on a schema mismatch or an unreadable file, no longer over a lock held by a parallel check, a full or read-only disk, a bad query, a duplicate record, a missing table or an oversized value. Checks sharing the default database file no longer discard each other's data
+* db_sqlite.py: table, index and column names carrying SQL keywords, punctuation, commas or doubled quotes are used as written, unique indexes and indexes on generated columns are created, and a rowid alias no longer looks like a broken database
+* db_sqlite.py: a single unusable row no longer aborts a CSV import and deletes the database. The offending line number is reported and the imported rows are kept
+* db_sqlite.py: several checks share one rate cache file, each keeping its own history, and a rate counter whose name contains punctuation is recorded
+* db_sqlite.py: RHEL 8 and other systems on old SQLite work again - databases open on Python 3.6, a corrupt file is actually removed below SQLite 3.39, and a misspelled column is caught below SQLite 3.26
+* db_sqlite.py: journal and write-ahead log files of a discarded database are removed with it, an unusable argument (fewer than two samples, a negative or non-numeric record count) is refused with a clear message, and a regular expression match works against empty and numeric values
+* distro.py: the OS family of Alpine, Amazon Linux and the whole SUSE family is correct. All three were reported as Debian, so checks branching on the OS family ran the Debian code path
+* distro.py: a distribution without `/etc/os-release` (RHEL 6, CentOS 6, SLES 11) is named and versioned, CentOS reports its two-part version, CentOS Stream is reported as Stream, Oracle Linux as Oracle Linux, and the release name is reported on AlmaLinux, Alpine, Amazon Linux, Kali, Kylin, openEuler, Parrot and TencentOS
+* huawei_dorado.py, huawei_pacific.py: sessions are closed on the appliance instead of being left open until they time out. A check used to leave one behind per run, or up to three with caching off, and could fill a session pool that on a Dorado holds 32
+* huawei_dorado.py, huawei_pacific.py: an HTTP error, a load balancer answering for the appliance or a failed connection is retried and reported with the appliance's own error text instead of ending the check on the spot
+* huawei_dorado.py, huawei_pacific.py: a rejected login says so instead of raising a type error further down, a wrong password is no longer retried towards the lockout threshold, an expired or still-initial monitoring password is named, a missing status field no longer aborts the check, and checks running under different accounts no longer share one session
+* huawei_dorado.py: V700 controller boards, enclosures, interface modules, models and states are named instead of shown as "Unknown", including RDMA/NoF interface modes, 100 Gbit/s RoCE link speeds, a faulty HyperMetro pair and a failed rollback
+* huawei_pacific.py: a cluster node without a management IP address, and a cluster with more nodes than one response returns, are flagged instead of being skipped while the check still reported OK
+* huawei_pacific.py: events and minor alarms are listed with a readable status instead of "Unknown"
+* nextcloud.py: a missing or unreadable `config/config.php` is reported with its path, an `occ` that cannot be started at all is reported as an error, and Nextcloud's own startup warnings are kept out of the evaluated result
+* time.py: an ISO 8601 timestamp with nanosecond precision, the form every Go-based tool writes, is parsed on RHEL 8 and RHEL 9 instead of being rejected
+* wordpress.py: a plugin header is found the way WordPress finds it, including a header behind the opening PHP tag, a multi-file plugin and carriage-return line breaks. A site URL pinned with `const` is read and one sitting in a comment is ignored, as PHP ignores it
 
 ### Security
 
-* Lockfiles pin the build-time packages as well, so vendoring them with `pip install --require-hashes` no longer depends on what a build host happens to have installed already ([#156](https://github.com/Linuxfabrik/lib/issues/156)).
-* Python 3.9 lockfile bumps the cryptography library to a release that is not vulnerable to a padding oracle in its PKCS#7 decryption, for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11.
-* db_sqlite.py: Table, index and column names are quoted when a statement is built, so a column name carrying SQL syntax can no longer alter the statement it appears in.
-* shell.py: A command that could not be started at all is reported with its arguments redacted, so a credential sitting in the argument list cannot reach the plugin output.
-* ssh.py: An SSH password is handed to `sshpass` through the environment instead of its command line, so it is no longer readable in the host's process list for as long as the check runs.
-* txt.py: HTTP basic credentials and a credential carried inside a URL, such as in a proxy address, are redacted too. Both used to reach the plugin output unmasked.
-* txt.py: Passwords, tokens and API keys are also redacted when a message embeds them as a Python mapping, not only in the `key=value` and JSON forms.
-* txt.py: Passwords, tokens and API keys are also redacted when a message embeds them as a stringified argument list, which is the shape a command takes in an error message.
-* url.py: A failed request no longer echoes the request body, so login credentials cannot reach the plugin output. Only the field names are reported.
+* Lockfiles pin the build-time packages as well, so vendoring them with `pip install --require-hashes` no longer depends on what a build host happens to have installed ([#156](https://github.com/Linuxfabrik/lib/issues/156))
+* Python 3.9 lockfile bumps the cryptography library past a padding oracle in its PKCS#7 decryption, for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11
+* db_sqlite.py: table, index and column names are quoted when a statement is built, so a name carrying SQL syntax cannot alter the statement
+* shell.py: a command that could not be started at all is reported with its arguments redacted
+* ssh.py: an SSH password is handed to `sshpass` through the environment instead of its command line, so it is no longer readable in the host's process list
+* txt.py: HTTP basic credentials, a credential carried inside a URL, a Python mapping and a stringified argument list are redacted too
+* url.py: a failed request no longer echoes the request body, so login credentials cannot reach the plugin output
 
 
 ## [v6.1.0] - 2026-08-04
@@ -237,39 +133,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* args.py: `--no-insecure` help text, so plugins that talk to internal endpoints insecurely by default can offer a switch to enforce TLS certificate verification.
-* args.py: `--no-perfdata` help text, so plugins can offer a switch to suppress performance data output.
-* args.py: `epilog()` builds a pointer to a script's online documentation for the `--help` output.
-* args.py: `HelpFormatter` wraps the `--help` output like argparse does, but keeps long words such as URLs intact.
-* base.py: `oao()` gained a `no_perfdata` parameter to suppress the performance data section while keeping the message and exit code.
-* db_mysql.py: `get_replica_hosts()` lists the replicas registered with a server, using `SHOW REPLICAS` on MySQL 8.0.22+ and falling back to `SHOW SLAVE HOSTS` on MariaDB and older MySQL.
-* db_mysql.py: `get_server_info()` also returns `version_tuple`, the comparable form of the version it already reported as a string.
-* db_mysql.py: `get_version()` returns the connected server's flavor and version as a comparable tuple, so callers no longer parse the version string themselves.
-* disk.py: `get_fingerprint()` hashes a file's head, tail or whole content, so callers can recognize a file by what it holds rather than by metadata, which reports nothing when a file is rewritten in place.
-* disk.py: `get_inode_usage()` returns a mount point's inode counts and usage percentage via `os.statvfs()`, reporting a filesystem that does not track inodes (btrfs, FAT, many network mounts) distinctly from an unreadable one.
-* disk.py: `glob()` returns a sorted list of paths matching a shell glob pattern (recursive by default).
-* disk.py: `read_file()` can return raw `bytes` via a new `binary` parameter.
-* disk.py: `stat()` returns a filesystem entry's `os.stat()` result (or `None`), so callers get every field (size, mtime, mode, owner, ...) in one syscall.
-* disk.py: `is_within()` reports whether a path resolves inside a set of allowed directories (symlinks and `..` are resolved so they cannot escape), for callers that must confine filesystem access.
-* icinga.py: `build_icingaweb2_url()` builds an Icinga Web 2 host or service detail URL from a base URL and the object name(s), URL-encoding the untrusted names and pinning the scheme to http/https.
-* icinga.py: `get_logo()` returns the bundled Icinga logo as PNG bytes.
-* icinga.py: `render_notification_mail()` renders the plain-text and HTML body of an Icinga notification mail from label/value rows, HTML-escaping the untrusted cell values.
-* mail.py: new library for sending plain-text and HTML email via SMTP, with optional login and inline related images.
-* openmetrics.py: new library reading the OpenMetrics and Prometheus text formats served by a `/metrics` endpoint, so consumers select a metric by name and labels instead of parsing the payload themselves.
-* redfish.py: a cache-aware Redfish fetch layer. `fetch_collection()` reads a collection in a single request via the `$expand` query where the controller supports it (falling back to one request per member), `fetch_members()` resolves bare member references, and `fetch_resource()` reads a single resource such as the service root; `get_expand_suffix()` returns the deepest `$expand` the controller advertises and `get_auth_header()` obtains a session token. Each caches its result by URL under the shared `CACHE_FILENAME` when the caller passes a non-zero `cache_expire`, so the several Redfish checks on a host share fetched data and one session instead of each hitting the controller; with the default they fetch straight through. `is_member_expanded()` tells an inlined member from a bare reference.
-* rocket.py: `send_message()` posts a JSON payload to a complete Rocket.Chat incoming-webhook URL (with custom headers and the parsed response returned), complementing `send2webhook()` which builds the URL from a base plus a webhook id.
+* args.py: shared help texts for `--no-insecure` and `--no-perfdata`, `epilog()` builds the pointer to a script's online documentation, and `HelpFormatter` wraps `--help` output without breaking long words such as URLs
+* base.py: `oao()` takes a `no_perfdata` to suppress the performance data section
+* db_mysql.py: `get_replica_hosts()` lists the replicas registered with a server, `get_version()` returns flavor and version as a comparable tuple, and `get_server_info()` also returns that tuple as `version_tuple`
+* disk.py: `get_fingerprint()` hashes a file's head, tail or whole content, so a file is recognized by what it holds rather than by metadata
+* disk.py: `get_inode_usage()`, `glob()`, `stat()`, `is_within()` for confining filesystem access, and a `binary` parameter on `read_file()`
+* icinga.py: `build_icingaweb2_url()`, `get_logo()` and `render_notification_mail()` build an Icinga Web 2 detail URL and the plain-text and HTML body of a notification mail, escaping the untrusted parts
+* mail.py: new library for sending plain-text and HTML email via SMTP, with optional login and inline related images
+* openmetrics.py: new library reading the OpenMetrics and Prometheus text formats, so a consumer selects a metric by name and labels instead of parsing the payload
+* redfish.py: a cache-aware fetch layer. `fetch_collection()` reads a collection in one request via `$expand` where the controller supports it, `fetch_members()` and `fetch_resource()` cover bare references and single resources, `get_expand_suffix()` and `get_auth_header()` negotiate the deepest `$expand` and a session token. With a non-zero `cache_expire` the several Redfish checks on a host share one session and the fetched data
+* rocket.py: `send_message()` posts to a complete incoming-webhook URL, complementing `send2webhook()` which builds the URL from a base plus a webhook id
 
 ### Changed
 
-* db_mysql.py: both version parsers share one flavor rule and delegate to `version.version()`, so a lowercase `-mariadb` tag is no longer read as MySQL.
-* disk.py: `shorten_path()` gained an optional `max_len` so it leaves already-short paths untouched and middle-truncates an over-long result, keeping very long paths (such as Kubernetes CSI volume mounts) readable.
-* version.py: importing the module no longer drags in the cache, SQLite and HTTP machinery; only `check_eol()` loads those, on call.
+* db_mysql.py: both version parsers share one flavor rule, so a lowercase `-mariadb` tag is no longer read as MySQL
+* disk.py: `shorten_path()` takes a `max_len`, leaving short paths untouched and middle-truncating an over-long result
+* version.py: importing the module no longer drags in the cache, SQLite and HTTP machinery; only `check_eol()` loads those, on call
 
 ### Fixed
 
-* db_sqlite.py: `get_db_path()` rejects a database filename that is not a plain basename, so a caller cannot traverse out of the secured per-user directory.
-* keycloak.py: the admin token is requested from the monitored Keycloak itself instead of from the URL its discovery document announces, so a malicious or compromised host can no longer collect the Keycloak admin credentials or aim the request at another host ([GHSA-88fj-95f7-w68m](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-88fj-95f7-w68m)).
-* lftest.py: the shared `--test` unit-test mechanism could be used to read arbitrary files as root on hosts where plugins run via a sudoers allowlist; fixture reads are now confined to the calling plugin's own `unit-test/` directory ([GHSA-rh9c-rqvg-f7pr](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-rh9c-rqvg-f7pr)).
+* db_sqlite.py: `get_db_path()` rejects a database filename that is not a plain basename, so a caller cannot traverse out of the secured per-user directory
+* keycloak.py: the admin token is requested from the monitored Keycloak itself instead of from the URL its discovery document announces, so a compromised host can no longer collect the admin credentials ([GHSA-88fj-95f7-w68m](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-88fj-95f7-w68m))
+* lftest.py: the shared `--test` mechanism could be used to read arbitrary files as root where plugins run via a sudoers allowlist; fixture reads are confined to the calling plugin's own `unit-test/` directory ([GHSA-rh9c-rqvg-f7pr](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-rh9c-rqvg-f7pr))
 
 
 ## [v6.0.0] - 2026-07-07
@@ -278,150 +163,139 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
-* huawei.py: renamed to `huawei_dorado.py`, freeing the generic name now that a second Huawei storage line is supported. Consumers must change their import from `lib.huawei` to `lib.huawei_dorado`.
+* huawei.py: renamed to `huawei_dorado.py`, freeing the generic name now that a second Huawei storage line is supported. Change the import from `lib.huawei` to `lib.huawei_dorado`
 
 ### Added
 
-* args.py: added a central help text for the `--no-match-severity` parameter, used by filter-based plugins to make the state configurable when no item matches the filters.
-* args.py: added a central help text for the `--unreachable-severity` parameter, used by end-of-life checks to make the state configurable when the online source is unreachable.
+* args.py: shared help texts for `--no-match-severity` and `--unreachable-severity`
 * bexio.py: new library
-* huawei_pacific.py: new library for Huawei OceanStor Pacific storage systems, which use the `/api/v2/` REST API with `X-Auth-Token` authentication (a different protocol from the Dorado line).
-* redfish.py: `build_url()` builds a follow-up Redfish URL from a base URL and an `@odata.id` link, rejecting non-relative links so a response cannot redirect the request to another host ([GHSA-96fx-pqc3-28xv](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-96fx-pqc3-28xv)).
-* shell.py: `shell_exec()` gained a `run_as` parameter to run a command as another local user with that user's session runtime directory (`XDG_RUNTIME_DIR`), as rootless Podman and other per-user session services require.
-* url.py: added new optional flag `response_on_error` for `fetch()`/`fetch_json()` to return the response body instead of an error message on failure. Primarily for use with APIs that provide machine-readable error responses such as the Bexio API.
-* version.py: `check_eol()` gained an `unreachable_severity` parameter to report a configurable state (default OK) when the online end-of-life source is unreachable and the bundled offline data is used. The offline fallback is no longer cached, so the next call retries the online source instead of masking a persistent outage.
+* huawei_pacific.py: new library for Huawei OceanStor Pacific, which speaks the `/api/v2/` REST API with `X-Auth-Token` authentication, a different protocol from the Dorado line
+* redfish.py: `build_url()` builds a follow-up URL from a base and an `@odata.id` link, rejecting a non-relative link so a response cannot redirect the request to another host ([GHSA-96fx-pqc3-28xv](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-96fx-pqc3-28xv))
+* shell.py: `shell_exec()` takes a `run_as` to run a command as another local user with that user's `XDG_RUNTIME_DIR`, as rootless Podman requires
+* url.py: `fetch()` / `fetch_json()` take a `response_on_error` to return the response body instead of an error message, for APIs with machine-readable error responses
+* version.py: `check_eol()` takes an `unreachable_severity` for when the online end-of-life source is unreachable and the bundled offline data is used. The offline fallback is no longer cached, so the next call retries the online source
 
 ### Changed
 
-* args.py: the developer-only `--test` parameter is now hidden from plugin `--help` output. It is still accepted on the command line, so the unit-test suite keeps working.
-* redfish.py: a cached Redfish session token is now kept only as long as the controller itself keeps the session alive, read from the controller's own session timeout. This avoids sporadic "401 Unauthorized" errors on controllers with short session timeouts (such as Supermicro's 300 seconds) without having to tune the cache expiration by hand ([#246](https://github.com/Linuxfabrik/lib/issues/246)).
-* time.py: clarified the `timestr2epoch(..., pattern='iso8601')` docstring - the mode is backed by `datetime.fromisoformat()`, not a full ISO 8601 parser, and which layouts it accepts beyond RFC 3339 depends on the Python version.
+* args.py: the developer-only `--test` parameter is hidden from `--help`, but still accepted
+* redfish.py: a cached session token is kept only as long as the controller's own session timeout, which avoids sporadic "401 Unauthorized" errors on controllers with short timeouts such as Supermicro's 300 seconds ([#246](https://github.com/Linuxfabrik/lib/issues/246))
+* time.py: the `timestr2epoch(..., pattern='iso8601')` docstring states that the mode is backed by `datetime.fromisoformat()`, not a full ISO 8601 parser
 
 ### Fixed
 
-* bexio.py: send an explicit JSON content-type header for requests containing data as this is now required by the API.
-* huawei_dorado.py: Huawei OceanStor Dorado checks no longer raise a false warning for a backup battery unit that is charging, and more component states are now shown with a readable label instead of `Unknown` (for example spun-down disks, link up/down, and replication states). The running-status translation was completed against the full documented status list.
-* huawei_dorado.py: Huawei OceanStor Dorado checks now recover on their own when the cached API session is no longer accepted by the appliance (after a controller reboot, a manual session reset, or the server-side session timeout). The check logs in again and retries instead of failing, and it no longer keeps retrying a doomed request long enough to risk hitting the monitoring server's check timeout.
-* powershell.py, shell.py, winrm.py: command output that contains non-UTF-8 bytes (such as a Windows username with an umlaut, or a locale-dependent tool message) no longer crashes the plugin later when it prints its result. Such output is now read as Latin-1 instead of producing text that fails to print ([#256](https://github.com/Linuxfabrik/lib/issues/256)).
-* url.py: fetching a page or JSON no longer fails with a decode error when the remote host sends non-UTF-8 content without declaring a charset (such as sensor firmware that serves the degree sign as a raw Latin-1 byte). The response is read as Latin-1 in that case instead of aborting the check.
+* bexio.py: requests carrying data send an explicit JSON content-type header, as the API now requires
+* huawei_dorado.py: a check recovers on its own when the cached API session is no longer accepted, and no longer retries a doomed request long enough to risk the monitoring server's check timeout
+* huawei_dorado.py: the running-status translation was completed against the full documented status list, so spun-down disks, link states and replication states are readable and a charging backup battery no longer raises a false warning
+* powershell.py, shell.py, winrm.py: command output containing non-UTF-8 bytes is read as Latin-1 instead of producing text that fails to print later ([#256](https://github.com/Linuxfabrik/lib/issues/256))
+* url.py: a response without a declared charset is read as Latin-1 instead of aborting the check with a decode error
 
 ### Security
 
-* url.py: `fetch()` no longer forwards credential headers to another host when a server redirects there (SSRF / token leak) ([GHSA-4jc5-g844-4x33](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-4jc5-g844-4x33)).
+* url.py: `fetch()` no longer forwards credential headers to another host when a server redirects there (SSRF / token leak) ([GHSA-4jc5-g844-4x33](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-4jc5-g844-4x33))
 
 
 ## [v5.1.0] - 2026-06-24
 
 ### Added
 
-* endoflifedate.py: bundled offline End-of-Life data for Apache Tomcat.
-* txt.py: `compile_regex()` accepts a `flags` argument, so callers can compile case-insensitive patterns (`re.IGNORECASE`) without a separate helper.
+* endoflifedate.py: bundled offline End-of-Life data for Apache Tomcat
+* txt.py: `compile_regex()` takes a `flags` argument, so a caller compiles a case-insensitive pattern without a separate helper
 
 ### Fixed
 
-* db_sqlite.py: cached databases now self-heal after a schema change between releases. A constraint or data error (such as a `NOT NULL` column that a newer or older release no longer writes) deletes and rebuilds the cache on the next run, instead of failing on every run until the stale file is removed by hand.
-* lftest.py: no longer breaks at import with a `SyntaxError` on Python interpreters older than 3.10 (such as the system Python 3.6 on RHEL 8 / Rocky 8, and our supported Python 3.9 floor). A parenthesized context manager was rewritten as nested `with` statements, so every plugin that imports this module stays runnable on those interpreters.
-* time.py: no longer fails to import on Python interpreters older than 3.9 (such as the system Python 3.6 on RHEL 8 / Rocky 8) where the `zoneinfo` module does not exist. Consumers that do not need named time zones keep working and fall back to UTC.
+* db_sqlite.py: a cached database self-heals after a schema change between releases, instead of failing on every run until the stale file is removed by hand
+* lftest.py, time.py: both import again on Python older than 3.10 and 3.9 respectively, so every plugin importing them stays runnable on RHEL 8's system Python
 
 ### Security
 
-* Python 3.9 lockfile bumps the cryptography library to a release that ships a patched OpenSSL, closing a known vulnerability for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11.
+* Python 3.9 lockfile bumps the cryptography library to a release shipping a patched OpenSSL, for downstreams that vendor the pinned dependencies on RHEL 8 / Debian 11
 
 
 ## [v5.0.0] - 2026-06-12
 
+### Breaking Changes
+
+* shell.py: `shell_exec()` requires the command as an argument list and always runs with `shell=False`. It no longer accepts a command string, a `shell=` parameter or `|` pipelines: pass `['df', '-h', path]` instead of `'df -h ' + path`
+* ssh.py: `build_options()` and `target()` return argument lists instead of pre-quoted strings, `run()`, `scp()` and `rsync()` build argument lists and drop the `use_shell` parameter
+
+### Added
+
+* shell.py: `safe_cli_value()` rejects a value a called program could misread as an option (leading `-`), guarding a positional or target argument such as an ssh destination against option injection
+
 ### Changed
 
-* distro.py, version.py: read the OS name and version directly from `/etc/os-release` instead of sourcing it through a shell
-* shell.py: `shell_exec()` requires the command as a list of arguments (argv) and always runs with `shell=False`. It no longer accepts a command string, a `shell=` parameter, or `|` pipelines. This is a breaking change: pass `['df', '-h', path]` instead of `'df -h ' + path`
-* shell.py: new `safe_cli_value()` rejects a value that a called program could misread as an option (leading `-`), to guard positional or target arguments (such as an ssh destination or a `ping` target) against option injection
-* ssh.py: `build_options()` and `target()` return argument lists/tokens instead of pre-quoted strings; `run()`, `scp()` and `rsync()` build argument lists, drop the `use_shell` parameter, and reject an option-like host or username
+* distro.py, version.py: the OS name and version are read directly from `/etc/os-release` instead of being sourced through a shell
 
 ### Removed
 
-* shell.py: removed `get_command_output()` (it had no consumers; use `shell_exec()` directly)
+* shell.py: `get_command_output()` is gone, it had no consumers. Use `shell_exec()` directly
 
 ### Fixed
 
-* base.py: `oao()` normalizes CRLF and stray CR in the plugin message to LF, so Windows command output is no longer rendered with doubled line breaks in web UIs that use `white-space: pre-wrap`
-* endoflifedate.py: the Apache httpd and Rocket.Chat offline data is keyed under their current endoflife.date URLs (`apache-http-server`, `rocket-chat`), so version checks still work when the endoflife.date API is unreachable
-* lftest.py: use the classic `with a, b:` form instead of parenthesized context managers (Python 3.10+ syntax), so the module parses under RHEL 8's default Python 3.6
-* shell.py: on Windows, a subprocess's piped output is decoded with the console / OEM code page instead of UTF-8, so non-ASCII characters such as umlauts in usernames are no longer mangled ([monitoring-plugins#681](https://github.com/Linuxfabrik/monitoring-plugins/issues/681))
-* url.py: use the classic `with a, b:` form instead of parenthesized context managers (Python 3.10+ syntax), so `import lib.url` no longer raises a SyntaxError under RHEL 8's default Python 3.6
+* base.py: `oao()` normalizes CRLF and stray CR to LF, so Windows command output is no longer rendered with doubled line breaks in web UIs
+* endoflifedate.py: the Apache httpd and Rocket.Chat offline data is keyed under their current endoflife.date URLs, so version checks still work when the API is unreachable
+* lftest.py, url.py: both parse under RHEL 8's default Python 3.6 again
+* shell.py: on Windows, piped output is decoded with the console code page instead of UTF-8, so umlauts in usernames are no longer mangled ([monitoring-plugins#681](https://github.com/Linuxfabrik/monitoring-plugins/issues/681))
 
 
 ## [v4.4.0] - 2026-06-09
 
 ### Added
 
-* disk.py: `shorten_path()` abbreviates a path for display by reducing every parent component to its first character (zsh-style), keeping the basename in full
-* redfish.py: `get_auth_header()` builds the request authentication header, reusing a cached session token to avoid creating a new controller session on every request, and falling back to HTTP Basic auth
-* redfish.py: `get_chassis_power_powercontrol()` parses a power control (overall power consumption) entry for health monitoring and reporting
-* redfish.py: `get_manager()` parses a manager (BMC) resource for health monitoring and identification
-* redfish.py: `get_systems_ethernetinterfaces()` parses an Ethernet interface resource for health monitoring and identification
-* redfish.py: `get_systems_memory()` parses a memory module (DIMM) resource for health monitoring and identification, applying vendor quirks (Dell module size, HPE/Fujitsu OEM module status)
-* redfish.py: `get_systems_processors()` parses a processor (CPU) resource for health monitoring and identification
-* redfish.py: `get_systems_storage_volumes()` parses a volume (logical drive) resource for health monitoring and identification
-* redfish.py: `get_updateservice_firmwareinventory()` parses a firmware inventory resource for version reporting and health monitoring
+* disk.py: `shorten_path()` abbreviates a path for display by reducing every parent component to its first character, keeping the basename in full
+* redfish.py: `get_auth_header()` builds the request authentication header, reusing a cached session token instead of creating a controller session per request, and falling back to HTTP Basic
+* redfish.py: parsers for managers, processors, memory modules, Ethernet interfaces, storage volumes, power control entries and the firmware inventory, applying the vendor quirks of Dell, HPE and Fujitsu
 
 ### Changed
 
-* net.py: `get_netinfo()` and `get_subnet_hosts()` read interface addresses via psutil instead of the deprecated `netifaces`, and the default gateway is read from the Linux routing table. This drops the `netifaces` dependency, so the library installs from pure wheels on Python 3.10+ without a build toolchain
-* redfish.py: `get_chassis_thermal_fans()` normalizes fan speed reported in RPM or percent onto a single shape
-* redfish.py: `get_manager_logservices_sel_entries()` can filter log entries by regular expression and age out entries older than a cutoff
-* redfish.py: `get_systems_storage_drives()` also extracts `PowerOnHours` and the drive temperature, so consumers can report drive age and temperature
-* time.py: `timestr2epoch()` accepts `pattern='iso8601'` to parse ISO 8601 timestamps (trailing `Z`, embedded offset or date-only) without specifying the exact layout
-* url.py: `fetch_json()` accepts a `retries` argument to re-attempt a failed request or an unparseable body, for flaky endpoints
+* net.py: `get_netinfo()` and `get_subnet_hosts()` read interface addresses via psutil instead of the deprecated `netifaces`, and the default gateway from the routing table. This drops the `netifaces` dependency, so the library installs from pure wheels on Python 3.10+ without a build toolchain
+* redfish.py: `get_chassis_thermal_fans()` normalizes fan speed reported in RPM or percent onto a single shape, `get_manager_logservices_sel_entries()` filters by regular expression and age, and `get_systems_storage_drives()` also reports `PowerOnHours` and the drive temperature
+* time.py: `timestr2epoch()` takes `pattern='iso8601'` to parse an ISO 8601 timestamp without spelling out the layout
+* url.py: `fetch_json()` takes a `retries` argument for flaky endpoints
 
 
 ## [v4.3.0] - 2026-06-06
 
 ### Added
 
-* disk.py: `copy_dir()` and `copy_file()` copy a directory tree / single file and report success or an error message, matching the other disk helpers
-* disk.py: `get_block_devices()` lists all local block devices, including ones without a mounted filesystem, so callers can also work with raw or unmounted devices such as multipath SAN volumes
-* disk.py: `make_temp_dir()` creates a unique temporary directory (companion to `get_tmpdir()`), reporting the path or an error message
-* disk.py: `mkdir()` creates a directory (including missing parents) and reports success or an error message, matching the other disk helpers
-* disk.py: `rm_dir()` recursively deletes a directory tree (companion to `rm_file()`), reporting success or an error message
-* lftest.py: `network()` plus `network` / `network_alias` arguments on `run_container()` let a test wire an application container to a backing service (e.g. a database) on a shared network, for multi-container integration tests
-* net.py: `cidr_to_hosts()` returns the usable IPv4 or IPv6 host addresses of a network given in CIDR notation, with a configurable size limit, for callers that need to enumerate an explicit subnet
-* net.py: `get_subnet_hosts()` returns the usable IPv4 or IPv6 host addresses of an interface's subnet, for callers that need to enumerate a local network
-* shell.py: `which()` locates an executable in PATH (wrapper around `shutil.which()`), so callers detect installed tools consistently
-* ssh.py: new module to run commands (`run()`) and copy files (`scp()`, `rsync()`) over SSH, assembling and quoting the command lines from individual options (`build_options()`, `target()`), so callers no longer hand-roll ssh/scp invocations
-* url.py: `fetch()` / `fetch_json()` accept a `method` argument to force the HTTP method, enabling a bodyless POST
+* disk.py: `copy_dir()`, `copy_file()`, `make_temp_dir()`, `mkdir()` and `rm_dir()` round out the filesystem helpers, each reporting success or an error message
+* disk.py: `get_block_devices()` lists all local block devices, including ones without a mounted filesystem, such as raw or unmounted multipath SAN volumes
+* lftest.py: `network()` plus `network` / `network_alias` arguments on `run_container()` wire an application container to a backing service for multi-container integration tests
+* net.py: `cidr_to_hosts()` and `get_subnet_hosts()` return the usable host addresses of a network in CIDR notation or of an interface's subnet, with a configurable size limit
+* shell.py: `which()` locates an executable in PATH
+* ssh.py: new module to run commands (`run()`) and copy files (`scp()`, `rsync()`) over SSH, assembling the command lines from individual options
+* url.py: `fetch()` / `fetch_json()` take a `method` argument to force the HTTP method, enabling a bodyless POST
 
 ### Fixed
 
-* huawei.py: the session cookie is read regardless of how the storage system cases the response header, preventing authentication from failing on a case-sensitive header lookup
-* redfish.py: Sensors that report an empty min/max range (identical min and max, used by some firmware as a "no limit" placeholder) no longer raise false warnings ([#1211](https://github.com/Linuxfabrik/monitoring-plugins/issues/1211))
-* url.py: a caller-supplied `Content-Length` is ignored and recomputed from the request body
-* url.py: response header names are exposed in lower case, so callers read them reliably no matter how the server cased them
-* veeam.py: authentication against the Veeam Enterprise Manager API no longer fails with a `415 Unsupported Media Type` error or a false "unauthorized" result
-* Installing the library from source (for example `pip install --editable .`) no longer hangs, which also unblocks the API documentation build
-* Resolve the remaining ruff lint violations across the library, including a few robustness fixes: a bare `except` in disk.py now catches only `OSError`, mutable default arguments in url.py and rocket.py are no longer shared between calls, and uptimerobot.py uses `isinstance()` instead of a `type()` comparison ([#118](https://github.com/Linuxfabrik/lib/issues/118))
+* huawei.py: the session cookie is read regardless of how the storage system cases the response header
+* redfish.py: a sensor reporting an empty min/max range, which some firmware uses as a "no limit" placeholder, no longer raises a false warning ([#1211](https://github.com/Linuxfabrik/monitoring-plugins/issues/1211))
+* url.py: a caller-supplied `Content-Length` is ignored and recomputed from the request body, and response header names are exposed in lower case
+* veeam.py: authentication against the Veeam Enterprise Manager API no longer fails with a `415 Unsupported Media Type` or a false "unauthorized"
+* Installing the library from source no longer hangs, which also unblocks the API documentation build
+* The remaining ruff lint violations are resolved, including a bare `except` in disk.py and shared mutable default arguments in url.py and rocket.py ([#118](https://github.com/Linuxfabrik/lib/issues/118))
 
 
 ## [v4.2.0] - 2026-06-02
 
 ### Added
 
-* db_sqlite.py: `get_db_path()` resolves and returns the absolute path of a database without opening it, so callers that need to seed, migrate or remove a database file rely on a single source of truth instead of rebuilding the path themselves
+* db_sqlite.py: `get_db_path()` resolves the absolute path of a database without opening it, so a caller that seeds, migrates or removes a database file has a single source of truth
 
 ### Security
 
-* db_sqlite.py: SQLite databases are now created in a private, per-user `0700` directory under the system temporary directory instead of directly in the shared, world-writable `/tmp`. This closes a local symlink attack on the predictable database paths where an unprivileged user could redirect writes from a process running as root to arbitrary files ([GHSA-r35r-fpx2-jgr4](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-r35r-fpx2-jgr4), thanks to [OoYo0uto](https://github.com/OoYo0uto))
+* db_sqlite.py: SQLite databases are created in a private, per-user `0700` directory under the system temporary directory instead of directly in the shared `/tmp`. This closes a local symlink attack on the predictable database paths ([GHSA-r35r-fpx2-jgr4](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-r35r-fpx2-jgr4), thanks to [OoYo0uto](https://github.com/OoYo0uto))
 
 
 ## [v4.1.0] - 2026-05-29
 
 ### Added
 
-* db_mysql.py: `get_server_info()` returns `{flavor, version}` for the installed MySQL/MariaDB server, probing `mysqld`, `mariadbd`, `mariadb`, `mysql` and parsing the --version banner with regexes that cover all known output formats (legacy `Distrib` banner, modern `from` banner, server-binary banner, MariaDB-suffixed and plain). Accepts a pre-collected banner string to support unit-test fixtures without shelling out. Works without a database connection
-* db_mysql.py: `get_flavor()` returns whether the installed binary is MariaDB or MySQL (thin wrapper around `get_server_info()`). Useful where systemd-based detection is unreliable (e.g. Fedora aliases `mysql.service` to `mariadb.service`)
+* db_mysql.py: `get_server_info()` and `get_flavor()` report the installed MySQL/MariaDB server's flavor and version without a database connection, by parsing the `--version` banner of `mysqld`, `mariadbd`, `mariadb` or `mysql`. Useful where systemd-based detection is unreliable, as on Fedora, which aliases `mysql.service` to `mariadb.service`
 
 ### Fixed
 
-* db_sqlite.py: consumers that cache trend data in `/tmp` no longer fail with "attempt to write a readonly database" when first run as one user (e.g. root) and later scheduled under another. Each user now gets its own cache file ([#181](https://github.com/Linuxfabrik/lib/issues/181))
+* db_sqlite.py: a consumer caching trend data no longer fails with "attempt to write a readonly database" when first run as one user and later scheduled under another. Each user gets its own cache file ([#181](https://github.com/Linuxfabrik/lib/issues/181))
 
 ### Security
 
@@ -432,184 +306,149 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* url.py: `import lib.url` no longer aborts with `AttributeError: module 'ssl' has no attribute 'TLSVersion'` on Python interpreters below 3.7 (e.g. RHEL 8's default `python3` = 3.6). The TLS version mapping is now built only when `ssl.TLSVersion` is available; any consumer that doesn't use TLS version pinning keeps importing. Callers that pass `tls_min` / `tls_max` get a clear `RuntimeError` naming the missing requirement instead of the cryptic `AttributeError`. Note: the lib's supported minimum is still Python 3.9; this only makes one specific import path resilient
+* url.py: `import lib.url` no longer aborts on Python below 3.7, such as RHEL 8's default `python3`. A caller passing `tls_min` / `tls_max` gets a clear `RuntimeError` naming the missing requirement. The supported minimum stays Python 3.9
 
 
 ## [v4.0.1] - 2026-05-18
 
 ### Fixed
 
-* db_mysql.py: `connect()` aligns the session's character set and collation with the `mysql` system schema right after the connection is up. Stops queries against `mysql.user` and `mysql.global_priv` from aborting with ER 1267 ("Illegal mix of collations") when the server's connection-collation default differs from the system tables' column collations. MariaDB 10.4+ exposes `mysql.user` as a view over `mysql.global_priv` with JSON-derived columns whose results carry COERCIBLE coercibility, which makes plain `col = 'literal'` compares trip whenever `collation_connection` and the column collation don't match. Lookup uses `information_schema.schemata` so the right collation is picked across MySQL/MariaDB versions and locale-specific installs. Best-effort: on any error the connection stays usable. Fixes all `mysql-*` plugins ([linuxfabrik/monitoring-plugins#1139](https://github.com/Linuxfabrik/monitoring-plugins/issues/1139))
+* db_mysql.py: `connect()` aligns the session's character set and collation with the `mysql` system schema, so queries against `mysql.user` and `mysql.global_priv` no longer abort with ER 1267 ("Illegal mix of collations") on MariaDB 10.4+. Fixes all `mysql-*` plugins ([monitoring-plugins#1139](https://github.com/Linuxfabrik/monitoring-plugins/issues/1139))
 
 
 ## [v4.0.0] - 2026-05-15
 
 ### Breaking Changes
 
-* base.py: rename module-level constant `X86_64` to `IS_64BIT`. The old name was misleading because it suggested Intel/AMD 64-bit only, while the underlying check (`sys.maxsize > 2**32`) is True on any 64-bit Python build (aarch64, ppc64le, s390x, riscv64, …). Logic unchanged. Downstream consumers must update imports
+* base.py: the module-level constant `X86_64` is renamed to `IS_64BIT`. The underlying check is True on any 64-bit Python build, not only Intel/AMD. Logic unchanged, consumers must update their imports
+* lftest.py: `run_mariadb()` / `run_mariadb_from_containerfile()` are renamed to `run_mysql_compatible()` / `run_mysql_compatible_from_containerfile()`, since both upstream MySQL and MariaDB images are supported. The old names stay as aliases for one release, and `MARIADB_LTS_IMAGES` is gone
 
 ### Added
 
-* db_mysql.py: `check_privileges(conn, *required)` replaces the old `check_select_privileges()`. Without arguments it keeps the previous functional smoke test (`SELECT VERSION()`, works with `GRANT USAGE` alone). With arguments it parses `SHOW GRANTS FOR CURRENT_USER()` and reports any privilege that is missing for the current user, with `ALL PRIVILEGES` and `SUPER` short-circuiting to success. Each positional argument can be a string (single privilege required) or a list/tuple of strings (any-of group, useful for cross-version aliases like `REPLICATION CLIENT` / `SLAVE MONITOR` / `REPLICA MONITOR` introduced by MariaDB 10.5+). Enables consumers to declare their actual privilege requirements precisely
-* db_mysql.py: four new helpers consolidate patterns that several consumers implement by hand. `get_all_status(conn)` and `get_all_variables(conn)` return the complete `SHOW GLOBAL STATUS` / `SHOW GLOBAL VARIABLES` as a dict in one round trip (cheaper than many `LIKE '...'` queries when a consumer needs more than a handful of values). `get_replica_status(conn)` issues `SHOW REPLICA STATUS` and silently falls back to the legacy `SHOW SLAVE STATUS`, returning the first row or `None` when the server is not configured as a replica. `has_is_role_column(conn)` reports whether `mysql.user.IS_ROLE` exists (MariaDB 10.0.5+ roles) so consumers can gate `IS_ROLE = 'N'` clauses without each implementing the same probe
-* db_sqlite.py: `per_second_deltas(filename, name, counters)` consolidates the cross-run "delta of cumulative counters between runs" pattern that several consumers implement by hand. Persists the counters in a local SQLite cache (schema derived from the counters dict so callers no longer have to spell out the table definition per consumer) and returns the per-second rates vs. the previous run. Useful for any cumulative counter that needs to be reported as a per-second rate: /proc and /sys byte counters (disk I/O, network traffic, file descriptors), database status counters, application metrics. Returns `None` on the first run, on counter resets and on schema changes (auto-rebuilds the cache table in that case). Lets consumers emit per-second rates as perfdata instead of `uom='c'` continuous counters, so Grafana panels do not need their own `non_negative_difference()` workaround
-* lftest.py: `run_mariadb_from_containerfile(containerfile_path, ...)` builds a per-consumer Containerfile via testcontainers' DockerImage and yields `(container, defaults_file)` like `run_mariadb()`. Consumers move their test-image matrix into `unit-test/containerfiles/<name>` so each consumer owns its supported MariaDB / MySQL LTS coverage instead of relying on a hardcoded image list in the lib. The `MARIADB_LTS_IMAGES` constant has been removed (no in-tree caller after the migration)
-* lftest.py: `run_mariadb` / `run_mariadb_from_containerfile` renamed to `run_mysql_compatible` / `run_mysql_compatible_from_containerfile` to reflect that both upstream MySQL and MariaDB images are supported (`docker.io/library/mysql:*`, `docker.io/library/mariadb:*`, `quay.io/sclorg/mariadb-*`, `quay.io/sclorg/mysql-*`). Family detection picks `mariadbd` vs `mysqld` when `extra_args` is set. Old names are kept as aliases for one release
-* net.py: `fetch()` and `fetch_socket()` gain an optional `dialog` parameter for multi-step request/response conversations (regex-driven, no half-close). Enables clean implementations for protocols like NUT, SMTP, POP3, IMAP and FTP without re-implementing socket handling per consumer
-* net.py: `fetch()` gains a `tls=True` switch that wraps the socket in a TLS 1.2+ context with SNI, equivalent to calling `fetch_ssl()`. The legacy `fetch_ssl()` helper stays for backward compatibility but is now marked deprecated in its docstring
-* time.py: `now()` gains `as_type='utc'` returning the current UTC time as a naive `datetime.datetime`. Useful for fields defined as UTC by spec (x509 `notBefore` / `notAfter`, HTTP `Date`, RFC 3339 timestamps), so consumers can stay on the lib helper instead of falling back to `datetime.datetime.now(datetime.timezone.utc)`
-* url.py: `fetch()` and `fetch_json()` now speak HTTP/1.0, HTTP/1.1 and HTTP/2 via `httpx`, with new `http_version`, `tls_min` and `tls_max` parameters for protocol pinning. `extended=True` now also returns the negotiated TLS version, ALPN protocol, the server certificate in DER form, and a per-phase `timings` dict with `dns`, `connect`, `tls`, `ttfb`, `transfer` and `total` (all seconds), ready for downstream certificate inspection and HTTPS-availability monitoring. `http_version='3'` is reserved and currently returns a clear error until QUIC support lands. Existing callers and parameters are unchanged
+* db_mysql.py: `check_privileges(conn, *required)` replaces `check_select_privileges()`. Without arguments it keeps the functional smoke test, with arguments it parses `SHOW GRANTS FOR CURRENT_USER()` and names every missing privilege. Each argument is a privilege or an any-of group, for cross-version aliases such as `REPLICATION CLIENT` / `SLAVE MONITOR` / `REPLICA MONITOR`
+* db_mysql.py: `get_all_status()`, `get_all_variables()`, `get_replica_status()` and `has_is_role_column()` consolidate patterns several consumers implement by hand
+* db_sqlite.py: `per_second_deltas()` persists cumulative counters in a local cache and returns their per-second rates against the previous run, so a consumer emits rates as perfdata instead of `uom='c'` counters and a Grafana panel needs no `non_negative_difference()` workaround
+* lftest.py: `run_mysql_compatible_from_containerfile()` builds a per-consumer Containerfile, so each consumer owns its supported MariaDB / MySQL LTS coverage instead of relying on a hardcoded image list in the lib
+* net.py: `fetch()` and `fetch_socket()` take a `dialog` for multi-step request/response conversations, which covers NUT, SMTP, POP3, IMAP and FTP without per-consumer socket handling. `fetch(tls=True)` replaces the now deprecated `fetch_ssl()`
+* time.py: `now(as_type='utc')` returns the current UTC time as a naive `datetime`, for fields defined as UTC by spec such as x509 `notBefore` / `notAfter`
+* url.py: `fetch()` and `fetch_json()` speak HTTP/1.0, 1.1 and 2 via `httpx`, with `http_version`, `tls_min` and `tls_max` for protocol pinning. `extended=True` also returns the negotiated TLS version, the ALPN protocol, the server certificate in DER form and a per-phase `timings` dict, ready for certificate inspection and HTTPS-availability monitoring
 
 ### Changed
 
-* pyproject.toml: declare `pypsrp` and `pywinrm` as direct dependencies. `lib.winrm` imports both at module load time (wrapped in `try/except ImportError` only so a non-WinRM consumer still loads); previously they had to be pinned in every downstream project that consumed `lib.winrm` (e.g. monitoring-plugins for `dhcp-scope-usage` on Windows). Same convention as `psutil`, `smbprotocol` etc., which `lib.psutil` / `lib.smb` import conditionally but which are declared as hard deps because they are part of lib's published surface
-* requirements: one hash-pinned lockfile per supported Python LTS, each in its own `lockfiles/pyXX/` subdirectory (`py39` to `py314`). Replaces the single `requirements.txt`. Dependabot watches each subdirectory separately, except `lockfiles/py39/` which is excluded from both version bumps and security PRs: most upstream packages dropped Python 3.9 over 2025/2026, so automated bumps would break `pip install --require-hashes` on RHEL 8 / Debian 11. The py39 lockfile is regenerated manually as needed
-* url.py: `fetch()` switched its underlying engine from stdlib `urllib` to `httpx`. Behaviour for existing callers is preserved (parameters, return-tuple shape, redirect-following, default `Connection: close` and `User-Agent` headers, automatic `application/x-www-form-urlencoded` for POST without explicit Content-Type). `response_header` in the extended dict is now a plain dict instead of `http.client.HTTPMessage`; existing consumers only relied on `.get()` access
+* pyproject.toml: `pypsrp` and `pywinrm` are declared as direct dependencies, so they no longer have to be pinned in every downstream project consuming `lib.winrm`
+* requirements: one hash-pinned lockfile per supported Python LTS under `lockfiles/pyXX/`, replacing the single `requirements.txt`. Dependabot watches each separately, except `lockfiles/py39/`, which is regenerated by hand because automated bumps would break `pip install --require-hashes` on RHEL 8 / Debian 11
+* url.py: `fetch()` switched its engine from stdlib `urllib` to `httpx`. Behaviour for existing callers is preserved, except that `response_header` in the extended dict is now a plain dict
 
 ### Deprecated
 
-* db_mysql.py: `check_select_privileges()` is deprecated and now a thin backwards-compatible shim that delegates to `check_privileges(conn)`. New code should call `check_privileges()` directly. The shim exists to keep already-deployed consumers working when the lib is upgraded ahead of the consumer set; it will be removed in a future major release
+* db_mysql.py: `check_select_privileges()` is a backwards-compatible shim delegating to `check_privileges(conn)`, and will be removed in a future major release
 
 ### Fixed
 
-* base.py: `oao()` now properly HTML-escapes `&`, `<` and `>` into `&amp;`, `&lt;` and `&gt;` instead of replacing `<` and `>` with apostrophes. The previous implementation destroyed legitimate threshold descriptions like `<= 10` and shell snippets like `echo 1 > /proc/sys/...`, turning them into `'= 10` and `echo 1 ' /proc/sys/...` in consumer output. HTML-based web UIs (Icinga Web, Naemon-Adagios) render the entities back to the original characters; terminal viewers see the literal entities, which preserves the information. The XSS-protection goal of the original change is still met
-* db_sqlite.py: `per_second_deltas()` no longer crashes with `sqlite3.ProgrammingError: Cannot operate on a closed database` when the cache table schema mismatches an earlier consumer version. The internal `insert()` call now uses `delete_db_on_operational_error=False` so the connection survives the schema-mismatch error; the explicit drop/recreate path below operates on a live connection as intended
-* url.py: `fetch()` with HTTP digest authentication and `insecure=True` now actually disables certificate verification. Previously the digest auth path silently lost the SSL context
-* url.py: `fetch()` with `no_proxy=True` now applies the `timeout` parameter. Previously the no-proxy path called `opener.open(request)` without a timeout, so hangs were only caught by the outer consumer wrapper
-* url.py: `import lib.url` no longer fails on hosts where `httpx` is not installed; the import is now lazy and `fetch()` returns a clear "httpx not installed" error message instead of crashing on import. Consumers that pull `lib.url` only transitively (for example via `lib.net`) keep working without `httpx`. Hosts that actually use `fetch()` still need `httpx[http2]` installed via `pip` or `dnf install python3-httpx python3-h2`
+* base.py: `oao()` HTML-escapes `&`, `<` and `>` into entities instead of replacing `<` and `>` with apostrophes, which used to turn `<= 10` into `'= 10` and destroy shell snippets in consumer output
+* db_sqlite.py: `per_second_deltas()` no longer crashes on a cache table schema mismatch from an earlier consumer version
+* url.py: `fetch()` with digest authentication actually honours `insecure=True`, and with `no_proxy=True` actually applies the `timeout`
+* url.py: `import lib.url` no longer fails where `httpx` is not installed; `fetch()` returns a clear error message instead. A consumer pulling `lib.url` only transitively keeps working
 
 
 ## [v3.4.1] - 2026-05-07
 
 ### Fixed
 
-* librenms.py: `get_state()` now also maps the LibreNMS alert states `WORSE` (3), `BETTER` (4) and `CHANGED` (5) to WARN/CRIT. Previously only `ACTIVE` (1) was treated as an alerting state, so open alerts in any of those three states were silently reported as OK. `WORSE` and `BETTER` exist in LibreNMS since 1.54 (July 2019); `CHANGED` was added in LibreNMS 25.2.0 (February 2025) and is now triggered whenever the alert `diff` detects a change
+* librenms.py: `get_state()` also maps the LibreNMS alert states `WORSE`, `BETTER` and `CHANGED` to WARN/CRIT. Only `ACTIVE` was treated as alerting, so open alerts in any of those three states were silently reported as OK
 
 ### Security
 
-* **ci**: Scope `GITHUB_TOKEN` permissions in the dependabot-auto-merge workflow to the job level, with top-level now `read-all`. Matches the pattern used by the other Linuxfabrik workflows and addresses the OpenSSF Scorecard `Token-Permissions` finding.
+* **ci**: the `GITHUB_TOKEN` permissions in the dependabot-auto-merge workflow are scoped to the job level, with top-level `read-all`, addressing the OpenSSF Scorecard `Token-Permissions` finding
 
 
 ## [v3.4.0] - 2026-04-22
 
 ### Added
 
-* time.py: add `macro2timestr(s, format='')` to expand time macros in a string. Supports `{today}`, `{yesterday}` (rendered with the given format, default ISO 8601) and single strftime components (`{%Y}`, `{%y}`, `{%m}`, `{%d}`, `{%H}`, `{%M}`, `{%S}`). Unknown `{...}` tokens pass through unchanged
+* time.py: `macro2timestr(s, format='')` expands time macros in a string - `{today}`, `{yesterday}` and single strftime components such as `{%Y}` or `{%m}`. An unknown `{...}` token passes through unchanged
 
 
 ## [v3.3.0] - 2026-04-19
 
 ### Added
 
-* args.py: add a generic `--check-security` help text so version-style consumers can offer an upstream security-update check with a uniform parameter description
+* args.py: a generic `--check-security` help text, so version-style consumers describe an upstream security-update check the same way
 
 
 ## [v3.2.0] - 2026-04-14
 
 ### Added
 
-* url.py: add `split_basic_auth(url)` helper that extracts userinfo from a URL like `https://user:secret@host/path`, returns the URL with the userinfo stripped from the netloc, plus a headers dict carrying the matching `Authorization: Basic ...` entry. Pass both into `lib.url.fetch()` / `lib.url.fetch_json()`. This lets apps accept HTTP basic auth via the URL itself instead of exposing separate `--username` / `--password` arguments, which keeps the credentials out of `ps` listings, out of the request line, and out of any proxy access log
+* url.py: `split_basic_auth(url)` splits the userinfo out of a URL like `https://user:secret@host/path` and returns the stripped URL plus the matching `Authorization` header. This lets an app accept HTTP basic auth via the URL itself, which keeps the credentials out of `ps` listings, out of the request line and out of any proxy access log
 
 
 ## [v3.1.1] - 2026-04-14
 
 ### Changed
 
-* human.py: `human2seconds()` and `humanduration2seconds()` now accept the Unix-style lowercase day/week markers `d` and `w` in addition to the canonical Linuxfabrik uppercase `D` and `W`. This lets callers parse duration strings from third-party tools that follow the Unix convention (exim `mailq` age literals, `sleep 3d`, systemd timers, etc.) without having to normalize the input first. Uppercase `D`/`W` continue to work exactly as before, so no existing caller breaks
-* nextcloud.py: `run_occ()` no longer relies on the Nextcloud `occ` script being marked executable. It now locates `php` via `shutil.which('php')` and invokes `sudo -u \#<uid> php <occ> <cmd>`, which also works on installations where `occ` lacks the execute bit or its shebang does not resolve to a working PHP interpreter. If no `php` is found in `PATH`, the call returns a descriptive error instead of silently failing
-
+* human.py: `human2seconds()` and `humanduration2seconds()` also accept the Unix-style lowercase day and week markers `d` and `w`, so a duration string from a third-party tool needs no normalizing first. The canonical uppercase `D` / `W` keep working
+* nextcloud.py: `run_occ()` no longer relies on `occ` being executable. It locates `php` and invokes `sudo -u \#<uid> php <occ> <cmd>`, and returns a descriptive error if no `php` is in `PATH`
 
 ### Security
 
-* Harden the CI supply chain: the `pre-commit` install in the pre-commit-autoupdate workflow is now hash-pinned via `.github/pre-commit/requirements.txt` (generated with `pip-compile --generate-hashes --strip-extras`), and `dependabot/fetch-metadata` is pinned to a commit SHA so all GitHub Actions used in `.github/workflows/` are now pinned by hash. The policy is documented in CONTRIBUTING.md under "CI Supply Chain"
+* CI supply chain: the `pre-commit` install in the pre-commit-autoupdate workflow is hash-pinned and `dependabot/fetch-metadata` is pinned to a commit SHA, so every GitHub Action in `.github/workflows/` is pinned by hash. The policy is documented in CONTRIBUTING.md under "CI Supply Chain"
 
 
 ## [v3.1.0] - 2026-04-13
 
 ### Added
 
-* disk.py: add `dir_exists()` as the directory-only counterpart to `file_exists()`. The existing `file_exists()` wraps `os.path.isfile()` and therefore returns `False` for directories, which is easy to miss; callers that want to check for a directory should now use `dir_exists()`
-* lftest.py: add `attach_each()` helper for iterating over arbitrary lists (e.g. container image matrices, file-based fixtures) with a caller-supplied action, complementing `attach_tests()` which only works on the `TESTS` dict shape
-* lftest.py: add `attach_tests()` helper that attaches one `test_*` method per entry in a consumer's `TESTS` list, so that test discovery and reporting show the actual number of fixtures instead of a single aggregate test
-* lftest.py: add `run_mariadb()` context manager and `MARIADB_LTS_IMAGES` constant for container-based MariaDB integration tests. Starts a sclorg or upstream MariaDB container, waits for the TCP listener, yields a temporary client option file, and cleans up on exit. `MARIADB_LTS_IMAGES` lists the currently supported MariaDB LTS releases (10.6, 10.11, 11.4, 11.8) so the mysql-* monitoring plugins can iterate over a single canonical matrix
+* disk.py: `dir_exists()` as the directory-only counterpart to `file_exists()`, which wraps `os.path.isfile()` and therefore returns `False` for a directory
+* lftest.py: `attach_tests()` attaches one `test_*` method per entry of a consumer's `TESTS` list, so discovery and reporting show the actual number of fixtures instead of a single aggregate test. `attach_each()` does the same for an arbitrary list
+* lftest.py: `run_mariadb()` context manager and `MARIADB_LTS_IMAGES` constant for container-based MariaDB integration tests
 
 
 ## [v3.0.0] - 2026-04-13
 
+### Removed
+
+* Support for Python older than 3.9 is dropped. This matches the oldest still-supported enterprise Linux (RHEL 8) and lets the codebase use modern syntax and standard-library features
+
 ### Added
 
-* Add GitHub Actions workflow to automatically build and deploy API documentation to GitHub Pages
-* Add bandit and vulture to `.pre-commit-config.yaml` for security and dead-code checks on every commit
-* Add pre-commit hooks
-* Add ruff linter and formatter to pre-commit hooks ([#117](https://github.com/Linuxfabrik/lib/issues/117))
-* args.py: expand `HELP_TEXTS` with standard help texts for all common parameters (always-ok, critical, warning, insecure, no-proxy, timeout, url, ignore-regex, match, lengthy, count, test, etc.)
-* disk.py: add `get_owner()`
-* lftest.py: add `run()` function for declarative, data-driven unit tests using `subTest()`
+* args.py: `HELP_TEXTS` covers all common parameters (always-ok, critical, warning, insecure, no-proxy, timeout, url, ignore-regex, match, lengthy, count, test and more)
+* disk.py: `get_owner()`
+* lftest.py: `run()` for declarative, data-driven unit tests using `subTest()`
 * nextcloud.py: new library
-* txt.py: add `exception2text()`
-* winrm.py: add `WINRM_CONFIGURATION_NAME` option to `run_ps()`
-* winrm.py: execute ps in `run_ps()` directly without Invoke-Expression wrapping
+* txt.py: `exception2text()`
+* winrm.py: `run_ps()` takes a `WINRM_CONFIGURATION_NAME` option and runs PowerShell directly instead of wrapping it in Invoke-Expression
+* CI: ruff, bandit and vulture run as pre-commit hooks, and the API documentation is built and deployed to GitHub Pages automatically ([#117](https://github.com/Linuxfabrik/lib/issues/117))
 
 ### Changed
 
-* base.py: `get_perfdata()` now sanitizes labels by stripping single quotes and replacing `=` with `_`
-* base.py: `get_perfdata()` output no longer has trailing semicolons
-* base.py: `get_table()`: document why pure ASCII delimiters are used instead of Unicode box-drawing characters
-* base.py: `get_worst()` now accepts any number of state arguments (`*states`). Existing two-argument callers keep working unchanged, but consumers that need to combine three or more states in one call no longer have to nest the call - e.g. `get_worst(state, used_state, committed_state)` instead of `get_worst(state, get_worst(used_state, committed_state))`
-* base.py: deduplicate `get_state()` operator logic using `operator` module
-* base.py: deduplicate `sum_dict()` by delegating to `sum_lod()`
-* base.py: improve `get_table()` performance for large tables
-* base.py: move `parse_range()` and state name mapping to module level
-* base.py: remove unused `collections` import
-* db_sqlite.py: reduce unnecessary dictionary object creation
-* human.py: deduplicate `bits2human()`/`bps2human()`/`bytes2human()` via shared `_to_human()` helper
-* human.py: deduplicate `humanrange2bytes()`/`humanrange2seconds()` via shared `_convert_range()` helper
-* human.py: pre-compute mappings as module constants
-* lftest.py: `test()` now accepts `args` with fewer than three elements. Consumers can be invoked as `--test=path/to/fixture` without the trailing `,,0`; stderr defaults to the empty string and the return code to `0`
-* powershell.py: `run_ps()` now always returns a dict
-* Remove pre-built documentation from the repository (now auto-deployed via GitHub Actions)
-* txt.py: improve `filter_mltext()` performance (avoid O(n²) string concatenation)
-* txt.py: improve readability of `extract_str()` fallback logic
-* txt.py: remove unused Python 2 type aliases and outdated comments
-* txt.py: simplify `to_text()` and `to_bytes()` for Python 3 only (remove dead Python 2 codepaths)
-* winrm.py: make `run_cmd()` and `run_ps()` JEA-aware
-* winrm.py: make `run_cmd()` and `run_ps()` Kerberos-aware
-
-### Removed
-
-* Drop support for Python older than 3.9. The lib now requires Python 3.9 or newer; this matches the oldest still-supported enterprise Linux (RHEL 8) and lets the codebase use modern syntax and standard-library features
+* base.py: `get_worst()` accepts any number of states, so combining three or more no longer needs a nested call
+* base.py: `get_perfdata()` sanitizes labels by stripping single quotes and replacing `=` with `_`, and drops the trailing semicolons
+* base.py: `get_table()` is faster on large tables
+* lftest.py: `test()` accepts `args` with fewer than three elements, so a consumer can be invoked as `--test=path/to/fixture` without the trailing `,,0`
+* powershell.py: `run_ps()` always returns a dict
+* winrm.py: `run_cmd()` and `run_ps()` are JEA-aware and Kerberos-aware
+* txt.py: `filter_mltext()` is faster, and the Python 2 codepaths in `to_text()` / `to_bytes()` are gone
+* Pre-built documentation is removed from the repository, it is now deployed via GitHub Actions
 
 ### Fixed
 
-* base.py: `cu()` now also escapes HTML characters in the error message, not just in the traceback
-* base.py: `cu()` now detects active exceptions via `sys.exc_info()` instead of string-matching the traceback
-* base.py: `get_state()` no longer calls `sys.exit()` on malformed range specs, returns UNKNOWN instead
-* base.py: `get_table()` no longer uses the wrong separator for the second data row when called without a header
-* base.py: `oao()` now escapes HTML characters in the output message to prevent injection in web UIs
-* base.py: fix invalid `-10` range example in `_parse_range()` docstring (correct syntax is `-10:0`)
-* cache.py: treat a cache entry as valid up to and including its `expire` timestamp instead of expiring it one second early (`<` instead of `<=`). A key set with `expire=now+5` is now still served at `now+5` and first becomes unavailable at `now+6`, matching HTTP Cache-Control max-age and Redis EXPIRE semantics. Callers that relied on the old one-second-early expiry see their cached value live one second longer ([#120](https://github.com/Linuxfabrik/lib/issues/120))
-* db_sqlite.py: pass `usedforsecurity=False` to `hashlib.sha1()` so bandit no longer flags a non-security SHA1 use as a weak hash (the hash is only used to derive sanitized SQL identifiers)
-* db_sqlite.py: rename unused loop variable in `rm_db()` to silence ruff B007
-* Fix `--require-hashes` pip installs in CI workflows by using pinned versions instead
-* grassfish.py: remove unused `match()` helper that referenced undefined names (`re` and `compiled_custom_id_regex`); the function was never called and would have raised `NameError` at runtime
-* human.py: `bits2human()`, `bytes2human()` and `bps2human()` now scale negative values to a unit that matches their magnitude. Before, `bytes2human(-1048576)` returned `-1048576.0B`, now it returns `-1.0MiB`. This matters for counter deltas that can legitimately be negative (counter resets, reclaimed memory, bandwidth drops) ([#120](https://github.com/Linuxfabrik/lib/issues/120))
-* human.py: fix incorrect `seconds2human()` docstring example for sub-second values
-* net.py: fix `get_netinfo()` which called a non-existent `get_ip_public()` and swallowed the resulting `NameError` by returning `[]`; the function now leaves `public_address` as `None` and callers that need the public IP must use `get_public_ip()` directly
-* powershell.py: fix outdated shebang line
-* rocket.py: `get_groups_history()` no longer mutates a shared default `params={}` dict (B006) and properly defaults `params` to `None`
-* shell.py: `shell_exec()` now applies timeout to the `shell=True` path (was previously ignored)
-* shell.py: close the upstream process's `stdout` after connecting it to the next pipeline stage. Without this, the upstream process never received EOF/SIGPIPE when the downstream stage exited early, and each pipeline stage leaked a file descriptor until garbage collection caught up ([#120](https://github.com/Linuxfabrik/lib/issues/120))
-* txt.py: `sanitize_sensitive_data()` now also redacts JSON-style fields and HTTP Authorization headers
-* txt.py: fix `exception2text()` missing `traceback` import (fallback path was dead code)
-* txt.py: fix `pluralize()` not stripping whitespace from comma-separated suffix parts
-* txt.py: fix `sanitize_sensitive_data()` replacing the key name instead of the secret value
-* url.py: `fetch()` and `fetch_json()` no longer use mutable default arguments for `header` and `data` (B006); defaults are now `None` with initialization inside the function
-* url.py: drop the dead `timeout=timeout if digest_auth_user else timeout` ternary in `fetch()`; both branches evaluated to `timeout`, so behavior is unchanged ([#120](https://github.com/Linuxfabrik/lib/issues/120))
-* winrm.py: pass parameters correctly in `run_cmd()` when using pypsrp
+* base.py: `oao()` and `cu()` escape HTML characters in the output message and in the error message, not just in the traceback, to prevent injection in web UIs
+* base.py: `get_state()` returns UNKNOWN on a malformed range spec instead of calling `sys.exit()`
+* base.py: `get_table()` uses the right separator for the second data row when called without a header
+* cache.py: a cache entry is valid up to and including its `expire` timestamp instead of expiring one second early, matching HTTP `Cache-Control: max-age` and Redis `EXPIRE` semantics ([#120](https://github.com/Linuxfabrik/lib/issues/120))
+* grassfish.py: the unused `match()` helper referencing undefined names is removed
+* human.py: `bits2human()`, `bytes2human()` and `bps2human()` scale a negative value to a unit matching its magnitude, so `bytes2human(-1048576)` returns `-1.0MiB` instead of `-1048576.0B`. This matters for counter deltas that can legitimately be negative ([#120](https://github.com/Linuxfabrik/lib/issues/120))
+* net.py: `get_netinfo()` no longer calls a non-existent `get_ip_public()` and swallows the resulting `NameError` by returning `[]`. It leaves `public_address` as `None`; a caller that needs it uses `get_public_ip()`
+* shell.py: `shell_exec()` applies the timeout to the `shell=True` path, and closes the upstream process's `stdout` after connecting it to the next pipeline stage, which used to leak a file descriptor per stage ([#120](https://github.com/Linuxfabrik/lib/issues/120))
+* txt.py: `sanitize_sensitive_data()` redacts the secret value instead of the key name, and also covers JSON-style fields and HTTP Authorization headers
+* txt.py: `exception2text()` imports `traceback`, so its fallback path is no longer dead code, and `pluralize()` strips whitespace from comma-separated suffix parts
+* url.py: `fetch()` and `fetch_json()` no longer use mutable default arguments for `header` and `data`
+* winrm.py: `run_cmd()` passes its parameters correctly when using pypsrp
 
 ### Security
 
-* Annotate all remaining bandit low/medium findings with `# nosec BXXX` comments and a short justification (subprocess helpers with `shell=True` by design, admin-controlled URLs passed to `urlopen`, SQL built from sanitized identifiers in `db_sqlite`). Bandit now runs clean at `--severity-level=low --confidence-level=low` over the whole lib
+* The remaining bandit low/medium findings are annotated with `# nosec BXXX` and a short justification, so bandit runs clean at `--severity-level=low --confidence-level=low` over the whole lib
 
 
 ## [v2.4.0] - 2025-09-17
