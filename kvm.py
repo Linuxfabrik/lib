@@ -29,7 +29,7 @@ Typical use case:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082403'
+__version__ = '2026082501'
 
 import re
 
@@ -58,6 +58,65 @@ DOMAIN_STATES = {
     5: 'shut off',
     6: 'crashed',
     7: 'pmsuspended',
+}
+
+# The reason libvirt records next to a domain state, one mapping per state. From the
+# `virDomain*Reason` enumerations in include/libvirt/libvirt-domain.h, spelled the way
+# virsh prints them (VIR_ENUM_IMPL(virshDomain*Reason) in
+# tools/virsh-domain-monitor.c) and complete as of libvirt 12.7.
+#
+# The reason is what separates an ending from how it ended: a domain that was shut
+# down, one that was killed off the host and one whose start never succeeded all sit
+# in `shut off`, and only the reason tells them apart. libvirt fills it for every
+# domain, including the ones it has no history for, where it answers `unknown`.
+DOMAIN_STATE_REASONS = {
+    0: {0: 'unknown'},
+    1: {
+        0: 'unknown',
+        1: 'booted',
+        2: 'migrated',
+        3: 'restored',
+        4: 'from snapshot',
+        5: 'unpaused',
+        6: 'migration canceled',
+        7: 'save canceled',
+        8: 'event wakeup',
+        9: 'crashed',
+        10: 'post-copy',
+        11: 'post-copy failed',
+    },
+    2: {0: 'unknown'},
+    3: {
+        0: 'unknown',
+        1: 'user',
+        2: 'migrating',
+        3: 'saving',
+        4: 'dumping',
+        5: 'I/O error',
+        6: 'watchdog',
+        7: 'from snapshot',
+        8: 'shutting down',
+        9: 'creating snapshot',
+        10: 'crashed',
+        11: 'starting up',
+        12: 'post-copy',
+        13: 'post-copy failed',
+        14: 'api error',
+    },
+    4: {0: 'unknown', 1: 'user'},
+    5: {
+        0: 'unknown',
+        1: 'shutdown',
+        2: 'destroyed',
+        3: 'crashed',
+        4: 'migrated',
+        5: 'saved',
+        6: 'failed',
+        7: 'from snapshot',
+        8: 'daemon',
+    },
+    6: {0: 'unknown', 1: 'panicked'},
+    7: {0: 'unknown'},
 }
 
 # The domain filters `virsh list` accepts, from opts_list in
