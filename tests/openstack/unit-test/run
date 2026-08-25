@@ -1,0 +1,641 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.openstack.
+
+The module talks to an OpenStack cloud over the Identity v3 REST API and the REST APIs of the
+services in its catalog. Every request goes through `lib.url.fetch_json`, so the suite is made
+fully hermetic by replacing `lib.openstack.url.fetch_json` with an in-memory fake, and the token
+cache by a dictionary. No socket, no DNS, no TLS handshake and no cache database file ever
+happens.
+
+The tests probe:
+
+  * Request construction: the URL, the body of the token request, the headers, and the
+    `insecure` / `no_proxy` / `proxy` / `timeout` keyword arguments handed to `fetch_json`.
+  * Catalog handling: which endpoint is picked per interface and region, and what happens to a
+    service the catalog does not offer.
+  * The token cache: what is stored, what is reused, and what makes an entry unusable.
+  * Error handling: a refused authentication, a service that answers with an error document,
+    an answer that is not what the API promises, and a time budget that is spent.
+"""
+
+import sys
+import time
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.openstack as openstack
+
+PROJECT_ID = 'a1b2c3d4e5f64a7b8c9d0e1f2a3b4c5d'
+TOKEN = 'gAAAAABm-a-token'
+
+ENV = {
+    'OS_AUTH_URL': 'https://cloud.example.com/identity/v3',
+    'OS_PASSWORD': 'linuxfabrik',
+    'OS_PROJECT_ID': PROJECT_ID,
+    'OS_PROJECT_NAME': 'monitoring',
+    'OS_REGION_NAME': 'region-a',
+    'OS_USERNAME': 'monitoring',
+    'OS_USER_DOMAIN_NAME': 'Default',
+}
+
+CATALOG = [
+    {
+        'type': 'compute',
+        'endpoints': [
+            {
+                'interface': 'internal',
+                'region': 'region-a',
+                'url': 'https://internal.example.com/compute/v2.1',
+            },
+            {
+                'interface': 'public',
+                'region': 'region-b',
+                'url': 'https://b.example.com/compute/v2.1',
+            },
+            {
+                'interface': 'public',
+                'region': 'region-a',
+                'url': 'https://cloud.example.com/compute/v2.1',
+            },
+        ],
+    },
+    {
+        'type': 'network',
+        'endpoints': [
+            {
+                'interface': 'public',
+                'region': 'region-a',
+                'url': 'https://cloud.example.com/network/',
+            },
+        ],
+    },
+]
+
+
+def token_response(expires_at='2036-01-01T00:00:00.000000Z', catalog=None):
+    """Build what the Identity API answers to a token request."""
+    return {
+        'response_header': {'x-subject-token': TOKEN},
+        'response_json': {
+            'token': {
+                'catalog': CATALOG if catalog is None else catalog,
+                'expires_at': expires_at,
+                'project': {'id': PROJECT_ID},
+            }
+        },
+        'status_code': 201,
+    }
+
+
+class FakeFetch:
+    """Stand-in for `lib.url.fetch_json` that answers from a scripted list.
+
+    Every call is recorded, so a test can assert on the URL, the body and the keyword
+    arguments the module hands to the HTTP layer.
+    """
+
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.calls = []
+
+    def __call__(self, target, **kwargs):
+        self.calls.append(dict(kwargs, target=target))
+        if not self.answers:
+            raise AssertionError(f'no answer scripted for {target}')
+        return self.answers.pop(0)
+
+
+class FakeCache:
+    """Stand-in for `lib.cache`, holding entries in memory."""
+
+    def __init__(self, entries=None):
+        self.entries = dict(entries or {})
+        self.written = []
+
+    def get(self, key, as_dict=False):
+        return self.entries.get(key, False)
+
+    def set(self, key, value, expire=0, path='', filename=''):
+        self.entries[key] = value
+        self.written.append({'expire': expire, 'key': key, 'value': value})
+        return True
+
+
+class OpenStackTestCase(unittest.TestCase):
+    """Base class that isolates the module from the network and from the cache."""
+
+    def patch(self, answers, entries=None):
+        """Route the module through a scripted fetch and an in-memory cache."""
+        self.fetch = FakeFetch(answers)
+        self.cache = FakeCache(entries)
+        patcher = mock.patch.object(openstack.url, 'fetch_json', self.fetch)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(openstack, 'cache', self.cache)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+
+class TestAuthBody(unittest.TestCase):
+    def test_scopes_the_project_by_id_and_the_user_by_name(self):
+        body = openstack._get_auth_body(ENV)['auth']
+        self.assertEqual(body['identity']['methods'], ['password'])
+        user = body['identity']['password']['user']
+        self.assertEqual(user['name'], 'monitoring')
+        self.assertEqual(user['password'], 'linuxfabrik')
+        self.assertEqual(user['domain'], {'name': 'Default'})
+        self.assertNotIn('id', user)
+        self.assertEqual(body['scope']['project'], {'id': PROJECT_ID})
+
+    def test_an_id_addresses_a_user_without_a_domain(self):
+        env = dict(ENV, OS_USER_ID='u-1')
+        user = openstack._get_auth_body(env)['auth']['identity']['password']['user']
+        self.assertEqual(user['id'], 'u-1')
+        self.assertNotIn('domain', user)
+        self.assertNotIn('name', user)
+
+    def test_a_project_by_name_carries_its_domain(self):
+        env = dict(ENV)
+        del env['OS_PROJECT_ID']
+        env['OS_PROJECT_DOMAIN_NAME'] = 'customers'
+        project = openstack._get_auth_body(env)['auth']['scope']['project']
+        self.assertEqual(
+            project, {'domain': {'name': 'customers'}, 'name': 'monitoring'}
+        )
+
+    def test_the_domain_id_wins_over_the_domain_name(self):
+        env = dict(ENV, OS_USER_DOMAIN_ID='d-1', OS_USER_DOMAIN_NAME='Default')
+        user = openstack._get_auth_body(env)['auth']['identity']['password']['user']
+        self.assertEqual(user['domain'], {'id': 'd-1'})
+
+    def test_no_domain_at_all_means_the_default_one(self):
+        env = dict(ENV)
+        del env['OS_USER_DOMAIN_NAME']
+        user = openstack._get_auth_body(env)['auth']['identity']['password']['user']
+        self.assertEqual(user['domain'], {'id': 'default'})
+
+    def test_an_empty_environment_does_not_raise(self):
+        body = openstack._get_auth_body({})['auth']
+        self.assertIsNone(body['identity']['password']['user']['password'])
+        self.assertIsNone(body['scope']['project']['name'])
+
+
+class TestAuthUrl(unittest.TestCase):
+    def test_a_url_that_names_v3_is_kept(self):
+        self.assertEqual(
+            openstack._get_auth_url({'OS_AUTH_URL': 'https://c.example/identity/v3'}),
+            'https://c.example/identity/v3',
+        )
+
+    def test_a_trailing_slash_does_not_produce_a_double_one(self):
+        self.assertEqual(
+            openstack._get_auth_url({'OS_AUTH_URL': 'https://c.example/identity/v3/'}),
+            'https://c.example/identity/v3',
+        )
+
+    def test_a_url_without_a_version_gets_v3(self):
+        self.assertEqual(
+            openstack._get_auth_url({'OS_AUTH_URL': 'https://c.example/identity'}),
+            'https://c.example/identity/v3',
+        )
+
+    def test_a_url_naming_the_retired_v2_is_moved_to_v3(self):
+        for retired in ('https://c.example/identity/v2.0', 'https://c.example/v2'):
+            self.assertTrue(
+                openstack._get_auth_url({'OS_AUTH_URL': retired}).endswith('/v3'),
+            )
+            self.assertNotIn('v2', openstack._get_auth_url({'OS_AUTH_URL': retired}))
+
+    def test_a_missing_url_does_not_raise(self):
+        self.assertEqual(openstack._get_auth_url({}), '/v3')
+
+
+class TestApiMessage(unittest.TestCase):
+    def test_the_message_of_a_wrapped_error(self):
+        for wrapper in ('error', 'forbidden', 'itemNotFound', 'NeutronError'):
+            self.assertEqual(
+                openstack._get_api_message(
+                    f'{{"{wrapper}": {{"code": 403, "message": "no way"}}}}'
+                ),
+                'no way',
+            )
+
+    def test_the_message_of_an_unwrapped_error(self):
+        self.assertEqual(openstack._get_api_message('{"message": "no way"}'), 'no way')
+
+    def test_markup_and_line_breaks_are_flattened(self):
+        self.assertEqual(
+            openstack._get_api_message(
+                '{"itemNotFound": {"message": "Not found.<br /><br />\\n\\n"}}'
+            ),
+            'Not found.',
+        )
+
+    def test_a_body_that_is_not_json_yields_nothing(self):
+        for body in ('<html>gateway timeout</html>', '', None, '[1, 2]'):
+            self.assertEqual(openstack._get_api_message(body), '')
+
+
+class TestEndpoints(unittest.TestCase):
+    def test_the_interface_and_the_region_decide(self):
+        endpoints = openstack._get_endpoints(
+            CATALOG, ['compute', 'network'], 'public', 'region-a'
+        )
+        self.assertEqual(
+            endpoints,
+            {
+                'compute': 'https://cloud.example.com/compute/v2.1',
+                'network': 'https://cloud.example.com/network/',
+            },
+        )
+
+    def test_another_interface_yields_another_url(self):
+        endpoints = openstack._get_endpoints(
+            CATALOG, ['compute'], 'internal', 'region-a'
+        )
+        self.assertEqual(
+            endpoints['compute'], 'https://internal.example.com/compute/v2.1'
+        )
+
+    def test_without_a_region_the_first_match_wins(self):
+        endpoints = openstack._get_endpoints(CATALOG, ['compute'], 'public', None)
+        self.assertEqual(endpoints['compute'], 'https://b.example.com/compute/v2.1')
+
+    def test_a_service_that_is_not_offered_is_left_out(self):
+        endpoints = openstack._get_endpoints(
+            CATALOG, ['compute', 'volumev3'], 'public', 'region-a'
+        )
+        self.assertEqual(sorted(endpoints), ['compute'])
+
+    def test_an_empty_catalog_yields_nothing(self):
+        for catalog in (
+            None,
+            [],
+            [{'type': 'compute'}],
+            [{'type': 'compute', 'endpoints': []}],
+        ):
+            self.assertEqual(
+                openstack._get_endpoints(catalog, ['compute'], 'public', None), {}
+            )
+
+
+class TestExpiry(unittest.TestCase):
+    def test_an_expiry_with_a_fraction(self):
+        self.assertEqual(
+            openstack._get_expiry({'expires_at': '2026-08-25T21:00:00.000000Z'}),
+            1787691600,
+        )
+
+    def test_an_expiry_without_a_fraction(self):
+        self.assertEqual(
+            openstack._get_expiry({'expires_at': '2026-08-25T21:00:00Z'}), 1787691600
+        )
+
+    def test_an_expiry_that_cannot_be_read_yields_zero(self):
+        for token in (
+            {},
+            {'expires_at': ''},
+            {'expires_at': 'never'},
+            {'expires_at': None},
+            {'expires_at': 1787691600},
+        ):
+            self.assertEqual(openstack._get_expiry(token), 0)
+
+
+class TestInterface(unittest.TestCase):
+    def test_the_default_is_public(self):
+        self.assertEqual(openstack._get_interface({}), 'public')
+
+    def test_the_url_suffix_of_an_older_rc_file_is_dropped(self):
+        self.assertEqual(
+            openstack._get_interface({'OS_INTERFACE': 'internalURL'}), 'internal'
+        )
+
+    def test_the_older_variable_is_read_too(self):
+        self.assertEqual(
+            openstack._get_interface({'OS_ENDPOINT_TYPE': 'adminURL'}), 'admin'
+        )
+
+    def test_a_value_that_names_no_interface_falls_back_to_public(self):
+        for value in ('nonsense', '', ' PUBLIC '):
+            self.assertEqual(
+                openstack._get_interface({'OS_INTERFACE': value}), 'public'
+            )
+
+
+class TestCacheKey(unittest.TestCase):
+    def test_the_key_carries_the_name_of_the_consumer(self):
+        self.assertTrue(
+            openstack._get_cache_key(ENV, 'openstack-quota').startswith(
+                'openstack-quota-'
+            )
+        )
+
+    def test_two_consumers_do_not_share_an_entry(self):
+        self.assertNotEqual(
+            openstack._get_cache_key(ENV, 'a'), openstack._get_cache_key(ENV, 'b')
+        )
+
+    def test_two_projects_do_not_share_an_entry(self):
+        self.assertNotEqual(
+            openstack._get_cache_key(ENV, 'a'),
+            openstack._get_cache_key(dict(ENV, OS_PROJECT_ID='other'), 'a'),
+        )
+
+    def test_the_password_is_not_part_of_the_key(self):
+        self.assertEqual(
+            openstack._get_cache_key(ENV, 'a'),
+            openstack._get_cache_key(dict(ENV, OS_PASSWORD='another'), 'a'),
+        )
+
+    def test_an_empty_environment_still_yields_a_key(self):
+        self.assertTrue(openstack._get_cache_key({}, 'a').startswith('a-'))
+
+
+class TestConnect(OpenStackTestCase):
+    def test_a_fresh_connection_posts_the_credentials_and_caches_the_token(self):
+        self.patch([(True, token_response())])
+        success, conn = openstack.connect(
+            ENV, ['compute', 'network'], cache_name='test', timeout=8
+        )
+        self.assertTrue(success)
+        self.assertFalse(conn['cached'])
+        self.assertEqual(conn['project_id'], PROJECT_ID)
+        self.assertEqual(conn['token'], TOKEN)
+        self.assertEqual(
+            conn['endpoints']['compute'], 'https://cloud.example.com/compute/v2.1'
+        )
+        call = self.fetch.calls[0]
+        self.assertEqual(
+            call['target'], 'https://cloud.example.com/identity/v3/auth/tokens'
+        )
+        self.assertEqual(call['encoding'], 'serialized-json')
+        self.assertEqual(call['header']['Content-Type'], 'application/json')
+        self.assertEqual(
+            call['data']['auth']['identity']['password']['user']['password'],
+            'linuxfabrik',
+        )
+        self.assertEqual(len(self.cache.written), 1)
+        self.assertIn(TOKEN, self.cache.written[0]['value'])
+
+    def test_the_transport_options_reach_the_http_layer(self):
+        self.patch([(True, token_response())])
+        openstack.connect(
+            ENV,
+            ['compute'],
+            cache_name='test',
+            insecure=True,
+            no_proxy=True,
+            proxy='http://proxy.example.com:3128',
+            timeout=20,
+        )
+        call = self.fetch.calls[0]
+        self.assertTrue(call['insecure'])
+        self.assertTrue(call['no_proxy'])
+        self.assertEqual(call['proxy'], 'http://proxy.example.com:3128')
+        self.assertLessEqual(call['timeout'], 21)
+        self.assertGreater(call['timeout'], 8)
+
+    def test_a_ca_bundle_from_the_rc_file_reaches_the_http_layer(self):
+        self.patch([(True, token_response())])
+        openstack.connect(
+            dict(ENV, OS_CACERT='/etc/pki/tls/certs/cloud-ca.pem'),
+            ['compute'],
+            cache_name='test',
+        )
+        self.assertEqual(
+            self.fetch.calls[0]['cacert'], '/etc/pki/tls/certs/cloud-ca.pem'
+        )
+
+    def test_without_a_ca_bundle_the_trust_store_of_the_host_applies(self):
+        self.patch([(True, token_response())])
+        openstack.connect(ENV, ['compute'], cache_name='test')
+        self.assertIsNone(self.fetch.calls[0]['cacert'])
+
+    def test_a_cached_token_is_reused_without_a_request(self):
+        key = openstack._get_cache_key(ENV, 'test')
+        entry = (
+            '{"endpoints": {"compute": "https://cloud.example.com/compute/v2.1"}, '
+            f'"project_id": "{PROJECT_ID}", "token": "{TOKEN}"}}'
+        )
+        self.patch([], {key: entry})
+        success, conn = openstack.connect(ENV, ['compute'], cache_name='test')
+        self.assertTrue(success)
+        self.assertTrue(conn['cached'])
+        self.assertEqual(conn['token'], TOKEN)
+        self.assertEqual(conn['header']['X-Auth-Token'], TOKEN)
+        self.assertEqual(self.fetch.calls, [])
+
+    def test_use_cache_false_authenticates_anyway(self):
+        key = openstack._get_cache_key(ENV, 'test')
+        entry = (
+            '{"endpoints": {"compute": "https://c/compute"}, "project_id": "p", '
+            '"token": "stale"}'
+        )
+        self.patch([(True, token_response())], {key: entry})
+        success, conn = openstack.connect(
+            ENV, ['compute'], cache_name='test', use_cache=False
+        )
+        self.assertTrue(success)
+        self.assertFalse(conn['cached'])
+        self.assertEqual(conn['token'], TOKEN)
+
+    def test_a_cache_entry_missing_a_service_is_replaced(self):
+        key = openstack._get_cache_key(ENV, 'test')
+        entry = (
+            '{"endpoints": {"compute": "https://c/compute"}, "project_id": "p", '
+            '"token": "stale"}'
+        )
+        self.patch([(True, token_response())], {key: entry})
+        success, conn = openstack.connect(
+            ENV, ['compute', 'network'], cache_name='test'
+        )
+        self.assertTrue(success)
+        self.assertFalse(conn['cached'])
+        self.assertEqual(len(self.fetch.calls), 1)
+
+    def test_a_cache_entry_that_cannot_be_read_is_replaced(self):
+        key = openstack._get_cache_key(ENV, 'test')
+        for entry in ('not json', '{}', '[]', '{"endpoints": {}}'):
+            self.patch([(True, token_response())], {key: entry})
+            success, conn = openstack.connect(ENV, ['compute'], cache_name='test')
+            self.assertTrue(success)
+            self.assertFalse(conn['cached'])
+
+    def test_refused_credentials_are_reported_as_such(self):
+        for status in (400, 401, 403):
+            self.patch([(False, {'status_code': status, 'response': '{}'})])
+            success, result = openstack.connect(ENV, ['compute'], cache_name='test')
+            self.assertFalse(success)
+            self.assertEqual(result, 'Failed to authenticate.')
+
+    def test_a_cloud_that_cannot_be_reached_says_so(self):
+        self.patch([(False, 'URL error "no address" for https://cloud.example.com')])
+        success, result = openstack.connect(ENV, ['compute'], cache_name='test')
+        self.assertFalse(success)
+        self.assertIn('Cannot authenticate against the Identity API', result)
+        self.assertIn('no address', result)
+
+    def test_an_answer_without_a_token_is_no_connection(self):
+        answer = token_response()
+        answer['response_header'] = {}
+        self.patch([(True, answer)])
+        success, result = openstack.connect(ENV, ['compute'], cache_name='test')
+        self.assertFalse(success)
+        self.assertIn('without a token', result)
+
+    def test_a_spent_time_budget_stops_before_the_request(self):
+        self.patch([])
+        success, result = openstack.connect(
+            ENV, ['compute'], cache_name='test', timeout=0
+        )
+        self.assertFalse(success)
+        self.assertIn('time budget', result)
+        self.assertEqual(self.fetch.calls, [])
+
+    def test_a_token_is_not_cached_past_its_own_lifetime(self):
+        soon = time.strftime(
+            '%Y-%m-%dT%H:%M:%S.000000Z', time.gmtime(time.time() + 300)
+        )
+        self.patch([(True, token_response(expires_at=soon))])
+        openstack.connect(ENV, ['compute'], cache_name='test', cache_expire=50)
+        expire = self.cache.written[0]['expire']
+        self.assertLess(expire, time.time() + 300)
+        self.assertGreater(expire, time.time())
+
+    def test_a_cache_expire_of_zero_turns_the_cache_off(self):
+        key = openstack._get_cache_key(ENV, 'test')
+        entry = (
+            '{"endpoints": {"compute": "https://cloud.example.com/compute/v2.1"}, '
+            f'"project_id": "{PROJECT_ID}", "token": "{TOKEN}"}}'
+        )
+        self.patch([(True, token_response())], {key: entry})
+        success, conn = openstack.connect(
+            ENV, ['compute'], cache_name='test', cache_expire=0
+        )
+        self.assertTrue(success)
+        # Neither read...
+        self.assertFalse(conn['cached'])
+        self.assertEqual(len(self.fetch.calls), 1)
+        # ...nor written.
+        self.assertEqual(self.cache.written, [])
+
+    def test_a_token_that_expires_at_once_is_not_cached(self):
+        gone = time.strftime('%Y-%m-%dT%H:%M:%S.000000Z', time.gmtime(time.time() - 1))
+        self.patch([(True, token_response(expires_at=gone))])
+        success, _ = openstack.connect(ENV, ['compute'], cache_name='test')
+        self.assertTrue(success)
+        self.assertEqual(self.cache.written, [])
+
+
+class TestFetchJson(OpenStackTestCase):
+    def connect(self, answers, entries=None, service_types=None):
+        """Open a connection whose token comes from the cache, then script the rest."""
+        key = openstack._get_cache_key(ENV, 'test')
+        entry = (
+            '{"endpoints": {"compute": "https://cloud.example.com/compute/v2.1"}, '
+            f'"project_id": "{PROJECT_ID}", "token": "{TOKEN}"}}'
+        )
+        self.patch(answers, dict({key: entry}, **(entries or {})))
+        return openstack.connect(ENV, service_types or ['compute'], cache_name='test')[
+            1
+        ]
+
+    def test_a_document_is_returned_and_the_token_travels_along(self):
+        conn = self.connect(
+            [(True, {'response_json': {'limits': {}}, 'status_code': 200})]
+        )
+        success, result = openstack.fetch_json(conn, 'compute', '/limits')
+        self.assertTrue(success)
+        self.assertEqual(result, {'limits': {}})
+        call = self.fetch.calls[0]
+        self.assertEqual(
+            call['target'], 'https://cloud.example.com/compute/v2.1/limits'
+        )
+        self.assertEqual(call['header']['X-Auth-Token'], TOKEN)
+
+    def test_a_header_of_the_caller_is_added_to_the_standard_ones(self):
+        conn = self.connect([(True, {'response_json': {}, 'status_code': 200})])
+        openstack.fetch_json(
+            conn, 'compute', '/servers', header={'OpenStack-API-Version': 'compute 2.1'}
+        )
+        call = self.fetch.calls[0]
+        self.assertEqual(call['header']['OpenStack-API-Version'], 'compute 2.1')
+        self.assertEqual(call['header']['X-Auth-Token'], TOKEN)
+        self.assertEqual(call['header']['Accept'], 'application/json')
+
+    def test_a_service_the_connection_does_not_hold_is_named(self):
+        conn = self.connect([])
+        success, result = openstack.fetch_json(conn, 'volumev3', '/limits')
+        self.assertFalse(success)
+        self.assertIn('volumev3', result)
+        self.assertEqual(self.fetch.calls, [])
+
+    def test_an_error_document_reaches_the_caller_with_its_reason(self):
+        conn = self.connect(
+            [
+                (
+                    False,
+                    {
+                        'status_code': 403,
+                        'response': '{"forbidden": {"message": "Policy does not allow"}}',
+                    },
+                )
+            ]
+        )
+        success, result = openstack.fetch_json(conn, 'compute', '/limits')
+        self.assertFalse(success)
+        self.assertEqual(result, 'HTTP 403: Policy does not allow')
+
+    def test_a_rejected_cached_token_is_replaced_and_the_request_repeated(self):
+        conn = self.connect(
+            [
+                (False, {'status_code': 401, 'response': '{}'}),
+                (True, token_response()),
+                (True, {'response_json': {'limits': {}}, 'status_code': 200}),
+            ]
+        )
+        success, result = openstack.fetch_json(conn, 'compute', '/limits')
+        self.assertTrue(success)
+        self.assertEqual(result, {'limits': {}})
+        self.assertEqual(len(self.fetch.calls), 3)
+        self.assertIn('auth/tokens', self.fetch.calls[1]['target'])
+
+    def test_a_fresh_token_that_is_rejected_is_not_retried(self):
+        self.patch(
+            [(True, token_response()), (False, {'status_code': 401, 'response': '{}'})]
+        )
+        conn = openstack.connect(ENV, ['compute'], cache_name='test')[1]
+        success, result = openstack.fetch_json(conn, 'compute', '/limits')
+        self.assertFalse(success)
+        self.assertIn('401', result)
+        self.assertEqual(len(self.fetch.calls), 2)
+
+    def test_a_cloud_that_stops_answering_says_so(self):
+        conn = self.connect([(False, 'timeout after 8s')])
+        success, result = openstack.fetch_json(conn, 'compute', '/limits')
+        self.assertFalse(success)
+        self.assertEqual(result, 'timeout after 8s')
+
+    def test_a_spent_time_budget_stops_before_the_request(self):
+        conn = self.connect([])
+        conn['deadline'] = time.monotonic() - 1
+        success, result = openstack.fetch_json(conn, 'compute', '/limits')
+        self.assertFalse(success)
+        self.assertIn('time budget', result)
+        self.assertEqual(self.fetch.calls, [])
+
+
+if __name__ == '__main__':
+    unittest.main()
