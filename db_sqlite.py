@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080603'
+__version__ = '2026082501'
 
 import csv
 import functools
@@ -539,6 +539,8 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
 
     ### Notes
     - The table must contain a `timestamp` column (UNIX epoch seconds).
+    - A sensor whose counter is lower than it was is left out too. The counter did not
+      go backwards, it started over, and no rate can be computed across a restart.
     - A sensor with fewer than `count` entries is left out of the result rather than
       blanking out the whole call. Sensors come and go while a consumer runs (an interface
       is brought up, a virtual machine is started), and one of them being new is no reason
@@ -621,6 +623,23 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
 
         load1_delta = perfdata[0]['timestamp'] - perfdata[1]['timestamp']
         loadn_delta = perfdata[0]['timestamp'] - perfdata[count - 1]['timestamp']
+
+        # A counter that is lower than it was did not go backwards, it started over:
+        # the machine was restarted, the service reloaded, the host rebooted. There is
+        # no rate to be had from that, and inventing one is worse than saying nothing.
+        # Negated it would report a busy sensor as idle, and taken as an absolute value
+        # it would report a spike that never happened; either way an alert follows that
+        # nobody can explain. The sensor is left out instead, which the caller already
+        # handles because a sensor without enough history is left out too, and it
+        # returns of its own accord once the samples from before the restart have aged
+        # out of the window.
+        if any(
+            perfdata[0][key] < perfdata[index][key]
+            for key in datacols
+            if key in perfdata[0]
+            for index in (1, count - 1)
+        ):
+            continue
 
         tmp = {sensorcol: sensor_name}
         for key in datacols:

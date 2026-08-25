@@ -610,6 +610,38 @@ class TestIdentifierQuoting(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('typo', msg)
 
+    def test_compute_load_skips_a_counter_that_started_over(self):
+        # A machine rebooted between two runs, so its counter is lower than it was.
+        # Dividing across that gives a negative rate, and a check comparing it with a
+        # threshold reports a machine that had simply restarted as critical.
+        db.create_table(self.conn, 'name TEXT, a INTEGER, timestamp INT', table='t')
+        for timestamp, value in ((1, 100), (2, 200), (3, 5)):
+            db.insert(
+                self.conn,
+                {'name': 'vm', 'a': value, 'timestamp': timestamp},
+                table='t',
+            )
+        db.commit(self.conn)
+        self.assertEqual(
+            db.compute_load(self.conn, 'name', ['a'], 3, table='t'), (True, False)
+        )
+
+    def test_compute_load_returns_once_the_restart_has_aged_out(self):
+        # And it comes back of its own accord as soon as the samples from before the
+        # restart have left the window.
+        db.create_table(self.conn, 'name TEXT, a INTEGER, timestamp INT', table='t')
+        for timestamp, value in ((1, 100), (2, 5), (3, 10), (4, 20)):
+            db.insert(
+                self.conn,
+                {'name': 'vm', 'a': value, 'timestamp': timestamp},
+                table='t',
+            )
+        db.commit(self.conn)
+        ok, load = db.compute_load(self.conn, 'name', ['a'], 3, table='t')
+        self.assertTrue(ok)
+        self.assertEqual(load[0]['a1'], 10)
+        self.assertEqual(load[0]['an'], 7.5)
+
     @unittest.skipUnless(HAS_GENERATED_COLUMNS, 'needs SQLite 3.31.0')
     def test_create_index_accepts_generated_column(self):
         # PRAGMA table_info omits generated columns, so validating against it rejected a column

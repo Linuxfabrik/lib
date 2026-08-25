@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * db_sqlite.py: `compute_load()` reports the sensors that already have enough samples instead of answering with nothing at all while a single new sensor warms up.
+* db_sqlite.py: `compute_load()` leaves out a sensor whose counter is lower than it was instead of reporting a negative rate. A counter does not go backwards, it starts over, and a check that divided across a restart alerted on a machine that had simply been rebooted.
 * url.py: `fetch()` says what is wrong with a certificate that does not verify and what to do about it, instead of repeating the library's own wording. An incomplete chain, an expired certificate, a private issuer and a name mismatch are told apart.
 * url.py: `fetch()` points out that a plaintext request may have been sent to a port that speaks TLS, instead of only reporting that the server disconnected.
 
