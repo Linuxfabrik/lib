@@ -21,7 +21,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082502'
+__version__ = '2026082503'
 
 
 def run(test_instance, plugin, testcase):
@@ -244,6 +244,28 @@ def attach_each(test_class, items, action, id_func=str):
 NO_CONTAINER_ENV = 'LFTEST_NO_CONTAINER'
 
 
+def _container_runtime_problem():
+    """Say why a container may not or cannot be started, or `None` if it can."""
+    if os.environ.get(NO_CONTAINER_ENV):
+        return f'{NO_CONTAINER_ENV} is set'
+    try:
+        import testcontainers  # noqa: F401
+    except ImportError:
+        return 'testcontainers is not installed; run `pip install testcontainers`'
+    return None
+
+
+def container_runtime_available():
+    """Say whether a test may and can start a container.
+
+    For a `setUpModule()` that prepares containers for the tests that need
+    them: it must return quietly rather than skip, because skipping there
+    takes the whole file with it, including the tests that need no container.
+    A single test asks with :func:`require_container_runtime` instead.
+    """
+    return _container_runtime_problem() is None
+
+
 def require_container_runtime():
     """Skip the calling test unless it may and can start a container.
 
@@ -258,14 +280,9 @@ def require_container_runtime():
     """
     import unittest
 
-    if os.environ.get(NO_CONTAINER_ENV):
-        raise unittest.SkipTest(f'{NO_CONTAINER_ENV} is set')
-    try:
-        import testcontainers  # noqa: F401
-    except ImportError as e:
-        raise unittest.SkipTest(
-            'testcontainers is not installed; run `pip install testcontainers`'
-        ) from e
+    problem = _container_runtime_problem()
+    if problem:
+        raise unittest.SkipTest(problem)
 
 
 @contextlib.contextmanager
