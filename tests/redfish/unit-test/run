@@ -168,6 +168,11 @@ CAP_500GB = human.bytes2human(500000000000)  # '465.7GiB'
 # X-Auth-Token header, lower-cased by lib.url (RFC 9110, section 5.1).
 SESSION_CREATED = (True, {'response_header': {'x-auth-token': 'new-token'}})
 
+UNAUTHORIZED = (
+    'HTTP error "401 Unauthorized" while fetching '
+    'https://203.0.113.10/redfish/v1/Chassis'
+)
+
 
 def _args(**over):
     """Build a minimal args namespace with sane, RFC-5737 defaults."""
@@ -228,17 +233,22 @@ class TestGetAuthHeader(unittest.TestCase):
         ]
         header = redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=3600)
         self.assertEqual(header, {'X-Auth-Token': 'new-token'})
-        # min(3600, 300 - 8) = 292, cached until now + 292
-        cache_mock.set.assert_called_once_with(
-            TOKEN_KEY, 'new-token', 1000 + 292, filename=redfish.CACHE_FILENAME
+        # 300 - 8 = 292, cached until now + 292
+        self.assertEqual(
+            cache_mock.set.call_args_list[0][0],
+            (TOKEN_KEY, 'new-token', 1000 + 292),
         )
 
     @mock.patch.object(redfish, 'time')
     @mock.patch.object(redfish, 'cache')
     @mock.patch.object(redfish, 'url')
-    def test_cache_expire_caps_a_large_session_timeout(
+    def test_cache_expire_does_not_cap_the_session_timeout(
         self, url_mock, cache_mock, time_mock
     ):
+        # A token is a credential, not data that goes stale: it stays valid until the
+        # session ends, so cache_expire (which keeps fetched data fresh) must not shorten
+        # it. Capping it here used to force a login, and therefore a new session, every
+        # cache_expire seconds, leaving the controller with one session per interval.
         cache_mock.get.return_value = False
         time_mock.now.return_value = 1000
         url_mock.fetch_json.side_effect = [
@@ -246,8 +256,8 @@ class TestGetAuthHeader(unittest.TestCase):
             (True, {'SessionTimeout': 86400}),
         ]
         redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=60)
-        # min(60, 86400 - 8) = 60
-        self.assertEqual(cache_mock.set.call_args[0][2], 1000 + 60)
+        # 86400 - 8, not the 60 of cache_expire
+        self.assertEqual(cache_mock.set.call_args_list[0][0][2], 1000 + 86392)
 
     @mock.patch.object(redfish, 'time')
     @mock.patch.object(redfish, 'cache')
@@ -332,6 +342,200 @@ class TestGetAuthHeader(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # get_chassis
 # ---------------------------------------------------------------------------
+
+class TestSessionLifecycle(unittest.TestCase):
+    """The session a login creates must not outlive its usefulness on the controller."""
+
+    def setUp(self):
+        redfish._AUTH['renewable'] = True
+        redfish._AUTH['args'] = None
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_session_is_remembered_for_the_next_run_to_delete(
+        self, url_mock, cache_mock, time_mock
+    ):
+        # The run that opens a session is gone by the time its token expires, so the
+        # session's URL and token are cached for the next run to hand back.
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.side_effect = [
+            (
+                True,
+                {
+                    'response_header': {
+                        'x-auth-token': 'new-token',
+                        'location': '/redfish/v1/SessionService/Sessions/7',
+                    }
+                },
+            ),
+            (True, {'SessionTimeout': 300}),
+        ]
+        redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=3600)
+        stored = [
+            c for c in cache_mock.set.call_args_list if c[0][0].endswith('-session')
+        ]
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(
+            json.loads(stored[0][0][1]),
+            {
+                'uri': 'https://203.0.113.10/redfish/v1/SessionService/Sessions/7',
+                'token': 'new-token',
+            },
+        )
+        # kept for as long as the controller keeps the session, not just as long as the token
+        self.assertEqual(stored[0][0][2], 1000 + 300)
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_previous_session_is_handed_back_before_a_new_login(
+        self, url_mock, cache_mock
+    ):
+        # A stored session note makes the next login delete its predecessor first.
+        def _get(key, **kwargs):
+            if key.endswith('-session'):
+                return json.dumps(
+                    {
+                        'uri': 'https://203.0.113.10/redfish/v1/SessionService/Sessions/1',
+                        'token': 'old-token',
+                    }
+                )
+            return False
+
+        cache_mock.get.side_effect = _get
+        url_mock.fetch.return_value = (True, '')
+        url_mock.fetch_json.side_effect = [SESSION_CREATED, (True, {})]
+        redfish.get_auth_header(_args(), cache_expire=300)
+        url_mock.fetch.assert_called_once()
+        self.assertEqual(
+            url_mock.fetch.call_args[0][0],
+            'https://203.0.113.10/redfish/v1/SessionService/Sessions/1',
+        )
+        self.assertEqual(url_mock.fetch.call_args[1]['method'], 'DELETE')
+        self.assertEqual(
+            url_mock.fetch.call_args[1]['header']['X-Auth-Token'], 'old-token'
+        )
+
+    @mock.patch.object(redfish, 'url')
+    def test_session_url_is_pinned_to_the_operator_supplied_host(self, url_mock):
+        # A controller naming another host in Location must not receive the token.
+        result = {
+            'response_header': {
+                'location': 'https://evil.example.com/redfish/v1/SessionService/Sessions/1'
+            }
+        }
+        self.assertEqual(
+            redfish._session_url('https://203.0.113.10', result),
+            'https://203.0.113.10/redfish/v1/SessionService/Sessions/1',
+        )
+
+    @mock.patch.object(redfish, 'url')
+    def test_login_retries_are_capped(self, url_mock):
+        # A controller creates the session before it answers, so an abandoned attempt
+        # leaves one behind. A caller's read budget must not be spent on logins.
+        url_mock.fetch_json.side_effect = [(False, 'boom')]
+        redfish.get_auth_header(_args(RETRIES=10), cache_expire=0)
+        self.assertEqual(
+            url_mock.fetch_json.call_args[1]['retries'], redfish.MAX_LOGIN_RETRIES
+        )
+
+
+class TestUnauthorizedDetection(unittest.TestCase):
+    """`_is_unauthorized()` reads an error string produced by `lib.url`, so pin the format."""
+
+    def test_recognises_a_real_401_from_lib_url(self):
+        # Built the way url.fetch() builds it, so a change to its wording fails here
+        # instead of silently disabling token renewal.
+        message = (
+            'HTTP error "401 Unauthorized" while fetching '
+            'https://203.0.113.10/redfish/v1/Chassis'
+        )
+        self.assertTrue(redfish._is_unauthorized(message))
+
+    def test_ignores_every_other_failure(self):
+        for message in (
+            'HTTP error "500 Internal Server Error" while fetching https://203.0.113.10/x',
+            'HTTP error "403 Forbidden" while fetching https://203.0.113.10/x',
+            'URL error "The read operation timed out" for https://203.0.113.10/x',
+            '',
+            None,
+        ):
+            self.assertFalse(redfish._is_unauthorized(message), message)
+
+
+class TestAuthRenewal(unittest.TestCase):
+    """A 401 on a read means the session died, not that the credentials are wrong."""
+
+    def setUp(self):
+        redfish._AUTH.update(
+            {
+                'args': _args(),
+                'cache_expire': 300,
+                'cache_filename': redfish.CACHE_FILENAME,
+                'token_key': TOKEN_KEY,
+                'renewable': True,
+            }
+        )
+
+    def tearDown(self):
+        redfish._AUTH['args'] = None
+        redfish._AUTH['renewable'] = True
+
+    def test_only_a_401_on_a_read_triggers_a_renewal(self):
+        self.assertTrue(redfish._should_renew('collection', (False, UNAUTHORIZED)))
+        # not on the requests that are themselves the login
+        self.assertFalse(redfish._should_renew('login', (False, UNAUTHORIZED)))
+        self.assertFalse(redfish._should_renew('sessionsvc', (False, UNAUTHORIZED)))
+        # not on a success, and not on another failure
+        self.assertFalse(redfish._should_renew('collection', (True, {})))
+        self.assertFalse(redfish._should_renew('collection', (False, 'timed out')))
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_renewal_replaces_the_token_in_the_caller_s_header(self, url_mock, cache_mock):
+        # The header dict is the one the caller passes to every fetch, so updating it in
+        # place is what makes the requests after the retry carry the new token too.
+        cache_mock.get.return_value = False
+        url_mock.fetch_json.side_effect = [SESSION_CREATED, (True, {})]
+        header = {'Accept': 'application/json', 'X-Auth-Token': 'stale-token'}
+        self.assertTrue(redfish._renew_auth(header))
+        self.assertEqual(header['X-Auth-Token'], 'new-token')
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_a_basic_auth_renewal_drops_the_dead_token(self, url_mock, cache_mock):
+        # Falling back to Basic must not leave the rejected token beside it.
+        cache_mock.get.return_value = False
+        url_mock.fetch_json.side_effect = [(False, 'no session service')]
+        header = {'X-Auth-Token': 'stale-token'}
+        self.assertTrue(redfish._renew_auth(header))
+        self.assertNotIn('X-Auth-Token', header)
+        self.assertIn('Authorization', header)
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_renews_at_most_once_per_run(self, url_mock, cache_mock):
+        # With wrong credentials every request comes back 401; renewing on each of them
+        # would flood the controller with logins instead of failing quickly.
+        cache_mock.get.return_value = False
+        url_mock.fetch_json.side_effect = [SESSION_CREATED, (True, {})]
+        header = {'X-Auth-Token': 'stale-token'}
+        self.assertTrue(redfish._renew_auth(header))
+        self.assertFalse(redfish._renew_auth(header))
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_a_refused_login_disables_renewal(self, url_mock, cache_mock):
+        # The controller rejected the credentials themselves, so a later 401 on a read is
+        # not a stale token and logging in again would only repeat the refusal.
+        cache_mock.get.return_value = False
+        url_mock.fetch_json.side_effect = [(False, UNAUTHORIZED)]
+        redfish.get_auth_header(_args(), cache_expire=300)
+        self.assertFalse(redfish._AUTH['renewable'])
+        self.assertFalse(redfish._should_renew('collection', (False, UNAUTHORIZED)))
+
+
 class TestGetChassis(unittest.TestCase):
     def test_full_payload(self):
         out = redfish.get_chassis(load(CHASSIS_BODY))

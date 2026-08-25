@@ -11,13 +11,16 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026071404'
+__version__ = '2026082501'
 
+import atexit
 import base64
 import json
+import os
+import sys
 import urllib.parse
 
-from . import base, cache, human, time, txt, url
+from . import base, cache, db_sqlite, disk, human, time, txt, url
 from .globals import STATE_CRIT, STATE_OK, STATE_WARN
 
 # Shared cache database filename for the Redfish fetch layer. The fetch helpers below cache by URL,
@@ -41,6 +44,41 @@ MAX_EXPAND_LEVELS = 3
 # to a plain request if the controller rejects it, so this stays safe on controllers without
 # `$expand`.
 DEFAULT_EXPAND = '?$expand=.($levels=1)'
+
+# File the diagnostic trace is written to, inside the same per-user directory as the cache
+# database. The trace is a support aid: it records what this library asked the controller for,
+# how long each request took and which path the authentication took, so a slow or flapping check
+# can be diagnosed from one file instead of from a dozen hand-run curl commands. A check writes
+# it only when its `--verbose` switch turned the trace on; otherwise the trace costs one `if` per
+# request and nothing is opened. See `start_trace()` for why this goes to a file rather than to
+# the check's output.
+# Upper bound for the extra attempts a login is given, however high a caller's own retry budget
+# is. A login is not a read: a controller creates the session before it answers, so an attempt the
+# client abandons on timeout still leaves a session behind on the controller (measured: three
+# attempts against a controller answering slower than the timeout left three sessions). Retrying a
+# login as often as a GET would therefore exhaust the controller's session pool, which is the very
+# condition that makes logins fail. Two extra attempts cover a dropped request without turning a
+# slow controller into a flooded one.
+MAX_LOGIN_RETRIES = 2
+
+TRACE_FILENAME = 'linuxfabrik-monitoring-plugins-redfish-trace.log'
+
+# Sentence a check appends to its own `--verbose` help, so all Redfish checks describe the trace
+# in the same words and an admin is told where to look before the check has run once. Kept free
+# of a literal '%', which argparse would try to expand.
+TRACE_HELP = (
+    'For this check that also writes a trace of every Redfish request, with timings, to '
+    + TRACE_FILENAME
+    + " below the temporary directory. Unlike this check's output, the trace survives a check "
+    'that the monitoring server terminates for exceeding its timeout, which is what makes it '
+    'useful against a slow management controller.'
+)
+
+# Upper bound for the trace file, in bytes. A check that runs every minute would otherwise fill
+# the temporary directory while an admin leaves `--verbose` on over a weekend. Once the file has
+# grown past this, `start_trace()` refuses instead of appending, so an admin is told to move the
+# file away rather than losing the temporary directory to it.
+TRACE_MAX_BYTES = 10 * 1024 * 1024
 
 CHASSIS_FAN_KEYS = (
     'FanName',
@@ -371,6 +409,269 @@ VOLUME_NESTED_KEYS = {
 }
 
 
+# Diagnostic trace state. `_TRACE['fd']` is the open trace file descriptor and doubles as the
+# on/off switch: everything below returns immediately while it is None, which is every run that
+# did not call `start_trace()`.
+_TRACE = {
+    'fd': None,
+    'path': '',
+    'started': 0.0,
+    'requests': 0,
+    'seconds': 0.0,
+    # per request kind: [count, seconds], so the summary can say where the time actually went
+    'by_kind': {},
+}
+
+
+def _trace_timestamp():
+    """Return the current local time as `YYYY-MM-DD HH:MM:SS.mmm`.
+
+    Millisecond resolution, because the point of the trace is to tell a request that took 200 ms
+    apart from one that took 8 s, and because the gap between two consecutive lines is what
+    reveals time spent outside the requests.
+    """
+    return time.now(as_type='datetime').strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+
+
+def _trace_pid():
+    """Return the current process id, padded, for the trace's second column.
+
+    A host's Redfish checks are scheduled together and append to the same file, so their lines
+    interleave. Without a process id on every line the file cannot be split back into the runs it
+    came from, and a `+12.000s` from one check reads as if it belonged to another. With it,
+    `grep` on one id yields one check's run.
+    """
+    return f'{os.getpid():>7}'
+
+
+def _trace(event, detail):
+    """Append one line to the trace file, if the trace is on.
+
+    The line carries an absolute timestamp, the seconds elapsed since `start_trace()`, a
+    fixed-width event name and a free-form detail, so an admin can both read it top to bottom and
+    `grep`/`awk` it by column.
+
+    Every line is passed through `txt.sanitize_sensitive_data()` before it is written. Callers
+    are expected to keep credentials out of the detail in the first place (this module never
+    passes a request header, a request body or a session token in here), but the trace is a file
+    an admin mails to a bug tracker, so the redaction is applied unconditionally as a second
+    line of defence.
+
+    Failures are swallowed: a diagnostic aid must never turn a working check into an UNKNOWN
+    because the temporary directory filled up mid-run.
+    """
+    if _TRACE['fd'] is None:
+        return
+    elapsed = time.now(as_type='float') - _TRACE['started']
+    line = f'{_trace_timestamp()}  {_trace_pid()}  +{elapsed:7.3f}s  {event:<9}  {detail}\n'
+    try:
+        os.write(_TRACE['fd'], txt.sanitize_sensitive_data(line).encode('utf-8'))
+    except OSError:
+        pass
+
+
+def _trace_summary():
+    """Write the closing summary and close the trace file. Registered with `atexit`.
+
+    Runs on a normal exit and on `sys.exit()`, but not when the process is killed by a signal,
+    which is exactly the case this trace exists for. That is why every line above is written and
+    flushed as it happens (unbuffered `os.write()`) instead of being collected and printed at the
+    end: a check that the monitoring server terminates for exceeding its timeout still leaves a
+    complete trace up to the moment it was killed, just without this summary. A trace whose last
+    line is a request that never completed is the finding.
+    """
+    if _TRACE['fd'] is None:
+        return
+    wall = time.now(as_type='float') - _TRACE['started']
+    other = wall - _TRACE['seconds']
+    _trace(
+        'summary',
+        f'{_TRACE["requests"]} requests, {_TRACE["seconds"]:.3f}s waiting for the '
+        f'controller, {other:.3f}s elsewhere, {wall:.3f}s total',
+    )
+    # Break the controller time down by what was being read. This is the line that names the
+    # culprit: 60 member requests worth 55s say the collection was not inlined, while a single
+    # login worth 55s says the controller is slow to authenticate.
+    for kind, (count, seconds) in sorted(
+        _TRACE['by_kind'].items(), key=lambda item: item[1][1], reverse=True
+    ):
+        share = 100 * seconds / wall if wall > 0 else 0
+        _trace(
+            'summary',
+            f'  {seconds:8.3f}s ({share:4.1f}% of the run) in {count} {kind} '
+            f'request(s), {seconds / count:.3f}s each on average',
+        )
+    try:
+        os.close(_TRACE['fd'])
+    except OSError:
+        pass
+    _TRACE['fd'] = None
+
+
+def start_trace(path='', filename=TRACE_FILENAME):
+    """
+    Start writing a diagnostic trace of every Redfish request this run makes.
+
+    Turn this on from a check's `--verbose` switch. It records, line by line and with millisecond
+    timestamps, which URL was requested with which timeout and retry budget, how long the
+    controller took to answer, whether an answer came from the shared cache, which `$expand`
+    support the controller advertised, whether its members arrived inlined or had to be fetched
+    one by one, and which of the three authentication paths (cached token, fresh session, Basic
+    fallback) the run took. Between them, those lines answer why a check against a slow
+    management controller runs long, without an admin having to reproduce the walk by hand.
+
+    The trace goes to a file rather than to the check's output on purpose. A check that runs long
+    enough to be diagnosed is usually a check the monitoring server terminates with `SIGTERM`,
+    and a terminated check produces no output at all: whatever it would have printed dies with
+    it. The file is written as the run progresses, so it survives that termination and still
+    shows where the time went.
+
+    The file lives in the same per-user, `0700` directory as the cache database, and is created
+    with `0600` and `O_NOFOLLOW`, so a symlink planted at a predictable path under a shared
+    temporary directory cannot redirect the write (CWE-59/CWE-377, the same reasoning as
+    `db_sqlite.get_db_dir()`).
+
+    Repeated runs append, so a flapping check can be left tracing for several cycles and compared
+    across them; a header line separates the runs. Once the file has grown past
+    `TRACE_MAX_BYTES` this refuses instead of appending.
+
+    ### Parameters
+    - **path** (`str`, optional): Directory to place the trace file in. Defaults to the system
+      temporary directory.
+    - **filename** (`str`, optional): Name of the trace file (a plain basename).
+      Defaults to `TRACE_FILENAME`.
+
+    ### Returns
+    - **tuple** (`bool`, `str`):
+      - `(True, path)` with the absolute path of the trace file on success. Tell the admin where
+        it is: a trace nobody can find is not a diagnostic.
+      - `(False, error)` if the file cannot be opened, so a `--verbose` run that silently traces
+        nowhere is impossible.
+
+    ### Example
+    >>> success, trace_path = start_trace()
+    >>> success
+    True
+    """
+    if _TRACE['fd'] is not None:
+        return True, _TRACE['path']
+    if filename in ('.', '..') or os.path.basename(filename) != filename:
+        return False, f'Refusing unsafe trace filename: {filename!r}'
+    if not path:
+        path = disk.get_tmpdir()
+    # Reuse the hardened per-user directory the cache database already lives in, so the trace
+    # inherits its ownership and permission checks instead of repeating them here.
+    success, trace_dir = db_sqlite.get_db_dir(path)
+    if not success:
+        return False, trace_dir
+    trace_path = os.path.join(trace_dir, filename)
+    try:
+        size = os.path.getsize(trace_path)
+    except OSError:
+        size = 0
+    if size > TRACE_MAX_BYTES:
+        return False, (
+            f'Trace file {trace_path} has grown past {human.bytes2human(TRACE_MAX_BYTES)}, '
+            f'refusing to append. Move it away to start a new one.'
+        )
+    try:
+        # O_NOFOLLOW: refuse to open a symlink sitting at the trace path. O_APPEND: several
+        # Redfish checks on the same host trace into the same file, and append-mode writes of
+        # this size do not interleave. 0o600: the trace names hosts and URLs.
+        fd = os.open(
+            trace_path,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
+            0o600,
+        )
+    except OSError as e:
+        return False, f'Cannot open trace file {trace_path}: {e}'
+
+    _TRACE['fd'] = fd
+    _TRACE['path'] = trace_path
+    _TRACE['started'] = time.now(as_type='float')
+    _TRACE['requests'] = 0
+    _TRACE['seconds'] = 0.0
+    atexit.register(_trace_summary)
+
+    # Identify the run: which check, which version of it, which version of this library, and the
+    # process id, so lines from Redfish checks tracing concurrently into this file can be told
+    # apart.
+    main_module = sys.modules.get('__main__')
+    check = os.path.basename(getattr(main_module, '__file__', '') or 'unknown')
+    check_version = getattr(main_module, '__version__', '') or 'unknown'
+    _trace(
+        'start',
+        f'{check} v{check_version}, lib/redfish.py v{__version__}. Columns: timestamp, pid, '
+        f'seconds since this run started, event, detail',
+    )
+    return True, trace_path
+
+
+def _fetch_json(what, url_string, timeout=8, retries=0, **kwargs):
+    """Fetch JSON through `url.fetch_json()`, timing and tracing the call.
+
+    Every request this module makes goes through here, so the trace sees all of them and the
+    timing is measured in exactly one place. With the trace off this adds one `if` to the call.
+
+    `url.fetch_json()` retries internally, so the measured duration covers all `retries + 1`
+    attempts. Both numbers are traced alongside it, which is what makes a long line readable: a
+    request logged as `timeout=8 retries=10` that took 88 s spent them being retried, while one
+    that took 88 s at `retries=0` was answered slowly by the controller. Note that `timeout` is
+    an httpx per-phase timeout, not a deadline for the whole request, so a controller that keeps
+    dribbling out a large response can exceed it without ever tripping it.
+
+    ### Parameters
+    - **what** (`str`): Short label for the trace, naming what is being read (e.g. `collection`).
+    - **url_string** (`str`): The URL to fetch.
+    - **timeout**, **retries**, **kwargs**: Forwarded to `url.fetch_json()`.
+
+    ### Returns
+    - **tuple** (`bool`, `dict` | `list` | `str`): Whatever `url.fetch_json()` returned.
+    """
+    if _TRACE['fd'] is None:
+        result = url.fetch_json(url_string, timeout=timeout, retries=retries, **kwargs)
+        if _should_renew(what, result) and _renew_auth(kwargs.get('header')):
+            result = url.fetch_json(
+                url_string, timeout=timeout, retries=retries, **kwargs
+            )
+        return result
+
+    method = kwargs.get('method') or ('POST' if kwargs.get('data') else 'GET')
+    started = time.now(as_type='float')
+    result = url.fetch_json(url_string, timeout=timeout, retries=retries, **kwargs)
+    if _should_renew(what, result) and _renew_auth(kwargs.get('header')):
+        result = url.fetch_json(url_string, timeout=timeout, retries=retries, **kwargs)
+    elapsed = time.now(as_type='float') - started
+
+    _TRACE['requests'] += 1
+    _TRACE['seconds'] += elapsed
+    kind = _TRACE['by_kind'].setdefault(what, [0, 0.0])
+    kind[0] += 1
+    kind[1] += elapsed
+
+    success, payload = result
+    if success:
+        # Size of the parsed document re-serialized, not the size on the wire: the wire size is
+        # not handed back by `fetch_json()` without switching every caller to `extended=True`,
+        # which would change the code path being measured. It is the right order of magnitude for
+        # spotting the response that is slow because it is large.
+        try:
+            size = human.bytes2human(len(json.dumps(payload)))
+        except (TypeError, ValueError):
+            size = 'n/a'
+        outcome = f'ok {size}'
+    else:
+        # `url.fetch_json()` appends ' while fetching <url>' to its errors. The URL is already
+        # this line's last column, so strip the repetition and keep the line readable.
+        outcome = f'FAILED {str(payload).split(" while fetching ")[0]}'
+    _trace(
+        'request',
+        f'{elapsed:7.3f}s  {method:<4} {what:<10} timeout={timeout} retries={retries}  '
+        f'{outcome}  {url_string}',
+    )
+    return result
+
+
 def _cache_read(cache_key, cache_expire, cache_filename):
     """Return the cached JSON value stored under `cache_key`, or `None` on a miss.
 
@@ -530,11 +831,14 @@ def fetch_collection(
     cache_key = f'redfish-{collection_url}'
     cached = _cache_read(cache_key, cache_expire, cache_filename)
     if cached is not None:
+        _trace('cache', f'hit   collection  {collection_url}')
         return True, cached
+    _trace('cache', f'miss  collection  {collection_url}')
     # `expand` is the `$expand` query suffix (default: one level of subordinate members). It is
     # derived from the controller's advertised expand support by `get_expand_suffix()`, so it is
     # our own literal and cannot smuggle in a different authority the way an `@odata.id` could.
-    success, collection = url.fetch_json(
+    success, collection = _fetch_json(
+        'collection',
         f'{collection_url}{expand}',
         header=header,
         insecure=insecure,
@@ -544,7 +848,13 @@ def fetch_collection(
     )
     if not (success and isinstance(collection, dict)):
         # controller rejected or could not answer the $expand query: read it plainly
-        success, collection = url.fetch_json(
+        _trace(
+            'expand',
+            f'the $expand request failed, falling back to a plain request. Everything this '
+            f'collection holds now costs one request per member: {collection_url}',
+        )
+        success, collection = _fetch_json(
+            'plain',
             collection_url,
             header=header,
             insecure=insecure,
@@ -553,6 +863,16 @@ def fetch_collection(
             retries=retries,
         )
     if success and isinstance(collection, dict):
+        members = collection.get('Members', [])
+        if isinstance(members, list):
+            inlined = len(
+                [m for m in members if isinstance(m, dict) and is_member_expanded(m)]
+            )
+            _trace(
+                'members',
+                f'{len(members)} members, {inlined} inlined by the controller, '
+                f'{len(members) - inlined} still to fetch one by one: {collection_url}',
+            )
         _cache_write(collection, cache_key, cache_expire, cache_filename)
         return True, collection
     return success, collection
@@ -623,8 +943,12 @@ def fetch_members(
             return False, member_url
         cache_key = f'redfish-{member_url}'
         member_data = _cache_read(cache_key, cache_expire, cache_filename)
+        if member_data is not None:
+            _trace('cache', f'hit   member      {member_url}')
         if member_data is None:
-            success, member_data = url.fetch_json(
+            _trace('cache', f'miss  member      {member_url}')
+            success, member_data = _fetch_json(
+                'member',
                 member_url,
                 header=header,
                 insecure=insecure,
@@ -676,8 +1000,11 @@ def fetch_resource(
     cache_key = f'redfish-{resource_url}'
     cached = _cache_read(cache_key, cache_expire, cache_filename)
     if cached is not None:
+        _trace('cache', f'hit   resource    {resource_url}')
         return True, cached
-    success, resource = url.fetch_json(
+    _trace('cache', f'miss  resource    {resource_url}')
+    success, resource = _fetch_json(
+        'resource',
         resource_url,
         header=header,
         insecure=insecure,
@@ -688,6 +1015,215 @@ def fetch_resource(
     if success and isinstance(resource, dict):
         _cache_write(resource, cache_key, cache_expire, cache_filename)
     return success, resource
+
+
+# What this run authenticated with, so a request that comes back "401 Unauthorized" can log in
+# again without every caller having to thread the credentials through. `header` is the very dict
+# the caller passes to the fetch helpers: renewing updates it in place, so the requests that
+# follow carry the new token too.
+_AUTH = {
+    'args': None,
+    'cache_expire': 0,
+    'cache_filename': CACHE_FILENAME,
+    'token_key': None,  # nosec B105 - the cache key naming the token, not a credential
+    # False once renewing has been tried, or once the controller has shown that the credentials
+    # themselves are rejected, in which case logging in again would only repeat the refusal.
+    'renewable': True,
+}
+
+# Requests that are themselves part of logging in. A 401 on one of these means the credentials
+# are wrong, not that a token went stale, so renewing on them would log in forever.
+_AUTH_REQUEST_KINDS = ('login', 'sessionsvc')
+
+
+def _is_unauthorized(payload):
+    """Say whether a failed fetch failed because the controller rejected the credentials.
+
+    `url.fetch_json()` reports an HTTP error as the string `HTTP error "401 Unauthorized" while
+    fetching ...`, which is what this recognizes. It is deliberately narrow: any other failure
+    (a timeout, a connection refused, a 500) must not trigger a new login.
+
+    The unit tests pin this against a real 401 from `url.fetch_json()`, so a change to its error
+    wording is caught there rather than silently disabling token renewal.
+    """
+    return isinstance(payload, str) and payload.startswith('HTTP error "401 ')
+
+
+def _should_renew(what, result):
+    """Say whether a fetch result warrants logging in again and retrying.
+
+    Only a 401 does, only on a request that is not itself part of logging in, and only while
+    renewing still stands a chance (see `_AUTH['renewable']`).
+    """
+    return (
+        _AUTH['renewable']
+        and not result[0]
+        and what not in _AUTH_REQUEST_KINDS
+        and _is_unauthorized(result[1])
+    )
+
+
+def _renew_auth(header):
+    """Log in again after a 401 and update `header` in place. Returns `True` if it can be retried.
+
+    A cached session token outlives its usefulness the moment the controller drops the session,
+    which it does on a reboot, when its session pool is evicted, or when an admin clears the
+    sessions by hand. Every check on that host then presents a token the controller no longer
+    knows and fails with a 401 until the cache entry expires. Renewing on the spot turns that
+    outage into a single extra login.
+
+    Only ever renews once per run: with wrong credentials every request would come back 401, and
+    retrying each of them would hammer the controller with logins instead of failing quickly.
+    """
+    if not _AUTH['renewable'] or _AUTH['args'] is None or not isinstance(header, dict):
+        return False
+    _AUTH['renewable'] = False
+    _trace(
+        'auth',
+        'the controller rejected the session token, so it dropped the session behind it. '
+        'Logging in again and retrying the request',
+    )
+    # Drop the stale token so this run, and every sibling check reading the same cache, stops
+    # presenting it.
+    if _AUTH['cache_expire'] and _AUTH['token_key']:
+        cache.set(
+            _AUTH['token_key'],
+            '',
+            time.now() - 1,
+            filename=_AUTH['cache_filename'],
+        )
+    fresh = get_auth_header(
+        _AUTH['args'],
+        cache_expire=_AUTH['cache_expire'],
+        cache_filename=_AUTH['cache_filename'],
+    )
+    if not fresh:
+        return False
+    # Replace whichever scheme the header carried: a renewal may come back as Basic auth when the
+    # controller can no longer create a session, and leaving a dead X-Auth-Token beside it would
+    # have the controller reject the retry too.
+    header.pop('X-Auth-Token', None)
+    header.pop('Authorization', None)
+    header.update(fresh)
+    return True
+
+
+def _session_url(base_url, result):
+    """Return the absolute URL of the session a login just created, or `''`.
+
+    Redfish names the new session in the `Location` response header, and most controllers repeat
+    it as `@odata.id` in the body. Either value comes from the controller, so neither is trusted:
+    only the path is taken from it and the scheme and host are pinned to `base_url` by
+    `build_url()`. Without that, a compromised controller could answer a login with
+    `Location: https://evil.example.com/x` and have the follow-up `DELETE` carry the session
+    token there (CWE-918, the same reasoning as `build_url()`).
+
+    ### Parameters
+    - **base_url** (`str`): The operator-supplied Redfish base URL.
+    - **result** (`dict`): The extended `url.fetch_json()` result of the login request.
+
+    ### Returns
+    - **str**: The absolute session URL, or `''` if the controller named none.
+    """
+    if not isinstance(result, dict):
+        return ''
+    # lib.url lower-cases all response header names (RFC 9110, section 5.1).
+    candidates = [result.get('response_header', {}).get('location', '')]
+    body = result.get('response_json')
+    if isinstance(body, dict):
+        candidates.append(body.get('@odata.id', ''))
+    for candidate in candidates:
+        if not isinstance(candidate, str) or not candidate:
+            continue
+        # Take the path only, so an absolute URL naming another host cannot survive.
+        success, session_url = build_url(
+            base_url, urllib.parse.urlsplit(candidate).path
+        )
+        if success:
+            return session_url
+    return ''
+
+
+def _delete_session(session_url, token, args):
+    """Hand a Redfish session back to the controller, so it stops occupying a slot.
+
+    A controller keeps a session until its own `SessionTimeout` expires it, which is typically far
+    longer than the interval at which checks log in. Without this, every login leaves its
+    predecessor behind and a host's checks accumulate sessions until the controller's pool is
+    full, at which point new logins fail and every check falls back to Basic auth (and gets
+    slower). Deleting the previous session on the way in keeps exactly one open.
+
+    Failures are ignored on purpose: this is housekeeping, and a controller that refuses the
+    `DELETE` (or has already expired the session itself) must not turn a working check into an
+    UNKNOWN. It is given no retries and never blocks a check for long.
+
+    ### Parameters
+    - **session_url** (`str`): Absolute URL of the session, as `_session_url()` pinned it.
+    - **token** (`str`): The session's own token, which is what authorizes deleting it.
+    - **args** (object): must provide `INSECURE`, `NO_PROXY` and `TIMEOUT`.
+
+    ### Returns
+    - **bool**: `True` if the controller confirmed the deletion.
+    """
+    if not (session_url and token):
+        return False
+    success, _ = url.fetch(
+        session_url,
+        header={'Accept': 'application/json', 'X-Auth-Token': token},
+        insecure=args.INSECURE,
+        no_proxy=args.NO_PROXY,
+        timeout=args.TIMEOUT,
+        method='DELETE',
+    )
+    # Neutral wording on purpose: this runs both for a predecessor's session on the way in and
+    # for this run's own session on the way out.
+    _trace(
+        'auth',
+        f'{"handed back" if success else "could not hand back"} the session {session_url}',
+    )
+    return success
+
+
+def _drop_previous_session(args, cache_expire, cache_filename):
+    """Delete the session a previous run left behind, before a new one is created.
+
+    The run that created a session is long gone by the time its token expires, so it cannot clean
+    up after itself. Instead the session's URL and token are cached (see `get_auth_header()`) for
+    as long as the controller would keep the session, and the next run to log in deletes it. The
+    cache entry is dropped either way, so a session that cannot be deleted is not retried forever.
+    """
+    if not cache_expire:
+        return
+    session_key = f'redfish-{args.URL}-{args.USERNAME}-session'
+    stored = cache.get(session_key, filename=cache_filename)
+    if not stored:
+        return
+    # Expire the entry first: whatever happens to the DELETE, this session is not ours to
+    # retry, and leaving the entry would have every later run attempt it again.
+    cache.set(session_key, '', time.now() - 1, filename=cache_filename)
+    try:
+        previous = json.loads(stored)
+    except ValueError:
+        return
+    if isinstance(previous, dict):
+        _delete_session(previous.get('uri', ''), previous.get('token', ''), args)
+
+
+def _remember_session(args, session_url, token, ttl, cache_expire, cache_filename):
+    """Remember a session so the next run can hand it back (see `_drop_previous_session()`).
+
+    Stored under its own key rather than with the token, because the two have different lifetimes:
+    the token entry expires when the token should stop being reused, while this one has to outlive
+    it, up to the point where the controller would drop the session on its own.
+    """
+    if not (cache_expire and session_url and token):
+        return
+    cache.set(
+        f'redfish-{args.URL}-{args.USERNAME}-session',
+        json.dumps({'uri': session_url, 'token': token}),
+        time.now() + ttl,
+        filename=cache_filename,
+    )
 
 
 def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
@@ -707,16 +1243,25 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
     (e.g. against an anonymous mockup) it returns an empty header. Only the session token is cached;
     the Basic and empty headers carry no token.
 
-    The cached token's lifetime is bounded by the controller's own `SessionTimeout` (an inactivity
-    timeout in seconds, read back from the SessionService) minus a `TIMEOUT`-sized safety margin, so
-    a token is never reused after the controller would already have dropped the session, which
-    otherwise surfaces as a "401 Unauthorized". `cache_expire` caps that lifetime from above; the
-    effective lifetime is the smaller of the two. When caching is off (`cache_expire` is `0`) the
-    SessionService is not even probed, since there is no lifetime to bound.
+    The cached token's lifetime follows the controller's own `SessionTimeout` (an inactivity
+    timeout in seconds, read back from the SessionService) minus a `TIMEOUT`-sized safety margin,
+    so a token is reused for as long as the session behind it lives. `cache_expire` does not cap
+    it: that setting keeps fetched *data* fresh, while a token stays valid until the session ends,
+    and capping it there meant a new login (and a new session) every `cache_expire` seconds. When
+    caching is off (`cache_expire` is `0`) the SessionService is not probed, since there is no
+    lifetime to bound.
+
+    Should the controller drop the session anyway (a reboot, an evicted session pool, an admin
+    clearing sessions), the next request comes back "401 Unauthorized". That is handled where the
+    request is made: the stale token is dropped from the cache, this function is called again, and
+    the request is retried once. See `_renew_auth()`.
+
+    Each new session is preceded by handing the previous one back to the controller, so a host's
+    checks keep one session open rather than one per login until the controller expires them.
 
     ### Parameters
     - **args** (object): must provide `URL`, `USERNAME`, `PASSWORD`, `INSECURE`, `NO_PROXY` and
-      `TIMEOUT`.
+      `TIMEOUT`. An optional `RETRIES` is honoured for the login, capped at `MAX_LOGIN_RETRIES`.
     - **cache_expire** (`int`, optional): Token cache lifetime cap in seconds; `0` (default) fetches
       a fresh session and does not cache the token.
     - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
@@ -730,16 +1275,36 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
     >>> header.update(get_auth_header(args, cache_expire=300))
     """
     if not (args.USERNAME and args.PASSWORD):
+        _trace('auth', 'no credentials given, requesting anonymously')
         return {}
 
     token_key = f'redfish-{args.URL}-{args.USERNAME}-token'
+    # Remember the inputs so a request that comes back 401 can log in again on its own.
+    _AUTH['args'] = args
+    _AUTH['cache_expire'] = cache_expire
+    _AUTH['cache_filename'] = cache_filename
+    _AUTH['token_key'] = token_key
     if cache_expire:
         cached_token = cache.get(token_key, filename=cache_filename)
         if cached_token:
+            _trace('auth', 'reusing the session token from the cache, no login needed')
             return {'X-Auth-Token': cached_token}
 
+    # About to create a session, so hand back the one a previous run left open first. A
+    # controller's session pool is small, and without this every login adds to it.
+    _drop_previous_session(args, cache_expire, cache_filename)
+
+    # A caller's full retry budget is meant for reads. A login leaves a session behind on the
+    # controller even when the client gives up on it, so it gets a capped budget of its own.
+    login_retries = min(getattr(args, 'RETRIES', 0), MAX_LOGIN_RETRIES)
+    _trace(
+        'auth',
+        f'no usable session token in the cache, logging in with up to {login_retries + 1} '
+        f'attempt(s)',
+    )
     # no cached token: create a new session via the SessionService
-    success, result = url.fetch_json(
+    success, result = _fetch_json(
+        'login',
         f'{args.URL}/redfish/v1/SessionService/Sessions',
         data={'UserName': args.USERNAME, 'Password': args.PASSWORD},
         encoding='serialized-json',
@@ -748,12 +1313,20 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
         timeout=args.TIMEOUT,
+        retries=login_retries,
         method='POST',
     )
     # lib.url lower-cases all response header names (RFC 9110, section 5.1).
     token = ''
+    session_url = ''
     if success and isinstance(result, dict):
         token = result.get('response_header', {}).get('x-auth-token', '')
+        session_url = _session_url(args.URL, result)
+    elif _is_unauthorized(result):
+        # The controller refused the credentials themselves, so a later 401 on a read is not a
+        # stale token and logging in again would only repeat this refusal.
+        _AUTH['renewable'] = False
+        _trace('auth', 'the controller refused these credentials')
     if token:
         if cache_expire:
             # Bound the cached token's lifetime by the controller's own inactivity
@@ -761,7 +1334,11 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
             # the token after the controller would already have dropped the
             # session. cache_expire caps it from above.
             token_ttl = cache_expire
-            success, result = url.fetch_json(
+            # Deliberately without retries: this probe only refines the token's cache lifetime,
+            # and a caller's budget of 10 would spend ten timeouts on a value the fallback below
+            # supplies anyway.
+            success, result = _fetch_json(
+                'sessionsvc',
                 f'{args.URL}/redfish/v1/SessionService',
                 encoding='serialized-json',
                 header={
@@ -780,14 +1357,55 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
                 except (TypeError, ValueError):
                     session_timeout = 0
             if session_timeout > 0:
-                # Subtract a TIMEOUT-sized margin so a token cached at the very edge
-                # of the window still reaches the controller before it drops the
-                # session. Never drop below one second.
-                token_ttl = min(token_ttl, max(session_timeout - args.TIMEOUT, 1))
+                # Keep the token for as long as the controller keeps the session, less a
+                # TIMEOUT-sized margin so a token cached at the very edge of the window still
+                # reaches the controller before it drops the session. Never drop below one
+                # second.
+                #
+                # `cache_expire` deliberately does not cap this. It exists to keep fetched
+                # *data* fresh, but a token is not data that goes stale: it stays valid until
+                # the session ends. Capping the token at `cache_expire` forced a fresh login,
+                # and therefore a fresh session, every `cache_expire` seconds, so a controller
+                # accumulated one session per interval for as long as its own SessionTimeout
+                # lasted. A token that outlives its session is caught by the 401 handling in
+                # `_renew_auth()` instead.
+                token_ttl = max(session_timeout - args.TIMEOUT, 1)
             cache.set(token_key, token, time.now() + token_ttl, filename=cache_filename)
+            # Remember the session for as long as the controller would keep it, so the next run
+            # to log in can hand it back. This has to outlive the token entry above: once that
+            # expires nobody presents the token any more, but the session is still open.
+            _remember_session(
+                args,
+                session_url,
+                token,
+                session_timeout or token_ttl,
+                cache_expire,
+                cache_filename,
+            )
+            _trace(
+                'auth',
+                f'logged in, caching the session token for {token_ttl}s (the controller '
+                f'reports SessionTimeout {session_timeout or "unknown"}s)',
+            )
+        else:
+            # Caching is off, so this session is this run's alone and nothing will ever reuse
+            # it. Hand it back when the process ends instead of leaving it to occupy a slot
+            # until the controller's own timeout expires it.
+            atexit.register(_delete_session, session_url, token, args)
+            _trace(
+                'auth',
+                'logged in, not caching the token (caching is off). The session is handed back '
+                'when this check ends',
+            )
         return {'X-Auth-Token': token}
 
     # session creation failed: fall back to HTTP Basic auth
+    _trace(
+        'auth',
+        'the login did not return a token, falling back to HTTP Basic. Every request now '
+        'carries the credentials, and a controller that opens an internal session per request '
+        'answers all of them more slowly. Nothing is cached, so the next run logs in again',
+    )
     encoded = txt.to_text(
         base64.b64encode(txt.to_bytes(f'{args.USERNAME}:{args.PASSWORD}'))
     )
@@ -1193,9 +1811,11 @@ def get_expand_suffix(
     if cache_expire:
         cached = cache.get(expand_key, filename=cache_filename)
         if cached:
+            _trace('expand', f'reusing the cached $expand suffix {cached!r}')
             return cached
     suffix = DEFAULT_EXPAND
-    success, root = url.fetch_json(
+    success, root = _fetch_json(
+        'root',
         f'{base_url}/redfish/v1',
         header=header,
         insecure=insecure,
@@ -1216,6 +1836,10 @@ def get_expand_suffix(
             suffix = f'?$expand={operator}($levels={levels})'
         else:
             suffix = f'?$expand={operator}'
+    _trace(
+        'expand',
+        f'the controller advertises ExpandQuery {expand or "nothing"}, using {suffix!r}',
+    )
     if cache_expire:
         cache.set(
             expand_key, suffix, time.now() + cache_expire, filename=cache_filename
