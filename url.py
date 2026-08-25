@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082503'
+__version__ = '2026082504'
 
 import base64
 import json
@@ -638,6 +638,22 @@ def compare_github_refs(
         return True, False
 
 
+def _retry(attempt, retries):
+    """Repeat an attempt until it succeeds or the budget is spent.
+
+    `attempt` is a callable returning the usual (success, result) tuple, so what counts as a
+    failed attempt is up to the caller: a request that never arrived for `fetch()`, and a body
+    that holds no JSON for `fetch_json()` on top of that. There is no delay between the
+    attempts, because a check has a limited runtime and a timeout has usually passed already.
+    """
+    count = 0
+    while True:
+        result = attempt()
+        if result[0] or count >= retries:
+            return result
+        count += 1
+
+
 def _fetch_once(
     url,
     insecure=False,
@@ -1037,9 +1053,8 @@ def fetch(
     ...     extended=True,
     ... )
     """
-    attempt = 0
-    while True:
-        result = _fetch_once(
+    return _retry(
+        lambda: _fetch_once(
             url,
             cacert=cacert,
             data=data,
@@ -1058,10 +1073,9 @@ def fetch(
             tls_max=tls_max,
             tls_min=tls_min,
             to_text=to_text,
-        )
-        if result[0] or attempt >= retries:
-            return result
-        attempt += 1
+        ),
+        retries,
+    )
 
 
 def fetch_json(
@@ -1113,8 +1127,8 @@ def fetch_json(
     >>> fetch_json('https://192.0.2.74/api/v2/?resource=cpu')
     (True, {'cpu': {'usage': '45%', 'temperature': '50C'}})
     """
-    attempt = 0
-    while True:
+    def attempt():
+        """Fetch once and decode the body, which is what an attempt is here."""
         success, jsonst = fetch(
             url,
             cacert=cacert,
@@ -1129,26 +1143,25 @@ def fetch_json(
             method=method,
             no_proxy=no_proxy,
             proxy=proxy,
+            response_on_error=response_on_error,
             timeout=timeout,
             tls_max=tls_max,
             tls_min=tls_min,
-            response_on_error=response_on_error,
         )
-        if success:
-            try:
-                if extended:
-                    jsonst['response_json'] = json.loads(jsonst['response'])
-                    result = (True, jsonst)
-                else:
-                    result = (True, json.loads(jsonst))
-            except Exception as e:
-                result = (False, f'{e}. No JSON object could be decoded.')
-        else:
-            result = (False, jsonst)
+        if not success:
+            return (False, jsonst)
+        try:
+            if extended:
+                jsonst['response_json'] = json.loads(jsonst['response'])
+                return (True, jsonst)
+            return (True, json.loads(jsonst))
+        except Exception as e:
+            return (False, f'{e}. No JSON object could be decoded.')
 
-        if result[0] or attempt >= retries:
-            return result
-        attempt += 1
+    # `fetch()` is called without `retries` on purpose: the attempts are counted here, where a
+    # body that arrived intact but holds no JSON counts as a failure too. Handing them down as
+    # well would square them.
+    return _retry(attempt, retries)
 
 
 def get_latest_tag_from_github(

@@ -416,6 +416,29 @@ class TestFetchValidation(unittest.TestCase):
             url.fetch('https://example.com', retries=2)
         self.assertEqual(len(attempts), 3)
 
+    def test_both_public_functions_share_one_retry_loop(self):
+        calls = []
+
+        def failing():
+            calls.append(1)
+            return (False, 'boom')
+
+        self.assertEqual(url._retry(failing, 0), (False, 'boom'))
+        self.assertEqual(len(calls), 1)
+        calls.clear()
+        self.assertEqual(url._retry(failing, 2), (False, 'boom'))
+        self.assertEqual(len(calls), 3)
+
+    def test_the_retry_loop_stops_at_the_first_success(self):
+        calls = []
+
+        def flaky():
+            calls.append(1)
+            return (len(calls) > 1, 'ok' if len(calls) > 1 else 'boom')
+
+        self.assertEqual(url._retry(flaky, 5), (True, 'ok'))
+        self.assertEqual(len(calls), 2)
+
     def test_fetch_json_does_not_multiply_the_attempts(self):
         # `fetch_json` counts the attempts itself, because it also repeats a body that
         # arrived intact but holds no JSON. Handing `retries` down as well would square them.
