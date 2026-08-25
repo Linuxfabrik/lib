@@ -29,7 +29,7 @@ Typical use case:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082401'
+__version__ = '2026082403'
 
 import re
 
@@ -223,16 +223,23 @@ def get_domstats(
     return True, parse_domstats(stdout)
 
 
-def _parse_info_block(stdout):
+def parse_pool_info(stdout):
     """
-    Turn a `Key: value` block, as printed by `virsh pool-info`, into a mapping.
+    Turn the output of `virsh pool-info` into a mapping.
 
     ### Parameters
-    - **stdout** (`str`): Raw output of an info-style virsh sub-command.
+    - **stdout** (`str`): Raw `virsh pool-info` output.
 
     ### Returns
     - **dict**: `{lowercased_key: value}`. A value made up of digits only is
       returned as `int`, every other value as `str`.
+
+    ### Notes
+    - Public for the same reason `parse_domstats()` is: a consumer that replays
+      recorded output rather than talking to a hypervisor needs the same parser the
+      live path uses, and reimplementing it would let the two drift apart.
+    - A line without a colon is skipped, so a heading or a blank line in the output
+      costs nothing.
     """
     info = {}
     for line in stdout.splitlines():
@@ -283,7 +290,39 @@ def get_pool_info(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     )
     if not success:
         return False, stdout
-    return True, _parse_info_block(stdout)
+    return True, parse_pool_info(stdout)
+
+
+def get_pool_xml(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
+    """
+    Return the XML definition of one storage pool.
+
+    ### Parameters
+    - **pool** (`str`): Name of the storage pool.
+    - **uri** (`str`, optional): libvirt connection URI. Defaults to `DEFAULT_URI`.
+    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+
+    ### Returns
+    - **tuple** (`bool`, `str`):
+      - `success` (`bool`): True if the command succeeded, False otherwise.
+      - `result` (`str`): The pool's XML, or an error message.
+
+    ### Notes
+    - Everything about a pool that is not a name, a state or a size lives here and
+      nowhere else: what kind of pool it is, where it points, and what it is built on.
+      `pool-info` reports none of it.
+    - Returned as text rather than parsed, because what a consumer needs out of it
+      differs per pool type and parsing all of it would serve none of them.
+    - The pool name reaches virsh as a positional argument, so a value that looks like
+      an option is refused rather than handed to virsh as one.
+
+    ### Example
+    >>> success, xml = get_pool_xml('default')
+    """
+    success, pool = shell.safe_cli_value(pool, 'pool name')
+    if not success:
+        return False, pool
+    return virsh(['pool-dumpxml', pool], uri=uri, timeout=timeout)
 
 
 def get_pools(uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
