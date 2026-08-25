@@ -29,7 +29,7 @@ Typical use case:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082502'
+__version__ = '2026082503'
 
 import re
 
@@ -382,6 +382,58 @@ def get_pool_xml(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     if not success:
         return False, pool
     return virsh(['pool-dumpxml', pool], uri=uri, timeout=timeout)
+
+
+def group_by_store(measurements, drift=0.01):
+    """
+    Group the storage pools that are looking at one and the same store.
+
+    ### Parameters
+    - **measurements** (`list` of `dict`): One entry per pool, each carrying at least
+      an `available` and a `capacity` byte count, as `get_pool_info()` reports them.
+    - **drift** (`float`, optional): How far the free space two pools report may
+      differ and still count as the same store, as a fraction of its capacity.
+      Defaults to 0.01.
+
+    ### Returns
+    - **list** of `list`: One list per store, holding the measurements that belong to
+      it. Every input entry appears in exactly one of them.
+
+    ### Notes
+    - libvirt never says what a pool sits on. For a directory-backed pool it fills the
+      three sizes from the filesystem the pool's path is on (a `statvfs()`, see
+      `storage_util.c`), so pools sharing a filesystem report it identically and that
+      is what gives them away.
+    - Comparing the figures for equality does not work: the pools are asked one after
+      another and a filesystem being written to moves in between. Measured on an idle
+      workstation, two pools of one filesystem a second apart reported 589.3 GiB and
+      586.1 GiB free, 0.18% of its capacity, enough to split them into two stores.
+    - So the capacity decides, which moves only when somebody resizes the filesystem,
+      and the free space only has to agree within `drift`. Two filesystems that really
+      are separate and happen to be exactly the same size are told apart by the second
+      test, unless they are also equally full to within that fraction, at which point
+      nothing libvirt reports could separate them.
+    - Grouping matters wherever several pools are summed or compared against their
+      storage: four pools of one filesystem each report the whole of it, so adding
+      them up claims storage that exists once as if it existed four times.
+
+    ### Example
+    >>> stores = group_by_store([{'capacity': 100, 'available': 40, 'name': 'a'}])
+    """
+    groups = []
+    for item in sorted(
+        measurements, key=lambda entry: (entry['capacity'], entry['available'])
+    ):
+        for group in groups:
+            other = group[0]
+            if item['capacity'] != other['capacity']:
+                continue
+            if abs(item['available'] - other['available']) <= other['capacity'] * drift:
+                group.append(item)
+                break
+        else:
+            groups.append([item])
+    return groups
 
 
 def parse_volumes(stdout):
