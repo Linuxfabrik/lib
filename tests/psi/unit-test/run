@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.psi, driven by throwaway directory trees that stand in for
+/proc/pressure.
+
+Every sample below is a real capture from a kernel 7.1 host, except where a test
+needs a shape the running kernel does not produce.
+"""
+
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.psi as psi
+
+# What the kernel prints for a resource it accounts for in both directions.
+MEMORY = (
+    'some avg10=27.42 avg60=20.23 avg300=6.34 total=23274839\n'
+    'full avg10=27.42 avg60=20.23 avg300=6.34 total=23235740\n'
+)
+
+# The CPU file of a kernel from before the upstream v5.13 change, which printed no
+# system-level "full" line at all.
+CPU_WITHOUT_FULL = 'some avg10=58.28 avg60=47.23 avg300=17.28 total=133653658\n'
+
+# Interrupt pressure is the one resource the kernel reports without a "some" line.
+IRQ = 'full avg10=0.00 avg60=0.02 avg300=0.00 total=21113035\n'
+
+
+class TestRead(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix='lftest-psi-')
+        os.makedirs(os.path.join(self.root, 'proc/pressure'))
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def write(self, resource, content):
+        with open(os.path.join(self.root, 'proc/pressure', resource), 'w') as f:
+            f.write(content)
+
+    def test_both_lines(self):
+        self.write('memory', MEMORY)
+        success, pressure = psi.read('memory', root=self.root)
+        self.assertTrue(success)
+        self.assertEqual(sorted(pressure), ['full', 'some'])
+        self.assertEqual(pressure['some']['avg10'], 27.42)
+        self.assertEqual(pressure['full']['avg300'], 6.34)
+        self.assertEqual(pressure['full']['total'], 23235740)
+
+    def test_a_kernel_without_the_full_line(self):
+        self.write('cpu', CPU_WITHOUT_FULL)
+        success, pressure = psi.read('cpu', root=self.root)
+        self.assertTrue(success)
+        self.assertEqual(list(pressure), ['some'])
+
+    def test_a_resource_without_the_some_line(self):
+        self.write('irq', IRQ)
+        success, pressure = psi.read('irq', root=self.root)
+        self.assertTrue(success)
+        self.assertEqual(list(pressure), ['full'])
+
+    def test_a_key_the_reader_does_not_know_is_skipped(self):
+        # values are read by name, so a key the kernel adds cannot shift another one
+        self.write('io', 'some avg10=1.00 avg60=2.00 avg300=3.00 avg900=4.00 total=5\n')
+        success, pressure = psi.read('io', root=self.root)
+        self.assertTrue(success)
+        self.assertEqual(
+            pressure['some'], {'avg10': 1.0, 'avg60': 2.0, 'avg300': 3.0, 'total': 5}
+        )
+
+    def test_pressure_accounting_switched_off(self):
+        # the kernel creates no /proc/pressure at all, which is a state and no error
+        self.assertEqual(psi.read('memory', root=self.root), (True, None))
+
+    def test_a_value_that_is_no_number(self):
+        self.write('memory', 'some avg10=0.00 avg60=none avg300=0.00 total=1\n')
+        success, result = psi.read('memory', root=self.root)
+        self.assertFalse(success)
+        self.assertIn('no average', result)
+
+    def test_a_total_that_is_no_number(self):
+        self.write('memory', 'some avg10=0.00 avg60=0.00 avg300=0.00 total=x\n')
+        success, result = psi.read('memory', root=self.root)
+        self.assertFalse(success)
+        self.assertIn('no duration', result)
+
+    def test_an_empty_file(self):
+        self.write('memory', '')
+        success, result = psi.read('memory', root=self.root)
+        self.assertFalse(success)
+        self.assertIn('no pressure values', result)
+
+    def test_an_unknown_resource_never_becomes_a_path(self):
+        success, result = psi.read('../../etc/passwd', root=self.root)
+        self.assertFalse(success)
+        self.assertIn('not a resource', result)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * kvm.py: new module for libvirt hosts, covering domain statistics and listings, storage pools, their volumes, which pools share a filesystem, and the names of domain states and their reasons. It connects read-only, so it needs neither root nor sudo
 * lftest.py: `require_container_runtime()` and `container_runtime_available()` let a test that needs a container skip itself where there is none, instead of failing next to the tests that do run
 * net.py: `get_proxy()` answers which proxy the environment wants for a target, honouring the exceptions in `no_proxy`, for a consumer that reaches the network without an HTTP client
+* psi.py: new module for the pressure stall information the Linux kernel exports below `/proc/pressure`. `read()` returns the `some` and `full` values of one resource, and reports when the kernel keeps no pressure statistics at all
 * redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
 
 ### Changed
