@@ -6,12 +6,12 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082001'
+__version__ = '2026082501'
 
 import base64
 import json
@@ -21,7 +21,7 @@ import ssl
 import time
 import urllib.parse
 
-# httpx is imported lazily inside fetch() so unrelated plugins that pull `lib.url` only
+# httpx is imported lazily inside fetch() so an unrelated consumer that pulls `lib.url` only
 # transitively (e.g. via `lib.net`) keep working on hosts where httpx is not installed yet
 try:
     import httpx
@@ -37,7 +37,7 @@ from . import txt
 # stdlib ssl version names; '1.0' first because it is the most permissive minimum.
 # `ssl.TLSVersion` was added in Python 3.7. Build the dict only when available so
 # `import lib.url` still works on older interpreters (e.g. RHEL 8's default `python3`
-# = 3.6) - any plugin that doesn't actually use TLS version pinning then continues
+# = 3.6) - a consumer that doesn't actually use TLS version pinning then continues
 # to work. Callers that pass `tls_min` / `tls_max` get a clearer RuntimeError in
 # `_build_ssl_context()` instead of an AttributeError at import time.
 _TLS_VERSIONS = {}
@@ -208,7 +208,7 @@ def _body_hint(data):
     """Describe a request body for an error message without disclosing its values.
 
     Request bodies routinely carry credentials (a login `password`, an API key, a bearer
-    token). Rendering the body itself would put them into the plugin output, and
+    token). Rendering the body itself would put them into the caller's output, and
     `txt.sanitize_sensitive_data()` cannot be relied on to catch that: a Python mapping renders
     as `{'password': 'x'}`, which is neither the `password=x` nor the `"password": "x"` form its
     patterns match. Only the field names are reported, which is what identifies the offending
@@ -227,7 +227,7 @@ def _build_ssl_context(insecure, tls_min, tls_max):
     """Build an SSL context with optional version pinning and ALPN advertised.
 
     ALPN ('h2', 'http/1.1') is advertised regardless of the requested HTTP version so the
-    negotiated protocol can be inspected via `extended=True` for compliance plugins.
+    negotiated protocol can be inspected via `extended=True` for a compliance check.
     """
     ctx = ssl.create_default_context()
     if insecure:
@@ -1150,7 +1150,7 @@ def split_basic_auth(url):
     empty dict.
 
     Pass the returned `url` and `headers` to `lib.url.fetch()` /
-    `lib.url.fetch_json()` so plugins can accept HTTP basic auth via
+    `lib.url.fetch_json()` so a consumer can accept HTTP basic auth via
     the URL (e.g. `https://user:secret@host/path`) instead of
     exposing separate `--username` / `--password` arguments.
 

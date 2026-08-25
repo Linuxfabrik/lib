@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Parse Atom and RSS feeds in Python.
 

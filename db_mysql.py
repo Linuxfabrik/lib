@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Library for accessing MySQL/MariaDB servers."""
 
@@ -20,7 +20,7 @@ from .globals import STATE_UNKNOWN
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070902'
+__version__ = '2026082501'
 
 try:
     import pymysql.cursors
@@ -34,7 +34,7 @@ def check_privileges(conn, *required):
     Verify the connected MySQL/MariaDB user has the required privileges.
 
     Without arguments, runs a functional smoke test (`SELECT VERSION()`), which succeeds with
-    `GRANT USAGE` alone. This is sufficient for plugins that only call `SHOW GLOBAL VARIABLES`
+    `GRANT USAGE` alone. This is sufficient for a consumer that only calls `SHOW GLOBAL VARIABLES`
     or `SHOW GLOBAL STATUS`, which do not need `SELECT` on any table.
 
     With arguments, parses `SHOW GRANTS FOR CURRENT_USER()` and verifies that every requested
@@ -131,10 +131,10 @@ def check_privileges(conn, *required):
 
 def check_select_privileges(conn):
     """
-    Deprecated. Backwards-compatible shim for already-deployed plugins that still call
-    `check_select_privileges()` against an upgraded lib. Equivalent to
+    Deprecated. Backwards-compatible shim for an already-deployed consumer that still
+    calls `check_select_privileges()` against an upgraded lib. Equivalent to
     `check_privileges(conn)` (the functional `SELECT VERSION()` smoke test). Will be
-    removed once a plugin re-deployment cycle has propagated everywhere; new code
+    removed once a consumer re-deployment cycle has propagated everywhere; new code
     should call `check_privileges()` directly.
     """
     return check_privileges(conn)
@@ -319,7 +319,7 @@ def get_all_status(conn):
     The result is what `lod2dict()` produces against the rows of
     `SHOW GLOBAL STATUS`. Keys are MySQL/MariaDB status variable names, values
     are the raw string values returned by the server. One round trip; cheaper
-    than issuing many `SHOW GLOBAL STATUS LIKE '...'` queries when a plugin
+    than issuing many `SHOW GLOBAL STATUS LIKE '...'` queries when a caller
     needs more than a handful of values.
 
     ### Parameters
@@ -343,7 +343,7 @@ def get_all_variables(conn):
     Fetch the complete output of `SHOW GLOBAL VARIABLES` as a dictionary.
 
     Same shape as `get_all_status()`, but for server variables instead of
-    status counters. Use when a plugin needs more than a handful of variables
+    status counters. Use when a caller needs more than a handful of variables
     and wants to avoid the per-`LIKE` query overhead.
 
     ### Parameters
@@ -474,8 +474,8 @@ def get_replica_status(conn):
 
     `SHOW REPLICA STATUS` is the MariaDB 10.5+ / MySQL 8.0.22+ wording;
     older servers only know `SHOW SLAVE STATUS`. This helper tries the newer
-    form first and silently falls back, so plugins do not have to know which
-    server flavour they are talking to.
+    form first and silently falls back, so a caller does not have to know which
+    server flavour it is talking to.
 
     ### Parameters
     - **conn** (`Connection`): An active database connection.
@@ -680,8 +680,8 @@ def has_is_role_column(conn):
     When the column exists, role rows in `mysql.user` carry `IS_ROLE = 'Y'`
     and should typically be excluded from anonymous-user / empty-password /
     username-as-password checks (a role legitimately has no password and an
-    empty `host` column). Plugins use the return value to gate `IS_ROLE = 'N'`
-    fragments in their `WHERE` clauses.
+    empty `host` column). Use the return value to gate `IS_ROLE = 'N'`
+    fragments in a `WHERE` clause.
 
     ### Parameters
     - **conn** (`Connection`): An active database connection.

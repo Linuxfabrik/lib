@@ -6,13 +6,13 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """This library collects some WildFly/JBoss related functions that are
-needed by more than one WildFly/JBoss plugin."""
+needed by more than one WildFly/JBoss consumer."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026082501'
 
 from . import base, url
 from .globals import STATE_UNKNOWN

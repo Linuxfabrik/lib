@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Provides functions for sending email via SMTP, including multipart
 plain-text/HTML messages with inline related images.

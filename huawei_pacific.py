@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """This library collects functions for Huawei OceanStor Pacific storage systems,
 which are accessed through their REST API (X-Auth-Token authentication, string-
@@ -15,7 +15,7 @@ generation of endpoints below /dsware/service/ and /dfv/service/.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081102'
+__version__ = '2026082501'
 
 import json
 from time import sleep as _sleep
@@ -24,8 +24,8 @@ from . import base, cache, time, url
 from .globals import STATE_CRIT, STATE_OK, STATE_WARN
 
 # Own cache file, following `lib.redfish`. The shared default file is written by every
-# plugin on the host, and `lib.cache` sweeps expired rows on the read path, so a session
-# token that is read on every single check would sit in the middle of that lock traffic.
+# consumer on the host, and `lib.cache` sweeps expired rows on the read path, so a session
+# token that is read on every single run would sit in the middle of that lock traffic.
 CACHE_FILENAME = 'linuxfabrik-monitoring-plugins-huawei-pacific.db'
 
 
@@ -73,25 +73,25 @@ def _redact(value):
 
 def record_response(endpoint, result):
     """
-    Remember what an endpoint answered, so a check can print it under `--verbose`.
+    Remember what an endpoint answered, so a consumer can print it under `--verbose`.
 
     ### Parameters
     - **endpoint** (`str`): The endpoint that was queried, as it was requested.
     - **result** (`dict`): The response, as `get_data()` built it.
 
     ### Notes
-    - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal check run
+    - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal run
       does not keep a second copy of every response in memory.
     - The login response is deliberately never recorded. It is the one response that
-      carries a session token, and a token in a check's output is a credential in the
-      monitoring server's database, its notifications and its log files.
+      carries a session token, and a token in the output is a credential in whatever
+      stores, forwards and logs that output downstream.
     """
     _recorded_responses.append((endpoint, _redact(result)))
 
 
 def format_responses():
     """
-    Render everything `record_response()` collected, for a check's `--verbose` output.
+    Render everything `record_response()` collected, for a `--verbose` output.
 
     ### Returns
     - **str**:
@@ -99,7 +99,7 @@ def format_responses():
       Empty when nothing was recorded, which is the case on a normal run and in test mode.
 
     ### Notes
-    - Meant for working out what an appliance actually reports, so a check can be built
+    - Meant for working out what an appliance actually reports, so a consumer can be built
       against it. The output is as long as the appliance's answers are, which on a list
       endpoint of a large cluster is very long indeed. It is a command-line tool, not
       something to switch on in a service definition.
@@ -144,7 +144,7 @@ def assert_ok(result, what):
     Abort the calling process (UNKNOWN) unless the appliance reported success.
 
     Every consumer has to check the response envelope before it reads anything out of it,
-    and the check is easy to get subtly wrong: the appliance reports success as the number
+    and that check is easy to get subtly wrong: the appliance reports success as the number
     `0` on some endpoints and as the string `'0'` on others, the older endpoint generation
     below `/dsware/service/` sends the code bare instead of wrapped in an object or names the
     object `error` rather than `result`, and a response carrying no outcome at all turns a
@@ -253,7 +253,7 @@ def get_alarm_severity(sev):
 
 def get_alarm_severity_state(sev):
     """
-    Convert an alarm severity code into the state a check reports for it.
+    Convert an alarm severity code into the state a consumer reports for it.
 
     ### Parameters
     - **sev** (`int` or `str`):
@@ -339,7 +339,7 @@ def get_all_data(
 
     A list endpoint returns one page per request and expects the caller to page through the
     rest. Without paging an appliance simply stops being reported past the first page, which
-    reads as a smaller but healthy inventory: exactly the failure a check must not have.
+    reads as a smaller but healthy inventory: exactly the failure a consumer must not have.
 
     ### Parameters
     - **endpoint** (`str`):
@@ -351,7 +351,7 @@ def get_all_data(
     - **page_size** (`int`, optional):
       Objects to request per page.
     - **max_pages** (`int`, optional):
-      Hard stop on the number of requests. It bounds the runtime of a check against an
+      Hard stop on the number of requests. It bounds the runtime of a call against an
       appliance with far more objects than anyone expected, and it keeps a firmware that
       ignores `range` from looping forever.
     - **range_style** (`str`, optional):
@@ -479,7 +479,7 @@ def get_base_board(bb):
 
 def get_component_status_state(st):
     """
-    Convert a chassis component status into the state a check reports for it.
+    Convert a chassis component status into the state a consumer reports for it.
 
     The `hwm/fan` and `hwm/power` endpoints report a component's condition as a lower-case
     string rather than a numeric code.
@@ -532,7 +532,7 @@ def get_component_status_state(st):
 # Kept deliberately narrow. Neither REST Interface Reference states which password states
 # restrict a session, so every entry here is an assumption about the appliance rather than
 # a documented rule. States 4 (initial password) and 6 (must be changed at the next login)
-# used to abort as well, which took every check on a freshly deployed appliance to UNKNOWN
+# used to abort as well, which took every consumer on a freshly deployed appliance to UNKNOWN
 # before anyone had logged in to set a password. They now run: if the appliance really does
 # refuse their requests, `get_data()` reports its error text, which names the cause better
 # than a guess made here.
@@ -546,7 +546,7 @@ def _logout(args, x_auth_token):
     Called on a session nothing will read back: the one a forced re-login replaces in
     `get_creds()`, and every session at all in `get_data()` when caching is switched off.
     Without it such a session stays open until the appliance's own timeout expires it, which
-    is configurable between 30 and 100 minutes. A check that keeps failing would leave orphans
+    is configurable between 30 and 100 minutes. A consumer that keeps failing would leave orphans
     behind run after run, so the count of open sessions grows for as long as the fault lasts.
 
     ### Parameters
@@ -610,7 +610,7 @@ def get_creds(args, force_relogin=False):
     ### Notes
     - The token is stored in the cache key `huaweipacific-{URL}-{USERNAME}-xauthtoken`, in the
       module's own cache file. The user name is part of the key because a session carries that
-      user's role: without it a check running as a different account would silently reuse the
+      user's role: without it a consumer running as a different account would silently reuse the
       first account's session and query the appliance with the wrong privileges.
     - A `CACHE_EXPIRE` of `0` turns caching off, rather than writing an entry that expires a
       moment later. Every call then logs in, which is what an operator asks for by setting it.
@@ -745,7 +745,7 @@ def _as_envelope(success, response):
         'result': {
             'code': 'n/a',
             # Bounded: the body of an error status can be a full HTML page, and this
-            # ends up in the check's plugin output.
+            # ends up in the caller's output.
             'description': f'{response}'[:200],
         },
     }
@@ -792,10 +792,10 @@ def get_data(
       there; a caller reaching for one of those passes its base path here. This is a developer
       constant, not something to build from data the appliance or a user supplied.
     - **max_attempts** (`int`, optional):
-      How often to try before giving up. The default of `3` is what a check wants. Lower it
-      on a call that is one of several in a run: the budget below is per call, and a check
-      that chains four of them can otherwise spend four times three requests plus four
-      logins before it answers, which is well past the monitoring server's own timeout.
+      How often to try before giving up. The default of `3` is what a monitoring run wants.
+      Lower it on a call that is one of several in a run: the budget below is per call, and a
+      caller that chains four of them can otherwise spend four times three requests plus four
+      logins before it answers, which is well past a typical run's own timeout.
 
     ### Returns
     - **dict**:
@@ -806,7 +806,7 @@ def get_data(
       `result.code`, the older ones as a bare `result`; `get_result_code()` reads both.
     - Makes at most three attempts, forcing a fresh login before the second one, and waits one
       second between attempts. The retry count is kept low on purpose, so one call stays within
-      the monitoring server's check timeout: the worst case is three requests plus one login,
+      the caller's own timeout: the worst case is three requests plus one login,
       plus two seconds of waiting. This budget is per call. A caller that chains several calls,
       for example `get_management_ips()` followed by a hardware query, has to size its own
       timeout for the sum.
@@ -850,7 +850,7 @@ def get_data(
             header['Content-Type'] = 'application/json'
         # `response_on_error` keeps the appliance's own error body readable when it
         # answers with a 4xx/5xx status. Without it the body is dropped in favour of
-        # the status line, and the request would abort the check on the spot instead
+        # the status line, and the request would abort the caller on the spot instead
         # of becoming a failed attempt the forced re-login can still recover from.
         result = _as_envelope(
             *url.fetch_json(
@@ -937,7 +937,7 @@ def get_disk_status(st):
 
 def get_disk_status_state(st):
     """
-    Convert a Huawei OceanStor Pacific disk status code into the state a check reports for it.
+    Convert a Huawei OceanStor Pacific disk status code into the state a consumer reports for it.
 
     ### Parameters
     - **st** (`int` or `str`):
@@ -1024,7 +1024,7 @@ def _assert_all_nodes_listed(listed, args):
     if total is not None and total > listed:
         base.cu(
             f'The cluster reports {total} nodes, but only {listed} were listed. The hardware '
-            'of the remaining ones cannot be queried, so the check would silently cover part '
+            'of the remaining ones cannot be queried, so the run would silently cover part '
             'of the cluster only.'
         )
 
@@ -1052,18 +1052,18 @@ def get_cluster_nodes(args):
     - `in_cluster` has three documented values, not two: `True` (added), `False` (not added)
       and `null` (about to be added). Only a node that reports `True` is queried. A node still
       being added holds no cluster hardware yet, and treating its missing management IP as a
-      fault would take the whole check to UNKNOWN while the cluster is perfectly healthy.
+      fault would take the whole run to UNKNOWN while the cluster is perfectly healthy.
       A node that does not report the field at all is kept, so a firmware that omits it does
       not narrow the result.
-    - Aborts the plugin (UNKNOWN) if the node query fails, if a node that is in the cluster has
-      no management IP address, or if no node has one at all. Returning the remaining nodes
-      instead would let a hardware check cover part of the cluster and still report OK, which
+    - Aborts the caller (UNKNOWN) if the node query fails, if a node that is in the cluster
+      has no management IP address, or if no node has one at all. Returning the remaining nodes
+      instead would let a hardware query cover part of the cluster and still report OK, which
       hides a failed component on the nodes that were dropped.
     - The node list is compared against `cluster/servers/count` for the same reason. The
       endpoint documents no paging parameters, but the API-wide default caps a list response
       at 100 entries, and the documentation does not say which endpoints that applies to. On a
       cluster above that size a silently truncated list would leave nodes unmonitored while
-      the check still reports OK, so a mismatch aborts instead.
+      the caller still reports OK, so a mismatch aborts instead.
 
     ### Example
     >>> [node['name'] for node in get_cluster_nodes(args)]
@@ -1080,7 +1080,7 @@ def get_cluster_nodes(args):
     for node in listed:
         # `cluster/servers` documents an array of node objects, but the sibling endpoint for
         # a single node answers with a bare object. A firmware that does the same here would
-        # otherwise put the field lookups below on a string and end the check in a traceback
+        # otherwise put the field lookups below on a string and end the caller in a traceback
         # instead of an UNKNOWN.
         if not isinstance(node, dict):
             continue
@@ -1158,7 +1158,7 @@ def get_node_names_by_ip(nodes):
 
 def get_node_running_status_state(rs):
     """
-    Convert a cluster node's running status into the state a check reports for it.
+    Convert a cluster node's running status into the state a consumer reports for it.
 
     The `cluster/servers` endpoint reports a node's condition as a lower-case string rather
     than a numeric code.
@@ -1214,7 +1214,7 @@ def get_oam_agent_status(s):
     """
     mapping = {
         # 8.2.0 prints this state as a bare '--'; V800R001C20 spells it out as
-        # 'not monitored', which is the wording a plugin's output can be read from.
+        # 'not monitored', which is the wording an output can be read from.
         -1: 'not monitored (-1)',
         0: 'healthy (0)',
         1: 'faulty (1)',
@@ -1262,7 +1262,7 @@ PERFORMANCE_OBJECT_NODE = 16385
 
 # How far back to ask for samples, in seconds. The appliance collects on a ten-second cycle
 # by default, so a window of a few minutes always contains several samples even when a
-# collection cycle was skipped, and the newest of them is what a check reports. The API caps
+# collection cycle was skipped, and the newest of them is what a consumer reports. The API caps
 # a real-time query at 90 minutes.
 PERFORMANCE_WINDOW = 300
 
@@ -1298,14 +1298,14 @@ def get_performance(object_type, indicators, args, ids=None, window=PERFORMANCE_
 
     ### Notes
     - The appliance answers with one row per object and indicator, each carrying parallel
-      lists of timestamps and values. Only the newest value of each row is kept: a check
+      lists of timestamps and values. Only the newest value of each row is kept: a consumer
       reports the current state, and the older samples in the window exist so that a skipped
       collection cycle does not leave it with nothing.
     - Every indicator is a gauge (a rate, a percentage or a time), not a cumulative counter,
       so the value can go into performance data as it is. See
       [#320](https://github.com/Linuxfabrik/monitoring-plugins/issues/320).
     - `break_point` is deliberately not sent. It pads gaps with `'-'`, which is what a
-      graphing front end wants and a check does not: a check would have to parse the padding
+      graphing front end wants and a consumer does not: it would have to parse the padding
       back out before it could compare anything.
 
     ### Example
@@ -1423,7 +1423,7 @@ def get_pool_status(st):
 
 def get_pool_status_state(st):
     """
-    Convert a Huawei OceanStor Pacific pool status code into the state a check reports.
+    Convert a Huawei OceanStor Pacific pool status code into the state a consumer reports.
 
     ### Parameters
     - **st** (`int` or `str`):
@@ -1542,7 +1542,7 @@ def get_replication_health_status(hs):
 
 def get_replication_health_status_state(hs):
     """
-    Convert a replication pair's health status code into the state a check reports.
+    Convert a replication pair's health status code into the state a consumer reports.
 
     ### Parameters
     - **hs** (`int` or `str`):
@@ -1599,7 +1599,7 @@ def get_replication_running_status(rs):
 
 def get_replication_running_status_state(rs):
     """
-    Convert a replication pair's running status code into the state a check reports.
+    Convert a replication pair's running status code into the state a consumer reports.
 
     ### Parameters
     - **rs** (`int` or `str`):

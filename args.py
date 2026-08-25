@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Extends argparse by new input argument data types on demand."""
 
@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081003'
+__version__ = '2026082501'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -36,7 +36,7 @@ MATCH_IGNORE_PRECEDENCE = (
 
 
 # Help text descriptions only - no "Default:" here.
-# Plugins append their own default info, e.g.:
+# A consumer appends its own default info, e.g.:
 #   help=lib.args.help('--timeout') + ' Default: %(default)s (seconds)',
 # Switches (store_true/store_false) don't need a default.
 HELP_TEXTS = {
@@ -303,7 +303,7 @@ def help(param):
     """Retrieves the global help text for a given parameter.
 
     Returns only the description, without "Default:" suffix.
-    The plugin appends the default info as needed, e.g.:
+    The caller appends the default info as needed, e.g.:
         help=lib.args.help('--timeout') + ' Default: %(default)s (seconds)',
 
     ### Parameters
@@ -347,8 +347,8 @@ def load_secret(path, param='--password-file'):
     Read a secret out of a file, so it does not have to be passed on the command line.
 
     A command-line argument is visible to every user on the host for as long as the
-    process runs, and a monitoring plugin runs on a schedule. Reading the secret from a
-    file that only the monitoring user can read keeps it out of the process list.
+    process runs, and a scheduled process runs again and again. Reading the secret from
+    a file that only its own user can read keeps it out of the process list.
 
     ### Parameters
     - **path** (`str`): The file to read.
@@ -364,7 +364,7 @@ def load_secret(path, param='--password-file'):
     - Only the first line is used, and only its trailing newline is stripped. Leading and
       trailing spaces are part of a password, and stripping them would make a valid
       password fail with no way to tell why.
-    - The file permissions are deliberately not enforced here. Which user a check runs as
+    - The file permissions are deliberately not enforced here. Which user a consumer runs as
       differs per deployment, and refusing to start over a permission bit would take a
       working check down; keeping the file readable only by the monitoring user is the
       documented operator's job.

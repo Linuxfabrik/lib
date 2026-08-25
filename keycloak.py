@@ -6,10 +6,10 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """This library collects some Keycloak related functions that are
-needed by more than one Keycloak plugin.
+needed by more than one Keycloak consumer.
 
 Typical use case:
 ```python
@@ -22,7 +22,7 @@ Typical use case:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082001'
+__version__ = '2026082501'
 
 from . import url
 

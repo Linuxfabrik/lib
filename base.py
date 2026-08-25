@@ -6,12 +6,12 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082401'
+__version__ = '2026082501'
 
 import math
 import numbers
@@ -73,8 +73,8 @@ def coe(result, state=STATE_UNKNOWN):
 
     ### Notes
     - Sensitive information in error messages is automatically redacted before printing.
-    - This function is intended to be used **only** inside the `main()` function of a plugin,
-      not inside library functions.
+    - This function is intended to be used **only** inside the `main()` function of the
+      calling script, not inside library functions.
     - If the function fails (`result[0]` is `False`), the script immediately exits after printing
       the sanitized message.
 
@@ -340,7 +340,7 @@ def get_table(
       fields it has something to say about, passes `missing='--'` instead. One optional
       field a firmware leaves out then costs that one cell rather than the whole table.
     - `hide_empty` is for the consumer whose column set is fixed but whose rows are not:
-      a check listing several kinds of object prints the columns that apply to none of the
+      a consumer listing several kinds of object prints the columns that apply to none of the
       objects it actually found as a wall of hyphens, pushing the text that matters off to
       the right. It is off by default, because a column that is empty today and filled
       tomorrow would otherwise make the table change shape between runs.
@@ -650,13 +650,13 @@ def _parse_range_atom(atom, default):
     whole range in C doubles and the value is a float here too. A bound kept as an exact
     Python int is compared exactly against a value that has already been rounded to a
     float, so `12345678901234567890` reads as greater than the very value it was written
-    for and the check alerts on it. Both sides have to be rounded the same way, which is
+    for and the caller alerts on it. Both sides have to be rounded the same way, which is
     what `lib/tests/test_utils.c` asserts for that bound.
 
     Deliberately stricter than the reference implementation, which reads a bound with
     `strtod()`: that takes the longest numeric prefix and silently answers 0 for a bound
     with no numeric prefix at all, so `1,5` becomes the threshold 1 and `abc` becomes 0.
-    Guessing a number out of a typo gives an admin a check that alerts forever without
+    Guessing a number out of a typo gives an admin a threshold that alerts forever without
     saying why, so anything outside this grammar is refused and reported instead. The
     same refusal covers what Python would read but the range syntax does not define:
     `1_000`, `inf`, `nan`, `0x10`.
@@ -846,15 +846,15 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
     """
     Over and Out (OaO)
 
-    Print a sanitized plugin message with optional performance data and exit the script.
+    Print a sanitized result message with optional performance data and exit the script.
 
-    This function formats and prints a plugin message, appends performance data if provided,
+    This function formats and prints the message, appends performance data if provided,
     sanitizes sensitive information, replaces reserved `|` characters, and exits with the
     specified state code. Optionally, it can always exit with `STATE_OK` regardless of the given
     state.
 
     ### Parameters
-    - **msg** (`str`): The plugin message to print. Will be stripped, sanitized, and processed.
+    - **msg** (`str`): The message to print. Will be stripped, sanitized, and processed.
     - **state** (`int`, optional): The exit code to use. Defaults to `STATE_OK`.
     - **perfdata** (`str`, optional): Performance data to append after a `|` separator.
       Defaults to an empty string (no performance data).
@@ -867,8 +867,8 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
     - **None**: This function does not return; it terminates the script via `sys.exit()`.
 
     ### Notes
-    - Any `|` characters inside the message are replaced with `!` to avoid breaking Nagios plugin
-      output format.
+    - Any `|` characters inside the message are replaced with `!`, the character being
+      reserved as the performance data separator of the Monitoring Plugins output format.
     - A `<` that would open an HTML tag is replaced by `&lt;`, so a web interface cannot
       mistake the output for markup. Everything else is left as it is: `<= 10`,
       `< 5.3.2` and `echo 1 > /proc/sys/...` reach the terminal exactly as written, and
@@ -876,7 +876,8 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
       the output as plain text, which is the path this keeps the output on. Rendering it
       as HTML instead would drop the monospace formatting that tables depend on.
     - Sensitive information like passwords, tokens, and keys is automatically redacted.
-    - `perfdata`, if provided, must follow monitoring plugin standards for performance metrics.
+    - `perfdata`, if provided, must follow the Monitoring Plugins specification for
+      performance metrics.
     - `no_perfdata` only affects what is printed; the message and the exit code are unchanged, so
       alerting keeps working while trending data is dropped from the output.
 
@@ -929,7 +930,7 @@ def range2txt(spec, value=None, value_name='value', fmt=None, view='alert'):
     repeating the range syntax at the admin.
 
     What is described is the condition, not where the value lies: by default the
-    `WARN/CRIT if` column of THRESHOLDS.md, so a check that alerts can name what it
+    `WARN/CRIT if` column of THRESHOLDS.md, so a consumer that alerts can name what it
     alerted on. `view='ok'` gives the `OK if result is` column instead.
 
     ### Parameters
@@ -1298,7 +1299,7 @@ def verbose(enabled, msg):
     destination are decided in one place.
 
     Output goes to STDOUT, never to STDERR, because the monitoring protocol only
-    captures STDOUT. The message therefore becomes part of the check result and is meant
+    captures STDOUT. The message therefore becomes part of the result and is meant
     for interactive debugging, not for a scheduled run.
 
     The message is redacted the same way `coe()`, `cu()` and `oao()` redact theirs.

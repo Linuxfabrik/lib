@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """This library collects functions for Huawei OceanStor Dorado storage systems,
 which are accessed through the DeviceManager REST API (numeric status codes,
@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081001'
+__version__ = '2026082501'
 
 import json
 from time import sleep as _sleep
@@ -32,8 +32,8 @@ from . import base, cache, time, url
 from .globals import STATE_CRIT, STATE_OK, STATE_WARN
 
 # Own cache file, following `lib.redfish`. The shared default file is written by every
-# plugin on the host, and `lib.cache` sweeps expired rows on the read path, so a session
-# token that is read on every single check would sit in the middle of that lock traffic.
+# consumer on the host, and `lib.cache` sweeps expired rows on the read path, so a session
+# token that is read on every single run would sit in the middle of that lock traffic.
 CACHE_FILENAME = 'linuxfabrik-monitoring-plugins-huawei-dorado.db'
 
 # Bytes per sector, for the capacities the API counts in sectors. The appliance reports its
@@ -94,25 +94,25 @@ def _redact(value):
 
 def record_response(endpoint, result):
     """
-    Remember what an endpoint answered, so a check can print it under `--verbose`.
+    Remember what an endpoint answered, so a consumer can print it under `--verbose`.
 
     ### Parameters
     - **endpoint** (`str`): The endpoint that was queried, as it was requested.
     - **result** (`dict`): The response envelope, as `get_data()` built it.
 
     ### Notes
-    - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal check run
+    - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal run
       does not keep a second copy of every response in memory.
     - The login response is deliberately never recorded. It is the one response that
-      carries a session token, and a token in a check's output is a credential in the
-      monitoring server's database, its notifications and its log files.
+      carries a session token, and a token in the output is a credential in whatever
+      stores, forwards and logs that output downstream.
     """
     _recorded_responses.append((endpoint, _redact(result)))
 
 
 def format_responses():
     """
-    Render everything `record_response()` collected, for a check's `--verbose` output.
+    Render everything `record_response()` collected, for a `--verbose` output.
 
     ### Returns
     - **str**:
@@ -120,7 +120,7 @@ def format_responses():
       Empty when nothing was recorded, which is the case on a normal run and in test mode.
 
     ### Notes
-    - Meant for working out what an appliance actually reports, so a check can be built
+    - Meant for working out what an appliance actually reports, so a consumer can be built
       against it. The output is as long as the appliance's answers are, which on a list
       endpoint of a large array is very long indeed. It is a command-line tool, not
       something to switch on in a service definition.
@@ -165,7 +165,7 @@ def assert_ok(result, what):
     Abort the calling process (UNKNOWN) unless the appliance reported success.
 
     Every consumer has to check the response envelope before it reads anything out of it,
-    and the check is easy to get subtly wrong: the appliance reports success as the number
+    and that check is easy to get subtly wrong: the appliance reports success as the number
     `0` on some endpoints and as the string `'0'` on others, and a response that carries no
     `error` object at all turns a naive `result['error']['code']` into an `AttributeError`
     instead of a clean UNKNOWN.
@@ -174,7 +174,7 @@ def assert_ok(result, what):
     - **result** (`dict`): A response envelope as `get_data()` returns it.
     - **what** (`str`):
       What was being queried, as a noun phrase for the message ("the fans", "the storage
-      pools"). It is the only part of the output that tells an operator which of a check's
+      pools"). It is the only part of the output that tells an operator which of a caller's
       several requests failed.
 
     ### Returns
@@ -405,7 +405,7 @@ def get_alarm_severity(sev):
 
 def get_alarm_severity_state(sev):
     """
-    Convert a Huawei alarm severity code into the state a check reports for it.
+    Convert a Huawei alarm severity code into the state a consumer reports for it.
 
     ### Parameters
     - **sev** (`int` or `str`):
@@ -444,7 +444,7 @@ def get_all_data(endpoint, args, page_size=100, max_pages=100):
 
     Most list endpoints return at most 100 objects per request and expect the caller to page
     through the rest. Without paging an array simply stops being reported past the first page,
-    which reads as a smaller but healthy inventory: exactly the failure a check must not have.
+    which reads as a smaller but healthy inventory: exactly the failure a consumer must not have.
 
     ### Parameters
     - **endpoint** (`str`):
@@ -459,7 +459,7 @@ def get_all_data(endpoint, args, page_size=100, max_pages=100):
       ceiling is the caller's job, because the appliance rejects a larger range rather than
       capping it.
     - **max_pages** (`int`, optional):
-      Hard stop on the number of requests. It bounds the runtime of a check against an array
+      Hard stop on the number of requests. It bounds the runtime of a call against an array
       with far more objects than anyone expected, and it keeps a firmware that ignores `range`
       from looping forever.
 
@@ -488,7 +488,7 @@ def get_all_data(endpoint, args, page_size=100, max_pages=100):
       copies of the same inventory.
     - The truncation flag is deliberately returned rather than turned into an abort here.
       Whether an incomplete inventory is worth an UNKNOWN or just a note in the output depends
-      on the check, and this function has no way to tell.
+      on the caller, and this function has no way to tell.
 
     ### Example
     >>> result, truncated = get_all_data('lun', args)
@@ -652,7 +652,7 @@ def get_cp_type(cp):
 # Everything else is deliberately left out. Neither REST Interface Reference states which
 # password states restrict a session, so every entry here is an assumption about the
 # appliance rather than a documented rule. States 4 (initial password) and 6 (must be
-# changed at the next login) used to abort as well, which took every check on a freshly
+# changed at the next login) used to abort as well, which took every consumer on a freshly
 # deployed appliance to UNKNOWN before anyone had logged in to set a password. They now
 # run: if the appliance really does refuse their requests, `get_data()` reports its error
 # text, which names the cause better than a guess made here. This matches
@@ -784,7 +784,7 @@ def get_creds(args, force_relogin=False):
       that only partly succeeds leaves a cache that can never be reused, and the resulting
       login on every single run is exactly what the caching is there to avoid.
       The user name is part of the key because a session carries that user's role: without it
-      a check running as a different account would silently reuse the first account's session
+      a consumer running as a different account would silently reuse the first account's session
       and query the appliance with the wrong privileges. The device ID is deliberately not
       part of it: it is optional, and the appliance accepts any string for it on the initial
       login, so it does not identify an appliance on its own. The URL does.
@@ -949,7 +949,7 @@ def _as_envelope(success, response):
         'error': {
             'code': 'n/a',
             # Bounded: the body of an error status can be a full HTML page, and this
-            # ends up in the check's plugin output.
+            # ends up in the caller's output.
             'description': f'{response}'[:200],
         },
     }
@@ -980,11 +980,11 @@ def get_data(endpoint, args, max_attempts=3):
         - `NO_PROXY` (`bool`): Ignore proxy settings.
         - `TIMEOUT` (`int`): Timeout for API requests.
     - **max_attempts** (`int`, optional):
-      How often to try before giving up. The default of `3` is what a check wants. Pass `1` to
-      ask a question whose expected answer may well be an error, such as probing which of two
-      endpoint spellings a firmware answers to: the retry loop would then spend two further
-      requests and a forced re-login on establishing what the first answer already said, and
-      the re-login would drop a perfectly good cached session along the way.
+      How often to try before giving up. The default of `3` is what a monitoring run wants.
+      Pass `1` to ask a question whose expected answer may well be an error, such as probing
+      which of two endpoint spellings a firmware answers to: the retry loop would then spend
+      two further requests and a forced re-login on establishing what the first answer already
+      said, and the re-login would drop a perfectly good cached session along the way.
 
     ### Returns
     - **dict**:
@@ -993,7 +993,7 @@ def get_data(endpoint, args, max_attempts=3):
     ### Notes
     - Makes at most three attempts, forcing a fresh login before the second one, and waits one
       second between attempts. The retry count is kept low on purpose, so one call stays within
-      the monitoring server's check timeout: the worst case is three requests plus one login,
+      the caller's own timeout: the worst case is three requests plus one login,
       plus two seconds of waiting. This budget is per call. A caller that chains several calls
       has to size its own timeout for the sum.
     - A rejected request is retried instead of aborting the caller: a transport failure, an HTTP
@@ -1036,7 +1036,7 @@ def get_data(endpoint, args, max_attempts=3):
         }
         # `response_on_error` keeps the appliance's own error body readable when it
         # answers with a 4xx/5xx status. Without it the body is dropped in favour of
-        # the status line, and the request would abort the check on the spot instead
+        # the status line, and the request would abort the caller on the spot instead
         # of becoming a failed attempt the forced re-login can still recover from.
         result = _as_envelope(
             *url.fetch_json(
@@ -1276,7 +1276,7 @@ _FAILED_HEALTH_STATES = frozenset({2, 11, 14, 18})
 
 def get_health_status_state(hs):
     """
-    Convert a Huawei health status code into the state a check reports for it.
+    Convert a Huawei health status code into the state a consumer reports for it.
 
     ### Parameters
     - **hs** (`int` or `str`):
@@ -1293,7 +1293,7 @@ def get_health_status_state(hs):
       `STATE_CRIT`.
     - An unrecognised code cannot be assumed to be harmless, so it warns rather than passing as
       OK. It renders as `'Unknown'` through `get_health_status()`, which tells the reader that
-      the code, not the object, is what the check could not place.
+      the code, not the object, is what the caller could not place.
     - `HEALTHSTATUS` is shared across object types, which is why this mapping needs no
       per-object parameter. `RUNNINGSTATUS` is not, hence the `ok_codes` argument on
       `get_running_status_state()`.
@@ -1368,7 +1368,7 @@ def get_hypermetro_domain_running_status(rs):
       rather than sharing the enumeration `get_running_status()` covers. Every code below
       collides: read through that function a faulty domain would come out as `'Running (2)'`
       and an invalid one as `'Sleep in High Temperature (5)'`, so a broken HyperMetro pair
-      would look healthy in a check's output.
+      would look healthy in the output.
     - Documented in the V700R001C10 REST Interface Reference. Code `4` exists nowhere else
       and is deliberately absent from `get_running_status()`.
 
@@ -1389,7 +1389,7 @@ def get_hypermetro_domain_running_status(rs):
 
 def get_hypermetro_domain_running_status_state(rs):
     """
-    Convert a HyperMetro domain's `RUNNINGSTATUS` code into the state a check reports for it.
+    Convert a HyperMetro domain's `RUNNINGSTATUS` code into the state a consumer reports for it.
 
     ### Parameters
     - **rs** (`int` or `str`):
@@ -1810,7 +1810,7 @@ def get_performance(uuid, data_ids, args):
     paths = (_performance_path,) if _performance_path else _PERFORMANCE_PATHS
     # While probing, an error is an expected answer rather than a fault, so it is taken at
     # face value. Retrying would cost two more requests and a forced re-login per wrong
-    # spelling, and the re-login would drop the cached session the rest of the check reuses.
+    # spelling, and the re-login would drop the cached session the rest of the run reuses.
     attempts = 1 if len(paths) > 1 else 3
 
     for path in paths:
@@ -2162,7 +2162,7 @@ _FAILED_RUNNING_STATES = frozenset({3, 5, 28, 35, 74, 94, 100, 103, 105, 112})
 
 def get_running_status_state(rs, ok_codes):
     """
-    Convert a Huawei running status code into the state a check reports for it.
+    Convert a Huawei running status code into the state a consumer reports for it.
 
     ### Parameters
     - **rs** (`int` or `str`):

@@ -6,13 +6,13 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """This library collects some LibreNMS related functions that are
-needed by LibreNMS check plugins."""
+needed by more than one LibreNMS consumer."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026042401'
+__version__ = '2026082501'
 
 from . import (
     base,  # pylint: disable=C0413

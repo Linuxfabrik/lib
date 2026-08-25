@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Library for accessing SQLite databases.
 
@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026082502'
 
 import csv
 import functools
@@ -41,19 +41,19 @@ import stat
 from . import disk, time, txt
 
 # Substrings identifying an `sqlite3.OperationalError` that means the on-disk schema no longer
-# matches what this release reads or writes, for example because a plugin gained or lost a column
+# matches what this release reads or writes, for example because a consumer gained or lost a column
 # between two versions. Discarding the database is the correct recovery here: the next run
 # rebuilds a valid cache from scratch.
 #
-# `OperationalError` covers far more than that, though. A lock held by a concurrent plugin run
+# `OperationalError` covers far more than that, though. A lock held by a concurrent run
 # ("database is locked"), a full or read-only disk, an I/O error or a broken SQL statement all
 # raise it as well, and deleting the file there destroys a healthy cache, possibly one another
 # process is still using. Those errors are reported to the caller and leave the database alone.
 #
 # "no such table" is deliberately absent: a table that does not exist yet is the normal state on
 # the first run, and `create_table()` uses `IF NOT EXISTS`, so nothing has to be discarded to
-# recover. Matching it would let one plugin's first query wipe the tables of every other plugin
-# sharing the default database file.
+# recover. Matching it would let one consumer's first query wipe the tables of every other
+# consumer sharing the default database file.
 #
 # SQLite words the arity error differently when the statement names its columns ("3 values for 2
 # columns"), and that spelling is absent as well. `insert()` and `replace()` build the column list
@@ -89,7 +89,7 @@ HEALTHY_SCHEMA_ERROR_RE = re.compile(
 # a newer or older release no longer fills.
 #
 # The other constraint violations are not schema problems at all. A UNIQUE or PRIMARY KEY conflict
-# is an ordinary data condition that a plugin hits on a healthy cache, and `replace()` exists to
+# is an ordinary data condition that a caller hits on a healthy cache, and `replace()` exists to
 # resolve exactly that; CHECK and FOREIGN KEY violations and "datatype mismatch" say something
 # about the row, not about the file.
 INTEGRITY_SCHEMA_ERRORS = ('not null constraint failed',)
@@ -350,7 +350,7 @@ def __is_unusable_db(e):
     Decide whether an `sqlite3` exception means the database file has to be discarded.
 
     Only a schema that no longer matches this release, or an unreadable file, justify deleting the
-    database. Everything else (a lock held by a concurrent plugin run, a full or read-only disk, an
+    database. Everything else (a lock held by a concurrent run, a full or read-only disk, an
     I/O error, a broken statement, a failing user-defined function, a value the caller may not
     store, a row that violates a constraint) is transient, a caller bug or ordinary data: the cache
     is fine and has to survive.
@@ -425,8 +425,8 @@ def __handle_db_error(conn, e, sql, data=None, delete_db=True):
       Always `False` plus an error message describing the failure.
 
     ### Notes
-    - The message wording is part of this library's contract: the plugin documentation and
-      several plugin unit tests match on `Operational Error: <sqlite message>, Query: ...`.
+    - The message wording is part of this library's contract: consumer documentation and
+      unit tests match on `Operational Error: <sqlite message>, Query: ...`.
     """
     if delete_db and __is_unusable_db(e):
         rm_db(conn)
@@ -699,7 +699,7 @@ def connect(path='', filename='', timeout=5.0):
       Defaults to `'linuxfabrik-monitoring-plugins-sqlite.db'`.
     - **timeout** (`float`, optional):
       Seconds to wait for a lock held by another process before giving up with
-      `database is locked`. Defaults to `5.0`. Raise it when several checks share one database
+      `database is locked`. Defaults to `5.0`. Raise it when several consumers share one database
       file and run concurrently.
 
     ### Returns
@@ -885,7 +885,7 @@ def create_table(
     - If `drop_table_first=True`, the function will attempt to drop the existing table before
       creating it.
     - The table creation uses `IF NOT EXISTS` to avoid errors if the table already exists.
-    - This is usually the first statement a plugin runs, so it is also where an unusable
+    - This is usually the first statement a consumer runs, so it is also where an unusable
       database file first shows up. Such a file is discarded here, and the next run starts from
       a healthy one.
 
@@ -1630,9 +1630,9 @@ def per_second_deltas(filename, name, counters):
     pattern. Works for any cumulative counter that needs to be reported as
     a per-second rate: /proc and /sys byte counters (disk I/O, network
     traffic, file descriptors), database status counters, application
-    metrics. Lets a check plugin emit per-second rates as perfdata instead
-    of `uom='c'` continuous counters (per CONTRIBUTING.md), so Grafana
-    panels do not need their own `non_negative_difference()` workaround.
+    metrics. Lets a consumer emit per-second rates instead of `uom='c'`
+    continuous counters (per CONTRIBUTING.md), so Grafana panels do not
+    need their own `non_negative_difference()` workaround.
 
     The cache table schema is derived from the keys of `counters`: each
     key becomes an `INT NOT NULL` column alongside the bookkeeping columns
@@ -1645,11 +1645,11 @@ def per_second_deltas(filename, name, counters):
 
     ### Parameters
     - **filename** (`str`):
-      SQLite cache filename, e.g. `'linuxfabrik-monitoring-plugins-<plugin>.db'`.
-      Lives under `$TEMP`. Pick a per-plugin name so caches do not collide.
+      SQLite cache filename, e.g. `'linuxfabrik-monitoring-plugins-<name>.db'`.
+      Lives under `$TEMP`. Pick a per-consumer name so caches do not collide.
     - **name** (`str`):
-      Sample identifier stored in the `name` column (e.g. the plugin
-      name). Lets multiple checks share a single cache file when
+      Sample identifier stored in the `name` column (e.g. the consumer's
+      own name). Lets multiple consumers share a single cache file when
       convenient, but typically one name per filename.
     - **counters** (`dict[str, int]`):
       Mapping from counter name to cumulative counter value. Characters

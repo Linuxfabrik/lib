@@ -6,12 +6,12 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026082501'
 
 import datetime
 import json
@@ -53,7 +53,7 @@ def check_eol(
     - **no_proxy** (`bool`, optional): Ignore proxy settings.
     - **timeout** (`int`, optional): Network timeout in seconds. Default: `8`.
     - **unreachable_severity** (`str`, optional): State to report when endoflife.date is
-      unreachable and the check falls back to the bundled offline data. One of `'ok'`, `'warn'`,
+      unreachable and the lookup falls back to the bundled offline data. One of `'ok'`, `'warn'`,
       `'crit'` or `'unknown'`. Default: `'ok'`.
 
     ### Returns

@@ -6,10 +6,10 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """This library collects some Rocket.Chat related functions that are
-needed by more than one Rocket.Chat plugin.
+needed by more than one Rocket.Chat consumer.
 
 Typical use-case:
 
@@ -39,7 +39,7 @@ result = lib.base.coe(
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070901'
+__version__ = '2026082501'
 
 from . import url
 

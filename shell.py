@@ -6,12 +6,12 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081002'
+__version__ = '2026082501'
 
 
 import os
@@ -153,7 +153,7 @@ def shell_exec(
     except (OSError, ValueError, Exception) as e:
         # The command is reported so the caller can see what failed to start, but it is
         # redacted first: an argument list can carry a credential, and this message is
-        # routinely printed as part of a check result.
+        # routinely printed as part of a result.
         return (
             False,
             f'Error "{e}" while calling command "{txt.sanitize_sensitive_data(str(cmd))}"',
@@ -182,7 +182,7 @@ def shell_exec(
         )
     # On Unix decode as UTF-8, but fall back to Latin-1 on invalid bytes instead of
     # surrogateescape: a lone surrogate decodes fine here but crashes later when the
-    # plugin re-encodes the message for stdout (Linuxfabrik/lib#256).
+    # caller re-encodes the message for stdout (Linuxfabrik/lib#256).
     return True, (
         txt.to_text(stdout, errors='strict_or_latin1'),
         txt.to_text(stderr, errors='strict_or_latin1'),

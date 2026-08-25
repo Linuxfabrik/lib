@@ -6,7 +6,7 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Provides test functions for unit tests."""
 
@@ -21,11 +21,11 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081001'
+__version__ = '2026082501'
 
 
 def run(test_instance, plugin, testcase):
-    """Run a single testcase against a plugin and assert the results.
+    """Run a single testcase against a script and assert the results.
 
     Designed to be used with unittest.TestCase.subTest() for declarative,
     data-driven test definitions. Each testcase is a dict describing what
@@ -34,14 +34,14 @@ def run(test_instance, plugin, testcase):
     ### Parameters
     - **test_instance** (`unittest.TestCase`): The test instance (self)
       for assertions.
-    - **plugin** (`str`): Path to the plugin executable.
+    - **plugin** (`str`): Path to the executable under test.
     - **testcase** (`dict`): Test definition with keys:
       - `test` (`str`): --test parameter value,
         e.g. `'stdout/ok-healthy,,0'`.
-      - `params` (`str`, optional): Additional plugin parameters.
+      - `params` (`str`, optional): Additional parameters to pass.
         Default: `''`.
       - `assert-retc` (`int`, optional): Expected return code (STATE_OK,
-        etc.). Omit it when the plugin's state depends on something the
+        etc.). Omit it when the resulting state depends on something the
         testcase does not control, for example an end-of-life date that
         moves the verdict from OK to WARNING as the calendar advances.
       - `assert-in` (`list` of `str`, optional): Strings that must
@@ -72,7 +72,7 @@ def run(test_instance, plugin, testcase):
     ...
     ...
     ... class TestCheck(unittest.TestCase):
-    ...     check = '../my-plugin'
+    ...     check = '../my-script'
     ...
     ...     def test(self):
     ...         for t in TESTS:
@@ -134,16 +134,16 @@ def attach_tests(test_class, tests, plugin_attr='check'):
     ### Parameters
     - **test_class** (`type`): a ``unittest.TestCase`` subclass with a
       ``check`` (or other ``plugin_attr``-named) attribute pointing at
-      the plugin executable.
+      the executable under test.
     - **tests** (`list[dict]`): a TESTS list of testcase dicts, each
       shaped as ``run()`` expects, with a unique ``id`` field.
     - **plugin_attr** (`str`, optional): the attribute name on
-      ``test_class`` that holds the plugin path. Defaults to
+      ``test_class`` that holds the path of the executable. Defaults to
       ``'check'``.
 
     ### Example
     >>> class TestCheck(unittest.TestCase):
-    ...     check = '../my-plugin'
+    ...     check = '../my-script'
     >>> attach_tests(TestCheck, TESTS)
     >>>
     >>> if __name__ == '__main__':
@@ -211,7 +211,7 @@ def attach_each(test_class, items, action, id_func=str):
     >>> def _check(test, image_pair):
     ...     image, version_tag = image_pair
     ...     with lib.lftest.run_container(image, ...) as container:
-    ...         # ... run plugin, assert ...
+    ...         # ... run the executable, assert ...
     ...         pass
     >>>
     >>> class TestCheck(unittest.TestCase):
@@ -342,7 +342,7 @@ def run_container(
     ...         container.get_container_host_ip(),
     ...         container.get_exposed_port(8080),
     ...     )
-    ...     # point the plugin at this url
+    ...     # point the executable at this url
     """
     try:
         from datetime import timedelta
@@ -441,8 +441,8 @@ def _run_mysql_compatible_resolved(image_ref, command, seed):
     statement.
 
     The `defaults_file` is a temporary `[client]` `.cnf` deleted on
-    context exit so callers can invoke plugins with `--defaults-file=...`
-    without manual tempfile bookkeeping.
+    context exit so a caller can invoke the executable with
+    `--defaults-file=...` without manual tempfile bookkeeping.
 
     The `MYSQL_*` env var names work for both flavours: MariaDB
     upstream accepts them as aliases for `MARIADB_*`, and MySQL
@@ -504,15 +504,16 @@ def run_mysql_compatible(image, *, extra_args=None, seed=None):
     """Start a MySQL- or MariaDB-compatible container and yield
     `(container, defaults_file)`.
 
-    Thin convenience wrapper around :func:`run_container` for the
-    Linuxfabrik mysql-* check plugins. Hides the image-family
+    Thin convenience wrapper around :func:`run_container` for a
+    consumer testing against MySQL or MariaDB. Hides the image-family
     boilerplate (env vars, TCP port exposure, start command, log
     marker to wait on) and writes a temporary `[client]` `.cnf` file
-    pointing at the exposed host port so the caller can run a plugin
-    with `--defaults-file=...` without manual tempfile management.
+    pointing at the exposed host port so the caller can run its
+    executable with `--defaults-file=...` without manual tempfile
+    management.
 
-    For the canonical convention (per-plugin Containerfile under
-    `unit-test/containerfiles/`), prefer
+    For the canonical convention (one Containerfile per LTS release under
+    the consumer's own `unit-test/containerfiles/`), prefer
     :func:`run_mysql_compatible_from_containerfile`. This entry point
     is kept for the legacy path that hard-codes an image reference.
 
@@ -554,16 +555,15 @@ def run_mysql_compatible_from_containerfile(
     extra_args=None,
     seed=None,
 ):
-    """Build a MySQL- or MariaDB-compatible image from a per-plugin
+    """Build a MySQL- or MariaDB-compatible image from a consumer's own
     Containerfile, start it and yield `(container, defaults_file)`
     exactly like :func:`run_mysql_compatible`.
 
-    The canonical layout for a Linuxfabrik mysql-* plugin places one
-    Containerfile per LTS release under
-    `<plugin>/unit-test/containerfiles/` (e.g. `mariadb-v118`,
+    The canonical layout places one Containerfile per LTS release under
+    the consumer's `unit-test/containerfiles/` (e.g. `mariadb-v118`,
     `mariadb-v1011`, `mysql-v80`, `mysql-v84`). Each file is typically
     a one-liner (`FROM <upstream-or-sclorg-image>`) but can be extended
-    with plugin-specific layers if a test needs custom server config
+    with consumer-specific layers if a test needs custom server config
     or pre-seeded state.
 
     The DBMS family (MariaDB vs MySQL; sclorg vs upstream) is detected
@@ -609,7 +609,7 @@ def run_mysql_compatible_from_containerfile(
 
     # No parenthesized context managers: they are Python 3.10+ syntax and break
     # parsing on RHEL 8's default Python 3.6. Use an ExitStack so the module
-    # stays importable on the oldest interpreters our plugins run on.
+    # stays importable on the oldest interpreters a consumer runs on.
     with contextlib.ExitStack() as stack:
         image = stack.enter_context(
             DockerImage(
@@ -776,19 +776,19 @@ def test_text(args, path=None):
 def _read_fixture(value):
     """
     Resolve a `--test` channel value to fixture content, confined to the calling
-    plugin's own `unit-test/` directory.
+    script's own `unit-test/` directory.
 
-    The unit-test harness passes fixture paths relative to a plugin's
-    `unit-test/` directory (for example `stdout/ok`) and invokes the plugin as
-    an unprivileged user from within that directory. To keep that working while
-    preventing `--test` from reading arbitrary files when a plugin runs as root
-    (the plugins are whitelisted in the shipped sudoers file), the read is
-    confined to `<plugin_dir>/unit-test/`. The directory is anchored to the
-    plugin script's own location (`sys.argv[0]`), not the current working
-    directory, which an attacker controls. On a deployed host the plugin lives
-    in a flat plugins directory with no `unit-test/` sibling, so nothing there
-    resolves to a readable fixture and the value is returned verbatim. This
-    closes the arbitrary root file read reported in GHSA-rh9c-rqvg-f7pr.
+    The unit-test harness passes fixture paths relative to that `unit-test/`
+    directory (for example `stdout/ok`) and invokes the script as an
+    unprivileged user from within it. To keep that working while preventing
+    `--test` from reading arbitrary files where the script runs as root (for
+    example through a sudoers allowlist), the read is confined to
+    `<script_dir>/unit-test/`. The directory is anchored to the script's own
+    location (`sys.argv[0]`), not the current working directory, which an
+    attacker controls. On a deployed host the script usually lives in a flat
+    directory with no `unit-test/` sibling, so nothing there resolves to a
+    readable fixture and the value is returned verbatim. This closes the
+    arbitrary root file read reported in GHSA-rh9c-rqvg-f7pr.
 
     A value that does not resolve to a contained fixture file (an absolute path,
     a `..` escape, or an inline literal test string) is returned unchanged.
@@ -798,7 +798,7 @@ def _read_fixture(value):
     fixtures_dir = os.path.join(
         os.path.dirname(os.path.realpath(sys.argv[0])), 'unit-test'
     )
-    # Refuse a symlinked anchor: on a host where the plugin directory is
+    # Refuse a symlinked anchor: on a host where the script's directory is
     # (mis)configured writable by the low-privilege user, a `unit-test` symlink
     # to e.g. /etc would otherwise redirect the read out of the source tree. A
     # real checkout always has unit-test/ as a plain directory. Symlinks *below*

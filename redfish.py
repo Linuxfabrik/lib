@@ -6,12 +6,12 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026082502'
 
 import atexit
 import base64
@@ -24,17 +24,18 @@ from . import base, cache, db_sqlite, disk, human, time, txt, url
 from .globals import STATE_CRIT, STATE_OK, STATE_WARN
 
 # Shared cache database filename for the Redfish fetch layer. The fetch helpers below cache by URL,
-# but only when a caller opts in by passing a non-zero `cache_expire` (the plugins pass one); with
-# the default `cache_expire=0` they fetch straight through and touch no cache. Several checks read
-# the same data from one controller each cycle (its session token, its `$expand` support, the
-# Systems or Managers collection and their members), so the first check to miss the cache fetches
-# and fills it and every sibling check reuses the entry instead of hitting the controller again.
+# but only when a caller opts in by passing a non-zero `cache_expire`; with the default
+# `cache_expire=0` they fetch straight through and touch no cache. Several consumers read the
+# same data from one controller each cycle (its session token, its `$expand` support, the
+# Systems or Managers collection and their members), so the first one to miss the cache fetches
+# and fills it and every sibling reuses the entry instead of hitting the controller again.
 # Kept out of the default cache database so those response bodies do not mingle with other cached
-# data. Named here so every plugin and this library agree on the same file and can share entries.
+# data. Named here so every consumer and this library agree on the same file and can share
+# entries.
 CACHE_FILENAME = 'linuxfabrik-monitoring-plugins-redfish.db'
 
 # Upper bound for the Redfish `$expand` `$levels` we ask for, even when a controller advertises a
-# higher `MaxLevels`. A single deeply expanded document already inlines every member a check reads;
+# higher `MaxLevels`. A single deeply expanded document already inlines every member a caller reads;
 # going deeper only inflates the response (and the controller's work) without a caller that needs
 # it. Three levels reach the deepest tree we walk (Systems -> Storage -> Drives/Volumes).
 MAX_EXPAND_LEVELS = 3
@@ -47,11 +48,11 @@ DEFAULT_EXPAND = '?$expand=.($levels=1)'
 
 # File the diagnostic trace is written to, inside the same per-user directory as the cache
 # database. The trace is a support aid: it records what this library asked the controller for,
-# how long each request took and which path the authentication took, so a slow or flapping check
-# can be diagnosed from one file instead of from a dozen hand-run curl commands. A check writes
-# it only when its `--verbose` switch turned the trace on; otherwise the trace costs one `if` per
-# request and nothing is opened. See `start_trace()` for why this goes to a file rather than to
-# the check's output.
+# how long each request took and which path the authentication took, so a slow or flapping run
+# can be diagnosed from one file instead of from a dozen hand-run curl commands. A consumer
+# writes it only when its `--verbose` switch turned the trace on; otherwise the trace costs one
+# `if` per request and nothing is opened. See `start_trace()` for why this goes to a file rather
+# than to the caller's output.
 # Upper bound for the extra attempts a login is given, however high a caller's own retry budget
 # is. A login is not a read: a controller creates the session before it answers, so an attempt the
 # client abandons on timeout still leaves a session behind on the controller (measured: three
@@ -63,9 +64,9 @@ MAX_LOGIN_RETRIES = 2
 
 TRACE_FILENAME = 'linuxfabrik-monitoring-plugins-redfish-trace.log'
 
-# Sentence a check appends to its own `--verbose` help, so all Redfish checks describe the trace
-# in the same words and an admin is told where to look before the check has run once. Kept free
-# of a literal '%', which argparse would try to expand.
+# Sentence a consumer appends to its own `--verbose` help, so every Redfish consumer describes
+# the trace in the same words and an admin is told where to look before it has run once. Kept
+# free of a literal '%', which argparse would try to expand.
 TRACE_HELP = (
     'For this check that also writes a trace of every Redfish request, with timings, to '
     + TRACE_FILENAME
@@ -74,7 +75,7 @@ TRACE_HELP = (
     'useful against a slow management controller.'
 )
 
-# Upper bound for the trace file, in bytes. A check that runs every minute would otherwise fill
+# Upper bound for the trace file, in bytes. A caller that runs every minute would otherwise fill
 # the temporary directory while an admin leaves `--verbose` on over a weekend. Once the file has
 # grown past this, `start_trace()` refuses instead of appending, so an admin is told to move the
 # file away rather than losing the temporary directory to it.
@@ -436,10 +437,10 @@ def _trace_timestamp():
 def _trace_pid():
     """Return the current process id, padded, for the trace's second column.
 
-    A host's Redfish checks are scheduled together and append to the same file, so their lines
-    interleave. Without a process id on every line the file cannot be split back into the runs it
-    came from, and a `+12.000s` from one check reads as if it belonged to another. With it,
-    `grep` on one id yields one check's run.
+    A host's Redfish consumers are scheduled together and append to the same file, so their
+    lines interleave. Without a process id on every line the file cannot be split back into the
+    runs it came from, and a `+12.000s` from one run reads as if it belonged to another. With it,
+    `grep` on one id yields one run.
     """
     return f'{os.getpid():>7}'
 
@@ -476,9 +477,9 @@ def _trace_summary():
     Runs on a normal exit and on `sys.exit()`, but not when the process is killed by a signal,
     which is exactly the case this trace exists for. That is why every line above is written and
     flushed as it happens (unbuffered `os.write()`) instead of being collected and printed at the
-    end: a check that the monitoring server terminates for exceeding its timeout still leaves a
-    complete trace up to the moment it was killed, just without this summary. A trace whose last
-    line is a request that never completed is the finding.
+    end: a run terminated from outside for exceeding a timeout still leaves a complete trace up
+    to the moment it was killed, just without this summary. A trace whose last line is a request
+    that never completed is the finding.
     """
     if _TRACE['fd'] is None:
         return
@@ -512,19 +513,19 @@ def start_trace(path='', filename=TRACE_FILENAME):
     """
     Start writing a diagnostic trace of every Redfish request this run makes.
 
-    Turn this on from a check's `--verbose` switch. It records, line by line and with millisecond
+    Turn this on from a `--verbose` switch. It records, line by line and with millisecond
     timestamps, which URL was requested with which timeout and retry budget, how long the
     controller took to answer, whether an answer came from the shared cache, which `$expand`
     support the controller advertised, whether its members arrived inlined or had to be fetched
     one by one, and which of the three authentication paths (cached token, fresh session, Basic
-    fallback) the run took. Between them, those lines answer why a check against a slow
-    management controller runs long, without an admin having to reproduce the walk by hand.
+    fallback) the run took. Between them, those lines answer why a run against a slow management
+    controller takes long, without an admin having to reproduce the walk by hand.
 
-    The trace goes to a file rather than to the check's output on purpose. A check that runs long
-    enough to be diagnosed is usually a check the monitoring server terminates with `SIGTERM`,
-    and a terminated check produces no output at all: whatever it would have printed dies with
-    it. The file is written as the run progresses, so it survives that termination and still
-    shows where the time went.
+    The trace goes to a file rather than to the caller's output on purpose. A run that takes long
+    enough to be diagnosed is usually one that is terminated from outside with `SIGTERM`, and a
+    terminated run produces no output at all: whatever it would have printed dies with it. The
+    file is written as the run progresses, so it survives that termination and still shows where
+    the time went.
 
     The file lives in the same per-user, `0700` directory as the cache database, and is created
     with `0600` and `O_NOFOLLOW`, so a symlink planted at a predictable path under a shared
@@ -788,8 +789,8 @@ def fetch_collection(
     A Redfish collection (for example `Sensors`, `Memory`, `Drives` or `FirmwareInventory`) lists
     its members as bare `@odata.id` references, so reading every member classically costs one
     request for the collection plus one request per member. On a controller with dozens of members
-    that fan-out dominates the check runtime and, on a slow management controller, can exceed the
-    monitoring server's check timeout.
+    that fan-out dominates the runtime and, on a slow management controller, can exceed the
+    caller's own timeout.
 
     This helper appends the Redfish `$expand` query `expand` (default: one level of subordinate
     members), which asks the controller to return the full member objects inline. When the
@@ -803,9 +804,9 @@ def fetch_collection(
     advertised support, so a single request inlines as much of the subtree as the controller can.
 
     When `cache_expire` is non-zero the parsed collection is cached under `redfish-<collection_url>`
-    (keyed by the plain URL, not the `$expand` variant) and reused by any sibling check reading the
-    same collection within the window, so identical reads across a host's Redfish checks hit the
-    cache instead of the controller. A failed fetch is never cached.
+    (keyed by the plain URL, not the `$expand` variant) and reused by any sibling consumer
+    reading the same collection within the window, so identical reads across a host's Redfish
+    consumers hit the cache instead of the controller. A failed fetch is never cached.
 
     ### Parameters
     - **collection_url** (`str`): The absolute URL of the collection resource, as produced by
@@ -903,9 +904,9 @@ def fetch_members(
     cannot redirect it to another host (see `build_url()` for the SSRF rationale).
 
     When `cache_expire` is non-zero each fetched member is cached under `redfish-<member_url>` and
-    reused by any sibling check that reads the same member within the window. On a controller without
-    `$expand` support several checks otherwise re-fetch the same members every cycle, so this is what
-    keeps a fleet of Redfish checks from hammering the controller. Already-inlined members are not
+    reused by any sibling consumer that reads the same member within the window. On a controller
+    without `$expand` support several consumers otherwise re-fetch the same members every cycle,
+    so this is what keeps a fleet of Redfish consumers from hammering the controller. Already-inlined members are not
     re-cached (they came from an already-cached collection), and a failed fetch is never cached.
 
     ### Parameters
@@ -979,8 +980,9 @@ def fetch_resource(
     Unlike `fetch_collection()` this adds no `$expand` query; it is for reading an individual
     resource such as the service root a caller inspects to detect the controller vendor. When
     `cache_expire` is non-zero the parsed document is cached under `redfish-<resource_url>` and
-    reused by any sibling check that reads the same URL within the window, so identical reads across
-    a host's Redfish checks hit the cache instead of the controller. A failed fetch is never cached.
+    reused by any sibling consumer that reads the same URL within the window, so identical reads
+    across a host's Redfish consumers hit the cache instead of the controller. A failed fetch is
+    never cached.
 
     ### Parameters
     - **resource_url** (`str`): The absolute URL of the resource.
@@ -1068,7 +1070,7 @@ def _renew_auth(header):
 
     A cached session token outlives its usefulness the moment the controller drops the session,
     which it does on a reboot, when its session pool is evicted, or when an admin clears the
-    sessions by hand. Every check on that host then presents a token the controller no longer
+    sessions by hand. Every consumer on that host then presents a token the controller no longer
     knows and fails with a 401 until the cache entry expires. Renewing on the spot turns that
     outage into a single extra login.
 
@@ -1083,7 +1085,7 @@ def _renew_auth(header):
         'the controller rejected the session token, so it dropped the session behind it. '
         'Logging in again and retrying the request',
     )
-    # Drop the stale token so this run, and every sibling check reading the same cache, stops
+    # Drop the stale token so this run, and every sibling consumer reading the same cache, stops
     # presenting it.
     if _AUTH['cache_expire'] and _AUTH['token_key']:
         cache.set(
@@ -1148,14 +1150,14 @@ def _delete_session(session_url, token, args):
     """Hand a Redfish session back to the controller, so it stops occupying a slot.
 
     A controller keeps a session until its own `SessionTimeout` expires it, which is typically far
-    longer than the interval at which checks log in. Without this, every login leaves its
-    predecessor behind and a host's checks accumulate sessions until the controller's pool is
-    full, at which point new logins fail and every check falls back to Basic auth (and gets
+    longer than the interval at which consumers log in. Without this, every login leaves its
+    predecessor behind and a host's consumers accumulate sessions until the controller's pool is
+    full, at which point new logins fail and every consumer falls back to Basic auth (and gets
     slower). Deleting the previous session on the way in keeps exactly one open.
 
     Failures are ignored on purpose: this is housekeeping, and a controller that refuses the
-    `DELETE` (or has already expired the session itself) must not turn a working check into an
-    UNKNOWN. It is given no retries and never blocks a check for long.
+    `DELETE` (or has already expired the session itself) must not turn a working run into an
+    UNKNOWN. It is given no retries and never blocks a run for long.
 
     ### Parameters
     - **session_url** (`str`): Absolute URL of the session, as `_session_url()` pinned it.
@@ -1330,7 +1332,7 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
     if token:
         if cache_expire:
             # Bound the cached token's lifetime by the controller's own inactivity
-            # timeout (SessionTimeout, in seconds) so a sibling check never reuses
+            # timeout (SessionTimeout, in seconds) so a sibling consumer never reuses
             # the token after the controller would already have dropped the
             # session. cache_expire caps it from above.
             token_ttl = cache_expire
@@ -1791,8 +1793,8 @@ def get_expand_suffix(
     clause, capped at `MAX_EXPAND_LEVELS`.
 
     When `cache_expire` is non-zero the derived suffix is cached under `redfish-expand-<base_url>`
-    and reused by the sibling Redfish checks on the host within the window, so the service root is
-    probed once per cycle instead of by every check. On any failure (root not readable, no expand
+    and reused by the sibling Redfish consumers on the host within the window, so the service
+    root is probed once per cycle instead of by every one of them. On any failure (root not readable, no expand
     support advertised) it returns `DEFAULT_EXPAND`; `fetch_collection()` falls back to a plain
     request should the controller reject even that.
 

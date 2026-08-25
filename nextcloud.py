@@ -6,12 +6,12 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """This library collects some Nextcloud related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026082501'
 
 import json
 import os
@@ -91,7 +91,7 @@ def run_occ(path, cmd, _format='json', timeout=None):
     if not php:
         return False, (
             'Could not find a `php` interpreter in PATH. Install PHP or make sure it is '
-            'reachable for the user running the plugin.'
+            'reachable for the user running this process.'
         )
 
     # get the owner of config.php

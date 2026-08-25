@@ -6,14 +6,14 @@
 #          https://www.linuxfabrik.ch/
 # License: The Unlicense, see LICENSE file.
 
-# https://github.com/Linuxfabrik/monitoring-plugins/blob/main/CONTRIBUTING.md
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
 """Functions to convert raw numbers, times etc. to a human readable representation (and sometimes
 back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082401'
+__version__ = '2026082501'
 
 import math
 import re
@@ -495,7 +495,7 @@ def _convert_range(text, convert_fn):
             # cannot, which as a range bound is not "nothing to compare against" but the
             # threshold zero: `1,5M` with a decimal comma would silently become `0:0`
             # and alert on every value but zero. Handing the bound on unconverted lets
-            # the range parser reject it and the plugin report UNKNOWN.
+            # the range parser reject it and the caller report UNKNOWN.
             parts.append(part)
             continue
         parts.append(part.replace(raw, str(convert_fn(raw))))
