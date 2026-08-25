@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082503'
+__version__ = '2026082504'
 
 import csv
 import functools
@@ -1826,8 +1826,14 @@ def per_second_deltas(filename, name, counters):
     # leaves the helper returning None forever.
     columns = {col: __filter_str(col) for col in counters}
 
+    # Quote the column names the same way `insert()` does. A counter name that survives
+    # __filter_str() can still be an SQL keyword, and an unquoted `drop INT NOT NULL`
+    # fails the CREATE, after which the helper returns None on every run - which reads
+    # like a missing baseline rather than like a broken cache table.
     col_defs = ['name TEXT NOT NULL', 'timestamp INT NOT NULL']
-    col_defs.extend(f'{column} INT NOT NULL' for column in columns.values())
+    col_defs.extend(
+        f'{__quote_ident(column)} INT NOT NULL' for column in columns.values()
+    )
     definition = ', '.join(col_defs)
 
     ok, _ = create_table(conn, definition, drop_table_first=False)

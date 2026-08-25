@@ -972,6 +972,28 @@ class TestPerSecondDeltas(unittest.TestCase):
         # The caller reads the result back with the key it passed in, not with the column name.
         self.assertAlmostEqual(rates['rx-bytes'], 20.0)
 
+    def test_counter_named_after_an_sql_keyword_still_works(self):
+        # A name that survives sanitizing can still be an SQL keyword. The column was quoted
+        # for the INSERT but not for the CREATE, so 'drop INT NOT NULL' failed the CREATE and
+        # the helper reported a missing baseline on every run. The kernel's connection
+        # tracking statistics carry exactly that counter name.
+        saved_now = db.time.now
+        ticks = iter([1000, 1010])
+        db.time.now = lambda: next(ticks)
+        try:
+            first = db.per_second_deltas(
+                'lftest-psd-keyword.db', 'conntrack', {'drop': 100, 'early_drop': 20}
+            )
+            rates = db.per_second_deltas(
+                'lftest-psd-keyword.db', 'conntrack', {'drop': 300, 'early_drop': 20}
+            )
+        finally:
+            db.time.now = saved_now
+        self.assertIsNone(first)
+        self.assertIsNotNone(rates, 'a counter named after an SQL keyword broke the table')
+        self.assertAlmostEqual(rates['drop'], 20.0)  # (300-100) / 10
+        self.assertAlmostEqual(rates['early_drop'], 0.0)
+
 
 class TestFirstSeen(unittest.TestCase):
     """first_seen(): ages an observed set, forgets what disappeared."""
