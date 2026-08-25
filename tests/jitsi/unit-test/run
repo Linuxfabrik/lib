@@ -238,7 +238,7 @@ class TestRequestConstruction(unittest.TestCase):
             jitsi.get_data(make_args())
             self.assertEqual(
                 set(fj.call_args.kwargs.keys()),
-                {'extended', 'header', 'insecure', 'no_proxy', 'timeout'},
+                {'extended', 'header', 'insecure', 'no_proxy', 'proxy', 'timeout'},
             )
 
     def test_raw_mode_forwards_same_kwargs(self):

@@ -241,7 +241,15 @@ class TestGetTokenRequestBuilding(unittest.TestCase):
         captured, _ = self._call()
         self.assertEqual(
             set(captured['kw'].keys()),
-            {'header', 'method', 'extended', 'insecure', 'no_proxy', 'timeout'},
+            {
+                'header',
+                'method',
+                'extended',
+                'insecure',
+                'no_proxy',
+                'proxy',
+                'timeout',
+            },
         )
 
     def test_uri_passed_positionally(self):

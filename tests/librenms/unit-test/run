@@ -222,7 +222,9 @@ class TestGetDataRequest(LibrenmsTestBase):
         kw = self.sent_kwargs()
         self.assertNotIn('data', kw)
         self.assertNotIn('header', {})  # sanity
-        self.assertEqual(set(kw), {'header', 'insecure', 'no_proxy', 'timeout'})
+        self.assertEqual(
+            set(kw), {'header', 'insecure', 'no_proxy', 'proxy', 'timeout'}
+        )
 
     def test_fetch_json_called_exactly_once(self):
         # get_data has no pagination; one endpoint hit per call.

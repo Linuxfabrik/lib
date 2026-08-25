@@ -283,6 +283,7 @@ class TestRequestConstruction(unittest.TestCase):
                 'header': {'Content-Type': 'application/json'},
                 'insecure': True,
                 'no_proxy': True,
+                'proxy': None,
                 'timeout': 20,
             },
         )
