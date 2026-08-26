@@ -15,15 +15,18 @@ Every sample below is a real capture from a kernel 7.1 host, except where a test
 needs a shape the running kernel does not produce.
 """
 
+import errno
 import os
 import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, '..')
 
 import lib.psi as psi
+from lib.globals import STATE_OK, STATE_WARN
 
 # What the kernel prints for a resource it accounts for in both directions.
 MEMORY = (
@@ -103,11 +106,122 @@ class TestRead(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn('no pressure values', result)
 
+    def test_a_file_the_kernel_refuses_to_account_for(self):
+        # The kernel creates pressure/irq whenever the accounting is compiled in and
+        # then refuses the read with EOPNOTSUPP while it is switched off at runtime
+        # (`tsc=noirqtime` on x86). No regular file can be made to answer that way, so
+        # the errno is injected here; psi_show() in kernel/sched/psi.c is the reference.
+        self.write('irq', IRQ)
+        real_open = open
+
+        def refuse(path, *args, **kwargs):
+            if str(path).endswith('/pressure/irq'):
+                raise OSError(errno.EOPNOTSUPP, 'Operation not supported')
+            return real_open(path, *args, **kwargs)
+
+        with mock.patch('builtins.open', refuse):
+            self.assertEqual(psi.read('irq', root=self.root), (True, None))
+
+    def test_a_file_that_cannot_be_read_is_still_an_error(self):
+        # every other reason a read fails stays an error, so a broken host is not
+        # reported as one that simply keeps no statistics
+        self.write('irq', IRQ)
+        real_open = open
+
+        def refuse(path, *args, **kwargs):
+            if str(path).endswith('/pressure/irq'):
+                raise OSError(errno.EACCES, 'Permission denied')
+            return real_open(path, *args, **kwargs)
+
+        with mock.patch('builtins.open', refuse):
+            success, result = psi.read('irq', root=self.root)
+        self.assertFalse(success)
+        self.assertIn('Permission denied', result)
+
     def test_an_unknown_resource_never_becomes_a_path(self):
         success, result = psi.read('../../etc/passwd', root=self.root)
         self.assertFalse(success)
         self.assertIn('not a resource', result)
 
+
+# A reading with a burst that the one minute average smooths away: the last ten
+# seconds are almost entirely lost, the last minute barely moved.
+BURST = {
+    'full': {'avg10': 90.0, 'avg60': 6.0, 'avg300': 1.0, 'total': 1},
+    'some': {'avg10': 95.0, 'avg60': 8.0, 'avg300': 2.0, 'total': 1},
+}
+
+
+# The interrupt reading as `read()` returns it: the one resource without a `some`
+# line, which every report helper has to survive.
+IRQ_READING = {'full': {'avg10': 0.0, 'avg60': 0.02, 'avg300': 0.0, 'total': 1}}
+
+
+class TestReport(unittest.TestCase):
+    def test_only_the_judged_windows_get_a_state(self):
+        states = psi.get_states(BURST, 'full', {'avg60': ('40', '60')})
+        self.assertEqual(states, {'avg60': STATE_OK})
+
+    def test_a_second_window_is_judged_on_its_own(self):
+        states = psi.get_states(
+            BURST, 'full', {'avg10': ('80', '95'), 'avg60': ('40', '60')}
+        )
+        self.assertEqual(states, {'avg10': STATE_WARN, 'avg60': STATE_OK})
+
+    def test_a_threshold_of_none_never_alerts(self):
+        states = psi.get_states(BURST, 'full', {'avg60': (None, None)})
+        self.assertEqual(states, {'avg60': STATE_OK})
+
+    def test_a_window_the_reading_does_not_carry_is_left_out(self):
+        states = psi.get_states(IRQ_READING, 'some', {'avg60': ('1', '2')})
+        self.assertEqual(states, {})
+
+    def test_the_summary_names_the_window_it_judges(self):
+        states = psi.get_states(BURST, 'full', {'avg60': ('40', '60')})
+        summary = psi.get_summary(
+            BURST, 'io', 'storage', ('some', 'full'), 'full', states
+        )
+        self.assertIn('io pressure, last minute: some 8.0%, full 6.0%', summary)
+        self.assertIn('some = at least one task waited for storage', summary)
+        # a window nobody judged stays out of the headline
+        self.assertNotIn('last ten seconds', summary)
+
+    def test_the_summary_names_a_burst_only_while_it_is_out_of_range(self):
+        thresholds = {'avg10': ('80', '95'), 'avg60': ('40', '60')}
+        states = psi.get_states(BURST, 'full', thresholds)
+        summary = psi.get_summary(
+            BURST, 'io', 'storage', ('some', 'full'), 'full', states
+        )
+        self.assertIn('last ten seconds: full 90.0% [WARNING]', summary)
+
+    def test_a_judged_burst_within_its_range_stays_out_of_the_headline(self):
+        thresholds = {'avg10': ('95', '99'), 'avg60': ('40', '60')}
+        states = psi.get_states(BURST, 'full', thresholds)
+        summary = psi.get_summary(
+            BURST, 'io', 'storage', ('some', 'full'), 'full', states
+        )
+        self.assertNotIn('last ten seconds', summary)
+
+    def test_only_the_judged_values_carry_their_thresholds(self):
+        perfdata = psi.get_perfdata(
+            BURST, ('some', 'full'), 'full', {'avg60': ('40', '60')}
+        )
+        self.assertIn("'full_avg60'=6.0%;40;60;0;100", perfdata)
+        self.assertIn("'full_avg10'=90.0%;;;0;100", perfdata)
+        self.assertIn("'some_avg60'=8.0%;;;0;100", perfdata)
+
+    def test_a_line_the_reading_does_not_carry_yields_no_metric(self):
+        perfdata = psi.get_perfdata(IRQ_READING, ('some', 'full'), 'full', {})
+        self.assertNotIn('some_', perfdata)
+        self.assertIn("'full_avg60'=0.02%", perfdata)
+
+    def test_the_table_marks_the_state_at_the_end_of_its_row(self):
+        thresholds = {'avg10': ('80', '89'), 'avg60': ('40', '60')}
+        states = psi.get_states(BURST, 'full', thresholds)
+        table = psi.get_table(BURST, ('some', 'full'), 'full', states)
+        rows = [line for line in table.splitlines() if line.startswith('avg10')]
+        self.assertTrue(rows[0].rstrip().endswith('[CRITICAL]'))
+        self.assertIn('Window', table)
 
 if __name__ == '__main__':
     unittest.main()
