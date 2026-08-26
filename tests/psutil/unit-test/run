@@ -31,21 +31,29 @@ except SystemExit:
     HAVE_PSUTIL = False
 
 
-# Mirror the named tuple psutil.disk_partitions() returns. The real one
-# also carries opts/maxfile/maxpath, but get_partitions only ever touches
-# .mountpoint, so a minimal stand-in keeps the fixtures readable while
-# still exercising the named-tuple access path.
-sdiskpart = collections.namedtuple('sdiskpart', ['device', 'mountpoint', 'fstype'])
+# Mirror the named tuple psutil's platform module returns. The real one also
+# carries maxfile/maxpath on some releases and not on others, which is exactly
+# why get_partitions() hands back four fields of its own.
+sdiskpart = collections.namedtuple(
+    'sdiskpart', ['device', 'mountpoint', 'fstype', 'opts']
+)
 
 
 def sample_partitions():
     """Realistic set of mounted partitions on a Linux host."""
     return [
-        sdiskpart('/dev/sda1', '/', 'ext4'),
-        sdiskpart('/dev/sda2', '/boot', 'ext4'),
-        sdiskpart('/dev/sdb1', '/mnt/backup', 'xfs'),
-        sdiskpart('/dev/mapper/vg-home', '/home', 'ext4'),
-        sdiskpart('/dev/sdc1', '/var/lib/docker', 'btrfs'),
+        sdiskpart('/dev/sda1', '/', 'ext4', 'rw,relatime'),
+        sdiskpart('/dev/sda2', '/boot', 'ext4', 'rw,relatime'),
+        sdiskpart('/dev/sdb1', '/mnt/backup', 'xfs', 'rw,relatime'),
+        sdiskpart('/dev/mapper/vg-home', '/home', 'ext4', 'rw,relatime'),
+        sdiskpart('/dev/sdc1', '/var/lib/docker', 'btrfs', 'rw,relatime'),
+    ]
+
+
+def expected(parts):
+    """The four-field tuples get_partitions() builds out of what psutil returned."""
+    return [
+        lib_psutil.sdiskpart(p.device, p.mountpoint, p.fstype, p.opts) for p in parts
     ]
 
 
@@ -57,23 +65,44 @@ class TestGetPartitions(unittest.TestCase):
         patcher = mock.patch.object(lib_psutil, 'psutil')
         self.mock_psutil = patcher.start()
         self.addCleanup(patcher.stop)
-        self.mock_psutil.disk_partitions.return_value = sample_partitions()
+        self.mock_psutil._psplatform.disk_partitions.return_value = sample_partitions()
 
     def test_returns_all_when_no_ignore(self):
         result = lib_psutil.get_partitions()
         self.assertEqual(len(result), 5)
-        self.assertEqual(result, sample_partitions())
+        self.assertEqual(result, expected(sample_partitions()))
 
-    def test_calls_disk_partitions_with_all_false(self):
+    def test_lists_physical_devices_only_by_default(self):
         # Physical-only behaviour (mirrors df) must be preserved.
         lib_psutil.get_partitions()
+        self.mock_psutil._psplatform.disk_partitions.assert_called_once_with(False)
+
+    def test_include_all_asks_for_every_filesystem(self):
+        lib_psutil.get_partitions(include_all=True)
+        self.mock_psutil._psplatform.disk_partitions.assert_called_once_with(True)
+
+    def test_the_blocking_lookups_are_skipped(self):
+        # psutil.disk_partitions() looks up os.pathconf() per mount point, which never
+        # returns on a network filesystem whose server is gone. The documented function
+        # must not be the one that gets called.
+        lib_psutil.get_partitions()
+        self.mock_psutil.disk_partitions.assert_not_called()
+
+    def test_the_documented_function_is_the_fallback(self):
+        self.mock_psutil._psplatform.disk_partitions.side_effect = AttributeError
+        self.mock_psutil.disk_partitions.return_value = sample_partitions()
+        self.assertEqual(lib_psutil.get_partitions(), expected(sample_partitions()))
         self.mock_psutil.disk_partitions.assert_called_once_with(all=False)
 
+    def test_four_fields_come_back_whatever_psutil_returned(self):
+        for part in lib_psutil.get_partitions():
+            self.assertEqual(part._fields, ('device', 'mountpoint', 'fstype', 'opts'))
+
     def test_default_ignore_is_none_keeps_everything(self):
-        self.assertEqual(lib_psutil.get_partitions(None), sample_partitions())
+        self.assertEqual(lib_psutil.get_partitions(None), expected(sample_partitions()))
 
     def test_empty_ignore_list_keeps_everything(self):
-        self.assertEqual(lib_psutil.get_partitions([]), sample_partitions())
+        self.assertEqual(lib_psutil.get_partitions([]), expected(sample_partitions()))
 
     def test_ignore_single_mountpoint(self):
         result = lib_psutil.get_partitions(['/boot'])
@@ -103,7 +132,7 @@ class TestGetPartitions(unittest.TestCase):
     def test_ignore_no_match_keeps_everything(self):
         self.assertEqual(
             lib_psutil.get_partitions(['/nonexistent']),
-            sample_partitions(),
+            expected(sample_partitions()),
         )
 
     def test_ignore_filters_empty_strings(self):
@@ -115,7 +144,9 @@ class TestGetPartitions(unittest.TestCase):
         self.assertEqual(len(result), 4)
 
     def test_ignore_only_empty_strings_keeps_everything(self):
-        self.assertEqual(lib_psutil.get_partitions(['', '']), sample_partitions())
+        self.assertEqual(
+            lib_psutil.get_partitions(['', '']), expected(sample_partitions())
+        )
 
     def test_ignore_none_entries_are_dropped(self):
         # filter(None, ...) also strips None, which would otherwise raise
@@ -129,7 +160,7 @@ class TestGetPartitions(unittest.TestCase):
         self.assertIsInstance(lib_psutil.get_partitions(), list)
 
     def test_empty_partition_table(self):
-        self.mock_psutil.disk_partitions.return_value = []
+        self.mock_psutil._psplatform.disk_partitions.return_value = []
         self.assertEqual(lib_psutil.get_partitions(), [])
         self.assertEqual(lib_psutil.get_partitions(['/boot']), [])
 

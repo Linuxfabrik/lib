@@ -95,7 +95,7 @@ These libraries are built with a clear set of priorities:
 | **distro.py** | Linux distribution detection. Returns normalized facts including distribution name, version, and Ansible-compatible `os_family`. | `get_distribution_facts()` |
 | **dmidecode.py** | Parses `dmidecode` output into structured data. Extracts CPU, RAM, firmware, serial number, manufacturer, and model information. | `cpu_speed()`, `cpu_type()`, `firmware()`, `get_data()`, `manufacturer()`, `model()`, `ram()`, `serno()` |
 | **endoflifedate.py** | Bundled End-of-Life data from [endoflife.date](https://endoflife.date) for offline version checks when internet access is unavailable. | -- |
-| **psutil.py** | Wrapper around `psutil` for retrieving mounted disk partitions with device, mount point, and filesystem type. | `get_partitions()` |
+| **psutil.py** | Wrapper around `psutil` for retrieving mounted disk partitions with device, mount point, filesystem type and mount options. Lists them from the mount table alone, so a network filesystem whose server is gone cannot hold the listing up. | `get_partitions()` |
 | **shell.py** | Runs external commands from an argv list without a shell, guards option-style CLI values, and locates executables in `PATH`. | `safe_cli_value()`, `shell_exec()`, `which()` |
 
 

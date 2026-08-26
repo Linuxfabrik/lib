@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * db_sqlite.py: `compute_load()` reports the sensors that have enough samples, and leaves out one whose counter started over
+* psutil.py: `get_partitions()` also returns the mount options, takes `include_all` to list every mounted filesystem instead of the physical devices only, and no longer waits on the filesystems it lists
 * lftest.py: the container helpers skip a test instead of failing it when testcontainers is missing or `LFTEST_NO_CONTAINER` is set
 * url.py: `fetch()` says what is wrong with a certificate that does not verify, and points out a plaintext request sent to a port that speaks TLS
 
