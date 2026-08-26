@@ -127,6 +127,32 @@ class TestSeconds2Human(unittest.TestCase):
     def test_very_large(self):
         self.assertEqual(human.seconds2human(10**8), '3Y 2M')
 
+    def test_sub_second_units_are_exact(self):
+        # A tenth of a second has no exact binary representation, so dividing the
+        # float by the size of each unit lost a microsecond on the way: 0.35 used
+        # to come out as '349ms 999us' and 0.125 as '124ms 1000us'.
+        self.assertEqual(human.seconds2human(0.35), '350ms')
+        self.assertEqual(human.seconds2human(0.125), '125ms')
+        self.assertEqual(human.seconds2human(0.001), '1ms')
+        self.assertEqual(human.seconds2human(0.000001), '1us')
+        self.assertEqual(human.seconds2human(1e-9), '1ns')
+        self.assertEqual(human.seconds2human(1e-12), '1ps')
+
+    def test_sub_second_units_combine_with_whole_seconds(self):
+        self.assertEqual(human.seconds2human(1.5), '1s 500ms')
+        self.assertEqual(human.seconds2human(3.7), '3s 700ms')
+        self.assertEqual(human.seconds2human(75.07), '1m 15s')
+        self.assertEqual(human.seconds2human(75.07, keep_short=False), '1m 15s 70ms')
+
+    def test_a_fraction_that_rounds_up_carries_into_the_second(self):
+        self.assertEqual(human.seconds2human(0.9999999999999), '1s')
+
+    def test_a_caller_picks_its_granularity_by_rounding(self):
+        # There is no precision parameter: a caller that wants milliseconds and no
+        # finer rounds its own value, which composes with every other parameter.
+        self.assertEqual(human.seconds2human(0.0021473), '2ms 147us')
+        self.assertEqual(human.seconds2human(round(0.0021473, 3)), '2ms')
+
 
 class TestHuman2Bytes(unittest.TestCase):
     def test_examples(self):

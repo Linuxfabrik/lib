@@ -13,7 +13,7 @@ back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082601'
+__version__ = '2026082602'
 
 import math
 import re
@@ -144,6 +144,10 @@ _TIME_UNITS_FULL = (
     ('nanosecs', 1e-9),
     ('picosecs', 1e-12),
 )
+
+# Picoseconds per second, the resolution the sub-second units of the tables above
+# are counted in so that seconds2human() can divide in whole numbers.
+_PICOS_PER_SECOND = 10**12
 
 # Pre-computed time units for seconds2human (short names)
 _TIME_UNITS_SHORT = (
@@ -631,7 +635,7 @@ def seconds2human(seconds, keep_short=True, full_name=False):
 
     ### Example
     >>> seconds2human(0.125)
-    '124ms 1000us'
+    '125ms'
 
     >>> seconds2human(1)
     '1s'
@@ -671,21 +675,34 @@ def seconds2human(seconds, keep_short=True, full_name=False):
         return '0seconds' if full_name else '0s'
 
     # A negative duration is formatted like its positive counterpart and signed. The
-    # floor division below rounds towards minus infinity, which turned -5 into
-    # '-1Y 12M'.
+    # division below rounds towards minus infinity, which turned -5 into '-1Y 12M'.
     sign = '-' if seconds < 0 else ''
     seconds = abs(seconds)
+
+    # The duration is split into whole seconds and a fraction counted in whole
+    # picoseconds, and every division below is an integer one. Dividing the float
+    # itself by the size of each unit cannot be exact for the sub-second units,
+    # because a tenth of a second has no exact binary representation: 0.35 // 1e-3
+    # is 349.0, so 0.35 came out as "349ms 999us" instead of "350ms".
+    whole = int(seconds)
+    fraction = round((seconds - whole) * _PICOS_PER_SECOND)
+    if fraction >= _PICOS_PER_SECOND:
+        # the rounding carried over into the next second
+        whole += 1
+        fraction -= _PICOS_PER_SECOND
 
     units = _TIME_UNITS_FULL if full_name else _TIME_UNITS_SHORT
 
     result = []
     for name, count in units:
-        value = seconds // count
+        if count >= 1:
+            value, whole = divmod(whole, int(count))
+        else:
+            value, fraction = divmod(fraction, round(count * _PICOS_PER_SECOND))
         if value:
-            seconds -= value * count
             if full_name and value == 1:
                 name = name.rstrip('s')
-            result.append(f'{int(value)}{name}')
+            result.append(f'{value}{name}')
 
     if keep_short and len(result) > 2:
         return sign + ' '.join(result[:2])

@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * base.py: `match_range()` and `get_state()` report a value that is not a number instead of raising, and refuse `nan`
 * db_sqlite.py: `per_second_deltas()` accepts a counter whose name is an SQL keyword, such as `drop`; it used to report a missing baseline on every run instead
+* human.py: `seconds2human()` renders a duration below a second exactly. It divided the value by the size of each unit, which cannot be exact in binary, so `0.35` came out as `349ms 999us` instead of `350ms`
 * human.py: `humanrange2bytes()` and `humanrange2seconds()` stop stalling on a threshold made of many digits, and report `0.00.0` as unreadable instead of reading it as the threshold zero
 * human.py: `seconds2human()` answers `0s` for a duration of zero and signs a negative duration
 * human.py: `number2human()` drops a fraction that is zero, so a count of two things reads as `2` instead of `2.0`
