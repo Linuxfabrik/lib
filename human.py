@@ -13,7 +13,7 @@ back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082502'
+__version__ = '2026082601'
 
 import math
 import re
@@ -578,7 +578,15 @@ def number2human(number):
     ### Returns
     - **str**: The number formatted with an appropriate SI prefix.
 
+    ### Notes
+    - A fraction that turns out to be zero is dropped: `2` rather than `2.0`. Most of what
+      this formats are counts of things, and a decimal place claims a precision a count does
+      not have.
+
     ### Example
+    >>> number2human(2)
+    '2'
+
     >>> number2human(123456.8)
     '123.5K'
 
@@ -597,7 +605,10 @@ def number2human(number):
 
     millidx = max(0, min(_SI_PREFIXES_MAX_IDX, millidx))
     scaled = number / 10 ** (3 * millidx)
-    return f'{scaled:.1f}{_SI_PREFIXES[millidx]}'
+    text = f'{scaled:.1f}'
+    if text.endswith('.0'):
+        text = text[:-2]
+    return f'{text}{_SI_PREFIXES[millidx]}'
 
 
 def seconds2human(seconds, keep_short=True, full_name=False):

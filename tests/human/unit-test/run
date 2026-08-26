@@ -77,10 +77,28 @@ class TestBitsAndBps(unittest.TestCase):
 class TestNumber2Human(unittest.TestCase):
     def test_examples_and_edges(self):
         self.assertEqual(human.number2human(1234567), '1.2M')
-        self.assertEqual(human.number2human(999), '999.0')
-        self.assertEqual(human.number2human(0), '0.0')
-        self.assertEqual(human.number2human(10**12), '1.0T')
-        self.assertEqual(human.number2human(-5), '-5.0')
+        self.assertEqual(human.number2human(999), '999')
+        self.assertEqual(human.number2human(0), '0')
+        self.assertEqual(human.number2human(10**12), '1T')
+        self.assertEqual(human.number2human(-5), '-5')
+
+    def test_a_fraction_that_is_zero_is_dropped(self):
+        # Most of what this formats are counts of things, and `2.0` claims a precision a
+        # count does not have.
+        self.assertEqual(human.number2human(2), '2')
+        self.assertEqual(human.number2human(2.0), '2')
+        self.assertEqual(human.number2human(1000), '1K')
+        self.assertEqual(human.number2human(50000), '50K')
+        self.assertEqual(human.number2human(-1500), '-1.5K')
+
+    def test_a_fraction_that_is_not_zero_stays(self):
+        self.assertEqual(human.number2human(2.3), '2.3')
+        self.assertEqual(human.number2human(999.9), '999.9')
+        self.assertEqual(human.number2human(1360), '1.4K')
+
+    def test_what_is_not_a_number_comes_back_unchanged(self):
+        self.assertEqual(human.number2human('x'), 'x')
+        self.assertIsNone(human.number2human(None))
 
 
 class TestSeconds2Human(unittest.TestCase):

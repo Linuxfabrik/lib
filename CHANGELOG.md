@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: `per_second_deltas()` accepts a counter whose name is an SQL keyword, such as `drop`; it used to report a missing baseline on every run instead
 * human.py: `humanrange2bytes()` and `humanrange2seconds()` stop stalling on a threshold made of many digits, and report `0.00.0` as unreadable instead of reading it as the threshold zero
 * human.py: `seconds2human()` answers `0s` for a duration of zero and signs a negative duration
+* human.py: `number2human()` drops a fraction that is zero, so a count of two things reads as `2` instead of `2.0`
 * redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, closes the previous session before opening a new one, retries a failed login instead of falling back to HTTP Basic, and re-authenticates once on a "401 Unauthorized"
 * url.py: `fetch(extended=True)` takes the proxy it is told to take; it used to connect directly no matter what `no_proxy` or the environment said
 * url.py: `fetch(extended=True)` tries every address a hostname resolves to, not only the first
