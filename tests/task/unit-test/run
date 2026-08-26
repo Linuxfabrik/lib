@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.task. No fixtures and no containers: the jobs are callables
+the test brings along, and a job that sleeps stands in for one that blocks.
+
+A job that is really uninterruptible needs a network filesystem whose server has
+gone away, which no unit test can produce. What is tested here is everything
+around it: the shared deadline, telling a job that raised apart from one that
+never answered, that the answer survives the process boundary, and that no
+process and no descriptor is left behind either way.
+"""
+
+import os
+import subprocess
+import sys
+import time
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.task as task
+
+
+def sleeper(seconds):
+    """Return a job that takes `seconds` to answer."""
+
+    def job():
+        time.sleep(seconds)
+        return 'done'
+
+    return job
+
+
+def open_fd_count():
+    """Return how many file descriptors this process holds, where the platform says."""
+    try:
+        return len(os.listdir(f'/proc/{os.getpid()}/fd'))
+    except OSError:
+        return None
+
+
+def child_count():
+    """Return how many child processes this process has, zombies included."""
+    out = subprocess.run(
+        ['ps', '-o', 'pid=', '--ppid', str(os.getpid())],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return len([line for line in out.stdout.splitlines() if line.strip()])
+
+
+class TestRunEachResults(unittest.TestCase):
+    def test_no_jobs(self):
+        self.assertEqual(task.run_each([], timeout=1), {})
+
+    def test_a_job_that_answers(self):
+        result = task.run_each([('a', lambda: 42)], timeout=5)
+        self.assertEqual(result, {'a': (True, 42)})
+
+    def test_every_json_type_survives_the_process_boundary(self):
+        value = {'s': 'text', 'i': 1, 'f': 1.5, 'b': True, 'n': None, 'l': [1, 2]}
+        result = task.run_each([('a', lambda: value)], timeout=5)
+        self.assertEqual(result['a'], (True, value))
+
+    def test_a_job_returning_nothing(self):
+        self.assertEqual(
+            task.run_each([('a', lambda: None)], timeout=5)['a'], (True, None)
+        )
+
+    def test_a_job_that_raises_reports_the_exception(self):
+        success, message = task.run_each([('a', lambda: 1 / 0)], timeout=5)['a']
+        self.assertFalse(success)
+        self.assertEqual(message, 'division by zero')
+
+    def test_a_job_that_raises_is_told_apart_from_one_that_times_out(self):
+        # the whole point of the module: the first means the work was done and the
+        # answer was no, the second means no answer was reached at all
+        result = task.run_each(
+            [('raises', lambda: 1 / 0), ('blocks', sleeper(30))], timeout=1
+        )
+        self.assertNotEqual(result['raises'][1], task.TIMEOUT)
+        self.assertEqual(result['blocks'], (False, task.TIMEOUT))
+
+    def test_a_job_whose_answer_is_not_json(self):
+        success, _ = task.run_each([('a', lambda: object())], timeout=5)['a']
+        self.assertFalse(success)
+
+    def test_keys_can_be_any_hashable(self):
+        jobs = [(1, lambda: 'one'), (('t', 2), lambda: 'two'), (None, lambda: 'none')]
+        result = task.run_each(jobs, timeout=5)
+        self.assertEqual(result[1], (True, 'one'))
+        self.assertEqual(result[('t', 2)], (True, 'two'))
+        self.assertEqual(result[None], (True, 'none'))
+
+    def test_an_answer_larger_than_a_pipe_holds(self):
+        # a pipe holds 64 KiB by default, so a larger answer makes the child wait for
+        # the parent to read; the parent has to keep reading until the child is done
+        payload = 'x' * (512 * 1024)
+        result = task.run_each([('a', lambda: payload)], timeout=10)
+        self.assertEqual(result['a'], (True, payload))
+
+    def test_an_answer_beyond_the_cap_is_refused(self):
+        cap = task.MAX_RESULT_BYTES
+        task.MAX_RESULT_BYTES = 1024
+        try:
+            success, message = task.run_each([('a', lambda: 'x' * 65536)], timeout=10)[
+                'a'
+            ]
+        finally:
+            task.MAX_RESULT_BYTES = cap
+        self.assertFalse(success)
+        self.assertIn('larger than', message)
+
+
+class TestRunEachDeadline(unittest.TestCase):
+    def test_the_deadline_is_shared_by_the_whole_batch(self):
+        # five jobs that never answer, one deadline: the batch takes about as long as
+        # one of them would, not five times as long
+        jobs = [(i, sleeper(30)) for i in range(5)]
+        started = time.time()
+        result = task.run_each(jobs, timeout=2)
+        elapsed = time.time() - started
+        self.assertLess(elapsed, 4)
+        self.assertGreaterEqual(elapsed, 2)
+        for i in range(5):
+            self.assertEqual(result[i], (False, task.TIMEOUT))
+
+    def test_a_batch_returns_as_soon_as_every_job_has_answered(self):
+        started = time.time()
+        task.run_each([(i, lambda: 'quick') for i in range(5)], timeout=30)
+        self.assertLess(time.time() - started, 5)
+
+    def test_the_jobs_that_answered_are_kept(self):
+        jobs = [('quick', lambda: 'here'), ('blocks', sleeper(30))]
+        result = task.run_each(jobs, timeout=2)
+        self.assertEqual(result['quick'], (True, 'here'))
+        self.assertEqual(result['blocks'], (False, task.TIMEOUT))
+
+    def test_a_timeout_of_zero_gives_no_job_any_time(self):
+        result = task.run_each([('a', sleeper(30))], timeout=0)
+        self.assertEqual(result['a'], (False, task.TIMEOUT))
+
+
+class TestRunEachLeavesNothingBehind(unittest.TestCase):
+    def test_no_child_survives_a_deadline(self):
+        before = child_count()
+        task.run_each([(i, sleeper(30)) for i in range(3)], timeout=1)
+        self.assertEqual(child_count(), before)
+
+    def test_no_child_is_left_as_a_zombie_after_a_normal_run(self):
+        before = child_count()
+        task.run_each([(i, lambda i=i: i) for i in range(3)], timeout=5)
+        self.assertEqual(child_count(), before)
+
+    def test_no_descriptor_leaks(self):
+        before = open_fd_count()
+        if before is None:
+            self.skipTest('this platform does not list the open descriptors')
+        for _ in range(3):
+            task.run_each([('quick', lambda: 1), ('blocks', sleeper(30))], timeout=1)
+        self.assertEqual(open_fd_count(), before)
+
+
+class TestRun(unittest.TestCase):
+    def test_a_single_job_that_answers(self):
+        self.assertEqual(task.run(lambda: 'value', timeout=5), (True, 'value'))
+
+    def test_a_single_job_that_raises(self):
+        success, message = task.run(lambda: 1 / 0, timeout=5)
+        self.assertFalse(success)
+        self.assertEqual(message, 'division by zero')
+
+    def test_a_single_job_that_times_out(self):
+        self.assertEqual(task.run(sleeper(30), timeout=1), (False, task.TIMEOUT))
+
+
+if __name__ == '__main__':
+    unittest.main()
