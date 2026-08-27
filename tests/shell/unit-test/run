@@ -20,6 +20,7 @@ core security property: shell metacharacters in an argument stay literal.
 import os
 import subprocess
 import sys
+import time
 import typing
 import unittest
 from unittest import mock
@@ -422,6 +423,22 @@ class TestShellExecRealCommands(unittest.TestCase):
         success, result = shell.shell_exec(['sleep', '5'], timeout=1)
         self.assertFalse(success)
         self.assertEqual(result, 'Timeout after 1 seconds.')
+
+    def test_real_timeout_holds_when_the_pipes_outlive_the_command(self):
+        # Killing the command does not close its pipes when something else holds them
+        # open: an orphaned grandchild here, and a command sitting in an uninterruptible
+        # sleep on storage that has gone away in the field. Reaping without a bound
+        # waits for that instead of for the deadline the caller asked for, so this call
+        # used to take as long as the grandchild lives (20 s) rather than the timeout.
+        start = time.time()
+        success, result = shell.shell_exec(
+            ['sh', '-c', 'sleep 20 & sleep 20'],
+            timeout=1,
+        )
+        elapsed = time.time() - start
+        self.assertFalse(success)
+        self.assertEqual(result, 'Timeout after 1 seconds.')
+        self.assertLess(elapsed, 10)
 
     def test_metacharacters_are_not_interpreted(self):
         # The whole string is one literal argument to echo; the shell would have

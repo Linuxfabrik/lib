@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026082701'
 
 
 import os
@@ -19,6 +19,11 @@ import shutil
 import subprocess  # nosec B404 - this library is the subprocess helper
 
 from . import txt
+
+# How long a killed command is given to actually die before `shell_exec()` reports the
+# timeout without it. Long enough for a process that can act on the signal, short enough
+# that one which cannot does not extend the caller's deadline in any meaningful way.
+_KILL_GRACE = 1
 
 RETC_SSHPASS = {
     1: 'Invalid command line argument',
@@ -111,7 +116,11 @@ def shell_exec(
     - Exceptions such as `OSError`, `ValueError`, or other execution errors during process
       creation are caught and reported as `(False, <error message>)`.
     - If the process exceeds the specified `timeout`, it is killed, and the function returns
-      `(False, "Timeout after <timeout> seconds.")`.
+      `(False, "Timeout after <timeout> seconds.")`. The call returns even where the kill
+      cannot take effect: a command blocked on storage that has gone away sits in an
+      uninterruptible sleep, takes the signal and does not act on it until the storage
+      answers again. Such a child outlives the call as an orphan, which is the price of
+      holding the deadline; the caller gets its answer on time either way.
     """
     if not isinstance(cmd, (list, tuple)):
         raise TypeError(
@@ -166,7 +175,28 @@ def shell_exec(
         )
     except subprocess.TimeoutExpired:
         p.kill()
-        p.communicate()
+        try:
+            # Reaping the child is what turns the kill into a finished process, but it
+            # must not become a second wait without an end. A command that blocks on
+            # storage that has gone away - `lvs` while one PV does not answer, `df` on a
+            # dead network mount - sits in an uninterruptible sleep, where it takes the
+            # signal and still cannot act on it. Its pipes stay open for as long as it
+            # lives, so an unbounded read here waits for the storage rather than for the
+            # timeout the caller asked for. Verified on Rocky 10 / kernel 6.12 against a
+            # suspended device-mapper device: without the bound below, a call with
+            # `timeout=5` never returned. Give the kill a moment to land and hand the
+            # timeout back either way; the orphan ends when its storage answers again.
+            p.communicate(timeout=_KILL_GRACE)
+        except subprocess.TimeoutExpired:
+            # Let go of the pipes rather than leaving them open for the lifetime of the
+            # caller. The orphan writing into them gets EPIPE the next time it runs,
+            # which is one more thing that ends it.
+            for pipe in (p.stdin, p.stdout, p.stderr):
+                try:
+                    if pipe is not None:
+                        pipe.close()
+                except OSError:
+                    pass
         return False, f'Timeout after {timeout} seconds.'
 
     # Decode the captured bytes. On Windows, console programs (query, schtasks,

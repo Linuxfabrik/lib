@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * human.py: `seconds2human()` answers `0s` for a duration of zero and signs a negative duration
 * human.py: `number2human()` drops a fraction that is zero, so a count of two things reads as `2` instead of `2.0`
 * redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, closes the previous session before opening a new one, retries a failed login instead of falling back to HTTP Basic, and re-authenticates once on a "401 Unauthorized"
+* shell.py: `shell_exec()` keeps to its `timeout` even when the killed command cannot die, such as one blocked on storage that has gone away; it used to wait for that command instead of for the deadline
 * url.py: `fetch(extended=True)` takes the proxy it is told to take; it used to connect directly no matter what `no_proxy` or the environment said
 * url.py: `fetch(extended=True)` tries every address a hostname resolves to, not only the first
 
