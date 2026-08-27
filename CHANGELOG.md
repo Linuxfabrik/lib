@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * every module that talks HTTP takes a `proxy` argument next to `no_proxy`, so a consumer can name the proxy instead of leaving the choice to the environment
 * args.py: `duration()` reads an `8D` style duration for argparse, and rejects a value whose unit is missing or unknown instead of silently reading it as zero
-* args.py: `HELP_TEXTS` carries `--grace-security`, `--grace-updates` and `--proxy`, so every consumer offering them describes them alike
+* args.py: `HELP_TEXTS` carries `--grace-security`, `--grace-updates`, `--grace-wait` and `--proxy`, so every consumer offering them describes them alike
 * base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`)
 * db_sqlite.py: `connect(in_memory=True)` opens a database private to the process, for data that only has to live as long as the run
 * db_sqlite.py: `cut_per_sensor()` trims a history table per sensor instead of by total row count

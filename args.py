@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk, human
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026082701'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -107,6 +107,15 @@ HELP_TEXTS = {
         'the list and comes back. '
         'A duration such as `12h`, `8D` or `2W`; `0D` disables the grace period.'
     ),
+    '--grace-wait': (
+        'How long a pending restart is tolerated before it counts towards the state. '
+        'Set this to cover the time a host needs between taking its updates and '
+        'rebooting, so a machine that is already scheduled for a reboot stays quiet '
+        'until it has had its chance. '
+        'Starts when the pending restart is first seen, separately for the reboot and '
+        'for each service, and starts over once that entry is gone. '
+        'A duration such as `12h`, `8D` or `2W`; `0D` disables the grace period.'
+    ),
     '--hostname': 'Hostname or IP address.',
     '--ipv6': 'Use IPv6.',
     '--ignore': (
@@ -162,8 +171,7 @@ HELP_TEXTS = {
         'while trending data is dropped.'
     ),
     '--no-proxy': (
-        'Do not use a proxy, not even one the environment names. '
-        'Overrides `--proxy`.'
+        'Do not use a proxy, not even one the environment names. Overrides `--proxy`.'
     ),
     '--no-vuln-data-severity': (
         'State to report when the vulnerability database could not be queried and no '
