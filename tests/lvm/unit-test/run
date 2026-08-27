@@ -1,0 +1,420 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.lvm.
+
+Every report below was captured from a real `lvs` or `vgs` run on Rocky 10
+(lvm2 2.03.28) against volumes that were actually driven into the state they show:
+a classic snapshot whose copy-on-write store was filled until the kernel threw it
+away, a thin pool written past its data volume, a thin pool whose metadata was
+exhausted through `dmsetup message ... create_thin`, and a volume group with a
+physical volume removed underneath it.
+"""
+
+import json
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.lvm as lvm
+from lib.globals import STATE_UNKNOWN, STATE_WARN
+
+# A healthy classic snapshot, one the kernel has thrown away, a healthy thin pool,
+# a thin pool whose metadata is full, a thin volume, a thin snapshot (created
+# inactive, so it reports no percentages at all) and a plain linear volume.
+LVS = """
+  {
+      "report": [
+          {
+              "lv": [
+                  {"data_percent":"0.01", "lv_active":"active", "lv_attr":"swi-a-s---", "lv_check_needed":"unknown", "lv_full_name":"testvg/goodsnap", "lv_health_status":"", "lv_layout":"linear", "lv_merge_failed":"", "lv_metadata_size":"", "lv_name":"goodsnap", "lv_role":"public,snapshot,thicksnapshot", "lv_size":"314572800", "lv_snapshot_invalid":"", "lv_time":"2026-08-27 11:19:13 +0200", "lv_when_full":"", "metadata_percent":"", "origin":"orig", "pool_lv":"", "vg_name":"testvg"},
+                  {"data_percent":"100.00", "lv_active":"active", "lv_attr":"swi-I-s---", "lv_check_needed":"unknown", "lv_full_name":"testvg/snap", "lv_health_status":"", "lv_layout":"linear", "lv_merge_failed":"", "lv_metadata_size":"", "lv_name":"snap", "lv_role":"public,snapshot,thicksnapshot", "lv_size":"209715200", "lv_snapshot_invalid":"snapshot invalid", "lv_time":"2026-08-27 11:09:04 +0200", "lv_when_full":"", "metadata_percent":"", "origin":"orig", "pool_lv":"", "vg_name":"testvg"},
+                  {"data_percent":"50.00", "lv_active":"active", "lv_attr":"twi-aotz--", "lv_check_needed":"", "lv_full_name":"testvg/tpool", "lv_health_status":"", "lv_layout":"thin,pool", "lv_merge_failed":"unknown", "lv_metadata_size":"8388608", "lv_name":"tpool", "lv_role":"private", "lv_size":"2147483648", "lv_snapshot_invalid":"unknown", "lv_time":"2026-08-27 11:10:33 +0200", "lv_when_full":"queue", "metadata_percent":"15.33", "origin":"", "pool_lv":"", "vg_name":"testvg"},
+                  {"data_percent":"74.34", "lv_active":"active", "lv_attr":"twi-aotzM-", "lv_check_needed":"", "lv_full_name":"testvg/mpool", "lv_health_status":"metadata_read_only", "lv_layout":"thin,pool", "lv_merge_failed":"unknown", "lv_metadata_size":"4194304", "lv_name":"mpool", "lv_role":"private", "lv_size":"4294967296", "lv_snapshot_invalid":"unknown", "lv_time":"2026-08-27 11:13:23 +0200", "lv_when_full":"queue", "metadata_percent":"100.00", "origin":"", "pool_lv":"", "vg_name":"testvg"},
+                  {"data_percent":"25.00", "lv_active":"active", "lv_attr":"Vwi-aotz--", "lv_check_needed":"unknown", "lv_full_name":"testvg/tvol", "lv_health_status":"", "lv_layout":"thin,sparse", "lv_merge_failed":"unknown", "lv_metadata_size":"", "lv_name":"tvol", "lv_role":"public,origin,thinorigin", "lv_size":"4294967296", "lv_snapshot_invalid":"unknown", "lv_time":"2026-08-27 11:10:34 +0200", "lv_when_full":"", "metadata_percent":"", "origin":"", "pool_lv":"tpool", "vg_name":"testvg"},
+                  {"data_percent":"", "lv_active":"", "lv_attr":"Vwi---tz-k", "lv_check_needed":"unknown", "lv_full_name":"testvg/tsnap", "lv_health_status":"", "lv_layout":"thin,sparse", "lv_merge_failed":"unknown", "lv_metadata_size":"", "lv_name":"tsnap", "lv_role":"public,snapshot,thinsnapshot", "lv_size":"4294967296", "lv_snapshot_invalid":"unknown", "lv_time":"2026-08-27 11:10:35 +0200", "lv_when_full":"", "metadata_percent":"", "origin":"tvol", "pool_lv":"tpool", "vg_name":"testvg"},
+                  {"data_percent":"", "lv_active":"active", "lv_attr":"-wi-a---p-", "lv_check_needed":"unknown", "lv_full_name":"parttest/spanned", "lv_health_status":"partial", "lv_layout":"linear", "lv_merge_failed":"unknown", "lv_metadata_size":"", "lv_name":"spanned", "lv_role":"public", "lv_size":"3221225472", "lv_snapshot_invalid":"unknown", "lv_time":"2026-08-27 11:21:40 +0200", "lv_when_full":"", "metadata_percent":"", "origin":"", "pool_lv":"", "vg_name":"parttest"}
+              ]
+          }
+      ]
+      ,
+      "log": [
+      ]
+  }
+"""
+
+# The same run against a volume group that is missing a physical volume. LVM writes
+# the warnings to stderr, and repeats them in the report's own `log` array, which is
+# not the section a consumer reads.
+VGS = """
+  {
+      "report": [
+          {
+              "vg": [
+                  {"lv_count":"0", "pv_count":"1", "snap_count":"0", "vg_attr":"wz--n-", "vg_extent_size":"4194304", "vg_free":"532676608", "vg_missing_pv_count":"0", "vg_name":"emptyvg", "vg_size":"532676608"},
+                  {"lv_count":"1", "pv_count":"2", "snap_count":"0", "vg_attr":"wz-pn-", "vg_extent_size":"4194304", "vg_free":"1065353216", "vg_missing_pv_count":"1", "vg_name":"parttest", "vg_size":"4286578688"}
+              ]
+          }
+      ]
+      ,
+      "log": [
+          {"log_seq_num":"3", "log_type":"warn", "log_context":"processing", "log_object_type":"vg", "log_object_name":"parttest", "log_object_id":"5grFEC", "log_object_group":"", "log_object_group_id":"", "log_message":"WARNING: VG parttest is missing PV zLOSuw (last written to /dev/loop4).", "log_errno":"0", "log_ret_code":"0"}
+      ]
+  }
+"""
+
+# A host without a single volume group. LVM reports an empty section, not an error.
+EMPTY = '{"report": [{"lv": []}], "log": []}'
+
+
+def by_name(rows, name):
+    """Pick one row out of a parsed report."""
+    return next(row for row in rows if row['lv_full_name'].endswith(f'/{name}'))
+
+
+ROWS = lvm.parse_report(LVS, 'lv')[1]
+
+
+class TestParseReport(unittest.TestCase):
+    def test_reads_every_row(self):
+        success, rows = lvm.parse_report(LVS, 'lv')
+        self.assertTrue(success)
+        self.assertEqual(len(rows), 7)
+
+    def test_reads_the_named_section_only(self):
+        success, rows = lvm.parse_report(VGS, 'vg')
+        self.assertTrue(success)
+        self.assertEqual([row['vg_name'] for row in rows], ['emptyvg', 'parttest'])
+
+    def test_a_host_without_volumes_is_not_an_error(self):
+        self.assertEqual(lvm.parse_report(EMPTY, 'lv'), (True, []))
+
+    def test_a_section_that_is_not_there_is_empty(self):
+        self.assertEqual(lvm.parse_report(EMPTY, 'vg'), (True, []))
+
+    def test_broken_json_is_reported(self):
+        success, result = lvm.parse_report('{"report": [', 'lv')
+        self.assertFalse(success)
+        self.assertIn('Unable to read', result)
+
+    def test_empty_output_is_reported(self):
+        success, _ = lvm.parse_report('', 'lv')
+        self.assertFalse(success)
+
+    def test_none_is_reported(self):
+        success, _ = lvm.parse_report(None, 'lv')
+        self.assertFalse(success)
+
+
+class TestClassification(unittest.TestCase):
+    def test_thick_snapshot(self):
+        snap = by_name(ROWS, 'goodsnap')
+        self.assertTrue(lvm.is_snapshot(snap))
+        self.assertFalse(lvm.is_thin(snap))
+        self.assertFalse(lvm.is_thin_pool(snap))
+
+    def test_thin_snapshot(self):
+        snap = by_name(ROWS, 'tsnap')
+        self.assertTrue(lvm.is_snapshot(snap))
+        self.assertTrue(lvm.is_thin(snap))
+        self.assertFalse(lvm.is_thin_pool(snap))
+
+    def test_thin_pool_is_not_a_thin_volume(self):
+        pool = by_name(ROWS, 'tpool')
+        self.assertTrue(lvm.is_thin_pool(pool))
+        self.assertFalse(lvm.is_thin(pool))
+        self.assertFalse(lvm.is_snapshot(pool))
+
+    def test_thin_volume(self):
+        vol = by_name(ROWS, 'tvol')
+        self.assertTrue(lvm.is_thin(vol))
+        self.assertFalse(lvm.is_thin_pool(vol))
+        self.assertFalse(lvm.is_snapshot(vol))
+
+    def test_plain_volume_is_nothing_in_particular(self):
+        plain = by_name(ROWS, 'spanned')
+        self.assertFalse(lvm.is_snapshot(plain))
+        self.assertFalse(lvm.is_thin(plain))
+        self.assertFalse(lvm.is_thin_pool(plain))
+
+    def test_a_row_without_any_field_does_not_raise(self):
+        self.assertFalse(lvm.is_snapshot({}))
+        self.assertFalse(lvm.is_thin({}))
+        self.assertFalse(lvm.is_thin_pool({}))
+
+
+class TestHealth(unittest.TestCase):
+    def test_a_healthy_volume_says_nothing(self):
+        self.assertEqual(lvm.health(by_name(ROWS, 'tvol')), '')
+
+    def test_a_healthy_snapshot_says_nothing(self):
+        self.assertEqual(lvm.health(by_name(ROWS, 'goodsnap')), '')
+
+    def test_an_invalidated_snapshot_is_reported_although_health_is_empty(self):
+        snap = by_name(ROWS, 'snap')
+        self.assertEqual(snap['lv_health_status'], '')
+        self.assertTrue(lvm.is_snapshot_invalid(snap))
+        self.assertIn('threw it away', lvm.health(snap))
+
+    def test_metadata_read_only(self):
+        self.assertIn('read-only', lvm.health(by_name(ROWS, 'mpool')))
+
+    def test_partial(self):
+        self.assertIn('missing', lvm.health(by_name(ROWS, 'spanned')))
+
+    def test_every_documented_status_has_words(self):
+        for status in lvm.HEALTH_LABELS:
+            self.assertTrue(lvm.health({'lv_health_status': status}))
+
+    def test_an_unknown_status_is_passed_through_rather_than_swallowed(self):
+        self.assertIn(
+            'something-new',
+            lvm.health({'lv_health_status': 'something-new'}),
+        )
+
+    def test_merge_failed(self):
+        self.assertIn(
+            'merging it back',
+            lvm.health({'lv_merge_failed': 'merge failed'}),
+        )
+
+    def test_check_needed(self):
+        self.assertIn(
+            'needing a check',
+            lvm.health({'lv_check_needed': 'check needed'}),
+        )
+
+    def test_the_negative_of_a_binary_field_is_not_a_finding(self):
+        # LVM reports "unknown" for a field that does not apply to this volume type
+        # and an empty string for one that applies and is false. Neither is a problem.
+        self.assertEqual(lvm.health({'lv_merge_failed': 'unknown'}), '')
+        self.assertEqual(lvm.health({'lv_snapshot_invalid': 'unknown'}), '')
+        self.assertEqual(lvm.health({'lv_check_needed': 'unknown'}), '')
+        self.assertEqual(lvm.health({'lv_snapshot_invalid': ''}), '')
+
+    def test_an_empty_row_is_healthy(self):
+        self.assertEqual(lvm.health({}), '')
+
+
+class TestCreated(unittest.TestCase):
+    def test_the_format_lvm_renders(self):
+        # 2026-08-27 11:19:13 +0200 is 09:19:13 UTC.
+        self.assertEqual(
+            lvm.created({'lv_time': '2026-08-27 11:19:13 +0200'}), 1787822353.0
+        )
+
+    def test_the_offset_is_honoured_and_not_read_as_local_time(self):
+        east = lvm.created({'lv_time': '2026-08-27 11:19:13 +0200'})
+        utc = lvm.created({'lv_time': '2026-08-27 11:19:13 +0000'})
+        self.assertEqual(utc - east, 7200)
+
+    def test_a_captured_row(self):
+        self.assertEqual(lvm.created(by_name(ROWS, 'goodsnap')), 1787822353.0)
+
+    def test_a_volume_without_a_recorded_time(self):
+        self.assertIsNone(lvm.created({'lv_time': ''}))
+        self.assertIsNone(lvm.created({}))
+
+    def test_a_format_this_host_was_configured_to_use_instead(self):
+        # Reading an unexpected rendering as a wrong timestamp would age every volume
+        # by years, so it yields nothing at all.
+        self.assertIsNone(lvm.created({'lv_time': 'Thu Aug 27 11:19:13 2026'}))
+
+
+class TestMetadataLimit(unittest.TestCase):
+    def test_a_small_metadata_volume_is_capped_at_a_quarter(self):
+        # 4 MiB of headroom is the whole volume, so the quarter wins.
+        self.assertEqual(lvm.metadata_limit(4 * 1024**2), 75.0)
+
+    def test_sixteen_mib_is_where_the_two_rules_meet(self):
+        self.assertEqual(lvm.metadata_limit(16 * 1024**2), 75.0)
+
+    def test_a_large_metadata_volume_keeps_four_mebibytes_free(self):
+        self.assertEqual(lvm.metadata_limit(64 * 1024**2), 93.75)
+
+    def test_it_reads_the_string_lvm_reports(self):
+        self.assertEqual(lvm.metadata_limit('4194304'), 75.0)
+
+    def test_an_unknown_size_has_no_limit(self):
+        self.assertIsNone(lvm.metadata_limit(''))
+        self.assertIsNone(lvm.metadata_limit(None))
+        self.assertIsNone(lvm.metadata_limit('0'))
+        self.assertIsNone(lvm.metadata_limit('not-a-number'))
+
+
+class TestToNumber(unittest.TestCase):
+    def test_a_percentage(self):
+        self.assertEqual(lvm.to_number('74.34'), 74.34)
+
+    def test_a_byte_count(self):
+        self.assertEqual(lvm.to_number('4294967296'), 4294967296)
+
+    def test_an_empty_field_is_not_a_zero(self):
+        # LVM leaves a field that does not apply empty, so reading it as zero would
+        # report an unmeasured volume as an empty one.
+        self.assertIsNone(lvm.to_number(''))
+
+    def test_none(self):
+        self.assertIsNone(lvm.to_number(None))
+
+    def test_a_word(self):
+        self.assertIsNone(lvm.to_number('unknown'))
+
+    def test_a_negative_value(self):
+        self.assertEqual(lvm.to_number('-1'), -1)
+
+
+class TestCommands(unittest.TestCase):
+    def test_the_command_is_a_fixed_argument_list(self):
+        # A sudo rule can only pin a command it can spell out, so nothing here may
+        # depend on the arguments a caller passes.
+        self.assertEqual(lvm.LVS_COMMAND[0], 'lvs')
+        self.assertEqual(lvm.VGS_COMMAND[0], 'vgs')
+        self.assertNotIn('*', ' '.join(lvm.LVS_COMMAND))
+
+    def test_no_segment_level_field_is_requested(self):
+        # A segment-level field turns the report into one row per segment, so a volume
+        # spanning two physical volumes would be counted twice.
+        for field in ('devices', 'seg_size', 'seg_start', 'segtype', 'stripes'):
+            self.assertNotIn(field, lvm.LV_FIELDS)
+
+    def test_every_requested_field_reaches_the_command(self):
+        options = lvm.LVS_COMMAND[lvm.LVS_COMMAND.index('--options') + 1]
+        self.assertEqual(options.split(','), list(lvm.LV_FIELDS))
+
+    def test_sizes_are_asked_for_in_bytes(self):
+        self.assertIn('--nosuffix', lvm.LVS_COMMAND)
+        self.assertIn('--nosuffix', lvm.VGS_COMMAND)
+
+
+class TestRun(unittest.TestCase):
+    def call(self, success, result):
+        with mock.patch.object(lvm.shell, 'shell_exec', return_value=(success, result)):
+            return lvm.get_logical_volumes(timeout=8)
+
+    def test_a_good_run(self):
+        success, rows = self.call(True, (LVS, '', 0))
+        self.assertTrue(success)
+        self.assertEqual(len(rows), 7)
+
+    def test_warnings_on_stderr_do_not_spoil_a_good_run(self):
+        # LVM warns about a missing physical volume on stderr and still exits 0.
+        success, rows = self.call(True, (LVS, 'WARNING: VG is missing PV ...', 0))
+        self.assertTrue(success)
+        self.assertEqual(len(rows), 7)
+
+    def test_a_timeout_names_the_deadline_and_what_to_look_at(self):
+        success, result = self.call(False, 'Timeout after 8 seconds.')
+        self.assertFalse(success)
+        self.assertIn('did not answer within 8s', result)
+        self.assertIn('physical volume', result)
+
+    def test_a_missing_binary_says_how_to_install_it(self):
+        success, result = self.call(
+            False, 'Error "[Errno 2] No such file or directory: \'lvs\'"'
+        )
+        self.assertFalse(success)
+        self.assertIn('not installed', result)
+
+    def test_running_without_root_says_so(self):
+        success, result = self.call(
+            True,
+            (
+                '',
+                '  WARNING: Running as a non-root user. Functionality may be '
+                'unavailable.\n  /run/lock/lvm/P_global:aux: open failed: Permission '
+                'denied\n',
+                5,
+            ),
+        )
+        self.assertFalse(success)
+        self.assertIn('needs root', result)
+        self.assertIn('sudoers', result)
+
+    def test_the_permission_message_is_also_found_in_the_json_log(self):
+        # With --reportformat json LVM keeps the numbers on stdout and repeats what
+        # went wrong in the report's own `log` array, so stderr alone is not enough.
+        report = (
+            '{"report": [{"lv": []}], "log": [{"log_type":"error", "log_message":'
+            '"/run/lock/lvm/P_global:aux: open failed: Permission denied"}]}'
+        )
+        success, result = self.call(True, (report, '', 5))
+        self.assertFalse(success)
+        self.assertIn('needs root', result)
+
+    def test_another_failure_is_not_reported_as_a_permission_problem(self):
+        # `ECMD_FAILED` is 5 and covers every failure alike, so the exit code cannot
+        # tell a missing volume group from a run without the rights.
+        success, result = self.call(
+            True,
+            (
+                '',
+                '  Volume group "nope" not found\n  Cannot process volume group nope\n',
+                5,
+            ),
+        )
+        self.assertFalse(success)
+        self.assertIn('not found', result)
+        self.assertNotIn('needs root', result)
+
+    def test_a_failure_on_another_exit_code_is_passed_on(self):
+        success, result = self.call(True, ('', 'Volume group "nope" not found\n', 3))
+        self.assertFalse(success)
+        self.assertIn('not found', result)
+
+    def test_the_timeout_reaches_the_command(self):
+        with mock.patch.object(
+            lvm.shell, 'shell_exec', return_value=(True, (LVS, '', 0))
+        ) as fake:
+            lvm.get_logical_volumes(timeout=3)
+        self.assertEqual(fake.call_args.kwargs['timeout'], 3)
+
+    def test_volume_groups_read_the_vg_section(self):
+        with mock.patch.object(
+            lvm.shell, 'shell_exec', return_value=(True, (VGS, '', 0))
+        ):
+            success, rows = lvm.get_volume_groups()
+        self.assertTrue(success)
+        self.assertEqual(rows[1]['vg_missing_pv_count'], '1')
+
+
+class TestFailureState(unittest.TestCase):
+    def test_a_host_whose_lvm_stopped_answering_is_a_problem_to_fix(self):
+        # A check that ends in UNKNOWN lands on the pile nobody reads, and storage that
+        # no longer answers is not a problem with the check.
+        message = f'{lvm.NO_ANSWER} within 8s. {lvm.NO_ANSWER_HELP}'
+        self.assertEqual(lvm.failure_state(message), STATE_WARN)
+
+    def test_a_host_without_the_lvm_tools_is_a_problem_to_fix(self):
+        self.assertEqual(lvm.failure_state(lvm.NOT_INSTALLED_HELP), STATE_WARN)
+
+    def test_running_without_the_rights_is_a_broken_deployment(self):
+        self.assertEqual(lvm.failure_state(lvm.NO_PERMISSION_HELP), STATE_UNKNOWN)
+
+    def test_an_unreadable_report_says_nothing_about_the_host(self):
+        self.assertEqual(
+            lvm.failure_state('Unable to read the LVM report.'), STATE_UNKNOWN
+        )
+
+    def test_an_empty_message(self):
+        self.assertEqual(lvm.failure_state(''), STATE_UNKNOWN)
+        self.assertEqual(lvm.failure_state(None), STATE_UNKNOWN)
+
+
+class TestFixtureShape(unittest.TestCase):
+    def test_the_captures_above_are_valid_json(self):
+        for report in (LVS, VGS, EMPTY):
+            json.loads(report)
+
+
+if __name__ == '__main__':
+    unittest.main()
