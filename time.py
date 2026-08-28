@@ -11,7 +11,7 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081301'
+__version__ = '2026082801'
 
 import datetime
 import re
@@ -204,29 +204,6 @@ def now(as_type=''):
     return int(time.time())
 
 
-def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S'):
-    """
-    Converts a time string into a datetime object using the specified format.
-
-    This function parses a string representing a date and time into a `datetime.datetime`
-    object based on the provided format pattern. The default format is ISO (YYYY-MM-DD HH:MM:SS).
-
-    ### Parameters
-    - **timestr** (`str`): A string representing the date and time.
-    - **pattern** (`str`, optional): The format string corresponding to the structure of `timestr`.
-      Defaults to '%Y-%m-%d %H:%M:%S'. For more details on format codes, see:
-      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
-
-    ### Returns
-    - **datetime.datetime**: A datetime object corresponding to the parsed date and time.
-
-    ### Example
-    >>> timestr2datetime('2021-05-08 09:32:09')
-    datetime.datetime(2021, 5, 8, 9, 32, 9)
-    """
-    return datetime.datetime.strptime(timestr, pattern)
-
-
 # Matches the fractional seconds of an ISO 8601 / RFC 3339 timestamp. A date or
 # time never carries another dot, so the first match is the fraction.
 _ISO8601_FRACTION_REGEX = re.compile(r'\.(\d+)')
@@ -259,6 +236,79 @@ def _normalize_iso8601_fraction(timestr):
     )
 
 
+# Matches a UTC offset written without the colon `fromisoformat()` wants before
+# Python 3.11, at the very end of the string. ISO 8601 allows both `+0200` and
+# `+02:00`, and `journalctl --output=short-iso` writes the former.
+_ISO8601_OFFSET_REGEX = re.compile(r'([+-])(\d{2})(\d{2})$')
+
+
+def _normalize_iso8601_offset(timestr):
+    """Insert the colon into a `+hhmm` offset, which `fromisoformat()` needs before 3.11.
+
+    Leaves a value that already carries the colon, one that ends in `Z`, and one without an
+    offset at all untouched.
+    """
+    return _ISO8601_OFFSET_REGEX.sub(r'\1\2:\3', timestr, count=1)
+
+
+def _parse(timestr, pattern, tzinfo=None):
+    """Turn a time string into a datetime, either by `strptime` layout or as ISO 8601.
+
+    Shared by `timestr2datetime()` and `timestr2epoch()` so both accept the same values; see
+    `timestr2epoch()` for what `pattern='iso8601'` covers.
+    """
+    if pattern == 'iso8601':
+        # fromisoformat() accepts a trailing 'Z' only from Python 3.11, so
+        # normalize it first. Same for fractional seconds that are not exactly
+        # three or six digits long, and for an offset written without a colon.
+        iso = timestr.strip()
+        if iso.endswith('Z'):
+            iso = iso[:-1] + '+00:00'
+        iso = _normalize_iso8601_offset(_normalize_iso8601_fraction(iso))
+        dt = datetime.datetime.fromisoformat(iso)
+        # A value that already carries an offset keeps it; a naive value is
+        # tagged with `tzinfo` when one is given.
+        if dt.tzinfo is None and tzinfo is not None:
+            dt = dt.replace(tzinfo=tzinfo)
+        return dt
+    dt = datetime.datetime.strptime(timestr, pattern)
+    # If a timezone is provided, make the datetime timezone-aware.
+    if tzinfo is not None:
+        dt = dt.replace(tzinfo=tzinfo)
+    return dt
+
+
+def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
+    """
+    Converts a time string into a datetime object using the specified format.
+
+    This function parses a string representing a date and time into a `datetime.datetime`
+    object based on the provided format pattern. The default format is ISO (YYYY-MM-DD HH:MM:SS).
+
+    ### Parameters
+    - **timestr** (`str`): A string representing the date and time.
+    - **pattern** (`str`, optional): The format string corresponding to the structure of `timestr`.
+      Defaults to '%Y-%m-%d %H:%M:%S'. For more details on format codes, see:
+      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
+      Pass the special value `'iso8601'` to parse without knowing the exact layout in advance;
+      `timestr2epoch()` describes what that covers.
+    - **tzinfo** (`datetime.tzinfo`, optional): Timezone to tag a value that carries none.
+      A value that brings its own offset keeps it. Defaults to None, which leaves the result
+      naive.
+
+    ### Returns
+    - **datetime.datetime**: A datetime object corresponding to the parsed date and time.
+
+    ### Example
+    >>> timestr2datetime('2021-05-08 09:32:09')
+    datetime.datetime(2021, 5, 8, 9, 32, 9)
+
+    >>> timestr2datetime('2026-08-28T17:16:18+0200', pattern='iso8601')
+    datetime.datetime(2026, 8, 28, 17, 16, 18, tzinfo=datetime.timezone(datetime.timedelta(seconds=7200)))
+    """
+    return _parse(timestr, pattern, tzinfo)
+
+
 def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
     """
     Converts a time string to a UNIX epoch timestamp.
@@ -275,7 +325,9 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
       broad from 3.11 on; RFC 3339 works consistently on 3.7+, including the nanosecond precision
       of Go-based tools, whose fractional seconds are normalized to microseconds first. A value
       that carries an offset (or `Z`) keeps it; a value without one is treated per `tzinfo`
-      (local time if `tzinfo` is None).
+      (local time if `tzinfo` is None). An offset written without the colon (`+0200`, which
+      `journalctl --output=short-iso` produces) is accepted on every supported Python, even
+      though `fromisoformat()` itself only takes it from 3.11 on.
     - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.
       If provided, the parsed datetime is set to this timezone.
       If None, the time is assumed to be local time.
@@ -299,25 +351,7 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
         # Convert an ISO 8601 string without specifying its exact layout:
         epoch_iso = timestr2epoch("2025-03-01T12:00:00Z", pattern='iso8601')
     """
-    if pattern == 'iso8601':
-        # fromisoformat() accepts a trailing 'Z' only from Python 3.11, so
-        # normalize it first. Same for fractional seconds that are not exactly
-        # three or six digits long.
-        iso = timestr.strip()
-        if iso.endswith('Z'):
-            iso = iso[:-1] + '+00:00'
-        dt = datetime.datetime.fromisoformat(_normalize_iso8601_fraction(iso))
-        # A value that already carries an offset keeps it; a naive value is
-        # tagged with `tzinfo` when one is given.
-        if dt.tzinfo is None and tzinfo is not None:
-            dt = dt.replace(tzinfo=tzinfo)
-    else:
-        dt = datetime.datetime.strptime(timestr, pattern)
-        # If a timezone is provided, make the datetime timezone-aware.
-        if tzinfo is not None:
-            dt = dt.replace(tzinfo=tzinfo)
-
-    return dt.timestamp()
+    return _parse(timestr, pattern, tzinfo).timestamp()
 
 
 def timestrdiff(

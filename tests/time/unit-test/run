@@ -158,5 +158,53 @@ class TestBadInput(unittest.TestCase):
             t.timestr2epoch('not a date')
 
 
+class TestIso8601Offsets(unittest.TestCase):
+    """`journalctl --output=short-iso` writes `+0200`, without the colon
+    `datetime.fromisoformat()` insists on before Python 3.11."""
+
+    def test_offset_without_a_colon(self):
+        self.assertEqual(
+            t.timestr2datetime('2026-08-28T17:16:18+0200', pattern='iso8601'),
+            datetime.datetime(
+                2026,
+                8,
+                28,
+                17,
+                16,
+                18,
+                tzinfo=datetime.timezone(datetime.timedelta(hours=2)),
+            ),
+        )
+        self.assertEqual(
+            t.timestr2epoch('2026-08-28T17:16:18+0200', pattern='iso8601'),
+            t.timestr2epoch('2026-08-28T17:16:18+02:00', pattern='iso8601'),
+        )
+
+    def test_a_negative_offset_without_a_colon(self):
+        self.assertEqual(
+            t.timestr2epoch('2026-08-28T17:16:18-0500', pattern='iso8601'),
+            t.timestr2epoch('2026-08-28T17:16:18-05:00', pattern='iso8601'),
+        )
+
+    def test_the_forms_that_already_worked_still_do(self):
+        for value in (
+            '2026-08-28T17:16:18Z',
+            '2026-08-28T17:16:18+02:00',
+            '2026-08-28T17:16:18.123456789+02:00',
+            '2026-08-28',
+        ):
+            self.assertIsInstance(
+                t.timestr2datetime(value, pattern='iso8601'), datetime.datetime
+            )
+
+    def test_a_digit_group_that_is_not_an_offset_is_left_alone(self):
+        # The normalization is anchored at the end of the string, so a date that
+        # merely ends in four digits is not rewritten into an offset.
+        self.assertEqual(
+            t.timestr2datetime('2026-08-28 17:16:18'),
+            datetime.datetime(2026, 8, 28, 17, 16, 18),
+        )
+
+
 if __name__ == '__main__':
     unittest.main()
