@@ -13,26 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * all HTTP-speaking modules: a `proxy` argument next to `no_proxy`, so a consumer can name the proxy instead of leaving the choice to the environment
-* args.py: `duration()` reads an `8D` style duration for argparse, and rejects a missing or unknown unit instead of silently reading it as zero
-* args.py: further shared help texts (`--grace-security`, `--grace-updates`, `--grace-wait`, `--icinga-*`, `--lookback`, `--proxy`)
+* args.py: `duration()` reads an `8D` style duration for argparse, and rejects a missing or unknown unit instead of silently reading it as zero. Further shared help texts (`--grace-security`, `--grace-updates`, `--grace-wait`, `--icinga-*`, `--lookback`, `--proxy`)
 * base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`)
-* db_sqlite.py: `connect(in_memory=True)` opens a database private to the process
-* db_sqlite.py: `cut_per_sensor()` trims a history table per sensor instead of by total row count
-* db_sqlite.py: `first_seen()` records when each item of an observed set turned up, so a consumer can hold an alert back until an item has persisted
+* db_sqlite.py: `connect(in_memory=True)` opens a database private to the process, `cut_per_sensor()` trims a history table per sensor instead of by total row count, and `first_seen()` records when each item of an observed set turned up, so a consumer can hold an alert back until an item has persisted
 * keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it
 * kvm.py: new module for libvirt hosts, covering domain statistics and listings, storage pools, their volumes, which pools share a filesystem, and the names of domain states and their reasons. It connects read-only, so it needs neither root nor sudo
 * lftest.py: `container_runtime_available()` and `require_container_runtime()` let a test that needs a container skip itself where there is none
 * logmatch.py: new module for remembering what was found in a log, so a finding keeps counting after the run that saw it. `record()` and `pending()` hold findings until they age out or are acknowledged, `service_acknowledged()` asks the monitoring server whether somebody has taken the alert on, `instance_id()` keeps two consumers watching the same log out of each other's state
-* logsource.py: new module for reading a log incrementally, wherever it is kept. `read()` returns the lines a file, a systemd unit or a container log grew by since the previous run and hands back a position to resume at, recognizing a file that was rotated, truncated or rewritten in place. `read(rotated=N)` reads the rotated predecessors of a file along with it, compressed ones included
-* logsource.py: `count_within()` counts how many of the lines arrived within a window, `timestamp()` reads when a line was written
+* logsource.py: new module for reading a log incrementally, wherever it is kept. `read()` returns the lines a file, a systemd unit or a container log grew by since the previous run and hands back a position to resume at, recognizing a file that was rotated, truncated or rewritten in place. `read(rotated=N)` reads the rotated predecessors of a file along with it, compressed ones included. `count_within()` counts how many of the lines arrived within a window, `timestamp()` reads when a line was written
 * lvm.py: new module for LVM hosts. `get_logical_volumes()` and `get_volume_groups()` read the `lvs` and `vgs` report, `health()` puts what is wrong with a volume into words, `metadata_limit()` answers at which fill level LVM stops creating thin volumes in a pool. Reading the volumes needs root or sudo
 * net.py: `get_proxy()` answers which proxy the environment wants for a target, honouring the exceptions in `no_proxy`, for a consumer that reaches the network without an HTTP client
 * openstack.py: new module for OpenStack clouds. `connect()` authenticates from an rc file, keeps a whole run inside one time budget and reuses the token across runs, `fetch()` and `fetch_json()` read any endpoint of a connected service
 * psi.py: new module for the pressure stall information the Linux kernel exports below `/proc/pressure`. `read()` and `is_enabled()` report a resource and tell a kernel that accounts for nothing apart from one that accounts for other resources only, `get_states()`, `get_summary()`, `get_perfdata()` and `get_table()` turn a reading into a report
 * redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
 * task.py: new module for work that cannot be interrupted. `run()` and `run_each()` run callables in processes of their own, sharing one deadline, and kill the ones that miss it. A call waiting on a network filesystem whose server has gone away blocks in the kernel, where no timeout inside the process reaches it
-* url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host
-* url.py: `fetch()` takes `retries`, which only `fetch_json()` offered so far
+* url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host. `fetch()` takes `retries`, which only `fetch_json()` offered so far
 
 ### Changed
 
@@ -57,8 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * base.py: `match_range()` accepts a threshold with a percent sign (`90%:`) or an exponent (`1e3`)
-* human.py: `human2bytes()` reads a size without a qualifier (`1048576`) as a byte count instead of as zero
-* human.py: `humanrange2bytes()`, `humanrange2seconds()`
+* human.py: `humanrange2bytes()`, `humanrange2seconds()`, and `human2bytes()`, which read a size without a qualifier (`1048576`) as zero
 
 
 ## [v7.1.0] - 2026-08-14
@@ -79,26 +73,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking Changes
 
 * distro.py: `get_distribution_facts()` reports `distribution_release` as the release name (`Plow`, `noble`, `bookworm`), the same as the Ansible fact of the same name, instead of as the running kernel release
-* huawei_dorado.py: `get_data()` no longer takes URL parameters in a separate argument; append them to the endpoint instead
-* huawei_dorado.py: `get_logic_type()` is now `get_enclosure_logic_type()` and `get_role()` is now `get_controller_role()`. A HyperMetro domain and a DR Star trio have their own `get_hypermetro_domain_running_status()` and `get_dr_star_running_status()`
+* huawei_dorado.py: `get_data()` no longer takes URL parameters in a separate argument; append them to the endpoint instead. `get_logic_type()` is now `get_enclosure_logic_type()` and `get_role()` is now `get_controller_role()`. A HyperMetro domain and a DR Star trio have their own `get_hypermetro_domain_running_status()` and `get_dr_star_running_status()`
 * version.py: `get_os_info()` is gone, it duplicated `distro.get_distribution_facts()`. Read its `os_info` key instead
 
 ### Added
 
-* args.py: `load_secret()` reads a secret out of a file, so it does not have to be passed on the command line
-* args.py: further shared help texts, plus `MATCH_IGNORE_PRECEDENCE` carrying the one sentence on how `--match` and `--ignore` combine
-* base.py: `get_table()` takes a `hide_empty` to drop columns no row filled in, a `max_rows` to cap the printed rows, and a `missing` placeholder for a cell an API did not send. All off by default
-* base.py: `verbose()` prints a progress message only when verbose output is switched on
+* args.py: `load_secret()` reads a secret out of a file, so it does not have to be passed on the command line. Further shared help texts, plus `MATCH_IGNORE_PRECEDENCE` carrying the one sentence on how `--match` and `--ignore` combine
+* base.py: `get_table()` takes a `hide_empty` to drop columns no row filled in, a `max_rows` to cap the printed rows, and a `missing` placeholder for a cell an API did not send, all off by default. `verbose()` prints a progress message only when verbose output is switched on
 * cache.py: `get(allow_stale=True)` serves an expired entry instead of deleting it. `prune()` deletes the entries a version-keyed cache leaves behind
 * db_sqlite.py: `connect()` takes a `timeout` for how long to wait for a lock
-* disk.py: `get_fingerprint()` takes an `algorithm`, `read_file()` takes a `max_bytes`
-* disk.py: `get_package()` names the package a path belongs to
+* disk.py: `get_package()` names the package a path belongs to, `get_fingerprint()` takes an `algorithm` and `read_file()` takes a `max_bytes`
 * distro.py: `get_distribution_facts()` recognises a further set of distributions and Debian derivatives, and identifies anything else from `/etc/os-release` instead of reporting it as plain "Linux"
 * feedparser.py: `fetch_soup()` and `parse_soup()` hand back the feed's own markup, and `retries` repeats a download that came back as something other than a feed
 * huawei_dorado.py, huawei_pacific.py: `as_code()`, `assert_ok()`, `get_all_data()` for paged list endpoints, the envelope readers `get_error_code()` / `get_result_code()` / `get_status_envelope()`, and a full set of status translators including their `_state()` counterparts. Consumers used to carry a copy of each
 * huawei_dorado.py: `get_performance()` and `get_performance_perfdata()` read the current counters of a managed object and turn them into performance data under the vendor's own indicator names, plus `as_temperature()`, `field()`, `get_account_state()` and `sectors2bytes()`
-* huawei_pacific.py: `get_data(base_path=...)` reaches the older endpoint generation below `/dsware/service/` and `/dfv/service/`, which alone serves the disk inventory
-* huawei_pacific.py: `get_cluster_nodes()`, `get_node_names_by_ip()`, `get_performance()`, `get_quota_bytes()` and `get_warranty_status()`, plus readable translations for base boards, disks, pools, replication pairs and the login password status
+* huawei_pacific.py: `get_data(base_path=...)` reaches the older endpoint generation below `/dsware/service/` and `/dfv/service/`, which alone serves the disk inventory. `get_cluster_nodes()`, `get_node_names_by_ip()`, `get_performance()`, `get_quota_bytes()` and `get_warranty_status()`, plus readable translations for base boards, disks, pools, replication pairs and the login password status
 * lftest.py: `test_json()` and `test_text()` read one of several test fixtures of a run
 * nextcloud.py: `run_occ()` takes a `timeout`
 * shell.py: `shell_exec()` takes a `run_as_session` to run as another user without exporting that user's session runtime directory. An `env` entry set to None removes that variable from the environment
@@ -112,8 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * base.py: `oao()` only escapes a `<` that would open an HTML tag, so `< 5.3.2`, `<= 10` and `echo 1 > /proc/sys/...` reach the terminal exactly as written
 * disk.py: `walk_directory()` relativizes its paths instead of stripping the root off the front as a plain substring
 * huawei_dorado.py, huawei_pacific.py: `get_creds()` reads a `CACHE_EXPIRE` of `0` as caching off, and keeps the session token in the library's own cache file instead of the shared default one. `get_data()` returns the response as it is instead of adding a `counter` field, and takes a `max_attempts`
-* huawei_dorado.py: `get_creds()` takes the appliance device ID as optional
-* huawei_dorado.py: `get_running_status_state()` reports a dead power feed, a component that is not running, a disk parked for overheating and a replication relationship that is not mirroring as CRITICAL instead of WARNING
+* huawei_dorado.py: `get_creds()` takes the appliance device ID as optional. `get_running_status_state()` reports a dead power feed, a component that is not running, a disk parked for overheating and a replication relationship that is not mirroring as CRITICAL instead of WARNING
 * lftest.py: `run()` treats `assert-retc` in a testcase as optional, as every other assertion already was
 * nextcloud.py: `run_occ()` skips `sudo` when it already runs as the owner of `config/config.php`, so no sudoers entry is needed
 * url.py: `compare_github_refs()`, `get_latest_tag_from_github()` and `get_latest_version_from_github()` report a repository that has published no release as having none instead of as a failed request, and name a rejected token and an exhausted rate limit as such
@@ -121,13 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * base.py: `get_perfdata()`
-* db_sqlite.py: a failed statement discards the database only on a schema mismatch or an unreadable file, no longer on a held lock, a full or read-only disk, a bad query or a missing table. Consumers sharing the default database file no longer discard each other's data
-* db_sqlite.py: RHEL 8 and other systems on old SQLite work again
-* db_sqlite.py: `compute_load()`, `create_index()`, `cut()`, `import_csv()`, `per_second_deltas()`, `regexp()`, `rm_db()`
-* distro.py: `get_distribution_facts()` reports the OS family of Alpine, Amazon Linux and the whole SUSE family correctly. All three were reported as Debian
-* distro.py: `get_distribution_facts()` names and versions a distribution without `/etc/os-release` (RHEL 6, CentOS 6, SLES 11)
-* huawei_dorado.py, huawei_pacific.py: `get_creds()` closes the session on the appliance instead of leaving it open until it times out. One was left behind per run, or up to three with caching off, and could fill a session pool that on a Dorado holds 32
-* huawei_dorado.py, huawei_pacific.py: `get_data()` retries an HTTP error, a load balancer answering for the appliance and a failed connection instead of giving up on the spot
+* db_sqlite.py: `compute_load()`, `create_index()`, `cut()`, `import_csv()`, `per_second_deltas()`, `regexp()`, `rm_db()`. A failed statement discards the database only on a schema mismatch or an unreadable file, no longer on a held lock, a full or read-only disk, a bad query or a missing table, so consumers sharing the default database file no longer discard each other's data. RHEL 8 and other systems on old SQLite work again
+* distro.py: `get_distribution_facts()` reports the OS family of Alpine, Amazon Linux and the whole SUSE family correctly, all three were reported as Debian, and names and versions a distribution without `/etc/os-release` (RHEL 6, CentOS 6, SLES 11)
+* huawei_dorado.py, huawei_pacific.py: `get_creds()` closes the session on the appliance instead of leaving it open until it times out. One was left behind per run, or up to three with caching off, and could fill a session pool that on a Dorado holds 32. `get_data()` retries an HTTP error, a load balancer answering for the appliance and a failed connection instead of giving up on the spot
 * huawei_dorado.py: `get_controller_model()`, `get_enclosure_model()`, `get_interface_model()`, `get_interface_runmode()` and `get_running_status()` name the V700 hardware and its states instead of reporting "Unknown"
 * huawei_pacific.py: `get_alarm_severity()`, `get_alarm_status()`, `get_cluster_nodes()`
 * nextcloud.py: `run_occ()`
@@ -154,8 +138,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * args.py: further shared help texts, `epilog()` builds the pointer to a script's online documentation, and `HelpFormatter` wraps `--help` output without breaking long words such as URLs
 * base.py: `oao()` takes a `no_perfdata` to suppress the performance data section
 * db_mysql.py: `get_replica_hosts()` lists the replicas registered with a server, `get_version()` returns flavor and version as a comparable tuple, and `get_server_info()` also returns that tuple as `version_tuple`
-* disk.py: `get_fingerprint()` hashes a file's head, tail or whole content
-* disk.py: `get_inode_usage()`, `glob()`, `stat()`, `is_within()` for confining filesystem access, and a `binary` parameter on `read_file()`
+* disk.py: `get_fingerprint()` hashes a file's head, tail or whole content, plus `get_inode_usage()`, `glob()`, `stat()`, `is_within()` for confining filesystem access, and a `binary` parameter on `read_file()`
 * icinga.py: `build_icingaweb2_url()`, `get_logo()` and `render_notification_mail()` build an Icinga Web 2 detail URL and the plain-text and HTML body of a notification mail, escaping the untrusted parts
 * mail.py: new module, `send()` sends plain-text and HTML email via SMTP, with optional login and inline related images
 * openmetrics.py: new module reading the OpenMetrics and Prometheus text formats. `parse()`, `get_samples()` and `get_value()` select a metric by name and labels
@@ -201,8 +184,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * bexio.py: `call_api()` sends an explicit JSON content-type header with a request carrying data, as the API now requires
-* huawei_dorado.py: `get_data()` recovers on its own when the cached API session is no longer accepted, and no longer retries a doomed request long enough to risk the caller's own timeout
-* huawei_dorado.py: `get_running_status()` was completed against the full documented status list, so spun-down disks, link states and replication states are readable and a charging backup battery no longer raises a false warning
+* huawei_dorado.py: `get_data()` recovers on its own when the cached API session is no longer accepted, and no longer retries a doomed request long enough to risk the caller's own timeout. `get_running_status()` was completed against the full documented status list, so spun-down disks, link states and replication states are readable and a charging backup battery no longer raises a false warning
 * powershell.py, shell.py, winrm.py: `run_ps()`, `shell_exec()` and `run_cmd()` read command output containing non-UTF-8 bytes as Latin-1, instead of producing text that fails to print later ([#256](https://github.com/Linuxfabrik/lib/issues/256))
 * url.py: `fetch()` reads a response without a declared charset as Latin-1 instead of aborting with a decode error
 
@@ -260,8 +242,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * disk.py: `shorten_path()` abbreviates a path for display by reducing every parent component to its first character, keeping the basename in full
-* redfish.py: `get_auth_header()` builds the request authentication header, reusing a cached session token instead of creating a controller session per request, and falling back to HTTP Basic
-* redfish.py: `get_chassis_power_powercontrol()`, `get_manager()`, `get_systems_ethernetinterfaces()`, `get_systems_memory()`, `get_systems_processors()`, `get_systems_storage_volumes()` and `get_updateservice_firmwareinventory()` read their resource, applying the vendor quirks of Dell, HPE and Fujitsu
+* redfish.py: `get_auth_header()` builds the request authentication header, reusing a cached session token instead of creating a controller session per request, and falling back to HTTP Basic. `get_chassis_power_powercontrol()`, `get_manager()`, `get_systems_ethernetinterfaces()`, `get_systems_memory()`, `get_systems_processors()`, `get_systems_storage_volumes()` and `get_updateservice_firmwareinventory()` read their resource, applying the vendor quirks of Dell, HPE and Fujitsu
 
 ### Changed
 
@@ -275,8 +256,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* disk.py: `copy_dir()`, `copy_file()`, `make_temp_dir()`, `mkdir()` and `rm_dir()` round out the filesystem helpers, each reporting success or an error message
-* disk.py: `get_block_devices()` lists all local block devices, including ones without a mounted filesystem, such as raw or unmounted multipath SAN volumes
+* disk.py: `copy_dir()`, `copy_file()`, `make_temp_dir()`, `mkdir()` and `rm_dir()` round out the filesystem helpers, each reporting success or an error message. `get_block_devices()` lists all local block devices, including ones without a mounted filesystem, such as raw or unmounted multipath SAN volumes
 * lftest.py: `network()` plus `network` / `network_alias` arguments on `run_container()` wire an application container to a backing service for multi-container integration tests
 * net.py: `cidr_to_hosts()` and `get_subnet_hosts()` return the usable host addresses of a network in CIDR notation or of an interface's subnet, with a configurable size limit
 * shell.py: `which()` locates an executable in PATH
@@ -342,8 +322,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* db_mysql.py: `check_privileges(conn, *required)` replaces `check_select_privileges()`. Without arguments it keeps the functional smoke test, with arguments it names every missing privilege. Each argument is a privilege or an any-of group, for cross-version aliases such as `REPLICATION CLIENT` / `SLAVE MONITOR` / `REPLICA MONITOR`
-* db_mysql.py: `get_all_status()`, `get_all_variables()`, `get_replica_status()` and `has_is_role_column()` consolidate patterns several consumers implement by hand
+* db_mysql.py: `check_privileges(conn, *required)` replaces `check_select_privileges()`. Without arguments it keeps the functional smoke test, with arguments it names every missing privilege. Each argument is a privilege or an any-of group, for cross-version aliases such as `REPLICATION CLIENT` / `SLAVE MONITOR` / `REPLICA MONITOR`. `get_all_status()`, `get_all_variables()`, `get_replica_status()` and `has_is_role_column()` consolidate patterns several consumers implement by hand
 * db_sqlite.py: `per_second_deltas()` persists cumulative counters in a local cache and returns their per-second rates against the previous run, so a consumer emits rates instead of `uom='c'` counters and a Grafana panel needs no `non_negative_difference()` workaround
 * lftest.py: `run_mysql_compatible_from_containerfile()` builds a per-consumer Containerfile, so each consumer owns its supported MariaDB / MySQL LTS coverage instead of relying on a hardcoded image list in the lib
 * net.py: `fetch()` and `fetch_socket()` take a `dialog` for multi-step request/response conversations, which covers NUT, SMTP, POP3, IMAP and FTP without per-consumer socket handling. `fetch(tls=True)` replaces the now deprecated `fetch_ssl()`
@@ -364,8 +343,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * base.py: `oao()` HTML-escapes `&`, `<` and `>` into entities instead of replacing `<` and `>` with apostrophes, which used to turn `<= 10` into `'= 10` and destroy shell snippets in the output
 * db_sqlite.py: `per_second_deltas()`
-* url.py: `fetch()` with digest authentication actually honours `insecure=True`, and with `no_proxy=True` actually applies the `timeout`
-* url.py: `import lib.url` no longer fails where `httpx` is not installed; `fetch()` returns a clear error message instead. A consumer pulling `lib.url` only transitively keeps working
+* url.py: `fetch()` with digest authentication actually honours `insecure=True`, and with `no_proxy=True` actually applies the `timeout`. `import lib.url` no longer fails where `httpx` is not installed, `fetch()` returns a clear error message instead, so a consumer pulling `lib.url` only transitively keeps working
 
 
 ## [v3.4.1] - 2026-05-07
@@ -417,8 +395,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * disk.py: `dir_exists()` as the directory-only counterpart to `file_exists()`, which wraps `os.path.isfile()` and therefore returns `False` for a directory
-* lftest.py: `attach_tests()` attaches one `test_*` method per entry of a consumer's `TESTS` list, so discovery and reporting show the actual number of fixtures instead of a single aggregate test. `attach_each()` does the same for an arbitrary list
-* lftest.py: `run_mariadb()` context manager and `MARIADB_LTS_IMAGES` constant for container-based MariaDB integration tests
+* lftest.py: `attach_tests()` attaches one `test_*` method per entry of a consumer's `TESTS` list, so discovery and reporting show the actual number of fixtures instead of a single aggregate test, `attach_each()` does the same for an arbitrary list. `run_mariadb()` context manager and `MARIADB_LTS_IMAGES` constant for container-based MariaDB integration tests
 
 
 ## [v3.0.0] - 2026-04-13
@@ -439,9 +416,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* base.py: `get_worst()` accepts any number of states, so combining three or more no longer needs a nested call
-* base.py: `get_perfdata()` sanitizes labels by stripping single quotes and replacing `=` with `_`, and drops the trailing semicolons
-* base.py: `get_table()` is faster on large tables
+* base.py: `get_worst()` accepts any number of states, so combining three or more no longer needs a nested call, `get_perfdata()` sanitizes labels by stripping single quotes and replacing `=` with `_` and drops the trailing semicolons, and `get_table()` is faster on large tables
 * lftest.py: `test()` accepts `args` with fewer than three elements, so a consumer can be invoked as `--test=path/to/fixture` without the trailing `,,0`
 * powershell.py: `run_ps()` always returns a dict
 * winrm.py: `run_cmd()` and `run_ps()` are JEA-aware and Kerberos-aware
@@ -450,8 +425,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* base.py: `oao()` and `cu()` escape HTML characters in the output message and in the error message, not just in the traceback, to prevent injection in web UIs
-* base.py: `get_state()`, `get_table()`
+* base.py: `get_state()`, `get_table()`, and `oao()` / `cu()`, which escape HTML characters in the output message and in the error message, not just in the traceback, to prevent injection in web UIs
 * cache.py: `get()` treats a cache entry as valid up to and including its `expire` timestamp instead of expiring it one second early, matching HTTP `Cache-Control: max-age` and Redis `EXPIRE` semantics ([#120](https://github.com/Linuxfabrik/lib/issues/120))
 * grassfish.py: the unused `match()` helper referencing undefined names is removed
 * human.py: `bits2human()`, `bytes2human()` and `bps2human()` scale a negative value to a unit matching its magnitude, so `bytes2human(-1048576)` returns `-1.0MiB` instead of `-1048576.0B`. This matters for counter deltas that can legitimately be negative ([#120](https://github.com/Linuxfabrik/lib/issues/120))
@@ -661,8 +635,7 @@ Minor improvements, barely any changes.
 
 ### Changed
 
-* base.py: `cu()` appends an optional message, making it a true error message function
-* base.py: `oao()` suffixes ' (always ok)' if `always_ok=True`
+* base.py: `cu()` appends an optional message, making it a true error message function, and `oao()` suffixes ' (always ok)' if `always_ok=True`
 * shell.py: `shell_exec()` merges the OS environment with the variables set via `env`
 * version.py: `check_eol()` also fetches and caches https://endoflife.date/api
 
@@ -694,8 +667,7 @@ Minor improvements, barely any changes.
 ### Breaking Changes
 
 * db_mysql3: `connect()` changes from username/password to option file authentication
-* net3: `get_ip_public()` is renamed to `get_public_ip()`
-* net3: `ip_to_cdir()` is renamed to `netmask_to_cdir()`
+* net3: `get_ip_public()` is renamed to `get_public_ip()`, `ip_to_cdir()` to `netmask_to_cdir()`
 
 ### Added
 
@@ -720,8 +692,7 @@ Minor improvements, barely any changes.
 ### Changed
 
 * cache3.py: `get()` and `set()` default to a more unique SQLite database name
-* db_mysql3.py: `check_select_privileges()` and `vars2dict()` are added, `connect()` and `select()` are reworked
-* db_mysql3.py: switch from `mysql.connector` to `PyMySQL` ([monitoring-plugins#570](https://github.com/Linuxfabrik/monitoring-plugins/issues/570))
+* db_mysql3.py: `check_select_privileges()` and `vars2dict()` are added, `connect()` and `select()` are reworked, and the driver switches from `mysql.connector` to `PyMySQL` ([monitoring-plugins#570](https://github.com/Linuxfabrik/monitoring-plugins/issues/570))
 * db_sqlite3.py: `connect()` defaults to a more unique SQLite database name
 * disk3.py: `file_exists()`
 * Revert Python 3.6+ f-strings to `.format()` for broader compatibility
@@ -741,13 +712,7 @@ Minor improvements, barely any changes.
 
 ### Changed
 
-* base3: `filter_str()` moves to db_sqlite3.py ([#52](https://github.com/Linuxfabrik/lib/issues/52))
-* base3: `get_owner()` moves out of the lib ([#53](https://github.com/Linuxfabrik/lib/issues/53))
-* base3: `sha1sum()` moves to db_sqlite3.py ([#50](https://github.com/Linuxfabrik/lib/issues/50))
-* base3: the `x2human` and `human2x` functions move to the new human.py ([#49](https://github.com/Linuxfabrik/lib/issues/49))
-* base3: the date/time functions move to the new time3.py ([#55](https://github.com/Linuxfabrik/lib/issues/55))
-* base3: the shell functions move to the new shell3.py ([#56](https://github.com/Linuxfabrik/lib/issues/56))
-* base3: the text functions move to the new txt3.py ([#51](https://github.com/Linuxfabrik/lib/issues/51))
+* base3: `filter_str()` and `sha1sum()` move to db_sqlite3.py ([#50](https://github.com/Linuxfabrik/lib/issues/50), [#52](https://github.com/Linuxfabrik/lib/issues/52)), `get_owner()` moves out of the lib ([#53](https://github.com/Linuxfabrik/lib/issues/53)), and the `x2human` / `human2x`, date/time, shell and text functions move to human.py, time3.py, shell3.py and txt3.py ([#49](https://github.com/Linuxfabrik/lib/issues/49), [#51](https://github.com/Linuxfabrik/lib/issues/51), [#55](https://github.com/Linuxfabrik/lib/issues/55), [#56](https://github.com/Linuxfabrik/lib/issues/56))
 * Lint all modules ([#57](https://github.com/Linuxfabrik/lib/issues/57))
 * Standardize try-except import statements ([#60](https://github.com/Linuxfabrik/lib/issues/60))
 * txt3: handles all encoding and decoding ([#59](https://github.com/Linuxfabrik/lib/issues/59))
@@ -760,14 +725,11 @@ Minor improvements, barely any changes.
 
 ### Fixed
 
-* base: `hashlib.md5()` on FIPS-compliant systems ([#30](https://github.com/Linuxfabrik/lib/issues/30))
-* base: tuple item assignment error ([#43](https://github.com/Linuxfabrik/lib/issues/43))
-* base2: `get_table()` decodes a cell via `to_text()` instead of `unicode()`, and reports an unknown column only where the column really is unknown ([#61](https://github.com/Linuxfabrik/lib/issues/61))
-* url3.py: `fetch()` returns text instead of bytes ([#47](https://github.com/Linuxfabrik/lib/issues/47), [#62](https://github.com/Linuxfabrik/lib/issues/62))
-* url3: `fetch()` no longer raises `TypeError`: a bytes-like object is required, not str ([#44](https://github.com/Linuxfabrik/lib/issues/44))
+* base: `hashlib.md5()` works on FIPS-compliant systems ([#30](https://github.com/Linuxfabrik/lib/issues/30), [#43](https://github.com/Linuxfabrik/lib/issues/43))
+* base2: `get_table()` ([#61](https://github.com/Linuxfabrik/lib/issues/61))
+* url3.py: `fetch()` returns text instead of bytes ([#44](https://github.com/Linuxfabrik/lib/issues/44), [#47](https://github.com/Linuxfabrik/lib/issues/47), [#62](https://github.com/Linuxfabrik/lib/issues/62))
+* veeam.py, veeam3.py, huawei3.py: `get_token()`, `getheader()` ([#45](https://github.com/Linuxfabrik/lib/issues/45), [#46](https://github.com/Linuxfabrik/lib/issues/46))
 * Various fixes after linting
-* veeam.py: `get_token()` no longer raises `ValueError`: need more than 2 values to unpack ([#45](https://github.com/Linuxfabrik/lib/issues/45))
-* veeam3.py, huawei3.py: `getheader()` should be `get()` in Python 3 ([#46](https://github.com/Linuxfabrik/lib/issues/46))
 
 
 ## [2021101401] - 2021-10-14
@@ -784,27 +746,20 @@ Minor improvements, barely any changes.
 ### Changed
 
 * base2: improve Unicode, UTF-8, and ASCII handling
-* base: `get_state()` can evaluate against a range ([#34](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/34))
-* base: `version2float()` strips everything except numbers and decimal points ([#26](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/26))
-* base: `get_table()` draws its lines better ([#7](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/7))
-* base: `version()` is more robust ([#28](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/28))
-* base: `get_table()` uses ASCII characters only, for the broadest terminal compatibility ([#33](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/33))
+* base: `get_state()` can evaluate against a range ([#34](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/34)), `get_table()` draws its lines better and uses ASCII characters only, for the broadest terminal compatibility ([#7](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/7), [#33](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/33)), and `version()` / `version2float()` are more robust ([#26](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/26), [#28](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/28))
 * cache: `get()` and `set()` take the cache filename ([#21](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/21))
 * db_sqlite: `select()` supports `LIKE` statements using a regexp
-* url: `fetch()` and `fetch_json()` can also return the HTTP status code and the response headers ([#32](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/32))
-* url: `fetch()` sends a `User-Agent: Linuxfabrik Monitoring Plugins` header ([#24](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/24))
+* url: `fetch()` and `fetch_json()` can also return the HTTP status code and the response headers ([#32](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/32)), and `fetch()` sends a `User-Agent: Linuxfabrik Monitoring Plugins` header ([#24](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/24))
 
 ### Fixed
 
-* base2: `AttributeError`: 'exceptions.ValueError' object has no attribute 'encode' ([#37](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/37))
-* base2: `UnicodeDecodeError`: 'ascii' codec can't decode byte 0xc2 ([#38](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/38))
 * base: `get_table()` handles the length of UTF-8 correctly ([#8](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/8))
-* cache3: `NameError`: name 'base' is not defined ([#29](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/29))
+* base2: Unicode and encoding handling ([#37](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/37), [#38](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/38))
+* cache3: module import ([#29](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/29))
 * db_sqlite: 8-bit bytestrings error with text_factory ([#20](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/20))
 * disk: `read_csv()` ([#25](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/25))
 * librenms3.py: `get_data()` ([#27](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/27))
-* net: `fetch()` port and timeout must be integers ([#22](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/22))
-* net: socket `recv()` timeout ([#23](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/23))
+* net: `fetch()` and the socket `recv()` timeout ([#22](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/22), [#23](https://git.linuxfabrik.ch/linuxfabrik/lib/-/issues/23))
 
 
 ## [2020052801] - 2020-05-28
