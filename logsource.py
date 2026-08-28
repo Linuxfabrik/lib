@@ -26,11 +26,12 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082801'
+__version__ = '2026082802'
 
 import collections
 import os
 import re
+import stat
 
 from . import disk, shell, txt
 
@@ -122,7 +123,94 @@ def _is_rewritten(filename, fingerprint, length):
     return True, current != fingerprint
 
 
-def _read_file(path, position, allowed_roots, max_lines):
+# What a log rotator appends to the name of the file it moved aside. Everything
+# it can produce is made of digits and separators, whether it counts generations
+# (`.1`) or stamps a date (`-20260828`, `-2026-08-28`), so a name carrying a
+# letter is somebody's backup copy and not a rotation.
+_ROTATED_SUFFIX_REGEX = re.compile(r'^[-.][-_.0-9]*[0-9][-_.0-9]*$')
+
+# Compression a rotator applies to what it moved aside, and the module that
+# reads it back. A rotator can be told to use something else (zstd, for
+# example); such a file simply does not look like a rotation here and is left
+# alone rather than read as binary noise.
+_COMPRESSION_MODULES = {
+    '.bz2': 'bz2',
+    '.gz': 'gzip',
+    '.xz': 'lzma',
+}
+
+
+def _open_log_file(path):
+    """Open a log file for reading in binary, decompressing it where its name says so.
+
+    The module that reads a compression is imported here rather than at the top, because a
+    Python can be built without one, and that must not keep this module from being imported at
+    all.
+    """
+    for suffix, module_name in _COMPRESSION_MODULES.items():
+        if not path.endswith(suffix):
+            continue
+        try:
+            module = __import__(module_name)
+        except ImportError:
+            return False, (
+                f'Cannot read "{path}": this Python has no `{module_name}` module.'
+            )
+        try:
+            return True, module.open(path, mode='rb')
+        except OSError as e:
+            return False, f'I/O error "{e.strerror}" while reading {path}'
+    try:
+        return True, open(path, mode='rb')
+    except OSError as e:
+        return False, f'I/O error "{e.strerror}" while reading {path}'
+
+
+def _rotated_files(path, count):
+    """Return the files a rotator moved aside from `path`, the oldest of them first.
+
+    Ordering is by modification time rather than by name, because the two naming schemes a
+    rotator uses disagree about which name is the newest: a counted generation is renamed
+    upwards on every rotation while a dated one never moves. Compressing a rotated file keeps
+    its modification time, so the order holds either way.
+
+    Only a regular file is considered, and a symlink is not followed, so nothing that was
+    dropped into the log directory can widen what the caller reads.
+    """
+    directory = os.path.dirname(path) or '.'
+    base = os.path.basename(path)
+    candidates = []
+    try:
+        entries = os.listdir(directory)
+    except OSError:
+        # A directory that cannot be listed simply yields no predecessor. The
+        # file itself is read on its own and reports its own trouble.
+        return []
+    for name in entries:
+        if not name.startswith(base) or name == base:
+            continue
+        suffix = name[len(base) :]
+        for compression in _COMPRESSION_MODULES:
+            if suffix.endswith(compression):
+                suffix = suffix[: -len(compression)]
+                break
+        if not _ROTATED_SUFFIX_REGEX.match(suffix):
+            continue
+        candidate = os.path.join(directory, name)
+        try:
+            candidate_stat = os.lstat(candidate)
+        except OSError:
+            continue
+        if not stat.S_ISREG(candidate_stat.st_mode):
+            continue
+        candidates.append((candidate_stat.st_mtime, candidate))
+    # newest first to pick the `count` most recent, then reversed so their lines
+    # arrive in the order they were written
+    candidates.sort(reverse=True)
+    return [candidate for _, candidate in reversed(candidates[:count])]
+
+
+def _read_file(path, position, allowed_roots, max_lines, rotated):
     """Read the lines a file grew by since `position`, detecting rotation and rewrites."""
     if allowed_roots and not disk.is_within(path, allowed_roots):
         return False, (
@@ -173,8 +261,31 @@ def _read_file(path, position, allowed_roots, max_lines):
     # A cap is applied to the lines that are kept, not to the lines that are
     # read: the offset still advances to the end, so a run that hits the cap
     # drops the oldest of the new lines instead of re-reading them forever.
+    # Rotated predecessors share the same deque, so the cap keeps the most
+    # recent lines across all of them rather than per file.
     lines = collections.deque(maxlen=max_lines) if max_lines else []
     read = 0
+    notices = []
+    rotated_read = []
+    for predecessor in _rotated_files(path, rotated) if rotated else []:
+        if allowed_roots and not disk.is_within(predecessor, allowed_roots):
+            notices.append(f'"{predecessor}" is outside the allowed roots')
+            continue
+        success, handle = _open_log_file(predecessor)
+        if not success:
+            notices.append(handle)
+            continue
+        try:
+            with handle:
+                for line in handle:
+                    read += 1
+                    lines.append(
+                        txt.to_text(line, errors='strict_or_latin1').rstrip('\r\n')
+                    )
+        except OSError as e:
+            notices.append(f'I/O error "{e.strerror}" while reading {predecessor}')
+            continue
+        rotated_read.append(predecessor)
     try:
         with open(path, mode='rb') as handle:
             handle.seek(offset)
@@ -191,8 +302,11 @@ def _read_file(path, position, allowed_roots, max_lines):
         'kind': KIND_FILE,
         'label': path,
         'lines': list(lines),
-        # Nothing reads a file but us, so there is never anything to pass on.
-        'notice': '',
+        # Nothing reads a file but us, so the only thing to pass on is a rotated
+        # predecessor that was asked for and could not be read.
+        'notice': (
+            'Skipped a rotated file: ' + '; '.join(notices) + '.' if notices else ''
+        ),
         'position': {
             'fingerprint': fingerprint,
             'inode': inode,
@@ -201,6 +315,7 @@ def _read_file(path, position, allowed_roots, max_lines):
             'offset': offset,
         },
         'restarted': restarted,
+        'rotated': rotated_read,
         'truncated': read > len(lines),
     }
 
@@ -280,6 +395,8 @@ def _read_journald(unit, position, max_lines, since, timeout):
         # resume at the closest one it still holds, without saying so, so there
         # is nothing here that could be reported as a restart.
         'restarted': False,
+        # Neither storage has a rotation of its own a caller could ask for.
+        'rotated': [],
         'truncated': bool(max_lines) and len(lines) >= max_lines,
     }
 
@@ -353,6 +470,8 @@ def _read_container(engine, target, position, max_lines, since, timeout):
             'timestamp': entries[-1][0] if entries else last,
         },
         'restarted': False,
+        # Neither storage has a rotation of its own a caller could ask for.
+        'rotated': [],
         'truncated': bool(max_lines) and len(entries) >= max_lines,
     }
 
@@ -362,6 +481,7 @@ def read(
     position=None,
     allowed_roots=None,
     max_lines=None,
+    rotated=0,
     since=None,
     timeout=DEFAULT_TIMEOUT,
 ):
@@ -390,7 +510,13 @@ def read(
     - **max_lines** (`int`, optional):
       At most this many lines are returned, the most recent ones. The position still advances
       past everything that was there, so the lines a cap dropped do not come back on the next
-      run. Defaults to None, which is no cap.
+      run. Defaults to None, which is no cap. Where rotated files are read as well, the cap
+      applies to all of them together rather than to each one.
+    - **rotated** (`int`, optional):
+      How many rotated predecessors of a file source to read ahead of it, most recent first.
+      Defaults to 0, which reads the file alone. Only a read that has no `position` honours
+      this, because a caller that resumes where it stopped has seen those lines already. See
+      the notes on which files count as a predecessor.
     - **since** (`str`, optional):
       Where to start when there is no position: a timestamp for a container, and anything
       `journalctl --since` accepts for a unit, for example `-8h`. Ignored for a file, which
@@ -418,6 +544,8 @@ def read(
           - `position` (`dict`): to store and pass back on the next call.
           - `restarted` (`bool`): True if the stored position had become meaningless and the
             source was read from its beginning, so the lines are not only the new ones.
+          - `rotated` (`list` of `str`): the rotated files that were read ahead of the source,
+            in the order their lines appear. Empty unless `rotated` asked for them.
           - `truncated` (`bool`): True if `max_lines` dropped lines from the result.
 
     ### Notes
@@ -429,9 +557,18 @@ def read(
     - A file is read in binary and decoded as UTF-8, falling back to Latin-1 for the whole line
       on any invalid byte, so a log that is not valid UTF-8 is reported rather than raising at
       the point where the result is printed.
+    - A predecessor is a regular file in the same directory whose name is the source's plus a
+      suffix of digits and separators, as a rotator writes it (`error.log.1`,
+      `error.log-20260828`), optionally compressed with gzip, xz or bzip2. Ordering is by
+      modification time, so both a counted and a dated scheme come out chronologically. A
+      symlink is never followed, a rotator told to compress with something else is left alone,
+      and a rotator configured to move its output to another directory is out of reach. One
+      that could not be read is named in `notice` instead of failing the whole call, so the
+      live file is still reported.
 
     ### Example
     >>> success, result = read('/var/log/messages', allowed_roots=['/var/log'])
+    >>> success, result = read('/var/log/messages', max_lines=30000, rotated=1)
     >>> success, result = read('systemd:sshd', position=stored, since='-8h')
     >>> success, result = read('podman:database', position=stored, max_lines=1000)
     """
@@ -448,4 +585,9 @@ def read(
         return _read_container(engine, target, position, max_lines, since, timeout)
     if kind == KIND_JOURNALD:
         return _read_journald(target, position, max_lines, since, timeout)
-    return _read_file(target, position, allowed_roots, max_lines)
+    # A caller that resumes where it stopped has seen the predecessors already,
+    # and the position it gets back describes the live file alone, so there
+    # would be no way to remember how much of a predecessor was consumed.
+    return _read_file(
+        target, position, allowed_roots, max_lines, 0 if position else rotated
+    )

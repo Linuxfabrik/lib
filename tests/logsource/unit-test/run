@@ -258,6 +258,155 @@ class TestReadFile(unittest.TestCase):
         self.assertFalse(second['restarted'])
 
 
+class TestReadRotated(unittest.TestCase):
+    """A rotator moves the old file aside and the application starts a fresh one, so a
+    caller reading a window of the log loses everything older than the last rotation
+    unless it asks for the predecessors as well."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmpdir, 'app.log')
+
+    def write(self, name, content, mtime=None):
+        """Write one of the files a rotator would have left behind.
+
+        Modification times are set explicitly, because the ordering is taken from them and
+        a test that wrote its files within the same clock tick would not pin it down.
+        """
+        path = os.path.join(self.tmpdir, name)
+        with open(path, 'w') as handle:
+            handle.write(content)
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
+
+    def write_gz(self, name, content, mtime=None):
+        import gzip
+
+        path = os.path.join(self.tmpdir, name)
+        with gzip.open(path, 'wt') as handle:
+            handle.write(content)
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
+
+    def read(self, **kwargs):
+        success, result = lib.logsource.read(self.path, **kwargs)
+        self.assertTrue(success, msg=result)
+        return result
+
+    def test_not_asked_for_is_not_read(self):
+        self.write('app.log.1', 'yesterday\n', mtime=1000)
+        self.write('app.log', 'today\n', mtime=2000)
+        result = self.read()
+        self.assertEqual(result['lines'], ['today'])
+        self.assertEqual(result['rotated'], [])
+
+    def test_counted_generation(self):
+        self.write('app.log.1', 'yesterday\n', mtime=1000)
+        self.write('app.log', 'today\n', mtime=2000)
+        result = self.read(rotated=1)
+        self.assertEqual(result['lines'], ['yesterday', 'today'])
+        self.assertEqual(result['rotated'], [os.path.join(self.tmpdir, 'app.log.1')])
+
+    def test_dated_generation(self):
+        self.write('app.log-20260827', 'older\n', mtime=1000)
+        self.write('app.log-20260828', 'yesterday\n', mtime=2000)
+        self.write('app.log', 'today\n', mtime=3000)
+        result = self.read(rotated=1)
+        # the newest predecessor by modification time, not the first by name
+        self.assertEqual(result['lines'], ['yesterday', 'today'])
+
+    def test_several_predecessors_arrive_oldest_first(self):
+        self.write('app.log.3', 'three\n', mtime=1000)
+        self.write('app.log.2', 'two\n', mtime=2000)
+        self.write('app.log.1', 'one\n', mtime=3000)
+        self.write('app.log', 'live\n', mtime=4000)
+        result = self.read(rotated=3)
+        self.assertEqual(result['lines'], ['three', 'two', 'one', 'live'])
+
+    def test_more_asked_for_than_exist(self):
+        self.write('app.log.1', 'one\n', mtime=1000)
+        self.write('app.log', 'live\n', mtime=2000)
+        self.assertEqual(self.read(rotated=10)['lines'], ['one', 'live'])
+
+    def test_compressed_predecessor(self):
+        # what delaycompress leaves behind: the newest is plain, the rest are gzipped
+        self.write_gz('app.log.2.gz', 'two\n', mtime=1000)
+        self.write('app.log.1', 'one\n', mtime=2000)
+        self.write('app.log', 'live\n', mtime=3000)
+        result = self.read(rotated=2)
+        self.assertEqual(result['lines'], ['two', 'one', 'live'])
+
+    def test_a_neighbours_log_is_not_a_predecessor(self):
+        # the same directory holds other logs, and one of them starting with the
+        # source's name must not be read as its rotation
+        self.write('app.log-error.1', 'not mine\n', mtime=1000)
+        self.write('app.log.backup', 'not mine either\n', mtime=1500)
+        self.write('app.log', 'live\n', mtime=2000)
+        result = self.read(rotated=5)
+        self.assertEqual(result['lines'], ['live'])
+        self.assertEqual(result['rotated'], [])
+
+    def test_symlink_is_not_followed(self):
+        secret = os.path.join(self.tmpdir, 'secret')
+        with open(secret, 'w') as handle:
+            handle.write('secret\n')
+        os.symlink(secret, os.path.join(self.tmpdir, 'app.log.1'))
+        self.write('app.log', 'live\n', mtime=2000)
+        result = self.read(rotated=1)
+        self.assertEqual(result['lines'], ['live'])
+        self.assertNotIn('secret', ' '.join(result['lines']))
+
+    def test_unreadable_predecessor_is_named_and_the_live_file_still_read(self):
+        # a rotation that was interrupted leaves a truncated archive behind; the
+        # live file is what the caller asked about and has to be reported anyway
+        broken = os.path.join(self.tmpdir, 'app.log.1.gz')
+        with open(broken, 'wb') as handle:
+            handle.write(b'not gzip at all')
+        os.utime(broken, (1000, 1000))
+        self.write('app.log', 'live\n', mtime=2000)
+        result = self.read(rotated=1)
+        self.assertEqual(result['lines'], ['live'])
+        self.assertEqual(result['rotated'], [])
+        self.assertIn('Skipped a rotated file', result['notice'])
+        self.assertIn('app.log.1.gz', result['notice'])
+
+    def test_predecessor_is_confined_to_the_allowed_roots(self):
+        # the live file decides the directory, so a predecessor is normally in the
+        # same one; the check is what keeps that true if it ever is not
+        self.write('app.log.1', 'one\n', mtime=1000)
+        self.write('app.log', 'live\n', mtime=2000)
+        result = self.read(rotated=1, allowed_roots=[self.tmpdir])
+        self.assertEqual(result['lines'], ['one', 'live'])
+
+    def test_max_lines_caps_across_all_files(self):
+        self.write('app.log.1', 'one\ntwo\n', mtime=1000)
+        self.write('app.log', 'three\nfour\n', mtime=2000)
+        result = self.read(rotated=1, max_lines=3)
+        self.assertEqual(result['lines'], ['two', 'three', 'four'])
+        self.assertTrue(result['truncated'])
+
+    def test_a_resuming_caller_gets_no_predecessor(self):
+        # the lines of a predecessor were seen on an earlier run, and the position
+        # that comes back describes the live file alone
+        self.write('app.log.1', 'yesterday\n', mtime=1000)
+        self.write('app.log', 'today\n', mtime=2000)
+        first = self.read(rotated=1)
+        self.assertEqual(first['lines'], ['yesterday', 'today'])
+        with open(self.path, 'a') as handle:
+            handle.write('later\n')
+        second = self.read(rotated=1, position=first['position'])
+        self.assertEqual(second['lines'], ['later'])
+        self.assertEqual(second['rotated'], [])
+
+    def test_the_position_describes_the_live_file(self):
+        self.write('app.log.1', 'yesterday\n', mtime=1000)
+        self.write('app.log', 'today\n', mtime=2000)
+        result = self.read(rotated=1)
+        self.assertEqual(result['position']['offset'], len('today\n'))
+
+
 class TestReadJournald(unittest.TestCase):
     CURSOR = 's=485571998e574800b311165f5bf0bd42;i=ce9e34'
 
