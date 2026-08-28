@@ -129,6 +129,23 @@ HELP_TEXTS = {
         'Can be specified multiple times. '
         'Example: `boot` matches both `/boot` and `/boot/efi`.'
     ),
+    '--icinga-callback': (
+        'Ask the monitoring server whether the service running this check is '
+        'acknowledged. Where it is, what this run reports is remembered as already '
+        'handled, so it no longer raises an alert on the following runs. Requires '
+        '`--icinga-url`, `--icinga-username`, `--icinga-password` and '
+        '`--icinga-service-name`.'
+    ),
+    '--icinga-password': 'Monitoring server API password.',
+    '--icinga-service-name': (
+        'Unique name of the service running this check, as the monitoring server knows '
+        'it. Take it from the `__name` service attribute. '
+        'Example: `monitoring-server!my-service-name`.'
+    ),
+    '--icinga-url': (
+        'Monitoring server API URL. Example: `https://monitoring.example.com:5665`.'
+    ),
+    '--icinga-username': 'Monitoring server API username.',
     '--ignore-regex': (
         'Any item matching this Python regex will be ignored. '
         'Can be specified multiple times. '

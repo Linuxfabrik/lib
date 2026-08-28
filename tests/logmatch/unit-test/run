@@ -1,0 +1,459 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.logmatch.
+
+Fixture-based, no container required. Every state database is created in a throwaway
+directory (`path=` argument to connect), so the tests never touch the real per-user temp
+directory and can run in parallel. The acknowledgement lookup replaces
+`lib.icinga.get_service` with recorded answers, including the ones a misconfigured or
+unreachable monitoring server gives.
+"""
+
+import datetime
+import os
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, '..')
+
+import lib.db_sqlite
+import lib.logmatch
+
+
+class TestInstanceId(unittest.TestCase):
+    def test_is_stable(self):
+        payload = {'critical': ['fatal'], 'warning': ['error']}
+        self.assertEqual(
+            lib.logmatch.instance_id(payload),
+            lib.logmatch.instance_id(payload),
+        )
+
+    def test_ignores_list_order(self):
+        self.assertEqual(
+            lib.logmatch.instance_id({'warning': ['error', 'warn']}),
+            lib.logmatch.instance_id({'warning': ['warn', 'error']}),
+        )
+
+    def test_ignores_key_order(self):
+        self.assertEqual(
+            lib.logmatch.instance_id({'a': 1, 'b': 2}),
+            lib.logmatch.instance_id({'b': 2, 'a': 1}),
+        )
+
+    def test_differs_on_a_changed_value(self):
+        self.assertNotEqual(
+            lib.logmatch.instance_id({'warning': ['error']}),
+            lib.logmatch.instance_id({'warning': ['fatal']}),
+        )
+
+    def test_differs_on_an_added_value(self):
+        self.assertNotEqual(
+            lib.logmatch.instance_id({'warning': ['error']}),
+            lib.logmatch.instance_id({'warning': ['error'], 'critical': ['fatal']}),
+        )
+
+    def test_nested_lists_are_normalized(self):
+        self.assertEqual(
+            lib.logmatch.instance_id({'a': {'b': ['y', 'x']}}),
+            lib.logmatch.instance_id({'a': {'b': ['x', 'y']}}),
+        )
+
+    def test_length(self):
+        self.assertEqual(len(lib.logmatch.instance_id({})), 10)
+        self.assertEqual(len(lib.logmatch.instance_id({}, length=6)), 6)
+
+
+class TestKey(unittest.TestCase):
+    def test_is_stable(self):
+        self.assertEqual(lib.logmatch.key('a line'), lib.logmatch.key('a line'))
+
+    def test_differs_per_line(self):
+        self.assertNotEqual(lib.logmatch.key('one'), lib.logmatch.key('two'))
+
+    def test_handles_non_ascii(self):
+        self.assertNotEqual(lib.logmatch.key('café'), lib.logmatch.key('cafe'))
+
+
+class LogmatchTestCase(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.connections = []
+        self.conn = self.connect()
+
+    def tearDown(self):
+        for conn in self.connections:
+            lib.db_sqlite.close(conn)
+
+    def connect(self, name='probe', instance='abc'):
+        success, conn = lib.logmatch.connect(name, instance, path=self.tmpdir)
+        self.assertTrue(success, msg=conn)
+        self.connections.append(conn)
+        return conn
+
+    def record(self, findings):
+        success, result = lib.logmatch.record(self.conn, findings)
+        self.assertTrue(success, msg=result)
+
+    def pending(self, **kwargs):
+        success, rows = lib.logmatch.pending(self.conn, **kwargs)
+        self.assertTrue(success, msg=rows)
+        return rows
+
+
+class TestConnect(LogmatchTestCase):
+    def db_path(self, filename):
+        # db_sqlite keeps its databases in a per-uid subdirectory of `path`, so
+        # ask it where the file went rather than assuming the flat name
+        success, path = lib.db_sqlite.get_db_path(path=self.tmpdir, filename=filename)
+        self.assertTrue(success, msg=path)
+        return path
+
+    def test_creates_the_database(self):
+        self.assertTrue(
+            os.path.isfile(self.db_path('linuxfabrik-monitoring-plugins-probe-abc.db'))
+        )
+
+    def test_instances_do_not_share_a_database(self):
+        other = self.connect(instance='def')
+        self.record([{'line': 'mine'}])
+        success, rows = lib.logmatch.pending(other)
+        self.assertTrue(success)
+        self.assertEqual(rows, [])
+
+    def test_without_an_instance(self):
+        success, conn = lib.logmatch.connect('probe', path=self.tmpdir)
+        self.assertTrue(success, msg=conn)
+        self.assertTrue(
+            os.path.isfile(self.db_path('linuxfabrik-monitoring-plugins-probe.db'))
+        )
+
+    def test_reopening_keeps_the_findings(self):
+        self.record([{'line': 'stays'}])
+        self.conn = self.connect()
+        self.assertEqual([row['line'] for row in self.pending()], ['stays'])
+
+
+class TestRecordAndPending(LogmatchTestCase):
+    def test_records_a_finding(self):
+        self.record([{'line': 'boom', 'state': 2}])
+        rows = self.pending()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['line'], 'boom')
+        self.assertEqual(rows[0]['state'], 2)
+        self.assertIsNone(rows[0]['acked_at'])
+
+    def test_state_defaults_to_warn(self):
+        self.record([{'line': 'boom'}])
+        self.assertEqual(self.pending()[0]['state'], 1)
+
+    def test_empty_findings(self):
+        self.record([])
+        self.assertEqual(self.pending(), [])
+
+    def test_generated_keys_are_unique_per_occurrence(self):
+        # a consumer reading incrementally sees the same text twice as two events
+        self.record([{'line': 'same'}])
+        self.record([{'line': 'same'}])
+        self.assertEqual(len(self.pending()), 2)
+
+    def test_explicit_key_collapses_repeats(self):
+        # a consumer re-reading its whole source sees one event twice
+        for _ in range(3):
+            self.record([{'key': lib.logmatch.key('same'), 'line': 'same'}])
+        self.assertEqual(len(self.pending()), 1)
+
+    def test_first_seen_survives_a_repeat(self):
+        item = lib.logmatch.key('same')
+        self.record([{'key': item, 'line': 'same'}])
+        first_seen = self.pending()[0]['first_seen']
+        self.record([{'key': item, 'line': 'same'}])
+        self.assertEqual(self.pending()[0]['first_seen'], first_seen)
+
+    def test_acknowledgement_survives_a_repeat(self):
+        # the point of the whole thing: an unchanged source must not raise an
+        # acknowledged finding again on the next run
+        item = lib.logmatch.key('same')
+        self.record([{'key': item, 'line': 'same'}])
+        lib.logmatch.acknowledge(self.conn, [{'key': item, 'line': 'same'}])
+        self.record([{'key': item, 'line': 'same'}])
+        self.assertEqual(self.pending(), [])
+
+    def test_pending_is_ordered_oldest_first(self):
+        self.record([{'line': 'first'}])
+        self.record([{'line': 'second'}])
+        self.assertEqual([row['line'] for row in self.pending()], ['first', 'second'])
+
+    def test_max_age_drops_an_old_finding(self):
+        self.record([{'line': 'old'}])
+        self.age(self.pending()[0]['key'], minutes=120)
+        self.assertEqual(self.pending(max_age=60), [])
+
+    def test_max_age_keeps_a_recent_finding(self):
+        self.record([{'line': 'fresh'}])
+        self.assertEqual(len(self.pending(max_age=60)), 1)
+
+    def test_max_age_measures_from_first_seen(self):
+        # a line that keeps repeating still ages out instead of renewing itself
+        item = lib.logmatch.key('repeats')
+        self.record([{'key': item, 'line': 'repeats'}])
+        self.age(item, minutes=120)
+        self.record([{'key': item, 'line': 'repeats'}])
+        self.assertEqual(self.pending(max_age=60), [])
+
+    def age(self, item, minutes):
+        """Backdate a finding, so ageing can be tested without waiting for it."""
+        cutoff = (
+            datetime.datetime.now() - datetime.timedelta(minutes=minutes)
+        ).isoformat(sep=' ')
+        success, result = lib.db_sqlite.replace(
+            self.conn,
+            dict(
+                lib.db_sqlite.select(
+                    self.conn,
+                    'SELECT * FROM findings WHERE key = :key',
+                    {'key': item},
+                    fetchone=True,
+                )[1],
+                first_seen=cutoff,
+                last_seen=cutoff,
+            ),
+            table='findings',
+        )
+        self.assertTrue(success, msg=result)
+
+
+class TestPosition(LogmatchTestCase):
+    def test_no_position_yet(self):
+        success, position = lib.logmatch.get_position(self.conn, '/var/log/app.log')
+        self.assertTrue(success, msg=position)
+        self.assertIsNone(position)
+
+    def test_round_trip(self):
+        stored = {'kind': 'file', 'offset': 42, 'inode': '17', 'fingerprint': 'ab'}
+        success, result = lib.logmatch.set_position(
+            self.conn, '/var/log/app.log', stored
+        )
+        self.assertTrue(success, msg=result)
+        success, position = lib.logmatch.get_position(self.conn, '/var/log/app.log')
+        self.assertTrue(success, msg=position)
+        self.assertEqual(position, stored)
+
+    def test_overwrite(self):
+        lib.logmatch.set_position(self.conn, 'src', {'offset': 1})
+        lib.logmatch.set_position(self.conn, 'src', {'offset': 2})
+        self.assertEqual(lib.logmatch.get_position(self.conn, 'src')[1], {'offset': 2})
+
+    def test_sources_are_kept_apart(self):
+        lib.logmatch.set_position(self.conn, 'a', {'offset': 1})
+        lib.logmatch.set_position(self.conn, 'b', {'offset': 2})
+        self.assertEqual(lib.logmatch.get_position(self.conn, 'a')[1], {'offset': 1})
+
+    def test_survives_reopening(self):
+        lib.logmatch.set_position(self.conn, 'src', {'cursor': 's=1'})
+        self.conn = self.connect()
+        self.assertEqual(
+            lib.logmatch.get_position(self.conn, 'src')[1], {'cursor': 's=1'}
+        )
+
+    def test_unreadable_position_reads_as_none(self):
+        # a state database written by an incompatible version costs one re-read
+        # instead of taking the consumer down
+        lib.db_sqlite.replace(
+            self.conn,
+            {'position': 'not json', 'source': 'src'},
+            table=lib.logmatch.POSITION_TABLE,
+        )
+        success, position = lib.logmatch.get_position(self.conn, 'src')
+        self.assertTrue(success)
+        self.assertIsNone(position)
+
+
+class TestAcknowledge(LogmatchTestCase):
+    def test_acknowledged_finding_stops_counting(self):
+        self.record([{'line': 'boom'}])
+        item = self.pending()[0]['key']
+        success, result = lib.logmatch.acknowledge(
+            self.conn, [{'key': item, 'line': 'same'}]
+        )
+        self.assertTrue(success, msg=result)
+        self.assertEqual(self.pending(), [])
+
+    def test_only_the_named_findings(self):
+        self.record([{'line': 'one'}, {'line': 'two'}])
+        rows = self.pending()
+        lib.logmatch.acknowledge(self.conn, [rows[0]])
+        self.assertEqual([row['line'] for row in self.pending()], ['two'])
+
+    def test_unknown_key_is_recorded_as_acknowledged(self):
+        # a consumer that only ever writes on an acknowledgement never recorded
+        # the finding first, so acknowledging it has to put it on file
+        self.record([{'line': 'one'}])
+        success, result = lib.logmatch.acknowledge(
+            self.conn, [{'key': 'nosuchkey', 'line': 'never recorded'}]
+        )
+        self.assertTrue(success, msg=result)
+        self.assertEqual(len(self.pending()), 1)
+        self.assertIn('nosuchkey', lib.logmatch.suppressed(self.conn)[1])
+
+    def test_empty_keys(self):
+        success, result = lib.logmatch.acknowledge(self.conn, [])
+        self.assertTrue(success, msg=result)
+
+    def test_a_new_occurrence_is_reported_again(self):
+        # generated keys, so the next occurrence of the same text is its own
+        # finding and the acknowledgement does not cover it
+        self.record([{'line': 'boom'}])
+        lib.logmatch.acknowledge(self.conn, [self.pending()[0]])
+        self.record([{'line': 'boom'}])
+        self.assertEqual(len(self.pending()), 1)
+
+
+class TestSuppressed(LogmatchTestCase):
+    def test_empty_when_nothing_acknowledged(self):
+        self.record([{'key': lib.logmatch.key('a'), 'line': 'a'}])
+        success, keys = lib.logmatch.suppressed(self.conn)
+        self.assertTrue(success, msg=keys)
+        self.assertEqual(keys, set())
+
+    def test_holds_acknowledged_keys_only(self):
+        for line in ('a', 'b'):
+            self.record([{'key': lib.logmatch.key(line), 'line': line}])
+        lib.logmatch.acknowledge(
+            self.conn, [{'key': lib.logmatch.key('a'), 'line': 'a'}]
+        )
+        success, keys = lib.logmatch.suppressed(self.conn)
+        self.assertTrue(success, msg=keys)
+        self.assertEqual(keys, {lib.logmatch.key('a')})
+
+    def test_filters_a_re_read_source(self):
+        # the shape a consumer reading its whole source every run uses
+        lines = ['boot ok', 'disk error', 'link down']
+        lib.logmatch.acknowledge(
+            self.conn, [{'key': lib.logmatch.key('disk error'), 'line': 'disk error'}]
+        )
+        acknowledged = lib.logmatch.suppressed(self.conn)[1]
+        remaining = [
+            line for line in lines if lib.logmatch.key(line) not in acknowledged
+        ]
+        self.assertEqual(remaining, ['boot ok', 'link down'])
+
+
+class TestPrune(LogmatchTestCase):
+    def test_keeps_a_recent_finding(self):
+        self.record([{'line': 'fresh'}])
+        success, result = lib.logmatch.prune(self.conn, retention=30)
+        self.assertTrue(success, msg=result)
+        self.assertEqual(len(self.pending()), 1)
+
+    def test_drops_an_old_finding(self):
+        self.record([{'line': 'old'}])
+        row = self.pending()[0]
+        cutoff = (datetime.datetime.now() - datetime.timedelta(days=90)).isoformat(
+            sep=' '
+        )
+        lib.db_sqlite.replace(
+            self.conn,
+            dict(row, first_seen=cutoff, last_seen=cutoff),
+            table='findings',
+        )
+        success, result = lib.logmatch.prune(self.conn, retention=30)
+        self.assertTrue(success, msg=result)
+        self.assertEqual(self.pending(), [])
+
+    def test_prunes_by_last_seen_not_first_seen(self):
+        # a long-standing finding the source still reports must stay on record
+        row_key = lib.logmatch.key('long standing')
+        self.record([{'key': row_key, 'line': 'long standing'}])
+        row = self.pending()[0]
+        lib.db_sqlite.replace(
+            self.conn,
+            dict(
+                row,
+                first_seen=(
+                    datetime.datetime.now() - datetime.timedelta(days=90)
+                ).isoformat(sep=' '),
+            ),
+            table='findings',
+        )
+        lib.logmatch.prune(self.conn, retention=30)
+        self.assertEqual(len(self.pending()), 1)
+
+
+class TestServiceAcknowledged(unittest.TestCase):
+    def icinga(self, payload, success=True):
+        return patch('lib.icinga.get_service', return_value=(success, payload))
+
+    def call(self):
+        success, result = lib.logmatch.service_acknowledged(
+            'https://monitoring.example.com:5665',
+            'username',
+            'linuxfabrik',
+            'host!service',
+        )
+        self.assertTrue(success, msg=result)
+        return result
+
+    def test_acknowledged(self):
+        with self.icinga({'results': [{'attrs': {'acknowledgement': 1}}]}):
+            acknowledged, note = self.call()
+        self.assertTrue(acknowledged)
+        self.assertEqual(note, '')
+
+    def test_not_acknowledged(self):
+        with self.icinga({'results': [{'attrs': {'acknowledgement': 0}}]}):
+            acknowledged, note = self.call()
+        self.assertFalse(acknowledged)
+        self.assertIn('Acknowledge this service', note)
+
+    def test_unknown_service(self):
+        with self.icinga({'results': []}):
+            acknowledged, note = self.call()
+        self.assertFalse(acknowledged)
+        self.assertIn('incorrect service name', note)
+
+    def test_missing_attribute(self):
+        with self.icinga({'results': [{'attrs': {}}]}):
+            acknowledged, note = self.call()
+        self.assertFalse(acknowledged)
+        self.assertIn('incorrect service name', note)
+
+    def test_unreachable_api_is_not_a_failure(self):
+        # a check must not go UNKNOWN just because it could not ask about an
+        # acknowledgement; the finding matters more than the lookup
+        with self.icinga('Connection refused', success=False):
+            acknowledged, note = self.call()
+        self.assertFalse(acknowledged)
+        self.assertIn('Connection refused', note)
+
+    def test_credentials_are_passed_on(self):
+        with self.icinga({'results': []}) as mock:
+            lib.logmatch.service_acknowledged(
+                'https://monitoring.example.com:5665',
+                'username',
+                'linuxfabrik',
+                'host!service',
+                insecure=True,
+                timeout=9,
+            )
+        self.assertEqual(mock.call_args[1]['attrs'], 'state,acknowledgement')
+        self.assertTrue(mock.call_args[1]['insecure'])
+        self.assertEqual(mock.call_args[1]['timeout'], 9)
+
+    def test_no_secret_in_the_note(self):
+        with self.icinga('Connection refused', success=False):
+            _, note = self.call()
+        self.assertNotIn('linuxfabrik', note)
+
+
+if __name__ == '__main__':
+    unittest.main()

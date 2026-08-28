@@ -1,0 +1,495 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.logsource.
+
+Fixture-based, no container required. The file tests write real files into a
+throwaway directory, so they exercise the rotation, truncation and rewrite
+detection against the filesystem instead of against a mock. The journald and
+container tests replace `lib.shell.shell_exec` with recorded output, so they
+assert both the command that is built and the parsing of what comes back.
+"""
+
+import os
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, '..')
+
+import lib.logsource
+
+
+class TestParse(unittest.TestCase):
+    def test_file(self):
+        self.assertEqual(
+            lib.logsource.parse('/var/log/messages'),
+            (True, ('file', None, '/var/log/messages')),
+        )
+
+    def test_file_with_colon_in_path(self):
+        # an unknown prefix is part of the path, not a storage
+        self.assertEqual(
+            lib.logsource.parse('/var/log/weird:name.log'),
+            (True, ('file', None, '/var/log/weird:name.log')),
+        )
+
+    def test_file_windows_drive_letter(self):
+        self.assertEqual(
+            lib.logsource.parse(r'C:\log\app.log'),
+            (True, ('file', None, r'C:\log\app.log')),
+        )
+
+    def test_journald(self):
+        self.assertEqual(
+            lib.logsource.parse('systemd:sshd'),
+            (True, ('journald', None, 'sshd')),
+        )
+
+    def test_container_engines(self):
+        for engine in ('docker', 'kubectl', 'podman'):
+            self.assertEqual(
+                lib.logsource.parse(f'{engine}:database'),
+                (True, ('container', engine, 'database')),
+            )
+
+    def test_target_is_stripped(self):
+        self.assertEqual(
+            lib.logsource.parse('systemd:  sshd  '),
+            (True, ('journald', None, 'sshd')),
+        )
+
+    def test_empty_target(self):
+        success, result = lib.logsource.parse('podman:')
+        self.assertFalse(success)
+        self.assertIn('names no target', result)
+
+    def test_empty_source(self):
+        for source in ('', None):
+            success, result = lib.logsource.parse(source)
+            self.assertFalse(success)
+            self.assertIn('No log source', result)
+
+    def test_wrong_type(self):
+        success, _ = lib.logsource.parse(42)
+        self.assertFalse(success)
+
+
+class TestReadFile(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmpdir, 'app.log')
+
+    def write(self, content, mode='a'):
+        with open(self.path, mode) as handle:
+            handle.write(content)
+
+    def read(self, position=None, **kwargs):
+        success, result = lib.logsource.read(self.path, position=position, **kwargs)
+        self.assertTrue(success, msg=result)
+        return result
+
+    def test_first_run_reads_everything(self):
+        self.write('one\ntwo\n', 'w')
+        result = self.read()
+        self.assertEqual(result['lines'], ['one', 'two'])
+        self.assertEqual(result['kind'], lib.logsource.KIND_FILE)
+        self.assertEqual(result['fidelity'], lib.logsource.FIDELITY_EXACT)
+        self.assertEqual(result['label'], self.path)
+        self.assertFalse(result['restarted'])
+        self.assertFalse(result['truncated'])
+        self.assertEqual(result['notice'], '')
+
+    def test_empty_file(self):
+        self.write('', 'w')
+        result = self.read()
+        self.assertEqual(result['lines'], [])
+        self.assertEqual(result['position']['offset'], 0)
+
+    def test_line_without_trailing_newline(self):
+        self.write('no newline at eof', 'w')
+        self.assertEqual(self.read()['lines'], ['no newline at eof'])
+
+    def test_nothing_new(self):
+        self.write('one\n', 'w')
+        first = self.read()
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], [])
+        self.assertFalse(second['restarted'])
+
+    def test_append_returns_only_new_lines(self):
+        self.write('one\n', 'w')
+        first = self.read()
+        self.write('two\nthree\n')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], ['two', 'three'])
+        self.assertFalse(second['restarted'])
+
+    def test_rewrite_in_place_restarts(self):
+        # same inode, and the new content is longer than what was read, so
+        # neither the inode nor the size gives the rewrite away
+        self.write('one\n', 'w')
+        first = self.read()
+        self.write('AAAA\nBBBB\nCCCC\n', 'w')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], ['AAAA', 'BBBB', 'CCCC'])
+        self.assertTrue(second['restarted'])
+
+    def test_truncation_restarts(self):
+        self.write('one\ntwo\nthree\n', 'w')
+        first = self.read()
+        self.write('x\n', 'w')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], ['x'])
+        self.assertTrue(second['restarted'])
+
+    def test_rotation_restarts(self):
+        self.write('one\n', 'w')
+        first = self.read()
+        os.rename(self.path, self.path + '.1')
+        self.write('fresh\n', 'w')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], ['fresh'])
+        self.assertTrue(second['restarted'])
+
+    def test_grown_from_empty_is_no_restart(self):
+        # the previous run saw an empty file, so an offset of 0 stays valid and
+        # nothing was missed
+        self.write('', 'w')
+        first = self.read()
+        self.write('one\n')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], ['one'])
+        self.assertFalse(second['restarted'])
+
+    def test_max_lines_keeps_the_newest(self):
+        self.write('a\nb\nc\nd\ne\n', 'w')
+        result = self.read(max_lines=2)
+        self.assertEqual(result['lines'], ['d', 'e'])
+        self.assertTrue(result['truncated'])
+
+    def test_max_lines_still_advances_the_position(self):
+        self.write('a\nb\nc\n', 'w')
+        first = self.read(max_lines=1)
+        self.write('d\n')
+        second = self.read(position=first['position'], max_lines=1)
+        self.assertEqual(second['lines'], ['d'])
+        self.assertFalse(second['truncated'])
+
+    def test_max_lines_not_reached(self):
+        self.write('a\n', 'w')
+        result = self.read(max_lines=10)
+        self.assertEqual(result['lines'], ['a'])
+        self.assertFalse(result['truncated'])
+
+    def test_allowed_roots_permit(self):
+        self.write('one\n', 'w')
+        result = self.read(allowed_roots=[self.tmpdir])
+        self.assertEqual(result['lines'], ['one'])
+
+    def test_allowed_roots_refuse(self):
+        self.write('one\n', 'w')
+        success, result = lib.logsource.read(self.path, allowed_roots=['/var/log'])
+        self.assertFalse(success)
+        self.assertIn('Refusing to read', result)
+
+    def test_allowed_roots_refuse_symlink_escape(self):
+        outside = os.path.join(self.tmpdir, 'outside.log')
+        with open(outside, 'w') as handle:
+            handle.write('secret\n')
+        root = os.path.join(self.tmpdir, 'root')
+        os.mkdir(root)
+        link = os.path.join(root, 'app.log')
+        os.symlink(outside, link)
+        success, result = lib.logsource.read(link, allowed_roots=[root])
+        self.assertFalse(success)
+        self.assertIn('Refusing to read', result)
+
+    def test_invalid_utf8_falls_back_to_latin1(self):
+        with open(self.path, 'wb') as handle:
+            handle.write(b'caf\xe9 broken\n')
+        self.assertEqual(self.read()['lines'], ['café broken'])
+
+    def test_crlf_line_endings_are_stripped(self):
+        with open(self.path, 'wb') as handle:
+            handle.write(b'one\r\ntwo\r\n')
+        self.assertEqual(self.read()['lines'], ['one', 'two'])
+
+    def test_missing_file(self):
+        success, result = lib.logsource.read(os.path.join(self.tmpdir, 'nope.log'))
+        self.assertFalse(success)
+        self.assertIn('I/O error', result)
+
+    def test_position_from_another_kind_is_ignored(self):
+        self.write('one\n', 'w')
+        success, result = lib.logsource.read(
+            self.path,
+            position={'kind': lib.logsource.KIND_JOURNALD, 'cursor': 's=1'},
+        )
+        self.assertTrue(success)
+        self.assertEqual(result['lines'], ['one'])
+
+    def test_position_shape(self):
+        self.write('one\n', 'w')
+        position = self.read()['position']
+        self.assertEqual(
+            sorted(position),
+            ['fingerprint', 'inode', 'kind', 'length', 'offset'],
+        )
+        self.assertEqual(position['kind'], lib.logsource.KIND_FILE)
+
+    def test_legacy_integer_inode_is_compared_as_string(self):
+        # a state written before the inode was stored as text reads back as int;
+        # comparing without the cast would look like a rotation on every run
+        self.write('one\n', 'w')
+        first = self.read()
+        legacy = dict(first['position'], inode=int(first['position']['inode']))
+        self.write('two\n')
+        second = self.read(position=legacy)
+        self.assertEqual(second['lines'], ['two'])
+        self.assertFalse(second['restarted'])
+
+
+class TestReadJournald(unittest.TestCase):
+    CURSOR = 's=485571998e574800b311165f5bf0bd42;i=ce9e34'
+
+    def shell(self, stdout, stderr='', retc=0):
+        return patch(
+            'lib.shell.shell_exec',
+            return_value=(True, (stdout, stderr, retc)),
+        )
+
+    def test_first_run_reads_the_current_boot(self):
+        stdout = (
+            f'2026-08-28T15:26:18+02:00 host sshd[1]: hello\n-- cursor: {self.CURSOR}\n'
+        )
+        with self.shell(stdout) as mock:
+            success, result = lib.logsource.read('systemd:sshd')
+        self.assertTrue(success)
+        cmd = mock.call_args[0][0]
+        self.assertIn('--boot', cmd)
+        self.assertIn('--unit=sshd', cmd)
+        self.assertIn('--show-cursor', cmd)
+        self.assertEqual(
+            result['lines'], ['2026-08-28T15:26:18+02:00 host sshd[1]: hello']
+        )
+        self.assertEqual(result['position']['cursor'], self.CURSOR)
+        self.assertEqual(result['fidelity'], lib.logsource.FIDELITY_EXACT)
+        self.assertEqual(result['label'], 'systemd:sshd')
+        self.assertFalse(result['restarted'])
+
+    def test_resume_uses_the_cursor(self):
+        with self.shell(f'-- cursor: {self.CURSOR}\n') as mock:
+            lib.logsource.read(
+                'systemd:sshd',
+                position={'kind': 'journald', 'cursor': self.CURSOR},
+            )
+        cmd = mock.call_args[0][0]
+        self.assertIn(f'--after-cursor={self.CURSOR}', cmd)
+        self.assertNotIn('--boot', cmd)
+
+    def test_since_is_used_without_a_position(self):
+        with self.shell('') as mock:
+            lib.logsource.read('systemd:sshd', since='-8h')
+        cmd = mock.call_args[0][0]
+        self.assertIn('--since=-8h', cmd)
+        self.assertNotIn('--boot', cmd)
+
+    def test_cursor_wins_over_since(self):
+        with self.shell('') as mock:
+            lib.logsource.read(
+                'systemd:sshd',
+                position={'kind': 'journald', 'cursor': self.CURSOR},
+                since='-8h',
+            )
+        cmd = mock.call_args[0][0]
+        self.assertIn(f'--after-cursor={self.CURSOR}', cmd)
+        self.assertNotIn('--since=-8h', cmd)
+
+    def test_max_lines_is_passed_on(self):
+        with self.shell('') as mock:
+            lib.logsource.read('systemd:sshd', max_lines=50)
+        self.assertIn('--lines=50', mock.call_args[0][0])
+
+    def test_informational_lines_are_dropped(self):
+        stdout = (
+            '-- Boot 3b5678970f3044849d9b00ab3e5ab6ee --\n'
+            '2026-08-28T15:26:18+02:00 host sshd[1]: real\n'
+            '-- No entries --\n'
+            f'-- cursor: {self.CURSOR}\n'
+        )
+        with self.shell(stdout):
+            _, result = lib.logsource.read('systemd:sshd')
+        self.assertEqual(
+            result['lines'], ['2026-08-28T15:26:18+02:00 host sshd[1]: real']
+        )
+
+    def test_no_new_entries_keeps_the_stored_cursor(self):
+        with self.shell('-- No entries --\n'):
+            _, result = lib.logsource.read(
+                'systemd:sshd',
+                position={'kind': 'journald', 'cursor': self.CURSOR},
+            )
+        self.assertEqual(result['lines'], [])
+        self.assertEqual(result['position']['cursor'], self.CURSOR)
+
+    def test_unknown_unit_yields_no_cursor(self):
+        with self.shell('-- No entries --\n'):
+            _, result = lib.logsource.read('systemd:nope')
+        self.assertIsNone(result['position']['cursor'])
+
+    def test_unit_name_is_bound_to_its_option(self):
+        # a unit starting with "-" must not be picked up as an option
+        with self.shell('') as mock:
+            lib.logsource.read('systemd:--version')
+        self.assertIn('--unit=--version', mock.call_args[0][0])
+
+    def test_non_zero_exit(self):
+        with self.shell('', 'Failed to add match', 1):
+            success, result = lib.logsource.read('systemd:sshd')
+        self.assertFalse(success)
+        self.assertIn('exited with error', result)
+
+    def test_unreadable_journal_is_a_failure_not_an_empty_read(self):
+        # journalctl exits 0 and only warns on stderr when the caller may not see
+        # the system journal. Reporting that as "nothing logged" would be a
+        # silently green check on a host whose log cannot be read at all.
+        hint = (
+            'Hint: You are currently not seeing messages from other users and '
+            'the system.'
+        )
+        with self.shell('-- No entries --\n', hint):
+            success, result = lib.logsource.read('systemd:sshd')
+        self.assertFalse(success)
+        self.assertIn('systemd-journal', result)
+        self.assertIn(hint, result)
+
+    def test_stderr_next_to_entries_becomes_a_notice(self):
+        stdout = (
+            f'2026-08-28T15:26:18+02:00 host sshd[1]: real\n-- cursor: {self.CURSOR}\n'
+        )
+        with self.shell(stdout, 'Hint: only showing your own messages.'):
+            success, result = lib.logsource.read('systemd:sshd')
+        self.assertTrue(success)
+        self.assertEqual(len(result['lines']), 1)
+        self.assertIn('only showing your own messages', result['notice'])
+
+    def test_quiet_read_has_no_notice(self):
+        with self.shell(f'-- cursor: {self.CURSOR}\n'):
+            _, result = lib.logsource.read(
+                'systemd:sshd',
+                position={'kind': 'journald', 'cursor': self.CURSOR},
+            )
+        self.assertEqual(result['notice'], '')
+
+    def test_shell_failure_is_passed_through(self):
+        with patch('lib.shell.shell_exec', return_value=(False, 'timeout')):
+            success, result = lib.logsource.read('systemd:sshd')
+        self.assertFalse(success)
+        self.assertEqual(result, 'timeout')
+
+
+class TestReadContainer(unittest.TestCase):
+    STAMP1 = '2026-08-28T15:30:26.100000000+02:00'
+    STAMP2 = '2026-08-28T15:30:26.200000000+02:00'
+    STAMP3 = '2026-08-28T15:30:26.300000000+02:00'
+
+    def shell(self, stdout, stderr='', retc=0):
+        return patch(
+            'lib.shell.shell_exec',
+            return_value=(True, (stdout, stderr, retc)),
+        )
+
+    def test_first_run_strips_the_timestamps(self):
+        with self.shell(f'{self.STAMP1} out one\n{self.STAMP2} out two\n') as mock:
+            success, result = lib.logsource.read('podman:db')
+        self.assertTrue(success)
+        cmd = mock.call_args[0][0]
+        self.assertEqual(cmd[:3], ['podman', 'logs', '--timestamps'])
+        self.assertEqual(cmd[-1], 'db')
+        self.assertEqual(result['lines'], ['out one', 'out two'])
+        self.assertEqual(result['fidelity'], lib.logsource.FIDELITY_APPROXIMATE)
+        self.assertEqual(result['label'], 'podman:db')
+        self.assertEqual(result['position']['timestamp'], self.STAMP2)
+        self.assertEqual(result['notice'], '')
+
+    def test_both_streams_are_merged_chronologically(self):
+        with self.shell(f'{self.STAMP3} out\n', f'{self.STAMP1} err\n'):
+            _, result = lib.logsource.read('podman:db')
+        self.assertEqual(result['lines'], ['err', 'out'])
+
+    def test_resume_drops_the_inclusive_repeat(self):
+        # `--since` is inclusive, so the entry at the stored timestamp comes back
+        with self.shell(f'{self.STAMP1} old\n{self.STAMP2} new\n') as mock:
+            _, result = lib.logsource.read(
+                'podman:db',
+                position={'kind': 'container', 'timestamp': self.STAMP1},
+            )
+        self.assertIn(f'--since={self.STAMP1}', mock.call_args[0][0])
+        self.assertEqual(result['lines'], ['new'])
+        self.assertEqual(result['position']['timestamp'], self.STAMP2)
+
+    def test_nothing_new_keeps_the_stored_timestamp(self):
+        with self.shell(f'{self.STAMP1} old\n'):
+            _, result = lib.logsource.read(
+                'podman:db',
+                position={'kind': 'container', 'timestamp': self.STAMP1},
+            )
+        self.assertEqual(result['lines'], [])
+        self.assertEqual(result['position']['timestamp'], self.STAMP1)
+
+    def test_kubectl_uses_since_time(self):
+        with self.shell('') as mock:
+            lib.logsource.read(
+                'kubectl:pod',
+                position={'kind': 'container', 'timestamp': self.STAMP1},
+            )
+        cmd = mock.call_args[0][0]
+        self.assertIn(f'--since-time={self.STAMP1}', cmd)
+        self.assertNotIn(f'--since={self.STAMP1}', cmd)
+
+    def test_since_is_used_without_a_position(self):
+        with self.shell('') as mock:
+            lib.logsource.read('docker:db', since=self.STAMP1)
+        self.assertIn(f'--since={self.STAMP1}', mock.call_args[0][0])
+
+    def test_max_lines_is_passed_on(self):
+        with self.shell('') as mock:
+            lib.logsource.read('podman:db', max_lines=100)
+        self.assertIn('--tail=100', mock.call_args[0][0])
+
+    def test_unstamped_line_inherits_the_previous_stamp(self):
+        with self.shell(f'{self.STAMP1} first\ncontinuation\n'):
+            _, result = lib.logsource.read('podman:db')
+        self.assertEqual(result['lines'], ['first', 'continuation'])
+        self.assertEqual(result['position']['timestamp'], self.STAMP1)
+
+    def test_container_name_starting_with_dash_is_refused(self):
+        success, result = lib.logsource.read('podman:-rm')
+        self.assertFalse(success)
+        self.assertIn('container name', result)
+
+    def test_non_zero_exit(self):
+        with self.shell('', 'Error: no such container', 125):
+            success, result = lib.logsource.read('podman:nope')
+        self.assertFalse(success)
+        self.assertIn('exited with error', result)
+
+    def test_empty_log(self):
+        with self.shell(''):
+            success, result = lib.logsource.read('podman:db')
+        self.assertTrue(success)
+        self.assertEqual(result['lines'], [])
+        self.assertIsNone(result['position']['timestamp'])
+
+
+if __name__ == '__main__':
+    unittest.main()
