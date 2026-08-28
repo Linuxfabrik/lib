@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082802'
+__version__ = '2026082803'
 
 import collections
 import os
@@ -34,6 +34,7 @@ import re
 import stat
 
 from . import disk, shell, txt
+from . import time as lftime
 
 # A position either names the exact spot the previous run stopped at, or only
 # approximates it. See the module docstring.
@@ -54,6 +55,43 @@ _SOURCE_PREFIXES = {
     'podman': KIND_CONTAINER,
     'systemd': KIND_JOURNALD,
 }
+
+
+def count_within(lines, since, parse_line=None):
+    """
+    Count the lines written at or after a moment, and those carrying no timestamp at all.
+
+    What a log holds and what happened lately are two different numbers, and a consumer that
+    alerts on how often something arrives needs the second one. A window over the whole log
+    would keep reporting a burst that ended hours ago.
+
+    ### Parameters
+    - **lines** (`iterable` of `str`): The log lines to count.
+    - **since** (`datetime.datetime`): The start of the window, naive and in local time.
+    - **parse_line** (`callable`, optional): Handed to `timestamp()`.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**int**): Lines written at or after `since`.
+        - tuple[1] (**int**): Lines carrying no timestamp either reader could find.
+
+    ### Notes
+    - The undated ones are reported separately rather than counted in or silently dropped,
+      because a source whose format leaves the timestamp out would otherwise read as a quiet
+      one and never raise anything.
+
+    ### Example
+    >>> recent, undated = count_within(lines, datetime.now() - timedelta(minutes=10))
+    """
+    recent = 0
+    undated = 0
+    for line in lines:
+        logged_at = timestamp(line, parse_line)
+        if logged_at is None:
+            undated += 1
+        elif logged_at >= since:
+            recent += 1
+    return recent, undated
 
 
 def parse(source):
@@ -591,3 +629,60 @@ def read(
     return _read_file(
         target, position, allowed_roots, max_lines, 0 if position else rotated
     )
+
+
+# The timestamp a transport puts in front of what the application wrote:
+# `journalctl --output=short-iso` writes `2026-08-28T17:16:18+0200 host unit[pid]:`
+# and this module strips the container engine's equivalent while reading, so
+# what is left to recognize here is an ISO 8601 moment at the very start of a
+# line. Deliberately anchored: an ISO timestamp further along is part of the
+# message, not of the line's own header.
+_LINE_TIMESTAMP_REGEX = re.compile(
+    r'^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)'
+)
+
+
+def timestamp(line, parse_line=None):
+    """
+    Return the moment a log line was written, as a naive datetime in local time.
+
+    An application that stamps its own lines is the better source, because that stamp says when
+    the event happened rather than when the line reached the transport, and because a transport
+    is not always there. It is also the one this module cannot know, so a consumer passes it in.
+    What is read here without being told is the timestamp the transport prefixes, which is what
+    stays when an application logs through syslog and leaves its own out.
+
+    ### Parameters
+    - **line** (`str`): One log line.
+    - **parse_line** (`callable`, optional):
+      The consumer's reader for the application's own timestamp. Takes the line and returns a
+      `datetime.datetime` or None. Tried first; the transport's timestamp is the fallback.
+
+    ### Returns
+    - **datetime.datetime | None**:
+      When the line was written, in local time and without a timezone attached, so it compares
+      against `datetime.now()`. None where neither reader found a timestamp, which is not an
+      error: a line an application wrote while starting up commonly carries none.
+
+    ### Notes
+    - A transport timestamp that carries an offset is converted to local time, so lines written
+      before and after a daylight saving change stay in order.
+
+    ### Example
+    >>> timestamp('2026-08-28T17:16:18+0200 host httpd[20]: [ssl:error] AH02032: ...')
+    datetime.datetime(2026, 8, 28, 17, 16, 18)
+    """
+    if parse_line:
+        logged_at = parse_line(line)
+        if logged_at is not None:
+            return logged_at
+    match = _LINE_TIMESTAMP_REGEX.match(line)
+    if not match:
+        return None
+    try:
+        logged_at = lftime.timestr2datetime(match.group(1), pattern='iso8601')
+    except ValueError:
+        return None
+    if logged_at.tzinfo is not None:
+        logged_at = logged_at.astimezone().replace(tzinfo=None)
+    return logged_at

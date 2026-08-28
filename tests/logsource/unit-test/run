@@ -17,9 +17,11 @@ container tests replace `lib.shell.shell_exec` with recorded output, so they
 assert both the command that is built and the parsing of what comes back.
 """
 
+import datetime
 import os
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -638,6 +640,90 @@ class TestReadContainer(unittest.TestCase):
         self.assertTrue(success)
         self.assertEqual(result['lines'], [])
         self.assertIsNone(result['position']['timestamp'])
+
+
+class TestTimestamp(unittest.TestCase):
+    """When a line was written, from the application's stamp or the transport's."""
+
+    def setUp(self):
+        self.saved_tz = os.environ.get('TZ')
+        os.environ['TZ'] = 'UTC'
+        time.tzset()
+
+    def tearDown(self):
+        if self.saved_tz is None:
+            os.environ.pop('TZ', None)
+        else:
+            os.environ['TZ'] = self.saved_tz
+        time.tzset()
+
+    def test_the_journald_prefix(self):
+        # `--output=short-iso`, which is what _read_journald() asks for.
+        self.assertEqual(
+            lib.logsource.timestamp(
+                '2026-08-28T17:16:18+0200 host httpd[20]: [ssl:error] AH02032: x'
+            ),
+            datetime.datetime(2026, 8, 28, 15, 16, 18),
+        )
+
+    def test_an_offset_is_converted_to_the_local_clock(self):
+        self.assertEqual(
+            lib.logsource.timestamp('2026-08-28T17:16:18+0200 a'),
+            lib.logsource.timestamp('2026-08-28T15:16:18Z a'),
+        )
+
+    def test_the_consumer_reader_wins(self):
+        # The application's own stamp says when the event happened; the
+        # transport's says when the line arrived.
+        def parse_line(line):
+            return datetime.datetime(2001, 2, 3, 4, 5, 6) if 'x' in line else None
+
+        self.assertEqual(
+            lib.logsource.timestamp(
+                '2026-08-28T17:16:18+0200 x', parse_line=parse_line
+            ),
+            datetime.datetime(2001, 2, 3, 4, 5, 6),
+        )
+        # Where it finds nothing, the transport's stamp is the fallback.
+        self.assertEqual(
+            lib.logsource.timestamp(
+                '2026-08-28T17:16:18+0200 y', parse_line=parse_line
+            ),
+            datetime.datetime(2026, 8, 28, 15, 16, 18),
+        )
+
+    def test_a_line_without_any_timestamp(self):
+        self.assertIsNone(lib.logsource.timestamp('AH00558: httpd: Could not ...'))
+
+    def test_a_timestamp_that_is_not_at_the_start_is_not_the_line_header(self):
+        self.assertIsNone(
+            lib.logsource.timestamp('AH1: the backup of 2026-08-28T17:16:18 failed')
+        )
+
+    def test_an_unparsable_timestamp_is_not_an_error(self):
+        self.assertIsNone(lib.logsource.timestamp('2026-13-45T99:99:99+0200 a'))
+
+
+class TestCountWithin(unittest.TestCase):
+    """How many of the lines arrived lately, and how many carry no time at all."""
+
+    def test_counts_only_what_falls_into_the_window(self):
+        now = datetime.datetime.now()
+        lines = [
+            (now - datetime.timedelta(minutes=1)).strftime('%Y-%m-%dT%H:%M:%S') + ' a',
+            (now - datetime.timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M:%S') + ' b',
+            (now - datetime.timedelta(hours=5)).strftime('%Y-%m-%dT%H:%M:%S') + ' c',
+            'no timestamp at all',
+        ]
+        recent, undated = lib.logsource.count_within(
+            lines, now - datetime.timedelta(minutes=10)
+        )
+        self.assertEqual((recent, undated), (2, 1))
+
+    def test_an_empty_log_counts_nothing(self):
+        self.assertEqual(
+            lib.logsource.count_within([], datetime.datetime.now()), (0, 0)
+        )
 
 
 if __name__ == '__main__':
