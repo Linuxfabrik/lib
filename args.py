@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk, human
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082701'
+__version__ = '2026082801'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -117,18 +117,6 @@ HELP_TEXTS = {
         'A duration such as `12h`, `8D` or `2W`; `0D` disables the grace period.'
     ),
     '--hostname': 'Hostname or IP address.',
-    '--ipv6': 'Use IPv6.',
-    '--ignore': (
-        'Any item matching this string will be ignored. '
-        'Case-sensitive. '
-        'Can be specified multiple times.'
-    ),
-    '--ignore-pattern': (
-        'Any item containing this pattern will be ignored. '
-        'Case-insensitive. '
-        'Can be specified multiple times. '
-        'Example: `boot` matches both `/boot` and `/boot/efi`.'
-    ),
     '--icinga-callback': (
         'Ask the monitoring server whether the service running this check is '
         'acknowledged. Where it is, what this run reports is remembered as already '
@@ -146,17 +134,35 @@ HELP_TEXTS = {
         'Monitoring server API URL. Example: `https://monitoring.example.com:5665`.'
     ),
     '--icinga-username': 'Monitoring server API username.',
+    '--ignore': (
+        'Any item matching this string will be ignored. '
+        'Case-sensitive. '
+        'Can be specified multiple times.'
+    ),
+    '--ignore-pattern': (
+        'Any item containing this pattern will be ignored. '
+        'Case-insensitive. '
+        'Can be specified multiple times. '
+        'Example: `boot` matches both `/boot` and `/boot/efi`.'
+    ),
     '--ignore-regex': (
         'Any item matching this Python regex will be ignored. '
         'Can be specified multiple times. '
         'Example: `(?i)linuxfabrik` for a case-insensitive match.'
     ),
     '--insecure': 'This option explicitly allows insecure SSL connections.',
+    '--ipv6': 'Use IPv6.',
     '--lengthy': 'Extended reporting.',
     '--link-down-severity': (
         'State to report for a port whose link is down. '
         'A port that is simply not cabled reports the same thing, which is why this '
         'defaults to not alerting.'
+    ),
+    '--lookback': (
+        'Time window in seconds to look back over, ending at the moment of the run. '
+        'Only what falls within it is counted, so what is reported is how often '
+        'something happened lately rather than a total that keeps growing for as long '
+        'as the source is kept.'
     ),
     '--match': (
         'Filter by this Python regular expression. '

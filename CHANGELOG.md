@@ -8,58 +8,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Highlights:** Seven new modules: reading a log incrementally wherever it is kept (logsource.py) and remembering what was found in it across runs (logmatch.py), libvirt hosts (kvm.py), LVM (lvm.py), OpenStack clouds (openstack.py), the kernel's pressure stall information (psi.py), and work that has to be bounded from outside the process (task.py). Every module that talks HTTP now takes an explicit proxy instead of leaving the choice to the environment. Redfish sessions survive as long as the controller keeps them, and a `shell_exec()` timeout holds even when the killed command is stuck in the kernel.
+
 ### Added
 
-* every module that talks HTTP takes a `proxy` argument next to `no_proxy`, so a consumer can name the proxy instead of leaving the choice to the environment
-* args.py: `duration()` reads an `8D` style duration for argparse, and rejects a value whose unit is missing or unknown instead of silently reading it as zero
-* args.py: `HELP_TEXTS` carries `--grace-security`, `--grace-updates`, `--grace-wait` and `--proxy`, so every consumer offering them describes them alike
-* args.py: `HELP_TEXTS` carries `--icinga-callback`, `--icinga-password`, `--icinga-service-name`, `--icinga-url` and `--icinga-username`, so every consumer asking a monitoring server about an acknowledgement describes them alike
+* all HTTP-speaking modules: a `proxy` argument next to `no_proxy`, so a consumer can name the proxy instead of leaving the choice to the environment
+* args.py: `duration()` reads an `8D` style duration for argparse, and rejects a missing or unknown unit instead of silently reading it as zero
+* args.py: further shared help texts (`--grace-security`, `--grace-updates`, `--grace-wait`, `--icinga-*`, `--lookback`, `--proxy`)
 * base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`)
-* db_sqlite.py: `connect(in_memory=True)` opens a database private to the process, for data that only has to live as long as the run
+* db_sqlite.py: `connect(in_memory=True)` opens a database private to the process
 * db_sqlite.py: `cut_per_sensor()` trims a history table per sensor instead of by total row count
-* db_sqlite.py: `first_seen()` records when each item of an observed set turned up and how long it has been around, so a consumer can hold an alert back until an item has persisted
+* db_sqlite.py: `first_seen()` records when each item of an observed set turned up, so a consumer can hold an alert back until an item has persisted
 * keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it
 * kvm.py: new module for libvirt hosts, covering domain statistics and listings, storage pools, their volumes, which pools share a filesystem, and the names of domain states and their reasons. It connects read-only, so it needs neither root nor sudo
-* lftest.py: `require_container_runtime()` and `container_runtime_available()` let a test that needs a container skip itself where there is none, instead of failing next to the tests that do run
-* logmatch.py: new module for remembering what was found in a log, so a finding keeps counting after the run that saw it. `record()` and `pending()` hold findings until they age out or are acknowledged, `service_acknowledged()` asks the monitoring server whether somebody has taken the alert on, and `instance_id()` keeps two consumers watching the same log for different things out of each other's state
-* logsource.py: new module for reading a log incrementally, wherever it is kept. `read()` returns the lines a file, a systemd unit or a container log grew by since the previous run and hands back a position to resume at, recognizing a file that was rotated, truncated or rewritten in place, and saying whether that position is exact or lets a line repeat. `read(rotated=N)` reads the rotated predecessors of a file along with it, compressed ones included, so a consumer that reports on a window of the log no longer loses everything older than the last rotation
-* lvm.py: new module for LVM hosts. `get_logical_volumes()` and `get_volume_groups()` read the `lvs` and `vgs` report, `health()` puts what is wrong with a volume into words, including the invalidated snapshot and the failed merge that `lv_health_status` says nothing about, and `metadata_limit()` answers at which fill level LVM stops creating thin volumes in a pool. Reading the volumes needs root or sudo
+* lftest.py: `container_runtime_available()` and `require_container_runtime()` let a test that needs a container skip itself where there is none
+* logmatch.py: new module for remembering what was found in a log, so a finding keeps counting after the run that saw it. `record()` and `pending()` hold findings until they age out or are acknowledged, `service_acknowledged()` asks the monitoring server whether somebody has taken the alert on, `instance_id()` keeps two consumers watching the same log out of each other's state
+* logsource.py: new module for reading a log incrementally, wherever it is kept. `read()` returns the lines a file, a systemd unit or a container log grew by since the previous run and hands back a position to resume at, recognizing a file that was rotated, truncated or rewritten in place. `read(rotated=N)` reads the rotated predecessors of a file along with it, compressed ones included
+* logsource.py: `count_within()` counts how many of the lines arrived within a window, `timestamp()` reads when a line was written
+* lvm.py: new module for LVM hosts. `get_logical_volumes()` and `get_volume_groups()` read the `lvs` and `vgs` report, `health()` puts what is wrong with a volume into words, `metadata_limit()` answers at which fill level LVM stops creating thin volumes in a pool. Reading the volumes needs root or sudo
 * net.py: `get_proxy()` answers which proxy the environment wants for a target, honouring the exceptions in `no_proxy`, for a consumer that reaches the network without an HTTP client
-* openstack.py: new module for OpenStack clouds. `connect()` authenticates from an rc file, keeps a whole run inside one time budget and reuses the token across runs, `fetch()` and `fetch_json()` read any endpoint of a connected service, headers included
-* psi.py: new module for the pressure stall information the Linux kernel exports below `/proc/pressure`. `read()` returns the `some` and `full` values of one resource, and reports when the kernel keeps no pressure statistics at all, including the one it publishes but refuses to answer. `is_enabled()` tells a kernel that accounts for nothing apart from one that accounts for other resources only, and `get_states()`, `get_summary()`, `get_perfdata()` and `get_table()` turn a reading into a report, judging as many averaging windows as a consumer asks for
+* openstack.py: new module for OpenStack clouds. `connect()` authenticates from an rc file, keeps a whole run inside one time budget and reuses the token across runs, `fetch()` and `fetch_json()` read any endpoint of a connected service
+* psi.py: new module for the pressure stall information the Linux kernel exports below `/proc/pressure`. `read()` and `is_enabled()` report a resource and tell a kernel that accounts for nothing apart from one that accounts for other resources only, `get_states()`, `get_summary()`, `get_perfdata()` and `get_table()` turn a reading into a report
 * redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
-* task.py: new module for work that cannot be interrupted. `run_each()` runs every callable in a process of its own, all of them started before the first is waited for and sharing one deadline, and kills the ones that miss it; `run()` does the same for a single callable. A call waiting on a network filesystem whose server has gone away blocks in the kernel, where no timeout inside the process reaches it, so the deadline has to be enforced from outside
+* task.py: new module for work that cannot be interrupted. `run()` and `run_each()` run callables in processes of their own, sharing one deadline, and kill the ones that miss it. A call waiting on a network filesystem whose server has gone away blocks in the kernel, where no timeout inside the process reaches it
 * url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host
-* url.py: `fetch()` takes `retries`, which only `fetch_json()` offered so far, so a consumer reading response headers or issuing a HEAD is covered against a flaky endpoint too. `fetch_json()` inherits it from there
+* url.py: `fetch()` takes `retries`, which only `fetch_json()` offered so far
 
 ### Changed
 
 * db_sqlite.py: `compute_load()` reports the sensors that have enough samples, and leaves out one whose counter started over
-* psutil.py: `get_partitions()` also returns the mount options, takes `include_all` to list every mounted filesystem instead of the physical devices only, and no longer waits on the filesystems it lists
 * lftest.py: the container helpers skip a test instead of failing it when testcontainers is missing or `LFTEST_NO_CONTAINER` is set
+* psutil.py: `get_partitions()` also returns the mount options, takes `include_all` to list every mounted filesystem instead of the physical devices only, and no longer waits on the filesystems it lists
 * url.py: `fetch()` says what is wrong with a certificate that does not verify, and points out a plaintext request sent to a port that speaks TLS
 
 ### Fixed
 
-* base.py: `match_range()` and `get_state()` report a value that is not a number instead of raising, and refuse `nan`
-* db_sqlite.py: `per_second_deltas()` accepts a counter whose name is an SQL keyword, such as `drop`; it used to report a missing baseline on every run instead
-* human.py: `seconds2human()` renders a duration below a second exactly. It divided the value by the size of each unit, which cannot be exact in binary, so `0.35` came out as `349ms 999us` instead of `350ms`
-* human.py: `humanrange2bytes()` and `humanrange2seconds()` stop stalling on a threshold made of many digits, and report `0.00.0` as unreadable instead of reading it as the threshold zero
-* human.py: `seconds2human()` answers `0s` for a duration of zero and signs a negative duration
-* human.py: `number2human()` drops a fraction that is zero, so a count of two things reads as `2` instead of `2.0`
-* redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, closes the previous session before opening a new one, retries a failed login instead of falling back to HTTP Basic, and re-authenticates once on a "401 Unauthorized"
-* shell.py: `shell_exec()` keeps to its `timeout` even when the killed command cannot die, such as one blocked on storage that has gone away; it used to wait for that command instead of for the deadline
-* url.py: `fetch(extended=True)` takes the proxy it is told to take; it used to connect directly no matter what `no_proxy` or the environment said
-* url.py: `fetch(extended=True)` tries every address a hostname resolves to, not only the first
+* base.py: `get_state()`, `match_range()`
+* db_sqlite.py: `per_second_deltas()`
+* human.py: `humanrange2bytes()`, `humanrange2seconds()`, `number2human()`, `seconds2human()`
+* redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, and re-authenticates on a "401 Unauthorized" instead of falling back to HTTP Basic
+* shell.py: `shell_exec()` keeps to its `timeout` even when the killed command cannot die, such as one blocked on storage that has gone away
+* time.py: `timestr2datetime()` and `timestr2epoch()` read an ISO 8601 offset written without a colon (`+0200`, which `journalctl` writes) on every supported Python
+* url.py: `fetch(extended=True)` takes the proxy it is told to take, and tries every address a hostname resolves to instead of only the first
 
 
 ## [v7.1.1] - 2026-08-18
 
 ### Fixed
 
-* base.py: `match_range()` accepts a threshold with a percent sign (`90%:`) or an exponent (`1e3`), compares a very large threshold correctly, and reports a mistyped threshold instead of raising
+* base.py: `match_range()` accepts a threshold with a percent sign (`90%:`) or an exponent (`1e3`)
 * human.py: `human2bytes()` reads a size without a qualifier (`1048576`) as a byte count instead of as zero
-* human.py: `humanrange2bytes()` and `humanrange2seconds()` keep an open lower bound (`~:1M`), a bare `@` and the catch-all `:`, and report an unreadable bound instead of turning it into zero
+* human.py: `humanrange2bytes()`, `humanrange2seconds()`
 
 
 ## [v7.1.0] - 2026-08-14
@@ -70,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* base.py: `get_table()` keeps its rows aligned when a cell reads like an HTML tag (`<unknown>`)
+* base.py: `get_table()`
 
 
 ## [v7.0.0] - 2026-08-14
@@ -86,25 +85,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* args.py: shared help texts for `--brief`, `--fail-severity`, `--no-checksum-data-severity`, `--no-vuln-data-severity`, `--password-file`, `--unscored-severity`, `--warning-temperature` / `--critical-temperature` and `--warning-voltage` / `--critical-voltage`. `MATCH_IGNORE_PRECEDENCE` carries the one sentence on how `--match` and `--ignore` combine
 * args.py: `load_secret()` reads a secret out of a file, so it does not have to be passed on the command line
+* args.py: further shared help texts, plus `MATCH_IGNORE_PRECEDENCE` carrying the one sentence on how `--match` and `--ignore` combine
 * base.py: `get_table()` takes a `hide_empty` to drop columns no row filled in, a `max_rows` to cap the printed rows, and a `missing` placeholder for a cell an API did not send. All off by default
 * base.py: `verbose()` prints a progress message only when verbose output is switched on
 * cache.py: `get(allow_stale=True)` serves an expired entry instead of deleting it. `prune()` deletes the entries a version-keyed cache leaves behind
 * db_sqlite.py: `connect()` takes a `timeout` for how long to wait for a lock
 * disk.py: `get_fingerprint()` takes an `algorithm`, `read_file()` takes a `max_bytes`
 * disk.py: `get_package()` names the package a path belongs to
-* distro.py: `get_distribution_facts()` recognises Clear Linux, CoreOS, Flatcar, Mandriva, OpenWrt, Slackware, SUSE, UnionTech and the Debian derivatives Cumulus Linux, Deepin, Devuan, Kali, Linux Mint, Parrot, SteamOS and Uos. Anything else is identified from `/etc/os-release` instead of being reported as plain "Linux"
+* distro.py: `get_distribution_facts()` recognises a further set of distributions and Debian derivatives, and identifies anything else from `/etc/os-release` instead of reporting it as plain "Linux"
 * feedparser.py: `fetch_soup()` and `parse_soup()` hand back the feed's own markup, and `retries` repeats a download that came back as something other than a feed
 * huawei_dorado.py, huawei_pacific.py: `as_code()`, `assert_ok()`, `get_all_data()` for paged list endpoints, the envelope readers `get_error_code()` / `get_result_code()` / `get_status_envelope()`, and a full set of status translators including their `_state()` counterparts. Consumers used to carry a copy of each
-* huawei_dorado.py: `get_performance()` and `get_performance_perfdata()` read the current counters of a managed object and turn them into performance data under the vendor's own indicator names. `as_temperature()`, `field()`, `get_account_state()` and `sectors2bytes()` cover placeholder readings, alternate field spellings, the login password status and the sector-counted capacity fields
+* huawei_dorado.py: `get_performance()` and `get_performance_perfdata()` read the current counters of a managed object and turn them into performance data under the vendor's own indicator names, plus `as_temperature()`, `field()`, `get_account_state()` and `sectors2bytes()`
 * huawei_pacific.py: `get_data(base_path=...)` reaches the older endpoint generation below `/dsware/service/` and `/dfv/service/`, which alone serves the disk inventory
 * huawei_pacific.py: `get_cluster_nodes()`, `get_node_names_by_ip()`, `get_performance()`, `get_quota_bytes()` and `get_warranty_status()`, plus readable translations for base boards, disks, pools, replication pairs and the login password status
 * lftest.py: `test_json()` and `test_text()` read one of several test fixtures of a run
 * nextcloud.py: `run_occ()` takes a `timeout`
 * shell.py: `shell_exec()` takes a `run_as_session` to run as another user without exporting that user's session runtime directory. An `env` entry set to None removes that variable from the environment
-* txt.py: `shorten()` cuts a long value down out of the middle, `strip_ansi()` removes the escape sequences a CLI tool colorizes with, and `unescape()` resolves HTML character references in plain text
-* url.py: `compare_github_refs()` counts how far a branch is ahead of a tag, `get_latest_tag_from_github()` covers projects that tag but never release, and `get_latest_version_from_github()` takes `insecure`, `no_proxy`, `timeout` and `header`. `github_token_header()` builds that header and raises the limit from 60 to 5000 requests per hour
+* txt.py: `shorten()`, `strip_ansi()` and `unescape()`
+* url.py: `compare_github_refs()` counts how far a branch is ahead of a tag, `get_latest_tag_from_github()` covers projects that tag but never release, and `github_token_header()` raises the rate limit from 60 to 5000 requests per hour
 * wordpress.py: new module reading a local WordPress installation from the filesystem - core version and locale, plugins with their wordpress.org slugs, themes, site URL - without a database connection, an HTTP request or `wp-cli`
 
 ### Changed
@@ -121,24 +120,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* base.py: `get_perfdata()` reports no metric at all for a reading a source did not deliver, instead of emitting a literal `None`
-* db_sqlite.py: a failed statement in any statement function discards the database only on a schema mismatch or an unreadable file, no longer on a held lock, a full or read-only disk, a bad query, a duplicate record, a missing table, an oversized value or a rowid alias. Consumers sharing the default database file no longer discard each other's data
-* db_sqlite.py: every statement function uses table, index and column names carrying SQL keywords, punctuation, commas or doubled quotes as written. `create_index()` creates a unique index and an index on a generated column
-* db_sqlite.py: `import_csv()` reports the line number of an unusable row and keeps the imported rows, instead of aborting and deleting the database
-* db_sqlite.py: `per_second_deltas()` lets several consumers share one rate cache file, each keeping its own history, and records a counter whose name contains punctuation
-* db_sqlite.py: RHEL 8 and other systems on old SQLite work again - `connect()` opens on Python 3.6, `rm_db()` removes a corrupt file below SQLite 3.39, and `create_index()` and `compute_load()` catch a misspelled column below SQLite 3.26
-* db_sqlite.py: `rm_db()` removes the journal and write-ahead log files with the database, `compute_load()` and `cut()` refuse an unusable argument with a clear message, and `regexp()` matches against empty and numeric values
+* base.py: `get_perfdata()`
+* db_sqlite.py: a failed statement discards the database only on a schema mismatch or an unreadable file, no longer on a held lock, a full or read-only disk, a bad query or a missing table. Consumers sharing the default database file no longer discard each other's data
+* db_sqlite.py: RHEL 8 and other systems on old SQLite work again
+* db_sqlite.py: `compute_load()`, `create_index()`, `cut()`, `import_csv()`, `per_second_deltas()`, `regexp()`, `rm_db()`
 * distro.py: `get_distribution_facts()` reports the OS family of Alpine, Amazon Linux and the whole SUSE family correctly. All three were reported as Debian
-* distro.py: `get_distribution_facts()` names and versions a distribution without `/etc/os-release` (RHEL 6, CentOS 6, SLES 11), reports CentOS with its two-part version, CentOS Stream as Stream, Oracle Linux as Oracle Linux, and the release name on AlmaLinux, Alpine, Amazon Linux, Kali, Kylin, openEuler, Parrot and TencentOS
+* distro.py: `get_distribution_facts()` names and versions a distribution without `/etc/os-release` (RHEL 6, CentOS 6, SLES 11)
 * huawei_dorado.py, huawei_pacific.py: `get_creds()` closes the session on the appliance instead of leaving it open until it times out. One was left behind per run, or up to three with caching off, and could fill a session pool that on a Dorado holds 32
-* huawei_dorado.py, huawei_pacific.py: `get_data()` retries an HTTP error, a load balancer answering for the appliance and a failed connection, and reports it with the appliance's own error text instead of giving up on the spot
-* huawei_dorado.py, huawei_pacific.py: `get_creds()` names a rejected login instead of raising a type error further down, does not retry a wrong password towards the lockout threshold, names an expired or still-initial monitoring password, and scopes a cached session per account
-* huawei_dorado.py: `get_controller_model()`, `get_enclosure_model()`, `get_interface_model()`, `get_interface_runmode()` and `get_running_status()` name the V700 boards, enclosures, interface modules and states instead of reporting "Unknown", including RDMA/NoF interface modes, 100 Gbit/s RoCE link speeds, a faulty HyperMetro pair and a failed rollback
-* huawei_pacific.py: `get_cluster_nodes()` flags a node without a management IP address and a cluster with more nodes than one response returns, instead of skipping them and still reporting OK
-* huawei_pacific.py: `get_alarm_severity()` and `get_alarm_status()` name events and minor alarms instead of reporting "Unknown"
-* nextcloud.py: `run_occ()` reports a missing or unreadable `config/config.php` with its path, reports an `occ` that cannot be started at all as an error, and keeps Nextcloud's own startup warnings out of the evaluated result
-* time.py: `timestr2epoch()` parses an ISO 8601 timestamp with nanosecond precision, the form every Go-based tool writes, on RHEL 8 and RHEL 9
-* wordpress.py: `get_plugins()` finds a plugin header the way WordPress finds it, including a header behind the opening PHP tag, a multi-file plugin and carriage-return line breaks. `get_site_url()` reads a URL pinned with `const` and ignores one sitting in a comment
+* huawei_dorado.py, huawei_pacific.py: `get_data()` retries an HTTP error, a load balancer answering for the appliance and a failed connection instead of giving up on the spot
+* huawei_dorado.py: `get_controller_model()`, `get_enclosure_model()`, `get_interface_model()`, `get_interface_runmode()` and `get_running_status()` name the V700 hardware and its states instead of reporting "Unknown"
+* huawei_pacific.py: `get_alarm_severity()`, `get_alarm_status()`, `get_cluster_nodes()`
+* nextcloud.py: `run_occ()`
+* time.py: `timestr2epoch()` parses an ISO 8601 timestamp with nanosecond precision, the form every Go-based tool writes
+* wordpress.py: `get_plugins()`, `get_site_url()`
 
 ### Security
 
@@ -157,7 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* args.py: shared help texts for `--no-insecure` and `--no-perfdata`, `epilog()` builds the pointer to a script's online documentation, and `HelpFormatter` wraps `--help` output without breaking long words such as URLs
+* args.py: further shared help texts, `epilog()` builds the pointer to a script's online documentation, and `HelpFormatter` wraps `--help` output without breaking long words such as URLs
 * base.py: `oao()` takes a `no_perfdata` to suppress the performance data section
 * db_mysql.py: `get_replica_hosts()` lists the replicas registered with a server, `get_version()` returns flavor and version as a comparable tuple, and `get_server_info()` also returns that tuple as `version_tuple`
 * disk.py: `get_fingerprint()` hashes a file's head, tail or whole content
@@ -191,7 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* args.py: shared help texts for `--no-match-severity` and `--unreachable-severity`
+* args.py: further shared help texts
 * bexio.py: new module, `call_api()` plus one function per bexio endpoint
 * huawei_pacific.py: new module for Huawei OceanStor Pacific, which speaks the `/api/v2/` REST API with `X-Auth-Token` authentication, a different protocol from the Dorado line
 * redfish.py: `build_url()` builds a follow-up URL from a base and an `@odata.id` link, rejecting a non-relative link so a response cannot redirect the request to another host ([GHSA-96fx-pqc3-28xv](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-96fx-pqc3-28xv))
@@ -203,7 +197,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * args.py: the developer-only `--test` parameter is hidden from `--help`, but still accepted
 * redfish.py: `get_auth_header()` keeps a cached session token only as long as the controller's own session timeout, which avoids sporadic "401 Unauthorized" errors on controllers with short timeouts such as Supermicro's 300 seconds ([#246](https://github.com/Linuxfabrik/lib/issues/246))
-* time.py: the `timestr2epoch(..., pattern='iso8601')` docstring states that the mode is backed by `datetime.fromisoformat()`, not a full ISO 8601 parser
 
 ### Fixed
 
@@ -292,12 +285,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* huawei.py: `get_creds()` reads the session cookie regardless of how the storage system cases the response header
+* huawei.py: `get_creds()`
 * redfish.py: `get_sensor_state()` no longer warns on a sensor reporting an empty min/max range, which some firmware uses as a "no limit" placeholder ([#1211](https://github.com/Linuxfabrik/monitoring-plugins/issues/1211))
-* url.py: `fetch()` ignores a caller-supplied `Content-Length` and recomputes it from the request body, and exposes response header names in lower case
+* url.py: `fetch()`
 * veeam.py: `get_token()` no longer fails with a `415 Unsupported Media Type` or a false "unauthorized"
 * Installing the library from source no longer hangs, which also unblocks the API documentation build
-* The remaining ruff lint violations are resolved, including a bare `except` in disk.py and shared mutable default arguments in url.py and rocket.py ([#118](https://github.com/Linuxfabrik/lib/issues/118))
+* The remaining ruff lint violations are resolved ([#118](https://github.com/Linuxfabrik/lib/issues/118))
 
 
 ## [v4.2.0] - 2026-06-02
@@ -370,7 +363,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * base.py: `oao()` HTML-escapes `&`, `<` and `>` into entities instead of replacing `<` and `>` with apostrophes, which used to turn `<= 10` into `'= 10` and destroy shell snippets in the output
-* db_sqlite.py: `per_second_deltas()` no longer crashes on a cache table schema mismatch from an earlier consumer version
+* db_sqlite.py: `per_second_deltas()`
 * url.py: `fetch()` with digest authentication actually honours `insecure=True`, and with `no_proxy=True` actually applies the `timeout`
 * url.py: `import lib.url` no longer fails where `httpx` is not installed; `fetch()` returns a clear error message instead. A consumer pulling `lib.url` only transitively keeps working
 
@@ -436,7 +429,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* args.py: `HELP_TEXTS` covers all common parameters (always-ok, critical, warning, insecure, no-proxy, timeout, url, ignore-regex, match, lengthy, count, test and more)
+* args.py: `HELP_TEXTS` covers all common parameters, so every consumer describes them alike
 * disk.py: `get_owner()`
 * lftest.py: `run()` for declarative, data-driven unit tests using `subTest()`
 * nextcloud.py: new module, `run_occ()` runs a Nextcloud `occ` command
@@ -458,17 +451,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * base.py: `oao()` and `cu()` escape HTML characters in the output message and in the error message, not just in the traceback, to prevent injection in web UIs
-* base.py: `get_state()` returns UNKNOWN on a malformed range spec instead of calling `sys.exit()`
-* base.py: `get_table()` uses the right separator for the second data row when called without a header
+* base.py: `get_state()`, `get_table()`
 * cache.py: `get()` treats a cache entry as valid up to and including its `expire` timestamp instead of expiring it one second early, matching HTTP `Cache-Control: max-age` and Redis `EXPIRE` semantics ([#120](https://github.com/Linuxfabrik/lib/issues/120))
 * grassfish.py: the unused `match()` helper referencing undefined names is removed
 * human.py: `bits2human()`, `bytes2human()` and `bps2human()` scale a negative value to a unit matching its magnitude, so `bytes2human(-1048576)` returns `-1.0MiB` instead of `-1048576.0B`. This matters for counter deltas that can legitimately be negative ([#120](https://github.com/Linuxfabrik/lib/issues/120))
-* net.py: `get_netinfo()` no longer calls a non-existent `get_ip_public()` and swallows the resulting `NameError` by returning `[]`. It leaves `public_address` as `None`; a caller that needs it uses `get_public_ip()`
+* net.py: `get_netinfo()` leaves `public_address` as `None` instead of swallowing a `NameError` and returning `[]`; a caller that needs it uses `get_public_ip()`
 * shell.py: `shell_exec()` applies the timeout to the `shell=True` path, and closes the upstream process's `stdout` after connecting it to the next pipeline stage, which used to leak a file descriptor per stage ([#120](https://github.com/Linuxfabrik/lib/issues/120))
-* txt.py: `sanitize_sensitive_data()` redacts the secret value instead of the key name, and also covers JSON-style fields and HTTP Authorization headers
-* txt.py: `exception2text()` imports `traceback`, so its fallback path is no longer dead code, and `pluralize()` strips whitespace from comma-separated suffix parts
-* url.py: `fetch()` and `fetch_json()` no longer use mutable default arguments for `header` and `data`
-* winrm.py: `run_cmd()` passes its parameters correctly when using pypsrp
+* txt.py: `exception2text()`, `pluralize()`, `sanitize_sensitive_data()`
+* url.py: `fetch()`, `fetch_json()`
+* winrm.py: `run_cmd()`
 
 ### Security
 
