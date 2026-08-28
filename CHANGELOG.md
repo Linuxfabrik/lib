@@ -8,29 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Highlights:** Seven new modules: reading a log incrementally wherever it is kept (logsource.py) and remembering what was found in it across runs (logmatch.py), libvirt hosts (kvm.py), LVM (lvm.py), OpenStack clouds (openstack.py), the kernel's pressure stall information (psi.py), and work that has to be bounded from outside the process (task.py). Every module that talks HTTP now takes an explicit proxy instead of leaving the choice to the environment. Redfish sessions survive as long as the controller keeps them, and a `shell_exec()` timeout holds even when the killed command is stuck in the kernel.
+**Highlights:** Seven new modules, among them incremental log reading that keeps its findings across runs, plus coverage for libvirt hosts, LVM, OpenStack clouds and the kernel's pressure stall information. Every module that talks HTTP now takes an explicit proxy instead of leaving the choice to the environment. Redfish sessions survive as long as the controller keeps them, and a `shell_exec()` timeout holds even when the killed command is stuck in the kernel.
 
 ### Added
 
-* all HTTP-speaking modules: a `proxy` argument next to `no_proxy`, so a consumer can name the proxy instead of leaving the choice to the environment
 * args.py: `duration()` reads an `8D` style duration for argparse, and rejects a missing or unknown unit instead of silently reading it as zero. Further shared help texts (`--grace-security`, `--grace-updates`, `--grace-wait`, `--icinga-*`, `--lookback`, `--proxy`)
 * base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`)
 * db_sqlite.py: `connect(in_memory=True)` opens a database private to the process, `cut_per_sensor()` trims a history table per sensor instead of by total row count, and `first_seen()` records when each item of an observed set turned up, so a consumer can hold an alert back until an item has persisted
 * keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it
 * kvm.py: new module for libvirt hosts, covering domain statistics and listings, storage pools, their volumes, which pools share a filesystem, and the names of domain states and their reasons. It connects read-only, so it needs neither root nor sudo
 * lftest.py: `container_runtime_available()` and `require_container_runtime()` let a test that needs a container skip itself where there is none
-* logmatch.py: new module for remembering what was found in a log, so a finding keeps counting after the run that saw it. `record()` and `pending()` hold findings until they age out or are acknowledged, `service_acknowledged()` asks the monitoring server whether somebody has taken the alert on, `instance_id()` keeps two consumers watching the same log out of each other's state
-* logsource.py: new module for reading a log incrementally, wherever it is kept. `read()` returns the lines a file, a systemd unit or a container log grew by since the previous run and hands back a position to resume at, recognizing a file that was rotated, truncated or rewritten in place. `read(rotated=N)` reads the rotated predecessors of a file along with it, compressed ones included. `count_within()` counts how many of the lines arrived within a window, `timestamp()` reads when a line was written
-* lvm.py: new module for LVM hosts. `get_logical_volumes()` and `get_volume_groups()` read the `lvs` and `vgs` report, `health()` puts what is wrong with a volume into words, `metadata_limit()` answers at which fill level LVM stops creating thin volumes in a pool. Reading the volumes needs root or sudo
-* net.py: `get_proxy()` answers which proxy the environment wants for a target, honouring the exceptions in `no_proxy`, for a consumer that reaches the network without an HTTP client
+* logmatch.py: new module for remembering what was found in a log, so a finding keeps counting after the run that saw it. It holds a finding until it ages out or somebody acknowledges the alert on the monitoring server, and keeps two consumers watching the same log out of each other's state
+* logsource.py: new module for reading a log incrementally, wherever it is kept. `read()` returns the lines a file, a systemd unit or a container log grew by since the previous run and hands back a position to resume at, recognizing a file that was rotated, truncated or rewritten in place. Rotated predecessors are read along with the file on request, compressed ones included, and a line carries its own timestamp, so a consumer can count what arrived within a window
+* lvm.py: new module for LVM hosts. It reads the logical volume and volume group report, puts what is wrong with a volume into words, and answers at which fill level LVM stops creating thin volumes in a pool. Reading the volumes needs root or sudo
+* net.py: `get_proxy()` answers which proxy the environment wants for a target, honoring the exceptions in `no_proxy`, for a consumer that reaches the network without an HTTP client
 * openstack.py: new module for OpenStack clouds. `connect()` authenticates from an rc file, keeps a whole run inside one time budget and reuses the token across runs, `fetch()` and `fetch_json()` read any endpoint of a connected service
-* psi.py: new module for the pressure stall information the Linux kernel exports below `/proc/pressure`. `read()` and `is_enabled()` report a resource and tell a kernel that accounts for nothing apart from one that accounts for other resources only, `get_states()`, `get_summary()`, `get_perfdata()` and `get_table()` turn a reading into a report
+* psi.py: new module for the pressure stall information the Linux kernel exports below `/proc/pressure`. It reports a resource and turns a reading into states, a summary, performance data or a table, and it tells a kernel that accounts for nothing apart from one that accounts for other resources only
 * redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
-* task.py: new module for work that cannot be interrupted. `run()` and `run_each()` run callables in processes of their own, sharing one deadline, and kill the ones that miss it. A call waiting on a network filesystem whose server has gone away blocks in the kernel, where no timeout inside the process reaches it
+* task.py: new module for work that cannot be interrupted from inside the process. `run()` and `run_each()` run callables in processes of their own, sharing one deadline, and kill the ones that miss it. A call waiting on a network filesystem whose server has gone away blocks in the kernel, where no timeout inside the process reaches it
 * url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host. `fetch()` takes `retries`, which only `fetch_json()` offered so far
 
 ### Changed
 
+* all HTTP-speaking modules: `fetch()` and its callers take a `proxy` argument next to `no_proxy`, so a consumer can name the proxy instead of leaving the choice to the environment
 * db_sqlite.py: `compute_load()` reports the sensors that have enough samples, and leaves out one whose counter started over
 * lftest.py: the container helpers skip a test instead of failing it when testcontainers is missing or `LFTEST_NO_CONTAINER` is set
 * psutil.py: `get_partitions()` also returns the mount options, takes `include_all` to list every mounted filesystem instead of the physical devices only, and no longer waits on the filesystems it lists
@@ -83,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * cache.py: `get(allow_stale=True)` serves an expired entry instead of deleting it. `prune()` deletes the entries a version-keyed cache leaves behind
 * db_sqlite.py: `connect()` takes a `timeout` for how long to wait for a lock
 * disk.py: `get_package()` names the package a path belongs to, `get_fingerprint()` takes an `algorithm` and `read_file()` takes a `max_bytes`
-* distro.py: `get_distribution_facts()` recognises a further set of distributions and Debian derivatives, and identifies anything else from `/etc/os-release` instead of reporting it as plain "Linux"
+* distro.py: `get_distribution_facts()` recognizes a further set of distributions and Debian derivatives, and identifies anything else from `/etc/os-release` instead of reporting it as plain "Linux"
 * feedparser.py: `fetch_soup()` and `parse_soup()` hand back the feed's own markup, and `retries` repeats a download that came back as something other than a feed
 * huawei_dorado.py, huawei_pacific.py: `as_code()`, `assert_ok()`, `get_all_data()` for paged list endpoints, the envelope readers `get_error_code()` / `get_result_code()` / `get_status_envelope()`, and a full set of status translators including their `_state()` counterparts. Consumers used to carry a copy of each
 * huawei_dorado.py: `get_performance()` and `get_performance_perfdata()` read the current counters of a managed object and turn them into performance data under the vendor's own indicator names, plus `as_temperature()`, `field()`, `get_account_state()` and `sectors2bytes()`
@@ -343,7 +343,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * base.py: `oao()` HTML-escapes `&`, `<` and `>` into entities instead of replacing `<` and `>` with apostrophes, which used to turn `<= 10` into `'= 10` and destroy shell snippets in the output
 * db_sqlite.py: `per_second_deltas()`
-* url.py: `fetch()` with digest authentication actually honours `insecure=True`, and with `no_proxy=True` actually applies the `timeout`. `import lib.url` no longer fails where `httpx` is not installed, `fetch()` returns a clear error message instead, so a consumer pulling `lib.url` only transitively keeps working
+* url.py: `fetch()` with digest authentication actually honors `insecure=True`, and with `no_proxy=True` actually applies the `timeout`. `import lib.url` no longer fails where `httpx` is not installed, `fetch()` returns a clear error message instead, so a consumer pulling `lib.url` only transitively keeps working
 
 
 ## [v3.4.1] - 2026-05-07
