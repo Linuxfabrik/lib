@@ -45,6 +45,12 @@ __version__ = '2026082901'
 DAEMON_ERROR_PREFIX = 'Error response from daemon: '
 RPC_STATUS_REGEX = re.compile(r'^rpc error: code = \S+ desc = ')
 
+# What a swarm appends to the name of a container it started for a service task: a
+# dot and the 25 character task id. The id changes with every rescheduling, so a
+# name carrying it is a different name after every restart, and anything keyed on it
+# (a table row, a performance data label, a graph) starts over with it.
+TASK_ID_REGEX = re.compile(r'\.[0-9a-z]{25}$')
+
 
 def _as_text(value):
     """
@@ -61,29 +67,6 @@ def _as_text(value):
     if isinstance(value, bytes):
         return txt.to_text(value, errors='strict_or_latin1')
     return str(value)
-
-
-def strip_daemon_error(message):
-    """
-    Reduce the answer of a container engine to the sentence somebody can act on.
-
-    ### Parameters
-    - **message** (`str`, `bytes` or `None`): What the client wrote, typically its
-      standard error.
-
-    ### Returns
-    - **str**: The message with the client's prefixes removed, on a single line.
-
-    ### Example
-    >>> strip_daemon_error(
-    ...     'Error response from daemon: rpc error: code = Unknown desc = '
-    ...     'The swarm does not have a leader.'
-    ... )
-    'The swarm does not have a leader.'
-    """
-    message = ' '.join(_as_text(message).split())
-    message = message.replace(DAEMON_ERROR_PREFIX, '', 1)
-    return RPC_STATUS_REGEX.sub('', message)
 
 
 def get_engine_error(stderr, stdout='', fallback_state=STATE_CRIT):
@@ -123,3 +106,47 @@ def get_engine_error(stderr, stdout='', fallback_state=STATE_CRIT):
             STATE_UNKNOWN,
         )
     return (text, fallback_state)
+
+
+def strip_daemon_error(message):
+    """
+    Reduce the answer of a container engine to the sentence somebody can act on.
+
+    ### Parameters
+    - **message** (`str`, `bytes` or `None`): What the client wrote, typically its
+      standard error.
+
+    ### Returns
+    - **str**: The message with the client's prefixes removed, on a single line.
+
+    ### Example
+    >>> strip_daemon_error(
+    ...     'Error response from daemon: rpc error: code = Unknown desc = '
+    ...     'The swarm does not have a leader.'
+    ... )
+    'The swarm does not have a leader.'
+    """
+    message = ' '.join(_as_text(message).split())
+    message = message.replace(DAEMON_ERROR_PREFIX, '', 1)
+    return RPC_STATUS_REGEX.sub('', message)
+
+
+def strip_task_id(name):
+    """
+    Return the name of a container without the task id a swarm appended to it.
+
+    ### Parameters
+    - **name** (`str`, `bytes` or `None`): The name as the engine reports it.
+
+    ### Returns
+    - **str**: The name without the trailing task id. A name that carries none is
+      returned unchanged.
+
+    ### Example
+    >>> strip_task_id('traefik_traefik.2.1idw12p2yqpxutlzkcwign4at')
+    'traefik_traefik.2'
+
+    >>> strip_task_id('backup.daily')
+    'backup.daily'
+    """
+    return TASK_ID_REGEX.sub('', _as_text(name))

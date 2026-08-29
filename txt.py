@@ -585,6 +585,39 @@ def shorten(text, max_len, ellipsis='...'):
     return f'{text[:head_len]}{ellipsis}{text[-tail_len:]}'
 
 
+def shorten_list(items, head=5, tail=5):
+    """
+    Collapse a long list to its head, an ellipsis and its tail.
+
+    Meant for a list of names that goes into a message: the first few and the last few
+    say what kind of thing is in it and how it is sorted, while the hundreds in between
+    only push the rest of the message off the screen. The count belongs next to it, so
+    the reader knows how much was left out.
+
+    ### Parameters
+    - **items** (`list`): The items to collapse.
+    - **head** (`int`, optional): How many items to keep at the front. Defaults to `5`.
+    - **tail** (`int`, optional): How many items to keep at the end. Defaults to `5`.
+
+    ### Returns
+    - **list**: The collapsed list, with the string `'...'` in place of what was left
+      out, or the original list when it is short enough to be printed whole. The
+      original is never modified.
+
+    ### Example
+    >>> shorten_list([1, 2, 3], head=1, tail=1)
+    [1, '...', 3]
+
+    >>> shorten_list([1, 2], head=1, tail=1)
+    [1, 2]
+    """
+    if head < 0 or tail < 0:
+        return list(items)
+    if len(items) > head + tail:
+        return [*items[:head], '...', *items[len(items) - tail :]]
+    return list(items)
+
+
 def strip_ansi(text):
     """
     Remove ANSI escape sequences from text.

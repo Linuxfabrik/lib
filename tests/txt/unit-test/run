@@ -384,6 +384,52 @@ class TestShorten(unittest.TestCase):
         self.assertEqual(txt.shorten('', 10), '')
 
 
+class TestShortenList(unittest.TestCase):
+    def test_a_short_list_is_returned_whole(self):
+        self.assertEqual(txt.shorten_list([1, 2, 3, 4], 2, 2), [1, 2, 3, 4])
+
+    def test_a_list_of_exactly_head_plus_tail_is_returned_whole(self):
+        self.assertEqual(txt.shorten_list([1, 2, 3, 4], head=2, tail=2), [1, 2, 3, 4])
+
+    def test_a_longer_list_is_collapsed(self):
+        self.assertEqual(txt.shorten_list([1, 2, 3, 4, 5], 2, 2), [1, 2, '...', 4, 5])
+
+    def test_the_defaults_keep_five_at_each_end(self):
+        self.assertEqual(
+            txt.shorten_list(list(range(20))),
+            [0, 1, 2, 3, 4, '...', 15, 16, 17, 18, 19],
+        )
+
+    def test_a_tail_of_zero_keeps_nothing_at_the_end(self):
+        # `items[-0:]` is the whole list, so the obvious implementation appends every
+        # item again right behind the ellipsis.
+        self.assertEqual(txt.shorten_list([1, 2, 3, 4, 5], 2, 0), [1, 2, '...'])
+
+    def test_a_head_of_zero_keeps_nothing_at_the_front(self):
+        self.assertEqual(txt.shorten_list([1, 2, 3, 4, 5], 0, 2), ['...', 4, 5])
+
+    def test_both_at_zero_leaves_the_ellipsis(self):
+        self.assertEqual(txt.shorten_list([1, 2, 3], 0, 0), ['...'])
+
+    def test_an_empty_list_stays_empty(self):
+        self.assertEqual(txt.shorten_list([], 2, 2), [])
+
+    def test_a_negative_bound_returns_the_list_unchanged(self):
+        self.assertEqual(txt.shorten_list([1, 2, 3], -1, 2), [1, 2, 3])
+
+    def test_the_input_list_is_not_modified(self):
+        items = [1, 2, 3, 4, 5]
+        txt.shorten_list(items, 1, 1)
+        self.assertEqual(items, [1, 2, 3, 4, 5])
+
+    def test_a_short_list_comes_back_as_a_copy(self):
+        items = [1, 2]
+        self.assertIsNot(txt.shorten_list(items, 5, 5), items)
+
+    def test_it_works_on_strings_too(self):
+        self.assertEqual(txt.shorten_list(['a', 'b', 'c'], 1, 1), ['a', '...', 'c'])
+
+
 class TestStripAnsi(unittest.TestCase):
     def test_plain_text_is_untouched(self):
         self.assertEqual(txt.strip_ansi('no escapes here'), 'no escapes here')
