@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.container.
+
+Where each sample comes from is stated at the sample. The Podman one was taken
+from podman 5.8.4 on Fedora 44, pointed at a socket that is not there. The Docker
+ones are the strings the consumers have been reading for years, which is what the
+behaviour under test was built around; this host runs podman-docker rather than
+Docker, so they could not be taken again here.
+"""
+
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.container as container
+from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
+
+# What the Docker client writes for a caller that is not in the group owning the
+# socket. The words that matter are the kernel's, at the end of the line.
+PERMISSION_DENIED = (
+    'permission denied while trying to connect to the Docker daemon socket at '
+    'unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.51/'
+    'containers/json": dial unix /var/run/docker.sock: connect: permission denied'
+)
+
+# What the Docker client writes where the engine is not running.
+ENGINE_DOWN = (
+    'Cannot connect to the Docker daemon at unix:///var/run/docker.sock. '
+    'Is the docker daemon running?'
+)
+
+# What podman 5.8.4 on Fedora 44 writes for the same situation, captured by pointing
+# it at a socket that does not exist. It says the same thing in different words and
+# behind a prefix of its own, which is why nothing here matches on the wording of an
+# outage: only the refused permission is recognized, everything else is passed on.
+PODMAN_ENGINE_DOWN = (
+    'Cannot connect to Podman. Please verify your connection to the Linux system '
+    'using `podman system connection list`, or try `podman machine init` and '
+    '`podman machine start` to manage a new Linux VM\n'
+    'Error: unable to connect to Podman socket: Get '
+    '"http://d/v5.8.4/libpod/_ping": dial unix /nonexistent/podman.sock: connect: '
+    'no such file or directory: unix:///nonexistent/podman.sock'
+)
+
+# What a swarm manager that lost its quorum answers, behind both prefixes.
+NO_LEADER = (
+    'Error response from daemon: rpc error: code = Unknown desc = The swarm does '
+    'not have a leader. It is possible that too few managers are online. Make sure '
+    'more than half of the managers are online.'
+)
+
+
+class TestStripDaemonError(unittest.TestCase):
+    def test_drops_both_prefixes(self):
+        self.assertEqual(
+            container.strip_daemon_error(NO_LEADER),
+            'The swarm does not have a leader. It is possible that too few managers '
+            'are online. Make sure more than half of the managers are online.',
+        )
+
+    def test_drops_the_daemon_prefix_alone(self):
+        self.assertEqual(
+            container.strip_daemon_error(
+                'Error response from daemon: This node is not a swarm manager.'
+            ),
+            'This node is not a swarm manager.',
+        )
+
+    def test_drops_the_rpc_prefix_alone(self):
+        self.assertEqual(
+            container.strip_daemon_error('rpc error: code = 5 desc = node not found'),
+            'node not found',
+        )
+
+    def test_leaves_a_message_without_a_prefix_alone(self):
+        self.assertEqual(container.strip_daemon_error(ENGINE_DOWN), ENGINE_DOWN)
+
+    def test_collapses_a_wrapped_message_onto_one_line(self):
+        self.assertEqual(
+            container.strip_daemon_error('one\n  two\t three '),
+            'one two three',
+        )
+
+    def test_only_the_first_prefix_goes(self):
+        # A client that failed on several items prints one answer per item. Dropping
+        # every occurrence would glue two sentences together without a separator.
+        self.assertEqual(
+            container.strip_daemon_error(
+                'Error response from daemon: a Error response from daemon: b'
+            ),
+            'a Error response from daemon: b',
+        )
+
+    def test_a_prefix_in_the_middle_stays(self):
+        self.assertEqual(
+            container.strip_daemon_error('x Error response from daemon: y'),
+            'x y',
+        )
+
+    def test_a_prefix_with_nothing_behind_it_stays_readable(self):
+        # The trailing space goes with the whitespace normalisation, so the prefix no
+        # longer matches and is reported as the whole message. There is nothing else
+        # to report in that case, and the caller sees that the client said nothing.
+        self.assertEqual(
+            container.strip_daemon_error('Error response from daemon: '),
+            'Error response from daemon:',
+        )
+
+    def test_an_empty_message_stays_empty(self):
+        self.assertEqual(container.strip_daemon_error(''), '')
+
+    def test_whitespace_only_is_empty(self):
+        self.assertEqual(container.strip_daemon_error('   \n\t '), '')
+
+    def test_none_is_empty_rather_than_the_word(self):
+        # A caller passing on a result it does not have must not print "None" as if
+        # the client had written it.
+        self.assertEqual(container.strip_daemon_error(None), '')
+
+    def test_bytes_are_decoded_rather_than_shown_as_a_repr(self):
+        self.assertEqual(
+            container.strip_daemon_error(b'Error response from daemon: gone'),
+            'gone',
+        )
+
+    def test_bytes_that_are_not_utf8_are_still_read(self):
+        self.assertEqual(
+            container.strip_daemon_error(b'caf\xe9 not found'),
+            'café not found',
+        )
+
+    def test_a_number_is_rendered_rather_than_raising(self):
+        self.assertEqual(container.strip_daemon_error(42), '42')
+
+    def test_a_long_message_is_passed_through_whole(self):
+        message = 'x' * 100000
+        self.assertEqual(container.strip_daemon_error(message), message)
+
+
+class TestGetEngineError(unittest.TestCase):
+    def test_a_refused_permission_is_unknown(self):
+        message, state = container.get_engine_error(PERMISSION_DENIED)
+        self.assertEqual(state, STATE_UNKNOWN)
+        self.assertIn('No permission to talk to the container engine', message)
+        # The original answer stays in the message: the socket path in it is what
+        # says which engine was asked.
+        self.assertIn('/var/run/docker.sock', message)
+
+    def test_a_refused_permission_ignores_the_fallback_state(self):
+        _, state = container.get_engine_error(
+            PERMISSION_DENIED, fallback_state=STATE_OK
+        )
+        self.assertEqual(state, STATE_UNKNOWN)
+
+    def test_an_engine_that_is_down_is_critical(self):
+        message, state = container.get_engine_error(ENGINE_DOWN)
+        self.assertEqual(state, STATE_CRIT)
+        self.assertEqual(message, ENGINE_DOWN)
+
+    def test_podman_says_the_same_thing_in_its_own_words(self):
+        message, state = container.get_engine_error(PODMAN_ENGINE_DOWN)
+        self.assertEqual(state, STATE_CRIT)
+        self.assertIn('unable to connect to Podman socket', message)
+
+    def test_the_fallback_state_is_the_callers_choice(self):
+        for fallback in (STATE_OK, STATE_WARN, STATE_CRIT, STATE_UNKNOWN):
+            with self.subTest(fallback=fallback):
+                _, state = container.get_engine_error(
+                    ENGINE_DOWN, fallback_state=fallback
+                )
+                self.assertEqual(state, fallback)
+
+    def test_a_reason_on_stdout_is_read_too(self):
+        message, state = container.get_engine_error('', PERMISSION_DENIED)
+        self.assertEqual(state, STATE_UNKNOWN)
+        self.assertIn('No permission to talk to the container engine', message)
+
+    def test_both_streams_end_up_in_the_message(self):
+        message, _ = container.get_engine_error('first', 'second')
+        self.assertEqual(message, 'first\nsecond')
+
+    def test_the_match_is_case_insensitive(self):
+        _, state = container.get_engine_error('Permission Denied')
+        self.assertEqual(state, STATE_UNKNOWN)
+
+    def test_a_client_that_said_nothing_still_reports(self):
+        message, state = container.get_engine_error('', '')
+        self.assertEqual(message, '')
+        self.assertEqual(state, STATE_CRIT)
+
+    def test_none_on_both_streams_is_empty_rather_than_the_word(self):
+        message, state = container.get_engine_error(None, None)
+        self.assertEqual(message, '')
+        self.assertEqual(state, STATE_CRIT)
+
+    def test_bytes_are_decoded_rather_than_shown_as_a_repr(self):
+        message, state = container.get_engine_error(b'permission denied')
+        self.assertEqual(state, STATE_UNKNOWN)
+        self.assertTrue(message.endswith('permission denied'))
+        self.assertNotIn("b'", message)
+
+    def test_bytes_that_are_not_utf8_are_still_read(self):
+        message, _ = container.get_engine_error(b'caf\xe9 not found')
+        self.assertEqual(message, 'café not found')
+
+    def test_the_message_is_not_stripped_of_its_prefixes(self):
+        # Stripping is a decision of the caller: a consumer that wants the bare
+        # sentence calls strip_daemon_error() on the way in.
+        message, _ = container.get_engine_error(NO_LEADER)
+        self.assertTrue(message.startswith('Error response from daemon:'))
+
+
+if __name__ == '__main__':
+    unittest.main()

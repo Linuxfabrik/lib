@@ -8,12 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Highlights:** Seven new modules, among them incremental log reading that keeps its findings across runs, plus coverage for libvirt hosts, LVM, OpenStack clouds and the kernel's pressure stall information. Every module that talks HTTP now takes an explicit proxy instead of leaving the choice to the environment. Redfish sessions survive as long as the controller keeps them, and a `shell_exec()` timeout holds even when the killed command is stuck in the kernel.
+**Highlights:** Eight new modules, among them incremental log reading that keeps its findings across runs, plus coverage for libvirt hosts, LVM, OpenStack clouds and the kernel's pressure stall information. Every module that talks HTTP now takes an explicit proxy instead of leaving the choice to the environment. Redfish sessions survive as long as the controller keeps them, and a `shell_exec()` timeout holds even when the killed command is stuck in the kernel.
 
 ### Added
 
 * args.py: `duration()` reads an `8D` style duration for argparse, and rejects a missing or unknown unit instead of silently reading it as zero. Further shared help texts (`--grace-security`, `--grace-updates`, `--grace-wait`, `--icinga-*`, `--lookback`, `--per-source`, `--no-per-source`, `--proxy`)
 * base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`)
+* container.py: new module for the answers every consumer of a container engine has to give the same way. `get_engine_error()` tells a refused permission, which says nothing about the engine and is UNKNOWN, apart from an engine that is down or gone, and `strip_daemon_error()` reduces what an engine answered to the sentence somebody can act on
 * db_sqlite.py: `connect(in_memory=True)` opens a database private to the process, `cut_per_sensor()` trims a history table per sensor instead of by total row count, and `first_seen()` records when each item of an observed set turned up, so a consumer can hold an alert back until an item has persisted
 * keycloak.py: `get_server_info_section()` returns one section of the server info document, and names the role Keycloak requires for it
 * kvm.py: new module for libvirt hosts, covering domain statistics and listings, storage pools, their volumes, which pools share a filesystem, and the names of domain states and their reasons. It connects read-only, so it needs neither root nor sudo
