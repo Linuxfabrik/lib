@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Highlights:** Eight new modules, among them incremental log reading that keeps its findings across runs, plus coverage for libvirt hosts, LVM, OpenStack clouds and the kernel's pressure stall information. Every module that talks HTTP now takes an explicit proxy instead of leaving the choice to the environment. Redfish sessions survive as long as the controller keeps them, and a `shell_exec()` timeout holds even when the killed command is stuck in the kernel.
+**Highlights:** Nine new modules, among them incremental log reading that keeps its findings across runs, plus coverage for libvirt hosts, LVM, OpenStack clouds and the kernel's pressure stall information. Every module that talks HTTP now takes an explicit proxy instead of leaving the choice to the environment. Redfish sessions survive as long as the controller keeps them, and a `shell_exec()` timeout holds even when the killed command is stuck in the kernel.
 
 ### Added
 
@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
 * task.py: new module for work that cannot be interrupted from inside the process. `run()` and `run_each()` run callables in processes of their own, sharing one deadline, and kill the ones that miss it. A call waiting on a network filesystem whose server has gone away blocks in the kernel, where no timeout inside the process reaches it
 * txt.py: `shorten_list()` collapses a long list to its first and last few items for a message
+* user.py: new module for what a host says about a local account. It resolves a numeric user or group id to its name, reads `UID_MIN`, the shells a login may use and the password field of a shadow entry, and says what that field means, telling an account that is locked apart from one that carries no password at all. An account the host does not manage locally is reported as absent rather than as broken
 * url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host. `fetch()` takes `retries`, which only `fetch_json()` offered so far
 
 ### Changed

@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.user.
+
+Every function that reads a file is driven from a fixture written into a throwaway
+directory, so nothing here depends on how the host running the tests is set up. The
+two id lookups are the exception: they ask the account database of the host, and
+only about uid and gid 0, which is `root` on every Unix.
+"""
+
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.user as user
+
+# What the login.defs of a Red Hat family host says about the boundary, with the
+# comment block around it that the file actually ships.
+LOGIN_DEFS = """# *REQUIRED*
+#   Directory where mailboxes reside.
+MAIL_DIR        /var/spool/mail
+
+PASS_MAX_DAYS   99999
+PASS_MIN_DAYS   0
+
+UID_MIN                  1000
+UID_MAX                 60000
+# System accounts
+SYS_UID_MIN               201
+SYS_UID_MAX               999
+"""
+
+# Four accounts, one per password state a shadow entry can be in.
+SHADOW = """root:!!:20000:0:99999:7:::
+locked:!$6$salt$hash:20000:0:99999:7:::
+nologin:*:20000:0:99999:7:::
+empty::20000:0:99999:7:::
+usable:$6$salt$hash:20000:0:99999:7:::
+"""
+
+SHELLS = """/bin/sh
+/bin/bash
+
+# a comment
+/usr/bin/zsh
+"""
+
+
+class TestFileBackedLookups(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+
+    def write(self, name, content, mode='w', encoding='utf-8'):
+        path = os.path.join(self.tmp, name)
+        if 'b' in mode:
+            with open(path, mode) as handle:
+                handle.write(content)
+        else:
+            with open(path, mode, encoding=encoding) as handle:
+                handle.write(content)
+        return path
+
+    # ---------- get_uid_min ----------
+
+    def test_uid_min_is_read_from_the_file(self):
+        self.assertEqual(user.get_uid_min(self.write('login.defs', LOGIN_DEFS)), 1000)
+
+    def test_uid_min_falls_back_where_the_file_is_missing(self):
+        self.assertEqual(
+            user.get_uid_min(os.path.join(self.tmp, 'nothing-here')),
+            user.DEFAULT_UID_MIN,
+        )
+
+    def test_uid_min_falls_back_where_the_file_does_not_state_it(self):
+        self.assertEqual(
+            user.get_uid_min(self.write('login.defs', 'PASS_MAX_DAYS 99999\n')),
+            user.DEFAULT_UID_MIN,
+        )
+
+    def test_uid_min_skips_a_line_that_states_no_number(self):
+        # A line naming the setting without a value says nothing, and the file may
+        # hold a second one that does.
+        path = self.write('login.defs', 'UID_MIN\nUID_MIN not-a-number\nUID_MIN 500\n')
+        self.assertEqual(user.get_uid_min(path), 500)
+
+    def test_uid_min_reads_a_value_that_is_not_the_usual_one(self):
+        self.assertEqual(
+            user.get_uid_min(self.write('login.defs', 'UID_MIN 5000\n')), 5000
+        )
+
+    def test_uid_min_of_an_empty_file_is_the_default(self):
+        self.assertEqual(
+            user.get_uid_min(self.write('login.defs', '')), user.DEFAULT_UID_MIN
+        )
+
+    # ---------- get_shadow_password ----------
+
+    def test_a_shadow_entry_is_found(self):
+        path = self.write('shadow', SHADOW)
+        self.assertEqual(user.get_shadow_password('root', path), ('found', '!!'))
+        self.assertEqual(user.get_shadow_password('empty', path), ('found', ''))
+        self.assertEqual(
+            user.get_shadow_password('usable', path), ('found', '$6$salt$hash')
+        )
+
+    def test_an_account_the_file_does_not_hold_is_missing(self):
+        self.assertEqual(
+            user.get_shadow_password('nobody', self.write('shadow', SHADOW)),
+            ('missing', None),
+        )
+
+    def test_a_shadow_database_that_cannot_be_read_is_told_apart(self):
+        # Not the same answer as "no such account": one is a missing privilege on
+        # this run, the other is an account served by a directory service.
+        self.assertEqual(
+            user.get_shadow_password('root', os.path.join(self.tmp, 'nothing-here')),
+            ('unreadable', None),
+        )
+
+    def test_a_line_without_a_second_field_is_skipped(self):
+        path = self.write('shadow', 'broken\nroot:!!:20000:0:99999:7:::\n')
+        self.assertEqual(user.get_shadow_password('root', path), ('found', '!!'))
+
+    def test_an_account_name_matches_exactly(self):
+        # A prefix must not match: `www` is not `www-data`.
+        path = self.write('shadow', 'www-data:$6$x:20000:0:99999:7:::\n')
+        self.assertEqual(user.get_shadow_password('www', path), ('missing', None))
+
+    def test_a_shadow_file_that_is_not_utf8_is_still_read(self):
+        # These files carry whatever a comment was written in, and one byte must not
+        # take the whole reading down.
+        path = self.write(
+            'shadow', b'# caf\xe9\nroot:!!:20000:0:99999:7:::\n', mode='wb'
+        )
+        self.assertEqual(user.get_shadow_password('root', path), ('found', '!!'))
+
+    # ---------- get_interactive_shells ----------
+
+    def test_the_shells_are_read_without_comments_and_blanks(self):
+        self.assertEqual(
+            user.get_interactive_shells(self.write('shells', SHELLS)),
+            {'/bin/sh', '/bin/bash', '/usr/bin/zsh'},
+        )
+
+    def test_a_missing_shells_file_is_an_empty_set(self):
+        # A host that makes no statement, not a host that allows nothing.
+        self.assertEqual(
+            user.get_interactive_shells(os.path.join(self.tmp, 'nothing-here')), set()
+        )
+
+    def test_an_empty_shells_file_is_an_empty_set(self):
+        self.assertEqual(user.get_interactive_shells(self.write('shells', '')), set())
+
+    def test_the_shells_lose_their_surrounding_whitespace(self):
+        self.assertEqual(
+            user.get_interactive_shells(self.write('shells', '  /bin/sh  \n')),
+            {'/bin/sh'},
+        )
+
+    def test_a_shells_file_that_is_not_utf8_is_still_read(self):
+        path = self.write('shells', b'# caf\xe9\n/bin/sh\n', mode='wb')
+        self.assertEqual(user.get_interactive_shells(path), {'/bin/sh'})
+
+
+class TestIdLookups(unittest.TestCase):
+    def test_uid_zero_is_root(self):
+        self.assertEqual(user.get_uid_name(0), 'root')
+
+    def test_gid_zero_is_root(self):
+        self.assertEqual(user.get_gid_name(0), 'root')
+
+    def test_an_unknown_uid_comes_back_as_its_number(self):
+        self.assertEqual(user.get_uid_name(4294967290), '4294967290')
+
+    def test_an_unknown_gid_comes_back_as_its_number(self):
+        self.assertEqual(user.get_gid_name(4294967290), '4294967290')
+
+    def test_a_negative_id_does_not_raise(self):
+        self.assertEqual(user.get_uid_name(-1), '-1')
+        self.assertEqual(user.get_gid_name(-1), '-1')
+
+    def test_an_id_too_large_for_the_c_type_does_not_raise(self):
+        # pwd.getpwuid() raises OverflowError rather than KeyError on these.
+        self.assertEqual(user.get_uid_name(2**70), str(2**70))
+
+    def test_a_host_without_an_account_database_falls_back_to_the_number(self):
+        # Windows has neither pwd nor grp.
+        with mock.patch.object(user, 'HAVE_ACCOUNT_DB', False):
+            self.assertEqual(user.get_uid_name(0), '0')
+            self.assertEqual(user.get_gid_name(0), '0')
+
+
+class TestPasswordState(unittest.TestCase):
+    def test_a_locked_account(self):
+        self.assertEqual(user.password_state('!!'), 'locked')
+        self.assertEqual(user.password_state('!$6$salt$hash'), 'locked')
+
+    def test_an_account_that_takes_no_password(self):
+        self.assertEqual(user.password_state('*'), 'no-login')
+        self.assertEqual(user.password_state('*LK*'), 'no-login')
+
+    def test_an_empty_field_is_a_password_of_no_characters(self):
+        self.assertEqual(user.password_state(''), 'none')
+
+    def test_a_hash_is_usable(self):
+        self.assertEqual(user.password_state('$6$salt$hash'), 'usable')
+
+    def test_none_is_read_as_no_password(self):
+        self.assertEqual(user.password_state(None), 'none')
+
+    def test_a_lock_prefix_wins_over_a_no_login_one(self):
+        # `!*` is a locked account that also took no password, and the lock is the
+        # stronger statement.
+        self.assertEqual(user.password_state('!*'), 'locked')
+
+
+class TestOwnMountNamespace(unittest.TestCase):
+    def test_a_linux_host_names_its_namespace(self):
+        namespace = user.own_mount_namespace()
+        if namespace is None:
+            self.skipTest('this kernel publishes no mount namespace')
+        self.assertTrue(namespace.startswith('mnt:['))
+
+    def test_a_kernel_without_one_answers_none(self):
+        with mock.patch('os.readlink', side_effect=OSError):
+            self.assertIsNone(user.own_mount_namespace())
+
+
+if __name__ == '__main__':
+    unittest.main()
