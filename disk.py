@@ -1061,7 +1061,9 @@ def shorten_path(path, max_len=None, truncate=True):
     >>> shorten_path('/a/very/long/path/' + 'x' * 60, max_len=20)
     '/a/v/l/p...xxxxxxxxx'
 
-    >>> shorten_path('/var/log/httpd/www.example.com-error.log', max_len=32, truncate=False)
+    >>> shorten_path(
+    ...     '/var/log/httpd/www.example.com-error.log', max_len=32, truncate=False
+    ... )
     '/v/l/h/www.example.com-error.log'
     """
     if not path or '/' not in path:
@@ -1074,6 +1076,50 @@ def shorten_path(path, max_len=None, truncate=True):
     if max_len is not None and truncate:
         result = txt.shorten(result, max_len)
     return result
+
+
+def under_root(root, path):
+    """
+    Return `path` relocated below `root`, whether it is absolute or relative.
+
+    Meant for a consumer that reads a set of well-known paths and has to be able to
+    read them from somewhere else instead: a test fixture standing in for the host's
+    `/etc`, a mounted image, an extracted backup. The caller keeps writing the paths
+    it means, and one root decides where they are read from.
+
+    No result ever leaves `root`: an empty segment, `.` and `..` are dropped rather
+    than followed, so a path assembled from data cannot walk out of the root through
+    its own text. That is not a sandbox, though, because a symlink inside the root
+    still points wherever it points. Where the containment has to hold against the
+    filesystem too, check the result with `is_within()`.
+
+    ### Parameters
+    - **root** (`str`): The directory every path is read below.
+    - **path** (`str`): The path to relocate. An absolute one loses its anchor, a
+      relative one is taken as it is.
+
+    ### Returns
+    - **str**: The relocated path, or `root` itself where `path` names no segment.
+
+    ### Example
+    >>> under_root('/fixtures/rhel', '/etc/os-release')
+    '/fixtures/rhel/etc/os-release'
+
+    >>> under_root('/fixtures/rhel', '/../etc/shadow')
+    '/fixtures/rhel/etc/shadow'
+    """
+    # splitdrive() takes a Windows drive letter off; on POSIX it is a no-op. The
+    # backslash is translated as well, because a path handed over on Windows uses it
+    # as its separator and would otherwise survive as part of a single segment.
+    _, tail = os.path.splitdrive(str(path))
+    parts = [
+        part
+        for part in tail.replace('\\', '/').split('/')
+        if part not in ('', '.', '..')
+    ]
+    if not parts:
+        return root
+    return os.path.join(root, *parts)
 
 
 def udevadm(device, _property):

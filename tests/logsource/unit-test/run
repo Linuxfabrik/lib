@@ -33,6 +33,84 @@ sys.path.insert(0, '..')
 import lib.logsource
 
 
+class TestDescribe(unittest.TestCase):
+    def test_a_source_without_a_size_is_named_alone(self):
+        self.assertEqual(
+            lib.logsource.describe({'label': '/var/log/secure', 'rotated': []}),
+            '`/var/log/secure`',
+        )
+
+    def test_a_size_is_stated_in_human_terms(self):
+        self.assertEqual(
+            lib.logsource.describe(
+                {'label': '/var/log/secure', 'rotated': []}, size=2048
+            ),
+            '`/var/log/secure` (size: 2.0KiB)',
+        )
+
+    def test_a_size_below_the_threshold_is_marked_as_such(self):
+        self.assertEqual(
+            lib.logsource.describe(
+                {'label': '/var/log/secure', 'rotated': []},
+                size=2048,
+                size_threshold=4096,
+            ),
+            '`/var/log/secure` (size: 2.0KiB < 4.0KiB)',
+        )
+
+    def test_a_size_at_the_threshold_counts_as_above_it(self):
+        self.assertEqual(
+            lib.logsource.describe(
+                {'label': '/var/log/secure', 'rotated': []},
+                size=4096,
+                size_threshold=4096,
+            ),
+            '`/var/log/secure` (size: 4.0KiB > 4.0KiB)',
+        )
+
+    def test_a_size_of_zero_is_stated_rather_than_dropped(self):
+        # 0 is a size somebody has to see: an empty log is a finding of its own.
+        self.assertEqual(
+            lib.logsource.describe({'label': '/var/log/secure', 'rotated': []}, size=0),
+            '`/var/log/secure` (size: 0.0B)',
+        )
+
+    def test_a_threshold_without_a_size_says_nothing(self):
+        self.assertEqual(
+            lib.logsource.describe(
+                {'label': '/var/log/secure', 'rotated': []}, size_threshold=4096
+            ),
+            '`/var/log/secure`',
+        )
+
+    def test_a_unit_is_named_the_way_it_was_asked_for(self):
+        self.assertEqual(
+            lib.logsource.describe({'label': 'systemd:sshd', 'rotated': []}),
+            '`systemd:sshd`',
+        )
+
+    def test_a_missing_rotated_key_is_no_predecessor(self):
+        self.assertEqual(lib.logsource.describe({'label': 'podman:db'}), '`podman:db`')
+
+    def test_the_predecessors_are_listed_behind_the_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            older = os.path.join(tmp, 'secure-20260828')
+            with open(older, 'w', encoding='utf-8') as handle:
+                handle.write('x' * 1024)
+            described = lib.logsource.describe(
+                {'label': '/var/log/secure', 'rotated': [older]}
+            )
+        self.assertEqual(described, f'`/var/log/secure` + `{older}` (size: 1.0KiB)')
+
+    def test_a_predecessor_that_is_gone_is_still_named(self):
+        # It was there when the reader found it, and saying which file was read is
+        # worth more than dropping it because it has since been rotated away.
+        described = lib.logsource.describe(
+            {'label': '/var/log/secure', 'rotated': ['/nonexistent/secure-1']}
+        )
+        self.assertEqual(described, '`/var/log/secure` + `/nonexistent/secure-1`')
+
+
 class TestParse(unittest.TestCase):
     def test_file(self):
         self.assertEqual(

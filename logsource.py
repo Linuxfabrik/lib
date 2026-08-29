@@ -34,7 +34,7 @@ import os
 import re
 import stat
 
-from . import disk, shell, txt
+from . import disk, human, shell, txt
 from . import time as lftime
 
 # A position either names the exact spot the previous run stopped at, or only
@@ -211,7 +211,9 @@ def sort_by_time(lines, parse_line=None):
             (dated, moment.replace(tzinfo=None) if moment else None, index, line)
             for dated, moment, index, line in decorated
         ]
-    decorated.sort(key=lambda item: (item[0], item[1] or datetime.datetime.min, item[2]))
+    decorated.sort(
+        key=lambda item: (item[0], item[1] or datetime.datetime.min, item[2])
+    )
     return [line for _, _, _, line in decorated]
 
 
@@ -232,7 +234,9 @@ def strip_syslog_prefix(line):
       what an application writing its own timestamps into a file of its own does.
 
     ### Example
-    >>> strip_syslog_prefix('Aug 29 11:15:53 host sshd[1]: Server listening on 0.0.0.0.')
+    >>> strip_syslog_prefix(
+    ...     'Aug 29 11:15:53 host sshd[1]: Server listening on 0.0.0.0.'
+    ... )
     'Server listening on 0.0.0.0.'
 
     >>> strip_syslog_prefix('[28-Aug-2026 15:20:15] ERROR: failed to ptrace(ATTACH)')
@@ -267,7 +271,9 @@ def covered_window(line_groups, parse_line=None):
         - tuple[1] (**datetime.datetime | None**): The latest moment found, or None.
 
     ### Example
-    >>> covered_window([['Aug 29 11:15:53 host sshd[1]: Accepted publickey for alice']])[0].hour
+    >>> covered_window(
+    ...     [['Aug 29 11:15:53 host sshd[1]: Accepted publickey for alice']]
+    ... )[0].hour
     11
     """
     moments = []
@@ -287,6 +293,53 @@ def covered_window(line_groups, parse_line=None):
     if len({moment.tzinfo is None for moment in moments}) > 1:
         moments = [moment.replace(tzinfo=None) for moment in moments]
     return min(moments), max(moments)
+
+
+def describe(source, size=None, size_threshold=None):
+    """
+    Name one source the way a report names it, together with what was read along.
+
+    A source read from a file is named by its path in full, because that is where
+    somebody copies the path from, and the rotated predecessors that were read with
+    it are listed behind it. Their size is looked up here rather than passed in: a
+    predecessor is not a source the caller named, the reader found it, and it stays
+    out of the size a caller trends.
+
+    ### Parameters
+    - **source** (`dict`): One entry of the `sources` a `read_many()` result carries,
+      holding at least a `label` and a `rotated` list.
+    - **size** (`int`, optional): The size of the live source in bytes, where the
+      caller has it and wants it named. Defaults to `None`, which names no size.
+    - **size_threshold** (`int`, optional): A size to compare against, so the fact
+      arrives with the verdict a caller reaches on it. Defaults to `None`, which
+      states the size on its own.
+
+    ### Returns
+    - **str**: The description, with every path in backticks.
+
+    ### Example
+    >>> describe({'label': '/var/log/secure', 'rotated': []})
+    '`/var/log/secure`'
+
+    >>> describe({'label': '/var/log/secure', 'rotated': []}, size=2048)
+    '`/var/log/secure` (size: 2.0KiB)'
+    """
+    described = f'`{source["label"]}`'
+    if size is not None:
+        if size_threshold is None:
+            described += f' (size: {human.bytes2human(size)})'
+        else:
+            comparison = '>' if size >= size_threshold else '<'
+            described += (
+                f' (size: {human.bytes2human(size)} {comparison}'
+                f' {human.bytes2human(size_threshold)})'
+            )
+    for predecessor in source.get('rotated') or []:
+        described += f' + `{predecessor}`'
+        predecessor_stat = disk.stat(predecessor)
+        if predecessor_stat is not None:
+            described += f' (size: {human.bytes2human(predecessor_stat.st_size)})'
+    return described
 
 
 def parse(source):

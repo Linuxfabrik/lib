@@ -489,5 +489,71 @@ class TestShortenPath(unittest.TestCase):
         )
 
 
+class TestUnderRoot(unittest.TestCase):
+    ROOT = os.path.join(os.sep, 'fixtures', 'rhel')
+
+    def test_an_absolute_path_loses_its_anchor(self):
+        self.assertEqual(
+            disk.under_root(self.ROOT, '/etc/os-release'),
+            os.path.join(self.ROOT, 'etc', 'os-release'),
+        )
+
+    def test_a_relative_path_is_taken_as_it_is(self):
+        self.assertEqual(
+            disk.under_root(self.ROOT, 'etc/os-release'),
+            os.path.join(self.ROOT, 'etc', 'os-release'),
+        )
+
+    def test_a_dot_dot_cannot_walk_out_of_the_root(self):
+        self.assertEqual(
+            disk.under_root(self.ROOT, '/../etc/shadow'),
+            os.path.join(self.ROOT, 'etc', 'shadow'),
+        )
+
+    def test_a_dot_dot_in_the_middle_is_dropped_rather_than_followed(self):
+        # Dropping rather than resolving is what keeps the result inside the root
+        # even where the segments before it would have been climbed back out of.
+        self.assertEqual(
+            disk.under_root(self.ROOT, 'a/../../b'),
+            os.path.join(self.ROOT, 'a', 'b'),
+        )
+
+    def test_a_single_dot_is_dropped(self):
+        self.assertEqual(
+            disk.under_root(self.ROOT, './etc/./hosts'),
+            os.path.join(self.ROOT, 'etc', 'hosts'),
+        )
+
+    def test_repeated_separators_collapse(self):
+        self.assertEqual(
+            disk.under_root(self.ROOT, '/etc//double///slash'),
+            os.path.join(self.ROOT, 'etc', 'double', 'slash'),
+        )
+
+    def test_the_root_itself_comes_back_for_a_path_of_separators(self):
+        self.assertEqual(disk.under_root(self.ROOT, '/'), self.ROOT)
+
+    def test_an_empty_path_returns_the_root(self):
+        self.assertEqual(disk.under_root(self.ROOT, ''), self.ROOT)
+
+    def test_a_backslash_separates_too(self):
+        # A path handed over on Windows uses the backslash, and it must not survive
+        # as part of a single segment.
+        self.assertEqual(
+            disk.under_root(self.ROOT, r'etc\hosts'),
+            os.path.join(self.ROOT, 'etc', 'hosts'),
+        )
+
+    def test_a_number_is_rendered_rather_than_raising(self):
+        self.assertEqual(disk.under_root(self.ROOT, 42), os.path.join(self.ROOT, '42'))
+
+    def test_the_result_stays_inside_the_root(self):
+        for path in ('/../..', '..', '../../etc/shadow', '/etc/../../..'):
+            with self.subTest(path=path):
+                self.assertTrue(
+                    disk.is_within(disk.under_root(self.ROOT, path), [self.ROOT])
+                )
+
+
 if __name__ == '__main__':
     unittest.main()
