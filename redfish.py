@@ -1169,7 +1169,8 @@ def _delete_session(session_url, token, args):
     ### Parameters
     - **session_url** (`str`): Absolute URL of the session, as `_session_url()` pinned it.
     - **token** (`str`): The session's own token, which is what authorizes deleting it.
-    - **args** (object): must provide `INSECURE`, `NO_PROXY` and `TIMEOUT`.
+    - **args** (object): must provide `INSECURE`, `NO_PROXY` and `TIMEOUT`. An optional
+      `PROXY` names the proxy to reach the controller through.
 
     ### Returns
     - **bool**: `True` if the controller confirmed the deletion.
@@ -1181,6 +1182,7 @@ def _delete_session(session_url, token, args):
         header={'Accept': 'application/json', 'X-Auth-Token': token},
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
+        proxy=getattr(args, 'PROXY', None),
         timeout=args.TIMEOUT,
         method='DELETE',
     )
@@ -1270,7 +1272,8 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
 
     ### Parameters
     - **args** (object): must provide `URL`, `USERNAME`, `PASSWORD`, `INSECURE`, `NO_PROXY` and
-      `TIMEOUT`. An optional `RETRIES` is honoured for the login, capped at `MAX_LOGIN_RETRIES`.
+      `TIMEOUT`. An optional `PROXY` names the proxy to reach the controller through, and an
+      optional `RETRIES` is honoured for the login, capped at `MAX_LOGIN_RETRIES`.
     - **cache_expire** (`int`, optional): Token cache lifetime cap in seconds; `0` (default) fetches
       a fresh session and does not cache the token.
     - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
@@ -1321,6 +1324,7 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
         header={'Accept': 'application/json', 'Content-Type': 'application/json'},
         insecure=args.INSECURE,
         no_proxy=args.NO_PROXY,
+        proxy=getattr(args, 'PROXY', None),
         timeout=args.TIMEOUT,
         retries=login_retries,
         method='POST',
@@ -1357,6 +1361,7 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
                 },
                 insecure=args.INSECURE,
                 no_proxy=args.NO_PROXY,
+                proxy=getattr(args, 'PROXY', None),
                 timeout=args.TIMEOUT,
             )
             session_timeout = 0

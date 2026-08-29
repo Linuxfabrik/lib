@@ -619,7 +619,7 @@ def get_netinfo():
     }
 
 
-def get_public_ip(services, insecure=False, no_proxy=False, timeout=2):
+def get_public_ip(services, insecure=False, no_proxy=False, proxy=None, timeout=2):
     """
     Retrieve the public IP address from a list of online services.
 
@@ -631,6 +631,8 @@ def get_public_ip(services, insecure=False, no_proxy=False, timeout=2):
     - **services** (`str`): Comma-separated URLs of services to query for the public IP.
     - **insecure** (`bool`, optional): Disable SSL verification. Defaults to `False`.
     - **no_proxy** (`bool`, optional): Ignore proxy settings. Defaults to `False`.
+    - **proxy** (`str`, optional): Proxy URL to reach the services through, overriding the one
+      the environment names. Defaults to `None`, which leaves the choice to the environment.
     - **timeout** (`int`, optional): Request timeout in seconds. Defaults to `2`.
 
     ### Returns
@@ -655,6 +657,7 @@ def get_public_ip(services, insecure=False, no_proxy=False, timeout=2):
             uri,
             insecure=insecure,
             no_proxy=no_proxy,
+            proxy=proxy,
             timeout=timeout,
         )
         if success and result:
