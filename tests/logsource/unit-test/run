@@ -19,7 +19,9 @@ assert both the command that is built and the parsing of what comes back.
 
 import calendar
 import datetime
+import gzip
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -770,6 +772,236 @@ class TestTimestamp(unittest.TestCase):
         self.assertIsNone(
             lib.logsource.timestamp('sshd[1]: the backup of Aug 28 19:34:14 failed')
         )
+
+
+class TestCompressedSource(unittest.TestCase):
+    """A rotated file named directly, which is how an operator reaches yesterday."""
+
+    def setUp(self):
+        self.directory = tempfile.mkdtemp(prefix='logsource-gz-')
+        self.path = os.path.join(self.directory, 'secure-20260828.gz')
+        with gzip.open(self.path, 'wb') as handle:
+            handle.write(b'one\ntwo\n')
+
+    def tearDown(self):
+        shutil.rmtree(self.directory, ignore_errors=True)
+
+    def test_a_compressed_file_is_read_as_text(self):
+        # Handing the compressed bytes back as text would tell the caller that
+        # the application never wrote a line.
+        success, result = lib.logsource.read(self.path)
+        self.assertTrue(success)
+        self.assertEqual(result['lines'], ['one', 'two'])
+
+
+class TestCoveredWindow(unittest.TestCase):
+    """Which stretch of time a set of logs covers."""
+
+    def test_the_newest_line_of_the_first_log_is_not_the_end(self):
+        # Two logs read one after the other: the file reaches into today, the
+        # journal of the unit stops at the last boot. Reading the ends of the
+        # concatenation would report the boot as the end of the window.
+        groups = [
+            [
+                'Aug 28 00:04:00 host sshd[1]: first',
+                'Aug 29 17:14:00 host sshd[1]: last',
+            ],
+            ['Aug 28 14:52:00 host systemd[1]: Started OpenSSH server'],
+        ]
+        first, last = lib.logsource.covered_window(groups)
+        self.assertEqual((first.day, first.hour), (28, 0))
+        self.assertEqual((last.day, last.hour), (29, 17))
+
+    def test_a_log_without_a_single_time(self):
+        self.assertEqual(lib.logsource.covered_window([['nothing here']]), (None, None))
+
+    def test_an_offset_next_to_a_value_without_one(self):
+        # A container entrypoint writes an offset, the server it starts does not,
+        # and Python refuses to order the two. Dropping the offset moves a line
+        # by hours at worst; failing the whole check is worse.
+        groups = [
+            ['2026-08-29 06:22:57+00:00 0 [Note] entrypoint'],
+            ['2026-08-29  6:23:00 0 [Note] mariadbd: ready for connections.'],
+        ]
+        first, last = lib.logsource.covered_window(groups)
+        self.assertIsNotNone(first)
+        self.assertLessEqual(first, last)
+
+
+class TestSortByTime(unittest.TestCase):
+    """Putting what several logs hold back into the order it was written in."""
+
+    def test_the_newest_line_wins_across_sources(self):
+        # The file is read before the journal, so its newest line sits in the
+        # middle: a consumer quoting "the last one" would name something days old.
+        lines = [
+            'Aug 27 17:19:52 host sshd[1]: file, older',
+            'Aug 29 17:31:13 host sshd[1]: file, newest',
+            'Aug 28 10:00:00 host sshd[1]: journal, in between',
+        ]
+        self.assertTrue(lib.logsource.sort_by_time(lines)[-1].endswith('newest'))
+
+    def test_a_line_without_a_time_keeps_its_place_up_front(self):
+        lines = ['no time at all', 'Aug 27 17:19:52 host sshd[1]: dated']
+        self.assertEqual(lib.logsource.sort_by_time(lines)[0], 'no time at all')
+
+    def test_an_offset_next_to_a_value_without_one(self):
+        # Python refuses to order the two, and taking the whole check down over
+        # it would be worse than moving a line by the offset.
+        lines = [
+            '2026-08-29T17:31:13+0200 host sshd[1]: aware',
+            'Aug 27 17:19:52 host sshd[1]: naive',
+        ]
+        self.assertTrue(lib.logsource.sort_by_time(lines)[-1].endswith('aware'))
+
+
+class TestSyslogPrefix(unittest.TestCase):
+    """Telling an application's own line from the transport around it."""
+
+    def test_the_identifier_of_both_timestamp_formats(self):
+        self.assertEqual(
+            lib.logsource.syslog_identifier(
+                'Aug 29 11:15:53 host sshd-session[1]: Accepted publickey'
+            ),
+            'sshd-session',
+        )
+        self.assertEqual(
+            lib.logsource.syslog_identifier(
+                '2026-08-29T11:15:53+0200 host systemd[1]: Starting OpenSSH server...'
+            ),
+            'systemd',
+        )
+
+    def test_a_line_an_application_wrote_itself_has_none(self):
+        # PHP-FPM and the database servers write their own timestamp into a file
+        # of their own, and nothing stands in front of it.
+        self.assertIsNone(
+            lib.logsource.syslog_identifier('[28-Aug-2026 15:20:15] ERROR: failed')
+        )
+        self.assertEqual(
+            lib.logsource.strip_syslog_prefix('[28-Aug-2026 15:20:15] ERROR: failed'),
+            '[28-Aug-2026 15:20:15] ERROR: failed',
+        )
+
+
+class TestReadMany(unittest.TestCase):
+    """Several logs read as one window."""
+
+    def setUp(self):
+        self.directory = tempfile.mkdtemp(prefix='logsource-many-')
+        self.first = os.path.join(self.directory, 'first.log')
+        self.second = os.path.join(self.directory, 'second.log')
+        with open(self.first, 'w', encoding='utf-8') as handle:
+            handle.write('one\ntwo\n')
+        with open(self.second, 'w', encoding='utf-8') as handle:
+            handle.write('three\n')
+
+    def tearDown(self):
+        shutil.rmtree(self.directory, ignore_errors=True)
+
+    def test_the_lines_come_back_in_the_order_the_sources_were_given(self):
+        success, result = lib.logsource.read_many([self.first, self.second])
+        self.assertTrue(success)
+        self.assertEqual(result['lines'], ['one', 'two', 'three'])
+        self.assertEqual(len(result['sources']), 2)
+        self.assertFalse(result['notice'])
+
+    def test_the_same_file_is_read_once_however_it_is_named(self):
+        # Twice by its own path, and once more through a symlink: counting a
+        # line twice would double every count a consumer builds on it.
+        link = os.path.join(self.directory, 'link.log')
+        os.symlink(self.first, link)
+        success, result = lib.logsource.read_many(
+            [self.first, self.first, link, self.second]
+        )
+        self.assertTrue(success)
+        self.assertEqual(result['lines'], ['one', 'two', 'three'])
+
+    def test_a_source_that_cannot_be_read_is_reported_and_skipped(self):
+        # A log an application has not written yet is normal where several are
+        # read, so it must not take the whole run down.
+        missing = os.path.join(self.directory, 'gone.log')
+        success, result = lib.logsource.read_many([self.first, missing])
+        self.assertTrue(success)
+        self.assertEqual(result['lines'], ['one', 'two'])
+        # Apart from the notice, which is about how the sources that could be
+        # read went: a hole in the window is a different matter, and a consumer
+        # reports the two differently.
+        self.assertEqual(len(result['failed']), 1)
+        self.assertIn('gone.log', result['failed'][0])
+
+    def test_a_run_where_everything_could_be_read_failed_at_nothing(self):
+        success, result = lib.logsource.read_many([self.first, self.second])
+        self.assertTrue(success)
+        self.assertEqual(result['failed'], [])
+
+    def test_a_wildcard_is_named_as_one_because_it_is_not_expanded(self):
+        # A shell that found nothing to expand hands the pattern on unchanged,
+        # and the caller then hunts for a typo that is not there.
+        success, result = lib.logsource.read_many(
+            [self.first, os.path.join(self.directory, '*.log')]
+        )
+        self.assertTrue(success)
+        self.assertEqual(result['lines'], ['one', 'two'])
+        self.assertIn('wildcard is not expanded', result['failed'][0])
+
+    def test_nothing_readable_at_all_is_a_failure(self):
+        missing = os.path.join(self.directory, 'gone.log')
+        success, result = lib.logsource.read_many([missing])
+        self.assertFalse(success)
+        self.assertIn('gone.log', result)
+
+    def test_no_source_at_all(self):
+        success, _ = lib.logsource.read_many([])
+        self.assertFalse(success)
+
+    def test_the_same_event_from_two_transports_is_counted_once(self):
+        # What rsyslog wrote into the file, and what journalctl prints for the
+        # same event: the prefixes differ, the message does not.
+        journal = os.path.join(self.directory, 'journal.log')
+        with open(self.first, 'w', encoding='utf-8') as handle:
+            handle.write('Aug 29 11:15:53 host sshd[1]: Accepted publickey for alice\n')
+        with open(journal, 'w', encoding='utf-8') as handle:
+            handle.write(
+                '2026-08-29T11:15:53+0200 host sshd[1]: Accepted publickey for alice\n'
+            )
+        success, result = lib.logsource.read_many(
+            [self.first, journal],
+            dedup_key=lib.logsource.strip_syslog_prefix,
+        )
+        self.assertTrue(success)
+        self.assertEqual(
+            result['lines'],
+            ['Aug 29 11:15:53 host sshd[1]: Accepted publickey for alice'],
+        )
+        self.assertEqual(result['duplicates'], 1)
+
+    def test_a_message_repeated_within_one_source_keeps_counting(self):
+        # A rate is counted from exactly that, so dropping the repetition would
+        # turn a burst into a single event.
+        with open(self.first, 'w', encoding='utf-8') as handle:
+            handle.write('Aug 29 11:15:53 host sshd[1]: Failed password\n' * 3)
+        success, result = lib.logsource.read_many(
+            [self.first],
+            dedup_key=lib.logsource.strip_syslog_prefix,
+        )
+        self.assertTrue(success)
+        self.assertEqual(len(result['lines']), 3)
+        self.assertEqual(result['duplicates'], 0)
+
+    def test_nothing_is_dropped_without_a_key(self):
+        success, result = lib.logsource.read_many([self.first, self.second])
+        self.assertTrue(success)
+        self.assertEqual(result['duplicates'], 0)
+
+    def test_the_cap_is_per_source(self):
+        # So one busy log cannot crowd out the quiet one that had the line.
+        success, result = lib.logsource.read_many(
+            [self.first, self.second], max_lines=1
+        )
+        self.assertTrue(success)
+        self.assertEqual(result['lines'], ['two', 'three'])
+        self.assertTrue(result['truncated'])
 
 
 class TestCountWithin(unittest.TestCase):

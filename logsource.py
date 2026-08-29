@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082902'
+__version__ = '2026082903'
 
 import collections
 import datetime
@@ -56,6 +56,22 @@ _SOURCE_PREFIXES = {
     'podman': KIND_CONTAINER,
     'systemd': KIND_JOURNALD,
 }
+
+
+# What a syslog daemon or journald puts in front of the message an application
+# wrote: a time, the host, and the identifier with the process id. Both spellings
+# of the time, because a file written by rsyslog carries the traditional one and
+# `journalctl --output=short-iso` carries ISO 8601.
+_SYSLOG_PREFIX_REGEX = re.compile(
+    r"""^(?:
+        [A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}   # Aug 29 11:15:53
+        |\d{4}-\d{2}-\d{2}[T\ ]\d{2}:\d{2}:\d{2}\S*   # 2026-08-29T11:15:53+0200
+    )
+    \s+\S+                                            # the host
+    \s+(?P<identifier>[^\s:\[]+)(?:\[\d+\])?:\s          # sshd-session[1234]:
+    """,
+    re.VERBOSE,
+)
 
 
 def count_within(lines, since, parse_line=None, key=None):
@@ -126,6 +142,151 @@ def count_within(lines, since, parse_line=None, key=None):
         'total': total,
         'undated': undated,
     }
+
+
+def syslog_identifier(line):
+    """
+    Return the identifier a log transport wrote in front of a line, or None.
+
+    That is the program name a syslog daemon or journald puts between the host and the
+    message, without the process id: `sshd` in `Aug 29 11:15:53 host sshd[1]: ...`. A consumer
+    reading the journal of a unit needs it to tell the application's own lines from the ones
+    systemd writes about the unit ("Starting ...", "Started ..."), which are about the service
+    rather than from it.
+
+    ### Parameters
+    - **line** (`str`): One line of a log.
+
+    ### Returns
+    - **str | None**: The identifier, or None where the line carries no transport prefix.
+
+    ### Example
+    >>> syslog_identifier('Aug 29 11:15:53 host sshd[1]: Server listening on 0.0.0.0.')
+    'sshd'
+
+    >>> syslog_identifier('[28-Aug-2026 15:20:15] ERROR: failed') is None
+    True
+    """
+    match = _SYSLOG_PREFIX_REGEX.match(line)
+    if not match:
+        return None
+    return match.group('identifier')
+
+
+def sort_by_time(lines, parse_line=None):
+    """
+    Return the lines in the order they were written, whichever log each of them came from.
+
+    A consumer reading several logs as one window holds them one log after the other, so the
+    newest line of the first log sits in the middle: "the last line" is then not the newest
+    one, and reporting it as the latest event names something days old. Sorting once puts that
+    right for everything built on the order - the line a summary quotes as the last, and the
+    order a listing renders in.
+
+    A line whose time cannot be read keeps its place relative to the other unreadable ones and
+    sorts before everything dated, because the alternative - guessing a time for it - would
+    move it somewhere it does not belong.
+
+    ### Parameters
+    - **lines** (`iterable` of `str`): The lines, in the order they were read.
+    - **parse_line** (`callable`, optional): Handed to `timestamp()` for a format it cannot
+      read on its own.
+
+    ### Returns
+    - **list** of `str`: The lines, oldest first.
+
+    ### Example
+    >>> sort_by_time(['Aug 29 11:15:53 h x[1]: b', 'Aug 28 11:15:53 h x[1]: a'])[0][:6]
+    'Aug 28'
+    """
+    decorated = []
+    for index, line in enumerate(lines):
+        moment = timestamp(line, parse_line)
+        decorated.append((moment is not None, moment, index, line))
+    # Naive and aware values cannot be compared, so the sort runs over the naive
+    # form of each: an offset moves a line by hours at worst, a `TypeError`
+    # takes the whole check down.
+    if len({moment.tzinfo is None for _, moment, _, _ in decorated if moment}) > 1:
+        decorated = [
+            (dated, moment.replace(tzinfo=None) if moment else None, index, line)
+            for dated, moment, index, line in decorated
+        ]
+    decorated.sort(key=lambda item: (item[0], item[1] or datetime.datetime.min, item[2]))
+    return [line for _, _, _, line in decorated]
+
+
+def strip_syslog_prefix(line):
+    """
+    Return what an application wrote, without the prefix a log transport put in front of it.
+
+    The same event reaches a consumer twice where a file and the journal of the same unit are
+    both read, and in two different prefixes: `Aug 29 11:15:53 host sshd[1]: ...` from what
+    rsyslog wrote, `2026-08-29T11:15:53+0200 host sshd[1]: ...` from `journalctl`. What
+    follows the prefix is byte for byte the same, which is what makes it comparable.
+
+    ### Parameters
+    - **line** (`str`): One line of a log.
+
+    ### Returns
+    - **str**: The message, or the line unchanged where it carries no such prefix - which is
+      what an application writing its own timestamps into a file of its own does.
+
+    ### Example
+    >>> strip_syslog_prefix('Aug 29 11:15:53 host sshd[1]: Server listening on 0.0.0.0.')
+    'Server listening on 0.0.0.0.'
+
+    >>> strip_syslog_prefix('[28-Aug-2026 15:20:15] ERROR: failed to ptrace(ATTACH)')
+    '[28-Aug-2026 15:20:15] ERROR: failed to ptrace(ATTACH)'
+    """
+    return _SYSLOG_PREFIX_REGEX.sub('', line, count=1)
+
+
+def covered_window(line_groups, parse_line=None):
+    """
+    Return the earliest and the latest moment a set of logs was written in.
+
+    A consumer reporting on a window of a log has to say which stretch of time that window
+    covers, because the line count alone does not: on a busy host the same 30000 lines reach
+    back hours, on a quiet one months.
+
+    Each group is one log, and only its ends are read rather than every line, which keeps the
+    cost at two parses per log however long it is. Taking the ends of the whole set instead
+    would be wrong as soon as there is more than one: the logs arrive one after the other, so
+    the newest line of the first one sits in the middle rather than at the end.
+
+    ### Parameters
+    - **line_groups** (`iterable` of `iterable` of `str`): One iterable of lines per log, each
+      in the order the log holds them.
+    - **parse_line** (`callable`, optional): Handed to `timestamp()` for a format it cannot
+      read on its own.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**datetime.datetime | None**): The earliest moment found, or None where no
+          line carries a time.
+        - tuple[1] (**datetime.datetime | None**): The latest moment found, or None.
+
+    ### Example
+    >>> covered_window([['Aug 29 11:15:53 host sshd[1]: Accepted publickey for alice']])[0].hour
+    11
+    """
+    moments = []
+    for lines in line_groups:
+        lines = list(lines)
+        for candidate in (lines, reversed(lines)):
+            for line in candidate:
+                moment = timestamp(line, parse_line)
+                if moment is not None:
+                    moments.append(moment)
+                    break
+    if not moments:
+        return None, None
+    # Compared as they are only where they agree on being aware or naive: a log
+    # written with a UTC offset next to one written without cannot be ordered,
+    # and guessing an offset would move a line by hours.
+    if len({moment.tzinfo is None for moment in moments}) > 1:
+        moments = [moment.replace(tzinfo=None) for moment in moments]
+    return min(moments), max(moments)
 
 
 def parse(source):
@@ -292,7 +453,16 @@ def _read_file(path, position, allowed_roots, max_lines, rotated):
     try:
         file_stat = os.stat(path)
     except OSError as e:
-        return False, f'I/O error "{e.strerror}" while reading {path}'
+        failure = f'I/O error "{e.strerror}" while reading {path}'
+        if any(character in path for character in '*?['):
+            # A shell that found nothing to expand hands the pattern on
+            # unchanged, and a caller who meant a set of files then sees a
+            # missing file with an odd name. Saying that a source is one file
+            # beats letting them hunt for a typo that is not there.
+            failure += (
+                ' - a wildcard is not expanded here, every file is its own source.'
+            )
+        return False, failure
     inode = str(file_stat.st_ino)
     # Fingerprint before reading rather than after: should the file be rewritten
     # in between, the stored fingerprint is the older one, so the next run
@@ -358,8 +528,16 @@ def _read_file(path, position, allowed_roots, max_lines, rotated):
             notices.append(f'I/O error "{e.strerror}" while reading {predecessor}')
             continue
         rotated_read.append(predecessor)
+    # Through the decompressor where the name says the file is compressed, the
+    # way a rotated predecessor is read: a caller that names a rotated file
+    # directly would otherwise be handed the compressed bytes as text and told
+    # that the application never wrote a line. `seek()` and `tell()` on such a
+    # handle count uncompressed bytes, so the position keeps its meaning.
+    success, handle = _open_log_file(path)
+    if not success:
+        return False, handle
     try:
-        with open(path, mode='rb') as handle:
+        with handle:
             handle.seek(offset)
             for line in handle:
                 read += 1
@@ -423,10 +601,16 @@ def _read_journald(unit, position, max_lines, since, timeout):
     if not success:
         return False, result
     stdout, stderr, retc = result
-    if retc != 0:
+    if retc != 0 and stderr.strip():
         return False, (
             f'`{" ".join(cmd)}` exited with error ({retc}, {stderr.strip()}).'
         )
+    # An exit code with nothing said about it means the journal holds nothing for
+    # this unit rather than that the read went wrong: `--show-cursor` exits 1 on a
+    # unit that logged nothing since the boot, because there is no cursor to
+    # print, and journalctl says so on standard output only ("-- No entries --").
+    # Failing here would put a permanent WARNING on every host with a quiet unit.
+    # Measured against systemd 239 on Rocky 8.
     lines = []
     for line in stdout.splitlines():
         if line.startswith(_JOURNALD_CURSOR_PREFIX):
@@ -663,6 +847,136 @@ def read(
     return _read_file(
         target, position, allowed_roots, max_lines, 0 if position else rotated
     )
+
+
+def read_many(
+    sources,
+    allowed_roots=None,
+    dedup_key=None,
+    max_lines=None,
+    rotated=0,
+    since=None,
+    timeout=DEFAULT_TIMEOUT,
+):
+    """
+    Read several logs as one window.
+
+    An application does not always keep what it has to say in one file. A web server writes a
+    log per virtual host next to the one it writes about itself, and an administrator watching
+    a service may want the file and the unit read together. Reading them one call at a time and
+    stitching the results together is the same work every time, and getting it slightly wrong
+    is easy: the same file named twice, or reached once by its own path and once through a
+    symlink, would count everything in it twice.
+
+    For a consumer that reads a window rather than resumes where it stopped, which is why this
+    takes no position; `read()` is the one to use for reading a log incrementally.
+
+    ### Parameters
+    - **sources** (`iterable` of `str`): What to read, each as `read()` takes it.
+    - **allowed_roots** (`iterable` of `str`, optional): Handed to `read()` for every source.
+    - **dedup_key** (`callable`, optional): Called with one line and returning what identifies
+      the event in it, for example its time and the message without the prefix a log transport
+      put in front of it (`strip_syslog_prefix()`). A line of a later source whose key a line
+      of an earlier one already produced is dropped, which is what keeps a file and the journal
+      of the same unit from counting the same event twice. Lines of one and the same source are
+      never dropped against each other: an application repeating a message is what a rate is
+      counted from. Without it nothing is dropped.
+    - **max_lines** (`int`, optional):
+      At most this many lines **per source**, the most recent ones. A window over several logs
+      is therefore at most this many times the number of sources, which is what keeps one busy
+      log from crowding out a quiet one that had the interesting line.
+    - **rotated** (`int`, optional): Handed to `read()` for every source.
+    - **since** (`str`, optional): Handed to `read()` for every source.
+    - **timeout** (`int`, optional): Handed to `read()` for every source, each in its own right.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**bool**): True if at least one source could be read, otherwise False.
+        - tuple[1] (**dict | str**): If unsuccessful, a message naming what went wrong with
+          each source. If successful, a dict:
+          - `lines` (`list` of `str`): Every source's lines, in the order the sources were
+            given.
+          - `duplicates` (`int`): How many lines `dedup_key` identified as an event an
+            earlier source had already delivered. 0 without `dedup_key`.
+          - `failed` (`list` of `str`): One message per source that could not be read at all.
+            A source that failed is skipped rather than fatal, because a log an application
+            has not written yet is normal where several are read - but the window then has a
+            hole in it, which is a different matter from `notice` and is reported apart from
+            it for that reason.
+          - `notice` (`str`): What the sources said about the read itself rather than about
+            what they hold, for a consumer to pass on.
+          - `sources` (`list` of `dict`): What `read()` returned per source that could be read,
+            in the same order, so a consumer can name each one and what came from it.
+          - `truncated` (`bool`): Whether any source stopped at `max_lines`.
+
+    ### Notes
+    - A source named twice is read once, and so is one reached by two paths that resolve to the
+      same file.
+
+    ### Example
+    >>> success, result = read_many(
+    ...     ['/var/log/httpd/error_log', 'systemd:httpd.service']
+    ... )
+    """
+    lines = []
+    notices = []
+    failures = []
+    read_sources = []
+    seen = set()
+    seen_keys = set()
+    duplicates = 0
+    for source in sources:
+        success, parsed = parse(source)
+        if not success:
+            failures.append(parsed)
+            continue
+        kind, _, target = parsed
+        # A file is identified by where it resolves to, so naming it twice, or
+        # reaching it once directly and once through a symlink, reads it once.
+        identity = os.path.realpath(target) if kind == KIND_FILE else source
+        if identity in seen:
+            continue
+        seen.add(identity)
+        success, result = read(
+            source,
+            allowed_roots=allowed_roots,
+            max_lines=max_lines,
+            rotated=rotated,
+            since=since,
+            timeout=timeout,
+        )
+        if not success:
+            failures.append(result)
+            continue
+        kept = result['lines']
+        if dedup_key is not None:
+            # Against the sources read so far, never against this one itself, so
+            # an application repeating a message keeps being counted as often as
+            # it repeated it.
+            kept = []
+            keys = []
+            for line in result['lines']:
+                key = dedup_key(line)
+                if key in seen_keys:
+                    duplicates += 1
+                    continue
+                keys.append(key)
+                kept.append(line)
+            seen_keys.update(keys)
+        lines.extend(kept)
+        if result['notice']:
+            notices.append(result['notice'])
+        read_sources.append(result)
+    if not read_sources:
+        return False, ' '.join(failures) if failures else 'No log source given.'
+    return True, {
+        'duplicates': duplicates,
+        'failed': failures,
+        'lines': lines,
+        'notice': ' '.join(notices),
+        'sources': read_sources,
+        'truncated': any(item['truncated'] for item in read_sources),
+    }
 
 
 # The timestamp a transport puts in front of what the application wrote:

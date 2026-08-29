@@ -206,5 +206,38 @@ class TestIso8601Offsets(unittest.TestCase):
         )
 
 
+class TestIso8601WithoutFromisoformat(unittest.TestCase):
+    """The hand-rolled parse for RHEL 8's Python 3.6, which has no `fromisoformat()`."""
+
+    @staticmethod
+    def _without_fromisoformat(value):
+        import builtins
+
+        real = builtins.hasattr
+        builtins.hasattr = lambda obj, name: (
+            False if name == 'fromisoformat' else real(obj, name)
+        )
+        try:
+            return t._fromisoformat(value)
+        finally:
+            builtins.hasattr = real
+
+    def test_it_returns_what_the_interpreter_would(self):
+        for value in (
+            '2026-08-28',
+            '2026-08-28 17:16:18',
+            '2026-08-28T17:16:18',
+            '2026-08-28T17:16',
+            '2026-08-28T17:16:18.123456',
+            '2026-08-28T17:16:18+02:00',
+            '2026-08-28T17:16:18-05:30',
+        ):
+            self.assertEqual(
+                self._without_fromisoformat(value),
+                datetime.datetime.fromisoformat(value),
+                value,
+            )
+
+
 if __name__ == '__main__':
     unittest.main()

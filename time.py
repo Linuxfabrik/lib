@@ -11,7 +11,7 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082801'
+__version__ = '2026082901'
 
 import datetime
 import re
@@ -251,6 +251,43 @@ def _normalize_iso8601_offset(timestr):
     return _ISO8601_OFFSET_REGEX.sub(r'\1\2:\3', timestr, count=1)
 
 
+# The trailing offset in the form `fromisoformat()` wants, for taking a value
+# apart by hand where that method does not exist yet.
+_ISO8601_COLON_OFFSET_REGEX = re.compile(r'([+-])(\d{2}):(\d{2})$')
+
+
+def _fromisoformat(iso):
+    """`datetime.fromisoformat()`, hand-rolled where the interpreter has none.
+
+    Python 3.6 - which RHEL 8 ships as its system interpreter and which our own plugins run
+    on there - gained no `fromisoformat()`, and `%z` did not read an offset written with a
+    colon before 3.7 either. The value arrives normalized, so the layouts it can still have
+    are few enough to try in turn.
+    """
+    if hasattr(datetime.datetime, 'fromisoformat'):
+        return datetime.datetime.fromisoformat(iso)
+    tzinfo = None
+    match = _ISO8601_COLON_OFFSET_REGEX.search(iso)
+    if match:
+        offset = datetime.timedelta(
+            hours=int(match.group(2)),
+            minutes=int(match.group(3)),
+        )
+        tzinfo = datetime.timezone(-offset if match.group(1) == '-' else offset)
+        iso = iso[: match.start()]
+    separator = 'T' if 'T' in iso else ' '
+    _, _, time_part = iso.partition(separator)
+    layout = '%Y-%m-%d'
+    if time_part:
+        layout += separator + '%H:%M'
+        if time_part.count(':') > 1:
+            layout += ':%S'
+        if '.' in time_part:
+            layout += '.%f'
+    dt = datetime.datetime.strptime(iso, layout)
+    return dt.replace(tzinfo=tzinfo) if tzinfo is not None else dt
+
+
 def _parse(timestr, pattern, tzinfo=None):
     """Turn a time string into a datetime, either by `strptime` layout or as ISO 8601.
 
@@ -265,7 +302,7 @@ def _parse(timestr, pattern, tzinfo=None):
         if iso.endswith('Z'):
             iso = iso[:-1] + '+00:00'
         iso = _normalize_iso8601_offset(_normalize_iso8601_fraction(iso))
-        dt = datetime.datetime.fromisoformat(iso)
+        dt = _fromisoformat(iso)
         # A value that already carries an offset keeps it; a naive value is
         # tagged with `tzinfo` when one is given.
         if dt.tzinfo is None and tzinfo is not None:

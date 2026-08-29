@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081301'
+__version__ = '2026082901'
 
 import csv
 import glob as _glob
@@ -1017,7 +1017,7 @@ def rm_file(filename):
         return False, f'Unknown error deleting {filename}: {e}'
 
 
-def shorten_path(path, max_len=None):
+def shorten_path(path, max_len=None, truncate=True):
     """
     Shorten a path for display.
 
@@ -1038,6 +1038,11 @@ def shorten_path(path, max_len=None):
     - **path** (`str`): A slash-separated path, for example `/etc/pki/tls/certs/002c0b4f.0`.
     - **max_len** (`int`, optional): Maximum length of the returned string. When `None` (the
       default), the path is always abbreviated and never truncated.
+    - **truncate** (`bool`, optional): Whether an abbreviated path that is still longer than
+      `max_len` may be middle-truncated. `False` keeps the result whole, which is what a
+      caller wants where the final component is the identifying part and a name cut in the
+      middle would no longer name anything - `max_len` is then the length at which
+      abbreviating starts rather than a limit on the result. Defaults to True.
 
     ### Returns
     - **str**: The abbreviated path, for example `/e/p/t/c/002c0b4f.0`. A value without a
@@ -1055,6 +1060,9 @@ def shorten_path(path, max_len=None):
 
     >>> shorten_path('/a/very/long/path/' + 'x' * 60, max_len=20)
     '/a/v/l/p...xxxxxxxxx'
+
+    >>> shorten_path('/var/log/httpd/www.example.com-error.log', max_len=32, truncate=False)
+    '/v/l/h/www.example.com-error.log'
     """
     if not path or '/' not in path:
         return path
@@ -1063,7 +1071,7 @@ def shorten_path(path, max_len=None):
     head, _, tail = path.rpartition('/')
     abbrev = '/'.join(part[:1] for part in head.split('/'))
     result = f'{abbrev}/{tail}'
-    if max_len is not None:
+    if max_len is not None and truncate:
         result = txt.shorten(result, max_len)
     return result
 
