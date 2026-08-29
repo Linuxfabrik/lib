@@ -45,10 +45,12 @@ __version__ = '2026082901'
 DAEMON_ERROR_PREFIX = 'Error response from daemon: '
 RPC_STATUS_REGEX = re.compile(r'^rpc error: code = \S+ desc = ')
 
-# What a swarm appends to the name of a container it started for a service task: a
-# dot and the 25 character task id. The id changes with every rescheduling, so a
-# name carrying it is a different name after every restart, and anything keyed on it
-# (a table row, a performance data label, a graph) starts over with it.
+# A swarm task container is named `<service>.<slot or node id>.<task id>`, and the
+# task id is 25 base36 characters (swarmkit `identity.NewID`). Only that suffix is
+# cut off, so a container somebody named `backup.daily` keeps the name they gave it,
+# and two such containers do not collapse into one row. The id changes with every
+# rescheduling, so anything keyed on the full name (a table row, a performance data
+# label, a graph) starts over with it.
 TASK_ID_REGEX = re.compile(r'\.[0-9a-z]{25}$')
 
 
