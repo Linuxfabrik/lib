@@ -26,9 +26,10 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082803'
+__version__ = '2026082902'
 
 import collections
+import datetime
 import os
 import re
 import stat
@@ -57,23 +58,40 @@ _SOURCE_PREFIXES = {
 }
 
 
-def count_within(lines, since, parse_line=None):
+def count_within(lines, since, parse_line=None, key=None):
     """
-    Count the lines written at or after a moment, and those carrying no timestamp at all.
+    Count the lines written at or after a moment, optionally per source.
 
     What a log holds and what happened lately are two different numbers, and a consumer that
     alerts on how often something arrives needs the second one. A window over the whole log
     would keep reporting a burst that ended hours ago.
 
+    Where the lines name who caused them, the total is not the number to judge by either.
+    Six failures from one address within ten minutes is somebody working on this host; six
+    failures from six addresses is the background of an open network going past, and only the
+    first is worth reporting. `key` turns the count into the largest a single source reached,
+    which is also the quantity an intrusion prevention system counts before it blocks one, so
+    thresholds derived from such a system compare against the same thing.
+
     ### Parameters
     - **lines** (`iterable` of `str`): The log lines to count.
     - **since** (`datetime.datetime`): The start of the window, naive and in local time.
     - **parse_line** (`callable`, optional): Handed to `timestamp()`.
+    - **key** (`callable`, optional):
+      Takes a line and returns what caused it - an address, an account, whatever the format
+      offers - or None where the line names nothing. Lines returning None are counted
+      together as one source, so a burst of unattributable lines still shows up. Without it
+      the lines are not grouped and `count` is the plain total.
 
     ### Returns
-    - **tuple**:
-        - tuple[0] (**int**): Lines written at or after `since`.
-        - tuple[1] (**int**): Lines carrying no timestamp either reader could find.
+    - **dict**:
+        - `busiest` (`str | None`): The source that reached `count`. None without `key`, and
+          None where the lines that reached it name no source.
+        - `count` (**int**): The number to judge by: the total, or with `key` the largest any
+          single source reached.
+        - `sources` (**int**): How many distinct sources were seen. 0 without `key`.
+        - `total` (**int**): Every line within the window, whatever its source.
+        - `undated` (**int**): Lines carrying no timestamp either reader could find.
 
     ### Notes
     - The undated ones are reported separately rather than counted in or silently dropped,
@@ -81,17 +99,33 @@ def count_within(lines, since, parse_line=None):
       one and never raise anything.
 
     ### Example
-    >>> recent, undated = count_within(lines, datetime.now() - timedelta(minutes=10))
+    >>> count_within(lines, datetime.now() - timedelta(minutes=10))
+    {'busiest': None, 'count': 37, 'sources': 0, 'total': 37, 'undated': 1}
+    >>> count_within(lines, datetime.now() - timedelta(minutes=10), key=peer_of)
+    {'busiest': '198.51.100.7', 'count': 12, 'sources': 9, 'total': 37, 'undated': 1}
     """
-    recent = 0
+    buckets = collections.Counter()
+    total = 0
     undated = 0
     for line in lines:
         logged_at = timestamp(line, parse_line)
         if logged_at is None:
             undated += 1
         elif logged_at >= since:
-            recent += 1
-    return recent, undated
+            total += 1
+            if key:
+                buckets[key(line)] += 1
+    busiest = None
+    count = total
+    if key and buckets:
+        busiest, count = buckets.most_common(1)[0]
+    return {
+        'busiest': busiest,
+        'count': count,
+        'sources': len([name for name in buckets if name is not None]),
+        'total': total,
+        'undated': undated,
+    }
 
 
 def parse(source):
@@ -637,9 +671,78 @@ def read(
 # what is left to recognize here is an ISO 8601 moment at the very start of a
 # line. Deliberately anchored: an ISO timestamp further along is part of the
 # message, not of the line's own header.
+# The hour is allowed to be padded with a space rather than with a zero, which
+# is not ISO 8601 but is what MariaDB writes: `2026-08-29  6:00:21` before ten
+# in the morning and `2026-08-29 15:01:47` after it. Without this a consumer
+# reading such a log would find no time on any line for a third of every day.
+# Verified against MariaDB 11.8.
 _LINE_TIMESTAMP_REGEX = re.compile(
-    r'^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)'
+    r'^(\d{4}-\d{2}-\d{2}[T ][ \d]\d:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)'
 )
+
+# The other timestamp a syslog daemon puts at the head of a line, the traditional
+# one of RFC 3164: `Aug 28 19:34:14`, with the day padded to two columns by a
+# space. Which of the two formats a host writes is up to the daemon and its
+# configuration rather than up to the application, so both are read here.
+# Verified against rsyslog with the configuration its package ships: 8.2102 on
+# Rocky 8 and 8.2510 on Rocky 9 write this format, 8.2504 on Debian 13 writes the
+# ISO one above.
+_SYSLOG_TIMESTAMP_REGEX = re.compile(
+    r'^([A-Z][a-z]{2}) {1,2}(\d{1,2}) (\d{2}):(\d{2}):(\d{2})(?:\s|$)'
+)
+
+# The month names of that format, read from a table rather than with `%b`,
+# because `strptime()` reads them in whatever locale the process happens to be
+# in, while a syslog daemon writes them in English on every host.
+_SYSLOG_MONTHS = {
+    'Apr': 4,
+    'Aug': 8,
+    'Dec': 12,
+    'Feb': 2,
+    'Jan': 1,
+    'Jul': 7,
+    'Jun': 6,
+    'Mar': 3,
+    'May': 5,
+    'Nov': 11,
+    'Oct': 10,
+    'Sep': 9,
+}
+
+
+def _syslog_datetime(match):
+    """Turn a match of `_SYSLOG_TIMESTAMP_REGEX` into a moment, or into None.
+
+    The format carries no year, so it is inferred: a line cannot have been written in the
+    future, so a date that lies ahead belongs to the year before. A day of slack absorbs a
+    host whose clock runs a little behind the one that wrote the line, and a line that lands
+    outside the year this leaves is reported as undated rather than mis-dated, which is all
+    a format without a year can honestly say about it.
+    """
+    month = _SYSLOG_MONTHS.get(match.group(1))
+    if month is None:
+        return None
+    now = datetime.datetime.now()
+    earliest = now - datetime.timedelta(days=366)
+    latest = now + datetime.timedelta(days=1)
+    for year in (now.year, now.year - 1):
+        try:
+            logged_at = datetime.datetime(
+                year,
+                month,
+                int(match.group(2)),
+                int(match.group(3)),
+                int(match.group(4)),
+                int(match.group(5)),
+            )
+        except ValueError:
+            # 31 April, and 29 February in a year that has no such day. The
+            # latter is why the year before is tried as well rather than only
+            # when the date lies ahead.
+            continue
+        if earliest <= logged_at <= latest:
+            return logged_at
+    return None
 
 
 def timestamp(line, parse_line=None):
@@ -667,10 +770,15 @@ def timestamp(line, parse_line=None):
     ### Notes
     - A transport timestamp that carries an offset is converted to local time, so lines written
       before and after a daylight saving change stay in order.
+    - Both formats a syslog daemon writes are read: the ISO 8601 moment, and the traditional
+      one of RFC 3164 (`Aug 28 19:34:14`). The traditional one names no year, so the year is
+      inferred from the assumption that a line was not written in the future.
 
     ### Example
     >>> timestamp('2026-08-28T17:16:18+0200 host httpd[20]: [ssl:error] AH02032: ...')
     datetime.datetime(2026, 8, 28, 17, 16, 18)
+    >>> timestamp('Aug 28 19:34:14 host sshd[193]: Server listening on port 22.')
+    datetime.datetime(2026, 8, 28, 19, 34, 14)
     """
     if parse_line:
         logged_at = parse_line(line)
@@ -678,9 +786,13 @@ def timestamp(line, parse_line=None):
             return logged_at
     match = _LINE_TIMESTAMP_REGEX.match(line)
     if not match:
-        return None
+        match = _SYSLOG_TIMESTAMP_REGEX.match(line)
+        return _syslog_datetime(match) if match else None
     try:
-        logged_at = lftime.timestr2datetime(match.group(1), pattern='iso8601')
+        # A space-padded hour is put back to what the parsers expect.
+        logged_at = lftime.timestr2datetime(
+            match.group(1).replace('  ', ' 0').replace('T ', 'T0'), pattern='iso8601'
+        )
     except ValueError:
         return None
     if logged_at.tzinfo is not None:

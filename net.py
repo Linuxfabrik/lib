@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026082901'
 
 import ipaddress
 import random
@@ -79,6 +79,29 @@ FAMILIYSTR = {
 FQDN_REGEX = re.compile(
     r'^((?!-)[-A-Z\d]{1,63}(?<!-)\.)+(?!-)[-A-Z\d]{1,63}(?<!-)\.?$', re.IGNORECASE
 )
+
+# What an address looks like where it stands in a log line, so a consumer that
+# has to pick one out of a message can compose its own pattern around these
+# instead of inventing them again.
+#
+# The shapes are the ones fail2ban matches with its `<ADDR>` tag, which is the
+# most widely deployed reader of exactly these lines, including the `::ffff:`
+# prefix it allows in front of an IPv4 address so a mapped one is read as the
+# IPv4 it carries.
+#
+# Neither shape decides whether something is an address, and neither is safe to
+# search a whole line for on its own. Both are deliberately loose: `999.1.2.3`
+# has the shape of an IPv4 address, and `19:25:07` - the clock at the head of
+# every syslog line - has the shape of an IPv6 one. fail2ban gets away with that
+# because it never searches: its address tag always sits inside a pattern that
+# carries the words around it. A consumer here does the same, and hands what it
+# found to `normalize_address()`, which is what actually decides.
+IPV4_REGEX = r'(?:::f{4,6}:)?(?:\d{1,3}\.){3}\d{1,3}'
+IPV6_REGEX = r'(?:[0-9A-Fa-f]{1,4}::?|:){1,7}(?:[0-9A-Fa-f]{1,4}(?:%\w+)?|(?<=:):)'
+# Either form, in the brackets that separate an IPv6 address from the port
+# written behind it. `normalize_address()` takes those off again.
+ADDRESS_REGEX = rf'\[?(?:{IPV4_REGEX}|{IPV6_REGEX})\]?'
+
 
 # protocol type
 PROTO_TCP = socket.IPPROTO_TCP  # 6
@@ -972,6 +995,52 @@ def ip_to_cidr(ip):
         return sum(bin(int(octet)).count('1') for octet in ip.split('.'))
     except (ValueError, AttributeError):
         return 0
+
+
+def normalize_address(text):
+    """
+    Bring an address a log line holds into one canonical form, or say it is not one.
+
+    A consumer that groups lines by who caused them needs the same peer to end up under the
+    same name every time, and a log does not guarantee that on its own: the same client turns
+    up as `198.51.100.7` in one line and as `::ffff:198.51.100.7` in the next, and an IPv6
+    address is written in upper case here and expanded there. Counting those as different
+    sources splits a burst across buckets and hides it.
+
+    ### Parameters
+    - **text** (`str`): The address as the line holds it, brackets and all.
+
+    ### Returns
+    - **str | None**:
+      The address in the one form this function gives it, or None where the text is not an
+      address at all. An IPv6 address that carries an IPv4 one comes back as that IPv4
+      address, which is how the two spellings of one client become one name.
+
+    ### Notes
+    - The brackets an IPv6 address is written in to separate it from a port are taken off.
+    - A zone (`fe80::1%eth0`) is kept, because two hosts on different links can carry the same
+      link-local address and are not the same peer.
+    - This is what decides whether something is an address, rather than the pattern that found
+      it: `999.1.2.3` has the shape of one and is not one.
+
+    ### Example
+    >>> normalize_address('::ffff:198.51.100.7')
+    '198.51.100.7'
+    >>> normalize_address('[2001:DB8:0:0:0:0:0:1]')
+    '2001:db8::1'
+    >>> normalize_address('999.1.2.3')
+    """
+    if not text:
+        return None
+    candidate = text.strip()
+    if candidate.startswith('[') and candidate.endswith(']'):
+        candidate = candidate[1:-1]
+    try:
+        address = ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
+    mapped = getattr(address, 'ipv4_mapped', None)
+    return str(mapped) if mapped else str(address)
 
 
 def is_valid_hostname(hostname):

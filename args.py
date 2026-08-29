@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk, human
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082801'
+__version__ = '2026082901'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -188,6 +188,12 @@ HELP_TEXTS = {
     '--no-match-severity': (
         'State to report when no item matches the filters and nothing is checked.'
     ),
+    '--no-per-source': (
+        'Judge a rate by everything that arrived within the window, whatever source the '
+        'lines name. Use this where the log reaches this check through something that '
+        'rewrites or drops the address of the peer, or where every source is as '
+        'interesting as the next.'
+    ),
     '--no-perfdata': (
         'Suppress the performance data section from the output. '
         'The status message and the exit code are unaffected, so alerting keeps working '
@@ -216,6 +222,14 @@ HELP_TEXTS = {
         'Example: `--password-file=/etc/icinga2/secrets/storage`.'
     ),
     '--path': 'Local path to the installation.',
+    '--per-source': (
+        'Judge a rate by the busiest single source address rather than by everything that '
+        'arrived. A handful of failures from one address within the window is somebody '
+        'working on this host; the same number spread over as many addresses is the '
+        'background of an open network going past, and only the first is worth reporting. '
+        'Lines that name no source are counted together as one, so a burst of those still '
+        'reports.'
+    ),
     '--port': 'Port number.',
     '--proxy': (
         'Proxy to reach the target through. '

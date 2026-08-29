@@ -14,6 +14,7 @@ The fetch* / get_public_ip functions talk to the network and are covered
 by the mock/container batch, not here.
 """
 
+import re
 import sys
 import unittest
 
@@ -87,6 +88,71 @@ class TestGetSubnetHosts(unittest.TestCase):
         ok, result = net.get_subnet_hosts('does-not-exist0')
         self.assertFalse(ok)
         self.assertIn('No such interface', result)
+
+
+class TestNormalizeAddress(unittest.TestCase):
+    """The same peer has to end up under the same name, whichever way a log spells it."""
+
+    def test_an_address_that_is_already_canonical(self):
+        self.assertEqual(net.normalize_address('198.51.100.7'), '198.51.100.7')
+
+    def test_an_ipv4_written_as_a_mapped_ipv6_is_the_same_peer(self):
+        # A dual-stack listener writes both spellings for one client, and
+        # counting them apart would split a burst across two buckets.
+        self.assertEqual(
+            net.normalize_address('::ffff:198.51.100.7'),
+            net.normalize_address('198.51.100.7'),
+        )
+        self.assertEqual(net.normalize_address('::FFFF:198.51.100.7'), '198.51.100.7')
+
+    def test_an_ipv6_is_compressed_and_lowercased(self):
+        self.assertEqual(
+            net.normalize_address('2001:0DB8:0000:0000:0000:0000:0000:0001'),
+            '2001:db8::1',
+        )
+
+    def test_the_brackets_around_an_ipv6_are_taken_off(self):
+        self.assertEqual(net.normalize_address('[2001:db8::1]'), '2001:db8::1')
+
+    def test_a_zone_is_kept(self):
+        # Two hosts on different links carry the same link-local address and are
+        # not the same peer.
+        self.assertEqual(net.normalize_address('fe80::1%eth0'), 'fe80::1%eth0')
+        self.assertNotEqual(
+            net.normalize_address('fe80::1%eth0'),
+            net.normalize_address('fe80::1%eth1'),
+        )
+
+    def test_what_only_looks_like_an_address(self):
+        for text in ('999.1.2.3', '19:25:07', 'localhost', '', None, '1.2.3'):
+            self.assertIsNone(net.normalize_address(text), text)
+
+
+class TestAddressRegex(unittest.TestCase):
+    """The patterns a consumer composes its own around."""
+
+    def test_the_shapes_a_log_writes(self):
+        pattern = re.compile(net.ADDRESS_REGEX)
+        for text in (
+            '198.51.100.7',
+            '::1',
+            '2001:db8::1',
+            '[2001:db8::1]',
+            '::ffff:198.51.100.7',
+            'fe80::1%eth0',
+        ):
+            match = pattern.fullmatch(text)
+            self.assertIsNotNone(match, text)
+
+    def test_the_shape_alone_decides_nothing(self):
+        # Both shapes are loose on purpose, the way fail2ban keeps them: the
+        # clock at the head of a syslog line has the shape of an IPv6 address
+        # and an impossible octet has the shape of an IPv4 one. That is why a
+        # consumer anchors the pattern in the words around it and hands what it
+        # found to normalize_address(), which is what actually decides.
+        for text in ('19:25:07', '999.1.2.3'):
+            self.assertIsNotNone(re.compile(net.ADDRESS_REGEX).fullmatch(text), text)
+            self.assertIsNone(net.normalize_address(text), text)
 
 
 class TestHostnameValidation(unittest.TestCase):

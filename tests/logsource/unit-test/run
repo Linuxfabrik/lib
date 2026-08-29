@@ -17,6 +17,7 @@ container tests replace `lib.shell.shell_exec` with recorded output, so they
 assert both the command that is built and the parsing of what comes back.
 """
 
+import calendar
 import datetime
 import os
 import sys
@@ -703,26 +704,144 @@ class TestTimestamp(unittest.TestCase):
     def test_an_unparsable_timestamp_is_not_an_error(self):
         self.assertIsNone(lib.logsource.timestamp('2026-13-45T99:99:99+0200 a'))
 
+    def test_an_hour_padded_with_a_space(self):
+        # What MariaDB writes before ten in the morning: an ISO 8601 date with
+        # the hour padded by a space rather than by a zero.
+        self.assertEqual(
+            lib.logsource.timestamp('2026-08-29  6:00:21 4 [Warning] Access denied'),
+            datetime.datetime(2026, 8, 29, 6, 0, 21),
+        )
+        self.assertEqual(
+            lib.logsource.timestamp('2026-08-29 15:01:47 3 [Warning] Access denied'),
+            datetime.datetime(2026, 8, 29, 15, 1, 47),
+        )
+
+    def test_the_traditional_syslog_format(self):
+        # What rsyslog writes with the configuration the RHEL family ships.
+        now = datetime.datetime.now()
+        line = now.strftime('%b %d %H:%M:%S') + ' host sshd[193]: Server listening'
+        self.assertEqual(
+            lib.logsource.timestamp(line),
+            now.replace(microsecond=0),
+        )
+
+    def test_a_day_below_the_tenth_is_padded_with_a_space(self):
+        # `Aug  8`, two spaces, which is what the format asks for. A month back,
+        # so the date is in the past whatever day the test runs on.
+        moment = (datetime.datetime.now() - datetime.timedelta(days=30)).replace(
+            day=8, microsecond=0
+        )
+        month = calendar.month_abbr[moment.month]
+        line = f'{month}  8 {moment:%H:%M:%S} host sshd[193]: x'
+        self.assertEqual(lib.logsource.timestamp(line), moment)
+
+    def test_a_date_ahead_of_now_belongs_to_the_year_before(self):
+        # The line the check reads in January was written in December. The offset
+        # skips 29 February, which the year before does not necessarily have.
+        now = datetime.datetime.now()
+        for days in range(30, 40):
+            ahead = (now + datetime.timedelta(days=days)).replace(microsecond=0)
+            if (ahead.month, ahead.day) != (2, 29):
+                break
+        month = calendar.month_abbr[ahead.month]
+        line = f'{month} {ahead.day:2d} {ahead:%H:%M:%S} host x: y'
+        self.assertEqual(
+            lib.logsource.timestamp(line), ahead.replace(year=ahead.year - 1)
+        )
+
+    def test_the_consumer_reader_still_wins_over_the_traditional_format(self):
+        def parse_line(_):
+            return datetime.datetime(2001, 2, 3, 4, 5, 6)
+
+        self.assertEqual(
+            lib.logsource.timestamp('Aug 28 19:34:14 host x: y', parse_line=parse_line),
+            datetime.datetime(2001, 2, 3, 4, 5, 6),
+        )
+
+    def test_a_month_name_in_another_language_is_not_read(self):
+        # A syslog daemon writes English month names on every host, so anything
+        # else is not the header of a line but the beginning of a message.
+        self.assertIsNone(lib.logsource.timestamp('Mai 28 19:34:14 host x: y'))
+
+    def test_an_impossible_day_is_not_read(self):
+        self.assertIsNone(lib.logsource.timestamp('Apr 31 19:34:14 host x: y'))
+
+    def test_the_traditional_format_has_to_be_at_the_start(self):
+        self.assertIsNone(
+            lib.logsource.timestamp('sshd[1]: the backup of Aug 28 19:34:14 failed')
+        )
+
 
 class TestCountWithin(unittest.TestCase):
-    """How many of the lines arrived lately, and how many carry no time at all."""
+    """How many of the lines arrived lately, from whom, and how many carry no time."""
 
-    def test_counts_only_what_falls_into_the_window(self):
-        now = datetime.datetime.now()
+    @staticmethod
+    def _lines(now, sources=()):
         lines = [
             (now - datetime.timedelta(minutes=1)).strftime('%Y-%m-%dT%H:%M:%S') + ' a',
             (now - datetime.timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M:%S') + ' b',
             (now - datetime.timedelta(hours=5)).strftime('%Y-%m-%dT%H:%M:%S') + ' c',
             'no timestamp at all',
         ]
-        recent, undated = lib.logsource.count_within(
-            lines, now - datetime.timedelta(minutes=10)
+        return lines + list(sources)
+
+    def test_counts_only_what_falls_into_the_window(self):
+        now = datetime.datetime.now()
+        result = lib.logsource.count_within(
+            self._lines(now), now - datetime.timedelta(minutes=10)
         )
-        self.assertEqual((recent, undated), (2, 1))
+        self.assertEqual(result['count'], 2)
+        self.assertEqual(result['total'], 2)
+        self.assertEqual(result['undated'], 1)
+        self.assertIsNone(result['busiest'])
+        self.assertEqual(result['sources'], 0)
 
     def test_an_empty_log_counts_nothing(self):
         self.assertEqual(
-            lib.logsource.count_within([], datetime.datetime.now()), (0, 0)
+            lib.logsource.count_within([], datetime.datetime.now()),
+            {'busiest': None, 'count': 0, 'sources': 0, 'total': 0, 'undated': 0},
+        )
+
+    def test_the_busiest_source_is_what_a_key_counts(self):
+        # Three from one address and one each from two others: the number to
+        # judge by is three, not five.
+        now = datetime.datetime.now()
+        stamp = (now - datetime.timedelta(minutes=1)).strftime('%Y-%m-%dT%H:%M:%S')
+        lines = [f'{stamp} from {peer}' for peer in ('a', 'a', 'a', 'b', 'c')]
+        result = lib.logsource.count_within(
+            lines,
+            now - datetime.timedelta(minutes=10),
+            key=lambda line: line.rsplit(' ', 1)[1],
+        )
+        self.assertEqual(result['busiest'], 'a')
+        self.assertEqual(result['count'], 3)
+        self.assertEqual(result['total'], 5)
+        self.assertEqual(result['sources'], 3)
+
+    def test_lines_naming_no_source_are_one_bucket_of_their_own(self):
+        # A burst nothing can be attributed to still has to reach a threshold.
+        now = datetime.datetime.now()
+        stamp = (now - datetime.timedelta(minutes=1)).strftime('%Y-%m-%dT%H:%M:%S')
+        lines = [f'{stamp} anonymous'] * 4 + [f'{stamp} from a']
+        result = lib.logsource.count_within(
+            lines,
+            now - datetime.timedelta(minutes=10),
+            key=lambda line: line.rsplit(' ', 1)[1] if ' from ' in line else None,
+        )
+        self.assertIsNone(result['busiest'])
+        self.assertEqual(result['count'], 4)
+        self.assertEqual(result['sources'], 1)
+
+    def test_a_key_that_names_nothing_at_all_still_counts(self):
+        now = datetime.datetime.now()
+        stamp = (now - datetime.timedelta(minutes=1)).strftime('%Y-%m-%dT%H:%M:%S')
+        result = lib.logsource.count_within(
+            [f'{stamp} x'] * 3,
+            now - datetime.timedelta(minutes=10),
+            key=lambda _: None,
+        )
+        self.assertEqual(
+            (result['count'], result['total'], result['sources']), (3, 3, 0)
         )
 
 
