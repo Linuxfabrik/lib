@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026083001'
 
 import math
 import numbers
@@ -21,7 +21,7 @@ import re
 import sys
 from traceback import format_exc
 
-from . import txt
+from . import human, txt
 from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 # A `<` that opens what a web interface would read as an HTML tag. This mirrors the
@@ -1021,6 +1021,72 @@ def range2txt(spec, value=None, value_name='value', fmt=None, view='alert'):
         return False, f'{value!r} is not a number'
 
     return True, f'{value_name}={_bound2txt(numeric_value, fmt)} {condition} {rng}'
+
+
+# One duration token such as `3d`, `12h`, `2W` or `1M`. The unit letters are the ones
+# `human.human2seconds()` knows; listing fewer here would let a valid duration fall
+# through and be read as a threshold range instead, which is silently wrong rather
+# than an error.
+_DURATION_ATOM = re.compile(r'^\d+(\.\d+)?[YMWwDdhms]$')
+
+
+def resolve_time_threshold(threshold, total_seconds):
+    """
+    Normalize a "time left" threshold into a Nagios range expressed in days.
+
+    A consumer that alerts on how much of a lifetime is left - a certificate, a
+    licence, a token, a support contract - wants to let the operator say that in
+    whichever way suits the subject: an absolute number of days, a share of the total
+    lifetime, or a duration. This turns all three into the one form `get_state()`
+    understands, so the comparison and the performance data stay in days throughout.
+
+    Accepted forms:
+
+    - empty: no threshold, passes through as empty
+    - `N%`: N percent of `total_seconds`, converted to days
+    - a single duration token (`3d`, `12h`, `2W`, `1M`): that duration in days
+    - anything else: already a Nagios range in days (`14:`, `@5:10`), passed through
+
+    A percentage and a duration both become a `<n>:` range, which alerts when *fewer*
+    than `n` days are left. That is the direction "time left" runs in, and it is why
+    the two shorthands cannot express the other one; an operator who needs that writes
+    the range out.
+
+    ### Parameters
+    - **threshold** (`str`): The threshold as the operator wrote it.
+    - **total_seconds** (`float`): The whole lifetime the percentage form refers to.
+      Only read for that form.
+
+    ### Returns
+    - **str**: A Nagios range in days, ready for `get_state(..., _operator='range')`.
+
+    ### Notes
+    - A percentage that does not parse as a number is passed through unchanged, so it
+      reaches the range parser and is reported there rather than being read as zero.
+
+    ### Example
+    >>> resolve_time_threshold('14:', 7776000)
+    '14:'
+
+    >>> resolve_time_threshold('10%', 7776000)
+    '9:'
+
+    >>> resolve_time_threshold('12h', 7776000)
+    '0.5:'
+    """
+    threshold = str(threshold).strip()
+    if not threshold:
+        return ''
+    if threshold.endswith('%'):
+        try:
+            pct = float(threshold[:-1])
+        except ValueError:
+            return threshold
+        # `:g` drops trailing zeros, so 25% of 60 days reads "15:", not "15.000000:"
+        return f'{pct / 100.0 * total_seconds / 86400.0:g}:'
+    if _DURATION_ATOM.match(threshold):
+        return f'{human.human2seconds(threshold) / 86400.0:g}:'
+    return threshold
 
 
 def smartcast(value):

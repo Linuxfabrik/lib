@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * args.py: `duration()` reads an `8D` style duration for argparse, and rejects a missing or unknown unit instead of silently reading it as zero. Further shared help texts (`--grace-security`, `--grace-updates`, `--grace-wait`, `--icinga-*`, `--lookback`, `--per-source`, `--no-per-source`, `--proxy`)
-* base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`)
+* base.py: `range2txt()` renders a threshold range in words (`age=3D not in (0s..2D)`), and `resolve_time_threshold()` reads a "time left" threshold written as a share of the lifetime (`10%`) or as a duration (`3d`) next to a plain range
 * container.py: new module for the answers every consumer of a container engine has to give the same way. `get_engine_error()` tells a refused permission, which says nothing about the engine and is UNKNOWN, apart from an engine that is down or gone, `strip_daemon_error()` reduces what an engine answered to the sentence somebody can act on, and `strip_task_id()` takes the task id a swarm appends to a container name off again, which otherwise makes every rescheduling look like a new container
 * db_sqlite.py: `connect(in_memory=True)` opens a database private to the process, `cut_per_sensor()` trims a history table per sensor instead of by total row count, and `first_seen()` records when each item of an observed set turned up, so a consumer can hold an alert back until an item has persisted
 * disk.py: `under_root()` relocates a path below a root, whatever it is anchored on, and drops the segments that would walk back out of it
@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * openstack.py: new module for OpenStack clouds. `connect()` authenticates from an rc file, keeps a whole run inside one time budget and reuses the token across runs, `fetch()` and `fetch_json()` read any endpoint of a connected service
 * psi.py: new module for the pressure stall information the Linux kernel exports below `/proc/pressure`. It reports a resource and turns a reading into states, a summary, performance data or a table, and it tells a kernel that accounts for nothing apart from one that accounts for other resources only
 * redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
+* shell.py: `quote_cli_value()` quotes a value for a command a consumer prints for somebody to run, where a value carrying a space or a semicolon would otherwise turn one command into two
 * task.py: new module for work that cannot be interrupted from inside the process. `run()` and `run_each()` run callables in processes of their own, sharing one deadline, and kill the ones that miss it. A call waiting on a network filesystem whose server has gone away blocks in the kernel, where no timeout inside the process reaches it
 * txt.py: `shorten_list()` collapses a long list to its first and last few items for a message
 * url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host. `fetch()` takes `retries`, which only `fetch_json()` offered so far

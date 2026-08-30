@@ -11,10 +11,11 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082701'
+__version__ = '2026083001'
 
 
 import os
+import shlex
 import shutil
 import subprocess  # nosec B404 - this library is the subprocess helper
 
@@ -34,6 +35,44 @@ RETC_SSHPASS = {
     6: 'Host public key is unknown. sshpass exits without confirming the new key.',
     7: 'IP public key changed. sshpass exits without confirming the new key.',
 }
+
+
+def quote_cli_value(value):
+    """
+    Quote a value for a command line that a person is going to run.
+
+    For a command a consumer *prints* rather than executes: a remediation hint, a
+    reproduction step, a copy-pasteable follow-up. Such a command is executed by a
+    shell eventually, the reader's own, so every value interpolated into it has to
+    survive that shell as a single word. A value carrying a space, a quote, a
+    semicolon or a backtick otherwise turns one printed command into two, and the
+    second one is written by whoever controls the value. That the consumer never runs
+    the command itself is what makes this easy to overlook.
+
+    Values that reach a command as an argument list instead are quoted by nothing and
+    need nothing: `shell_exec()` passes them verbatim. Use `safe_cli_value()` there.
+
+    ### Parameters
+    - **value** (`any`): The value to quote. Anything that is not a string is
+      converted to one first, so a number or a path object can be passed as it is.
+
+    ### Returns
+    - **str**: The value as a single shell word, quoted where it has to be.
+
+    ### Notes
+    - POSIX shell quoting. A command meant for `cmd.exe` or PowerShell needs different
+      quoting and this is the wrong helper for it.
+    - Quoting keeps a hostile value from becoming a second command, it does not make
+      it a sensible one. Where a value has a known shape, validate it as well.
+
+    ### Example
+    >>> quote_cli_value('www.example.com')
+    'www.example.com'
+
+    >>> quote_cli_value('a b; rm -rf /')
+    "'a b; rm -rf /'"
+    """
+    return shlex.quote(str(value))
 
 
 def shell_exec(

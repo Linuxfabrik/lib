@@ -993,6 +993,53 @@ class TestRange2Txt(unittest.TestCase):
         )
 
 
+class TestResolveTimeThreshold(unittest.TestCase):
+    # 90 days, the lifetime a public CA certificate used to be issued for
+    NINETY_DAYS = 90 * 86400
+
+    def test_empty_stays_empty(self):
+        self.assertEqual(base.resolve_time_threshold('', self.NINETY_DAYS), '')
+        self.assertEqual(base.resolve_time_threshold('   ', self.NINETY_DAYS), '')
+
+    def test_plain_range_passes_through(self):
+        for spec in ('14:', '5:', '~:50', '@10:20', '0'):
+            self.assertEqual(base.resolve_time_threshold(spec, self.NINETY_DAYS), spec)
+
+    def test_percentage_of_the_lifetime(self):
+        self.assertEqual(base.resolve_time_threshold('10%', self.NINETY_DAYS), '9:')
+        self.assertEqual(base.resolve_time_threshold('25%', self.NINETY_DAYS), '22.5:')
+        self.assertEqual(base.resolve_time_threshold('100%', self.NINETY_DAYS), '90:')
+        self.assertEqual(base.resolve_time_threshold('0%', self.NINETY_DAYS), '0:')
+
+    def test_percentage_that_is_not_a_number_passes_through(self):
+        # it reaches the range parser and is reported there, rather than being read as
+        # zero, which would silently disable the threshold
+        self.assertEqual(base.resolve_time_threshold('x%', self.NINETY_DAYS), 'x%')
+
+    def test_duration_token(self):
+        self.assertEqual(base.resolve_time_threshold('3d', self.NINETY_DAYS), '3:')
+        self.assertEqual(base.resolve_time_threshold('3D', self.NINETY_DAYS), '3:')
+        self.assertEqual(base.resolve_time_threshold('12h', self.NINETY_DAYS), '0.5:')
+        self.assertEqual(base.resolve_time_threshold('1M', self.NINETY_DAYS), '30:')
+        self.assertEqual(base.resolve_time_threshold('1Y', self.NINETY_DAYS), '365:')
+
+    def test_both_week_spellings(self):
+        # `human2seconds()` knows `w` and `W`; a unit list that leaves one of them out
+        # lets that spelling fall through to the range parser, which then reports
+        # UNKNOWN for every value
+        self.assertEqual(base.resolve_time_threshold('2W', self.NINETY_DAYS), '14:')
+        self.assertEqual(base.resolve_time_threshold('2w', self.NINETY_DAYS), '14:')
+
+    def test_a_resolved_threshold_is_a_usable_range(self):
+        # 20 days left, out of a 90 day lifetime, is under a quarter of it
+        warn = base.resolve_time_threshold('25%', self.NINETY_DAYS)
+        self.assertEqual(base.get_state(20, warn, '', _operator='range'), STATE_WARN)
+        self.assertEqual(base.get_state(30, warn, '', _operator='range'), STATE_OK)
+
+    def test_non_string_input(self):
+        self.assertEqual(base.resolve_time_threshold(14, self.NINETY_DAYS), '14')
+
+
 class TestSmartcast(unittest.TestCase):
     def test_numeric_string(self):
         self.assertEqual(base.smartcast('3.14'), 3.14)

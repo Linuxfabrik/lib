@@ -368,6 +368,59 @@ class TestShellExecRunAs(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+class TestQuoteCliValue(unittest.TestCase):
+    def test_plain_values_stay_readable(self):
+        # a value that needs no quoting must not get any, or every printed command
+        # turns into a wall of quotes nobody reads
+        for value in ('www.example.com', '/etc/acme.sh', '--ecc', 'ec-256'):
+            self.assertEqual(shell.quote_cli_value(value), value)
+
+    def test_empty_value_is_quoted(self):
+        # an unquoted empty string would vanish from the command line entirely
+        self.assertEqual(shell.quote_cli_value(''), "''")
+
+    def test_whitespace_is_kept_as_one_word(self):
+        self.assertEqual(
+            shell.quote_cli_value('systemctl reload httpd'),
+            "'systemctl reload httpd'",
+        )
+
+    def test_shell_metacharacters_cannot_start_a_second_command(self):
+        for value in (
+            'a; rm -rf /',
+            'a && reboot',
+            'a | tee /etc/passwd',
+            '$(id)',
+            '`id`',
+            'a\nb',
+            'a>b',
+        ):
+            quoted = shell.quote_cli_value(value)
+            # the shell has to hand the value back unchanged, as a single argument
+            out = subprocess.run(
+                ['sh', '-c', f'printf %s {quoted}'],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertEqual(out.stdout, value)
+
+    def test_embedded_single_quote(self):
+        value = "it's here"
+        quoted = shell.quote_cli_value(value)
+        out = subprocess.run(
+            ['sh', '-c', f'printf %s {quoted}'],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(out.stdout, value)
+
+    def test_non_string_values(self):
+        self.assertEqual(shell.quote_cli_value(42), '42')
+        self.assertEqual(shell.quote_cli_value(None), 'None')
+
+
 class TestSafeCliValue(unittest.TestCase):
     def test_plain_value_passes(self):
         self.assertEqual(
