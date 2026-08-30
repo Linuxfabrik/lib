@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk, human
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082901'
+__version__ = '2026083001'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -323,6 +323,30 @@ def csv(arg):
     return [x.strip() for x in arg.split(',')]
 
 
+class _Duration(int):
+    """A duration in seconds that renders as the text it was written with.
+
+    A consumer reporting which grace period held something back wants to show the
+    operator the `8D` they set, not the `1W 1D` the same number of seconds renders
+    as. Subclassing `int` keeps every comparison and every calculation working
+    unchanged, so only formatting sees a difference.
+
+    `int` is a variable-length built-in, so a subclass of it cannot carry `__slots__`
+    and keeps an instance dictionary.
+    """
+
+    def __new__(cls, seconds, text):
+        self = super().__new__(cls, seconds)
+        self.text = text
+        return self
+
+    def __str__(self):
+        return self.text
+
+    def __repr__(self):
+        return f'{type(self).__name__}({int(self)}, {self.text!r})'
+
+
 def duration(arg):
     """Converts a human-readable duration into seconds, for use as an argparse
     `type`.
@@ -337,7 +361,9 @@ def duration(arg):
       `d`/`D`, `w`/`W`, `M` (months) or `Y`.
 
     ### Returns
-    - **int**: The duration in seconds.
+    - **int**: The duration in seconds. It renders as the text it was written with,
+      so a consumer can report the value the operator set without converting it back
+      and arriving at a different spelling of the same duration.
 
     ### Raises
     - **argparse.ArgumentTypeError**: The value carries no unit or an unknown one.
@@ -348,6 +374,9 @@ def duration(arg):
 
     >>> duration('0d')
     0
+
+    >>> f'{duration("8D")}'
+    '8D'
     """
     if not re.fullmatch(r'\s*(?:\d+(?:\.\d*)?|\.\d+)\s*[smhdDwWMY]\s*', arg or ''):
         raise argparse.ArgumentTypeError(
@@ -355,7 +384,7 @@ def duration(arg):
             f'one of `s`, `m` (minutes), `h`, `d`, `W`, `M` (months) or `Y`, '
             f'for example `12h`, `3d` or `2W`'
         )
-    return human.human2seconds(arg)
+    return _Duration(human.human2seconds(arg), arg.strip())
 
 
 def epilog(path, section='check-plugins'):

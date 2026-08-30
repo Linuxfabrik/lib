@@ -189,6 +189,26 @@ class TestDuration(unittest.TestCase):
         self.assertEqual(args.duration('0D'), 0)
         self.assertEqual(args.duration('0s'), 0)
 
+    def test_renders_as_the_text_it_was_written_with(self):
+        # A consumer reporting which grace period held something back shows the
+        # operator their own `8D`, not the `1W 1D` those seconds render as.
+        for value in ('8D', '0D', '12h', '2W', '1.5W'):
+            self.assertEqual(str(args.duration(value)), value)
+            self.assertEqual(f'{args.duration(value)}', value)
+
+    def test_is_still_an_int(self):
+        # Every comparison and every calculation a consumer does with it has to
+        # keep working, because the value is a number of seconds first.
+        grace = args.duration('8D')
+        self.assertIsInstance(grace, int)
+        self.assertEqual(grace, 691200)
+        self.assertEqual(grace + 1, 691201)
+        self.assertTrue(grace > args.duration('1D'))
+        self.assertEqual(sorted([args.duration('2D'), args.duration('1h')])[0], 3600)
+
+    def test_surrounding_whitespace_is_not_carried_into_the_text(self):
+        self.assertEqual(str(args.duration(' 8D ')), '8D')
+
     def test_rejects_what_human2seconds_would_read_as_zero(self):
         # human2seconds() returns 0 for garbage as well as for a real zero.
         # Passing that through would turn `--grace-updates=8` into "no grace at
