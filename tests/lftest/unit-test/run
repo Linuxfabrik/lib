@@ -109,6 +109,79 @@ class TestTestText(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 3)
 
 
+class TestTestTextMissingOk(unittest.TestCase):
+    """test_text(missing_ok=True): a fixture that is not there is data."""
+
+    def setUp(self):
+        self.cwd = os.getcwd()
+        os.chdir(HERE)
+        self._argv0 = sys.argv[0]
+        sys.argv[0] = os.path.join(os.path.dirname(HERE), 'lftest-plugin')
+
+    def tearDown(self):
+        sys.argv[0] = self._argv0
+        os.chdir(self.cwd)
+
+    def test_missing_fixture_returns_none(self):
+        self.assertIsNone(
+            lftest.test_text(['stdout/does-not-exist'], missing_ok=True)
+        )
+
+    def test_a_fixture_that_is_there_is_read_as_usual(self):
+        self.assertEqual(
+            lftest.test_text(['stdout/case'], missing_ok=True), 'hello world'
+        )
+
+    def test_an_empty_fixture_is_not_a_missing_one(self):
+        # A response with no body and a request that did not answer are two
+        # different things, so the empty string must not collapse into None.
+        self.assertEqual(lftest.test_text(['stdout/empty'], missing_ok=True), '')
+
+
+class TestTestHttpResponse(unittest.TestCase):
+    """test_http_response(): a fixture pair as an extended fetch() returns it."""
+
+    def setUp(self):
+        self.cwd = os.getcwd()
+        os.chdir(HERE)
+        self._argv0 = sys.argv[0]
+        sys.argv[0] = os.path.join(os.path.dirname(HERE), 'lftest-plugin')
+
+    def tearDown(self):
+        sys.argv[0] = self._argv0
+        os.chdir(self.cwd)
+
+    def test_header_body_and_status_arrive_together(self):
+        response = lftest.test_http_response(['stdout/x', '', '404'], 'stdout/response')
+        self.assertEqual(response['status_code'], 404)
+        self.assertIn('404 Not Found', response['response'])
+        self.assertEqual(
+            response['response_header']['server'], 'Apache/2.4.62 (Rocky Linux)'
+        )
+
+    def test_field_names_arrive_lower_cased(self):
+        # HTTP field names are case-insensitive and url.fetch() lower-cases them,
+        # so a fixture has to reach the consumer the same way it was written.
+        response = lftest.test_http_response(['stdout/x'], 'stdout/response')
+        self.assertIn('x-powered-by', response['response_header'])
+        self.assertNotIn('X-Powered-By', response['response_header'])
+
+    def test_a_response_without_a_body_carries_an_empty_one(self):
+        response = lftest.test_http_response(['stdout/x'], 'stdout/bodyless')
+        self.assertEqual(response['response'], '')
+        self.assertEqual(response['response_header']['server'], 'nginx')
+
+    def test_a_request_that_did_not_answer_is_none(self):
+        self.assertIsNone(
+            lftest.test_http_response(['stdout/x'], 'stdout/no-such-response')
+        )
+
+    def test_arguments_are_left_alone(self):
+        args = ['stdout/x', '', '200']
+        lftest.test_http_response(args, 'stdout/response')
+        self.assertEqual(args, ['stdout/x', '', '200'])
+
+
 class TestFixtureConfinement(unittest.TestCase):
     """test(): the fixture read stays inside the plugin's own unit-test/ dir,
     even against symlinks a writable plugin directory could plant."""

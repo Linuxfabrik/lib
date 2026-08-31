@@ -1277,6 +1277,38 @@ def github_token_header(token):
     return {'Authorization': f'Bearer {token}'}
 
 
+def server_product(response_header):
+    """Return the product token of a `Server` response header, lower-cased.
+
+    A `Server` header is written as `product/version (comment)`, so the part in front of
+    the first slash names the software and the rest describes the build. A consumer that
+    wants to know *what* answered, rather than which version did, needs only that first
+    part - to decide whether advice about a product applies at all, for instance, since
+    naming a directive of software the host does not run is worse than saying nothing.
+
+    ### Parameters
+    - **response_header** (`dict`):
+      The response headers as `fetch(extended=True)` returns them, with lower-cased field
+      names.
+
+    ### Returns
+    - **str**: The product token in lower case, or None where the response carries no
+      `Server` header or an empty one. None means the product is genuinely unknown, which
+      is not the same as it being something else.
+
+    ### Example
+    >>> server_product({'server': 'Apache/2.4.62 (Rocky Linux)'})
+    'apache'
+    >>> server_product({'server': 'nginx'})
+    'nginx'
+    >>> server_product({})
+    """
+    banner = response_header.get('server', '')
+    if not banner:
+        return None
+    return banner.partition('/')[0].strip().lower() or None
+
+
 def split_basic_auth(url):
     """Extract userinfo from `url` and return a `(url, headers)` tuple.
 

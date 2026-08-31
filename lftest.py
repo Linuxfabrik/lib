@@ -708,6 +708,73 @@ def test(args):
     return stdout, stderr, retc
 
 
+def test_http_response(args, path=None):
+    """
+    Read one `--test` fixture pair and return it shaped like an extended `url.fetch()`.
+
+    A consumer that checks what a server discloses needs the response headers, the body
+    and the status side by side, and needs them for more than one request per run. Two
+    fixtures carry that: `<path>-header` holds the response headers, one `name: value`
+    per line, and `<path>-body` the body. The status comes from the return-code slot of
+    the `--test` argument, which is what lets an error page be tested without a server
+    that produces one.
+
+    ### Parameters
+    - **args** (`list`):
+      The `--test` argument as `lib.args.csv` parsed it. It is not modified, so the
+      caller's own value keeps pointing at the base path and stays usable for the next
+      request.
+    - **path** (`str`, optional):
+      The base path of the fixture pair, without the `-header` and `-body` suffix.
+      Typically the base path with a request-specific part, for example
+      `stdout/stock-error`. Defaults to the fixture `args` already names.
+
+    ### Returns
+    - **dict**: `response`, `response_header` and `status_code`, the keys an extended
+      `url.fetch()` fills, with the status as the integer `fetch()` also returns, or None
+      where the header fixture does not exist.
+
+    ### Notes
+    - A missing header fixture is data, not a mistake: it stands for a request that did
+      not answer at all, which is a case worth testing. A missing body fixture yields an
+      empty body, for a response that carries none.
+    - Header field names arrive lower-cased, because HTTP field names are
+      case-insensitive and `url.fetch()` hands them over that way. A fixture written with
+      any other capitalisation therefore reaches the consumer as the real thing would.
+    - The fixture paths are resolved by `test()` and are never checked against the file
+      system, so a consumer run from a different working directory sees the same result.
+
+    ### Example
+    >>> test_http_response(['stdout/stock', '', '404'], 'stdout/stock-error')
+    {'response': '<html>...', 'response_header': {'server': 'Apache/2.4.62'},
+     'status_code': 404}
+    """
+    args = list(args)
+    if path is not None:
+        args[0] = path
+    base_path = args[0]
+
+    header_args = list(args)
+    header_args[0] = f'{base_path}-header'
+    raw_header, _stderr, status_code = test(header_args)
+    if raw_header == header_args[0]:
+        return None
+
+    response_header = {}
+    for line in raw_header.splitlines():
+        if ':' not in line:
+            continue
+        key, _, value = line.partition(':')
+        response_header[key.strip().lower()] = value.strip()
+
+    body = test_text(args, f'{base_path}-body', missing_ok=True)
+    return {
+        'response': body if body is not None else '',
+        'response_header': response_header,
+        'status_code': status_code,
+    }
+
+
 def test_json(args, path=None):
     """
     Read one `--test` fixture and return the JSON document it holds.
@@ -758,7 +825,7 @@ def test_json(args, path=None):
         return None
 
 
-def test_text(args, path=None):
+def test_text(args, path=None, missing_ok=False):
     """
     Read one `--test` fixture and return the text it holds.
 
@@ -777,14 +844,20 @@ def test_text(args, path=None):
       The fixture to read instead of the one in `args`. Typically the base path with a
       run-specific suffix, for example `stdout/all-ok-second-pass`. Defaults to the
       fixture `args` already names.
+    - **missing_ok** (`bool`, optional):
+      Return None instead of aborting when the fixture does not exist. For a consumer to
+      which a missing fixture is data rather than a mistake: where the fixture stands for
+      a file that is absent on the system under test, "not there" is the case being
+      tested. Defaults to False.
 
     ### Returns
-    - **str**: The content of the fixture.
+    - **str**: The content of the fixture, or None where `missing_ok` is set and it does
+      not exist.
 
     ### Notes
-    - Aborts the calling process (UNKNOWN) when the fixture does not exist. That is a
-      developer error in a test fixture, and a clear message beats a run that silently
-      parses the path itself as if it were data.
+    - Aborts the calling process (UNKNOWN) when the fixture does not exist and
+      `missing_ok` is not set. That is a developer error in a test fixture, and a clear
+      message beats a run that silently parses the path itself as if it were data.
     - A missing fixture is recognised by `test()` handing the path back unchanged, which
       is what it does for anything that does not resolve to a contained fixture file. The
       path is deliberately not checked against the file system here: fixtures are anchored
@@ -803,6 +876,8 @@ def test_text(args, path=None):
 
     stdout, _stderr, _retc = test(args)
     if stdout == wanted:
+        if missing_ok:
+            return None
         base.cu(f'Test fixture not found: "{wanted}".')
     return stdout
 

@@ -1531,5 +1531,33 @@ class TestTlsVerifyMessage(unittest.TestCase):
         self.assertIsNone(url._tls_verify_message(first, 'https://example.com'))
 
 
+class TestServerProduct(unittest.TestCase):
+    """server_product(): what answered, taken from the `Server` header."""
+
+    def test_the_token_in_front_of_the_version(self):
+        self.assertEqual(
+            url.server_product({'server': 'Apache/2.4.62 (Rocky Linux)'}), 'apache'
+        )
+
+    def test_a_banner_without_a_version(self):
+        self.assertEqual(url.server_product({'server': 'nginx'}), 'nginx')
+
+    def test_the_token_arrives_lower_cased(self):
+        self.assertEqual(url.server_product({'server': 'Microsoft-IIS/10.0'}),
+                         'microsoft-iis')
+
+    def test_no_header_leaves_the_product_unknown(self):
+        # Not "something else": a server that sends no banner is exactly the case
+        # a consumer must not draw a conclusion from.
+        self.assertIsNone(url.server_product({}))
+
+    def test_an_empty_or_blank_banner_is_unknown_too(self):
+        self.assertIsNone(url.server_product({'server': ''}))
+        self.assertIsNone(url.server_product({'server': '   '}))
+
+    def test_a_banner_that_is_only_a_version_is_unknown(self):
+        self.assertIsNone(url.server_product({'server': '/1.0'}))
+
+
 if __name__ == '__main__':
     unittest.main()
