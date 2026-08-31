@@ -173,5 +173,95 @@ class TestGetPartitions(unittest.TestCase):
         self.assertEqual(part.fstype, 'ext4')
 
 
+class _Proc:
+    """The shape psutil.process_iter(attrs) yields: an object with an `info` dict."""
+
+    def __init__(self, name, pid, username):
+        self.info = {'name': name, 'pid': pid, 'username': username}
+
+
+class _Vanished(_Proc):
+    """A process that goes away while the list is being built."""
+
+    @property
+    def info(self):
+        raise lib_psutil.psutil.NoSuchProcess(1)
+
+    @info.setter
+    def info(self, value):
+        pass
+
+
+@unittest.skipUnless(HAVE_PSUTIL, 'psutil module not installed')
+class TestGetProcessAccounts(unittest.TestCase):
+    """get_process_accounts(): who a program's processes actually run as."""
+
+    def _procs(self):
+        return [
+            _Proc('httpd', 10, 'root'),
+            _Proc('httpd', 11, 'apache'),
+            _Proc('httpd', 12, 'apache'),
+            _Proc('nginx', 20, 'nginx'),
+            _Proc('sshd', 30, 'root'),
+        ]
+
+    def _run(self, names, procs=None, namespace=None, links=None):
+        links = links or {}
+        with (
+            mock.patch.object(
+                lib_psutil.psutil, 'process_iter',
+                return_value=self._procs() if procs is None else list(procs),
+            ),
+            mock.patch.object(
+                lib_psutil.user, 'own_mount_namespace', return_value=namespace
+            ),
+            mock.patch.object(
+                lib_psutil.os, 'readlink',
+                side_effect=lambda path: links.get(path, namespace),
+            ),
+        ):
+            return lib_psutil.get_process_accounts(names)
+
+    def test_every_matching_process_is_one_entry(self):
+        # Repeats are kept: three httpd processes are three accounts, which is
+        # what tells one stray process from a whole pool of them.
+        self.assertEqual(self._run(('httpd',)), ['root', 'apache', 'apache'])
+
+    def test_several_names_are_matched(self):
+        self.assertEqual(
+            self._run(('httpd', 'apache2', 'nginx')),
+            ['root', 'apache', 'apache', 'nginx'],
+        )
+
+    def test_a_name_nothing_runs_under_is_empty(self):
+        self.assertEqual(self._run(('does-not-exist',)), [])
+
+    def test_no_names_matches_nothing(self):
+        self.assertEqual(self._run([]), [])
+
+    def test_a_generator_is_accepted(self):
+        # The names are consumed more than once, so an iterator has to survive.
+        self.assertEqual(self._run(n for n in ('httpd',)),
+                         ['root', 'apache', 'apache'])
+
+    def test_a_foreign_mount_namespace_is_left_out(self):
+        # The same program in a container shows up in the host's process list
+        # under a mapped user id, which is not an account of this installation.
+        links = {'/proc/11/ns/mnt': 'mnt:[4026532999]'}
+        self.assertEqual(
+            self._run(('httpd',), namespace='mnt:[4026531841]', links=links),
+            ['root', 'apache'],
+        )
+
+    def test_without_a_namespace_nothing_is_filtered(self):
+        # Not Linux: the kernel publishes none, so every process counts.
+        self.assertEqual(self._run(('httpd',), namespace=None),
+                         ['root', 'apache', 'apache'])
+
+    def test_a_process_that_vanished_is_skipped(self):
+        procs = [_Proc('httpd', 10, 'root'), _Vanished('httpd', 11, 'apache')]
+        self.assertEqual(self._run(('httpd',), procs=procs), ['root'])
+
+
 if __name__ == '__main__':
     unittest.main()

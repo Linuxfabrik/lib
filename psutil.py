@@ -13,9 +13,11 @@
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026082601'
 
+import os
 import sys
 from collections import namedtuple
 
+from . import user
 from .globals import STATE_UNKNOWN
 
 try:
@@ -78,3 +80,49 @@ def get_partitions(ignore=None, include_all=False):
         for part in parts
         if not any(item in part.mountpoint for item in ignore)
     ]
+
+
+def get_process_accounts(names):
+    """
+    Return the account names the running processes of a program use.
+
+    Which account a program's processes actually run under answers a different question
+    than which one its configuration names: a process that never dropped its privileges
+    still shows the account it kept.
+
+    The listing is confined to this process's own mount namespace. A program running in
+    a container appears in the host's process list too, under a user id mapped into the
+    host's range, and counting that as an account of the host's own installation reports
+    a stray user that does not exist there. Two processes in the same mount namespace see
+    the same filesystem, which is what makes them part of the same installation.
+
+    ### Parameters
+    - **names** (`iterable`): The process names to count, for example
+      `('httpd', 'apache2')`. Matched exactly against the name the kernel reports, which
+      is the executable rather than the command line.
+
+    ### Returns
+    - **list**: The account name of every matching process, one entry per process and
+      therefore with repeats. A process that vanished while the list was being built, or
+      that this user may not inspect, is left out rather than reported as an unknown
+      account.
+
+    ### Example
+    >>> get_process_accounts(('httpd', 'apache2'))
+    ['root', 'apache', 'apache']
+    """
+    names = tuple(names)
+    namespace = user.own_mount_namespace()
+    accounts = []
+    for proc in psutil.process_iter(['name', 'pid', 'username']):
+        try:
+            if proc.info['name'] not in names:
+                continue
+            if namespace is not None:
+                own = os.readlink('/proc/{}/ns/mnt'.format(proc.info['pid']))
+                if own != namespace:
+                    continue
+            accounts.append(proc.info['username'])
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+            continue
+    return accounts
