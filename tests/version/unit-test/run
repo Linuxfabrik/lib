@@ -48,6 +48,7 @@ EOL_CYCLES = [
         'support': '1999-01-01',
         'latest': '2.0.0',
     },
+    {'cycle': '3', 'eol': True, 'support': None, 'latest': '3.0.0'},
     {'cycle': '1', 'eol': False, 'support': True, 'latest': '1.0.0'},
 ]
 
@@ -144,10 +145,21 @@ class TestCheckEol(unittest.TestCase):
         _, msg = self.check('2.0.0')
         self.assertIn('full support ended on 1999-01-01', msg)
 
-    def test_missing_eol_date_is_reported_as_unknown(self):
+    def test_eol_false_means_no_end_announced(self):
+        # `eol: false` is upstream saying the cycle has no announced end, the healthiest
+        # answer the API gives. Reporting it as a gap in our data read the opposite way.
         state, msg = self.check('1.0.0')
         self.assertEqual(state, STATE_OK)
-        self.assertIn('EOL unknown', msg)
+        self.assertIn('no EOL announced', msg)
+
+    def test_eol_true_warns_without_a_date(self):
+        # `eol: true` is the other boolean and the other meaning: end of life reached,
+        # no date given. Feeding it to strptime() raised a TypeError and the plugin
+        # answered UNKNOWN with a stack trace instead of warning about old software.
+        state, msg = self.check('3.0.0')
+        self.assertEqual(state, STATE_WARN)
+        self.assertIn('EOL, no date announced', msg)
+        self.assertIn('[WARNING]', msg)
 
     def test_offset_shifts_the_warning_window(self):
         # Same cycle as test_eol_far_in_the_future_is_ok(), only the window moves: warning
@@ -169,10 +181,87 @@ class TestCheckEol(unittest.TestCase):
         state, _ = self.check('1.0.0', check_major=True)
         self.assertEqual(state, STATE_WARN)
 
-    def test_unknown_version_is_unknown(self):
+    def test_unknown_version_between_listed_cycles_is_unknown(self):
         state, msg = self.check('42.0.0')
         self.assertEqual(state, STATE_UNKNOWN)
         self.assertIn('version 42.0.0 unknown', msg)
+
+    def test_version_above_every_listed_cycle_is_ok(self):
+        # The host runs a release endoflife.date has not catalogued yet. Nobody can act
+        # on that, and alerting on it punishes exactly the admin who stays current.
+        state, msg = self.check('1000.0.0')
+        self.assertEqual(state, STATE_OK)
+        self.assertIn('newer than anything endoflife.date lists', msg)
+
+    def test_version_below_every_listed_cycle_warns(self):
+        # Older than the oldest cycle upstream still records, so out of support for
+        # certain even though no date says so.
+        state, msg = self.check('0.9.0')
+        self.assertEqual(state, STATE_WARN)
+        self.assertIn('older than anything endoflife.date lists', msg)
+
+    def test_an_unlisted_version_still_reports_the_upgrade(self):
+        # The early return used to drop the "newer release available" part along with
+        # the EOL verdict, so the admin lost both at once.
+        _, msg = self.check('0.9.0')
+        self.assertIn('available', msg)
+
+
+class TestCycleBounds(unittest.TestCase):
+    """`cycle_bounds()` places a version that has no cycle of its own, so every shape
+    endoflife.date puts in a `cycle` has to come out as a bound or be skipped.
+    """
+
+    def test_lowest_and_highest(self):
+        self.assertEqual(
+            version.cycle_bounds([{'cycle': '8.4'}, {'cycle': '5.7'}, {'cycle': '9.7'}]),
+            ((5, 7, 0), (9, 7, 0)),
+        )
+
+    def test_single_cycle_is_both_bounds(self):
+        self.assertEqual(version.cycle_bounds([{'cycle': '8.0'}]), ((8, 0, 0), (8, 0, 0)))
+
+    def test_empty_list(self):
+        self.assertEqual(version.cycle_bounds([]), (None, None))
+
+    def test_cycle_without_a_digit_is_skipped(self):
+        # 166 of the API's 8444 cycles are named "current", "provided", "subscription"
+        # and the like. `version()` turns those into (0, 0, 0) rather than raising,
+        # which would drag the lower bound to zero and disable the "older than
+        # anything listed" verdict for the whole product.
+        self.assertEqual(
+            version.cycle_bounds([{'cycle': '9.7'}, {'cycle': 'current'}, {'cycle': '8.0'}]),
+            ((8, 0, 0), (9, 7, 0)),
+        )
+
+    def test_only_cycles_without_digits(self):
+        self.assertEqual(
+            version.cycle_bounds([{'cycle': 'current'}, {'cycle': 'pro'}]), (None, None)
+        )
+
+    def test_cycle_none_is_skipped(self):
+        self.assertEqual(
+            version.cycle_bounds([{'cycle': None}, {'cycle': '8.0'}]), ((8, 0, 0), (8, 0, 0))
+        )
+
+    def test_entry_without_a_cycle_key_is_skipped(self):
+        self.assertEqual(
+            version.cycle_bounds([{'eol': False}, {'cycle': '8.0'}]), ((8, 0, 0), (8, 0, 0))
+        )
+
+    def test_non_dict_entry_is_skipped(self):
+        self.assertEqual(
+            version.cycle_bounds(['8.0', None, 42, {'cycle': '8.0'}]), ((8, 0, 0), (8, 0, 0))
+        )
+
+    def test_numeric_cycle_is_accepted(self):
+        # The API answers `cycle` as a string, but a hand-built list may hold a number.
+        self.assertEqual(version.cycle_bounds([{'cycle': 8}, {'cycle': 9}]), ((8, 0, 0), (9, 0, 0)))
+
+    def test_four_part_cycle_truncates_like_version(self):
+        self.assertEqual(
+            version.cycle_bounds([{'cycle': '1.2.3.4'}]), ((1, 2, 3), (1, 2, 3))
+        )
 
 
 class TestVersion(unittest.TestCase):

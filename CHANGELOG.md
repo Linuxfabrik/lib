@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * txt.py: `shorten_list()` collapses a long list to its first and last few items for a message
 * url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host. `fetch()` takes `retries`, which only `fetch_json()` offered so far. `server_product()` returns the product token of a `Server` response header, so a consumer can tell what answered before it offers advice about a product
 * user.py: new module for what a host says about a local account. It resolves a numeric user or group id to its name, reads `UID_MIN`, the shells a login may use and the password field of a shadow entry, and says what that field means, telling an account that is locked apart from one that carries no password at all. An account the host does not manage locally is reported as absent rather than as broken
+* version.py: `cycle_bounds()` returns the lowest and highest release cycle a set of endoflife.date entries names
 
 ### Changed
 
@@ -49,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * human.py: `humanrange2bytes()`, `humanrange2seconds()`, `number2human()`, `seconds2human()`
 * redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, and re-authenticates on a "401 Unauthorized" instead of falling back to HTTP Basic
 * shell.py: `shell_exec()` keeps to its `timeout` even when the killed command cannot die, such as one blocked on storage that has gone away
+* version.py: `check_eol()` reads all three shapes endoflife.date answers the end-of-life field in. A cycle marked end of life without a date took the check down with a Python error, and one with no announced end was reported as a gap in the data. A version endoflife.date has not catalogued yet is placed against the cycles it does list instead of going UNKNOWN, so staying current no longer raises an alert nobody can act on, and the available-upgrade note survives either way
 * time.py: `timestr2datetime()` and `timestr2epoch()` read an ISO 8601 timestamp on RHEL 8's system Python too, and an offset written without a colon (`+0200`, which `journalctl` writes) on every supported Python
 * url.py: `fetch(extended=True)` takes the proxy it is told to take, and tries every address a hostname resolves to instead of only the first
 

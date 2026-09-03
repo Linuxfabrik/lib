@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026090301'
 
 import datetime
 import json
@@ -124,35 +124,56 @@ def check_eol(
         if cycles_eoldate:
             break
 
-    if not cycles_eoldate:
-        return (
-            base.get_worst(STATE_UNKNOWN, unreachable_state),
-            f'version {version_string} unknown{unreachable_note}',
-        )
-
     msg = []
     state = STATE_OK
 
-    support = cycles_eoldate.get('support')
-    if support and isinstance(support, str):
-        if now > time.timestr2datetime(support, pattern=pattern):
-            msg.append(f'full support ended on {support}; ')
-
-    eol_key = (
-        'extendedSupport'
-        if extended_support and cycles_eoldate.get('extendedSupport')
-        else 'eol'
-    )
-    eol_date = cycles_eoldate.get(eol_key)
-
-    if eol_date:
-        eol_dt = time.timestr2datetime(eol_date, pattern=pattern)
-        msg.append(f'EOL {eol_date} {"+" if offset_eol > 0 else ""}{offset_eol}d')
-        if now > eol_dt + datetime.timedelta(days=offset_eol):
+    if not cycles_eoldate:
+        # endoflife.date lists the product but not this cycle, and where the installed
+        # version falls relative to what is listed says what that means. A version above
+        # everything listed is a host that upstream has not catalogued yet, which nobody
+        # can act on; one below everything listed is older than the oldest cycle upstream
+        # still records, and therefore out of support for certain. Only a gap between the
+        # two is genuinely unknown.
+        oldest, newest = cycle_bounds(eol)
+        if newest is not None and installed > newest:
+            msg.append('newer than anything endoflife.date lists')
+        elif oldest is not None and installed < oldest:
             state = STATE_WARN
+            msg.append('older than anything endoflife.date lists')
             msg.append(base.state2str(state, prefix=' '))
+        else:
+            state = STATE_UNKNOWN
+            msg.append(f'version {version_string} unknown')
     else:
-        msg.append('EOL unknown')
+        support = cycles_eoldate.get('support')
+        if support and isinstance(support, str):
+            if now > time.timestr2datetime(support, pattern=pattern):
+                msg.append(f'full support ended on {support}; ')
+
+        eol_key = (
+            'extendedSupport'
+            if extended_support and cycles_eoldate.get('extendedSupport')
+            else 'eol'
+        )
+        eol_date = cycles_eoldate.get(eol_key)
+
+        # The API answers this field in three shapes and they are not interchangeable:
+        # a date string, `true` (end of life reached, no date given) and `false` (no end
+        # announced). Reading either boolean as a date is what used to raise a TypeError
+        # here, and reading `false` as a missing date reported the healthiest answer the
+        # API gives as a gap in our knowledge.
+        if isinstance(eol_date, str) and eol_date:
+            eol_dt = time.timestr2datetime(eol_date, pattern=pattern)
+            msg.append(f'EOL {eol_date} {"+" if offset_eol > 0 else ""}{offset_eol}d')
+            if now > eol_dt + datetime.timedelta(days=offset_eol):
+                state = STATE_WARN
+                msg.append(base.state2str(state, prefix=' '))
+        elif eol_date is True:
+            state = STATE_WARN
+            msg.append('EOL, no date announced')
+            msg.append(base.state2str(state, prefix=' '))
+        else:
+            msg.append('no EOL announced')
 
     try:
         latest_versions = [version(item['latest']) for item in eol]
@@ -181,6 +202,46 @@ def check_eol(
 
     state = base.get_worst(state, unreachable_state)
     return state, ''.join(msg) + unreachable_note
+
+
+def cycle_bounds(eol):
+    """
+    Return the lowest and highest release cycle a set of endoflife.date entries names.
+
+    Used to place a version that has no cycle of its own: above the highest cycle the
+    data has simply not caught up yet, below the lowest it is older than anything
+    upstream still records.
+
+    ### Parameters
+    - **eol** (`list`): endoflife.date entries, each a dict that may carry a `cycle` key.
+
+    ### Returns
+    - **tuple** (`tuple` or `None`, `tuple` or `None`):
+      The lowest and the highest cycle as comparable version tuples, or `(None, None)`
+      when no entry names a parsable cycle.
+
+    ### Example
+    >>> cycle_bounds([{'cycle': '8.4'}, {'cycle': '5.7'}])
+    ((5, 7, 0), (8, 4, 0))
+    """
+    cycles = []
+    for item in eol:
+        if not isinstance(item, dict) or item.get('cycle') is None:
+            continue
+        cycle = str(item['cycle'])
+        # endoflife.date names 166 of its 8444 cycles without a single digit
+        # ("current", "subscription", "nodejs", ...). `version()` turns those into
+        # (0, 0, 0) rather than raising, which would drag the lower bound to zero and
+        # silently disable the "older than anything listed" verdict for that product.
+        if not any(char.isdigit() for char in cycle):
+            continue
+        try:
+            cycles.append(version(cycle))
+        except (TypeError, ValueError):
+            continue
+    if not cycles:
+        return None, None
+    return min(cycles), max(cycles)
 
 
 def version(ver, maxlen=3):
