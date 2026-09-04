@@ -16,14 +16,14 @@ repos:
         exclude: '/unit-test/(config|fixtures|retc|stderr|stdout)/'
 
   - repo: 'https://github.com/astral-sh/ruff-pre-commit'
-    rev: 'v0.16.5'
+    rev: 'v0.16.6'
     hooks:
       - id: 'ruff-check'
         args: ['--fix']
       - id: 'ruff-format'
 
   - repo: 'https://github.com/pylint-dev/pylint'
-    rev: 'v4.0.7'
+    rev: 'v4.0.8'
     hooks:
       - id: 'pylint'
 
