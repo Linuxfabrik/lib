@@ -18,7 +18,7 @@ import lib.globals  # pylint: disable=C0413
 import lib.url  # pylint: disable=C0413
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081401'
+__version__ = '2026090701'
 
 DESCRIPTION = (
     """Simply creates the file "endoflifedate.py" for a given list of products."""
@@ -26,7 +26,7 @@ DESCRIPTION = (
 
 DEFAULT_FILE = 'lib/endoflifedate.py'
 
-DATA_VERSION = '2026062301'  # adapt this if one of PRODUCTS was added/deleted
+DATA_VERSION = '2026090701'  # adapt this if one of PRODUCTS was added/deleted
 PRODUCTS = [
     'https://endoflife.date/api/apache-http-server.json',
     'https://endoflife.date/api/composer.json',
@@ -41,6 +41,7 @@ PRODUCTS = [
     'https://endoflife.date/api/mastodon.json',
     'https://endoflife.date/api/matomo.json',
     'https://endoflife.date/api/mediawiki.json',
+    'https://endoflife.date/api/metabase.json',
     'https://endoflife.date/api/moodle.json',
     'https://endoflife.date/api/mysql.json',
     'https://endoflife.date/api/nextcloud.json',
