@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * openstack.py: new module for OpenStack clouds. `connect()` authenticates from an rc file, keeps a whole run inside one time budget and reuses the token across runs, `fetch()` and `fetch_json()` read any endpoint of a connected service
 * psi.py: new module for the pressure stall information the Linux kernel exports below `/proc/pressure`. It reports a resource and turns a reading into states, a summary, performance data or a table, and it tells a kernel that accounts for nothing apart from one that accounts for other resources only
 * psutil.py: `get_process_accounts()` returns the accounts a program's processes actually run under, counting only those in this process's own mount namespace, so the same program running in a container is not reported as a stray account of the host
-* redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file
+* redfish.py: `start_trace()` writes every request, its duration and the authentication path taken to a file, `record_responses()` and `format_responses()` add every response a consumer evaluated to its output, and `replay()` answers the requests from such an output instead of from a controller, which turns a bug report into a test case
 * shell.py: `quote_cli_value()` quotes a value for a command a consumer prints for somebody to run, where a value carrying a space or a semicolon would otherwise turn one command into two
 * task.py: new module for work that cannot be interrupted from inside the process. `run()` and `run_each()` run callables in processes of their own, sharing one deadline, and kill the ones that miss it. A call waiting on a network filesystem whose server has gone away blocks in the kernel, where no timeout inside the process reaches it
 * txt.py: `shorten_list()` collapses a long list to its first and last few items for a message
@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: `compute_load()` reports the sensors that have enough samples, and leaves out one whose counter started over
 * lftest.py: the container helpers skip a test instead of failing it when testcontainers is missing or `LFTEST_NO_CONTAINER` is set
 * psutil.py: `get_partitions()` also returns the mount options, takes `include_all` to list every mounted filesystem instead of the physical devices only, and no longer waits on the filesystems it lists
+* redfish.py: `get_expand_suffix()` asks for a single `$expand` level, which already inlines every member of a collection, instead of the deepest one a controller offers, which made its answers many times larger
 * url.py: `fetch()` says what is wrong with a certificate that does not verify, and points out a plaintext request sent to a port that speaks TLS
 
 ### Fixed

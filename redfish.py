@@ -11,12 +11,13 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082502'
+__version__ = '2026091001'
 
 import atexit
 import base64
 import json
 import os
+import re
 import sys
 import urllib.parse
 
@@ -35,10 +36,14 @@ from .globals import STATE_CRIT, STATE_OK, STATE_WARN
 CACHE_FILENAME = 'linuxfabrik-monitoring-plugins-redfish.db'
 
 # Upper bound for the Redfish `$expand` `$levels` we ask for, even when a controller advertises a
-# higher `MaxLevels`. A single deeply expanded document already inlines every member a caller reads;
-# going deeper only inflates the response (and the controller's work) without a caller that needs
-# it. Three levels reach the deepest tree we walk (Systems -> Storage -> Drives/Volumes).
-MAX_EXPAND_LEVELS = 3
+# higher `MaxLevels`. One level inlines the members of a collection, and the members are all a
+# caller reads from it: a deeper resource it needs, it reads as a collection of its own. Every
+# further level only inlines what the members link to, and with the `*` operator that includes
+# every link. Measured against dmtf/redfish-mockup-server (Redfish 1.15.0): one level inlined
+# every member of every collection the Redfish checks read, while three levels made the same
+# answers 20 to 800 times larger (Chassis 3 KB against 329 KB, the log entries 1 KB against
+# 794 KB) without a single additional member, work a real controller has to do on every request.
+MAX_EXPAND_LEVELS = 1
 
 # `$expand` suffix used when the controller does not advertise its expand support (or the service
 # root cannot be read): ask for one level of subordinate members. `fetch_collection()` falls back
@@ -46,13 +51,6 @@ MAX_EXPAND_LEVELS = 3
 # `$expand`.
 DEFAULT_EXPAND = '?$expand=.($levels=1)'
 
-# File the diagnostic trace is written to, inside the same per-user directory as the cache
-# database. The trace is a support aid: it records what this library asked the controller for,
-# how long each request took and which path the authentication took, so a slow or flapping run
-# can be diagnosed from one file instead of from a dozen hand-run curl commands. A consumer
-# writes it only when its `--verbose` switch turned the trace on; otherwise the trace costs one
-# `if` per request and nothing is opened. See `start_trace()` for why this goes to a file rather
-# than to the caller's output.
 # Upper bound for the extra attempts a login is given, however high a caller's own retry budget
 # is. A login is not a read: a controller creates the session before it answers, so an attempt the
 # client abandons on timeout still leaves a session behind on the controller (measured: three
@@ -62,24 +60,35 @@ DEFAULT_EXPAND = '?$expand=.($levels=1)'
 # slow controller into a flooded one.
 MAX_LOGIN_RETRIES = 2
 
+# File the diagnostic trace is written to, inside the same per-user directory as the cache
+# database. The trace is a support aid: it records what this library asked the controller for,
+# how long each request took and which path the authentication took, so a slow or flapping run
+# can be diagnosed from one file instead of from a dozen hand-run curl commands. A consumer
+# writes it only when its `--verbose` switch turned the trace on; otherwise the trace costs one
+# `if` per request and nothing is opened. See `start_trace()` for why this goes to a file rather
+# than to the caller's output.
 TRACE_FILENAME = 'linuxfabrik-monitoring-plugins-redfish-trace.log'
-
-# Sentence a consumer appends to its own `--verbose` help, so every Redfish consumer describes
-# the trace in the same words and an admin is told where to look before it has run once. Kept
-# free of a literal '%', which argparse would try to expand.
-TRACE_HELP = (
-    'For this check that also writes a trace of every Redfish request, with timings, to '
-    + TRACE_FILENAME
-    + " below the temporary directory. Unlike this check's output, the trace survives a check "
-    'that the monitoring server terminates for exceeding its timeout, which is what makes it '
-    'useful against a slow management controller.'
-)
 
 # Upper bound for the trace file, in bytes. A caller that runs every minute would otherwise fill
 # the temporary directory while an admin leaves `--verbose` on over a weekend. Once the file has
 # grown past this, `start_trace()` refuses instead of appending, so an admin is told to move the
 # file away rather than losing the temporary directory to it.
 TRACE_MAX_BYTES = 10 * 1024 * 1024
+
+# Sentence a consumer appends to its own `--verbose` help, so every Redfish consumer describes
+# the switch in the same words and an admin is told where to look before it has run once. Kept
+# free of a literal '%', which argparse would try to expand.
+VERBOSE_HELP = (
+    'For this check that also appends every Redfish response it evaluated to its output, '
+    'ready to be attached to a bug report, and writes a trace of every Redfish request, with '
+    'timings, to '
+    + TRACE_FILENAME
+    + " below the temporary directory. Unlike this check's output, the trace survives a check "
+    'that the monitoring server terminates for exceeding its timeout, which is what makes it '
+    'useful against a slow management controller. Passwords and session tokens are kept out '
+    'of both. The output grows with the responses, so keep this switched on in a service '
+    'definition only while chasing a problem.'
+)
 
 CHASSIS_FAN_KEYS = (
     'FanName',
@@ -423,6 +432,43 @@ _TRACE = {
     'by_kind': {},
 }
 
+# Field names whose value never reaches the recorded responses, whatever a controller sends
+# back. The login is not recorded at all, so a session token cannot get in through the front
+# door; this closes the back door of a firmware echoing a credential inside a data response.
+# Matched case-insensitively.
+_REDACTED_FIELDS = frozenset(
+    {
+        'authorization',
+        'community',
+        'communitystring',
+        'passphrase',
+        'password',
+        'secret',
+        'token',
+        'x-auth-token',
+    }
+)
+
+# Responses a replay answers from, keyed by request path (see `replay()`). None while no replay
+# runs, which is every run that talks to a controller.
+_REPLAY = {'responses': None}
+
+# One recorded response as `format_responses()` renders it: a `### GET <path>` heading line,
+# optionally followed by notes, and the response as JSON on the lines below.
+_REPLAY_BLOCK = re.compile(r'^### GET (\S+)[^\n]*\n', re.MULTILINE)
+
+# Responses recorded for `--verbose` (see `record_responses()`). `items` holds one
+# `(request, payload, cached)` triple per response in the order they arrived. `expand` is the
+# `$expand` suffix `get_expand_suffix()` settled on, so the output can say what the collections
+# were asked for with. `formatted` turns true once `format_responses()` handed them over, so the
+# exit handler does not print them a second time.
+_RESPONSES = {
+    'expand': '',
+    'formatted': False,
+    'items': [],
+    'on': False,
+}
+
 
 def _trace_timestamp():
     """Return the current local time as `YYYY-MM-DD HH:MM:SS.mmm`.
@@ -507,6 +553,19 @@ def _trace_summary():
     except OSError:
         pass
     _TRACE['fd'] = None
+
+
+def _consumer():
+    """Return the name and version of the consumer running this module, as far as it declares them.
+
+    Both come from the `__main__` module, its file name and its `__version__`. They identify a
+    run in the trace and in the recorded responses, which is what a bug report needs to be
+    matched against the code that produced it.
+    """
+    main_module = sys.modules.get('__main__')
+    name = os.path.basename(getattr(main_module, '__file__', '') or 'unknown')
+    version = getattr(main_module, '__version__', '') or 'unknown'
+    return name, version
 
 
 def start_trace(path='', filename=TRACE_FILENAME):
@@ -597,9 +656,7 @@ def start_trace(path='', filename=TRACE_FILENAME):
     # Identify the run: which check, which version of it, which version of this library, and the
     # process id, so lines from Redfish checks tracing concurrently into this file can be told
     # apart.
-    main_module = sys.modules.get('__main__')
-    check = os.path.basename(getattr(main_module, '__file__', '') or 'unknown')
-    check_version = getattr(main_module, '__version__', '') or 'unknown'
+    check, check_version = _consumer()
     _trace(
         'start',
         f'{check} v{check_version}, lib/redfish.py v{__version__}. Columns: timestamp, pid, '
@@ -608,11 +665,41 @@ def start_trace(path='', filename=TRACE_FILENAME):
     return True, trace_path
 
 
+def _replay_key(url_string):
+    """Return the key a replay files a response under: the path of `url_string`.
+
+    The query is dropped on purpose. It carries the `$expand` suffix, which a replay has no
+    controller to negotiate with, and a collection has to be found whether it was recorded with
+    `$expand` or after the plain fallback. A trailing slash is dropped as well, because the
+    service root is requested as both `/redfish/v1` and `/redfish/v1/`.
+    """
+    return urllib.parse.urlsplit(url_string).path.rstrip('/') or '/'
+
+
+def _replay_response(url_string):
+    """Answer a request from the responses `replay()` loaded, the way a controller would.
+
+    A recorded JSON string stands for a request that failed and is handed back as that failure.
+    A path that was never recorded is answered with a 404, which is what a controller answers
+    for a resource it does not have, so a consumer's handling of a missing endpoint is exercised
+    as well.
+    """
+    key = _replay_key(url_string)
+    if key not in _REPLAY['responses']:
+        return False, f'HTTP error "404 Not Found" while fetching {key}'
+    payload = _REPLAY['responses'][key]
+    if isinstance(payload, str):
+        return False, payload
+    return True, payload
+
+
 def _fetch_json(what, url_string, timeout=8, retries=0, **kwargs):
     """Fetch JSON through `url.fetch_json()`, timing and tracing the call.
 
     Every request this module makes goes through here, so the trace sees all of them and the
     timing is measured in exactly one place. With the trace off this adds one `if` to the call.
+    While a replay runs (see `replay()`), the answer comes from the recorded responses instead
+    and no request leaves the host.
 
     `url.fetch_json()` retries internally, so the measured duration covers all `retries + 1`
     attempts. Both numbers are traced alongside it, which is what makes a long line readable: a
@@ -629,6 +716,8 @@ def _fetch_json(what, url_string, timeout=8, retries=0, **kwargs):
     ### Returns
     - **tuple** (`bool`, `dict` | `list` | `str`): Whatever `url.fetch_json()` returned.
     """
+    if _REPLAY['responses'] is not None:
+        return _replay_response(url_string)
     if _TRACE['fd'] is None:
         result = url.fetch_json(url_string, timeout=timeout, retries=retries, **kwargs)
         if _should_renew(what, result) and _renew_auth(kwargs.get('header')):
@@ -676,10 +765,12 @@ def _fetch_json(what, url_string, timeout=8, retries=0, **kwargs):
 def _cache_read(cache_key, cache_expire, cache_filename):
     """Return the cached JSON value stored under `cache_key`, or `None` on a miss.
 
-    Returns `None` when caching is off (`cache_expire` is `0`) or the key is absent, so callers
-    treat both the same and fetch. A stored value is deserialized from JSON before it is returned.
+    Returns `None` when caching is off (`cache_expire` is `0`), while a replay runs, or when the
+    key is absent, so callers treat all three the same and fetch. A replay must not pick up what
+    a real run left in the shared cache, or it would no longer replay the recorded responses. A
+    stored value is deserialized from JSON before it is returned.
     """
-    if not cache_expire:
+    if not cache_expire or _REPLAY['responses'] is not None:
         return None
     cached = cache.get(cache_key, filename=cache_filename)
     return json.loads(cached) if cached else None
@@ -688,16 +779,62 @@ def _cache_read(cache_key, cache_expire, cache_filename):
 def _cache_write(data, cache_key, cache_expire, cache_filename):
     """Store `data` as JSON under `cache_key` for `cache_expire` seconds, when caching is on.
 
-    A no-op when caching is off (`cache_expire` is `0`) or `data` is not a JSON-serializable
-    container, so a failed fetch never poisons the cache.
+    A no-op when caching is off (`cache_expire` is `0`), while a replay runs, or when `data` is
+    not a JSON-serializable container, so a failed fetch never poisons the cache and a replayed
+    response never reaches a real run.
     """
-    if cache_expire and isinstance(data, (dict, list)):
+    if cache_expire and _REPLAY['responses'] is None and isinstance(data, (dict, list)):
         cache.set(
             cache_key,
             json.dumps(data),
             time.now() + cache_expire,
             filename=cache_filename,
         )
+
+
+def _redact(value):
+    """Return a copy of a response with the value of every field in `_REDACTED_FIELDS` replaced.
+
+    ### Parameters
+    - **value** (any): A decoded response, or any part of one.
+
+    ### Returns
+    - The same structure, with each sensitive field's value replaced by `'******'`.
+    """
+    if isinstance(value, dict):
+        return {
+            key: ('******' if str(key).lower() in _REDACTED_FIELDS else _redact(inner))
+            for key, inner in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    return value
+
+
+def _record(request_url, result, cached=False):
+    """Remember what a request returned, for `format_responses()`, if recording is on.
+
+    The fetch helpers call this with the URL as they requested it, so a collection keeps its
+    `$expand` query and the recording shows how it was asked for. Only path and query are kept:
+    they are all a replay needs, and they keep the controller's address out of an output that
+    ends up in a bug report. For the same reason the address is cut out of an error message.
+
+    A response served from the shared cache is recorded as well, marked as such. The consumer
+    evaluated it just the same, and a replay needs it.
+
+    ### Parameters
+    - **request_url** (`str`): The absolute URL that was requested.
+    - **result** (`tuple`): The `(success, payload)` pair the request returned.
+    - **cached** (`bool`, optional): Whether the payload came from the shared cache.
+    """
+    if not _RESPONSES['on']:
+        return
+    parts = urllib.parse.urlsplit(request_url)
+    request = parts.path + (f'?{parts.query}' if parts.query else '')
+    success, payload = result
+    if not success:
+        payload = str(payload).replace(f'{parts.scheme}://{parts.netloc}', '')
+    _RESPONSES['items'].append((request, _redact(payload), cached))
 
 
 # The "Status" property is common to many Redfish schema, and contains:
@@ -802,7 +939,7 @@ def fetch_collection(
     without the inlined members.
 
     Callers pass the `expand` suffix that `get_expand_suffix()` derived from the controller's
-    advertised support, so a single request inlines as much of the subtree as the controller can.
+    advertised support, so the members arrive inlined wherever the controller can inline them.
 
     When `cache_expire` is non-zero the parsed collection is cached under `redfish-<collection_url>`
     (keyed by the plain URL, not the `$expand` variant) and reused by any sibling consumer
@@ -834,14 +971,16 @@ def fetch_collection(
     cached = _cache_read(cache_key, cache_expire, cache_filename)
     if cached is not None:
         _trace('cache', f'hit   collection  {collection_url}')
+        _record(collection_url, (True, cached), cached=True)
         return True, cached
     _trace('cache', f'miss  collection  {collection_url}')
     # `expand` is the `$expand` query suffix (default: one level of subordinate members). It is
     # derived from the controller's advertised expand support by `get_expand_suffix()`, so it is
     # our own literal and cannot smuggle in a different authority the way an `@odata.id` could.
+    request_url = f'{collection_url}{expand}'
     success, collection = _fetch_json(
         'collection',
-        f'{collection_url}{expand}',
+        request_url,
         header=header,
         insecure=insecure,
         no_proxy=no_proxy,
@@ -856,6 +995,7 @@ def fetch_collection(
             f'the $expand request failed, falling back to a plain request. Everything this '
             f'collection holds now costs one request per member: {collection_url}',
         )
+        request_url = collection_url
         success, collection = _fetch_json(
             'plain',
             collection_url,
@@ -866,6 +1006,7 @@ def fetch_collection(
             timeout=timeout,
             retries=retries,
         )
+    _record(request_url, (success, collection))
     if success and isinstance(collection, dict):
         members = collection.get('Members', [])
         if isinstance(members, list):
@@ -950,6 +1091,7 @@ def fetch_members(
         member_data = _cache_read(cache_key, cache_expire, cache_filename)
         if member_data is not None:
             _trace('cache', f'hit   member      {member_url}')
+            _record(member_url, (True, member_data), cached=True)
         if member_data is None:
             _trace('cache', f'miss  member      {member_url}')
             success, member_data = _fetch_json(
@@ -962,6 +1104,7 @@ def fetch_members(
                 timeout=timeout,
                 retries=retries,
             )
+            _record(member_url, (success, member_data))
             if not success or not isinstance(member_data, dict):
                 return False, member_data
             _cache_write(member_data, cache_key, cache_expire, cache_filename)
@@ -1009,6 +1152,7 @@ def fetch_resource(
     cached = _cache_read(cache_key, cache_expire, cache_filename)
     if cached is not None:
         _trace('cache', f'hit   resource    {resource_url}')
+        _record(resource_url, (True, cached), cached=True)
         return True, cached
     _trace('cache', f'miss  resource    {resource_url}')
     success, resource = _fetch_json(
@@ -1021,9 +1165,71 @@ def fetch_resource(
         timeout=timeout,
         retries=retries,
     )
+    _record(resource_url, (success, resource))
     if success and isinstance(resource, dict):
         _cache_write(resource, cache_key, cache_expire, cache_filename)
     return success, resource
+
+
+def format_responses():
+    """
+    Render every response `record_responses()` collected, for a `--verbose` output.
+
+    Each response becomes a block headed by `### GET <path>`, with the query the consumer sent
+    and a note if the response came from the shared cache or reports a failed request, followed
+    by the response as indented JSON. A failed request is recorded as the error it returned, a
+    JSON string where a response would otherwise be an object. A few lines come first: which
+    consumer in which version recorded the responses with which version of this module, the
+    `$expand` query the collections were asked for with, and the trace file if one is being
+    written (see `start_trace()`).
+
+    The output is meant to travel: into a bug report, and from there into a file that
+    `replay()` reads, so a reported problem becomes a test case that reproduces it. `replay()`
+    ignores everything around the blocks, so the complete output of a run serves as it is.
+
+    ### Returns
+    - **str**: The rendered responses, or an empty string if nothing was recorded and no trace
+      is being written.
+
+    ### Notes
+    - Marks the responses as handed over, so the exit handler `record_responses()` registered
+      does not print them a second time.
+    - Controller addresses and the values of sensitive fields are already removed while
+      recording (see `_record()`).
+
+    ### Example
+    >>> print(format_responses())
+    Redfish responses evaluated by redfish-sensors v2026091001, lib/redfish.py v2026091001
+    Collections requested with: ?$expand=*($levels=1)
+    Trace of every Redfish request: /tmp/lf-1000/linuxfabrik-monitoring-plugins-redfish-trace.log
+
+    ### GET /redfish/v1/Chassis?$expand=*($levels=1)
+    {
+      "Members": [
+        ...
+    """
+    blocks = []
+    if _RESPONSES['items'] or _TRACE['path']:
+        name, version = _consumer()
+        header = [
+            f'Redfish responses evaluated by {name} v{version}, '
+            f'lib/redfish.py v{__version__}'
+        ]
+        if _RESPONSES['expand']:
+            header.append(f'Collections requested with: {_RESPONSES["expand"]}')
+        if _TRACE['path']:
+            header.append(f'Trace of every Redfish request: {_TRACE["path"]}')
+        blocks.append('\n'.join(header))
+    for request, payload, cached in _RESPONSES['items']:
+        notes = []
+        if cached:
+            notes.append('from the cache')
+        if isinstance(payload, str):
+            notes.append('failed')
+        heading = f'### GET {request}' + (f' ({", ".join(notes)})' if notes else '')
+        blocks.append(f'{heading}\n{json.dumps(payload, indent=2, sort_keys=True)}')
+    _RESPONSES['formatted'] = True
+    return '\n\n'.join(blocks)
 
 
 # What this run authenticated with, so a request that comes back "401 Unauthorized" can log in
@@ -1286,6 +1492,10 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
     >>> header = {'Accept': 'application/json'}
     >>> header.update(get_auth_header(args, cache_expire=300))
     """
+    if _REPLAY['responses'] is not None:
+        # recorded responses need no session, and a replay must not touch the cached ones
+        _trace('auth', 'replaying recorded responses, no login needed')
+        return {}
     if not (args.USERNAME and args.PASSWORD):
         _trace('auth', 'no credentials given, requesting anonymously')
         return {}
@@ -1795,21 +2005,23 @@ def get_expand_suffix(
     cache_filename=CACHE_FILENAME,
 ):
     """
-    Return the deepest Redfish `$expand` query the controller advertises, as a URL suffix.
+    Return the Redfish `$expand` query to send with a collection, as a URL suffix.
 
     Reading the service root `/redfish/v1` once, this inspects
-    `ProtocolFeaturesSupported.ExpandQuery` and builds the most generic `$expand` suffix the
-    controller supports, so a single request inlines as much of a collection's subtree as possible
-    (see `fetch_collection()`). `ExpandAll` selects the `*` operator (subordinate resources and
-    links, so linked resources such as a storage controller's `Drives` are inlined too); otherwise
-    the `.` operator (subordinate resources only) is used. `Levels`/`MaxLevels` add a `$levels`
-    clause, capped at `MAX_EXPAND_LEVELS`.
+    `ProtocolFeaturesSupported.ExpandQuery` and builds the `$expand` suffix that makes the
+    controller inline a collection's members, so a single request returns all of them (see
+    `fetch_collection()`). `ExpandAll` selects the `*` operator (subordinate resources and links,
+    so linked resources such as a storage controller's `Drives` are inlined too); otherwise the
+    `.` operator (subordinate resources only) is used. `Levels`/`MaxLevels` add a `$levels`
+    clause, capped at `MAX_EXPAND_LEVELS`, which explains why one level is all it takes.
 
     When `cache_expire` is non-zero the derived suffix is cached under `redfish-expand-<base_url>`
     and reused by the sibling Redfish consumers on the host within the window, so the service
-    root is probed once per cycle instead of by every one of them. On any failure (root not readable, no expand
-    support advertised) it returns `DEFAULT_EXPAND`; `fetch_collection()` falls back to a plain
-    request should the controller reject even that.
+    root is probed once per cycle instead of by every one of them. A run that records its
+    responses (see `record_responses()`) reads the service root regardless, so the recording
+    shows what the controller advertises. On any failure (root not readable, no expand support
+    advertised) it returns `DEFAULT_EXPAND`; `fetch_collection()` falls back to a plain request
+    should the controller reject even that.
 
     ### Parameters
     - **base_url** (`str`): The operator-supplied Redfish base URL, e.g. `https://bmc`.
@@ -1823,15 +2035,20 @@ def get_expand_suffix(
       the controller's support is unknown.
     """
     expand_key = f'redfish-expand-{base_url}'
-    if cache_expire:
+    # a replay must neither pick up nor leave behind what a real run cached
+    use_cache = cache_expire and _REPLAY['responses'] is None
+    # a recording run reads the root even when a sibling consumer cached the suffix, so its
+    # output shows what the controller advertises and names the vendor and firmware
+    if use_cache and not _RESPONSES['on']:
         cached = cache.get(expand_key, filename=cache_filename)
         if cached:
             _trace('expand', f'reusing the cached $expand suffix {cached!r}')
             return cached
     suffix = DEFAULT_EXPAND
+    root_url = f'{base_url}/redfish/v1'
     success, root = _fetch_json(
         'root',
-        f'{base_url}/redfish/v1',
+        root_url,
         header=header,
         insecure=insecure,
         no_proxy=no_proxy,
@@ -1839,6 +2056,7 @@ def get_expand_suffix(
         timeout=timeout,
         retries=retries,
     )
+    _record(root_url, (success, root))
     expand = {}
     if success and isinstance(root, dict):
         features = root.get('ProtocolFeaturesSupported', {})
@@ -1856,7 +2074,8 @@ def get_expand_suffix(
         'expand',
         f'the controller advertises ExpandQuery {expand or "nothing"}, using {suffix!r}',
     )
-    if cache_expire:
+    _RESPONSES['expand'] = suffix
+    if use_cache:
         cache.set(
             expand_key, suffix, time.now() + cache_expire, filename=cache_filename
         )
@@ -2811,3 +3030,95 @@ def is_member_expanded(member):
     if not isinstance(member, dict):
         return False
     return any(not key.startswith('@odata') for key in member)
+
+
+def _print_unformatted_responses():
+    """Print the recorded responses on the way out, unless the consumer already did.
+
+    Registered with `atexit` by `record_responses()`. A run that aborts on an error never
+    reaches the point where its consumer appends `format_responses()` to its output, yet the
+    responses leading up to the error are the ones that explain it. The text is redacted and
+    escaped the way `base.oao()` treats a message, because it lands in the same output.
+    """
+    if _RESPONSES['formatted'] or not _RESPONSES['items']:
+        return
+    text = txt.sanitize_sensitive_data(format_responses())
+    print('\n' + base.TAG_START.sub('&lt;', text).replace('|', '!'))
+
+
+def record_responses():
+    """
+    Start recording every Redfish response this run evaluates, for `format_responses()`.
+
+    Turn this on from a `--verbose` switch. From here on, `fetch_collection()`,
+    `fetch_members()`, `fetch_resource()` and `get_expand_suffix()` remember what each request
+    returned, including responses served from the shared cache and requests that failed. The
+    login is never recorded. Nothing is recorded unless this was called, so a normal run keeps
+    no second copy of every response in memory.
+
+    Also registers an exit handler that prints what was recorded if the run ends before
+    `format_responses()` handed it over. That is the case whenever a consumer aborts on an
+    error, which is when the responses are needed most.
+
+    ### Returns
+    - **None**
+
+    ### Example
+    >>> record_responses()
+    >>> success, chassis = fetch_collection('https://bmc/redfish/v1/Chassis')
+    >>> print(format_responses())
+    """
+    if _RESPONSES['on']:
+        return
+    _RESPONSES['on'] = True
+    atexit.register(_print_unformatted_responses)
+
+
+def replay(text):
+    """
+    Answer every Redfish request from recorded responses instead of from a controller.
+
+    `text` is what `format_responses()` rendered, typically the complete output of a `--verbose`
+    run as somebody attached it to a bug report. Only the `### GET <path>` blocks are read,
+    everything around them is ignored. From here on, every request this module makes is
+    answered from them, matched by path. The query is ignored, since there is no controller
+    whose `$expand` support could differ, and a path that was not recorded is answered with a
+    404, as a controller would answer it. Nothing is read from or written to the shared cache
+    and no login takes place, so a replay neither depends on nor disturbs what a real run left
+    behind.
+
+    This turns a reported problem into a test case: the consumer walks the recorded responses
+    through the same code that walked the controller, including any number of members.
+
+    ### Parameters
+    - **text** (`str`): The recorded responses.
+
+    ### Returns
+    - **tuple** (`bool`, `int` | `str`):
+      - `(True, count)` with the number of distinct paths loaded.
+      - `(False, error)` if `text` holds no recorded response, or one that is not valid JSON.
+
+    ### Example
+    >>> replay('### GET /redfish/v1/Chassis\\n{"Members": []}')
+    (True, 1)
+    """
+    if not isinstance(text, str):
+        text = ''
+    responses = {}
+    decoder = json.JSONDecoder()
+    for match in _REPLAY_BLOCK.finditer(text):
+        start = match.end()
+        while start < len(text) and text[start].isspace():
+            start += 1
+        try:
+            payload, _ = decoder.raw_decode(text, start)
+        except ValueError as e:
+            return (
+                False,
+                f'Recorded response for {match.group(1)} is not valid JSON: {e}',
+            )
+        responses[_replay_key(match.group(1))] = payload
+    if not responses:
+        return False, 'Found no recorded Redfish responses to replay.'
+    _REPLAY['responses'] = responses
+    return True, len(responses)

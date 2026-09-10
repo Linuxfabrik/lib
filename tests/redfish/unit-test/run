@@ -26,12 +26,13 @@ and touches no cache. get_auth_header() returns just a header fragment and cache
 session token itself when asked; get_expand_suffix() probes the service root and
 caches the derived suffix when asked.
 
-Public functions under test (23):
+Public functions under test (27):
 
 - build_url()                              -> @odata.id SSRF pinning
 - fetch_collection()                       -> $expand + plain fallback + cache (mocked I/O)
 - fetch_members()                          -> bare refs, skip expanded, cache (mocked I/O)
 - fetch_resource()                         -> cached plain GET (mocked I/O)
+- format_responses()                       -> recorded responses as replayable blocks
 - get_auth_header()                        -> session header, cached token (mocked I/O)
 - get_expand_suffix()                      -> deepest advertised $expand, cached (mocked I/O)
 - get_chassis()                            -> flat + nested key projection
@@ -52,6 +53,8 @@ Public functions under test (23):
 - get_systems_storage_drives()             -> projection + CapacityBytes + temperature
 - get_vendor()                             -> Vendor / Oem / 'generic' resolution
 - is_member_expanded()                     -> populated vs bare-reference detection
+- record_responses()                       -> recording switch, exit handler
+- replay()                                 -> recorded responses instead of a controller
 
 All expected values were probed against the live module first, then pinned.
 Notably: lib.base.state2str renders [CRITICAL]/[WARNING] (not [CRIT]/[WARN]),
@@ -1810,16 +1813,17 @@ def _root(**expand_query):
 class TestGetExpandSuffix(unittest.TestCase):
     @mock.patch.object(redfish, 'url')
     def test_expandall_uses_star_and_caps_levels(self, url_mock):
-        # MaxLevels 9 is capped at MAX_EXPAND_LEVELS (3)
+        # MaxLevels 9 is capped at MAX_EXPAND_LEVELS (1): one level inlines the members,
+        # every further one only inflates the answer
         url_mock.fetch_json.return_value = _root(
             ExpandAll=True, Levels=True, MaxLevels=9
         )
         self.assertEqual(
-            redfish.get_expand_suffix('https://bmc'), '?$expand=*($levels=3)'
+            redfish.get_expand_suffix('https://bmc'), '?$expand=*($levels=1)'
         )
 
     @mock.patch.object(redfish, 'url')
-    def test_maxlevels_below_cap_is_honoured(self, url_mock):
+    def test_a_single_advertised_level_is_used(self, url_mock):
         url_mock.fetch_json.return_value = _root(
             ExpandAll=True, Levels=True, MaxLevels=1
         )
@@ -1833,7 +1837,7 @@ class TestGetExpandSuffix(unittest.TestCase):
             ExpandAll=False, NoLinks=True, Levels=True, MaxLevels=2
         )
         self.assertEqual(
-            redfish.get_expand_suffix('https://bmc'), '?$expand=.($levels=2)'
+            redfish.get_expand_suffix('https://bmc'), '?$expand=.($levels=1)'
         )
 
     @mock.patch.object(redfish, 'url')
@@ -2009,6 +2013,184 @@ class TestIsMemberExpanded(unittest.TestCase):
     def test_non_dict_is_not_expanded(self):
         self.assertFalse(redfish.is_member_expanded('nope'))
         self.assertFalse(redfish.is_member_expanded(None))
+
+
+# ---------------------------------------------------------------------------
+# record_responses / format_responses / replay (a --verbose output as a fixture)
+# ---------------------------------------------------------------------------
+class TestRecordAndReplay(unittest.TestCase):
+    def setUp(self):
+        self.trace_path = redfish._TRACE['path']
+        redfish._TRACE['path'] = ''
+        redfish._REPLAY['responses'] = None
+        redfish._RESPONSES.update(expand='', formatted=False, items=[], on=True)
+
+    def tearDown(self):
+        redfish._TRACE['path'] = self.trace_path
+        redfish._REPLAY['responses'] = None
+        redfish._RESPONSES.update(expand='', formatted=False, items=[], on=False)
+
+    @mock.patch.object(redfish, 'url')
+    def test_a_recorded_walk_replays_without_a_controller(self, url_mock):
+        collection = {
+            '@odata.id': '/redfish/v1/Chassis/1/Sensors',
+            'Members': [{'@odata.id': '/redfish/v1/Chassis/1/Sensors/T1'}],
+        }
+        sensor = {'@odata.id': '/redfish/v1/Chassis/1/Sensors/T1', 'Reading': 21}
+        url_mock.fetch_json.side_effect = [(True, collection), (True, sensor)]
+        _, coll = redfish.fetch_collection(
+            'https://203.0.113.10/redfish/v1/Chassis/1/Sensors'
+        )
+        redfish.fetch_members(coll['Members'], 'https://203.0.113.10')
+        text = redfish.format_responses()
+        # the collection keeps the query it was asked for with, the host stays out
+        self.assertIn(
+            '### GET /redfish/v1/Chassis/1/Sensors?$expand=.($levels=1)', text
+        )
+        self.assertNotIn('203.0.113.10', text)
+
+        # replay it surrounded by a check's message, the way a bug report carries it
+        redfish._RESPONSES.update(on=False, items=[])
+        url_mock.reset_mock()
+        self.assertEqual(redfish.replay(f'Everything is ok.\n\n{text}\n'), (True, 2))
+        _, coll = redfish.fetch_collection('https://bmc/redfish/v1/Chassis/1/Sensors')
+        self.assertEqual(coll, collection)
+        self.assertEqual(
+            redfish.fetch_members(coll['Members'], 'https://bmc'), (True, [sensor])
+        )
+        url_mock.fetch_json.assert_not_called()
+
+    @mock.patch.object(redfish, 'url')
+    def test_a_failed_request_is_recorded_and_replayed_as_a_failure(self, url_mock):
+        url_mock.fetch_json.return_value = (
+            False,
+            'HTTP error "500 Internal Server Error" while fetching '
+            'https://203.0.113.10/redfish/v1/Chassis/1/Thermal',
+        )
+        redfish.fetch_resource('https://203.0.113.10/redfish/v1/Chassis/1/Thermal')
+        text = redfish.format_responses()
+        self.assertIn('### GET /redfish/v1/Chassis/1/Thermal (failed)', text)
+        self.assertNotIn('203.0.113.10', text)
+        redfish.replay(text)
+        ok, out = redfish.fetch_resource('https://bmc/redfish/v1/Chassis/1/Thermal')
+        self.assertFalse(ok)
+        self.assertIn('500 Internal Server Error', out)
+
+    def test_an_unrecorded_path_is_answered_with_a_404(self):
+        redfish.replay('### GET /redfish/v1/Chassis\n{"Members": []}')
+        ok, out = redfish.fetch_resource('https://bmc/redfish/v1/Chassis/1/Thermal')
+        self.assertFalse(ok)
+        self.assertIn('404 Not Found', out)
+
+    def test_the_service_root_is_found_with_and_without_a_trailing_slash(self):
+        redfish.replay('### GET /redfish/v1\n{"Vendor": "Contoso"}')
+        self.assertEqual(
+            redfish.fetch_resource('https://bmc/redfish/v1/'), (True, {'Vendor': 'Contoso'})
+        )
+
+    def test_the_expand_suffix_is_derived_from_a_replayed_root(self):
+        root = {
+            'ProtocolFeaturesSupported': {
+                'ExpandQuery': {'ExpandAll': True, 'Levels': True, 'MaxLevels': 2}
+            }
+        }
+        redfish.replay(f'### GET /redfish/v1\n{json.dumps(root)}')
+        self.assertEqual(
+            redfish.get_expand_suffix('https://bmc', cache_expire=300),
+            '?$expand=*($levels=1)',
+        )
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_a_recording_run_reads_the_root_despite_a_cached_suffix(
+        self, url_mock, cache_mock
+    ):
+        # a sibling consumer cached the suffix; the recording still needs the root
+        cache_mock.get.return_value = '?$expand=*($levels=1)'
+        url_mock.fetch_json.return_value = (True, {'Vendor': 'Contoso'})
+        redfish.get_expand_suffix('https://bmc', cache_expire=300)
+        url_mock.fetch_json.assert_called_once()
+        self.assertIn('### GET /redfish/v1\n', redfish.format_responses())
+
+    def test_the_output_names_consumer_versions_and_expand_query(self):
+        redfish._RESPONSES.update(
+            expand='?$expand=*($levels=1)',
+            items=[('/redfish/v1/Chassis', {'Members': []}, False)],
+        )
+        header = redfish.format_responses().split('\n\n')[0]
+        self.assertIn(f'lib/redfish.py v{redfish.__version__}', header)
+        self.assertIn('Collections requested with: ?$expand=*($levels=1)', header)
+
+    @mock.patch.object(redfish, 'cache')
+    def test_a_cached_response_is_recorded_and_marked(self, cache_mock):
+        cache_mock.get.return_value = json.dumps({'Members': []})
+        redfish.fetch_collection('https://bmc/redfish/v1/Systems', cache_expire=300)
+        self.assertIn(
+            '### GET /redfish/v1/Systems (from the cache)', redfish.format_responses()
+        )
+
+    @mock.patch.object(redfish, 'cache')
+    def test_a_replay_neither_reads_nor_writes_the_cache(self, cache_mock):
+        redfish.replay('### GET /redfish/v1/Systems\n{"Members": []}')
+        redfish.fetch_collection('https://bmc/redfish/v1/Systems', cache_expire=300)
+        cache_mock.get.assert_not_called()
+        cache_mock.set.assert_not_called()
+
+    @mock.patch.object(redfish, 'url')
+    def test_a_replay_does_not_log_in(self, url_mock):
+        redfish.replay('### GET /redfish/v1\n{}')
+        self.assertEqual(redfish.get_auth_header(_args(), cache_expire=300), {})
+        url_mock.fetch_json.assert_not_called()
+
+    @mock.patch.object(redfish, 'url')
+    def test_sensitive_fields_are_redacted(self, url_mock):
+        url_mock.fetch_json.return_value = (
+            True,
+            {'Id': '1', 'Password': 'linuxfabrik', 'Oem': {'Contoso': {'Token': 'x1y2'}}},
+        )
+        redfish.fetch_resource('https://bmc/redfish/v1/AccountService/Accounts/1')
+        text = redfish.format_responses()
+        self.assertNotIn('linuxfabrik', text)
+        self.assertNotIn('x1y2', text)
+
+    @mock.patch.object(redfish, 'url')
+    def test_nothing_is_recorded_unless_switched_on(self, url_mock):
+        redfish._RESPONSES['on'] = False
+        url_mock.fetch_json.return_value = (True, {'Id': '1'})
+        redfish.fetch_resource('https://bmc/redfish/v1/Systems/1')
+        self.assertEqual(redfish._RESPONSES['items'], [])
+
+    def test_replay_without_recorded_responses_fails(self):
+        ok, err = redfish.replay('Everything is ok. Checked sensors on 1 member.')
+        self.assertFalse(ok)
+        self.assertIn('no recorded Redfish responses', err)
+        self.assertIsNone(redfish._REPLAY['responses'])
+
+    def test_replay_of_broken_json_names_the_path(self):
+        ok, err = redfish.replay('### GET /redfish/v1/Chassis\n{"Members": [')
+        self.assertFalse(ok)
+        self.assertIn('/redfish/v1/Chassis', err)
+
+    @mock.patch.object(redfish, 'atexit')
+    def test_the_exit_handler_is_registered_once(self, atexit_mock):
+        redfish._RESPONSES['on'] = False
+        redfish.record_responses()
+        redfish.record_responses()
+        atexit_mock.register.assert_called_once_with(
+            redfish._print_unformatted_responses
+        )
+
+    def test_the_exit_handler_prints_only_what_was_not_handed_over(self):
+        redfish._RESPONSES['items'] = [('/redfish/v1/Chassis', {'Name': 'a|b'}, False)]
+        with mock.patch('builtins.print') as print_mock:
+            redfish._print_unformatted_responses()
+        printed = print_mock.call_args[0][0]
+        self.assertIn('### GET /redfish/v1/Chassis', printed)
+        # a pipe would start the performance data of the check's output
+        self.assertNotIn('|', printed)
+        with mock.patch('builtins.print') as print_mock:
+            redfish._print_unformatted_responses()
+        print_mock.assert_not_called()
 
 
 if __name__ == '__main__':
