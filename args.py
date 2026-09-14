@@ -173,6 +173,14 @@ HELP_TEXTS = {
         'something happened lately rather than a total that keeps growing for as long '
         'as the source is kept.'
     ),
+    '--mail-encryption': (
+        'Set how the connection to the mail server is encrypted. '
+        '`none` sends the mail and the login in plaintext. '
+        '`starttls` upgrades the connection with STARTTLS, which the server has to offer. '
+        '`tls` encrypts the connection from the start (SMTPS, implicit TLS). '
+        'The server certificate is verified unless `--insecure` is given. '
+        'Example: `--mail-encryption=tls --mail-port=465`.'
+    ),
     '--mail-password': 'Set the mail server login password.',
     '--mail-port': 'Set the mail server port.',
     '--mail-recipient': 'Set the mail recipient.',

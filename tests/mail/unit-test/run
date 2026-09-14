@@ -15,9 +15,14 @@ suite replaces smtplib.SMTP with an in-memory fake, so no socket is ever
 opened, and asserts the message-assembly contract (From/To/Subject headers,
 plain-only vs. multipart/alternative, inline related image by Content-ID),
 the login contract (only when a password is set, sender used as the fallback
-login user) and the (success, result) error handling for a transport failure.
+login user), the encryption contract (STARTTLS before the login, implicit TLS
+via smtplib.SMTP_SSL, certificates verified unless insecure) and the
+(success, result) error handling, including how certificate failures, a port
+that does not speak TLS and the answers of the server are worded.
 """
 
+import smtplib
+import ssl
 import sys
 import unittest
 from typing import ClassVar
@@ -27,16 +32,21 @@ sys.path.insert(0, '..')
 
 import lib.mail as mail
 
+PASSWORD = 'linuxfabrik'
+
 
 class _FakeSMTP:
     """Minimal smtplib.SMTP stand-in that records construction, login and send."""
 
     instances: ClassVar[list] = []
+    offers_starttls = True
 
-    def __init__(self, host=None, port=None, timeout=None):
+    def __init__(self, host=None, port=None, timeout=None, context=None):
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.context = context
+        self.events = []
         self.logins = []
         self.sent = []
         _FakeSMTP.instances.append(self)
@@ -48,16 +58,36 @@ class _FakeSMTP:
         return False
 
     def login(self, user, password):
+        self.events.append('login')
         self.logins.append((user, password))
 
     def send_message(self, msg):
+        self.events.append('send')
         self.sent.append(msg)
 
+    def starttls(self, context=None):
+        if not self.offers_starttls:
+            raise smtplib.SMTPNotSupportedError(
+                'STARTTLS extension not supported by server.'
+            )
+        self.events.append('starttls')
+        self.context = context
 
-def patch_smtp():
-    """Patch lib.mail.smtplib.SMTP with a fresh _FakeSMTP recorder."""
+
+class _FakeSMTPSSL(_FakeSMTP):
+    """smtplib.SMTP_SSL stand-in, told apart from _FakeSMTP by its class."""
+
+
+class _FakeSMTPNoStartTLS(_FakeSMTP):
+    """smtplib.SMTP stand-in for a server that does not offer STARTTLS."""
+
+    offers_starttls = False
+
+
+def patch_smtp(smtp_class=_FakeSMTP):
+    """Patch lib.mail.smtplib.SMTP and SMTP_SSL with fresh recorders."""
     _FakeSMTP.instances = []
-    return mock.patch.object(mail.smtplib, 'SMTP', _FakeSMTP)
+    return mock.patch.multiple(mail.smtplib, SMTP=smtp_class, SMTP_SSL=_FakeSMTPSSL)
 
 
 class TestSend(unittest.TestCase):
@@ -177,9 +207,9 @@ class TestSend(unittest.TestCase):
                 'to@example.com',
                 plain='Body',
                 username='login-user',
-                password='linuxfabrik',
+                password=PASSWORD,
             )
-        self.assertEqual(_FakeSMTP.instances[0].logins, [('login-user', 'linuxfabrik')])
+        self.assertEqual(_FakeSMTP.instances[0].logins, [('login-user', PASSWORD)])
 
     def test_login_falls_back_to_sender(self):
         with patch_smtp():
@@ -188,10 +218,10 @@ class TestSend(unittest.TestCase):
                 'from@example.com',
                 'to@example.com',
                 plain='Body',
-                password='linuxfabrik',
+                password=PASSWORD,
             )
         self.assertEqual(
-            _FakeSMTP.instances[0].logins, [('from@example.com', 'linuxfabrik')]
+            _FakeSMTP.instances[0].logins, [('from@example.com', PASSWORD)]
         )
 
     def test_transport_failure_returns_error(self):
@@ -203,6 +233,219 @@ class TestSend(unittest.TestCase):
             )
         self.assertFalse(result[0])
         self.assertIn('connection refused', result[1])
+
+
+class TestEncryption(unittest.TestCase):
+    """Assert how the connection is encrypted and whether the peer is verified."""
+
+    def send(self, **kwargs):
+        return mail.send(
+            'mail.example.com',
+            'from@example.com',
+            'to@example.com',
+            plain='Body',
+            **kwargs,
+        )
+
+    def test_none_is_default_and_plaintext(self):
+        with patch_smtp():
+            result = self.send(password=PASSWORD)
+        smtp = _FakeSMTP.instances[0]
+        self.assertEqual(result, (True, True))
+        self.assertIs(type(smtp), _FakeSMTP)
+        self.assertIsNone(smtp.context)
+        self.assertEqual(smtp.events, ['login', 'send'])
+
+    def test_starttls_before_login_and_send(self):
+        with patch_smtp():
+            result = self.send(encryption='starttls', password=PASSWORD)
+        smtp = _FakeSMTP.instances[0]
+        self.assertEqual(result, (True, True))
+        self.assertIs(type(smtp), _FakeSMTP)
+        self.assertEqual(smtp.events, ['starttls', 'login', 'send'])
+
+    def test_starttls_verifies_certificate(self):
+        with patch_smtp():
+            self.send(encryption='starttls')
+        context = _FakeSMTP.instances[0].context
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+
+    def test_starttls_not_offered_sends_nothing(self):
+        with patch_smtp(_FakeSMTPNoStartTLS):
+            result = self.send(encryption='starttls', password=PASSWORD)
+        smtp = _FakeSMTP.instances[0]
+        self.assertFalse(result[0])
+        self.assertIn('STARTTLS', result[1])
+        self.assertEqual(smtp.logins, [])
+        self.assertEqual(smtp.sent, [])
+
+    def test_tls_uses_smtp_ssl_with_verifying_context(self):
+        with patch_smtp():
+            result = self.send(encryption='tls', port=465, password=PASSWORD)
+        smtp = _FakeSMTP.instances[0]
+        self.assertEqual(result, (True, True))
+        self.assertIs(type(smtp), _FakeSMTPSSL)
+        self.assertEqual(smtp.port, 465)
+        self.assertEqual(smtp.context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(smtp.context.check_hostname)
+        self.assertEqual(smtp.events, ['login', 'send'])
+
+    def assert_unverified(self, context):
+        self.assertEqual(context.verify_mode, ssl.CERT_NONE)
+        self.assertFalse(context.check_hostname)
+
+    def test_insecure_skips_verification_starttls(self):
+        with patch_smtp():
+            self.send(encryption='starttls', insecure=True)
+        self.assert_unverified(_FakeSMTP.instances[0].context)
+
+    def test_insecure_skips_verification_tls(self):
+        with patch_smtp():
+            self.send(encryption='tls', insecure=True)
+        self.assert_unverified(_FakeSMTP.instances[0].context)
+
+    def test_insecure_without_encryption_stays_plaintext(self):
+        with patch_smtp():
+            result = self.send(insecure=True)
+        smtp = _FakeSMTP.instances[0]
+        self.assertEqual(result, (True, True))
+        self.assertIs(type(smtp), _FakeSMTP)
+        self.assertIsNone(smtp.context)
+        self.assertEqual(smtp.events, ['send'])
+
+    def assert_rejected(self, encryption):
+        with patch_smtp():
+            result = self.send(encryption=encryption)
+        self.assertFalse(result[0])
+        self.assertIn('unknown encryption', result[1])
+        self.assertEqual(_FakeSMTP.instances, [])
+
+    def test_unknown_encryption_ssl_does_not_connect(self):
+        self.assert_rejected('ssl')
+
+    def test_unknown_encryption_uppercase_does_not_connect(self):
+        self.assert_rejected('TLS')
+
+    def test_unknown_encryption_empty_does_not_connect(self):
+        self.assert_rejected('')
+
+    def test_unknown_encryption_none_type_does_not_connect(self):
+        self.assert_rejected(None)
+
+    def test_unknown_encryption_wrong_type_does_not_connect(self):
+        self.assert_rejected(True)
+
+
+def _raising(exc):
+    """Return an SMTP class stand-in whose construction raises `exc`."""
+    return mock.MagicMock(side_effect=exc)
+
+
+class TestErrorMessage(unittest.TestCase):
+    """Assert that a failed delivery is reported in words an operator can act on."""
+
+    def send(self, **kwargs):
+        return mail.send(
+            'mail.example.com',
+            'from@example.com',
+            'to@example.com',
+            plain='Body',
+            port=465,
+            **kwargs,
+        )
+
+    def test_certificate_hostname_mismatch_explained(self):
+        exc = ssl.SSLCertVerificationError(1, 'certificate verify failed')
+        exc.verify_code = 62
+        exc.verify_message = "Hostname mismatch, certificate is not valid for 'x'."
+        with mock.patch.object(mail.smtplib, 'SMTP_SSL', _raising(exc)):
+            result = self.send(encryption='tls')
+        self.assertEqual(
+            result,
+            (
+                False,
+                'Error: TLS certificate verification failed for mail.example.com:465: '
+                "Hostname mismatch, certificate is not valid for 'x'. "
+                + mail.url.TLS_VERIFY_HINTS[62],
+            ),
+        )
+
+    def test_certificate_unknown_code_has_no_hint(self):
+        exc = ssl.SSLCertVerificationError(1, 'certificate verify failed')
+        exc.verify_code = 64
+        exc.verify_message = 'IP address mismatch'
+        with mock.patch.object(mail.smtplib, 'SMTP_SSL', _raising(exc)):
+            result = self.send(encryption='tls')
+        self.assertEqual(
+            result[1],
+            'Error: TLS certificate verification failed for mail.example.com:465: '
+            'IP address mismatch.',
+        )
+
+    def test_certificate_failure_during_starttls_explained(self):
+        exc = ssl.SSLCertVerificationError(1, 'certificate verify failed')
+        exc.verify_code = 19
+        exc.verify_message = 'self-signed certificate in certificate chain'
+        starttls = mock.patch.object(_FakeSMTP, 'starttls', side_effect=exc)
+        with patch_smtp(), starttls:
+            result = self.send(encryption='starttls', password=PASSWORD)
+        self.assertIn('TLS certificate verification failed', result[1])
+        self.assertIn(mail.url.TLS_VERIFY_HINTS[19], result[1])
+        self.assertEqual(_FakeSMTP.instances[0].logins, [])
+
+    def test_plaintext_port_explained(self):
+        exc = ssl.SSLError(1, '[SSL: WRONG_VERSION_NUMBER] wrong version number')
+        exc.reason = 'WRONG_VERSION_NUMBER'
+        with mock.patch.object(mail.smtplib, 'SMTP_SSL', _raising(exc)):
+            result = self.send(encryption='tls')
+        self.assertEqual(
+            result[1],
+            'Error: mail.example.com:465 does not speak TLS from the start. '
+            'It expects a plaintext connection, possibly upgraded with STARTTLS.',
+        )
+
+    def test_other_ssl_error_passed_through(self):
+        exc = ssl.SSLError(1, '[SSL: SOMETHING] something')
+        exc.reason = 'SOMETHING'
+        with mock.patch.object(mail.smtplib, 'SMTP_SSL', _raising(exc)):
+            result = self.send(encryption='tls')
+        self.assertEqual(result[1], f'Error: {exc}')
+
+    def test_server_answer_decoded(self):
+        exc = mail.smtplib.SMTPAuthenticationError(535, b'5.7.8 authentication failed')
+        with mock.patch.object(mail.smtplib, 'SMTP', _raising(exc)):
+            result = self.send()
+        self.assertEqual(result, (False, 'Error: 535 5.7.8 authentication failed'))
+
+    def test_server_answer_not_utf8_decoded_as_latin1(self):
+        exc = mail.smtplib.SMTPAuthenticationError(535, b'5.7.8 Zugang verweigert \xe4')
+        with mock.patch.object(mail.smtplib, 'SMTP', _raising(exc)):
+            result = self.send()
+        self.assertEqual(result[1], 'Error: 535 5.7.8 Zugang verweigert \u00e4')
+
+    def test_refused_recipients_decoded(self):
+        exc = mail.smtplib.SMTPRecipientsRefused(
+            {
+                'a@example.com': (451, b'4.3.0 temporary lookup failure'),
+                'b@example.com': (550, b'5.1.1 unknown user'),
+            }
+        )
+        with mock.patch.object(mail.smtplib, 'SMTP', _raising(exc)):
+            result = self.send()
+        self.assertEqual(
+            result[1],
+            'Error: recipient refused: '
+            'a@example.com (451 4.3.0 temporary lookup failure), '
+            'b@example.com (550 5.1.1 unknown user)',
+        )
+
+    def test_starttls_not_offered_passed_through(self):
+        with patch_smtp(_FakeSMTPNoStartTLS):
+            result = self.send(encryption='starttls')
+        self.assertEqual(
+            result, (False, 'Error: STARTTLS extension not supported by server.')
+        )
 
 
 if __name__ == '__main__':
