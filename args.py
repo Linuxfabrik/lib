@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk, human
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026083001'
+__version__ = '2026091401'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -80,6 +80,7 @@ HELP_TEXTS = {
     '--critical-seconds': 'CRIT threshold in seconds.',
     '--critical-temperature': 'CRIT threshold in degrees Celsius.',
     '--critical-voltage': 'CRIT threshold in volts.',
+    '--datetime': 'Set the message timestamp ($icinga.short_date_time$).',
     '--defaults-file': (
         'Specifies a cnf file to read parameters like user, host and password from '
         '(for MySQL/MariaDB cnf-style files).'
@@ -116,6 +117,10 @@ HELP_TEXTS = {
         'for each service, and starts over once that entry is gone. '
         'A duration such as `12h`, `8D` or `2W`; `0D` disables the grace period.'
     ),
+    '--host-address': 'Set the IPv4 address of the host.',
+    '--host-displayname': 'Set the display name of the host ($host.display_name$).',
+    '--host-output': 'Set the host output ($host.output$).',
+    '--host-state': 'Set the host state ($host.state$).',
     '--hostname': 'Hostname or IP address.',
     '--icinga-callback': (
         'Ask the monitoring server whether the service running this check is '
@@ -134,6 +139,10 @@ HELP_TEXTS = {
         'Monitoring server API URL. Example: `https://monitoring.example.com:5665`.'
     ),
     '--icinga-username': 'Monitoring server API username.',
+    '--icingaweb2-url': (
+        'Set the Icinga Web 2 URL. '
+        'Example: `--icingaweb2-url=https://icinga.example.com/icingaweb2`.'
+    ),
     '--ignore': (
         'Any item matching this string will be ignored. '
         'Case-sensitive. '
@@ -164,6 +173,12 @@ HELP_TEXTS = {
         'something happened lately rather than a total that keeps growing for as long '
         'as the source is kept.'
     ),
+    '--mail-password': 'Set the mail server login password.',
+    '--mail-port': 'Set the mail server port.',
+    '--mail-recipient': 'Set the mail recipient.',
+    '--mail-sender': 'Set the mail sender.',
+    '--mail-server': 'Set the mail server.',
+    '--mail-user': 'Set the mail server login user.',
     '--match': (
         'Filter by this Python regular expression. '
         'Case-sensitive by default; use `(?i)` for case-insensitive matching. '
@@ -209,6 +224,14 @@ HELP_TEXTS = {
         'clean result then only means nothing else was found, not that the target is '
         'free of known vulnerabilities.'
     ),
+    '--notes': 'Set the notes.',
+    '--notes-url': 'Set the notes url.',
+    '--notification-author': 'Set the author of the comment ($notification.author$).',
+    '--notification-comment': 'Set the comment ($notification.comment$).',
+    '--notification-type': (
+        'Set the type of notification ($notification.type$). '
+        'Example: `--notification-type=PROBLEM`.'
+    ),
     '--offset-eol': (
         'Alert n days before ("-30") or after an EOL date ("30" or "+30").'
     ),
@@ -230,6 +253,7 @@ HELP_TEXTS = {
         'Lines that name no source are counted together as one, so a burst of those still '
         'reports.'
     ),
+    '--perfdata': 'Set the perfdata.',
     '--port': 'Port number.',
     '--proxy': (
         'Proxy to reach the target through. '
@@ -242,7 +266,20 @@ HELP_TEXTS = {
         'command-line argument is visible to every user on the host. '
         'Example: `--proxy=http://proxy.example.com:3128`.'
     ),
+    '--rocketchat-mentions': (
+        'Set the Rocket.Chat mentions. Can be specified multiple times.'
+    ),
+    '--rocketchat-url': 'Set the Rocket.Chat Webhook API URL.',
+    '--service-displayname': (
+        'Set the display name of the service ($service.display_name$).'
+    ),
+    '--service-output': 'Set the service output ($service.output$).',
+    '--service-state': 'Set the service state ($service.state$).',
+    '--servicename': 'Set the servicename ($service.name$).',
     '--severity': 'Severity for alerting.',
+    '--short': (
+        'Send a short message. This can be useful when using an SMS relay, for example.'
+    ),
     '--stratum': (
         'Warns if the determined stratum of the time server is greater than or equal '
         'to this value. '
