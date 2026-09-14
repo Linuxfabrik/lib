@@ -64,6 +64,62 @@ class TestFileHelpers(unittest.TestCase):
         self.assertFalse(disk.file_exists(empty))
         self.assertTrue(disk.file_exists(empty, allow_empty=True))
 
+    def test_is_symlink(self):
+        disk.write_file(self.file, 'x')
+        self.assertFalse(disk.is_symlink(self.file))
+        link = os.path.join(self.dir, 'link')
+        os.symlink(self.file, link)
+        self.assertTrue(disk.is_symlink(link))
+        # A path that cannot be examined is not a symlink, and does not raise.
+        self.assertFalse(disk.is_symlink(os.path.join(self.dir, 'nope')))
+
+    def test_read_file_allowed_roots_rejects_escape(self):
+        # A symlink inside the root that points outside it is refused, because
+        # is_within() resolves the real path before comparing.
+        outside = os.path.join(self.dir, 'outside')
+        disk.write_file(outside, 'SECRET')
+        root = os.path.join(self.dir, 'root')
+        disk.mkdir(root)
+        escape = os.path.join(root, 'escape')
+        os.symlink(outside, escape)
+        success, result = disk.read_file(escape, allowed_roots=[root])
+        self.assertFalse(success)
+        self.assertIn('outside the allowed roots', result)
+        # A real file inside the root is read normally.
+        inside = os.path.join(root, 'inside')
+        disk.write_file(inside, 'ok')
+        self.assertEqual(disk.read_file(inside, allowed_roots=[root]), (True, 'ok'))
+
+    def test_read_file_nofollow_refuses_symlink(self):
+        # nofollow refuses even a symlink whose target is inside the root, which
+        # closes the check-then-open race that allowed_roots alone leaves.
+        disk.write_file(self.file, 'target')
+        link = os.path.join(self.dir, 'link')
+        os.symlink(self.file, link)
+        success, result = disk.read_file(link, nofollow=True)
+        self.assertFalse(success)
+        self.assertIn('while opening or reading', result)
+        # Without nofollow the same symlink reads its target.
+        self.assertEqual(disk.read_file(link), (True, 'target'))
+
+    def test_read_env_allowed_roots_and_nofollow(self):
+        root = os.path.join(self.dir, 'root')
+        disk.mkdir(root)
+        conf = os.path.join(root, 'account.conf')
+        disk.write_file(conf, 'KEY=value\n')
+        self.assertEqual(
+            disk.read_env(conf, allowed_roots=[root], nofollow=True),
+            (True, {'KEY': 'value'}),
+        )
+        # A symlinked conf pointing out of the root is refused before it is read.
+        secret = os.path.join(self.dir, 'secret.env')
+        disk.write_file(secret, 'TOKEN=linuxfabrik\n')
+        planted = os.path.join(root, 'planted.conf')
+        os.symlink(secret, planted)
+        success, result = disk.read_env(planted, allowed_roots=[root], nofollow=True)
+        self.assertFalse(success)
+        self.assertIn('outside the allowed roots', result)
+
     def test_get_fingerprint_hashes_the_head_only(self):
         disk.write_file(self.file, 'head' + 'tail')
         success, (fingerprint, hashed) = disk.get_fingerprint(self.file, length=4)

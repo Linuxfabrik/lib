@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082901'
+__version__ = '2026091401'
 
 import csv
 import glob as _glob
@@ -180,6 +180,32 @@ def file_exists(path, allow_empty=False):
         return True
 
     return os.path.getsize(path) > 0
+
+
+def is_symlink(path):
+    """
+    Return whether `path` is a symbolic link.
+
+    An exception-safe wrapper around `os.path.islink()`, so a plugin that must refuse a
+    symlink (a root process about to open a caller-supplied path, for example) does not
+    have to import `os` itself. It sits with `dir_exists()` and `file_exists()` as the
+    filesystem-predicate a plugin reaches for. A path that cannot be examined counts as
+    not a symlink; the caller's own open or read then reports the real trouble.
+
+    ### Parameters
+    - **path** (`str | os.PathLike`): The path to test.
+
+    ### Returns
+    - **bool**: True if `path` is a symbolic link, otherwise False.
+
+    ### Example
+    >>> is_symlink('/path/does/not/exist')
+    False
+    """
+    try:
+        return os.path.islink(path)
+    except OSError:
+        return False
 
 
 def is_within(path, roots):
@@ -864,7 +890,55 @@ def read_csv(
         return False, f'Unknown error opening or reading {filename}: {e}'
 
 
-def read_env(filename, delimiter='='):
+def _open_for_read(filename, binary=False, allowed_roots=None, nofollow=False):
+    """
+    Open a file for reading, applying the containment guards the readers below share.
+
+    The guarantee lives here rather than in each caller, so a privileged consumer gets
+    the same protection everywhere (see the "Confining a path a privileged plugin was
+    pointed at" section in the monitoring-plugins CONTRIBUTING.md).
+
+    ### Parameters
+    - **filename** (`str`): Path to open.
+    - **binary** (`bool`, optional): Open in binary mode. Defaults to False (UTF-8
+      text).
+    - **allowed_roots** (`iterable` of `str`, optional): When given, the file is
+      refused unless its real path resolves inside one of these roots. Symlinks and
+      `..` are resolved first (via `is_within()`), so a symlink pointing out of a root
+      is rejected. Defaults to None (no containment).
+    - **nofollow** (`bool`, optional): Refuse to open a symlink at the final path
+      component (`O_NOFOLLOW`), which closes the check-then-open race that
+      `allowed_roots` alone leaves. Defaults to False.
+
+    ### Returns
+    - **tuple**:
+        - tuple[0] (**bool**): True on success, otherwise False.
+        - tuple[1] (**file object or str**): The open file object, or an error message.
+    """
+    if allowed_roots and not is_within(os.path.realpath(filename), allowed_roots):
+        return False, (
+            f'Refusing to read "{filename}": resolved path is outside the allowed '
+            f'roots ({", ".join(allowed_roots)}); bind-mount it in if intended.'
+        )
+    try:
+        if nofollow:
+            # O_NOFOLLOW is POSIX-only. On a platform without it getattr() yields 0, so
+            # the flag is simply absent there and the open still succeeds; the caller
+            # keeps the allowed_roots containment either way.
+            fd = os.open(filename, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+            if binary:
+                return True, os.fdopen(fd, 'rb')
+            return True, os.fdopen(fd, mode='r', encoding='utf-8')
+        if binary:
+            return True, open(filename, mode='rb')
+        return True, open(filename, mode='r', encoding='utf-8')
+    except OSError as e:
+        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
+    except Exception as e:
+        return False, f'Unknown error opening or reading {filename}: {e}'
+
+
+def read_env(filename, delimiter='=', allowed_roots=None, nofollow=False):
     """
     Read a shell script that sets environment variables and return a dictionary with the
     extracted variables.
@@ -877,6 +951,11 @@ def read_env(filename, delimiter='='):
     - **filename** (`str`): Path to the environment file to read.
     - **delimiter** (`str`, optional): The character that separates keys and values.
       Defaults to '='.
+    - **allowed_roots** (`iterable` of `str`, optional): Confine the read to these
+      roots; a file resolving outside them is refused. See `_open_for_read()`.
+      Defaults to None.
+    - **nofollow** (`bool`, optional): Refuse to follow a symlink at the final path
+      component. See `_open_for_read()`. Defaults to False.
 
     ### Returns
     - **tuple**:
@@ -898,8 +977,13 @@ def read_env(filename, delimiter='='):
     >>> read_env('env.sh')
     {'OS_AUTH_URL': 'https://api/v3', 'OS_PROJECT_NAME': 'mypro', 'OS_PASSWORD': 'linuxfabrik'}
     """
+    success, handle = _open_for_read(
+        filename, allowed_roots=allowed_roots, nofollow=nofollow
+    )
+    if not success:
+        return False, handle
     try:
-        with open(filename, mode='r', encoding='utf-8') as envfile:
+        with handle as envfile:
             data = {}
             for raw_line in envfile:
                 line = raw_line.strip()
@@ -918,7 +1002,9 @@ def read_env(filename, delimiter='='):
         return False, f'Unknown error opening or reading {filename}: {e}'
 
 
-def read_file(filename, binary=False, max_bytes=None):
+def read_file(
+    filename, binary=False, max_bytes=None, allowed_roots=None, nofollow=False
+):
     """
     Read the contents of a file and return them.
 
@@ -931,6 +1017,14 @@ def read_file(filename, binary=False, max_bytes=None):
       the file is of interest, for example a metadata header at the top, so a file that
       unexpectedly grew to gigabytes cannot exhaust memory. Defaults to None, which
       reads the file completely.
+    - **allowed_roots** (`iterable` of `str`, optional): Confine the read to these
+      roots; a file whose real path resolves outside them is refused. A plugin that
+      runs as root and opens a caller-supplied path must pass this so a planted symlink
+      cannot redirect the read to `/etc/shadow` or a private key. See
+      `_open_for_read()`. Defaults to None.
+    - **nofollow** (`bool`, optional): Refuse to follow a symlink at the final path
+      component (`O_NOFOLLOW`), closing the check-then-open race `allowed_roots` alone
+      leaves. See `_open_for_read()`. Defaults to False.
 
     ### Returns
     - **tuple**:
@@ -949,12 +1043,15 @@ def read_file(filename, binary=False, max_bytes=None):
     >>> success, content = read_file('example.txt')
     >>> success, raw = read_file('cert.der', binary=True)
     >>> success, header = read_file('plugin.php', binary=True, max_bytes=8192)
+    >>> success, content = read_file(dmesg, allowed_roots=[dump_dir], nofollow=True)
     """
+    success, handle = _open_for_read(
+        filename, binary=binary, allowed_roots=allowed_roots, nofollow=nofollow
+    )
+    if not success:
+        return False, handle
     try:
-        if binary:
-            with open(filename, mode='rb') as f:
-                return True, f.read() if max_bytes is None else f.read(max_bytes)
-        with open(filename, mode='r', encoding='utf-8') as f:
+        with handle as f:
             return True, f.read() if max_bytes is None else f.read(max_bytes)
     except OSError as e:
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
