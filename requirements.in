@@ -47,7 +47,7 @@
 # frozen lockfile, or `--upgrade` to raise every pin.
 
 beautifulsoup4
-httpx[http2]
+httpx[http2]>=0.26  # url.py passes `proxy=`, which httpx accepts since 0.26
 lxml --only-binary=lxml
 psutil
 pymysql
