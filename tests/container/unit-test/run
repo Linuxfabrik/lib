@@ -17,8 +17,10 @@ behaviour under test was built around; this host runs podman-docker rather than
 Docker, so they could not be taken again here.
 """
 
+import contextlib
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, '..')
 
@@ -252,6 +254,197 @@ class TestGetEngineError(unittest.TestCase):
         # sentence calls strip_daemon_error() on the way in.
         message, _ = container.get_engine_error(NO_LEADER)
         self.assertTrue(message.startswith('Error response from daemon:'))
+
+
+class TestRun(unittest.TestCase):
+    """run(): one time budget for all engine commands of a run."""
+
+    def _run(self, answer, now=(100.0, 100.0), **kwargs):
+        clock = iter(now)
+        # ExitStack rather than a parenthesized `with`, which Python 3.9 cannot parse
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(
+                    container.time, 'now', side_effect=lambda **_: next(clock)
+                )
+            )
+            m = stack.enter_context(
+                mock.patch.object(container.shell, 'shell_exec', return_value=answer)
+            )
+            result = container.run(**kwargs)
+        return result, m
+
+    def test_hands_back_what_the_client_printed(self):
+        result, m = self._run(
+            (True, ('{}', '', 0)), cmd=['podman', 'info'], timeout=8, started=100.0
+        )
+        self.assertEqual(result, (True, ('{}', '', 0)))
+        self.assertEqual(m.call_args.args[0], ['podman', 'info'])
+
+    def test_a_non_zero_exit_code_is_not_judged(self):
+        answer = (True, ('', 'Cannot connect to the Docker daemon', 1))
+        result, _ = self._run(answer, cmd=['docker', 'ps'], timeout=8, started=100.0)
+        self.assertEqual(result, answer)
+
+    def test_the_command_gets_what_is_left_of_the_budget(self):
+        _, m = self._run(
+            (True, ('', '', 0)),
+            now=(103.0,),
+            cmd=['docker', 'ps'],
+            timeout=8,
+            started=100.0,
+        )
+        self.assertAlmostEqual(m.call_args.kwargs['timeout'], 5.0)
+
+    def test_started_defaults_to_now(self):
+        _, m = self._run((True, ('', '', 0)), now=(50.0, 50.0), cmd=['x'], timeout=8)
+        self.assertAlmostEqual(m.call_args.kwargs['timeout'], 8.0)
+
+    def test_a_spent_budget_does_not_start_the_client(self):
+        result, m = self._run(
+            (True, ('', '', 0)),
+            now=(108.0,),
+            cmd=['docker', 'stats', '--no-stream'],
+            timeout=8,
+            started=100.0,
+        )
+        m.assert_not_called()
+        self.assertEqual(
+            result,
+            (
+                False,
+                (
+                    'Timeout after 8s while running `docker stats --no-stream`.',
+                    STATE_WARN,
+                ),
+            ),
+        )
+
+    def test_a_client_that_times_out_is_a_warning(self):
+        result, _ = self._run(
+            (False, 'Timeout after 7.5 seconds.'),
+            cmd=['podman', 'ps'],
+            timeout=8,
+            started=100.0,
+            run_as='rocketchat',
+        )
+        # the message names the configured budget and the user the client ran as
+        self.assertEqual(
+            result,
+            (
+                False,
+                (
+                    'Timeout after 8s while running `podman ps` (user: `rocketchat`).',
+                    STATE_WARN,
+                ),
+            ),
+        )
+
+    def test_a_long_command_is_quoted_in_part(self):
+        ids = [f'sha256:{i:064x}' for i in range(500)]
+        result, _ = self._run(
+            (False, 'Timeout after 7.5 seconds.'),
+            cmd=['podman', 'image', 'inspect', *ids],
+            timeout=8,
+            started=100.0,
+        )
+        message = result[1][0]
+        self.assertTrue(
+            message.startswith(
+                f'Timeout after 8s while running `podman image inspect {ids[0]} ... (499 more)`'
+            )
+        )
+        self.assertLess(len(message), 200)
+
+    def test_a_short_command_keeps_every_argument(self):
+        cmd = ['docker', 'service', 'ps', '--no-trunc', '--format', '{{json .}}', 'web']
+        result, _ = self._run(
+            (False, 'Timeout after 7.5 seconds.'), cmd=cmd, timeout=8, started=100.0
+        )
+        self.assertIn(f'`{" ".join(cmd)}`', result[1][0])
+
+    def test_a_fractional_timeout_is_accepted(self):
+        result, m = self._run(
+            (False, 'Timeout after 2.5 seconds.'),
+            now=(100.0,),
+            cmd=['docker', 'ps'],
+            timeout=2.5,
+            started=100.0,
+        )
+        self.assertAlmostEqual(m.call_args.kwargs['timeout'], 2.5)
+        self.assertEqual(
+            result[1], ('Timeout after 2.5s while running `docker ps`.', STATE_WARN)
+        )
+
+    def test_an_unusable_start_is_unknown_without_starting_anything(self):
+        for started in ('100', float('nan'), float('inf'), True, [100]):
+            with self.subTest(started=started):
+                result, m = self._run(
+                    (True, ('', '', 0)), cmd=['docker'], timeout=8, started=started
+                )
+                m.assert_not_called()
+                self.assertEqual(result[1][1], STATE_UNKNOWN)
+
+    def test_arguments_given_as_bytes_are_quoted_as_text(self):
+        result, _ = self._run(
+            (False, 'Timeout after 7.5 seconds.'),
+            cmd=[b'podman', b'caf\xe9'],
+            timeout=8,
+            started=100.0,
+        )
+        self.assertIn('`podman café`', result[1][0])
+
+    def test_a_first_argument_beyond_the_limit_is_quoted_whole(self):
+        # the executable is always named, even where it alone exceeds the limit
+        executable = '/opt/' + 'x' * 150 + '/podman'
+        result, _ = self._run(
+            (False, 'Timeout after 7.5 seconds.'),
+            cmd=[executable, 'ps'],
+            timeout=8,
+            started=100.0,
+        )
+        self.assertIn(f'`{executable} ... (1 more)`', result[1][0])
+
+    def test_run_as_is_passed_on(self):
+        _, m = self._run(
+            (True, ('', '', 0)), cmd=['podman'], timeout=8, started=100.0, run_as='u'
+        )
+        self.assertEqual(m.call_args.kwargs['run_as'], 'u')
+
+    def test_a_client_that_cannot_be_started_is_unknown(self):
+        result, _ = self._run(
+            (False, "[Errno 2] No such file or directory: 'docker'"),
+            cmd=['docker', 'ps'],
+            timeout=8,
+            started=100.0,
+        )
+        self.assertEqual(
+            result,
+            (False, ("[Errno 2] No such file or directory: 'docker'", STATE_UNKNOWN)),
+        )
+
+    def test_a_tuple_command_is_accepted(self):
+        _, m = self._run((True, ('', '', 0)), cmd=('docker', 'ps'), timeout=8)
+        self.assertEqual(m.call_args.args[0], ['docker', 'ps'])
+
+    def test_unusable_arguments_are_unknown_without_starting_anything(self):
+        for cmd, timeout in (
+            ('docker ps', 8),
+            ([], 8),
+            (None, 8),
+            (['docker'], 0),
+            (['docker'], -1),
+            (['docker'], '8'),
+            (['docker'], True),
+            (['docker'], None),
+            (['docker'], float('nan')),
+            (['docker'], float('inf')),
+        ):
+            with self.subTest(cmd=cmd, timeout=timeout):
+                result, m = self._run((True, ('', '', 0)), cmd=cmd, timeout=timeout)
+                m.assert_not_called()
+                self.assertFalse(result[0])
+                self.assertEqual(result[1][1], STATE_UNKNOWN)
 
 
 if __name__ == '__main__':
