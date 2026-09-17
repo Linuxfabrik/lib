@@ -28,7 +28,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082504'
+__version__ = '2026091601'
 
 import csv
 import functools
@@ -1309,6 +1309,94 @@ def first_seen(filename, name, keys):
     # A clock that went backwards (NTP step, a cache restored from a backup)
     # would hand out a negative age and let a threshold pass that should not.
     return {key: max(0, now - known[key]) for key in keys}
+
+
+def forget_sensors(
+    conn,
+    sensorcol,
+    keep,
+    table='perfdata',
+    delete_db_on_operational_error=True,
+):
+    """
+    Delete the rows of every sensor that is not in `keep`.
+
+    `cut_per_sensor()` bounds the history of each sensor, but never drops a sensor.
+    Where the set of sensors changes over time (a container that was removed, a
+    network interface that went away, a machine that was deleted), the rows of the
+    ones that are gone stay in the table for good, and a table holding a sensor per
+    short-lived workload grows without limit. Passing the sensors that exist right
+    now forgets the others.
+
+    ### Parameters
+    - **conn** (`sqlite3.Connection`): An active database connection object.
+    - **sensorcol** (`str`): Column that identifies the sensor, for example
+      `'interface'` or `'name'`.
+    - **keep** (`iterable[str]`): The sensors whose rows stay. An empty iterable
+      deletes every row.
+    - **table** (`str`, optional): Name of the table. Defaults to `'perfdata'`.
+    - **delete_db_on_operational_error** (`bool`, optional): Delete the database file
+      on `sqlite3.OperationalError`. Defaults to True.
+
+    ### Returns
+    - **tuple** (`bool`, `bool` or `str`):
+      - `(True, True)` on success.
+      - `(False, error_message)` on failure.
+
+    ### Notes
+    - Pass every sensor that still exists, not only the ones the current run looked
+      at. Two callers sharing a table while each filters its own subset would
+      otherwise delete each other's history on every run.
+    - `per_second_deltas()` keeps its samples in the table `perfdata` with the sensor
+      in the column `name`, so its cache is pruned with `sensorcol='name'`.
+    - A plain string is rejected rather than read as an iterable of its characters.
+    - Deliberately deletes sensor by sensor instead of building one `NOT IN` list, so
+      the number of sensors is not bound by the host parameter limit of older SQLite
+      versions.
+
+    ### Example
+    Forget the interfaces that no longer exist:
+    >>> forget_sensors(conn, sensorcol='interface', keep=['eth0', 'eth1'])
+    """
+    if isinstance(keep, (str, bytes)):
+        return False, 'The sensors to keep must be an iterable of names, not a string'
+    try:
+        keep = {str(sensor) for sensor in keep}
+    except TypeError:
+        return False, 'The sensors to keep must be an iterable of names'
+
+    known = __table_columns(conn, table)
+    if known and sensorcol not in known:
+        return False, f'No such column {sensorcol} in table {table}'
+
+    quoted_table = __quote_ident(table)
+    quoted_sensorcol = __quote_ident(sensorcol)
+
+    # `table` and `sensorcol` are quoted above, the sensor is bound.
+    select_sql = f'SELECT DISTINCT {quoted_sensorcol} AS sensor FROM {quoted_table}'  # nosec B608
+    delete_sql = f'DELETE FROM {quoted_table} WHERE {quoted_sensorcol} = :sensor'  # nosec B608
+
+    c = conn.cursor()
+    try:
+        stale = [
+            row[0]
+            for row in c.execute(select_sql).fetchall()
+            if row[0] is None or str(row[0]) not in keep
+        ]
+        for sensor in stale:
+            if sensor is None:
+                c.execute(
+                    f'DELETE FROM {quoted_table} WHERE {quoted_sensorcol} IS NULL'  # nosec B608
+                )
+            else:
+                c.execute(delete_sql, {'sensor': sensor})
+        return True, True
+    except sqlite3.Error as e:
+        return __handle_db_error(
+            conn, e, delete_sql, delete_db=delete_db_on_operational_error
+        )
+    except Exception as e:
+        return False, f'Query failed: {delete_sql}, Error: {e}'
 
 
 def get_colnames(col_definition):
