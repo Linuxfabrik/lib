@@ -26,6 +26,8 @@ the Kerberos credential-cache fallback, JEA configuration handling, CLIXML
 noise suppression and the exception-to-stderr normalization.
 """
 
+import base64
+import re
 import sys
 import types
 import unittest
@@ -81,6 +83,47 @@ def make_pywinrm_result(status_code=0, std_out=b'', std_err=b''):
     result.std_out = std_out
     result.std_err = std_err
     return result
+
+
+# A value is shipped as `FromBase64String('<base64>')`; these helpers read it back, so a
+# test can assert both what arrives on the remote side and that nothing else is there.
+_LITERAL = re.compile(
+    r'\(\[Text\.Encoding\]::UTF8\.GetString\('
+    r"\[Convert\]::FromBase64String\('([A-Za-z0-9+/=]*)'\)\)\)"
+)
+
+
+def decode_literals(script):
+    """Return the values of all `_ps_literal()` expressions in `script`, in order."""
+    return [base64.b64decode(m).decode('utf-8') for m in _LITERAL.findall(script)]
+
+
+def strip_literals(script):
+    """Return `script` with every `_ps_literal()` expression replaced by `L`."""
+    return _LITERAL.sub('L', script)
+
+
+def decode_native_call(command_line):
+    """Return the PowerShell script inside a `_native_call()` command line."""
+    prefix = 'powershell.exe -NoProfile -NonInteractive -EncodedCommand '
+    if not command_line.startswith(prefix):
+        raise AssertionError(f'not a native call: {command_line}')
+    return base64.b64decode(command_line[len(prefix) :]).decode('utf-16-le')
+
+
+# Values that break out of a quoted PowerShell or cmd.exe string one way or another.
+# U+2018 to U+201B close a single-quoted PowerShell string just like "'" does.
+HOSTILE = [
+    "O'Brien",
+    'svc\u2019; Write-Output INJECTED; \u2018',
+    'svc\u201a; Write-Output INJECTED; \u201b',
+    'x & echo INJECTED',
+    'x | calc',
+    '$(Write-Output INJECTED)',
+    '`n"quoted"',
+    'M\u00fcller',
+    '',
+]
 
 
 def force_jea(have_jea=True, have_winrm=False):
@@ -274,26 +317,50 @@ class TestMapTransport(unittest.TestCase):
 
 
 # ============================================================================
-# _quote_ps_value
+# _ps_literal, _native_call
 # ============================================================================
 
 
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
-class TestQuotePsValue(unittest.TestCase):
-    def test_plain_string_is_single_quoted(self):
-        self.assertEqual(winrm_lib._quote_ps_value('WinRM'), "'WinRM'")
+class TestPsLiteral(unittest.TestCase):
+    def test_value_round_trips(self):
+        for value in HOSTILE:
+            self.assertEqual(decode_literals(winrm_lib._ps_literal(value)), [value])
 
-    def test_embedded_single_quote_is_doubled(self):
-        self.assertEqual(winrm_lib._quote_ps_value("O'Brien"), "'O''Brien'")
-
-    def test_multiple_single_quotes(self):
-        self.assertEqual(winrm_lib._quote_ps_value("'a'b'"), "'''a''b'''")
+    def test_value_never_appears_in_the_script(self):
+        # the whole expression is fixed text plus base64, whatever the value holds
+        for value in HOSTILE:
+            self.assertEqual(strip_literals(winrm_lib._ps_literal(value)), 'L')
 
     def test_non_string_is_stringified(self):
-        self.assertEqual(winrm_lib._quote_ps_value(42), "'42'")
+        self.assertEqual(decode_literals(winrm_lib._ps_literal(42)), ['42'])
 
-    def test_empty_string(self):
-        self.assertEqual(winrm_lib._quote_ps_value(''), "''")
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestNativeCall(unittest.TestCase):
+    def test_command_line_is_base64_only(self):
+        # nothing cmd.exe could read as an operator reaches it
+        self.assertRegex(
+            winrm_lib._native_call('cmd.exe', HOSTILE),
+            r'^powershell\.exe -NoProfile -NonInteractive -EncodedCommand '
+            r'[A-Za-z0-9+/=]+$',
+        )
+
+    def test_program_and_arguments_arrive_in_order(self):
+        script = decode_native_call(winrm_lib._native_call('findstr', HOSTILE))
+        self.assertEqual(decode_literals(script), ['findstr', *HOSTILE])
+
+    def test_script_calls_the_program_and_keeps_its_return_code(self):
+        # `exit $LASTEXITCODE` alone would report a program that cannot be started as
+        # success, because $LASTEXITCODE is never set; the catch turns that into 1
+        script = decode_native_call(winrm_lib._native_call('ipconfig', ['/all']))
+        self.assertEqual(
+            strip_literals(script),
+            "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; "
+            'try { & L L } '
+            'catch { [Console]::Error.WriteLine($_.ToString()); exit 1 }; '
+            'exit $LASTEXITCODE',
+        )
 
 
 # ============================================================================
@@ -311,7 +378,9 @@ class TestRunCmdJea(unittest.TestCase):
         with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
             result = winrm_lib.run_cmd(args, 'ipconfig', ['/all'])
         self.assertEqual(result, {'retc': 0, 'stdout': 'out', 'stderr': 'err'})
-        session.execute_cmd.assert_called_once_with('ipconfig', args=['/all'])
+        session.execute_cmd.assert_called_once_with(
+            winrm_lib._native_call('ipconfig', ['/all'])
+        )
 
     def test_nonzero_rc_is_propagated(self):
         session = MagicMock()
@@ -321,13 +390,30 @@ class TestRunCmdJea(unittest.TestCase):
             result = winrm_lib.run_cmd(make_args(), 'whoami')
         self.assertEqual(result, {'retc': 5, 'stdout': '', 'stderr': 'bad'})
 
-    def test_params_default_to_empty_list(self):
+    def test_without_params_the_command_is_passed_as_it_stands(self):
         session = MagicMock()
         session.execute_cmd.return_value = ('', '', 0)
         client_cls = MagicMock(return_value=session)
         with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
             winrm_lib.run_cmd(make_args(), 'hostname')
-        session.execute_cmd.assert_called_once_with('hostname', args=[])
+            winrm_lib.run_cmd(make_args(), 'hostname', [])
+        self.assertEqual(
+            [c.args for c in session.execute_cmd.call_args_list],
+            [('hostname',), ('hostname',)],
+        )
+
+    def test_hostile_params_reach_cmd_exe_as_base64_only(self):
+        session = MagicMock()
+        session.execute_cmd.return_value = ('', '', 0)
+        client_cls = MagicMock(return_value=session)
+        with force_jea(), patch.object(winrm_lib, 'Client', client_cls, create=True):
+            winrm_lib.run_cmd(make_args(), 'cmd.exe', HOSTILE)
+        (command_line,), kwargs = session.execute_cmd.call_args
+        # pypsrp's execute_cmd() takes the command line only, no argument list
+        self.assertEqual(kwargs, {})
+        self.assertEqual(
+            decode_literals(decode_native_call(command_line)), ['cmd.exe', *HOSTILE]
+        )
 
     def test_client_constructed_with_mapped_transport_and_auth(self):
         session = MagicMock()
@@ -418,7 +504,9 @@ class TestRunCmdPywinrm(unittest.TestCase):
         ):
             result = winrm_lib.run_cmd(make_args(), 'ipconfig', ['/all'])
         self.assertEqual(result, {'retc': 0, 'stdout': 'out', 'stderr': ''})
-        session.run_cmd.assert_called_once_with('ipconfig', ['/all'])
+        session.run_cmd.assert_called_once_with(
+            winrm_lib._native_call('ipconfig', ['/all'])
+        )
 
     def test_session_built_with_auth_and_transport(self):
         session = MagicMock()
@@ -470,7 +558,7 @@ class TestRunCmdPywinrm(unittest.TestCase):
             patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
         ):
             winrm_lib.run_cmd(make_args(), 'hostname')
-        session.run_cmd.assert_called_once_with('hostname', [])
+        session.run_cmd.assert_called_once_with('hostname')
 
 
 # ============================================================================
@@ -705,7 +793,9 @@ class TestRunPsPywinrm(unittest.TestCase):
             patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
         ):
             winrm_lib.run_ps(make_args(), 'Get-Service', ['WinRM', 'Spooler'])
-        session.run_ps.assert_called_once_with('Get-Service WinRM Spooler')
+        (script,), _ = session.run_ps.call_args
+        self.assertEqual(strip_literals(script), '& L L L')
+        self.assertEqual(decode_literals(script), ['Get-Service', 'WinRM', 'Spooler'])
 
     def test_empty_positional_params_keeps_bare_cmd(self):
         session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
@@ -714,9 +804,11 @@ class TestRunPsPywinrm(unittest.TestCase):
             patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
         ):
             winrm_lib.run_ps(make_args(), 'Get-Date', [])
-        session.run_ps.assert_called_once_with('Get-Date')
+        (script,), _ = session.run_ps.call_args
+        self.assertEqual(strip_literals(script), '& L')
+        self.assertEqual(decode_literals(script), ['Get-Date'])
 
-    def test_dict_params_are_quoted(self):
+    def test_dict_params_are_named_literals(self):
         session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
         with (
             force_jea(have_jea=False, have_winrm=True),
@@ -727,18 +819,41 @@ class TestRunPsPywinrm(unittest.TestCase):
                 'Get-WmiObject',
                 {'Class': 'Win32_OperatingSystem'},
             )
-        session.run_ps.assert_called_once_with(
-            "Get-WmiObject -Class 'Win32_OperatingSystem'",
+        (script,), _ = session.run_ps.call_args
+        self.assertEqual(strip_literals(script), '& L -Class L')
+        self.assertEqual(
+            decode_literals(script), ['Get-WmiObject', 'Win32_OperatingSystem']
         )
 
-    def test_dict_params_escape_single_quotes(self):
-        session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
-        with (
-            force_jea(have_jea=False, have_winrm=True),
-            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
-        ):
-            winrm_lib.run_ps(make_args(), 'Get-Thing', {'Name': "O'Brien"})
-        session.run_ps.assert_called_once_with("Get-Thing -Name 'O''Brien'")
+    def test_hostile_values_never_reach_the_script_text(self):
+        for value in HOSTILE:
+            session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
+            with (
+                force_jea(have_jea=False, have_winrm=True),
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+            ):
+                winrm_lib.run_ps(make_args(), 'Get-Thing', {'Name': value})
+                winrm_lib.run_ps(make_args(), 'Get-Thing', [value])
+            dict_script, list_script = (
+                c.args[0] for c in session.run_ps.call_args_list
+            )
+            self.assertEqual(strip_literals(dict_script), '& L -Name L')
+            self.assertEqual(decode_literals(dict_script), ['Get-Thing', value])
+            self.assertEqual(strip_literals(list_script), '& L L')
+            self.assertEqual(decode_literals(list_script), ['Get-Thing', value])
+
+    def test_invalid_parameter_name_is_refused(self):
+        for name in ('Name; Write-Output INJECTED; #', 'Na me', '-Name', '1st', ''):
+            session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
+            with (
+                force_jea(have_jea=False, have_winrm=True),
+                patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+            ):
+                result = winrm_lib.run_ps(make_args(), 'Get-Thing', {name: 'x'})
+            self.assertEqual(result['retc'], 1)
+            self.assertEqual(result['stdout'], '')
+            self.assertIn('Invalid PowerShell parameter name', result['stderr'])
+            session.run_ps.assert_not_called()
 
     def test_clixml_noise_suppressed_on_success(self):
         result_obj = make_pywinrm_result(0, b'data', b'#< CLIXML\r\n<Objs>...')

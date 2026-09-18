@@ -11,7 +11,10 @@
 """This library collects some Microsoft WinRM related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070301'
+__version__ = '2026091801'
+
+import base64
+import re
 
 try:
     import winrm
@@ -93,6 +96,68 @@ def _map_transport(args):
     return (psrp_auth, use_ssl, port)
 
 
+def _ps_literal(value):
+    """
+    Return a PowerShell expression that evaluates to `str(value)`, whatever it holds.
+
+    The value travels base64-encoded and is decoded on the remote host, so it never
+    appears in the script text. Quoting cannot give that guarantee: PowerShell closes a
+    single-quoted string on the typographic quotes U+2018 to U+201B as well, so a value
+    carrying one of them ends the literal and turns the rest into script, however the
+    ASCII quote is escaped. Verified against Windows PowerShell 5.1 on Windows Server
+    2025 and PowerShell 7.6 on RHEL 9. The base64 alphabet contains no quote and no
+    operator, which fixes the boundaries of the value before the value is known.
+
+    Parameters
+    ----------
+    value
+        The value (converted to `str`).
+
+    Returns
+    -------
+    str
+        A parenthesized expression, usable as an argument or parameter value.
+    """
+    encoded = txt.to_text(base64.b64encode(txt.to_bytes(str(value))))
+    return (
+        f"([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded}')))"
+    )
+
+
+def _native_call(cmd, params):
+    """
+    Return a command line that runs `cmd` with `params` without `cmd.exe` parsing them.
+
+    WinRS hands a command line to `cmd.exe`, where `&`, `|` and `>` in an argument start
+    a second command. The command line returned here holds nothing but base64: it starts
+    PowerShell with an encoded script that calls `cmd` with each argument decoded from
+    its own literal. A program that cannot be started yields return code 1 and the
+    reason on stderr, as it would from `cmd.exe`, instead of `exit $null` reporting
+    success.
+
+    Parameters
+    ----------
+    cmd : str
+        The program to run.
+    params : list
+        Its arguments (each converted to `str`).
+
+    Returns
+    -------
+    str
+        The command line to hand to WinRS.
+    """
+    call = ' '.join(['&', *(_ps_literal(item) for item in [cmd, *params])])
+    script = (
+        "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; "
+        f'try {{ {call} }} '
+        'catch { [Console]::Error.WriteLine($_.ToString()); exit 1 }; '
+        'exit $LASTEXITCODE'
+    )
+    encoded = txt.to_text(base64.b64encode(txt.to_bytes(script, encoding='utf-16-le')))
+    return f'powershell.exe -NoProfile -NonInteractive -EncodedCommand {encoded}'
+
+
 def run_cmd(args, cmd, params=None):
     """
     Run a native command on a remote Windows host via WinRM/PSRP and return a
@@ -119,10 +184,12 @@ def run_cmd(args, cmd, params=None):
         (Additional fields may be honored by the underlying libraries if present.)
     cmd : str
         The executable/command to run remotely (native command, not a PowerShell
-         script block).
+         script block). Without `params` it is handed to `cmd.exe` as it stands, so it
+         must not contain untrusted data.
     params : list[str], optional
-        Positional arguments passed to the command. Defaults
-         to `[]`.
+        Positional arguments passed to the command. Each
+         one reaches the program as a single argument, whatever it contains: `cmd.exe`
+         never parses them. Defaults to `[]`.
 
     Returns
     -------
@@ -140,6 +207,10 @@ def run_cmd(args, cmd, params=None):
       via `Client.execute_cmd()`.
     - If pypsrp is unavailable but **pywinrm** is installed, executes via
       `Session.run_cmd()`.
+    - With `params`, the command runs through an encoded PowerShell call rather than
+      through `cmd.exe`, which would read `&`, `|` or `>` in an argument as the start
+      of another command. Return code, stdout and stderr are those of the program. A
+      `.bat` or `.cmd` file is still interpreted by `cmd.exe`, arguments included.
     - For Kerberos authentication: if `WINRM_USERNAME` and `WINRM_PASSWORD` are not provided
       (or are empty/None), the function will attempt to use existing Kerberos credentials
       from the credential cache (obtained via `kinit`).
@@ -157,8 +228,7 @@ def run_cmd(args, cmd, params=None):
     {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
     """
     auth = _build_auth(args)
-    if params is None:
-        params = []
+    command = _native_call(cmd, params) if params else cmd
 
     if HAVE_JEA:
         try:
@@ -173,10 +243,7 @@ def run_cmd(args, cmd, params=None):
                 cert_validation=True,
             )
 
-            stdout, stderr, rc = session.execute_cmd(
-                cmd,
-                args=params,
-            )
+            stdout, stderr, rc = session.execute_cmd(command)
             return {
                 'retc': rc,
                 'stdout': txt.to_text(stdout, errors='strict_or_latin1'),
@@ -197,7 +264,7 @@ def run_cmd(args, cmd, params=None):
                 transport=args.WINRM_TRANSPORT,
             )
 
-            result = session.run_cmd(cmd, params)
+            result = session.run_cmd(command)
             return {
                 'retc': result.status_code,
                 'stdout': txt.to_text(result.std_out, errors='strict_or_latin1'),
@@ -217,23 +284,9 @@ def run_cmd(args, cmd, params=None):
     }
 
 
-def _quote_ps_value(value):
-    """Escape a value for use in a PowerShell command string.
-
-    Single-quotes the value, doubling any embedded single
-    quotes (`'` becomes `''`).
-
-    Parameters
-    ----------
-    value
-        The value to quote (converted to `str`).
-
-    Returns
-    -------
-    str
-        A safely quoted PowerShell string literal.
-    """
-    return "'{}'".format(str(value).replace("'", "''"))
+# What PowerShell accepts as a parameter name. A name is spliced into the script text as
+# it stands, so anything else could carry script of its own.
+_PS_PARAMETER_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 
 def run_ps(args, cmd, params=None):
@@ -282,6 +335,11 @@ def run_ps(args, cmd, params=None):
             `add_argument()`.
           - `dict` — named parameters added via
             `add_parameter(name, value)`.
+          Values may be untrusted: each one reaches the cmdlet
+          as a single value, whatever it contains. With
+          **pywinrm** every value is converted to `str`, and a
+          parameter name that PowerShell would not accept is
+          refused with `retc` 1.
 
     Returns
     -------
@@ -396,21 +454,25 @@ def run_ps(args, cmd, params=None):
                 transport=args.WINRM_TRANSPORT,
             )
 
+            # pywinrm only runs script text, so the structured call pypsrp makes is
+            # rebuilt here: the command and every value are decoded from literals of
+            # their own, and a parameter name has to be one before it is spliced in.
             if params is not None:
                 if isinstance(params, dict):
-                    param_str = ' '.join(
-                        f'-{k} {_quote_ps_value(v)}' for k, v in params.items()
-                    )
-                    ps_cmd = f'{cmd} {param_str}'
+                    for name in params:
+                        if not _PS_PARAMETER_NAME.match(str(name)):
+                            return {
+                                'retc': 1,
+                                'stdout': '',
+                                'stderr': f'Invalid PowerShell parameter name: {name}',
+                            }
+                    arguments = [
+                        f'-{name} {_ps_literal(value)}'
+                        for name, value in params.items()
+                    ]
                 else:
-                    ps_cmd = (
-                        '{} {}'.format(
-                            cmd,
-                            ' '.join(str(p) for p in params),
-                        )
-                        if params
-                        else cmd
-                    )
+                    arguments = [_ps_literal(param) for param in params]
+                ps_cmd = ' '.join(['&', _ps_literal(cmd), *arguments])
             else:
                 ps_cmd = cmd
 

@@ -57,10 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * version.py: `check_eol()` reads all three shapes endoflife.date answers the end-of-life field in. A cycle marked end of life without a date took the check down with a Python error, and one with no announced end was reported as a gap in the data. A version endoflife.date has not catalogued yet is placed against the cycles it does list instead of going UNKNOWN, so staying current no longer raises an alert nobody can act on, and the available-upgrade note survives either way
 * time.py: `timestr2datetime()` and `timestr2epoch()` read an ISO 8601 timestamp on RHEL 8's system Python too, and an offset written without a colon (`+0200`, which `journalctl` writes) on every supported Python
 * url.py: `fetch(extended=True)` takes the proxy it is told to take, and tries every address a hostname resolves to instead of only the first
+* winrm.py: `run_cmd()` runs again when pypsrp is installed
 
 ### Security
 
 * shell.py: `shell_exec()` names only the program when a command cannot be started, so a password or SNMP community on its command line no longer ends up in the result
+* winrm.py: `run_cmd()` and `run_ps()` pass every argument and parameter value as one literal, so a value holding `&`, `;` or a typographic quote can no longer run a second command on the Windows host
 
 
 ## [v7.1.1] - 2026-08-18
