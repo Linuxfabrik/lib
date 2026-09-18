@@ -45,7 +45,7 @@ from . import base, disk
 from .globals import STATE_OK
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082601'
+__version__ = '2026091801'
 
 # The kernel creates this directory only where pressure accounting is switched on, so
 # its absence is the normal state of a kernel built with CONFIG_PSI_DEFAULT_DISABLED
@@ -271,7 +271,7 @@ def is_enabled(root='/'):
     return disk.dir_exists(os.path.join(root, PRESSURE_DIR.lstrip('/')))
 
 
-def _accounting_is_off(path):
+def _accounting_is_off(error):
     """
     Whether a pressure file exists but the kernel keeps no statistics behind it.
 
@@ -283,20 +283,16 @@ def _accounting_is_off(path):
     created, and not a failure worth reporting as one.
 
     ### Parameters
-    - **path** (`str`): The pressure file whose read failed.
+    - **error** (`str`): The message `disk.read_file()` returned for the pressure
+      file. It quotes the `strerror` of the failed call, and `os.strerror()` gives the
+      same text in the same process, so the comparison holds in any locale.
 
     ### Returns
     - **bool**: True if the read failed because the kernel does not keep these
       statistics, False for every other reason.
     """
-    try:
-        with open(path) as f:
-            f.read()
-    except OSError as e:
-        return e.errno in (errno.ENOTSUP, errno.EOPNOTSUPP)
-    except Exception:
-        return False
-    return False
+    # ENOTSUP and EOPNOTSUPP are one value on Linux, the only system with this file.
+    return f'"{os.strerror(errno.EOPNOTSUPP)}"' in error
 
 
 def read(resource, root='/'):
@@ -353,7 +349,7 @@ def read(resource, root='/'):
         return (True, None)
     success, content = disk.read_file(path)
     if not success:
-        if _accounting_is_off(path):
+        if _accounting_is_off(content):
             return (True, None)
         return (False, content)
     pressure = {}
