@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026083001'
+__version__ = '2026091801'
 
 import math
 import numbers
@@ -33,8 +33,29 @@ TAG_START = re.compile(r'<(?=\w+(?:\s\w+=[^>]*)?>)')
 
 WINDOWS = os.name == 'nt'
 LINUX = sys.platform.startswith('linux')
+
 # True on any 64-bit Python (x86_64, aarch64, ppc64*, s390x, riscv64, ...).
 IS_64BIT = sys.maxsize > 2**32
+
+if WINDOWS:
+    # A monitoring agent reads a consumer's stdout through a pipe, and on Windows
+    # Python gives a pipe the ANSI code page (cp1252 on a Western install) and
+    # translates every "\n" into "\r\n" (`create_stdio()` in CPython's
+    # Python/pylifecycle.c). Icinga 2 reads the output as UTF-8, so an "ä" arrives as
+    # an invalid byte, and a character the code page lacks ("ő") ends the run with a
+    # UnicodeEncodeError, exit 1 and so a WARNING. It also splits the output at "\r"
+    # and "\n" alike (`PluginUtility::ParseCheckOutput()`), which turns every CRLF into
+    # an empty line of its own. The console is not affected, as Python writes it
+    # through the console API, which is why a run by hand looks fine. Verified with
+    # Python 3.14 and Icinga 2 v2.16.5 on Windows Server 2025. Doing it here, on
+    # import, covers every write to stdout, the consumer's own and argparse's
+    # included.
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace', newline='\n')
+    except AttributeError:
+        # stdout was replaced by an object without reconfigure(), such as an
+        # io.StringIO in a test, or is None under pythonw.exe
+        pass
 
 _OPS = {
     'ge': operator.ge,

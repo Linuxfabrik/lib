@@ -19,9 +19,11 @@ and the text they print to stdout.
 """
 
 import contextlib
+import importlib
 import io
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, '..')
 
@@ -1228,6 +1230,38 @@ class TestVerbose(unittest.TestCase):
         with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
             base.verbose(True, 'scanning')
         self.assertEqual(err.getvalue(), '')
+
+
+class TestWindowsStdout(unittest.TestCase):
+    # lib.base sets stdout up for a monitoring agent while it is imported, so each test
+    # re-imports it under a patched platform. What the setup buys was verified on
+    # Windows with a real Icinga 2 (see the comment in base.py); this only guards that
+    # it is still asked for, and that it cannot break the import.
+    def tearDown(self):
+        importlib.reload(base)
+
+    def _import_as(self, os_name, stdout):
+        with mock.patch('os.name', os_name), mock.patch('sys.stdout', stdout):
+            importlib.reload(base)
+
+    def test_windows_writes_utf8_with_lf(self):
+        stdout = mock.Mock()
+        self._import_as('nt', stdout)
+        stdout.reconfigure.assert_called_once_with(
+            encoding='utf-8', errors='replace', newline='\n'
+        )
+
+    def test_other_platforms_leave_stdout_alone(self):
+        stdout = mock.Mock()
+        self._import_as('posix', stdout)
+        stdout.reconfigure.assert_not_called()
+
+    # io.StringIO has no reconfigure(), and pythonw.exe runs with sys.stdout = None
+    def test_a_stdout_without_reconfigure_does_not_break_the_import(self):
+        for stdout in (io.StringIO(), None):
+            with self.subTest(stdout=stdout):
+                self._import_as('nt', stdout)
+                self.assertTrue(base.WINDOWS)
 
 
 if __name__ == '__main__':
