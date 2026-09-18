@@ -34,26 +34,31 @@ def get_auth_sid(args):
     This function authenticates against the QNAP QTS API and retrieves an auth SID token needed for
     other API operations.
 
-    ### Parameters
-    - **args** (object):
-      An argument object containing:
-        - `USERNAME` (`str`): API Username.
-        - `PASSWORD` (`str`): API Password.
-        - `URL` (`str`): API base URL.
-        - `INSECURE` (`bool`): Whether to allow insecure SSL connections.
-        - `NO_PROXY` (`bool`): Whether to disable proxy usage.
-        - `TIMEOUT` (`int`): Request timeout in seconds.
+    Parameters
+    ----------
+    args : object
+        An argument object containing:
 
-    ### Returns
-    - **tuple** (`bool`, `str` or `error`):
-      - `True` and the `auth_sid` if authentication succeeds.
-      - `False` and an error message if authentication fails.
+          - `USERNAME` (`str`): API Username.
+          - `PASSWORD` (`str`): API Password.
+          - `URL` (`str`): API base URL.
+          - `INSECURE` (`bool`): Whether to allow insecure SSL connections.
+          - `NO_PROXY` (`bool`): Whether to disable proxy usage.
+          - `TIMEOUT` (`int`): Request timeout in seconds.
 
-    ### Notes
+    Returns
+    -------
+    tuple (bool, str or error)
+        - `True` and the `auth_sid` if authentication succeeds.
+        - `False` and an error message if authentication fails.
+
+    Notes
+    -----
     - Requires the `xmltodict` Python library.
     - Refer to API doc: https://download.qnap.com/dev/API_QNAP_QTS_Authentication.pdf
 
-    ### Example
+    Examples
+    --------
     >>> success, auth_sid = get_auth_sid(args)
     """
     if not LIB_XMLTODICT_FOUND:

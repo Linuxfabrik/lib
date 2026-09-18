@@ -75,12 +75,16 @@ def _redact(value):
     """
     Return a copy of an API response with every sensitive field's value replaced.
 
-    ### Parameters
-    - **value** (any): A decoded response, or any part of one.
+    Parameters
+    ----------
+    value : any
+        A decoded response, or any part of one.
 
-    ### Returns
-    - The same structure, with the value of every field named in `_REDACTED_FIELDS`
-      replaced by `'******'`.
+    Returns
+    -------
+    any
+        The same structure, with the value of every field named in `_REDACTED_FIELDS`
+        replaced by `'******'`.
     """
     if isinstance(value, dict):
         return {
@@ -96,11 +100,15 @@ def record_response(endpoint, result):
     """
     Remember what an endpoint answered, so a consumer can print it under `--verbose`.
 
-    ### Parameters
-    - **endpoint** (`str`): The endpoint that was queried, as it was requested.
-    - **result** (`dict`): The response envelope, as `get_data()` built it.
+    Parameters
+    ----------
+    endpoint : str
+        The endpoint that was queried, as it was requested.
+    result : dict
+        The response envelope, as `get_data()` built it.
 
-    ### Notes
+    Notes
+    -----
     - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal run
       does not keep a second copy of every response in memory.
     - The login response is deliberately never recorded. It is the one response that
@@ -114,18 +122,21 @@ def format_responses():
     """
     Render everything `record_response()` collected, for a `--verbose` output.
 
-    ### Returns
-    - **str**:
-      One block per request, naming the endpoint and pretty-printing what came back.
-      Empty when nothing was recorded, which is the case on a normal run and in test mode.
+    Returns
+    -------
+    str
+        One block per request, naming the endpoint and pretty-printing what came back.
+        Empty when nothing was recorded, which is the case on a normal run and in test mode.
 
-    ### Notes
+    Notes
+    -----
     - Meant for working out what an appliance actually reports, so a consumer can be built
       against it. The output is as long as the appliance's answers are, which on a list
       endpoint of a large array is very long indeed. It is a command-line tool, not
       something to switch on in a service definition.
 
-    ### Example
+    Examples
+    --------
     >>> print(format_responses())
     ### GET controller
     {
@@ -150,11 +161,15 @@ def _with_recorded_responses(message):
     Nothing is recorded unless the caller asked for verbose output, so a normal run gets
     the message unchanged and a verbose one gets the answers that explain it.
 
-    ### Parameters
-    - **message** (`str`): The message the consumer is about to abort with.
+    Parameters
+    ----------
+    message : str
+        The message the consumer is about to abort with.
 
-    ### Returns
-    - **str**: The message, followed by what every request returned.
+    Returns
+    -------
+    str
+        The message, followed by what every request returned.
     """
     recorded = format_responses()
     return f'{message}\n\n{recorded}' if recorded else message
@@ -170,17 +185,22 @@ def assert_ok(result, what):
     `error` object at all turns a naive `result['error']['code']` into an `AttributeError`
     instead of a clean UNKNOWN.
 
-    ### Parameters
-    - **result** (`dict`): A response envelope as `get_data()` returns it.
-    - **what** (`str`):
-      What was being queried, as a noun phrase for the message ("the fans", "the storage
-      pools"). It is the only part of the output that tells an operator which of a caller's
-      several requests failed.
+    Parameters
+    ----------
+    result : dict
+        A response envelope as `get_data()` returns it.
+    what : str
+        What was being queried, as a noun phrase for the message ("the fans", "the storage
+        pools"). It is the only part of the output that tells an operator which of a caller's
+        several requests failed.
 
-    ### Returns
-    - **None**: Returns on success, and does not return otherwise.
+    Returns
+    -------
+    None
+        Returns on success, and does not return otherwise.
 
-    ### Notes
+    Notes
+    -----
     - An empty response is an error as well. `get_data()` always answers with an envelope,
       so nothing at all means the consumer never reached the appliance.
     - The appliance's own description and suggestion are printed where it sends them. They
@@ -189,7 +209,8 @@ def assert_ok(result, what):
       is the moment they are needed most, and printing them at the end of a successful run
       only would hide them from exactly the run that has to be explained.
 
-    ### Example
+    Examples
+    --------
     >>> assert_ok({'error': {'code': 0}, 'data': []}, 'the fans')
     """
     if not result:
@@ -220,13 +241,18 @@ def as_code(value):
     has to render as `'Unknown'`; aborting the calling process with a `TypeError` or
     `ValueError` would turn a single unexpected field into a crashed check.
 
-    ### Parameters
-    - **value** (`any`): The raw field value taken from the API response.
+    Parameters
+    ----------
+    value : any
+        The raw field value taken from the API response.
 
-    ### Returns
-    - **int** or **None**: The code as an integer, or `None` if it cannot be converted.
+    Returns
+    -------
+    int or None
+        The code as an integer, or `None` if it cannot be converted.
 
-    ### Example
+    Examples
+    --------
     >>> as_code('27')
     27
     >>> as_code(None) is None
@@ -248,14 +274,19 @@ def as_temperature(value):
     measurement, and all three have to be kept out of the performance data and away from
     the thresholds.
 
-    ### Parameters
-    - **value** (`any`): The raw field value taken from the API response.
+    Parameters
+    ----------
+    value : any
+        The raw field value taken from the API response.
 
-    ### Returns
-    - **int** or **None**: The temperature in degrees Celsius, or `None` when the object
-      reported no reading.
+    Returns
+    -------
+    int or None
+        The temperature in degrees Celsius, or `None` when the object
+        reported no reading.
 
-    ### Notes
+    Notes
+    -----
     - The placeholders are what the vendor's own response examples show: the controller
       example of the V700R001C10 REST Interface Reference carries `"TEMPERATURE": "-1"`,
       the power module example `"TEMPERATURE": "0"`.
@@ -266,7 +297,8 @@ def as_temperature(value):
       0 °C is outside every documented operating range, so the value is a placeholder
       rather than a measurement worth graphing.
 
-    ### Example
+    Examples
+    --------
     >>> as_temperature('42')
     42
 
@@ -292,15 +324,22 @@ def field(data, *names, default=None):
     while its response example shows `RXPOWER` and `SFPMODETYPE`. A consumer that picks one
     spelling reads an empty field on half the fleet.
 
-    ### Parameters
-    - **data** (`dict`): One object as the API returned it.
-    - **names** (`str`): The field names to try, in order of preference.
-    - **default** (any, optional): What to return when none of them is present.
+    Parameters
+    ----------
+    data : dict
+        One object as the API returned it.
+    *names : str
+        The field names to try, in order of preference.
+    default : any, optional
+        What to return when none of them is present.
 
-    ### Returns
-    - The first value found under any of `names`, matched case-insensitively, or `default`.
+    Returns
+    -------
+    any
+        The first value found under any of `names`, matched case-insensitively, or `default`.
 
-    ### Notes
+    Notes
+    -----
     - The exact spellings are tried first and in the order given, so a firmware that reports
       two of the names (an old field and its replacement) still yields the preferred one.
       Only then does the case-insensitive pass run.
@@ -308,7 +347,8 @@ def field(data, *names, default=None):
       for "no value", and turning those into the default would hide the difference between
       a field a firmware does not have and one it has nothing to say about.
 
-    ### Example
+    Examples
+    --------
     >>> field({'RXPOWER': '[1234]'}, 'rxPowerReal', 'RXPOWER')
     '[1234]'
 
@@ -339,17 +379,20 @@ def get_account_state(st):
     of the login account's password, not the outcome of the login itself: a login can succeed
     while the account is still unusable for anything but changing the password.
 
-    ### Parameters
-    - **st** (`int` or `str`):
-      The password status code.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    st : int or str
+        The password status code.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_account_state(3)
     'password expired (3)'
     """
@@ -372,17 +415,20 @@ def get_alarm_severity(sev):
     """
     Convert a Huawei alarm severity code into a human-readable description.
 
-    ### Parameters
-    - **sev** (`int` or `str`):
-      The alarm severity code.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    sev : int or str
+        The alarm severity code.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - `alarm/currentalarm` documents only warning, major and critical. Informational (`2`)
       comes from the alarm type table, where an appliance may define an alarm at that
       severity, so it is carried here: a listing that does contain one has to render it
@@ -390,7 +436,8 @@ def get_alarm_severity(sev):
     - Code `4` (minor) exists on other Huawei product lines and is deliberately absent,
       because neither Dorado REST Interface Reference lists it.
 
-    ### Example
+    Examples
+    --------
     >>> get_alarm_severity(6)
     'Critical (6)'
     """
@@ -407,23 +454,27 @@ def get_alarm_severity_state(sev):
     """
     Convert a Huawei alarm severity code into the state a consumer reports for it.
 
-    ### Parameters
-    - **sev** (`int` or `str`):
-      The alarm severity code.
+    Parameters
+    ----------
+    sev : int or str
+        The alarm severity code.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for an informational alarm, `STATE_CRIT` for a critical one, `STATE_WARN`
-      for warning, major, a code the enumeration does not know and a missing value.
+    Returns
+    -------
+    int
+        `STATE_OK` for an informational alarm, `STATE_CRIT` for a critical one, `STATE_WARN`
+        for warning, major, a code the enumeration does not know and a missing value.
 
-    ### Notes
+    Notes
+    -----
     - An informational alarm is a note, not a fault, so it does not alert. It still appears
       in the output, where it is what an operator reads after the fact.
     - Major sits at warning rather than at critical on purpose: it marks a fault that
       degrades the array without stopping it, and an array full of major alarms that all
       page someone at night is an array nobody watches any more.
 
-    ### Example
+    Examples
+    --------
     >>> get_alarm_severity_state(6) == STATE_CRIT
     True
 
@@ -446,31 +497,34 @@ def get_all_data(endpoint, args, page_size=100, max_pages=100):
     through the rest. Without paging an array simply stops being reported past the first page,
     which reads as a smaller but healthy inventory: exactly the failure a consumer must not have.
 
-    ### Parameters
-    - **endpoint** (`str`):
-      The endpoint after the device ID, optionally with a query string of its own (for example
-      `alarm/currentalarm?filter=level::6`). The `range` parameter is appended to it, so the
-      caller must not supply one.
-    - **args** (object):
-      The same object `get_data()` reads.
-    - **page_size** (`int`, optional):
-      Objects to request per page. The documented ceiling differs per endpoint: 100 for most,
-      250 for the alarm and event endpoints, 10000 for storage pools. Staying at or below the
-      ceiling is the caller's job, because the appliance rejects a larger range rather than
-      capping it.
-    - **max_pages** (`int`, optional):
-      Hard stop on the number of requests. It bounds the runtime of a call against an array
-      with far more objects than anyone expected, and it keeps a firmware that ignores `range`
-      from looping forever.
+    Parameters
+    ----------
+    endpoint : str
+        The endpoint after the device ID, optionally with a query string of its own (for example
+        `alarm/currentalarm?filter=level::6`). The `range` parameter is appended to it, so the
+        caller must not supply one.
+    args : object
+        The same object `get_data()` reads.
+    page_size : int, optional
+        Objects to request per page. The documented ceiling differs per endpoint: 100 for most,
+        250 for the alarm and event endpoints, 10000 for storage pools. Staying at or below the
+        ceiling is the caller's job, because the appliance rejects a larger range rather than
+        capping it.
+    max_pages : int, optional
+        Hard stop on the number of requests. It bounds the runtime of a call against an array
+        with far more objects than anyone expected, and it keeps a firmware that ignores `range`
+        from looping forever.
 
-    ### Returns
-    - **tuple** (`dict`, `bool`):
-      The envelope of the last request with its `data` replaced by every object collected, and
-      a flag that is `True` when `max_pages` cut the walk short. On a failed request the
-      envelope is handed back unchanged with the flag `False`, so the caller reports the
-      appliance's own error text the same way it would after a single `get_data()`.
+    Returns
+    -------
+    tuple (dict, bool)
+        The envelope of the last request with its `data` replaced by every object collected, and
+        a flag that is `True` when `max_pages` cut the walk short. On a failed request the
+        envelope is handed back unchanged with the flag `False`, so the caller reports the
+        appliance's own error text the same way it would after a single `get_data()`.
 
-    ### Notes
+    Notes
+    -----
     - `range=[i-j]` is half-open: the appliance documents it as "objects subscripted in
       sequence from i to j-1". Consecutive pages therefore start where the previous one
       ended, and no object is read twice.
@@ -490,7 +544,8 @@ def get_all_data(endpoint, args, page_size=100, max_pages=100):
       Whether an incomplete inventory is worth an UNKNOWN or just a note in the output depends
       on the caller, and this function has no way to tell.
 
-    ### Example
+    Examples
+    --------
     >>> result, truncated = get_all_data('lun', args)
     >>> len(result['data'])
     237
@@ -533,17 +588,20 @@ def get_controller_model(cm):
     This function translates numeric controller model codes from Huawei storage systems into
     descriptive text for better hardware identification.
 
-    ### Parameters
-    - **cm** (`int` or `str`):
-      The controller model code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    cm : int or str
+        The controller model code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the controller model.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the controller model.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_controller_model(4127)
     '2U2C PALM control board'
 
@@ -581,23 +639,27 @@ def get_controller_role(role):
     """
     Convert a controller's `ROLE` code into a human-readable description.
 
-    ### Parameters
-    - **role** (`int` or `str`):
-      The role code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    role : int or str
+        The role code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the role.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the role.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Scoped to the controller object on purpose. `ROLE` is reused with entirely different
       meanings elsewhere: on a logical port `1` is a management port, on a HyperMetro domain
       `0` is the preferred site. Applied to those objects this mapping would print a
       confident but wrong label, which is why the function name names its object.
 
-    ### Example
+    Examples
+    --------
     >>> get_controller_role(1)
     'Primary'
 
@@ -619,17 +681,20 @@ def get_cp_type(cp):
     This function translates numeric CP type codes from Huawei storage systems into descriptive
     labels that indicate the type of quorum mechanism in use.
 
-    ### Parameters
-    - **cp** (`int` or `str`):
-      The CP type code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    cp : int or str
+        The CP type code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the consistency protection type.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the consistency protection type.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_cp_type(1)
     'Quorum Server'
 
@@ -666,15 +731,20 @@ def _cached_session(session_key):
 
     Used by `get_creds()`.
 
-    ### Parameters
-    - **session_key** (`str`): The cache key the triple is stored under.
+    Parameters
+    ----------
+    session_key : str
+        The cache key the triple is stored under.
 
-    ### Returns
-    - **tuple** (`str`, `str`, `str`) or **None**: The triple, or `None` if the cache holds
-      nothing, something an older version wrote, or a half-populated entry. All three cases
-      have the same answer: log in again rather than build a request header out of it.
+    Returns
+    -------
+    tuple (str, str, str) or None
+        The triple, or `None` if the cache holds
+        nothing, something an older version wrote, or a half-populated entry. All three cases
+        have the same answer: log in again rather than build a request header out of it.
 
-    ### Notes
+    Notes
+    -----
     - An entry of any other length is discarded rather than padded. An older version stored
       the token pair alone, and a device ID guessed for such an entry would send every
       request of the run to the wrong path.
@@ -706,15 +776,20 @@ def _logout(args, session):
     interval, fill that pool from a single service. Once it is full every login is refused,
     including an operator's login to DeviceManager.
 
-    ### Parameters
-    - **args** (object): An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT`.
-    - **session** (`tuple` (`str`, `str`, `str`)): The `(iBaseToken, Cookie, deviceId)`
-      triple to end.
+    Parameters
+    ----------
+    args : object
+        An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT`.
+    session : tuple (str, str, str)
+        The `(iBaseToken, Cookie, deviceId)`
+        triple to end.
 
-    ### Returns
-    - **None**
+    Returns
+    -------
+    None
 
-    ### Notes
+    Notes
+    -----
     - The device ID comes from the session being ended, not from `args`. A session opened
       without a caller-supplied device ID carries the one the appliance answered with, and
       that is the only path the logout is accepted on.
@@ -751,34 +826,38 @@ def get_creds(args, force_relogin=False):
     security reasons. If no cached credentials are found, it performs a login request and caches
     the new credentials for future reuse.
 
-    ### Parameters
-    - **args** (object):
-      An argument object containing:
-        - `URL` (`str`): Base URL of the Huawei API.
-        - `DEVICE_ID` (`str`): Unique device identifier. May be left empty, in which case the
-          login is sent to the placeholder path the vendor's own example uses and the
-          appliance answers with its real device ID.
-        - `USERNAME` (`str`): Login username.
-        - `PASSWORD` (`str`): Login password.
-        - `SCOPE` (`str`): User type (`'0'` local user, `'1'` LDAP user, `'8'` RADIUS user).
-          `'8'` is only documented from V700R001C10 on. The value is passed through
-          unvalidated, so a firmware that knows further types works without a code change.
-        - `INSECURE` (`bool`): Whether to disable SSL verification.
-        - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
-        - `TIMEOUT` (`int`): Request timeout in seconds.
-        - `CACHE_EXPIRE` (`int`): Cache expiration time in minutes.
-    - **force_relogin** (`bool`, optional):
-      If `True`, ignore any cached token and perform a fresh login, overwriting the cache.
-      Used to recover from a cached session that the appliance no longer accepts (for example
-      after a controller reboot, a manual session reset, or the server-side 20-minute timeout).
+    Parameters
+    ----------
+    args : object
+        An argument object containing:
 
-    ### Returns
-    - **tuple** (`str`, `str`, `str`):
-      - `ibase_token` (str): The API session token (iBaseToken).
-      - `cookie` (str): The session cookie.
-      - `device_id` (str): The device ID every further request is addressed to.
+          - `URL` (`str`): Base URL of the Huawei API.
+          - `DEVICE_ID` (`str`): Unique device identifier. May be left empty, in which case the
+            login is sent to the placeholder path the vendor's own example uses and the
+            appliance answers with its real device ID.
+          - `USERNAME` (`str`): Login username.
+          - `PASSWORD` (`str`): Login password.
+          - `SCOPE` (`str`): User type (`'0'` local user, `'1'` LDAP user, `'8'` RADIUS user).
+            `'8'` is only documented from V700R001C10 on. The value is passed through
+            unvalidated, so a firmware that knows further types works without a code change.
+          - `INSECURE` (`bool`): Whether to disable SSL verification.
+          - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `TIMEOUT` (`int`): Request timeout in seconds.
+          - `CACHE_EXPIRE` (`int`): Cache expiration time in minutes.
+    force_relogin : bool, optional
+        If `True`, ignore any cached token and perform a fresh login, overwriting the cache.
+        Used to recover from a cached session that the appliance no longer accepts (for example
+        after a controller reboot, a manual session reset, or the server-side 20-minute timeout).
 
-    ### Notes
+    Returns
+    -------
+    tuple (str, str, str)
+        - `ibase_token` (str): The API session token (iBaseToken).
+        - `cookie` (str): The session cookie.
+        - `device_id` (str): The device ID every further request is addressed to.
+
+    Notes
+    -----
     - Token, cookie and device ID are stored together, JSON-encoded, under the single cache
       key `huaweidorado-{URL}-{USERNAME}-session`, in the module's own cache file. One key
       rather than three because a request needs all of them: split over several keys, a write
@@ -820,7 +899,8 @@ def get_creds(args, force_relogin=False):
       be told apart. Should a firmware ever do that, `lib.url` has to expose the raw header list
       first.
 
-    ### Example
+    Examples
+    --------
     >>> ibasetoken, cookie, device_id = get_creds(args)
     """
     session_key = f'huaweidorado-{args.URL}-{args.USERNAME}-session'
@@ -920,14 +1000,20 @@ def _as_envelope(success, response):
     envelope keeps a single bad response from turning into a type error inside the retry loop,
     and lets the caller print the appliance's own error text.
 
-    ### Parameters
-    - **success** (`bool`): The first element of the `url.fetch_json()` result tuple.
-    - **response** (`any`): The second element of that tuple.
+    Parameters
+    ----------
+    success : bool
+        The first element of the `url.fetch_json()` result tuple.
+    response : any
+        The second element of that tuple.
 
-    ### Returns
-    - **dict**: The response envelope, either as the appliance sent it or synthesised.
+    Returns
+    -------
+    dict
+        The response envelope, either as the appliance sent it or synthesised.
 
-    ### Example
+    Examples
+    --------
     >>> _as_envelope(True, {'error': {'code': 0}, 'data': []})
     {'error': {'code': 0}, 'data': []}
     >>> _as_envelope(False, 'URL error "timed out"')['error']['code']
@@ -968,31 +1054,35 @@ def get_data(endpoint, args, max_attempts=3):
     can never recover from that, so the next attempt forces a fresh login and retries. Any remaining
     attempts cover short-lived transient errors.
 
-    ### Parameters
-    - **endpoint** (`str`):
-      The API endpoint to call (relative path after the device ID), including the query string
-      if the endpoint takes one. The string is appended to the request URL verbatim, so the
-      caller is responsible for percent-encoding it; never build it from data the appliance
-      itself returned.
-    - **args** (object):
-      An object containing:
-        - `URL` (`str`): Base API URL.
-        - `DEVICE_ID` (`str`): Device ID. Optional; see `get_creds()`.
-        - `INSECURE` (`bool`): Disable SSL verification.
-        - `NO_PROXY` (`bool`): Ignore proxy settings.
-        - `TIMEOUT` (`int`): Timeout for API requests.
-    - **max_attempts** (`int`, optional):
-      How often to try before giving up. The default of `3` is what a monitoring run wants.
-      Pass `1` to ask a question whose expected answer may well be an error, such as probing
-      which of two endpoint spellings a firmware answers to: the retry loop would then spend
-      two further requests and a forced re-login on establishing what the first answer already
-      said, and the re-login would drop a perfectly good cached session along the way.
+    Parameters
+    ----------
+    endpoint : str
+        The API endpoint to call (relative path after the device ID), including the query string
+        if the endpoint takes one. The string is appended to the request URL verbatim, so the
+        caller is responsible for percent-encoding it; never build it from data the appliance
+        itself returned.
+    args : object
+        An object containing:
 
-    ### Returns
-    - **dict**:
-      The parsed JSON response from the API.
+          - `URL` (`str`): Base API URL.
+          - `DEVICE_ID` (`str`): Device ID. Optional; see `get_creds()`.
+          - `INSECURE` (`bool`): Disable SSL verification.
+          - `NO_PROXY` (`bool`): Ignore proxy settings.
+          - `TIMEOUT` (`int`): Timeout for API requests.
+    max_attempts : int, optional
+        How often to try before giving up. The default of `3` is what a monitoring run wants.
+        Pass `1` to ask a question whose expected answer may well be an error, such as probing
+        which of two endpoint spellings a firmware answers to: the retry loop would then spend
+        two further requests and a forced re-login on establishing what the first answer already
+        said, and the re-login would drop a perfectly good cached session along the way.
 
-    ### Notes
+    Returns
+    -------
+    dict
+        The parsed JSON response from the API.
+
+    Notes
+    -----
     - Makes at most three attempts, forcing a fresh login before the second one, and waits one
       second between attempts. The retry count is kept low on purpose, so one call stays within
       the caller's own timeout: the worst case is three requests plus one login,
@@ -1012,7 +1102,8 @@ def get_data(endpoint, args, max_attempts=3):
       number of sessions. In this mode a call can therefore reach three logins and three
       logouts, which is the price of asking for no caching.
 
-    ### Example
+    Examples
+    --------
     >>> get_data('disk/list', args)
     {
         'error': {'code': 0},
@@ -1071,24 +1162,28 @@ def get_dr_star_running_status(rs):
     """
     Convert a DR Star trio's `RUNNINGSTATUS` code into a human-readable description.
 
-    ### Parameters
-    - **rs** (`int` or `str`):
-      The running status code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    rs : int or str
+        The running status code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the running status, including the original code in
-      brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the running status, including the original code in
+        brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Scoped to the `dr_star` object, which renumbers `RUNNINGSTATUS` rather than sharing the
       enumeration `get_running_status()` covers. Read through that function a disabled trio
       would come out as `'Running (2)'`, which reads like the opposite of what it is.
     - Both REST Interface References agree on these four values.
 
-    ### Example
+    Examples
+    --------
     >>> get_dr_star_running_status(2)
     'Disabled (2)'
     """
@@ -1105,23 +1200,27 @@ def get_enclosure_logic_type(lt):
     """
     Convert an enclosure's `LOGICTYPE` code into a human-readable description.
 
-    ### Parameters
-    - **lt** (`int` or `str`):
-      The logic type code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    lt : int or str
+        The logic type code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the logic type.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the logic type.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Scoped to the enclosure object on purpose. `LOGICTYPE` is reused with entirely
       different meanings elsewhere: on a port `2` is a management port, on a disk `2` is a
       member disk. Applied to those objects this mapping would print a confident but wrong
       label, which is why the function name names its object.
 
-    ### Example
+    Examples
+    --------
     >>> get_enclosure_logic_type(1)
     'Controller Enclosure'
 
@@ -1145,17 +1244,20 @@ def get_enclosure_model(em):
     This function translates numeric enclosure model codes from Huawei storage systems into
     descriptive text to simplify hardware identification.
 
-    ### Parameters
-    - **em** (`int` or `str`):
-      The enclosure model code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    em : int or str
+        The enclosure model code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the enclosure model.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the enclosure model.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_enclosure_model(39)
     '4 U 75-slot 3.5-inch 12 Gbit/s SAS disk enclosure'
 
@@ -1188,19 +1290,24 @@ def get_error_code(result):
     """
     Read the status code out of a response envelope.
 
-    ### Parameters
-    - **result** (`dict`): A response envelope as `get_data()` returns it.
+    Parameters
+    ----------
+    result : dict
+        A response envelope as `get_data()` returns it.
 
-    ### Returns
-    - **int**, **str** or **None**:
-      The value of `error.code`, the bare `error` if the appliance answered with a scalar
-      instead of the documented object, or `None` if the envelope carries neither.
+    Returns
+    -------
+    int, str or None
+        The value of `error.code`, the bare `error` if the appliance answered with a scalar
+        instead of the documented object, or `None` if the envelope carries neither.
 
-    ### Notes
+    Notes
+    -----
     - Success is code `0`. The appliance reports it as a number on some endpoints and as the
       string `'0'` on others, so compare against both rather than against one of them.
 
-    ### Example
+    Examples
+    --------
     >>> get_error_code({'error': {'code': 0}})
     0
     """
@@ -1217,17 +1324,20 @@ def get_health_status(hs):
     This function translates numeric health status codes returned by Huawei appliances into
     descriptive text, making it easier to interpret device health states.
 
-    ### Parameters
-    - **hs** (`int` or `str`):
-      The health status code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    hs : int or str
+        The health status code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the health status, including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the health status, including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - `HEALTHSTATUS` is a shared enumeration, and code `17` is the one value whose wording
       depends on the object it is read from: a disk reports it as `single link`, a host as
       `no redundant link`. The response carries no marker for which of the two applies, so
@@ -1239,7 +1349,8 @@ def get_health_status(hs):
       are compared. They are not: the REST API never sends them, and carrying them here
       would document behaviour this module cannot produce.
 
-    ### Example
+    Examples
+    --------
     >>> get_health_status(1)
     'Normal (1)'
 
@@ -1281,16 +1392,19 @@ def get_health_status_state(hs):
     """
     Convert a Huawei health status code into the state a consumer reports for it.
 
-    ### Parameters
-    - **hs** (`int` or `str`):
-      The health status code to interpret.
+    Parameters
+    ----------
+    hs : int or str
+        The health status code to interpret.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for a normal object, `STATE_CRIT` for a failed one, `STATE_WARN` for every
-      other code, including one the enumeration does not know and a missing value.
+    Returns
+    -------
+    int
+        `STATE_OK` for a normal object, `STATE_CRIT` for a failed one, `STATE_WARN` for every
+        other code, including one the enumeration does not know and a missing value.
 
-    ### Notes
+    Notes
+    -----
     - Faulty (`2`), No Input (`11`), Invalid (`14`) and Offline (`18`) are the codes that
       report an object which has stopped doing its job, so they are the ones that reach
       `STATE_CRIT`.
@@ -1301,7 +1415,8 @@ def get_health_status_state(hs):
       per-object parameter. `RUNNINGSTATUS` is not, hence the `ok_codes` argument on
       `get_running_status_state()`.
 
-    ### Example
+    Examples
+    --------
     >>> get_health_status_state(1) == STATE_OK
     True
 
@@ -1326,17 +1441,20 @@ def get_host_access_state(has):
     This function translates the numeric read/write setting a Huawei storage system reports for
     a secondary resource (`SECRESACCESS`) into a descriptive label.
 
-    ### Parameters
-    - **has** (`int` or `str`):
-      The host access state code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    has : int or str
+        The host access state code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the host access state.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the host access state.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_host_access_state(2)
     'Read-only'
 
@@ -1355,18 +1473,21 @@ def get_hypermetro_domain_running_status(rs):
     """
     Convert a HyperMetro domain's `RUNNINGSTATUS` code into a human-readable description.
 
-    ### Parameters
-    - **rs** (`int` or `str`):
-      The running status code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    rs : int or str
+        The running status code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the running status, including the original code in
-      brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the running status, including the original code in
+        brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Scoped to the `HyperMetroDomain` object, which renumbers `RUNNINGSTATUS` from `0` up
       rather than sharing the enumeration `get_running_status()` covers. Every code below
       collides: read through that function a faulty domain would come out as `'Running (2)'`
@@ -1375,7 +1496,8 @@ def get_hypermetro_domain_running_status(rs):
     - Documented in the V700R001C10 REST Interface Reference. Code `4` exists nowhere else
       and is deliberately absent from `get_running_status()`.
 
-    ### Example
+    Examples
+    --------
     >>> get_hypermetro_domain_running_status(2)
     'Faulty (2)'
     """
@@ -1394,16 +1516,19 @@ def get_hypermetro_domain_running_status_state(rs):
     """
     Convert a HyperMetro domain's `RUNNINGSTATUS` code into the state a consumer reports for it.
 
-    ### Parameters
-    - **rs** (`int` or `str`):
-      The running status code to interpret.
+    Parameters
+    ----------
+    rs : int or str
+        The running status code to interpret.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for a normal domain, `STATE_CRIT` for a faulty or invalid one, `STATE_WARN`
-      for every other code, including one the enumeration does not know and a missing value.
+    Returns
+    -------
+    int
+        `STATE_OK` for a normal domain, `STATE_CRIT` for a faulty or invalid one, `STATE_WARN`
+        for every other code, including one the enumeration does not know and a missing value.
 
-    ### Notes
+    Notes
+    -----
     - Scoped to the `HyperMetroDomain` object for the same reason as
       `get_hypermetro_domain_running_status()`: the codes are renumbered from `0` up and every
       one of them collides with the shared enumeration, so `get_running_status_state()` cannot
@@ -1412,7 +1537,8 @@ def get_hypermetro_domain_running_status_state(rs):
       side still serves its own I/O, and an administrator splits a domain deliberately during
       maintenance.
 
-    ### Example
+    Examples
+    --------
     >>> get_hypermetro_domain_running_status_state(0) == STATE_OK
     True
 
@@ -1434,16 +1560,19 @@ def get_interface_model(im):
     This function translates numeric hardware IDs from Huawei hardware into a descriptive
     model name.
 
-    ### Parameters
-    - **im** (`int` or `str`):
-      The numeric ID of the interface module.
+    Parameters
+    ----------
+    im : int or str
+        The numeric ID of the interface module.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the interface model.
-      Returns `'Unknown'` if the ID is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the interface model.
+        Returns `'Unknown'` if the ID is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_interface_model(2306)
     '4 ports FE 32 Gbit/s Fibre Channel I/O module'
     """
@@ -1624,16 +1753,19 @@ def get_interface_runmode(rm):
     This function translates numeric runmode IDs from Huawei hardware into a descriptive
     operational mode name (e.g., FC, Ethernet, Cluster).
 
-    ### Parameters
-    - **rm** (`int` or `str`):
-      The numeric ID representing the interface run mode.
+    Parameters
+    ----------
+    rm : int or str
+        The numeric ID representing the interface run mode.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the interface run mode.
-      Returns `'Unknown'` if the ID is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the interface run mode.
+        Returns `'Unknown'` if the ID is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Code `5` is the one value whose meaning differs between the two documented firmware
       generations: 6.1.0 defines it as RoCE, V700R001C10 as RDMA (and moves RoCE to `10`). The
       response carries no firmware marker, and the appliance model does not imply the firmware,
@@ -1644,7 +1776,8 @@ def get_interface_runmode(rm):
       their own, much shorter `RUNMODE` with only `1` for Fibre Channel and `2` for Ethernet,
       where this mapping would render `2` as `'FCoE/iSCSI'`.
 
-    ### Example
+    Examples
+    --------
     >>> get_interface_runmode(1)
     'FC'
     """
@@ -1666,15 +1799,18 @@ def get_led_status(st):
     """
     Convert a `LIGHTSTATUS` code into a human-readable LED state.
 
-    ### Parameters
-    - **st** (`int` or `str`):
-      The numeric LED status ID.
+    Parameters
+    ----------
+    st : int or str
+        The numeric LED status ID.
 
-    ### Returns
-    - **str**:
-      A human-readable LED status. Returns `'Unknown'` if the ID is not recognized.
+    Returns
+    -------
+    str
+        A human-readable LED status. Returns `'Unknown'` if the ID is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Scoped to the field named `LIGHTSTATUS`, which the interface module and the expansion
       board report as `0` for off and `1` for on.
     - It does **not** apply to the controller's `LIGHT_STATUS`, spelled with an underscore,
@@ -1686,7 +1822,8 @@ def get_led_status(st):
       `huawei-dorado-controller` does. There is deliberately no helper for it: one would
       have to pick one of the vendor's two answers and be wrong about half the fleet.
 
-    ### Example
+    Examples
+    --------
     >>> get_led_status(1)
     'On'
     """
@@ -1705,23 +1842,27 @@ def get_os(os):
     This function translates numeric OS codes from Huawei storage systems into descriptive
     names for better interpretation of connected or managed hosts.
 
-    ### Parameters
-    - **os** (`int` or `str`):
-      The OS code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    os : int or str
+        The OS code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the operating system.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the operating system.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Code `255` is not in the `OPERATIONSYSTEM` table of either REST Interface Reference. It
       is carried here because appliances report it for a host that never delivered an
       operating system, where rendering it as `'Unknown'` would read like a code the vendor
       forgot to document. Treat the wording as observed behaviour, not as a documented value.
 
-    ### Example
+    Examples
+    --------
     >>> get_os(7)
     'VMware ESX'
 
@@ -1770,29 +1911,32 @@ def get_performance(uuid, data_ids, args):
     """
     Fetch the current performance counters of one managed object.
 
-    ### Parameters
-    - **uuid** (`str`):
-      The object's UUID in the appliance's own `TYPE:ID` notation, as `get_uuid()` builds it.
-      For example `'207:0A'` for a controller. The type numbers the performance indicator
-      tables list are `11` LUN, `21` host, `207` controller, `212` FC port, `213` Ethernet
-      port, `216` storage pool, `230` SmartQoS policy, `235` bond port, `252` FCoE port,
-      `266` disk domain and `279` LIF, but a consumer builds the UUID from the object's own
-      `TYPE` rather than naming one of them.
-    - **data_ids** (iterable of `int`):
-      The performance indicators to read. The vendor numbers them per indicator, not per
-      object: `18` utilisation in percent, `19` queue length, `21` block bandwidth in MB/s,
-      `22` IOPS, `23` and `26` read and write bandwidth, `25` and `28` read and write IOPS,
-      `370` average I/O response time. Not every object supports every indicator.
-    - **args** (object):
-      The same object `get_data()` reads.
+    Parameters
+    ----------
+    uuid : str
+        The object's UUID in the appliance's own `TYPE:ID` notation, as `get_uuid()` builds it.
+        For example `'207:0A'` for a controller. The type numbers the performance indicator
+        tables list are `11` LUN, `21` host, `207` controller, `212` FC port, `213` Ethernet
+        port, `216` storage pool, `230` SmartQoS policy, `235` bond port, `252` FCoE port,
+        `266` disk domain and `279` LIF, but a consumer builds the UUID from the object's own
+        `TYPE` rather than naming one of them.
+    data_ids : iterable of int
+        The performance indicators to read. The vendor numbers them per indicator, not per
+        object: `18` utilisation in percent, `19` queue length, `21` block bandwidth in MB/s,
+        `22` IOPS, `23` and `26` read and write bandwidth, `25` and `28` read and write IOPS,
+        `370` average I/O response time. Not every object supports every indicator.
+    args : object
+        The same object `get_data()` reads.
 
-    ### Returns
-    - **dict**:
-      Indicator number to reported value, both as strings, in the order the appliance listed
-      them. Empty if the request failed or the appliance returned no sample, which is the
-      normal answer for an object whose counters are not being collected.
+    Returns
+    -------
+    dict
+        Indicator number to reported value, both as strings, in the order the appliance listed
+        them. Empty if the request failed or the appliance returned no sample, which is the
+        normal answer for an object whose counters are not being collected.
 
-    ### Notes
+    Notes
+    -----
     - The appliance answers with two parallel comma-separated lists, one of indicator numbers
       and one of values. They are zipped back together here so a caller reads a counter by its
       number instead of by its position.
@@ -1802,7 +1946,8 @@ def get_performance(uuid, data_ids, args):
     - The first call of a run may cost two requests while the endpoint spelling is being
       determined; every later call in the same run goes straight to the one that answered.
 
-    ### Example
+    Examples
+    --------
     >>> get_performance('207:0A', (21, 22, 370), args)
     {'21': '132', '22': '4711', '370': '385'}
     """
@@ -1874,19 +2019,23 @@ def get_performance_perfdata(prefix, samples, indicators=None):
     """
     Turn the samples `get_performance()` returned into performance data.
 
-    ### Parameters
-    - **prefix** (`str`):
-      What every metric name starts with, normally the object's sanitised UUID.
-    - **samples** (`dict`):
-      Indicator number to value, as `get_performance()` returns it.
-    - **indicators** (`dict`, optional):
-      The descriptor table to read the label, unit and conversion factor from. Defaults
-      to `PERFORMANCE_INDICATORS`.
+    Parameters
+    ----------
+    prefix : str
+        What every metric name starts with, normally the object's sanitised UUID.
+    samples : dict
+        Indicator number to value, as `get_performance()` returns it.
+    indicators : dict, optional
+        The descriptor table to read the label, unit and conversion factor from. Defaults
+        to `PERFORMANCE_INDICATORS`.
 
-    ### Returns
-    - **str**: The performance data, ready to be appended to a consumer's own.
+    Returns
+    -------
+    str
+        The performance data, ready to be appended to a consumer's own.
 
-    ### Notes
+    Notes
+    -----
     - An indicator the table does not describe is skipped rather than emitted under its
       bare number. A number is not a metric name a dashboard can be built on, and the
       appliance answers with indicators a consumer never asked for on some firmware.
@@ -1895,7 +2044,8 @@ def get_performance_perfdata(prefix, samples, indicators=None):
     - A value that does not parse as a number is skipped for the same reason a missing one
       is: the appliance sends `'--'` for a counter it is not collecting.
 
-    ### Example
+    Examples
+    --------
     >>> get_performance_perfdata('207_0A', {'22': '4711', '370': '385'})
     "'207_0A_total_iops'=4711;;;0 '207_0A_avg_io_response_time'=0.000385s;;;0 "
     """
@@ -1929,17 +2079,20 @@ def get_product_mode(pm):
     This function translates numeric product mode codes for Huawei Dorado storage systems
     into descriptive text, making it easier to identify hardware models.
 
-    ### Parameters
-    - **pm** (`int` or `str`):
-      The product mode code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    pm : int or str
+        The product mode code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the product model, including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the product model, including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_product_mode(812)
     'Dorado 5000 V6 (NVMe) (812)'
 
@@ -2013,17 +2166,20 @@ def get_runlevel(rl):
     This function translates numeric run level codes reported by Huawei appliances into readable
     text. It makes it easier to interpret device operation levels.
 
-    ### Parameters
-    - **rl** (`int` or `str`):
-      The run level code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    rl : int or str
+        The run level code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the run level, including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the run level, including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_runlevel(1)
     'normal (1)'
 
@@ -2045,17 +2201,20 @@ def get_running_status(rs):
     This function translates numeric running status codes reported by Huawei appliances into
     descriptive text for easier interpretation of device operational states.
 
-    ### Parameters
-    - **rs** (`int` or `str`):
-      The running status code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    rs : int or str
+        The running status code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the running status, including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the running status, including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Not scoped to `HyperMetroDomain` and `dr_star`. Both renumber `RUNNINGSTATUS` instead
       of sharing this enumeration, and both collide on the low codes this function is most
       likely to be handed: `2` is faulty on a HyperMetro domain and disabled on a DR Star
@@ -2070,7 +2229,8 @@ def get_running_status(rs):
       `faulty restoration`, which reads as "restoring after a fault" and therefore states
       the opposite of what the code means.
 
-    ### Example
+    Examples
+    --------
     >>> get_running_status(1)
     'Normal (1)'
 
@@ -2167,27 +2327,31 @@ def get_running_status_state(rs, ok_codes):
     """
     Convert a Huawei running status code into the state a consumer reports for it.
 
-    ### Parameters
-    - **rs** (`int` or `str`):
-      The running status code to interpret.
-    - **ok_codes** (iterable of `int`):
-      The codes that count as healthy for the object being checked. A disk passes `(1, 27)`,
-      a controller `(1, 2, 27)`, a backup power module `(1, 2, 27, 48, 49)`.
+    Parameters
+    ----------
+    rs : int or str
+        The running status code to interpret.
+    ok_codes : iterable of int
+        The codes that count as healthy for the object being checked. A disk passes `(1, 27)`,
+        a controller `(1, 2, 27)`, a backup power module `(1, 2, 27, 48, 49)`.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for a code the caller listed as healthy, `STATE_CRIT` for a code that reports
-      a failure on any object, `STATE_WARN` for every other code, including one the enumeration
-      does not know and a missing value.
+    Returns
+    -------
+    int
+        `STATE_OK` for a code the caller listed as healthy, `STATE_CRIT` for a code that reports
+        a failure on any object, `STATE_WARN` for every other code, including one the enumeration
+        does not know and a missing value.
 
-    ### Notes
+    Notes
+    -----
     - Unlike `HEALTHSTATUS`, this enumeration is not shared: the same code means different
       things on different objects, and there is no code that is healthy everywhere. That is why
       the healthy set is the caller's to state and cannot live in this function.
     - A code the enumeration does not know warns rather than passing as OK, for the same reason
       as in `get_health_status_state()`.
 
-    ### Example
+    Examples
+    --------
     >>> get_running_status_state(27, (1, 27)) == STATE_OK
     True
 
@@ -2209,23 +2373,27 @@ def get_switch_status(st):
     """
     Convert a `SWITCHSTATUS` code into a human-readable description.
 
-    ### Parameters
-    - **st** (`int` or `str`):
-      The switch status code to interpret.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    st : int or str
+        The switch status code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description of the switch status.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description of the switch status.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Scoped to the field named `SWITCHSTATUS`, not to on/off fields in general. Other
       switch-like fields number their states differently and would be rendered wrongly:
       `QUOTASWITCHSTATUS`, for example, uses `0` for off, `1` for on and `2` for
       initializing, so `2` would come out as `'Off'` here.
 
-    ### Example
+    Examples
+    --------
     >>> get_switch_status(1)
     'On'
 
@@ -2247,17 +2415,20 @@ def get_uuid(data):
     a given dictionary. The UUID is typically used to query performance statistics
     or uniquely identify resources.
 
-    ### Parameters
-    - **data** (`dict`):
-      A dictionary containing the keys `'TYPE'` and `'ID'`.
+    Parameters
+    ----------
+    data : dict
+        A dictionary containing the keys `'TYPE'` and `'ID'`.
 
-    ### Returns
-    - **str**:
-      The UUID in the format `'TYPE:ID'`, e.g., `'207:0A'`. A field the appliance did not
-      report is rendered as `'--'`, so an incomplete object still yields a printable
-      identifier instead of aborting the caller with a `KeyError`.
+    Returns
+    -------
+    str
+        The UUID in the format `'TYPE:ID'`, e.g., `'207:0A'`. A field the appliance did not
+        report is rendered as `'--'`, so an incomplete object still yields a printable
+        identifier instead of aborting the caller with a `KeyError`.
 
-    ### Example
+    Examples
+    --------
     >>> get_uuid({'TYPE': '207', 'ID': '0A'})
     '207:0A'
 
@@ -2274,18 +2445,21 @@ def sectors2bytes(sectors, sector_size=DEFAULT_SECTOR_SIZE):
     Every capacity in the API is counted in sectors. A consumer that reports one has to
     convert it, so that a dashboard can label its axis without knowing the sector size.
 
-    ### Parameters
-    - **sectors** (`int`, `str` or `None`):
-      The sector count as the API reported it.
-    - **sector_size** (`int`, optional):
-      Bytes per sector. Leave it alone unless a capacity is documented in units of
-      something other than the 512-byte sector.
+    Parameters
+    ----------
+    sectors : int, str or None
+        The sector count as the API reported it.
+    sector_size : int, optional
+        Bytes per sector. Leave it alone unless a capacity is documented in units of
+        something other than the 512-byte sector.
 
-    ### Returns
-    - **int** or **None**:
-      The capacity in bytes, or `None` for a value that cannot be used.
+    Returns
+    -------
+    int or None
+        The capacity in bytes, or `None` for a value that cannot be used.
 
-    ### Notes
+    Notes
+    -----
     - A sector is 512 bytes, which is what the REST Interface References state next to the
       capacity fields themselves ("Note: The size of a sector is 512 bytes"). The
       `SECTORSIZE` a LUN or a disk reports is a different number: the block size that
@@ -2298,7 +2472,8 @@ def sectors2bytes(sectors, sector_size=DEFAULT_SECTOR_SIZE):
     - `None` is also what a missing field yields, which is what `lib.base.get_perfdata()`
       turns into no metric at all.
 
-    ### Example
+    Examples
+    --------
     >>> sectors2bytes('2048')
     1048576
 

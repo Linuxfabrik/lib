@@ -49,14 +49,18 @@ def _build_auth(args):
     Kerberos credential cache (`kinit`). Otherwise prepends
     `WINRM_DOMAIN` to the username when set.
 
-    ### Parameters
-    - **args**: Object with `WINRM_USERNAME`,
-      `WINRM_PASSWORD`, `WINRM_TRANSPORT`, and optionally
-      `WINRM_DOMAIN`.
+    Parameters
+    ----------
+    args
+        Object with `WINRM_USERNAME`,
+        `WINRM_PASSWORD`, `WINRM_TRANSPORT`, and optionally
+        `WINRM_DOMAIN`.
 
-    ### Returns
-    - **tuple**: `(username, password)` suitable for
-      pypsrp or pywinrm.
+    Returns
+    -------
+    tuple
+        `(username, password)` suitable for
+        pypsrp or pywinrm.
     """
     username = getattr(args, 'WINRM_USERNAME', None)
     password = getattr(args, 'WINRM_PASSWORD', None)
@@ -72,11 +76,15 @@ def _map_transport(args):
     """
     Derive PSRP auth method, SSL flag, and port from `args`.
 
-    ### Parameters
-    - **args**: Object with `WINRM_TRANSPORT`.
+    Parameters
+    ----------
+    args
+        Object with `WINRM_TRANSPORT`.
 
-    ### Returns
-    - **tuple**: `(psrp_auth, use_ssl, port)`.
+    Returns
+    -------
+    tuple
+        `(psrp_auth, use_ssl, port)`.
     """
     transport = (getattr(args, 'WINRM_TRANSPORT', None) or '').lower()
     psrp_auth = _AUTH_MAP.get(transport, 'negotiate')
@@ -94,30 +102,39 @@ def run_cmd(args, cmd, params=None):
     compatibility); otherwise falls back to **pywinrm**. Authentication,
     transport and SSL/port selection are derived from the provided `args`.
 
-    ### Parameters
-    - **args**: An object (e.g., `argparse.Namespace`) that provides at least:
-        - `WINRM_HOSTNAME` (`str`): Target host or IP.
-        - `WINRM_USERNAME` (`str`, optional): Username. If `None` or empty when using
-          Kerberos transport, will use existing Kerberos credentials from credential cache
-          (e.g., obtained via `kinit`).
-        - `WINRM_PASSWORD` (`str`, optional): Password. If `None` or empty when using
-          Kerberos transport, will use existing Kerberos credentials from credential cache.
-        - `WINRM_TRANSPORT` (`str`, optional): Transport (e.g., `'negotiate'`, `'kerberos'`,
-          `'ntlm'`, `'credssp'`, `'basic'`, `'ssl'`). Defaults to `'negotiate'` if unset.
-        - `WINRM_DOMAIN` (`str`, optional): If set, username is sent as `user@domain`.
-      (Additional fields may be honored by the underlying libraries if present.)
-    - **cmd** (`str`): The executable/command to run remotely (native command, not a PowerShell
-       script block).
-    - **params** (`list[str]`, optional): Positional arguments passed to the command. Defaults
-       to `[]`.
+    Parameters
+    ----------
+    args
+        An object (e.g., `argparse.Namespace`) that provides at least:
 
-    ### Returns
-    - **dict**: A normalized result with:
-        - `retc` (`int`): Process return code (`0` on success).
-        - `stdout` (`str`): Captured standard output (text).
-        - `stderr` (`str`): Captured standard error (text).
+          - `WINRM_HOSTNAME` (`str`): Target host or IP.
+          - `WINRM_USERNAME` (`str`, optional): Username. If `None` or empty when using
+            Kerberos transport, will use existing Kerberos credentials from credential cache
+            (e.g., obtained via `kinit`).
+          - `WINRM_PASSWORD` (`str`, optional): Password. If `None` or empty when using
+            Kerberos transport, will use existing Kerberos credentials from credential cache.
+          - `WINRM_TRANSPORT` (`str`, optional): Transport (e.g., `'negotiate'`, `'kerberos'`,
+            `'ntlm'`, `'credssp'`, `'basic'`, `'ssl'`). Defaults to `'negotiate'` if unset.
+          - `WINRM_DOMAIN` (`str`, optional): If set, username is sent as `user@domain`.
+        (Additional fields may be honored by the underlying libraries if present.)
+    cmd : str
+        The executable/command to run remotely (native command, not a PowerShell
+         script block).
+    params : list[str], optional
+        Positional arguments passed to the command. Defaults
+         to `[]`.
 
-    ### Behavior
+    Returns
+    -------
+    dict
+        A normalized result with:
+
+          - `retc` (`int`): Process return code (`0` on success).
+          - `stdout` (`str`): Captured standard output (text).
+          - `stderr` (`str`): Captured standard error (text).
+
+    Notes
+    -----
     - If **pypsrp** is available, maps `WINRM_TRANSPORT` to an appropriate PSRP auth
       and chooses SSL/port (5986 for SSL, 5985 otherwise), then executes the command
       via `Client.execute_cmd()`.
@@ -130,7 +147,8 @@ def run_cmd(args, cmd, params=None):
     - If neither backend is present, returns an error indicating that no compatible
       remoting library is available.
 
-    ### Example
+    Examples
+    --------
     >>> # With explicit credentials:
     >>> run_cmd(args, 'ipconfig', ['/all'])
     {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
@@ -205,11 +223,15 @@ def _quote_ps_value(value):
     Single-quotes the value, doubling any embedded single
     quotes (`'` becomes `''`).
 
-    ### Parameters
-    - **value**: The value to quote (converted to `str`).
+    Parameters
+    ----------
+    value
+        The value to quote (converted to `str`).
 
-    ### Returns
-    - **str**: A safely quoted PowerShell string literal.
+    Returns
+    -------
+    str
+        A safely quoted PowerShell string literal.
     """
     return "'{}'".format(str(value).replace("'", "''"))
 
@@ -223,48 +245,57 @@ def run_ps(args, cmd, params=None):
     JEA/PowerShell Remoting); otherwise falls back to
     **pywinrm**.
 
-    ### Parameters
-    - **args**: Object (e.g. `argparse.Namespace`) with:
-        - `WINRM_HOSTNAME` (`str`): Target host or IP.
-        - `WINRM_USERNAME` (`str`, optional): Username.
-          If empty with Kerberos transport, the credential
-          cache (`kinit`) is used.
-        - `WINRM_PASSWORD` (`str`, optional): Password.
-          Same Kerberos fallback as username.
-        - `WINRM_TRANSPORT` (`str`, optional): Transport
-          (e.g. `'negotiate'`, `'kerberos'`, `'ntlm'`,
-          `'credssp'`, `'basic'`, `'ssl'`).
-          Defaults to `'negotiate'`.
-        - `WINRM_DOMAIN` (`str`, optional): If set,
-          username is sent as `user@domain`.
-        - `WINRM_CONFIGURATION_NAME` (`str`, optional):
-          JEA endpoint name. Defaults to
-          `'Microsoft.PowerShell'`. Only with **pypsrp**.
-    - **cmd** (`str`): What to execute remotely. Meaning
-      depends on `params`:
-        - `params is None` — `cmd` is an arbitrary
-          PowerShell script (pipelines, expressions, etc.)
-          executed via `add_script()`.
-        - `params` given (`list` or `dict`) — `cmd` is a
-          single cmdlet name executed via `add_cmdlet()`
-          (optimal for JEA allow/deny).
-    - **params** (`list[str]`, `dict`, or `None`):
-        - `None` (default) — no params; `cmd` is run as a
-          script.
-        - `list[str]` — positional arguments added via
-          `add_argument()`.
-        - `dict` — named parameters added via
-          `add_parameter(name, value)`.
+    Parameters
+    ----------
+    args
+        Object (e.g. `argparse.Namespace`) with:
 
-    ### Returns
-    - **dict**: Normalized result with:
-        - `retc` (`int`): `0` if no errors.
-        - `stdout` (`str`): Captured output.
-        - `stderr` (`str`): Error/diagnostic output.
-          For **pywinrm**: CLIXML progress noise is
-          suppressed when `retc == 0`.
+          - `WINRM_HOSTNAME` (`str`): Target host or IP.
+          - `WINRM_USERNAME` (`str`, optional): Username.
+            If empty with Kerberos transport, the credential
+            cache (`kinit`) is used.
+          - `WINRM_PASSWORD` (`str`, optional): Password.
+            Same Kerberos fallback as username.
+          - `WINRM_TRANSPORT` (`str`, optional): Transport
+            (e.g. `'negotiate'`, `'kerberos'`, `'ntlm'`,
+            `'credssp'`, `'basic'`, `'ssl'`).
+            Defaults to `'negotiate'`.
+          - `WINRM_DOMAIN` (`str`, optional): If set,
+            username is sent as `user@domain`.
+          - `WINRM_CONFIGURATION_NAME` (`str`, optional):
+            JEA endpoint name. Defaults to
+            `'Microsoft.PowerShell'`. Only with **pypsrp**.
+    cmd : str
+        What to execute remotely. Meaning
+        depends on `params`:
 
-    ### Example
+          - `params is None` — `cmd` is an arbitrary
+            PowerShell script (pipelines, expressions, etc.)
+            executed via `add_script()`.
+          - `params` given (`list` or `dict`) — `cmd` is a
+            single cmdlet name executed via `add_cmdlet()`
+            (optimal for JEA allow/deny).
+    params : list[str], dict, or None
+          - `None` (default) — no params; `cmd` is run as a
+            script.
+          - `list[str]` — positional arguments added via
+            `add_argument()`.
+          - `dict` — named parameters added via
+            `add_parameter(name, value)`.
+
+    Returns
+    -------
+    dict
+        Normalized result with:
+
+          - `retc` (`int`): `0` if no errors.
+          - `stdout` (`str`): Captured output.
+          - `stderr` (`str`): Error/diagnostic output.
+            For **pywinrm**: CLIXML progress noise is
+            suppressed when `retc == 0`.
+
+    Examples
+    --------
     Pipeline (params=None, uses add_script):
     >>> run_ps(args, 'Get-Process | Select -First 1')
 

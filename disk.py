@@ -33,16 +33,19 @@ def bd2dmd(device):
     This function reads the sysfs entry directly instead of using `dmsetup ls`, thus avoiding
     elevated privileges. ("bd2dmd" = block device to device-mapper device).
 
-    ### Parameters
-    - **device** (`str`):
-      The block device name or path (e.g., 'dm-0', '/dev/dm-0').
+    Parameters
+    ----------
+    device : str
+        The block device name or path (e.g., 'dm-0', '/dev/dm-0').
 
-    ### Returns
-    - **str**:
-      The full path to the mapped device (e.g., '/dev/mapper/rl_rocky8-root'),
-      or an empty string if not a device-mapper device.
+    Returns
+    -------
+    str
+        The full path to the mapped device (e.g., '/dev/mapper/rl_rocky8-root'),
+        or an empty string if not a device-mapper device.
 
-    ### Example
+    Examples
+    --------
     >>> bd2dmd('dm-0')
     '/dev/mapper/rl_rocky8-root'
     >>> bd2dmd('sda')
@@ -66,16 +69,21 @@ def copy_dir(src, dst):
     `(success, error)` style as the other disk helpers, so callers do not have to
     handle exceptions themselves.
 
-    ### Parameters
-    - **src** (`str`): Source directory.
-    - **dst** (`str`): Destination directory (must not exist yet).
+    Parameters
+    ----------
+    src : str
+        Source directory.
+    dst : str
+        Destination directory (must not exist yet).
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the copy succeeded, otherwise False.
-        - tuple[1] (**None or str**): None on success, otherwise an error message.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the copy succeeded, otherwise False.
+          - tuple[1] (**None or str**): None on success, otherwise an error message.
 
-    ### Example
+    Examples
+    --------
     >>> copy_dir('/usr/share/lynis', '/tmp/lynis')
     (True, None)
     """
@@ -95,16 +103,21 @@ def copy_file(src, dst):
     Wraps `shutil.copy2()` and reports the outcome in the same `(success, error)`
     style as the other disk helpers.
 
-    ### Parameters
-    - **src** (`str`): Source file.
-    - **dst** (`str`): Destination file or directory.
+    Parameters
+    ----------
+    src : str
+        Source file.
+    dst : str
+        Destination file or directory.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the copy succeeded, otherwise False.
-        - tuple[1] (**None or str**): None on success, otherwise an error message.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the copy succeeded, otherwise False.
+          - tuple[1] (**None or str**): None on success, otherwise an error message.
 
-    ### Example
+    Examples
+    --------
     >>> copy_file('/etc/lynis/default.prf', '/tmp/lynis/default.prf')
     (True, None)
     """
@@ -125,16 +138,19 @@ def dir_exists(path):
     only returns `True` for regular files (it is `os.path.isfile()` under
     the hood), so passing a directory to it always returns `False`.
 
-    ### Parameters
-    - **path** (`str`):
-      The path to the directory to check.
+    Parameters
+    ----------
+    path : str
+        The path to the directory to check.
 
-    ### Returns
-    - **bool**:
-      `True` if the path exists and is a directory (or a symlink to one),
-      `False` otherwise.
+    Returns
+    -------
+    bool
+        `True` if the path exists and is a directory (or a symlink to one),
+        `False` otherwise.
 
-    ### Example
+    Examples
+    --------
     >>> dir_exists('/etc')
     True
     >>> dir_exists('/etc/passwd')
@@ -154,18 +170,21 @@ def file_exists(path, allow_empty=False):
     symlinks pointing at regular files. Directories return `False`; use
     `dir_exists()` for directory checks.
 
-    ### Parameters
-    - **path** (`str`):
-      The path to the file to check.
-    - **allow_empty** (`bool`, optional):
-      If True, consider empty files as existing.
-      If False, empty files are treated as non-existent. Defaults to False.
+    Parameters
+    ----------
+    path : str
+        The path to the file to check.
+    allow_empty : bool, optional
+        If True, consider empty files as existing.
+        If False, empty files are treated as non-existent. Defaults to False.
 
-    ### Returns
-    - **bool**:
-      True if the file exists (and is non-empty unless `allow_empty` is True), otherwise False.
+    Returns
+    -------
+    bool
+        True if the file exists (and is non-empty unless `allow_empty` is True), otherwise False.
 
-    ### Example
+    Examples
+    --------
     >>> file_exists('/path/to/file')
     True
     >>> file_exists('/path/to/empty_file', allow_empty=False)
@@ -192,13 +211,18 @@ def is_symlink(path):
     filesystem-predicate a plugin reaches for. A path that cannot be examined counts as
     not a symlink; the caller's own open or read then reports the real trouble.
 
-    ### Parameters
-    - **path** (`str | os.PathLike`): The path to test.
+    Parameters
+    ----------
+    path : str | os.PathLike
+        The path to test.
 
-    ### Returns
-    - **bool**: True if `path` is a symbolic link, otherwise False.
+    Returns
+    -------
+    bool
+        True if `path` is a symbolic link, otherwise False.
 
-    ### Example
+    Examples
+    --------
     >>> is_symlink('/path/does/not/exist')
     False
     """
@@ -221,18 +245,21 @@ def is_within(path, roots):
     a root is rejected; to legitimately reach a location stored elsewhere,
     bind-mount it into a root instead of symlinking it.
 
-    ### Parameters
-    - **path** (`str`):
-      The path to check. It need not exist; only its resolved location matters.
-    - **roots** (`iterable` of `str`):
-      The directories `path` is allowed to resolve into.
+    Parameters
+    ----------
+    path : str
+        The path to check. It need not exist; only its resolved location matters.
+    roots : iterable of str
+        The directories `path` is allowed to resolve into.
 
-    ### Returns
-    - **bool**:
-      True if `path` resolves to one of the roots or a location below it,
-      otherwise False.
+    Returns
+    -------
+    bool
+        True if `path` resolves to one of the roots or a location below it,
+        otherwise False.
 
-    ### Example
+    Examples
+    --------
     >>> is_within('/var/log/app/today.log', ['/var/log'])
     True
     >>> is_within('/var/log/../etc/shadow', ['/var/log'])
@@ -275,14 +302,14 @@ def get_block_devices():
     Pseudo devices that never carry meaningful I/O are skipped by name prefix: loopback (`loop`),
     RAM disks (`ram`), compressed RAM (`zram`), floppy (`fd`) and optical (`sr`) devices.
 
-    ### Parameters
-    - None
+    Returns
+    -------
+    list of dict
+        One entry per block device, including unmounted ones. Empty list on
+        systems without `/proc/diskstats` (e.g. non-Linux).
 
-    ### Returns
-    - **list of dict**: One entry per block device, including unmounted ones. Empty list on
-      systems without `/proc/diskstats` (e.g. non-Linux).
-
-    ### Example
+    Examples
+    --------
     >>> get_block_devices()
     [{'bd': '/dev/dm-7', 'dmd': '/dev/mapper/data', 'mp': ''},
      {'bd': '/dev/sda1', 'dmd': '', 'mp': '/boot'}]
@@ -326,14 +353,13 @@ def get_cwd():
     """
     Get the current working directory.
 
-    ### Parameters
-    - None
+    Returns
+    -------
+    str
+        The absolute path of the current working directory.
 
-    ### Returns
-    - **str**:
-      The absolute path of the current working directory.
-
-    ### Example
+    Examples
+    --------
     >>> get_cwd()
     '/home/user/project'
     """
@@ -370,29 +396,34 @@ def get_fingerprint(filename, length=256, algorithm='sha256'):
     count back as `length` for that, and treat a count below the one requested as "the file no
     longer holds that many bytes", i.e. it was truncated.
 
-    ### Parameters
-    - **filename** (`str`):
-      Path to the file to fingerprint.
-    - **length** (`int`, optional):
-      How many bytes to hash, and from which side:
-      - `> 0`: the first `length` bytes (the head). Defaults to 256, which is enough to tell
-        two lines of text apart.
-      - `< 0`: the last `abs(length)` bytes (the tail).
-      - `0`: the whole file, read in chunks.
-    - **algorithm** (`str`, optional):
-      Name of the hash algorithm, as accepted by `hashlib.new()`, for example `'md5'`,
-      `'sha1'`, `'sha256'` or `'sha512'`. Defaults to `'sha256'`.
+    Parameters
+    ----------
+    filename : str
+        Path to the file to fingerprint.
+    length : int, optional
+        How many bytes to hash, and from which side:
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if reading succeeded, otherwise False.
-        - tuple[1] (**tuple | str**):
-          - If successful, a `(fingerprint, hashed)` tuple: the hexdigest of the slice, and
-            the number of bytes it was taken over. `hashed` is less than the requested number
-            of bytes if the file is shorter than that.
-          - If unsuccessful, an error message string.
+        - `> 0`: the first `length` bytes (the head). Defaults to 256, which is enough to tell
+          two lines of text apart.
+        - `< 0`: the last `abs(length)` bytes (the tail).
+        - `0`: the whole file, read in chunks.
+    algorithm : str, optional
+        Name of the hash algorithm, as accepted by `hashlib.new()`, for example `'md5'`,
+        `'sha1'`, `'sha256'` or `'sha512'`. Defaults to `'sha256'`.
 
-    ### Notes
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if reading succeeded, otherwise False.
+          - tuple[1] (**tuple | str**):
+
+            - If successful, a `(fingerprint, hashed)` tuple: the hexdigest of the slice, and
+              the number of bytes it was taken over. `hashed` is less than the requested number
+              of bytes if the file is shorter than that.
+            - If unsuccessful, an error message string.
+
+    Notes
+    -----
     - A file shorter than the requested slice is hashed as a whole, so head, tail and whole
       file yield the same fingerprint for it.
     - Pick `algorithm` to match whatever the fingerprint is compared against. Where the
@@ -405,7 +436,8 @@ def get_fingerprint(filename, length=256, algorithm='sha256'):
       refuses MD5 there, which surfaces as a failure of this function rather than as a wrong
       answer.
 
-    ### Example
+    Examples
+    --------
     >>> success, (fingerprint, hashed) = get_fingerprint('/var/log/messages')
     >>> success, (fingerprint, hashed) = get_fingerprint('/tmp/export', length=-4096)
     >>> success, (fingerprint, hashed) = get_fingerprint('/tmp/export', length=0)
@@ -457,20 +489,25 @@ def get_inode_usage(mount):
     zero. Such a filesystem has no meaningful inode-usage percentage, which is signalled
     with a `None` result, distinct from a read failure.
 
-    ### Parameters
-    - **mount** (`str`): Mount point to inspect, e.g. `/` or `/boot`.
+    Parameters
+    ----------
+    mount : str
+        Mount point to inspect, e.g. `/` or `/boot`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the mount point could be read, otherwise False (for
-          example permission denied, an I/O error, or a platform without `os.statvfs()`).
-        - tuple[1] (**dict | None | str**):
-          - On success, a dict with the inode counts `total`, `free` and `used`, plus
-            `percent` (used inodes in percent, rounded to one decimal); or `None` if the
-            filesystem does not report inodes (total is zero).
-          - On failure, an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the mount point could be read, otherwise False (for
+            example permission denied, an I/O error, or a platform without `os.statvfs()`).
+          - tuple[1] (**dict | None | str**):
 
-    ### Example
+            - On success, a dict with the inode counts `total`, `free` and `used`, plus
+              `percent` (used inodes in percent, rounded to one decimal); or `None` if the
+              filesystem does not report inodes (total is zero).
+            - On failure, an error message string.
+
+    Examples
+    --------
     >>> get_inode_usage('/boot')
     (True, {'total': 65536, 'free': 65427, 'used': 109, 'percent': 0.2})
     >>> get_inode_usage('/')  # btrfs, no fixed inode count
@@ -499,21 +536,25 @@ def get_owner(file):
     """
     Get the numeric user ID (UID) of the owner of a filesystem entry.
 
-    ### Parameters
-    - **file** *(str | os.PathLike)*:
-      Path to the file or directory whose owner UID should be retrieved.
+    Parameters
+    ----------
+    file : str | os.PathLike
+        Path to the file or directory whose owner UID should be retrieved.
 
-    ### Returns
-    - **int**:
-      The owner's UID if available; `-1` if the call fails or ownership cannot be determined.
+    Returns
+    -------
+    int
+        The owner's UID if available; `-1` if the call fails or ownership cannot be determined.
 
-    ### Notes
+    Notes
+    -----
     - This function is POSIX-oriented. On Windows, `st_uid` may be `0` for all files
       and not reflect the real owner. If you need the account name on Windows,
       consider platform-specific APIs (e.g., `win32security`).
     - All exceptions are caught and result in `-1`.
 
-    ### Example
+    Examples
+    --------
     >>> get_owner('/etc/passwd')  # doctest: +SKIP (system-dependent)
     0
     >>> get_owner('/path/does/not/exist')
@@ -535,16 +576,19 @@ def stat(file):
     fields (`st_size`, `st_mtime`, `st_mode`, `st_uid`) are available on every
     supported platform, including Windows.
 
-    ### Parameters
-    - **file** *(str | os.PathLike)*:
-      Path to stat.
+    Parameters
+    ----------
+    file : str | os.PathLike
+        Path to stat.
 
-    ### Returns
-    - **os.stat_result | None**:
-      The stat result on success; `None` if the call fails (for example the path
-      does not exist or is not accessible).
+    Returns
+    -------
+    os.stat_result | None
+        The stat result on success; `None` if the call fails (for example the path
+        does not exist or is not accessible).
 
-    ### Example
+    Examples
+    --------
     >>> stat('/path/does/not/exist') is None
     True
     """
@@ -563,17 +607,20 @@ def glob(pattern, recursive=True):
     pattern that matches nothing yields an empty list; the call never raises for
     a non-matching pattern.
 
-    ### Parameters
-    - **pattern** *(str)*:
-      The glob pattern, e.g. `/var/log/**/*.log` or `*.txt`.
-    - **recursive** *(bool, optional)*:
-      Whether `**` should match across directory boundaries. Defaults to True.
+    Parameters
+    ----------
+    pattern : str
+        The glob pattern, e.g. `/var/log/**/*.log` or `*.txt`.
+    recursive : bool, optional
+        Whether `**` should match across directory boundaries. Defaults to True.
 
-    ### Returns
-    - **list**:
-      The matching paths, sorted for a deterministic order.
+    Returns
+    -------
+    list
+        The matching paths, sorted for a deterministic order.
 
-    ### Example
+    Examples
+    --------
     >>> glob('/path/does/not/exist/*')
     []
     """
@@ -593,20 +640,26 @@ def get_package(path):
     answer here on purpose: neither means the path belongs to a package. A host
     with neither package manager also yields the empty string.
 
-    ### Parameters
-    - **path** (`str`): The path to ask about, for example
-      `/usr/share/icingaweb2/modules/director`.
+    Parameters
+    ----------
+    path : str
+        The path to ask about, for example
+        `/usr/share/icingaweb2/modules/director`.
 
-    ### Returns
-    - **str**: The package name, or the empty string.
+    Returns
+    -------
+    str
+        The package name, or the empty string.
 
-    ### Notes
+    Notes
+    -----
     - The path is refused when a package manager could read it as one of its own
       options. `rpm --query --file --version` prints the rpm version and succeeds,
       so an unguarded lookup on a path named that way would report the tool's
       version string as a package name. Verified against rpm 6.0.2 on Fedora 43.
 
-    ### Example
+    Examples
+    --------
     >>> get_package('/usr/share/icingaweb2/modules/director')
     'icinga-director-php-1.11.9-1.fc43.noarch'
 
@@ -649,13 +702,13 @@ def get_real_disks():
     Devices are discovered by parsing /proc/mounts and resolving device-mapper relationships
     via udevadm. Devices under /dev/loop* (loopback devices) are ignored.
 
-    ### Parameters
-    - None
+    Returns
+    -------
+    list of dict
+        List of mounted devices and their details.
 
-    ### Returns
-    - **list of dict**: List of mounted devices and their details.
-
-    ### Example
+    Examples
+    --------
     >>> get_real_disks()
     [{'bd': '/dev/dm-0', 'dmd': '/dev/mapper/rl-root', 'mp': '/ /home'}]
     """
@@ -704,20 +757,21 @@ def get_tmpdir():
 
     The literal `/tmp` is only returned as a fallback if `tempfile.gettempdir()` itself raises.
 
-    ### Parameters
-    - None
+    Returns
+    -------
+    str
+        The absolute path to the temporary directory.
 
-    ### Returns
-    - **str**: The absolute path to the temporary directory.
-
-    ### Notes
+    Notes
+    -----
     - `tempfile.gettempdir()` computes the result once and caches it; changing `TMPDIR` and
       friends afterwards has no effect for the rest of the process.
     - The path is made absolute but not symlink-resolved (`os.path.abspath`, not
       `os.path.realpath`), so a caller that needs a trusted location must validate the final path
       itself.
 
-    ### Example
+    Examples
+    --------
     >>> get_tmpdir()
     '/tmp'
 
@@ -739,18 +793,23 @@ def grep_file(filename, pattern):
 
     Returns the first match found; if no match is found or an error occurs, returns False.
 
-    ### Parameters
-    - **filename** (`str`): Path to the file to search.
-    - **pattern** (`str`): A Python regular expression pattern to search for.
+    Parameters
+    ----------
+    filename : str
+        Path to the file to search.
+    pattern : str
+        A Python regular expression pattern to search for.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the operation succeeded (no I/O or file handling errors),
-          otherwise False.
-        - tuple[1] (**str**): The string matched by `pattern` (if any), or an error message if
-          unsuccessful.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the operation succeeded (no I/O or file handling errors),
+            otherwise False.
+          - tuple[1] (**str**): The string matched by `pattern` (if any), or an error message if
+            unsuccessful.
 
-    ### Example
+    Examples
+    --------
     >>> success, nc_version = grep_file('version.php', r'\\$OC_version=array\\((.*)\\)')
     """
     try:
@@ -774,16 +833,20 @@ def make_temp_dir(prefix=''):
     Wraps `tempfile.mkdtemp()` and reports the outcome in the same
     `(success, result)` style as the other disk helpers.
 
-    ### Parameters
-    - **prefix** (`str`, optional): Prefix for the directory name. Defaults to ''.
+    Parameters
+    ----------
+    prefix : str, optional
+        Prefix for the directory name. Defaults to ''.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True on success, otherwise False.
-        - tuple[1] (**str**): The created directory path on success, otherwise an
-          error message.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**str**): The created directory path on success, otherwise an
+            error message.
 
-    ### Example
+    Examples
+    --------
     >>> make_temp_dir(prefix='myapp-')
     (True, '/tmp/myapp-abcd1234')
     """
@@ -803,19 +866,25 @@ def mkdir(path, mode=0o755, exist_ok=True):
     style as the other disk helpers, so callers do not have to handle exceptions
     themselves.
 
-    ### Parameters
-    - **path** (`str`): Directory path to create.
-    - **mode** (`int`, optional): Permission bits for newly created directories.
-      Defaults to `0o755`.
-    - **exist_ok** (`bool`, optional): If `True`, an already existing directory is
-      not an error. Defaults to `True`.
+    Parameters
+    ----------
+    path : str
+        Directory path to create.
+    mode : int, optional
+        Permission bits for newly created directories.
+        Defaults to `0o755`.
+    exist_ok : bool, optional
+        If `True`, an already existing directory is
+        not an error. Defaults to `True`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the directory exists afterwards, else False.
-        - tuple[1] (**None or str**): None on success, otherwise an error message.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the directory exists afterwards, else False.
+          - tuple[1] (**None or str**): None on success, otherwise an error message.
 
-    ### Example
+    Examples
+    --------
     >>> mkdir('/tmp/example/sub')
     (True, None)
     """
@@ -839,25 +908,35 @@ def read_csv(
     """
     Read a CSV file and return its content as a list or dictionary.
 
-    ### Parameters
-    - **filename** (`str`): Path to the CSV file.
-    - **delimiter** (`str`, optional): The field delimiter character. Defaults to ','.
-    - **quotechar** (`str`, optional): The character used to quote fields. Defaults to '"'.
-    - **newline** (`str`, optional): Controls how universal newlines mode works while opening the
-      file. Defaults to ''.
-    - **as_dict** (`bool`, optional): If True, return each row as a dictionary using the CSV header.
-      Defaults to False.
-    - **skip_empty_rows** (`bool`, optional): If True, skip rows that contain only empty or
-      whitespace fields. Defaults to False.
+    Parameters
+    ----------
+    filename : str
+        Path to the CSV file.
+    delimiter : str, optional
+        The field delimiter character. Defaults to ','.
+    quotechar : str, optional
+        The character used to quote fields. Defaults to '"'.
+    newline : str, optional
+        Controls how universal newlines mode works while opening the
+        file. Defaults to ''.
+    as_dict : bool, optional
+        If True, return each row as a dictionary using the CSV header.
+        Defaults to False.
+    skip_empty_rows : bool, optional
+        If True, skip rows that contain only empty or
+        whitespace fields. Defaults to False.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if reading succeeded, otherwise False.
-        - tuple[1] (**list or str**):
-          - If successful, a list of rows (as lists or dicts depending on `as_dict`).
-          - If unsuccessful, an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if reading succeeded, otherwise False.
+          - tuple[1] (**list or str**):
 
-    ### Example
+            - If successful, a list of rows (as lists or dicts depending on `as_dict`).
+            - If unsuccessful, an error message string.
+
+    Examples
+    --------
     >>> success, data = read_csv('data.csv')
     >>> success, data = read_csv('data.csv', as_dict=True, skip_empty_rows=True)
     """
@@ -898,22 +977,28 @@ def _open_for_read(filename, binary=False, allowed_roots=None, nofollow=False):
     the same protection everywhere (see the "Confining a path a privileged plugin was
     pointed at" section in the monitoring-plugins CONTRIBUTING.md).
 
-    ### Parameters
-    - **filename** (`str`): Path to open.
-    - **binary** (`bool`, optional): Open in binary mode. Defaults to False (UTF-8
-      text).
-    - **allowed_roots** (`iterable` of `str`, optional): When given, the file is
-      refused unless its real path resolves inside one of these roots. Symlinks and
-      `..` are resolved first (via `is_within()`), so a symlink pointing out of a root
-      is rejected. Defaults to None (no containment).
-    - **nofollow** (`bool`, optional): Refuse to open a symlink at the final path
-      component (`O_NOFOLLOW`), which closes the check-then-open race that
-      `allowed_roots` alone leaves. Defaults to False.
+    Parameters
+    ----------
+    filename : str
+        Path to open.
+    binary : bool, optional
+        Open in binary mode. Defaults to False (UTF-8
+        text).
+    allowed_roots : iterable of str, optional
+        When given, the file is
+        refused unless its real path resolves inside one of these roots. Symlinks and
+        `..` are resolved first (via `is_within()`), so a symlink pointing out of a root
+        is rejected. Defaults to None (no containment).
+    nofollow : bool, optional
+        Refuse to open a symlink at the final path
+        component (`O_NOFOLLOW`), which closes the check-then-open race that
+        `allowed_roots` alone leaves. Defaults to False.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True on success, otherwise False.
-        - tuple[1] (**file object or str**): The open file object, or an error message.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**file object or str**): The open file object, or an error message.
     """
     if allowed_roots and not is_within(os.path.realpath(filename), allowed_roots):
         return False, (
@@ -947,24 +1032,32 @@ def read_env(filename, delimiter='=', allowed_roots=None, nofollow=False):
     (optionally prefixed with 'export') are processed. More complex shell logic (e.g., conditional
     reads) is ignored.
 
-    ### Parameters
-    - **filename** (`str`): Path to the environment file to read.
-    - **delimiter** (`str`, optional): The character that separates keys and values.
-      Defaults to '='.
-    - **allowed_roots** (`iterable` of `str`, optional): Confine the read to these
-      roots; a file resolving outside them is refused. See `_open_for_read()`.
-      Defaults to None.
-    - **nofollow** (`bool`, optional): Refuse to follow a symlink at the final path
-      component. See `_open_for_read()`. Defaults to False.
+    Parameters
+    ----------
+    filename : str
+        Path to the environment file to read.
+    delimiter : str, optional
+        The character that separates keys and values.
+        Defaults to '='.
+    allowed_roots : iterable of str, optional
+        Confine the read to these
+        roots; a file resolving outside them is refused. See `_open_for_read()`.
+        Defaults to None.
+    nofollow : bool, optional
+        Refuse to follow a symlink at the final path
+        component. See `_open_for_read()`. Defaults to False.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if reading succeeded, otherwise False.
-        - tuple[1] (**dict or str**):
-          - If successful, a dictionary of environment variable names and values.
-          - If unsuccessful, an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if reading succeeded, otherwise False.
+          - tuple[1] (**dict or str**):
 
-    ### Example
+            - If successful, a dictionary of environment variable names and values.
+            - If unsuccessful, an error message string.
+
+    Examples
+    --------
     Example shell script 'env.sh':
 
         export OS_AUTH_URL="https://api/v3"
@@ -1008,38 +1101,48 @@ def read_file(
     """
     Read the contents of a file and return them.
 
-    ### Parameters
-    - **filename** (`str`): Path to the file to read.
-    - **binary** (`bool`, optional): If True, read in binary mode and return the
-      contents as `bytes`; otherwise decode as UTF-8 text. Defaults to False.
-    - **max_bytes** (`int`, optional): Stop after this many bytes (characters in text
-      mode) instead of reading the whole file. Use it whenever only a bounded part of
-      the file is of interest, for example a metadata header at the top, so a file that
-      unexpectedly grew to gigabytes cannot exhaust memory. Defaults to None, which
-      reads the file completely.
-    - **allowed_roots** (`iterable` of `str`, optional): Confine the read to these
-      roots; a file whose real path resolves outside them is refused. A plugin that
-      runs as root and opens a caller-supplied path must pass this so a planted symlink
-      cannot redirect the read to `/etc/shadow` or a private key. See
-      `_open_for_read()`. Defaults to None.
-    - **nofollow** (`bool`, optional): Refuse to follow a symlink at the final path
-      component (`O_NOFOLLOW`), closing the check-then-open race `allowed_roots` alone
-      leaves. See `_open_for_read()`. Defaults to False.
+    Parameters
+    ----------
+    filename : str
+        Path to the file to read.
+    binary : bool, optional
+        If True, read in binary mode and return the
+        contents as `bytes`; otherwise decode as UTF-8 text. Defaults to False.
+    max_bytes : int, optional
+        Stop after this many bytes (characters in text
+        mode) instead of reading the whole file. Use it whenever only a bounded part of
+        the file is of interest, for example a metadata header at the top, so a file that
+        unexpectedly grew to gigabytes cannot exhaust memory. Defaults to None, which
+        reads the file completely.
+    allowed_roots : iterable of str, optional
+        Confine the read to these
+        roots; a file whose real path resolves outside them is refused. A plugin that
+        runs as root and opens a caller-supplied path must pass this so a planted symlink
+        cannot redirect the read to `/etc/shadow` or a private key. See
+        `_open_for_read()`. Defaults to None.
+    nofollow : bool, optional
+        Refuse to follow a symlink at the final path
+        component (`O_NOFOLLOW`), closing the check-then-open race `allowed_roots` alone
+        leaves. See `_open_for_read()`. Defaults to False.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if reading succeeded, otherwise False.
-        - tuple[1] (**str | bytes**):
-          - If successful, the contents of the file (`str`, or `bytes` when
-            `binary` is True).
-          - If unsuccessful, an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if reading succeeded, otherwise False.
+          - tuple[1] (**str | bytes**):
 
-    ### Notes
+            - If successful, the contents of the file (`str`, or `bytes` when
+              `binary` is True).
+            - If unsuccessful, an error message string.
+
+    Notes
+    -----
     - With `max_bytes` in text mode the read may end in the middle of a multi-byte
       character sequence. Prefer `binary=True` plus an explicit decode when the file's
       encoding is not reliably known.
 
-    ### Example
+    Examples
+    --------
     >>> success, content = read_file('example.txt')
     >>> success, raw = read_file('cert.der', binary=True)
     >>> success, header = read_file('plugin.php', binary=True, max_bytes=8192)
@@ -1066,15 +1169,19 @@ def rm_dir(path):
     Wraps `shutil.rmtree()` and reports the outcome in the same `(success, error)`
     style as `rm_file()`.
 
-    ### Parameters
-    - **path** (`str`): Directory tree to delete.
+    Parameters
+    ----------
+    path : str
+        Directory tree to delete.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if deletion succeeded, otherwise False.
-        - tuple[1] (**None or str**): None on success, otherwise an error message.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if deletion succeeded, otherwise False.
+          - tuple[1] (**None or str**): None on success, otherwise an error message.
 
-    ### Example
+    Examples
+    --------
     >>> rm_dir('/tmp/lynis')
     (True, None)
     """
@@ -1091,17 +1198,22 @@ def rm_file(filename):
     """
     Delete or remove a file.
 
-    ### Parameters
-    - **filename** (`str`): Path to the file to delete.
+    Parameters
+    ----------
+    filename : str
+        Path to the file to delete.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if deletion succeeded, otherwise False.
-        - tuple[1] (**None or str**):
-          - None if the file was successfully deleted.
-          - An error message string if unsuccessful.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if deletion succeeded, otherwise False.
+          - tuple[1] (**None or str**):
 
-    ### Example
+            - None if the file was successfully deleted.
+            - An error message string if unsuccessful.
+
+    Examples
+    --------
     >>> rm_file('test.txt')
     (True, None)
     """
@@ -1131,21 +1243,28 @@ def shorten_path(path, max_len=None, truncate=True):
     distinguishable. The `...` marker is plain ASCII so it renders in monospace tables on any
     terminal and transport.
 
-    ### Parameters
-    - **path** (`str`): A slash-separated path, for example `/etc/pki/tls/certs/002c0b4f.0`.
-    - **max_len** (`int`, optional): Maximum length of the returned string. When `None` (the
-      default), the path is always abbreviated and never truncated.
-    - **truncate** (`bool`, optional): Whether an abbreviated path that is still longer than
-      `max_len` may be middle-truncated. `False` keeps the result whole, which is what a
-      caller wants where the final component is the identifying part and a name cut in the
-      middle would no longer name anything - `max_len` is then the length at which
-      abbreviating starts rather than a limit on the result. Defaults to True.
+    Parameters
+    ----------
+    path : str
+        A slash-separated path, for example `/etc/pki/tls/certs/002c0b4f.0`.
+    max_len : int, optional
+        Maximum length of the returned string. When `None` (the
+        default), the path is always abbreviated and never truncated.
+    truncate : bool, optional
+        Whether an abbreviated path that is still longer than
+        `max_len` may be middle-truncated. `False` keeps the result whole, which is what a
+        caller wants where the final component is the identifying part and a name cut in the
+        middle would no longer name anything - `max_len` is then the length at which
+        abbreviating starts rather than a limit on the result. Defaults to True.
 
-    ### Returns
-    - **str**: The abbreviated path, for example `/e/p/t/c/002c0b4f.0`. A value without a
-      slash (a bare basename, an empty string, a sentinel like `-`) is returned unchanged.
+    Returns
+    -------
+    str
+        The abbreviated path, for example `/e/p/t/c/002c0b4f.0`. A value without a
+        slash (a bare basename, an empty string, a sentinel like `-`) is returned unchanged.
 
-    ### Example
+    Examples
+    --------
     >>> shorten_path('/etc/pki/tls/certs/002c0b4f.0')
     '/e/p/t/c/002c0b4f.0'
 
@@ -1190,15 +1309,21 @@ def under_root(root, path):
     still points wherever it points. Where the containment has to hold against the
     filesystem too, check the result with `is_within()`.
 
-    ### Parameters
-    - **root** (`str`): The directory every path is read below.
-    - **path** (`str`): The path to relocate. An absolute one loses its anchor, a
-      relative one is taken as it is.
+    Parameters
+    ----------
+    root : str
+        The directory every path is read below.
+    path : str
+        The path to relocate. An absolute one loses its anchor, a
+        relative one is taken as it is.
 
-    ### Returns
-    - **str**: The relocated path, or `root` itself where `path` names no segment.
+    Returns
+    -------
+    str
+        The relocated path, or `root` itself where `path` names no segment.
 
-    ### Example
+    Examples
+    --------
     >>> under_root('/fixtures/rhel', '/etc/os-release')
     '/fixtures/rhel/etc/os-release'
 
@@ -1226,14 +1351,20 @@ def udevadm(device, _property):
     To support older systems, the function does not use the `--property=` option
     and instead parses all properties manually to find the desired one.
 
-    ### Parameters
-    - **device** (`str`): Path to the device (e.g., '/dev/dm-0' or '/dev/mapper/rl-root').
-    - **_property** (`str`): The property name to retrieve (e.g., 'DEVNAME', 'DM_NAME').
+    Parameters
+    ----------
+    device : str
+        Path to the device (e.g., '/dev/dm-0' or '/dev/mapper/rl-root').
+    _property : str
+        The property name to retrieve (e.g., 'DEVNAME', 'DM_NAME').
 
-    ### Returns
-    - **str**: The value of the requested property if found, otherwise an empty string.
+    Returns
+    -------
+    str
+        The value of the requested property if found, otherwise an empty string.
 
-    ### Example
+    Examples
+    --------
     >>> udevadm('/dev/mapper/rl_rocky8-root', 'DEVNAME')
     '/dev/dm-0'
 
@@ -1271,17 +1402,25 @@ def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True
     are ignored. If an `include_pattern` (regex) is specified, only files matching
     this pattern are included. Exclude filtering is applied before include filtering.
 
-    ### Parameters
-    - **path** (`str`): The root directory to walk.
-    - **exclude_pattern** (`str`, optional): Regex pattern to exclude files. Defaults to ''.
-    - **include_pattern** (`str`, optional): Regex pattern to include files. Defaults to ''.
-    - **relative** (`bool`, optional): Return relative paths if True, else absolute.
-      Defaults to True.
+    Parameters
+    ----------
+    path : str
+        The root directory to walk.
+    exclude_pattern : str, optional
+        Regex pattern to exclude files. Defaults to ''.
+    include_pattern : str, optional
+        Regex pattern to include files. Defaults to ''.
+    relative : bool, optional
+        Return relative paths if True, else absolute.
+        Defaults to True.
 
-    ### Returns
-    - **list of str**: List of matching file paths.
+    Returns
+    -------
+    list of str
+        List of matching file paths.
 
-    ### Example
+    Examples
+    --------
     >>> walk_directory('/tmp')
     ['cpu-usage.db', 'segv_output.MCiVt9']
 
@@ -1316,20 +1455,27 @@ def write_file(filename, content, append=False):
 
     If `append` is True, the content is appended to the file instead of overwriting it.
 
-    ### Parameters
-    - **filename** (`str`): Path to the file to write to.
-    - **content** (`str`): The string content to write into the file.
-    - **append** (`bool`, optional): If True, append to the file; if False, overwrite the file.
-      Defaults to False.
+    Parameters
+    ----------
+    filename : str
+        Path to the file to write to.
+    content : str
+        The string content to write into the file.
+    append : bool, optional
+        If True, append to the file; if False, overwrite the file.
+        Defaults to False.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if writing succeeded, otherwise False.
-        - tuple[1] (**None or str**):
-          - None if the file was written successfully.
-          - An error message string if unsuccessful.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if writing succeeded, otherwise False.
+          - tuple[1] (**None or str**):
 
-    ### Example
+            - None if the file was written successfully.
+            - An error message string if unsuccessful.
+
+    Examples
+    --------
     >>> write_file('test.txt', 'First line\\nSecond line')
     (True, None)
     """

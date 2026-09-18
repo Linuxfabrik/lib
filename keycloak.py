@@ -12,13 +12,14 @@
 needed by more than one Keycloak consumer.
 
 Typical use case:
-```python
+
+.. code-block:: python
+
     # Discover the OIDC endpoints for the realm (no authentication needed),
     # obtain an admin access token and call the Admin REST API (fetch the realm's details).
     oidc_config = lib.base.coe(lib.keycloak.discover_oidc_endpoints(args))
     admin_token = lib.base.coe(lib.keycloak.obtain_admin_token(args, oidc_config))
     server_info = lib.base.coe(lib.keycloak.get_data(args, admin_token, '/admin/serverinfo'))
-```
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
@@ -35,25 +36,30 @@ def discover_oidc_endpoints(args):
     Authentication is not required to perform the discovery. It retrieves endpoint information such
     as authorization, token, introspection, and user info endpoints.
 
-    ### Parameters
-    - **args** (object):
-      An argument object containing:
-        - `URL` (`str`): Base URL of the Keycloak server.
-        - `REALM` (`str`): The Keycloak realm name.
-        - `INSECURE` (`bool`): Whether to disable SSL verification.
-        - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
-        - `TIMEOUT` (`int`): Request timeout in seconds.
+    Parameters
+    ----------
+    args : object
+        An argument object containing:
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - `success` (`bool`): True if the fetch succeeded, False otherwise.
-      - `result` (`dict` or `str`): Parsed JSON response or an error message.
+          - `URL` (`str`): Base URL of the Keycloak server.
+          - `REALM` (`str`): The Keycloak realm name.
+          - `INSECURE` (`bool`): Whether to disable SSL verification.
+          - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `TIMEOUT` (`int`): Request timeout in seconds.
 
-    ### Notes
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - `success` (`bool`): True if the fetch succeeded, False otherwise.
+        - `result` (`dict` or `str`): Parsed JSON response or an error message.
+
+    Notes
+    -----
     - This uses the standard `.well-known/openid-configuration` path.
     - Automatically removes any trailing slash in the base URL.
 
-    ### Example
+    Examples
+    --------
     >>> success, endpoints = discover_oidc_endpoints(args)
     """
     url_base = args.URL.rstrip('/')
@@ -74,27 +80,32 @@ def get_data(args, token_data, uri):
     This function sends an authenticated request to the Keycloak REST API, using the provided
     access token obtained from a previous authentication step.
 
-    ### Parameters
-    - **args** (object):
-      An argument object containing:
-        - `URL` (`str`): Base URL of the Keycloak server.
-        - `INSECURE` (`bool`): Whether to disable SSL verification.
-        - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
-        - `TIMEOUT` (`int`): Request timeout in seconds.
-    - **token_data** (`dict`):
-      A dictionary containing at least the `access_token`.
-    - **uri** (`str`):
-      Relative URI to be appended to the base URL (e.g., `/admin/realms/myrealm/users`).
+    Parameters
+    ----------
+    args : object
+        An argument object containing:
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - `success` (`bool`): True if the request succeeded, False otherwise.
-      - `result` (`dict` or `str`): Fetched data or error message.
+          - `URL` (`str`): Base URL of the Keycloak server.
+          - `INSECURE` (`bool`): Whether to disable SSL verification.
+          - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `TIMEOUT` (`int`): Request timeout in seconds.
+    token_data : dict
+        A dictionary containing at least the `access_token`.
+    uri : str
+        Relative URI to be appended to the base URL (e.g., `/admin/realms/myrealm/users`).
 
-    ### Notes
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - `success` (`bool`): True if the request succeeded, False otherwise.
+        - `result` (`dict` or `str`): Fetched data or error message.
+
+    Notes
+    -----
     - The Bearer token is passed in the `Authorization` header.
 
-    ### Example
+    Examples
+    --------
     >>> success, result = get_data(args, token_data, '/admin/realms/myrealm/users')
     """
     url_base = args.URL.rstrip('/')
@@ -120,22 +131,28 @@ def get_server_info_section(server_info, section):
     document without those sections, so a consumer reading one of them ends up with
     nothing to evaluate and has to say why.
 
-    ### Parameters
-    - **server_info** (`dict`): The parsed `/admin/serverinfo` response.
-    - **section** (`str`): Name of the section to return, for example `memoryInfo`.
+    Parameters
+    ----------
+    server_info : dict
+        The parsed `/admin/serverinfo` response.
+    section : str
+        Name of the section to return, for example `memoryInfo`.
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - `success` (`bool`): True if the section holds data, False otherwise.
-      - `result` (`dict` or `str`): The section or an error message naming the role that
-        makes Keycloak report it.
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - `success` (`bool`): True if the section holds data, False otherwise.
+        - `result` (`dict` or `str`): The section or an error message naming the role that
+          makes Keycloak report it.
 
-    ### Notes
+    Notes
+    -----
     - Verified against Keycloak 26.7.2. Up to 26.6 an account authenticating against the
       administration realm received these sections regardless of its roles; since 26.7.0
       the `manage-realm` role decides.
 
-    ### Example
+    Examples
+    --------
     >>> success, memory_info = get_server_info_section(server_info, 'memoryInfo')
     """
     data = server_info.get(section)
@@ -157,26 +174,30 @@ def obtain_admin_token(args, oidc_config):
     ("password grant"). It authenticates against the realm's token endpoint on the Keycloak
     server given as the base URL.
 
-    ### Parameters
-    - **args** (object):
-      An argument object containing:
-        - `URL` (`str`): Base URL of the Keycloak server.
-        - `REALM` (`str`): The Keycloak realm name.
-        - `CLIENT_ID` (`str`): Client ID registered in Keycloak.
-        - `USERNAME` (`str`): Admin username.
-        - `PASSWORD` (`str`): Admin password.
-        - `INSECURE` (`bool`): Whether to disable SSL verification.
-        - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
-        - `TIMEOUT` (`int`): Request timeout in seconds.
-    - **oidc_config** (`dict`):
-      OIDC discovery document containing endpoints (must have `token_endpoint`).
+    Parameters
+    ----------
+    args : object
+        An argument object containing:
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - `success` (`bool`): True if authentication succeeded, False otherwise.
-      - `result` (`dict` or `str`): Access token data or error message.
+          - `URL` (`str`): Base URL of the Keycloak server.
+          - `REALM` (`str`): The Keycloak realm name.
+          - `CLIENT_ID` (`str`): Client ID registered in Keycloak.
+          - `USERNAME` (`str`): Admin username.
+          - `PASSWORD` (`str`): Admin password.
+          - `INSECURE` (`bool`): Whether to disable SSL verification.
+          - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `TIMEOUT` (`int`): Request timeout in seconds.
+    oidc_config : dict
+        OIDC discovery document containing endpoints (must have `token_endpoint`).
 
-    ### Notes
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - `success` (`bool`): True if authentication succeeded, False otherwise.
+        - `result` (`dict` or `str`): Access token data or error message.
+
+    Notes
+    -----
     - Uses `grant_type=password`.
     - Make sure Resource Owner Password Credentials Grant is allowed in your realm settings.
     - The request URL is built from the base URL and the realm, exactly like the discovery
@@ -186,7 +207,8 @@ def obtain_admin_token(args, oidc_config):
       choosing (CWE-918/CWE-522). The document is only asked whether the realm announces a
       token endpoint at all.
 
-    ### Example
+    Examples
+    --------
     >>> success, token_data = obtain_admin_token(args, oidc_config)
     """
     if not oidc_config.get('token_endpoint'):

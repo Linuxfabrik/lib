@@ -595,20 +595,25 @@ def start_trace(path='', filename=TRACE_FILENAME):
     across them; a header line separates the runs. Once the file has grown past
     `TRACE_MAX_BYTES` this refuses instead of appending.
 
-    ### Parameters
-    - **path** (`str`, optional): Directory to place the trace file in. Defaults to the system
-      temporary directory.
-    - **filename** (`str`, optional): Name of the trace file (a plain basename).
-      Defaults to `TRACE_FILENAME`.
+    Parameters
+    ----------
+    path : str, optional
+        Directory to place the trace file in. Defaults to the system
+        temporary directory.
+    filename : str, optional
+        Name of the trace file (a plain basename).
+        Defaults to `TRACE_FILENAME`.
 
-    ### Returns
-    - **tuple** (`bool`, `str`):
-      - `(True, path)` with the absolute path of the trace file on success. Tell the admin where
-        it is: a trace nobody can find is not a diagnostic.
-      - `(False, error)` if the file cannot be opened, so a `--verbose` run that silently traces
-        nowhere is impossible.
+    Returns
+    -------
+    tuple (bool, str)
+        - `(True, path)` with the absolute path of the trace file on success. Tell the admin where
+          it is: a trace nobody can find is not a diagnostic.
+        - `(False, error)` if the file cannot be opened, so a `--verbose` run that silently traces
+          nowhere is impossible.
 
-    ### Example
+    Examples
+    --------
     >>> success, trace_path = start_trace()
     >>> success
     True
@@ -708,13 +713,19 @@ def _fetch_json(what, url_string, timeout=8, retries=0, **kwargs):
     an httpx per-phase timeout, not a deadline for the whole request, so a controller that keeps
     dribbling out a large response can exceed it without ever tripping it.
 
-    ### Parameters
-    - **what** (`str`): Short label for the trace, naming what is being read (e.g. `collection`).
-    - **url_string** (`str`): The URL to fetch.
-    - **timeout**, **retries**, **kwargs**: Forwarded to `url.fetch_json()`.
+    Parameters
+    ----------
+    what : str
+        Short label for the trace, naming what is being read (e.g. `collection`).
+    url_string : str
+        The URL to fetch.
+    timeout, retries, **kwargs
+        Forwarded to `url.fetch_json()`.
 
-    ### Returns
-    - **tuple** (`bool`, `dict` | `list` | `str`): Whatever `url.fetch_json()` returned.
+    Returns
+    -------
+    tuple (bool, dict | list | str)
+        Whatever `url.fetch_json()` returned.
     """
     if _REPLAY['responses'] is not None:
         return _replay_response(url_string)
@@ -795,11 +806,14 @@ def _cache_write(data, cache_key, cache_expire, cache_filename):
 def _redact(value):
     """Return a copy of a response with the value of every field in `_REDACTED_FIELDS` replaced.
 
-    ### Parameters
-    - **value** (any): A decoded response, or any part of one.
+    Parameters
+    ----------
+    value : any
+        A decoded response, or any part of one.
 
-    ### Returns
-    - The same structure, with each sensitive field's value replaced by `'******'`.
+    Returns
+    -------
+    The same structure, with each sensitive field's value replaced by ''.
     """
     if isinstance(value, dict):
         return {
@@ -822,10 +836,14 @@ def _record(request_url, result, cached=False):
     A response served from the shared cache is recorded as well, marked as such. The consumer
     evaluated it just the same, and a replay needs it.
 
-    ### Parameters
-    - **request_url** (`str`): The absolute URL that was requested.
-    - **result** (`tuple`): The `(success, payload)` pair the request returned.
-    - **cached** (`bool`, optional): Whether the payload came from the shared cache.
+    Parameters
+    ----------
+    request_url : str
+        The absolute URL that was requested.
+    result : tuple
+        The `(success, payload)` pair the request returned.
+    cached : bool, optional
+        Whether the payload came from the shared cache.
     """
     if not _RESPONSES['on']:
         return
@@ -884,16 +902,21 @@ def build_url(base_url, odata_id):
     relative path and pins scheme and host to `base_url`, so a response can never redirect the
     request to another host.
 
-    ### Parameters
-    - **base_url** (`str`): The operator-supplied Redfish base URL, e.g. `https://bmc`.
-    - **odata_id** (`str`): The `@odata.id` value taken from the controller's response.
+    Parameters
+    ----------
+    base_url : str
+        The operator-supplied Redfish base URL, e.g. `https://bmc`.
+    odata_id : str
+        The `@odata.id` value taken from the controller's response.
 
-    ### Returns
-    - **tuple** (`bool`, `str`):
-      - `(True, url)` with the safe absolute URL on success.
-      - `(False, error)` if `odata_id` is not a server-relative path.
+    Returns
+    -------
+    tuple (bool, str)
+        - `(True, url)` with the safe absolute URL on success.
+        - `(False, error)` if `odata_id` is not a server-relative path.
 
-    ### Example
+    Examples
+    --------
     >>> build_url('https://bmc', '/redfish/v1/Systems/1')
     (True, 'https://bmc/redfish/v1/Systems/1')
     >>> build_url('https://bmc', '@evil.example.com/x')
@@ -946,22 +969,31 @@ def fetch_collection(
     reading the same collection within the window, so identical reads across a host's Redfish
     consumers hit the cache instead of the controller. A failed fetch is never cached.
 
-    ### Parameters
-    - **collection_url** (`str`): The absolute URL of the collection resource, as produced by
-      `build_url()`. Must not already carry a query string.
-    - **expand** (`str`, optional): The `$expand` query suffix to append (default `DEFAULT_EXPAND`).
-    - **header** (`dict`, optional): Request headers (including the auth header).
-    - **insecure**, **no_proxy**, **timeout**, **retries**: Forwarded to `url.fetch_json()`.
-    - **cache_expire** (`int`, optional): Cache lifetime in seconds; `0` (default) disables caching.
-    - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
+    Parameters
+    ----------
+    collection_url : str
+        The absolute URL of the collection resource, as produced by
+        `build_url()`. Must not already carry a query string.
+    expand : str, optional
+        The `$expand` query suffix to append (default `DEFAULT_EXPAND`).
+    header : dict, optional
+        Request headers (including the auth header).
+    insecure, no_proxy, timeout, retries
+        Forwarded to `url.fetch_json()`.
+    cache_expire : int, optional
+        Cache lifetime in seconds; `0` (default) disables caching.
+    cache_filename : str, optional
+        Cache database filename (default `CACHE_FILENAME`).
 
-    ### Returns
-    - **tuple** (`bool`, `dict` | `str`):
-      - `(True, collection)` with the parsed collection document on success. Its `Members` may or
-        may not be expanded, depending on controller support.
-      - `(False, error)` if the collection cannot be read even without `$expand`.
+    Returns
+    -------
+    tuple (bool, dict | str)
+        - `(True, collection)` with the parsed collection document on success. Its `Members` may or
+          may not be expanded, depending on controller support.
+        - `(False, error)` if the collection cannot be read even without `$expand`.
 
-    ### Example
+    Examples
+    --------
     >>> success, collection = fetch_collection(
     ...     'https://bmc/redfish/v1/Chassis/1U/Sensors'
     ... )
@@ -1054,22 +1086,31 @@ def fetch_members(
     so this is what keeps a fleet of Redfish consumers from hammering the controller. Already-inlined members are not
     re-cached (they came from an already-cached collection), and a failed fetch is never cached.
 
-    ### Parameters
-    - **members** (`list`): The member references, e.g. `collection.get('Members', [])` or a
-      storage member's `Drives` list. Each item is a dict, expanded or a bare `@odata.id` stub.
-    - **base_url** (`str`): The operator-supplied Redfish base URL, used to pin the host of every
-      follow-up request.
-    - **header** (`dict`, optional): Request headers (including the auth header).
-    - **insecure**, **no_proxy**, **timeout**, **retries**: Forwarded to `url.fetch_json()`.
-    - **cache_expire** (`int`, optional): Cache lifetime in seconds; `0` (default) disables caching.
-    - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
+    Parameters
+    ----------
+    members : list
+        The member references, e.g. `collection.get('Members', [])` or a
+        storage member's `Drives` list. Each item is a dict, expanded or a bare `@odata.id` stub.
+    base_url : str
+        The operator-supplied Redfish base URL, used to pin the host of every
+        follow-up request.
+    header : dict, optional
+        Request headers (including the auth header).
+    insecure, no_proxy, timeout, retries
+        Forwarded to `url.fetch_json()`.
+    cache_expire : int, optional
+        Cache lifetime in seconds; `0` (default) disables caching.
+    cache_filename : str, optional
+        Cache database filename (default `CACHE_FILENAME`).
 
-    ### Returns
-    - **tuple** (`bool`, `list` | `str`):
-      - `(True, [member_dict, ...])` on success (the list is empty when `members` is empty).
-      - `(False, error)` if a bare reference is malformed or cannot be fetched.
+    Returns
+    -------
+    tuple (bool, list | str)
+        - `(True, [member_dict, ...])` on success (the list is empty when `members` is empty).
+        - `(False, error)` if a bare reference is malformed or cannot be fetched.
 
-    ### Example
+    Examples
+    --------
     >>> success, collection = fetch_collection(
     ...     'https://bmc/redfish/v1/Chassis/1U/Sensors'
     ... )
@@ -1133,19 +1174,27 @@ def fetch_resource(
     across a host's Redfish consumers hit the cache instead of the controller. A failed fetch is
     never cached.
 
-    ### Parameters
-    - **resource_url** (`str`): The absolute URL of the resource.
-    - **header** (`dict`, optional): Request headers (including the auth header).
-    - **insecure**, **no_proxy**, **timeout**, **retries**: Forwarded to `url.fetch_json()`.
-    - **cache_expire** (`int`, optional): Cache lifetime in seconds; `0` (default) disables caching.
-    - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
+    Parameters
+    ----------
+    resource_url : str
+        The absolute URL of the resource.
+    header : dict, optional
+        Request headers (including the auth header).
+    insecure, no_proxy, timeout, retries
+        Forwarded to `url.fetch_json()`.
+    cache_expire : int, optional
+        Cache lifetime in seconds; `0` (default) disables caching.
+    cache_filename : str, optional
+        Cache database filename (default `CACHE_FILENAME`).
 
-    ### Returns
-    - **tuple** (`bool`, `dict` | `str`):
-      - `(True, resource)` with the parsed resource document on success.
-      - `(False, error)` if the resource cannot be read.
+    Returns
+    -------
+    tuple (bool, dict | str)
+        - `(True, resource)` with the parsed resource document on success.
+        - `(False, error)` if the resource cannot be read.
 
-    ### Example
+    Examples
+    --------
     >>> success, root = fetch_resource('https://bmc/redfish/v1/')
     """
     cache_key = f'redfish-{resource_url}'
@@ -1187,17 +1236,21 @@ def format_responses():
     `replay()` reads, so a reported problem becomes a test case that reproduces it. `replay()`
     ignores everything around the blocks, so the complete output of a run serves as it is.
 
-    ### Returns
-    - **str**: The rendered responses, or an empty string if nothing was recorded and no trace
-      is being written.
+    Returns
+    -------
+    str
+        The rendered responses, or an empty string if nothing was recorded and no trace
+        is being written.
 
-    ### Notes
+    Notes
+    -----
     - Marks the responses as handed over, so the exit handler `record_responses()` registered
       does not print them a second time.
     - Controller addresses and the values of sensitive fields are already removed while
       recording (see `_record()`).
 
-    ### Example
+    Examples
+    --------
     >>> print(format_responses())
     Redfish responses evaluated by redfish-sensors v2026091001, lib/redfish.py v2026091001
     Collections requested with: ?$expand=*($levels=1)
@@ -1333,12 +1386,17 @@ def _session_url(base_url, result):
     `Location: https://evil.example.com/x` and have the follow-up `DELETE` carry the session
     token there (CWE-918, the same reasoning as `build_url()`).
 
-    ### Parameters
-    - **base_url** (`str`): The operator-supplied Redfish base URL.
-    - **result** (`dict`): The extended `url.fetch_json()` result of the login request.
+    Parameters
+    ----------
+    base_url : str
+        The operator-supplied Redfish base URL.
+    result : dict
+        The extended `url.fetch_json()` result of the login request.
 
-    ### Returns
-    - **str**: The absolute session URL, or `''` if the controller named none.
+    Returns
+    -------
+    str
+        The absolute session URL, or `''` if the controller named none.
     """
     if not isinstance(result, dict):
         return ''
@@ -1372,14 +1430,20 @@ def _delete_session(session_url, token, args):
     `DELETE` (or has already expired the session itself) must not turn a working run into an
     UNKNOWN. It is given no retries and never blocks a run for long.
 
-    ### Parameters
-    - **session_url** (`str`): Absolute URL of the session, as `_session_url()` pinned it.
-    - **token** (`str`): The session's own token, which is what authorizes deleting it.
-    - **args** (object): must provide `INSECURE`, `NO_PROXY` and `TIMEOUT`. An optional
-      `PROXY` names the proxy to reach the controller through.
+    Parameters
+    ----------
+    session_url : str
+        Absolute URL of the session, as `_session_url()` pinned it.
+    token : str
+        The session's own token, which is what authorizes deleting it.
+    args : object
+        must provide `INSECURE`, `NO_PROXY` and `TIMEOUT`. An optional
+        `PROXY` names the proxy to reach the controller through.
 
-    ### Returns
-    - **bool**: `True` if the controller confirmed the deletion.
+    Returns
+    -------
+    bool
+        `True` if the controller confirmed the deletion.
     """
     if not (session_url and token):
         return False
@@ -1476,19 +1540,26 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
     Each new session is preceded by handing the previous one back to the controller, so a host's
     checks keep one session open rather than one per login until the controller expires them.
 
-    ### Parameters
-    - **args** (object): must provide `URL`, `USERNAME`, `PASSWORD`, `INSECURE`, `NO_PROXY` and
-      `TIMEOUT`. An optional `PROXY` names the proxy to reach the controller through, and an
-      optional `RETRIES` is honoured for the login, capped at `MAX_LOGIN_RETRIES`.
-    - **cache_expire** (`int`, optional): Token cache lifetime cap in seconds; `0` (default) fetches
-      a fresh session and does not cache the token.
-    - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
+    Parameters
+    ----------
+    args : object
+        must provide `URL`, `USERNAME`, `PASSWORD`, `INSECURE`, `NO_PROXY` and
+        `TIMEOUT`. An optional `PROXY` names the proxy to reach the controller through, and an
+        optional `RETRIES` is honoured for the login, capped at `MAX_LOGIN_RETRIES`.
+    cache_expire : int, optional
+        Token cache lifetime cap in seconds; `0` (default) fetches
+        a fresh session and does not cache the token.
+    cache_filename : str, optional
+        Cache database filename (default `CACHE_FILENAME`).
 
-    ### Returns
-    - **dict**: a header fragment to merge into the request headers, one of
-      `{'X-Auth-Token': '...'}`, `{'Authorization': 'Basic ...'}` or `{}`.
+    Returns
+    -------
+    dict
+        a header fragment to merge into the request headers, one of
+        `{'X-Auth-Token': '...'}`, `{'Authorization': 'Basic ...'}` or `{}`.
 
-    ### Example
+    Examples
+    --------
     >>> header = {'Accept': 'application/json'}
     >>> header.update(get_auth_header(args, cache_expire=300))
     """
@@ -1643,27 +1714,33 @@ def get_chassis(redfish):
     This function retrieves specific chassis details from a Redfish response and returns
     them as a dictionary.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish chassis data.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish chassis data.
 
-    ### Returns
-    - **dict**: A dictionary containing the following chassis details:
-      - **AssetTag** (`str`): The asset tag of the chassis.
-      - **ChassisType** (`str`): The type of the chassis.
-      - **Id** (`str`): The ID of the chassis.
-      - **IndicatorLED** (`str`): The status of the indicator LED.
-      - **Manufacturer** (`str`): The manufacturer of the chassis.
-      - **Model** (`str`): The model of the chassis.
-      - **PartNumber** (`str`): The part number of the chassis.
-      - **PowerState** (`str`): The power state of the chassis (e.g., "On").
-      - **SerialNumber** (`str`): The serial number of the chassis.
-      - **SKU** (`str`): The SKU of the chassis.
-      - **Sensors_@odata.id** (`str`): The sensors' OData ID.
-      - **Status_State** (`str`): The state of the chassis (e.g., "Enabled").
-      - **Status_Health** (`str`): The health status of the chassis (e.g., "OK").
-      - **Status_HealthRollup** (`str`): The health rollup status of the chassis (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following chassis details:
 
-    ### Example
+        - **AssetTag** (`str`): The asset tag of the chassis.
+        - **ChassisType** (`str`): The type of the chassis.
+        - **Id** (`str`): The ID of the chassis.
+        - **IndicatorLED** (`str`): The status of the indicator LED.
+        - **Manufacturer** (`str`): The manufacturer of the chassis.
+        - **Model** (`str`): The model of the chassis.
+        - **PartNumber** (`str`): The part number of the chassis.
+        - **PowerState** (`str`): The power state of the chassis (e.g., "On").
+        - **SerialNumber** (`str`): The serial number of the chassis.
+        - **SKU** (`str`): The SKU of the chassis.
+        - **Sensors_@odata.id** (`str`): The sensors' OData ID.
+        - **Status_State** (`str`): The state of the chassis (e.g., "Enabled").
+        - **Status_Health** (`str`): The health status of the chassis (e.g., "OK").
+        - **Status_HealthRollup** (`str`): The health rollup status of the chassis (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'AssetTag': '12345',
     ...     'ChassisType': 'Rackmount',
@@ -1687,19 +1764,25 @@ def get_chassis_power_powercontrol(redfish):
     power consumption of the chassis. This function projects a single such entry into a flat
     dictionary.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing a single Redfish `PowerControl` entry.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing a single Redfish `PowerControl` entry.
 
-    ### Returns
-    - **dict**: A dictionary containing the following power control details:
-      - **MemberId** (`str`): The identifier of the power control entry.
-      - **Name** (`str`): The name of the power control entry.
-      - **PowerCapacityWatts** (`str`): The total power capacity in watts.
-      - **PowerConsumedWatts** (`str`): The currently consumed power in watts.
-      - **Status_State** (`str`): The state of the power control entry (e.g., "Enabled").
-      - **Status_Health** (`str`): The health status of the power control entry (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following power control details:
 
-    ### Example
+        - **MemberId** (`str`): The identifier of the power control entry.
+        - **Name** (`str`): The name of the power control entry.
+        - **PowerCapacityWatts** (`str`): The total power capacity in watts.
+        - **PowerConsumedWatts** (`str`): The currently consumed power in watts.
+        - **Status_State** (`str`): The state of the power control entry (e.g., "Enabled").
+        - **Status_Health** (`str`): The health status of the power control entry (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'Name': 'System Power Control',
     ...     'PowerConsumedWatts': 344,
@@ -1726,26 +1809,32 @@ def get_chassis_power_powersupplies(redfish):
     This function retrieves specific power supply details from a Redfish response and returns
     them as a dictionary.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish power supply data.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish power supply data.
 
-    ### Returns
-    - **dict**: A dictionary containing the following power supply details:
-      - **FirmwareVersion** (`str`): The firmware version of the power supply.
-      - **LastPowerOutputWatts** (`str`): The last reported power output in watts.
-      - **LineInputVoltage** (`str`): The input voltage of the power supply.
-      - **LineInputVoltageType** (`str`): The type of input voltage.
-      - **Manufacturer** (`str`): The manufacturer of the power supply.
-      - **Model** (`str`): The model of the power supply.
-      - **PartNumber** (`str`): The part number of the power supply.
-      - **PowerCapacityWatts** (`str`): The power capacity of the power supply in watts.
-      - **PowerSupplyType** (`str`): The type of power supply.
-      - **SerialNumber** (`str`): The serial number of the power supply.
-      - **SparePartNumber** (`str`): The spare part number of the power supply.
-      - **Status_State** (`str`): The state of the power supply (e.g., "Enabled").
-      - **Status_Health** (`str`): The health status of the power supply (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following power supply details:
 
-    ### Example
+        - **FirmwareVersion** (`str`): The firmware version of the power supply.
+        - **LastPowerOutputWatts** (`str`): The last reported power output in watts.
+        - **LineInputVoltage** (`str`): The input voltage of the power supply.
+        - **LineInputVoltageType** (`str`): The type of input voltage.
+        - **Manufacturer** (`str`): The manufacturer of the power supply.
+        - **Model** (`str`): The model of the power supply.
+        - **PartNumber** (`str`): The part number of the power supply.
+        - **PowerCapacityWatts** (`str`): The power capacity of the power supply in watts.
+        - **PowerSupplyType** (`str`): The type of power supply.
+        - **SerialNumber** (`str`): The serial number of the power supply.
+        - **SparePartNumber** (`str`): The spare part number of the power supply.
+        - **Status_State** (`str`): The state of the power supply (e.g., "Enabled").
+        - **Status_Health** (`str`): The health status of the power supply (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'FirmwareVersion': '1.0',
     ...     'LastPowerOutputWatts': 200,
@@ -1771,24 +1860,30 @@ def get_chassis_power_voltages(redfish):
     This function retrieves specific power voltage details from a Redfish response and returns
     them as a dictionary.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish power voltage data.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish power voltage data.
 
-    ### Returns
-    - **dict**: A dictionary containing the following power voltage details:
-      - **LowerThresholdCritical** (`str`): The critical lower threshold voltage.
-      - **LowerThresholdFatal** (`str`): The fatal lower threshold voltage.
-      - **LowerThresholdNonCritical** (`str`): The non-critical lower threshold voltage.
-      - **Name** (`str`): The name of the voltage.
-      - **PhysicalContext** (`str`): The physical context of the voltage.
-      - **ReadingVolts** (`str`): The current voltage reading.
-      - **UpperThresholdCritical** (`str`): The critical upper threshold voltage.
-      - **UpperThresholdFatal** (`str`): The fatal upper threshold voltage.
-      - **UpperThresholdNonCritical** (`str`): The non-critical upper threshold voltage.
-      - **Status_State** (`str`): The state of the voltage (e.g., "Enabled").
-      - **Status_Health** (`str`): The health status of the voltage (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following power voltage details:
 
-    ### Example
+        - **LowerThresholdCritical** (`str`): The critical lower threshold voltage.
+        - **LowerThresholdFatal** (`str`): The fatal lower threshold voltage.
+        - **LowerThresholdNonCritical** (`str`): The non-critical lower threshold voltage.
+        - **Name** (`str`): The name of the voltage.
+        - **PhysicalContext** (`str`): The physical context of the voltage.
+        - **ReadingVolts** (`str`): The current voltage reading.
+        - **UpperThresholdCritical** (`str`): The critical upper threshold voltage.
+        - **UpperThresholdFatal** (`str`): The fatal upper threshold voltage.
+        - **UpperThresholdNonCritical** (`str`): The non-critical upper threshold voltage.
+        - **Status_State** (`str`): The state of the voltage (e.g., "Enabled").
+        - **Status_Health** (`str`): The health status of the voltage (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'LowerThresholdCritical': 10,
     ...     'ReadingVolts': 12,
@@ -1812,27 +1907,33 @@ def get_chassis_sensors(redfish):
     This function retrieves specific sensor details from a Redfish response and returns
     them as a dictionary.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish sensor data.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish sensor data.
 
-    ### Returns
-    - **dict**: A dictionary containing the following sensor details:
-      - **Id** (`str`): The ID of the sensor.
-      - **Name** (`str`): The name of the sensor.
-      - **PhysicalContext** (`str`): The physical context of the sensor.
-      - **Reading** (`str`): The current reading of the sensor.
-      - **ReadingRangeMax** (`str`): The maximum reading range of the sensor.
-      - **ReadingRangeMin** (`str`): The minimum reading range of the sensor.
-      - **ReadingUnits** (`str`): The units of the sensor reading.
-      - **Thresholds_LowerCaution** (`str`): The lower caution threshold for the sensor.
-      - **Thresholds_LowerCritical** (`str`): The lower critical threshold for the sensor.
-      - **Thresholds_UpperCaution** (`str`): The upper caution threshold for the sensor.
-      - **Thresholds_UpperCritical** (`str`): The upper critical threshold for the sensor.
-      - **Status_State** (`str`): The state of the sensor (e.g., "Enabled").
-      - **Status_Health** (`str`): The health status of the sensor (e.g., "OK").
-      - **Status_HealthRollup** (`str`): The health rollup status of the sensor (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following sensor details:
 
-    ### Example
+        - **Id** (`str`): The ID of the sensor.
+        - **Name** (`str`): The name of the sensor.
+        - **PhysicalContext** (`str`): The physical context of the sensor.
+        - **Reading** (`str`): The current reading of the sensor.
+        - **ReadingRangeMax** (`str`): The maximum reading range of the sensor.
+        - **ReadingRangeMin** (`str`): The minimum reading range of the sensor.
+        - **ReadingUnits** (`str`): The units of the sensor reading.
+        - **Thresholds_LowerCaution** (`str`): The lower caution threshold for the sensor.
+        - **Thresholds_LowerCritical** (`str`): The lower critical threshold for the sensor.
+        - **Thresholds_UpperCaution** (`str`): The upper caution threshold for the sensor.
+        - **Thresholds_UpperCritical** (`str`): The upper critical threshold for the sensor.
+        - **Status_State** (`str`): The state of the sensor (e.g., "Enabled").
+        - **Status_Health** (`str`): The health status of the sensor (e.g., "OK").
+        - **Status_HealthRollup** (`str`): The health rollup status of the sensor (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'Id': 'sensor1',
     ...     'Reading': 75,
@@ -1860,30 +1961,36 @@ def get_chassis_thermal_fans(redfish):
     This function retrieves specific thermal fan details from a Redfish response and returns
     them as a dictionary.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish thermal fan data.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish thermal fan data.
 
-    ### Returns
-    - **dict**: A dictionary containing the following thermal fan details:
-      - **FanName** (`str`): The name of the fan.
-      - **HotPluggable** (`str`): Indicates if the fan is hot pluggable.
-      - **LowerThresholdCritical** (`str`): The critical lower threshold for the fan's reading.
-      - **LowerThresholdFatal** (`str`): The fatal lower threshold for the fan's reading.
-      - **LowerThresholdNonCritical** (`str`): The non-critical lower threshold for the fan's
-         reading.
-      - **Name** (`str`): The name of the sensor.
-      - **PhysicalContext** (`str`): The physical context of the sensor.
-      - **Reading** (`str`): The current reading of the fan.
-      - **ReadingUnits** (`str`): The units of the fan's reading.
-      - **SensorNumber** (`str`): The number of the fan's sensor.
-      - **UpperThresholdCritical** (`str`): The critical upper threshold for the fan's reading.
-      - **UpperThresholdFatal** (`str`): The fatal upper threshold for the fan's reading.
-      - **UpperThresholdNonCritical** (`str`): The non-critical upper threshold for the fan's
-         reading.
-      - **Status_State** (`str`): The state of the fan (e.g., "Enabled").
-      - **Status_Health** (`str`): The health status of the fan (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following thermal fan details:
 
-    ### Example
+        - **FanName** (`str`): The name of the fan.
+        - **HotPluggable** (`str`): Indicates if the fan is hot pluggable.
+        - **LowerThresholdCritical** (`str`): The critical lower threshold for the fan's reading.
+        - **LowerThresholdFatal** (`str`): The fatal lower threshold for the fan's reading.
+        - **LowerThresholdNonCritical** (`str`): The non-critical lower threshold for the fan's
+           reading.
+        - **Name** (`str`): The name of the sensor.
+        - **PhysicalContext** (`str`): The physical context of the sensor.
+        - **Reading** (`str`): The current reading of the fan.
+        - **ReadingUnits** (`str`): The units of the fan's reading.
+        - **SensorNumber** (`str`): The number of the fan's sensor.
+        - **UpperThresholdCritical** (`str`): The critical upper threshold for the fan's reading.
+        - **UpperThresholdFatal** (`str`): The fatal upper threshold for the fan's reading.
+        - **UpperThresholdNonCritical** (`str`): The non-critical upper threshold for the fan's
+           reading.
+        - **Status_State** (`str`): The state of the fan (e.g., "Enabled").
+        - **Status_Health** (`str`): The health status of the fan (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {'FanName': 'Fan1', 'Reading': 80, 'UpperThresholdCritical': 100}
     >>> get_chassis_thermal_fans(redfish_data)
     {'FanName': 'Fan1', 'Reading': 80, 'UpperThresholdCritical': 100, ...}
@@ -1916,17 +2023,23 @@ def get_chassis_thermal_redundancy(redfish):
     This function retrieves specific thermal redundancy details from a Redfish response and returns
     them as a dictionary.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish thermal redundancy data.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish thermal redundancy data.
 
-    ### Returns
-    - **dict**: A dictionary containing the following thermal redundancy details:
-      - **Mode** (`str`): The mode of the thermal redundancy.
-      - **Name** (`str`): The name of the thermal redundancy.
-      - **Status_State** (`str`): The state of the thermal redundancy (e.g., "Enabled").
-      - **Status_Health** (`str`): The health status of the thermal redundancy (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following thermal redundancy details:
 
-    ### Example
+        - **Mode** (`str`): The mode of the thermal redundancy.
+        - **Name** (`str`): The name of the thermal redundancy.
+        - **Status_State** (`str`): The state of the thermal redundancy (e.g., "Enabled").
+        - **Status_Health** (`str`): The health status of the thermal redundancy (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'Mode': 'Active',
     ...     'Name': 'Thermal Redundancy',
@@ -1953,24 +2066,30 @@ def get_chassis_thermal_temperatures(redfish):
     This function retrieves specific thermal temperature details from a Redfish response and returns
     them as a dictionary.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish thermal temperature data.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish thermal temperature data.
 
-    ### Returns
-    - **dict**: A dictionary containing the following thermal temperature details:
-      - **LowerThresholdCritical** (`str`): The critical lower threshold temperature.
-      - **LowerThresholdFatal** (`str`): The fatal lower threshold temperature.
-      - **LowerThresholdNonCritical** (`str`): The non-critical lower threshold temperature.
-      - **Name** (`str`): The name of the thermal temperature sensor.
-      - **PhysicalContext** (`str`): The physical context of the sensor.
-      - **ReadingCelsius** (`str`): The current temperature reading in Celsius.
-      - **UpperThresholdCritical** (`str`): The critical upper threshold temperature.
-      - **UpperThresholdFatal** (`str`): The fatal upper threshold temperature.
-      - **UpperThresholdNonCritical** (`str`): The non-critical upper threshold temperature.
-      - **Status_State** (`str`): The state of the thermal sensor (e.g., "Enabled").
-      - **Status_Health** (`str`): The health status of the thermal sensor (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following thermal temperature details:
 
-    ### Example
+        - **LowerThresholdCritical** (`str`): The critical lower threshold temperature.
+        - **LowerThresholdFatal** (`str`): The fatal lower threshold temperature.
+        - **LowerThresholdNonCritical** (`str`): The non-critical lower threshold temperature.
+        - **Name** (`str`): The name of the thermal temperature sensor.
+        - **PhysicalContext** (`str`): The physical context of the sensor.
+        - **ReadingCelsius** (`str`): The current temperature reading in Celsius.
+        - **UpperThresholdCritical** (`str`): The critical upper threshold temperature.
+        - **UpperThresholdFatal** (`str`): The fatal upper threshold temperature.
+        - **UpperThresholdNonCritical** (`str`): The non-critical upper threshold temperature.
+        - **Status_State** (`str`): The state of the thermal sensor (e.g., "Enabled").
+        - **Status_Health** (`str`): The health status of the thermal sensor (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'LowerThresholdCritical': '10',
     ...     'LowerThresholdFatal': '5',
@@ -2023,16 +2142,24 @@ def get_expand_suffix(
     advertised) it returns `DEFAULT_EXPAND`; `fetch_collection()` falls back to a plain request
     should the controller reject even that.
 
-    ### Parameters
-    - **base_url** (`str`): The operator-supplied Redfish base URL, e.g. `https://bmc`.
-    - **header** (`dict`, optional): Request headers (including the auth header).
-    - **insecure**, **no_proxy**, **timeout**, **retries**: Forwarded to `url.fetch_json()`.
-    - **cache_expire** (`int`, optional): Cache lifetime in seconds; `0` (default) disables caching.
-    - **cache_filename** (`str`, optional): Cache database filename (default `CACHE_FILENAME`).
+    Parameters
+    ----------
+    base_url : str
+        The operator-supplied Redfish base URL, e.g. `https://bmc`.
+    header : dict, optional
+        Request headers (including the auth header).
+    insecure, no_proxy, timeout, retries
+        Forwarded to `url.fetch_json()`.
+    cache_expire : int, optional
+        Cache lifetime in seconds; `0` (default) disables caching.
+    cache_filename : str, optional
+        Cache database filename (default `CACHE_FILENAME`).
 
-    ### Returns
-    - **str**: A `$expand` query suffix such as `?$expand=*($levels=1)`, or `DEFAULT_EXPAND` when
-      the controller's support is unknown.
+    Returns
+    -------
+    str
+        A `$expand` query suffix such as `?$expand=*($levels=1)`, or `DEFAULT_EXPAND` when
+        the controller's support is unknown.
     """
     expand_key = f'redfish-expand-{base_url}'
     # a replay must neither pick up nor leave behind what a real run cached
@@ -2089,24 +2216,30 @@ def get_manager(redfish):
     This function processes a Redfish manager resource (e.g., a BMC, iLO, or iDRAC) and extracts
     the attributes relevant for health monitoring and identification.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish manager data, typically a single member
-      of the `Managers` collection.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish manager data, typically a single member
+        of the `Managers` collection.
 
-    ### Returns
-    - **dict**: A dictionary containing the following manager details:
-      - `FirmwareVersion`: The firmware version of the manager.
-      - `Id`: The unique identifier of the manager.
-      - `ManagerType`: The type of the manager (e.g., "BMC").
-      - `Model`: The model of the manager.
-      - `Name`: The name of the manager.
-      - `PowerState`: The power state of the manager (e.g., "On").
-      - `UUID`: The UUID of the manager.
-      - `Status_State`: The state of the manager (e.g., "Enabled").
-      - `Status_Health`: The health status of the manager (e.g., "OK").
-      - `Status_HealthRollup`: The rollup health status of the manager (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following manager details:
 
-    ### Example
+        - `FirmwareVersion`: The firmware version of the manager.
+        - `Id`: The unique identifier of the manager.
+        - `ManagerType`: The type of the manager (e.g., "BMC").
+        - `Model`: The model of the manager.
+        - `Name`: The name of the manager.
+        - `PowerState`: The power state of the manager (e.g., "On").
+        - `UUID`: The UUID of the manager.
+        - `Status_State`: The state of the manager (e.g., "Enabled").
+        - `Status_Health`: The health status of the manager (e.g., "OK").
+        - `Status_HealthRollup`: The rollup health status of the manager (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'FirmwareVersion': '1.45',
     ...     'ManagerType': 'BMC',
@@ -2141,24 +2274,32 @@ def get_manager_logservices_sel_entries(
     - **cutoff_epoch**: when non-zero, drop (and count) entries whose `Created` timestamp is older
       than this Unix epoch, so a long-since resolved event no longer keeps the state non-OK.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing the Redfish log entries under the 'Members' key.
-    - **match** (`list`, optional): Compiled regular expressions; keep only matching messages.
-    - **ignore** (`list`, optional): Compiled regular expressions; drop matching messages.
-    - **cutoff_epoch** (`int` or `float`, optional): Drop entries created before this epoch.
-      `0` (default) disables aging.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing the Redfish log entries under the 'Members' key.
+    match : list, optional
+        Compiled regular expressions; keep only matching messages.
+    ignore : list, optional
+        Compiled regular expressions; drop matching messages.
+    cutoff_epoch : int or float, optional
+        Drop entries created before this epoch.
+        `0` (default) disables aging.
 
-    ### Returns
-    - **tuple**:
-      - **msg** (`str`): A formatted string of the reported entries (created time, message, state).
-      - **state** (`int`): The worst state across the reported entries:
-        - `STATE_OK` (0): nothing to report.
-        - `STATE_WARN` (1): some entries are warnings.
-        - `STATE_CRIT` (2): some entries are critical.
-      - **aged_out** (`int`): How many non-OK entries were suppressed because they were older than
-        `cutoff_epoch`.
+    Returns
+    -------
+    tuple
+        - **msg** (`str`): A formatted string of the reported entries (created time, message, state).
+        - **state** (`int`): The worst state across the reported entries:
 
-    ### Example
+          - `STATE_OK` (0): nothing to report.
+          - `STATE_WARN` (1): some entries are warnings.
+          - `STATE_CRIT` (2): some entries are critical.
+        - **aged_out** (`int`): How many non-OK entries were suppressed because they were older than
+          `cutoff_epoch`.
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'Members': [
     ...         {
@@ -2174,7 +2315,7 @@ def get_manager_logservices_sel_entries(
     ...     ]
     ... }
     >>> get_manager_logservices_sel_entries(redfish_data)
-    ('* 2021-08-01: Temperature is high [CRITICAL]\n', 2, 0)
+    ('* 2021-08-01: Temperature is high [CRITICAL]\\n', 2, 0)
     """
     lines = []
     state = STATE_OK
@@ -2219,16 +2360,22 @@ def get_perfdata(data, key='Reading'):
     range from the provided dictionary. It formats this data and returns a performance data string,
     suitable for monitoring.
 
-    ### Parameters
-    - **data** (`dict`): A dictionary containing performance data and related information.
-    - **key** (`str`, optional): The key in the dictionary whose value should be extracted.
-      Defaults to `'Reading'`.
+    Parameters
+    ----------
+    data : dict
+        A dictionary containing performance data and related information.
+    key : str, optional
+        The key in the dictionary whose value should be extracted.
+        Defaults to `'Reading'`.
 
-    ### Returns
-    - **str**: A formatted string containing performance data in the format:
-      `'label=value[unit];[warn];[crit];[min];[max]'`, or an empty string if the required data is invalid or missing.
+    Returns
+    -------
+    str
+        A formatted string containing performance data in the format:
+        `'label=value[unit];[warn];[crit];[min];[max]'`, or an empty string if the required data is invalid or missing.
 
-    ### Example
+    Examples
+    --------
     >>> data = {
     ...     'Name': 'Temperature Sensor 1',
     ...     'PhysicalContext': 'Chassis',
@@ -2286,25 +2433,33 @@ def get_sensor_state(data, key='Reading'):
     5. **Default**
        If no other checks apply, returns STATE_OK.
 
-    ### Parameters
-    - **data** (`dict`): Sensor data containing keys such as:
-        - `'Reading'` (float or numeric string)
-        - `'Status_State'`, `'Status_HealthRollup'`, `'Status_Health'`
-        - Default thresholds: `'Thresholds_LowerCritical'`, `'Thresholds_UpperCritical'`,
-          `'Thresholds_LowerCaution'`, `'Thresholds_UpperCaution'`
-        - User thresholds: `'Thresholds_LowerCriticalUser'`, `'Thresholds_UpperCriticalUser'`,
-          `'Thresholds_LowerCautionUser'`, `'Thresholds_UpperCautionUser'`
-        - Reading ranges: `'ReadingRangeMin'`, `'ReadingRangeMax'`.
-    - **key** (`str`, optional): The key in `data` whose value is the sensor reading.
-      Defaults to `'Reading'`.
+    Parameters
+    ----------
+    data : dict
+        Sensor data containing keys such as:
 
-    ### Returns
-    - **int**: One of:
-        - `STATE_OK`   (0)
-        - `STATE_WARN` (1)
-        - `STATE_CRIT` (2)
+          - `'Reading'` (float or numeric string)
+          - `'Status_State'`, `'Status_HealthRollup'`, `'Status_Health'`
+          - Default thresholds: `'Thresholds_LowerCritical'`, `'Thresholds_UpperCritical'`,
+            `'Thresholds_LowerCaution'`, `'Thresholds_UpperCaution'`
+          - User thresholds: `'Thresholds_LowerCriticalUser'`, `'Thresholds_UpperCriticalUser'`,
+            `'Thresholds_LowerCautionUser'`, `'Thresholds_UpperCautionUser'`
+          - Reading ranges: `'ReadingRangeMin'`, `'ReadingRangeMax'`.
+    key : str, optional
+        The key in `data` whose value is the sensor reading.
+        Defaults to `'Reading'`.
 
-    ### Example
+    Returns
+    -------
+    int
+        One of:
+
+          - `STATE_OK`   (0)
+          - `STATE_WARN` (1)
+          - `STATE_CRIT` (2)
+
+    Examples
+    --------
     >>> sample = {
     ...     'Reading': 95.0,
     ...     'Status_State': 'Enabled',
@@ -2423,17 +2578,23 @@ def get_state(data):
     health rollup indicates a critical state, `STATE_WARN` for warning states, or `STATE_OK` if no
     critical or warning states are found.
 
-    ### Parameters
-    - **data** (`dict`): A dictionary containing the status and health information of the entity
-      (e.g., `Status_State`, `Status_Health`, `Status_HealthRollup`).
+    Parameters
+    ----------
+    data : dict
+        A dictionary containing the status and health information of the entity
+        (e.g., `Status_State`, `Status_Health`, `Status_HealthRollup`).
 
-    ### Returns
-    - **int**: The state of the entity, which can be:
-      - `STATE_OK` (0): If the entity is in a normal or healthy state.
-      - `STATE_WARN` (1): If the entity's health or status indicates a warning.
-      - `STATE_CRIT` (2): If the entity's health or status indicates a critical state.
+    Returns
+    -------
+    int
+        The state of the entity, which can be:
 
-    ### Example
+        - `STATE_OK` (0): If the entity is in a normal or healthy state.
+        - `STATE_WARN` (1): If the entity's health or status indicates a warning.
+        - `STATE_CRIT` (2): If the entity's health or status indicates a critical state.
+
+    Examples
+    --------
     >>> data = {
     ...     'Status_State': 'Enabled',
     ...     'Status_Health': 'Warning',
@@ -2464,30 +2625,36 @@ def get_systems(redfish):
     This function processes a Redfish API response to extract system details such as BIOS version,
     host name, manufacturer, model, processor summary, power state, and system health status.
 
-    ### Parameters
-    - **redfish** (`dict`): The Redfish API response data, typically containing system-related
-      information such as BIOS version, processor details, and status information.
+    Parameters
+    ----------
+    redfish : dict
+        The Redfish API response data, typically containing system-related
+        information such as BIOS version, processor details, and status information.
 
-    ### Returns
-    - **dict**: A dictionary containing the following system details:
-      - `BiosVersion`: The BIOS version.
-      - `HostName`: The system's host name.
-      - `Id`: The unique identifier for the system.
-      - `IndicatorLED`: The system's indicator LED state.
-      - `Manufacturer`: The manufacturer of the system.
-      - `Model`: The model of the system.
-      - `PowerState`: The current power state of the system (e.g., "On").
-      - `ProcessorSummary_Count`: The number of processors.
-      - `ProcessorSummary_LogicalProcessorCount`: The number of logical processors.
-      - `ProcessorSummary_Model`: The model of the processor.
-      - `SerialNumber`: The system's serial number.
-      - `SKU`: The system's SKU (Stock Keeping Unit).
-      - `Storage_@odata.id`: The OData ID for the system's storage.
-      - `Status_State`: The system's status state (e.g., "Enabled").
-      - `Status_Health`: The system's health status (e.g., "OK").
-      - `Status_HealthRollup`: The rollup health status of the system.
+    Returns
+    -------
+    dict
+        A dictionary containing the following system details:
 
-    ### Example
+        - `BiosVersion`: The BIOS version.
+        - `HostName`: The system's host name.
+        - `Id`: The unique identifier for the system.
+        - `IndicatorLED`: The system's indicator LED state.
+        - `Manufacturer`: The manufacturer of the system.
+        - `Model`: The model of the system.
+        - `PowerState`: The current power state of the system (e.g., "On").
+        - `ProcessorSummary_Count`: The number of processors.
+        - `ProcessorSummary_LogicalProcessorCount`: The number of logical processors.
+        - `ProcessorSummary_Model`: The model of the processor.
+        - `SerialNumber`: The system's serial number.
+        - `SKU`: The system's SKU (Stock Keeping Unit).
+        - `Storage_@odata.id`: The OData ID for the system's storage.
+        - `Status_State`: The system's status state (e.g., "Enabled").
+        - `Status_Health`: The system's health status (e.g., "OK").
+        - `Status_HealthRollup`: The rollup health status of the system.
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'BiosVersion': '1.0.0',
     ...     'HostName': 'System1',
@@ -2538,27 +2705,33 @@ def get_systems_ethernetinterfaces(redfish):
     This function processes a Redfish Ethernet interface resource and extracts the attributes
     relevant for health monitoring and identification, such as MAC address, link status, and speed.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish Ethernet interface data, typically a
-      single member of an `EthernetInterfaces` collection.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish Ethernet interface data, typically a
+        single member of an `EthernetInterfaces` collection.
 
-    ### Returns
-    - **dict**: A dictionary containing the following Ethernet interface details:
-      - `Description`: A description of the interface.
-      - `FQDN`: The fully qualified domain name of the interface.
-      - `FullDuplex`: Whether the interface operates in full-duplex mode.
-      - `HostName`: The host name configured on the interface.
-      - `Id`: The unique identifier of the interface.
-      - `LinkStatus`: The link status of the interface (e.g., "LinkUp").
-      - `MACAddress`: The currently configured MAC address.
-      - `Name`: The name of the interface.
-      - `PermanentMACAddress`: The permanent (factory) MAC address.
-      - `SpeedMbps`: The link speed in megabits per second.
-      - `Status_State`: The state of the interface (e.g., "Enabled").
-      - `Status_Health`: The health status of the interface (e.g., "OK").
-      - `Status_HealthRollup`: The rollup health status of the interface (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following Ethernet interface details:
 
-    ### Example
+        - `Description`: A description of the interface.
+        - `FQDN`: The fully qualified domain name of the interface.
+        - `FullDuplex`: Whether the interface operates in full-duplex mode.
+        - `HostName`: The host name configured on the interface.
+        - `Id`: The unique identifier of the interface.
+        - `LinkStatus`: The link status of the interface (e.g., "LinkUp").
+        - `MACAddress`: The currently configured MAC address.
+        - `Name`: The name of the interface.
+        - `PermanentMACAddress`: The permanent (factory) MAC address.
+        - `SpeedMbps`: The link speed in megabits per second.
+        - `Status_State`: The state of the interface (e.g., "Enabled").
+        - `Status_Health`: The health status of the interface (e.g., "OK").
+        - `Status_HealthRollup`: The rollup health status of the interface (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'MACAddress': '12:44:6A:3B:04:11',
     ...     'LinkStatus': 'LinkUp',
@@ -2586,30 +2759,36 @@ def get_systems_memory(redfish):
     This function processes a Redfish memory resource and extracts the attributes relevant for
     health monitoring and identification, such as capacity, type, speed, manufacturer, and status.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish memory data, typically a single member
-      of the `Memory` collection.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish memory data, typically a single member
+        of the `Memory` collection.
 
-    ### Returns
-    - **dict**: A dictionary containing the following memory details:
-      - `BaseModuleType`: The form factor of the module (e.g., "RDIMM").
-      - `CapacityMiB`: The capacity in human-readable format (converted from mebibytes).
-      - `ErrorCorrection`: The error correction scheme (e.g., "MultiBitECC").
-      - `Id`: The unique identifier of the memory module.
-      - `Location_ServiceLabel`: The service label of the slot (e.g., "DIMM 1").
-      - `Manufacturer`: The manufacturer of the module.
-      - `MemoryDeviceType`: The device type (e.g., "DDR4").
-      - `MemoryType`: The memory media type (e.g., "DRAM").
-      - `Name`: The name of the module.
-      - `OperatingSpeedMhz`: The operating speed in megahertz.
-      - `PartNumber`: The part number of the module.
-      - `RankCount`: The number of ranks.
-      - `SerialNumber`: The serial number of the module.
-      - `Status_State`: The state of the module (e.g., "Enabled").
-      - `Status_Health`: The health status of the module (e.g., "OK").
-      - `Status_HealthRollup`: The rollup health status of the module (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following memory details:
 
-    ### Example
+        - `BaseModuleType`: The form factor of the module (e.g., "RDIMM").
+        - `CapacityMiB`: The capacity in human-readable format (converted from mebibytes).
+        - `ErrorCorrection`: The error correction scheme (e.g., "MultiBitECC").
+        - `Id`: The unique identifier of the memory module.
+        - `Location_ServiceLabel`: The service label of the slot (e.g., "DIMM 1").
+        - `Manufacturer`: The manufacturer of the module.
+        - `MemoryDeviceType`: The device type (e.g., "DDR4").
+        - `MemoryType`: The memory media type (e.g., "DRAM").
+        - `Name`: The name of the module.
+        - `OperatingSpeedMhz`: The operating speed in megahertz.
+        - `PartNumber`: The part number of the module.
+        - `RankCount`: The number of ranks.
+        - `SerialNumber`: The serial number of the module.
+        - `Status_State`: The state of the module (e.g., "Enabled").
+        - `Status_Health`: The health status of the module (e.g., "OK").
+        - `Status_HealthRollup`: The rollup health status of the module (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'CapacityMiB': 32768,
     ...     'MemoryDeviceType': 'DDR4',
@@ -2687,29 +2866,35 @@ def get_systems_processors(redfish):
     This function processes a Redfish processor resource and extracts the attributes relevant for
     health monitoring and identification, such as model, core count, speed, and status.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish processor data, typically a single
-      member of the `Processors` collection.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish processor data, typically a single
+        member of the `Processors` collection.
 
-    ### Returns
-    - **dict**: A dictionary containing the following processor details:
-      - `Id`: The unique identifier of the processor.
-      - `InstructionSet`: The instruction set (e.g., "x86-64").
-      - `Manufacturer`: The manufacturer of the processor.
-      - `MaxSpeedMHz`: The maximum clock speed in megahertz.
-      - `Model`: The model of the processor.
-      - `Name`: The name of the processor.
-      - `ProcessorArchitecture`: The architecture (e.g., "x86").
-      - `ProcessorType`: The type of processor (e.g., "CPU", "FPGA").
-      - `Socket`: The socket the processor is installed in.
-      - `TotalCores`: The number of cores.
-      - `TotalThreads`: The number of threads.
-      - `Location_ServiceLabel`: The service label of the socket (e.g., "CPU 1").
-      - `Status_State`: The state of the processor (e.g., "Enabled").
-      - `Status_Health`: The health status of the processor (e.g., "OK").
-      - `Status_HealthRollup`: The rollup health status of the processor (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following processor details:
 
-    ### Example
+        - `Id`: The unique identifier of the processor.
+        - `InstructionSet`: The instruction set (e.g., "x86-64").
+        - `Manufacturer`: The manufacturer of the processor.
+        - `MaxSpeedMHz`: The maximum clock speed in megahertz.
+        - `Model`: The model of the processor.
+        - `Name`: The name of the processor.
+        - `ProcessorArchitecture`: The architecture (e.g., "x86").
+        - `ProcessorType`: The type of processor (e.g., "CPU", "FPGA").
+        - `Socket`: The socket the processor is installed in.
+        - `TotalCores`: The number of cores.
+        - `TotalThreads`: The number of threads.
+        - `Location_ServiceLabel`: The service label of the socket (e.g., "CPU 1").
+        - `Status_State`: The state of the processor (e.g., "Enabled").
+        - `Status_Health`: The health status of the processor (e.g., "OK").
+        - `Status_HealthRollup`: The rollup health status of the processor (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'Model': 'Multi-Core Intel(R) Xeon(R) processor 7xxx Series',
     ...     'Socket': 'CPU 1',
@@ -2736,21 +2921,27 @@ def get_systems_storage(redfish):
     This function processes a Redfish API response to extract storage-related system details such
     as the storage description, number of drives, storage ID, name, and health status.
 
-    ### Parameters
-    - **redfish** (`dict`): The Redfish API response data, typically containing storage-related
-      information such as description, status, and health.
+    Parameters
+    ----------
+    redfish : dict
+        The Redfish API response data, typically containing storage-related
+        information such as description, status, and health.
 
-    ### Returns
-    - **dict**: A dictionary containing the following storage system details:
-      - `Description`: A description of the storage system.
-      - `Drives@odata.count`: The number of drives in the storage system.
-      - `Id`: The unique identifier for the storage system.
-      - `Name`: The name of the storage system.
-      - `Status_State`: The status state of the storage system (e.g., "Enabled").
-      - `Status_Health`: The health status of the storage system (e.g., "OK").
-      - `Status_HealthRollup`: The rollup health status of the storage system.
+    Returns
+    -------
+    dict
+        A dictionary containing the following storage system details:
 
-    ### Example
+        - `Description`: A description of the storage system.
+        - `Drives@odata.count`: The number of drives in the storage system.
+        - `Id`: The unique identifier for the storage system.
+        - `Name`: The name of the storage system.
+        - `Status_State`: The status state of the storage system (e.g., "Enabled").
+        - `Status_Health`: The health status of the storage system (e.g., "OK").
+        - `Status_HealthRollup`: The rollup health status of the storage system.
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'Description': 'RAID Storage',
     ...     'Drives@odata.count': 5,
@@ -2788,41 +2979,47 @@ def get_systems_storage_drives(redfish):
     including attributes such as capacity, encryption status, failure prediction, speed, and other
     properties.
 
-    ### Parameters
-    - **redfish** (`dict`): The Redfish API response data, typically containing details about
-      storage drives such as capacity, health status, and manufacturer.
+    Parameters
+    ----------
+    redfish : dict
+        The Redfish API response data, typically containing details about
+        storage drives such as capacity, health status, and manufacturer.
 
-    ### Returns
-    - **dict**: A dictionary containing the following storage drive details:
-      - `BlockSizeBytes`: The block size of the storage drive in bytes.
-      - `CapableSpeedGbs`: The capable speed of the drive in gigabits per second (Gbps).
-      - `CapacityBytes`: The capacity of the drive in human-readable format (converted from bytes).
-      - `Description`: A description of the storage drive.
-      - `EncryptionAbility`: The encryption ability status of the storage drive.
-      - `EncryptionStatus`: The current encryption status of the storage drive.
-      - `FailurePredicted`: A boolean indicating whether failure of the drive is predicted.
-      - `HotspareType`: The type of hot spare (if any) associated with the drive.
-      - `Id`: The unique identifier for the storage drive.
-      - `Manufacturer`: The manufacturer of the storage drive.
-      - `MediaType`: The type of media used by the storage drive (e.g., SSD, HDD).
-      - `Model`: The model of the storage drive.
-      - `Name`: The name of the storage drive.
-      - `NegotiatedSpeedGbs`: The negotiated speed of the drive in gigabits per second (Gbps).
-      - `PartNumber`: The part number of the storage drive.
-      - `PowerOnHours`: The number of hours the drive has been powered on.
-      - `PredictedMediaLifeLeftPercent`: The predicted remaining life of the storage media in
-         percentage.
-      - `Protocol`: The protocol used by the storage drive (e.g., SATA, NVMe).
-      - `Revision`: The revision number of the storage drive.
-      - `RotationSpeedRPM`: The rotational speed of the drive (if applicable) in revolutions per
-         minute (RPM).
-      - `SerialNumber`: The serial number of the storage drive.
-      - `WriteCacheEnabled`: A boolean indicating whether write cache is enabled on the drive.
-      - `Status_State`: The state of the storage drive (e.g., "Enabled").
-      - `Status_Health`: The health status of the storage drive (e.g., "OK").
-      - `Status_HealthRollup`: The rollup health status of the storage drive (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following storage drive details:
 
-    ### Example
+        - `BlockSizeBytes`: The block size of the storage drive in bytes.
+        - `CapableSpeedGbs`: The capable speed of the drive in gigabits per second (Gbps).
+        - `CapacityBytes`: The capacity of the drive in human-readable format (converted from bytes).
+        - `Description`: A description of the storage drive.
+        - `EncryptionAbility`: The encryption ability status of the storage drive.
+        - `EncryptionStatus`: The current encryption status of the storage drive.
+        - `FailurePredicted`: A boolean indicating whether failure of the drive is predicted.
+        - `HotspareType`: The type of hot spare (if any) associated with the drive.
+        - `Id`: The unique identifier for the storage drive.
+        - `Manufacturer`: The manufacturer of the storage drive.
+        - `MediaType`: The type of media used by the storage drive (e.g., SSD, HDD).
+        - `Model`: The model of the storage drive.
+        - `Name`: The name of the storage drive.
+        - `NegotiatedSpeedGbs`: The negotiated speed of the drive in gigabits per second (Gbps).
+        - `PartNumber`: The part number of the storage drive.
+        - `PowerOnHours`: The number of hours the drive has been powered on.
+        - `PredictedMediaLifeLeftPercent`: The predicted remaining life of the storage media in
+           percentage.
+        - `Protocol`: The protocol used by the storage drive (e.g., SATA, NVMe).
+        - `Revision`: The revision number of the storage drive.
+        - `RotationSpeedRPM`: The rotational speed of the drive (if applicable) in revolutions per
+           minute (RPM).
+        - `SerialNumber`: The serial number of the storage drive.
+        - `WriteCacheEnabled`: A boolean indicating whether write cache is enabled on the drive.
+        - `Status_State`: The state of the storage drive (e.g., "Enabled").
+        - `Status_Health`: The health status of the storage drive (e.g., "OK").
+        - `Status_HealthRollup`: The rollup health status of the storage drive (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'CapacityBytes': 500000000000,
     ...     'Description': 'SSD Drive',
@@ -2879,23 +3076,29 @@ def get_systems_storage_volumes(redfish):
     This function processes a Redfish volume resource and extracts the attributes relevant for
     health monitoring and identification, such as capacity, RAID type, and status.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish volume data, typically a single member
-      of a `Volumes` collection.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish volume data, typically a single member
+        of a `Volumes` collection.
 
-    ### Returns
-    - **dict**: A dictionary containing the following volume details:
-      - `CapacityBytes`: The capacity of the volume in human-readable format (converted from bytes).
-      - `Encrypted`: Whether the volume is encrypted.
-      - `Id`: The unique identifier of the volume.
-      - `Name`: The name of the volume.
-      - `RAIDType`: The RAID type of the volume (e.g., "RAID1").
-      - `VolumeType`: The volume type (deprecated in favor of `RAIDType`).
-      - `Status_State`: The state of the volume (e.g., "Enabled").
-      - `Status_Health`: The health status of the volume (e.g., "OK").
-      - `Status_HealthRollup`: The rollup health status of the volume (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following volume details:
 
-    ### Example
+        - `CapacityBytes`: The capacity of the volume in human-readable format (converted from bytes).
+        - `Encrypted`: Whether the volume is encrypted.
+        - `Id`: The unique identifier of the volume.
+        - `Name`: The name of the volume.
+        - `RAIDType`: The RAID type of the volume (e.g., "RAID1").
+        - `VolumeType`: The volume type (deprecated in favor of `RAIDType`).
+        - `Status_State`: The state of the volume (e.g., "Enabled").
+        - `Status_Health`: The health status of the volume (e.g., "OK").
+        - `Status_HealthRollup`: The rollup health status of the volume (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'CapacityBytes': 1000000000000,
     ...     'Name': 'Virtual Disk 0',
@@ -2926,24 +3129,30 @@ def get_updateservice_firmwareinventory(redfish):
     This function processes a Redfish software inventory resource (a firmware component) and
     extracts the attributes relevant for version reporting and health monitoring.
 
-    ### Parameters
-    - **redfish** (`dict`): A dictionary containing Redfish firmware data, typically a single member
-      of the `FirmwareInventory` collection.
+    Parameters
+    ----------
+    redfish : dict
+        A dictionary containing Redfish firmware data, typically a single member
+        of the `FirmwareInventory` collection.
 
-    ### Returns
-    - **dict**: A dictionary containing the following firmware details:
-      - `Id`: The unique identifier of the firmware component.
-      - `Manufacturer`: The manufacturer of the firmware component.
-      - `Name`: The name of the firmware component.
-      - `ReleaseDate`: The release date of the firmware.
-      - `SoftwareId`: The software identifier.
-      - `Updateable`: Whether the component can be updated through the update service.
-      - `Version`: The installed firmware version.
-      - `Status_State`: The state of the firmware component (e.g., "Enabled").
-      - `Status_Health`: The health status of the firmware component (e.g., "OK").
-      - `Status_HealthRollup`: The rollup health status of the firmware component (e.g., "OK").
+    Returns
+    -------
+    dict
+        A dictionary containing the following firmware details:
 
-    ### Example
+        - `Id`: The unique identifier of the firmware component.
+        - `Manufacturer`: The manufacturer of the firmware component.
+        - `Name`: The name of the firmware component.
+        - `ReleaseDate`: The release date of the firmware.
+        - `SoftwareId`: The software identifier.
+        - `Updateable`: Whether the component can be updated through the update service.
+        - `Version`: The installed firmware version.
+        - `Status_State`: The state of the firmware component (e.g., "Enabled").
+        - `Status_Health`: The health status of the firmware component (e.g., "OK").
+        - `Status_HealthRollup`: The rollup health status of the firmware component (e.g., "OK").
+
+    Examples
+    --------
     >>> redfish_data = {
     ...     'Name': 'Contoso BIOS Firmware',
     ...     'Version': 'P79 v1.45',
@@ -2971,14 +3180,19 @@ def get_vendor(redfish):
     it looks in the  'Oem' dictionary for the first key and uses that as the vendor. If no vendor
     information is available, it returns 'generic'.
 
-    ### Parameters
-    - **redfish** (`dict`): The Redfish API response data, typically containing information about
-      the system, including vendor details.
+    Parameters
+    ----------
+    redfish : dict
+        The Redfish API response data, typically containing information about
+        the system, including vendor details.
 
-    ### Returns
-    - **str**: The vendor name in lowercase, or 'generic' if no vendor information is found.
+    Returns
+    -------
+    str
+        The vendor name in lowercase, or 'generic' if no vendor information is found.
 
-    ### Example
+    Examples
+    --------
     >>> redfish_data = {
     ...     'Vendor': 'DELL',
     ... }
@@ -3012,14 +3226,19 @@ def is_member_expanded(member):
     starting with `@odata`), because a real resource always exposes fields such as `Id`, `Name` or
     `Status`. Used by `fetch_members()` to decide whether a follow-up request is still needed.
 
-    ### Parameters
-    - **member** (`dict`): A single entry from a collection's `Members` list (or an inline
-      reference array).
+    Parameters
+    ----------
+    member : dict
+        A single entry from a collection's `Members` list (or an inline
+        reference array).
 
-    ### Returns
-    - **bool**: `True` if the member is already populated, `False` if it is a bare reference.
+    Returns
+    -------
+    bool
+        `True` if the member is already populated, `False` if it is a bare reference.
 
-    ### Example
+    Examples
+    --------
     >>> is_member_expanded({'@odata.id': '/redfish/v1/Chassis/1U/Sensors/0'})
     False
     >>> is_member_expanded(
@@ -3060,10 +3279,12 @@ def record_responses():
     `format_responses()` handed it over. That is the case whenever a consumer aborts on an
     error, which is when the responses are needed most.
 
-    ### Returns
-    - **None**
+    Returns
+    -------
+    None
 
-    ### Example
+    Examples
+    --------
     >>> record_responses()
     >>> success, chassis = fetch_collection('https://bmc/redfish/v1/Chassis')
     >>> print(format_responses())
@@ -3090,15 +3311,19 @@ def replay(text):
     This turns a reported problem into a test case: the consumer walks the recorded responses
     through the same code that walked the controller, including any number of members.
 
-    ### Parameters
-    - **text** (`str`): The recorded responses.
+    Parameters
+    ----------
+    text : str
+        The recorded responses.
 
-    ### Returns
-    - **tuple** (`bool`, `int` | `str`):
-      - `(True, count)` with the number of distinct paths loaded.
-      - `(False, error)` if `text` holds no recorded response, or one that is not valid JSON.
+    Returns
+    -------
+    tuple (bool, int | str)
+        - `(True, count)` with the number of distinct paths loaded.
+        - `(False, error)` if `text` holds no recorded response, or one that is not valid JSON.
 
-    ### Example
+    Examples
+    --------
     >>> replay('### GET /redfish/v1/Chassis\\n{"Members": []}')
     (True, 1)
     """

@@ -27,24 +27,31 @@ def run_ps(cmd):
     (blocking) and relies on PowerShell being available on PATH
     (Windows PowerShell or PowerShell 7+). No external libraries are required.
 
-    ### Parameters
-    - **cmd** (`str`): The PowerShell command to execute (passed as a single string
-      to the `-Command` argument).
+    Parameters
+    ----------
+    cmd : str
+        The PowerShell command to execute (passed as a single string
+        to the `-Command` argument).
 
-    ### Returns
-    - **dict**: A result dictionary with:
-      - `retc` (`int`): Process return code (`0` indicates success).
-      - `stdout` (`str`): Decoded standard output.
-      - `stderr` (`str`): Decoded standard error.
+    Returns
+    -------
+    dict
+        A result dictionary with:
 
-    ### Notes
+        - `retc` (`int`): Process return code (`0` indicates success).
+        - `stdout` (`str`): Decoded standard output.
+        - `stderr` (`str`): Decoded standard error.
+
+    Notes
+    -----
     - Output decoding is performed via `txt.to_text(...)`.
     - Exceptions are caught and converted to a result with `retc=1`,
       empty `stdout`, and `stderr` containing the formatted exception text.
     - No timeout is applied; the call will block until the command exits.
     - `stderr` is not merged into `stdout`.
 
-    ### Example
+    Examples
+    --------
     >>> run_ps('Get-Process')
     {
         'retc': 0,

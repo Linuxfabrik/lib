@@ -25,7 +25,9 @@ microseconds. Verified against `kernel/sched/psi.c` and
 consumer judges and prints the same numbers the same way.
 
 Typical use case:
-```python
+
+.. code-block:: python
+
     pressure = lib.base.coe(lib.psi.read('memory'))
     if pressure is None:
         print('Pressure stall information is switched off in this kernel.')
@@ -35,7 +37,6 @@ Typical use case:
         print(lib.psi.get_summary(
             pressure, 'memory', 'memory', ('some', 'full'), 'full', states,
         ))
-```
 """
 
 import errno
@@ -87,17 +88,25 @@ def get_perfdata(pressure, kinds, alert_kind, thresholds):
     Only the values that are actually judged carry their thresholds, so a graph
     does not draw a warning line across the windows nobody alerts on.
 
-    ### Parameters
-    - **pressure** (`dict`): A reading as returned by `read()`.
-    - **kinds** (`tuple`): The lines to report, in the order they are printed.
-    - **alert_kind** (`str`): The line the thresholds belong to.
-    - **thresholds** (`dict`): Maps an averaging window to a `(warn, crit)` tuple,
-      as handed to `get_states()`.
+    Parameters
+    ----------
+    pressure : dict
+        A reading as returned by `read()`.
+    kinds : tuple
+        The lines to report, in the order they are printed.
+    alert_kind : str
+        The line the thresholds belong to.
+    thresholds : dict
+        Maps an averaging window to a `(warn, crit)` tuple,
+        as handed to `get_states()`.
 
-    ### Returns
-    - **str**: The performance data string.
+    Returns
+    -------
+    str
+        The performance data string.
 
-    ### Example
+    Examples
+    --------
     >>> get_perfdata(pressure, ('some', 'full'), 'full', {'avg60': ('40', '60')})
     "'some_avg10'=0.0%;;;0;100 ..."
     """
@@ -128,17 +137,24 @@ def get_states(pressure, kind, thresholds):
     Evaluate one line of a pressure reading against a threshold per averaging
     window.
 
-    ### Parameters
-    - **pressure** (`dict`): A reading as returned by `read()`.
-    - **kind** (`str`): The line to judge, `full` or `some`.
-    - **thresholds** (`dict`): Maps an averaging window to a `(warn, crit)` tuple
-      of Nagios range expressions. A bound of `None` is not evaluated.
+    Parameters
+    ----------
+    pressure : dict
+        A reading as returned by `read()`.
+    kind : str
+        The line to judge, `full` or `some`.
+    thresholds : dict
+        Maps an averaging window to a `(warn, crit)` tuple
+        of Nagios range expressions. A bound of `None` is not evaluated.
 
-    ### Returns
-    - **dict**: Maps every window that was judged to its state. A window the
-      reading does not carry is left out rather than counted as zero.
+    Returns
+    -------
+    dict
+        Maps every window that was judged to its state. A window the
+        reading does not carry is left out rather than counted as zero.
 
-    ### Example
+    Examples
+    --------
     >>> get_states(pressure, 'full', {'avg60': ('40', '60')})
     {'avg60': 0}
     """
@@ -166,23 +182,34 @@ def get_summary(
     its range, so a burst that the longer average smooths away is named at the
     moment it matters and stays out of the way otherwise.
 
-    ### Parameters
-    - **pressure** (`dict`): A reading as returned by `read()`.
-    - **resource** (`str`): The resource the reading belongs to, used as the
-      subject of the headline.
-    - **waiting_for** (`str`): What the tasks were waiting for, completing the
-      sentences in `KIND_LABELS`, for example `a CPU` or `storage`.
-    - **kinds** (`tuple`): The lines to report, in the order they are printed.
-    - **alert_kind** (`str`): The line that carries the state markers.
-    - **states** (`dict`): Maps an averaging window to its state, as returned by
-      `get_states()`.
-    - **window** (`str`, optional): The averaging window the headline reports.
-      Defaults to `avg60`.
+    Parameters
+    ----------
+    pressure : dict
+        A reading as returned by `read()`.
+    resource : str
+        The resource the reading belongs to, used as the
+        subject of the headline.
+    waiting_for : str
+        What the tasks were waiting for, completing the
+        sentences in `KIND_LABELS`, for example `a CPU` or `storage`.
+    kinds : tuple
+        The lines to report, in the order they are printed.
+    alert_kind : str
+        The line that carries the state markers.
+    states : dict
+        Maps an averaging window to its state, as returned by
+        `get_states()`.
+    window : str, optional
+        The averaging window the headline reports.
+        Defaults to `avg60`.
 
-    ### Returns
-    - **str**: The headline and the legend, separated by a newline.
+    Returns
+    -------
+    str
+        The headline and the legend, separated by a newline.
 
-    ### Example
+    Examples
+    --------
     >>> get_summary(pressure, 'io', 'storage', ('some', 'full'), 'full', states)
     'io pressure, last minute: some 18.57%, full 9.76%\\nsome = ...'
     """
@@ -213,17 +240,25 @@ def get_table(pressure, kinds, alert_kind, states):
     alignment of a monospace table wherever a web interface replaces it with an
     icon.
 
-    ### Parameters
-    - **pressure** (`dict`): A reading as returned by `read()`.
-    - **kinds** (`tuple`): The lines to report, in the order they are printed.
-    - **alert_kind** (`str`): The line that carries the state markers.
-    - **states** (`dict`): Maps an averaging window to its state, as returned by
-      `get_states()`.
+    Parameters
+    ----------
+    pressure : dict
+        A reading as returned by `read()`.
+    kinds : tuple
+        The lines to report, in the order they are printed.
+    alert_kind : str
+        The line that carries the state markers.
+    states : dict
+        Maps an averaging window to its state, as returned by
+        `get_states()`.
 
-    ### Returns
-    - **str**: The rendered table.
+    Returns
+    -------
+    str
+        The rendered table.
 
-    ### Example
+    Examples
+    --------
     >>> print(get_table(pressure, ('some', 'full'), 'full', states))
     Window ! Some  ! Full
     ...
@@ -256,15 +291,20 @@ def is_enabled(root='/'):
     for. The remedy differs, so a consumer that reports the state has to know which
     of the two it is looking at.
 
-    ### Parameters
-    - **root** (`str`, optional): Prefix for the path that is read, so a directory
-      tree can stand in for the running system's `/proc`. Defaults to `/`.
+    Parameters
+    ----------
+    root : str, optional
+        Prefix for the path that is read, so a directory
+        tree can stand in for the running system's `/proc`. Defaults to `/`.
 
-    ### Returns
-    - **bool**: True where the kernel publishes pressure statistics, which it does
-      by creating the directory the per-resource files live in.
+    Returns
+    -------
+    bool
+        True where the kernel publishes pressure statistics, which it does
+        by creating the directory the per-resource files live in.
 
-    ### Example
+    Examples
+    --------
     >>> is_enabled()
     True
     """
@@ -282,14 +322,18 @@ def _accounting_is_off(error):
     7.1. That is the same "nothing is measured here" state as a file the kernel never
     created, and not a failure worth reporting as one.
 
-    ### Parameters
-    - **error** (`str`): The message `disk.read_file()` returned for the pressure
-      file. It quotes the `strerror` of the failed call, and `os.strerror()` gives the
-      same text in the same process, so the comparison holds in any locale.
+    Parameters
+    ----------
+    error : str
+        The message `disk.read_file()` returned for the pressure
+        file. It quotes the `strerror` of the failed call, and `os.strerror()` gives the
+        same text in the same process, so the comparison holds in any locale.
 
-    ### Returns
-    - **bool**: True if the read failed because the kernel does not keep these
-      statistics, False for every other reason.
+    Returns
+    -------
+    bool
+        True if the read failed because the kernel does not keep these
+        statistics, False for every other reason.
     """
     # ENOTSUP and EOPNOTSUPP are one value on Linux, the only system with this file.
     return f'"{os.strerror(errno.EOPNOTSUPP)}"' in error
@@ -299,25 +343,31 @@ def read(resource, root='/'):
     """
     Read the pressure stall information of one resource.
 
-    ### Parameters
-    - **resource** (`str`): One of `cpu`, `io`, `irq` or `memory`.
-    - **root** (`str`, optional): Prefix for the path that is read, so a directory
-      tree can stand in for the running system's `/proc`. Defaults to `/`.
+    Parameters
+    ----------
+    resource : str
+        One of `cpu`, `io`, `irq` or `memory`.
+    root : str, optional
+        Prefix for the path that is read, so a directory
+        tree can stand in for the running system's `/proc`. Defaults to `/`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the file was read or is absent, otherwise
-          False.
-        - tuple[1] (**dict | None | str**):
-          - A mapping of `some` and `full` to their values, each a mapping of
-            `avg10`, `avg60` and `avg300` (`float`, percent) and `total` (`int`,
-            microseconds since boot). Only the lines the kernel actually prints are
-            present.
-          - `None` if pressure accounting is unavailable on this system.
-          - An error message string if the file exists but could not be read or
-            parsed.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the file was read or is absent, otherwise
+            False.
+          - tuple[1] (**dict | None | str**):
 
-    ### Notes
+            - A mapping of `some` and `full` to their values, each a mapping of
+              `avg10`, `avg60` and `avg300` (`float`, percent) and `total` (`int`,
+              microseconds since boot). Only the lines the kernel actually prints are
+              present.
+            - `None` if pressure accounting is unavailable on this system.
+            - An error message string if the file exists but could not be read or
+              parsed.
+
+    Notes
+    -----
     - `None` is a state and not an error: the kernel exports nothing at all where
       pressure accounting is switched off, and an unprivileged caller cannot tell
       that apart from a kernel built without `CONFIG_PSI`. Booting with `psi=1`
@@ -335,7 +385,8 @@ def read(resource, root='/'):
     - An unknown resource name is rejected rather than turned into a path, so a
       caller cannot reach outside `/proc/pressure`.
 
-    ### Example
+    Examples
+    --------
     >>> success, pressure = read('io')
     >>> pressure['full']['avg60']
     3.04

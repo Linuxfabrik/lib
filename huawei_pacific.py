@@ -54,12 +54,16 @@ def _redact(value):
     """
     Return a copy of an API response with every sensitive field's value replaced.
 
-    ### Parameters
-    - **value** (any): A decoded response, or any part of one.
+    Parameters
+    ----------
+    value : any
+        A decoded response, or any part of one.
 
-    ### Returns
-    - The same structure, with the value of every field named in `_REDACTED_FIELDS`
-      replaced by `'******'`.
+    Returns
+    -------
+    any
+        The same structure, with the value of every field named in `_REDACTED_FIELDS`
+        replaced by `'******'`.
     """
     if isinstance(value, dict):
         return {
@@ -75,11 +79,15 @@ def record_response(endpoint, result):
     """
     Remember what an endpoint answered, so a consumer can print it under `--verbose`.
 
-    ### Parameters
-    - **endpoint** (`str`): The endpoint that was queried, as it was requested.
-    - **result** (`dict`): The response, as `get_data()` built it.
+    Parameters
+    ----------
+    endpoint : str
+        The endpoint that was queried, as it was requested.
+    result : dict
+        The response, as `get_data()` built it.
 
-    ### Notes
+    Notes
+    -----
     - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal run
       does not keep a second copy of every response in memory.
     - The login response is deliberately never recorded. It is the one response that
@@ -93,18 +101,21 @@ def format_responses():
     """
     Render everything `record_response()` collected, for a `--verbose` output.
 
-    ### Returns
-    - **str**:
-      One block per request, naming the endpoint and pretty-printing what came back.
-      Empty when nothing was recorded, which is the case on a normal run and in test mode.
+    Returns
+    -------
+    str
+        One block per request, naming the endpoint and pretty-printing what came back.
+        Empty when nothing was recorded, which is the case on a normal run and in test mode.
 
-    ### Notes
+    Notes
+    -----
     - Meant for working out what an appliance actually reports, so a consumer can be built
       against it. The output is as long as the appliance's answers are, which on a list
       endpoint of a large cluster is very long indeed. It is a command-line tool, not
       something to switch on in a service definition.
 
-    ### Example
+    Examples
+    --------
     >>> print(format_responses())
     ### GET cluster/servers
     {
@@ -129,11 +140,15 @@ def _with_recorded_responses(message):
     Nothing is recorded unless the caller asked for verbose output, so a normal run gets
     the message unchanged and a verbose one gets the answers that explain it.
 
-    ### Parameters
-    - **message** (`str`): The message the consumer is about to abort with.
+    Parameters
+    ----------
+    message : str
+        The message the consumer is about to abort with.
 
-    ### Returns
-    - **str**: The message, followed by what every request returned.
+    Returns
+    -------
+    str
+        The message, followed by what every request returned.
     """
     recorded = format_responses()
     return f'{message}\n\n{recorded}' if recorded else message
@@ -150,17 +165,22 @@ def assert_ok(result, what):
     object `error` rather than `result`, and a response carrying no outcome at all turns a
     naive `result['result']['code']` into an `AttributeError` instead of a clean UNKNOWN.
 
-    ### Parameters
-    - **result** (`dict`): A response as `get_data()` returns it.
-    - **what** (`str`):
-      What was being queried, as a noun phrase for the message ("the cluster nodes", "the
-      storage pools"). It is the only part of the output that tells an operator which of a
-      check's several requests failed.
+    Parameters
+    ----------
+    result : dict
+        A response as `get_data()` returns it.
+    what : str
+        What was being queried, as a noun phrase for the message ("the cluster nodes", "the
+        storage pools"). It is the only part of the output that tells an operator which of a
+        check's several requests failed.
 
-    ### Returns
-    - **None**: Returns on success, and does not return otherwise.
+    Returns
+    -------
+    None
+        Returns on success, and does not return otherwise.
 
-    ### Notes
+    Notes
+    -----
     - An empty response is an error as well. `get_data()` always answers with an envelope,
       so nothing at all means the consumer never reached the appliance.
     - The appliance's own description and suggestion are printed where it sends them. They
@@ -169,7 +189,8 @@ def assert_ok(result, what):
       is the moment they are needed most, and printing them at the end of a successful run
       only would hide them from exactly the run that has to be explained.
 
-    ### Example
+    Examples
+    --------
     >>> assert_ok({'result': {'code': 0}, 'data': []}, 'the cluster nodes')
     """
     if not result:
@@ -198,13 +219,18 @@ def as_code(value):
     malformed code has to render as `'Unknown'`; aborting the calling process with a
     `TypeError` or `ValueError` would turn a single unexpected field into a crashed check.
 
-    ### Parameters
-    - **value** (`any`): The raw field value taken from the API response.
+    Parameters
+    ----------
+    value : any
+        The raw field value taken from the API response.
 
-    ### Returns
-    - **int** or **None**: The code as an integer, or `None` if it cannot be converted.
+    Returns
+    -------
+    int or None
+        The code as an integer, or `None` if it cannot be converted.
 
-    ### Example
+    Examples
+    --------
     >>> as_code('6')
     6
     >>> as_code(None) is None
@@ -220,24 +246,28 @@ def get_alarm_severity(sev):
     """
     Convert a Huawei OceanStor Pacific alarm severity code into a human-readable description.
 
-    ### Parameters
-    - **sev** (`int` or `str`):
-      The alarm severity code.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    sev : int or str
+        The alarm severity code.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Scoped to the `/api/v2/` alarm and event endpoints. The older
       `/dsware/service/${version}/alarm/list` endpoint numbers its `ialarmLevel` field the
       other way round (`1` critical, `2` major, `3` minor, `4` warning, `5` other), where this
       mapping would render a critical alarm as `'Unknown'` and a major one as
       `'Information (2)'`.
 
-    ### Example
+    Examples
+    --------
     >>> get_alarm_severity(6)
     'Critical (6)'
     """
@@ -255,16 +285,19 @@ def get_alarm_severity_state(sev):
     """
     Convert an alarm severity code into the state a consumer reports for it.
 
-    ### Parameters
-    - **sev** (`int` or `str`):
-      The alarm severity code.
+    Parameters
+    ----------
+    sev : int or str
+        The alarm severity code.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for an informational alarm, `STATE_CRIT` for a critical one, `STATE_WARN`
-      for warning, minor, major, a code the enumeration does not know and a missing value.
+    Returns
+    -------
+    int
+        `STATE_OK` for an informational alarm, `STATE_CRIT` for a critical one, `STATE_WARN`
+        for warning, minor, major, a code the enumeration does not know and a missing value.
 
-    ### Notes
+    Notes
+    -----
     - An informational alarm is a note, not a fault, so it does not alert. It still appears
       in the output, where it is what an operator reads after the fact.
     - Major sits at warning rather than at critical on purpose: it marks a fault that
@@ -275,7 +308,8 @@ def get_alarm_severity_state(sev):
       `get_alarm_severity()`: the older `/dsware/service/` alarm endpoint numbers its
       severities the other way round, where code `2` would silently pass as OK.
 
-    ### Example
+    Examples
+    --------
     >>> get_alarm_severity_state(6) == STATE_CRIT
     True
 
@@ -294,17 +328,20 @@ def get_alarm_status(st):
     """
     Convert a Huawei OceanStor Pacific alarm status code into a human-readable description.
 
-    ### Parameters
-    - **st** (`int` or `str`):
-      The alarm status code.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    st : int or str
+        The alarm status code.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Scoped to the field named `alarmStatus`. The `status` field of `fms/alarms` shares the
       codes `1` and `2` but words them as uncleared and cleared, and never reports `4`.
     - Code `-1` is not in the enumeration table of the field. It is carried here because the
@@ -313,7 +350,8 @@ def get_alarm_status(st):
       reports no recovery state. Without the entry every row of an event listing would render
       as `'Unknown'`.
 
-    ### Example
+    Examples
+    --------
     >>> get_alarm_status(1)
     'Unrecovered (1)'
     """
@@ -341,37 +379,40 @@ def get_all_data(
     rest. Without paging an appliance simply stops being reported past the first page, which
     reads as a smaller but healthy inventory: exactly the failure a consumer must not have.
 
-    ### Parameters
-    - **endpoint** (`str`):
-      The endpoint after the base path, optionally with a query string of its own (for
-      example `common/alarms?filter=alarmStatus::1`). The `range` parameter is appended to
-      it, so the caller must not supply one.
-    - **args** (object):
-      The same object `get_data()` reads.
-    - **page_size** (`int`, optional):
-      Objects to request per page.
-    - **max_pages** (`int`, optional):
-      Hard stop on the number of requests. It bounds the runtime of a call against an
-      appliance with far more objects than anyone expected, and it keeps a firmware that
-      ignores `range` from looping forever.
-    - **range_style** (`str`, optional):
-      Which of the API's two incompatible range syntaxes the endpoint speaks. `'offset'`
-      sends `range={"offset":0,"limit":100}` and is the general form; `'bracket'` sends
-      `range=[0-100]`, which is what the alarm and event endpoints expect. Neither is
-      accepted by the other kind of endpoint, and the response does not say which one an
-      endpoint wanted, so the caller states it from that endpoint's own description.
-    - **kwargs**:
-      Passed through to `get_data()`, for the endpoints that need a body, a forced method or
-      an older base path.
+    Parameters
+    ----------
+    endpoint : str
+        The endpoint after the base path, optionally with a query string of its own (for
+        example `common/alarms?filter=alarmStatus::1`). The `range` parameter is appended to
+        it, so the caller must not supply one.
+    args : object
+        The same object `get_data()` reads.
+    page_size : int, optional
+        Objects to request per page.
+    max_pages : int, optional
+        Hard stop on the number of requests. It bounds the runtime of a call against an
+        appliance with far more objects than anyone expected, and it keeps a firmware that
+        ignores `range` from looping forever.
+    range_style : str, optional
+        Which of the API's two incompatible range syntaxes the endpoint speaks. `'offset'`
+        sends `range={"offset":0,"limit":100}` and is the general form; `'bracket'` sends
+        `range=[0-100]`, which is what the alarm and event endpoints expect. Neither is
+        accepted by the other kind of endpoint, and the response does not say which one an
+        endpoint wanted, so the caller states it from that endpoint's own description.
+    **kwargs
+        Passed through to `get_data()`, for the endpoints that need a body, a forced method or
+        an older base path.
 
-    ### Returns
-    - **tuple** (`dict`, `bool`):
-      The envelope of the last request with its `data` replaced by every object collected,
-      and a flag that is `True` when `max_pages` cut the walk short. On a failed request the
-      envelope is handed back unchanged with the flag `False`, so the caller reports the
-      appliance's own error text the same way it would after a single `get_data()`.
+    Returns
+    -------
+    tuple (dict, bool)
+        The envelope of the last request with its `data` replaced by every object collected,
+        and a flag that is `True` when `max_pages` cut the walk short. On a failed request the
+        envelope is handed back unchanged with the flag `False`, so the caller reports the
+        appliance's own error text the same way it would after a single `get_data()`.
 
-    ### Notes
+    Notes
+    -----
     - A page shorter than `page_size` ends the walk. A page of exactly `page_size` objects is
       always followed by another request, which costs one empty request when the object count
       is an exact multiple of the page size.
@@ -379,7 +420,8 @@ def get_all_data(
       incomplete inventory is worth an UNKNOWN or just a note in the output depends on the
       check, and this function has no way to tell.
 
-    ### Example
+    Examples
+    --------
     >>> result, truncated = get_all_data(
     ...     'common/alarms?filter=alarmStatus::1', args, range_style='bracket'
     ... )
@@ -427,14 +469,18 @@ def _from_string_code(value, mapping):
     code is already readable, and the vendor's tables are demonstrably incomplete. Keeping it
     means a consumer still shows something an engineer can open a support case with.
 
-    ### Parameters
-    - **value** (`str`): The raw field value taken from the API response.
-    - **mapping** (`dict`): Upper-case code to description.
+    Parameters
+    ----------
+    value : str
+        The raw field value taken from the API response.
+    mapping : dict
+        Upper-case code to description.
 
-    ### Returns
-    - **str**:
-      `'<description> (<code>)'` for a known code, the normalised code itself for an unknown
-      one, and `'Unknown'` for a missing or empty value.
+    Returns
+    -------
+    str
+        `'<description> (<code>)'` for a known code, the normalised code itself for an unknown
+        one, and `'Unknown'` for a missing or empty value.
     """
     if value is None:
         return 'Unknown'
@@ -453,17 +499,20 @@ def get_base_board(bb):
     The base board code names the product line a node's hardware belongs to, which the node's
     own `model` field does not always spell out.
 
-    ### Parameters
-    - **bb** (`str`):
-      The base board code.
-      A missing or empty value renders as `'Unknown'`.
+    Parameters
+    ----------
+    bb : str
+        The base board code.
+        A missing or empty value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      An unrecognised code is returned unchanged.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        An unrecognised code is returned unchanged.
 
-    ### Example
+    Examples
+    --------
     >>> get_base_board('STL6SPCM')
     'Pacific (STL6SPCM)'
     """
@@ -484,16 +533,19 @@ def get_component_status_state(st):
     The `hwm/fan` and `hwm/power` endpoints report a component's condition as a lower-case
     string rather than a numeric code.
 
-    ### Parameters
-    - **st** (`str`):
-      The `status` field of a fan or power supply.
+    Parameters
+    ----------
+    st : str
+        The `status` field of a fan or power supply.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for `'normal'` and `'absent'`, `STATE_CRIT` for `'fault'`, `STATE_WARN` for
-      anything else, including a value the vendor's table does not list and a missing one.
+    Returns
+    -------
+    int
+        `STATE_OK` for `'normal'` and `'absent'`, `STATE_CRIT` for `'fault'`, `STATE_WARN` for
+        anything else, including a value the vendor's table does not list and a missing one.
 
-    ### Notes
+    Notes
+    -----
     - The comparison is case-insensitive and ignores surrounding whitespace, so a firmware that
       capitalises the value differently does not silently turn a healthy component into a
       warning.
@@ -505,7 +557,8 @@ def get_component_status_state(st):
       these endpoints are demonstrably incomplete, and a component this check cannot place is
       worth looking at.
 
-    ### Example
+    Examples
+    --------
     >>> get_component_status_state('normal') == STATE_OK
     True
 
@@ -549,14 +602,19 @@ def _logout(args, x_auth_token):
     is configurable between 30 and 100 minutes. A consumer that keeps failing would leave orphans
     behind run after run, so the count of open sessions grows for as long as the fault lasts.
 
-    ### Parameters
-    - **args** (object): An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT`.
-    - **x_auth_token** (`str`): The session token to end.
+    Parameters
+    ----------
+    args : object
+        An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT`.
+    x_auth_token : str
+        The session token to end.
 
-    ### Returns
-    - **None**
+    Returns
+    -------
+    None
 
-    ### Notes
+    Notes
+    -----
     - Every outcome is discarded, errors included. This is housekeeping on the way to a fresh
       login, and the session most likely to be logged out here is one the appliance has
       already dropped, which is exactly the case that answers with an error. Letting that
@@ -588,27 +646,31 @@ def get_creds(args, force_relogin=False):
     avoid repeated logins, which may be rate-limited for security reasons. The appliance is
     identified by its base URL, since the login is not scoped to a device ID.
 
-    ### Parameters
-    - **args** (object):
-      An argument object containing:
-        - `URL` (`str`): Base URL of the Pacific API (`https://<ip>:<port>`).
-        - `USERNAME` (`str`): Login user name.
-        - `PASSWORD` (`str`): Login password.
-        - `SCOPE` (`str`): User type (`'0'` local user, `'1'` LDAP user).
-        - `INSECURE` (`bool`): Whether to disable SSL verification.
-        - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
-        - `TIMEOUT` (`int`): Request timeout in seconds.
-        - `CACHE_EXPIRE` (`int`): Cache expiration time in minutes.
-    - **force_relogin** (`bool`, optional):
-      If `True`, ignore any cached token and perform a fresh login, overwriting the cache.
-      Used to recover from a cached session that the appliance no longer accepts (for example
-      after a session reset or the server-side session timeout).
+    Parameters
+    ----------
+    args : object
+        An argument object containing:
 
-    ### Returns
-    - **str**:
-      The `x_auth_token` session token.
+          - `URL` (`str`): Base URL of the Pacific API (`https://<ip>:<port>`).
+          - `USERNAME` (`str`): Login user name.
+          - `PASSWORD` (`str`): Login password.
+          - `SCOPE` (`str`): User type (`'0'` local user, `'1'` LDAP user).
+          - `INSECURE` (`bool`): Whether to disable SSL verification.
+          - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `TIMEOUT` (`int`): Request timeout in seconds.
+          - `CACHE_EXPIRE` (`int`): Cache expiration time in minutes.
+    force_relogin : bool, optional
+        If `True`, ignore any cached token and perform a fresh login, overwriting the cache.
+        Used to recover from a cached session that the appliance no longer accepts (for example
+        after a session reset or the server-side session timeout).
 
-    ### Notes
+    Returns
+    -------
+    str
+        The `x_auth_token` session token.
+
+    Notes
+    -----
     - The token is stored in the cache key `huaweipacific-{URL}-{USERNAME}-xauthtoken`, in the
       module's own cache file. The user name is part of the key because a session carries that
       user's role: without it a consumer running as a different account would silently reuse the
@@ -638,7 +700,8 @@ def get_creds(args, force_relogin=False):
       handed back through `_logout()`, so it does not stay open until its own timeout
       expires it.
 
-    ### Example
+    Examples
+    --------
     >>> x_auth_token = get_creds(args)
     """
     token_key = f'huaweipacific-{args.URL}-{args.USERNAME}-xauthtoken'
@@ -716,14 +779,20 @@ def _as_envelope(success, response):
     envelope keeps a single bad response from turning into a type error inside the retry loop,
     and lets the caller print the appliance's own error text.
 
-    ### Parameters
-    - **success** (`bool`): The first element of the `url.fetch_json()` result tuple.
-    - **response** (`any`): The second element of that tuple.
+    Parameters
+    ----------
+    success : bool
+        The first element of the `url.fetch_json()` result tuple.
+    response : any
+        The second element of that tuple.
 
-    ### Returns
-    - **dict**: The response envelope, either as the appliance sent it or synthesised.
+    Returns
+    -------
+    dict
+        The response envelope, either as the appliance sent it or synthesised.
 
-    ### Example
+    Examples
+    --------
     >>> _as_envelope(True, {'result': {'code': 0}, 'data': []})
     {'result': {'code': 0}, 'data': []}
     >>> _as_envelope(False, 'URL error "timed out"')['result']['code']
@@ -769,41 +838,44 @@ def get_data(
     Reads on this API are a mix of `GET` (no body) and `POST` (a body selecting the nodes to
     query), so both the request body and the HTTP method can be supplied by the caller.
 
-    ### Parameters
-    - **endpoint** (`str`):
-      The API endpoint after `/api/v2/` (for example `hwm/fan`), including the query string if
-      the endpoint takes one. The string is appended to the request URL verbatim, so the caller
-      is responsible for percent-encoding it; never build it from data the appliance itself
-      returned. Note that the API knows two incompatible query syntaxes: the general one is
-      `?range={"offset":0,"limit":100}`, while a part of the endpoints expects
-      `?range=[0-100]&filter=alarmStatus::1` instead. The alarm and event endpoints are the
-      ones most likely to be queried that way, but the second syntax is not limited to them,
-      so check the endpoint's own description rather than assuming the general form.
-    - **args** (object):
-      An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT` (plus the credentials read
-      by `get_creds()`).
-    - **payload** (`dict`, optional):
-      Request body. A truthy body turns the request into a `POST`; otherwise it is a `GET`.
-    - **method** (`str`, optional):
-      Force the HTTP method regardless of the body, for endpoints that require a bodyless `POST`
-      or a `GET` that carries one.
-    - **base_path** (`str`, optional):
-      The path between the base URL and the endpoint, without surrounding slashes. Defaults to
-      the `api/v2` the current API is built on. The appliance also serves an older generation of
-      endpoints below `dsware/service` and `dfv/service`, and some information is only available
-      there; a caller reaching for one of those passes its base path here. This is a developer
-      constant, not something to build from data the appliance or a user supplied.
-    - **max_attempts** (`int`, optional):
-      How often to try before giving up. The default of `3` is what a monitoring run wants.
-      Lower it on a call that is one of several in a run: the budget below is per call, and a
-      caller that chains four of them can otherwise spend four times three requests plus four
-      logins before it answers, which is well past a typical run's own timeout.
+    Parameters
+    ----------
+    endpoint : str
+        The API endpoint after `/api/v2/` (for example `hwm/fan`), including the query string if
+        the endpoint takes one. The string is appended to the request URL verbatim, so the caller
+        is responsible for percent-encoding it; never build it from data the appliance itself
+        returned. Note that the API knows two incompatible query syntaxes: the general one is
+        `?range={"offset":0,"limit":100}`, while a part of the endpoints expects
+        `?range=[0-100]&filter=alarmStatus::1` instead. The alarm and event endpoints are the
+        ones most likely to be queried that way, but the second syntax is not limited to them,
+        so check the endpoint's own description rather than assuming the general form.
+    args : object
+        An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT` (plus the credentials read
+        by `get_creds()`).
+    payload : dict, optional
+        Request body. A truthy body turns the request into a `POST`; otherwise it is a `GET`.
+    method : str, optional
+        Force the HTTP method regardless of the body, for endpoints that require a bodyless `POST`
+        or a `GET` that carries one.
+    base_path : str, optional
+        The path between the base URL and the endpoint, without surrounding slashes. Defaults to
+        the `api/v2` the current API is built on. The appliance also serves an older generation of
+        endpoints below `dsware/service` and `dfv/service`, and some information is only available
+        there; a caller reaching for one of those passes its base path here. This is a developer
+        constant, not something to build from data the appliance or a user supplied.
+    max_attempts : int, optional
+        How often to try before giving up. The default of `3` is what a monitoring run wants.
+        Lower it on a call that is one of several in a run: the budget below is per call, and a
+        caller that chains four of them can otherwise spend four times three requests plus four
+        logins before it answers, which is well past a typical run's own timeout.
 
-    ### Returns
-    - **dict**:
-      The parsed JSON response from the API.
+    Returns
+    -------
+    dict
+        The parsed JSON response from the API.
 
-    ### Notes
+    Notes
+    -----
     - Success is indicated by a status code of `0`. The `api/v2` endpoints report it as
       `result.code`, the older ones as a bare `result`; `get_result_code()` reads both.
     - Makes at most three attempts, forcing a fresh login before the second one, and waits one
@@ -825,7 +897,8 @@ def get_data(
       because nothing will ever read it back from the cache. In this mode a call can therefore
       reach three logins and three logouts, which is the price of asking for no caching.
 
-    ### Example
+    Examples
+    --------
     >>> get_data('hwm/fan', args, payload={'server_list': ['192.0.2.10']})
     {
         'data': [...],
@@ -888,17 +961,20 @@ def get_disk_role(r):
     """
     Convert a Huawei OceanStor Pacific media role into a human-readable description.
 
-    ### Parameters
-    - **r** (`str`):
-      The media role.
-      A missing or empty value renders as `'Unknown'`.
+    Parameters
+    ----------
+    r : str
+        The media role.
+        A missing or empty value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      An unrecognised role is returned unchanged.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        An unrecognised role is returned unchanged.
 
-    ### Example
+    Examples
+    --------
     >>> get_disk_role('main_storage')
     'main storage (MAIN_STORAGE)'
     """
@@ -915,17 +991,20 @@ def get_disk_status(st):
     """
     Convert a Huawei OceanStor Pacific disk status code into a human-readable description.
 
-    ### Parameters
-    - **st** (`int` or `str`):
-      The disk status code.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    st : int or str
+        The disk status code.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_disk_status(0)
     'healthy (0)'
     """
@@ -942,21 +1021,25 @@ def get_disk_status_state(st):
     """
     Convert a Huawei OceanStor Pacific disk status code into the state a consumer reports for it.
 
-    ### Parameters
-    - **st** (`int` or `str`):
-      The disk status code.
+    Parameters
+    ----------
+    st : int or str
+        The disk status code.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for a healthy disk, `STATE_CRIT` for a faulty one, `STATE_WARN` for every
-      other code, including one the enumeration does not know and a missing value.
+    Returns
+    -------
+    int
+        `STATE_OK` for a healthy disk, `STATE_CRIT` for a faulty one, `STATE_WARN` for every
+        other code, including one the enumeration does not know and a missing value.
 
-    ### Notes
+    Notes
+    -----
     - A disk removed from the storage pool (`101`) warns rather than going critical. The pool
       has already rebuilt around it, so the redundancy loss is over; what is left is a slot an
       administrator has to attend to.
 
-    ### Example
+    Examples
+    --------
     >>> get_disk_status_state(0) == STATE_OK
     True
 
@@ -975,17 +1058,20 @@ def get_disk_type(t):
     """
     Convert a Huawei OceanStor Pacific media type into a human-readable description.
 
-    ### Parameters
-    - **t** (`str`):
-      The media type.
-      A missing or empty value renders as `'Unknown'`.
+    Parameters
+    ----------
+    t : str
+        The media type.
+        A missing or empty value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      An unrecognised media type is returned unchanged.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        An unrecognised media type is returned unchanged.
 
-    ### Example
+    Examples
+    --------
     >>> get_disk_type('ssd_card')
     'SSD card or NVMe SSD (SSD_CARD)'
     """
@@ -1007,11 +1093,15 @@ def _assert_all_nodes_listed(listed, args):
 
     Used by `get_management_ips()`. Split out to keep the node loop readable.
 
-    ### Parameters
-    - **listed** (`int`): Number of nodes `cluster/servers` returned.
-    - **args** (object): The argument object read by `get_data()`.
+    Parameters
+    ----------
+    listed : int
+        Number of nodes `cluster/servers` returned.
+    args : object
+        The argument object read by `get_data()`.
 
-    ### Notes
+    Notes
+    -----
     - A failing count query is not fatal. It is a cross-check, not the data itself, and a
       firmware that does not offer the endpoint must not take the hardware check down with it.
     """
@@ -1043,15 +1133,18 @@ def get_cluster_nodes(args):
     the addresses alone, because a caller that reports per-node findings needs the node name too
     and would otherwise have to query the same endpoint a second time to get it.
 
-    ### Parameters
-    - **args** (object):
-      The argument object read by `get_data()` / `get_creds()`.
+    Parameters
+    ----------
+    args : object
+        The argument object read by `get_data()` / `get_creds()`.
 
-    ### Returns
-    - **list** of `dict`:
-      One entry per node that is in the cluster and reports a `management_ip`.
+    Returns
+    -------
+    list of dict
+        One entry per node that is in the cluster and reports a `management_ip`.
 
-    ### Notes
+    Notes
+    -----
     - `in_cluster` has three documented values, not two: `True` (added), `False` (not added)
       and `null` (about to be added). Only a node that reports `True` is queried. A node still
       being added holds no cluster hardware yet, and treating its missing management IP as a
@@ -1068,7 +1161,8 @@ def get_cluster_nodes(args):
       cluster above that size a silently truncated list would leave nodes unmonitored while
       the caller still reports OK, so a mismatch aborts instead.
 
-    ### Example
+    Examples
+    --------
     >>> [node['name'] for node in get_cluster_nodes(args)]
     ['node01', 'node02']
     """
@@ -1114,15 +1208,18 @@ def get_management_ips(args):
     Convenience wrapper around `get_cluster_nodes()` for a caller that needs nothing but the
     `server_list` of a node-scoped hardware endpoint.
 
-    ### Parameters
-    - **args** (object):
-      The argument object read by `get_data()` / `get_creds()`.
+    Parameters
+    ----------
+    args : object
+        The argument object read by `get_data()` / `get_creds()`.
 
-    ### Returns
-    - **list** of `str`:
-      The `management_ip` of every cluster node.
+    Returns
+    -------
+    list of str
+        The `management_ip` of every cluster node.
 
-    ### Example
+    Examples
+    --------
     >>> get_management_ips(args)
     ['192.0.2.11', '192.0.2.12']
     """
@@ -1137,14 +1234,18 @@ def get_node_names_by_ip(nodes):
     number and by the management IP addresses of the node in it, but not by the node name an
     operator knows it as. This turns a node listing into the lookup that closes that gap.
 
-    ### Parameters
-    - **nodes** (`list` of `dict`):
-      Node objects as `get_cluster_nodes()` returns them.
+    Parameters
+    ----------
+    nodes : list of dict
+        Node objects as `get_cluster_nodes()` returns them.
 
-    ### Returns
-    - **dict**: `management_ip` to node name, skipping the nodes that report neither.
+    Returns
+    -------
+    dict
+        `management_ip` to node name, skipping the nodes that report neither.
 
-    ### Example
+    Examples
+    --------
     >>> get_node_names_by_ip([{'management_ip': '192.0.2.11', 'name': 'node01'}])
     {'192.0.2.11': 'node01'}
     """
@@ -1166,21 +1267,25 @@ def get_node_running_status_state(rs):
     The `cluster/servers` endpoint reports a node's condition as a lower-case string rather
     than a numeric code.
 
-    ### Parameters
-    - **rs** (`str`):
-      The `running_status` field of a node.
+    Parameters
+    ----------
+    rs : str
+        The `running_status` field of a node.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for `'online'`, `STATE_CRIT` for `'offline'`, `STATE_WARN` for anything else,
-      including a value the vendor's table does not list and a missing one.
+    Returns
+    -------
+    int
+        `STATE_OK` for `'online'`, `STATE_CRIT` for `'offline'`, `STATE_WARN` for anything else,
+        including a value the vendor's table does not list and a missing one.
 
-    ### Notes
+    Notes
+    -----
     - A node that has left the cluster takes its share of the storage with it, so an offline
       node is a failure rather than a degradation.
     - The comparison is case-insensitive and ignores surrounding whitespace.
 
-    ### Example
+    Examples
+    --------
     >>> get_node_running_status_state('online') == STATE_OK
     True
 
@@ -1201,17 +1306,20 @@ def get_oam_agent_status(s):
     """
     Convert a Huawei OceanStor Pacific OAM agent status code into a human-readable description.
 
-    ### Parameters
-    - **s** (`int` or `str`):
-      The OAM agent status code.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    s : int or str
+        The OAM agent status code.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_oam_agent_status(0)
     'healthy (0)'
     """
@@ -1233,17 +1341,20 @@ def get_password_status(st):
     state of the login account's password, not the outcome of the login itself: a login can
     succeed while the account is still unusable for anything but changing the password.
 
-    ### Parameters
-    - **st** (`int` or `str`):
-      The password status code.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    st : int or str
+        The password status code.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_password_status(3)
     'password expired (3)'
     """
@@ -1274,32 +1385,35 @@ def get_performance(object_type, indicators, args, ids=None, window=PERFORMANCE_
     """
     Fetch the most recent performance counters of one kind of managed object.
 
-    ### Parameters
-    - **object_type** (`int` or `str`):
-      The monitored object type, for example `PERFORMANCE_OBJECT_CLUSTER` or
-      `PERFORMANCE_OBJECT_NODE`.
-    - **indicators** (iterable of `int`):
-      The performance indicators to read. The vendor numbers them per indicator, not per
-      object: `68` CPU usage in percent, `69` memory usage in percent, `217` maximum CPU
-      usage, `22` IOPS, `25` and `28` read and write IOPS, `123` and `124` read and write
-      bandwidth in KB/s, `811` total bandwidth in KB/s, `1300` to `1302` average, write and
-      read latency in microseconds, `1369` write cache watermark in percent. Not every
-      object supports every indicator.
-    - **args** (object):
-      The same object `get_data()` reads.
-    - **ids** (iterable, optional):
-      The instances to query. Required for every object type except the cluster, which has
-      no instances. The vendor recommends staying below 200 per request.
-    - **window** (`int`, optional):
-      How many seconds back to ask for samples.
+    Parameters
+    ----------
+    object_type : int or str
+        The monitored object type, for example `PERFORMANCE_OBJECT_CLUSTER` or
+        `PERFORMANCE_OBJECT_NODE`.
+    indicators : iterable of int
+        The performance indicators to read. The vendor numbers them per indicator, not per
+        object: `68` CPU usage in percent, `69` memory usage in percent, `217` maximum CPU
+        usage, `22` IOPS, `25` and `28` read and write IOPS, `123` and `124` read and write
+        bandwidth in KB/s, `811` total bandwidth in KB/s, `1300` to `1302` average, write and
+        read latency in microseconds, `1369` write cache watermark in percent. Not every
+        object supports every indicator.
+    args : object
+        The same object `get_data()` reads.
+    ids : iterable, optional
+        The instances to query. Required for every object type except the cluster, which has
+        no instances. The vendor recommends staying below 200 per request.
+    window : int, optional
+        How many seconds back to ask for samples.
 
-    ### Returns
-    - **dict**:
-      Object ID to a mapping of indicator number to reported value, both as strings. Empty
-      if the request failed or the appliance returned no sample, which is the normal answer
-      while collection is still warming up.
+    Returns
+    -------
+    dict
+        Object ID to a mapping of indicator number to reported value, both as strings. Empty
+        if the request failed or the appliance returned no sample, which is the normal answer
+        while collection is still warming up.
 
-    ### Notes
+    Notes
+    -----
     - The appliance answers with one row per object and indicator, each carrying parallel
       lists of timestamps and values. Only the newest value of each row is kept: a consumer
       reports the current state, and the older samples in the window exist so that a skipped
@@ -1311,7 +1425,8 @@ def get_performance(object_type, indicators, args, ids=None, window=PERFORMANCE_
       graphing front end wants and a consumer does not: it would have to parse the padding
       back out before it could compare anything.
 
-    ### Example
+    Examples
+    --------
     >>> get_performance(PERFORMANCE_OBJECT_NODE, (68, 69), args, ids=(1, 2))
     {'1': {'68': '17.0', '69': '45.0'}, '2': {'68': '9.0', '69': '37.0'}}
     """
@@ -1364,17 +1479,20 @@ def get_warranty_status(st):
     is a commercial fact rather than a fault: a node out of warranty runs exactly as well
     as one in warranty, right up to the point where a part has to be replaced.
 
-    ### Parameters
-    - **st** (`int` or `str`):
-      The warranty status code.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    st : int or str
+        The warranty status code.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_warranty_status(2)
     'about to expire, less than six months (2)'
     """
@@ -1392,22 +1510,26 @@ def get_pool_status(st):
     """
     Convert a Huawei OceanStor Pacific pool status code into a human-readable description.
 
-    ### Parameters
-    - **st** (`int` or `str`):
-      The pool status code.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    st : int or str
+        The pool status code.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Storage pools and disk pools share this enumeration; both REST Interface References
       list the same codes for their respective `poolStatus` field.
     - Code `6` is not in the vendor's table and is deliberately absent here.
 
-    ### Example
+    Examples
+    --------
     >>> get_pool_status(0)
     'normal (0)'
     """
@@ -1428,23 +1550,27 @@ def get_pool_status_state(st):
     """
     Convert a Huawei OceanStor Pacific pool status code into the state a consumer reports.
 
-    ### Parameters
-    - **st** (`int` or `str`):
-      The pool status code.
+    Parameters
+    ----------
+    st : int or str
+        The pool status code.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for a normal pool, `STATE_CRIT` for one that has failed or stopped serving,
-      `STATE_WARN` for every other code, including one the enumeration does not know and a
-      missing value.
+    Returns
+    -------
+    int
+        `STATE_OK` for a normal pool, `STATE_CRIT` for one that has failed or stopped serving,
+        `STATE_WARN` for every other code, including one the enumeration does not know and a
+        missing value.
 
-    ### Notes
+    Notes
+    -----
     - Faulty (`1`), stopped (`3`) and faulty and write-protected (`4`) are the codes that
       report a pool which is no longer doing its job.
     - Write-protected (`2`), migrating (`5`), degraded (`7`) and rebuilding (`8`) warn: the
       pool still serves reads, and the last three are states it works itself out of.
 
-    ### Example
+    Examples
+    --------
     >>> get_pool_status_state(0) == STATE_OK
     True
 
@@ -1478,26 +1604,30 @@ def get_quota_bytes(value, space_unit_type):
     """
     Convert a Huawei OceanStor Pacific quota space value into bytes.
 
-    ### Parameters
-    - **value** (`int`, `str` or `None`):
-      The quota or usage as the API reported it.
-    - **space_unit_type** (`int`, `str` or `None`):
-      The unit the value is counted in, as the API reported it alongside:
-      `0` bytes, `1` KB, `2` MB, `3` GB. A missing or unknown unit is taken as bytes,
-      which is the default the vendor documents.
+    Parameters
+    ----------
+    value : int, str or None
+        The quota or usage as the API reported it.
+    space_unit_type : int, str or None
+        The unit the value is counted in, as the API reported it alongside:
+        `0` bytes, `1` KB, `2` MB, `3` GB. A missing or unknown unit is taken as bytes,
+        which is the default the vendor documents.
 
-    ### Returns
-    - **int** or **None**:
-      The value in bytes, or `None` for a missing value, a negative one and for the
-      `18446744073709551615` placeholder the API sends where nothing is configured.
+    Returns
+    -------
+    int or None
+        The value in bytes, or `None` for a missing value, a negative one and for the
+        `18446744073709551615` placeholder the API sends where nothing is configured.
 
-    ### Notes
+    Notes
+    -----
     - The unit is per quota, not per appliance: two shares on the same file system can
       report their quota in different units. Reading the bare number as bytes understates
       a quota expressed in gibibytes by a factor of 1073741824, and any fill level computed
       from it is wrong by the same factor.
 
-    ### Example
+    Examples
+    --------
     >>> get_quota_bytes('1', 3)
     1073741824
 
@@ -1517,21 +1647,25 @@ def get_replication_health_status(hs):
     """
     Convert a remote replication pair's health status code into a human-readable description.
 
-    ### Parameters
-    - **hs** (`int` or `str`):
-      The `HEALTHSTATUS` of a replication pair.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    hs : int or str
+        The `HEALTHSTATUS` of a replication pair.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Notes
+    Notes
+    -----
     - Both REST Interface References list these three codes for a replication pair, which is a
       narrower set than the health status enumeration of the hardware objects.
 
-    ### Example
+    Examples
+    --------
     >>> get_replication_health_status('1')
     'normal (1)'
     """
@@ -1547,16 +1681,19 @@ def get_replication_health_status_state(hs):
     """
     Convert a replication pair's health status code into the state a consumer reports.
 
-    ### Parameters
-    - **hs** (`int` or `str`):
-      The `HEALTHSTATUS` of a replication pair.
+    Parameters
+    ----------
+    hs : int or str
+        The `HEALTHSTATUS` of a replication pair.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for a normal pair, `STATE_CRIT` for a faulty one, `STATE_WARN` for a pair
-      whose health the appliance cannot state, and for a code the enumeration does not know.
+    Returns
+    -------
+    int
+        `STATE_OK` for a normal pair, `STATE_CRIT` for a faulty one, `STATE_WARN` for a pair
+        whose health the appliance cannot state, and for a code the enumeration does not know.
 
-    ### Example
+    Examples
+    --------
     >>> get_replication_health_status_state(1) == STATE_OK
     True
 
@@ -1575,17 +1712,20 @@ def get_replication_running_status(rs):
     """
     Convert a remote replication pair's running status code into a human-readable description.
 
-    ### Parameters
-    - **rs** (`int` or `str`):
-      The `RUNNINGSTATUS` of a replication pair.
-      A missing or malformed value renders as `'Unknown'`.
+    Parameters
+    ----------
+    rs : int or str
+        The `RUNNINGSTATUS` of a replication pair.
+        A missing or malformed value renders as `'Unknown'`.
 
-    ### Returns
-    - **str**:
-      A human-readable description including the original code in brackets.
-      Returns `'Unknown'` if the code is not recognized.
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
 
-    ### Example
+    Examples
+    --------
     >>> get_replication_running_status(23)
     'synchronizing (23)'
     """
@@ -1604,17 +1744,20 @@ def get_replication_running_status_state(rs):
     """
     Convert a replication pair's running status code into the state a consumer reports.
 
-    ### Parameters
-    - **rs** (`int` or `str`):
-      The `RUNNINGSTATUS` of a replication pair.
+    Parameters
+    ----------
+    rs : int or str
+        The `RUNNINGSTATUS` of a replication pair.
 
-    ### Returns
-    - **int**:
-      `STATE_OK` for a pair that is mirroring, `STATE_CRIT` for one that has stopped without
-      being told to, `STATE_WARN` for the rest, including a code the enumeration does not know
-      and a missing value.
+    Returns
+    -------
+    int
+        `STATE_OK` for a pair that is mirroring, `STATE_CRIT` for one that has stopped without
+        being told to, `STATE_WARN` for the rest, including a code the enumeration does not know
+        and a missing value.
 
-    ### Notes
+    Notes
+    -----
     - Synchronizing (`23`) is the working state of an asynchronous pair while it transfers, not
       a fault, so it reports OK alongside normal (`1`).
     - Interrupted (`34`) and invalid (`35`) are the codes of a pair that is no longer protecting
@@ -1623,7 +1766,8 @@ def get_replication_running_status_state(rs):
       detached, the second one waiting to be resumed. Neither is mirroring, and neither is a
       surprise worth waking somebody for.
 
-    ### Example
+    Examples
+    --------
     >>> get_replication_running_status_state(1) == STATE_OK
     True
 
@@ -1645,14 +1789,19 @@ def get_status_envelope(result):
     Split out of `get_result_code()` so that a consumer which wants the appliance's own
     description or suggestion does not have to work out which of the envelopes it got.
 
-    ### Parameters
-    - **result** (`dict`): A response as returned by `get_data()`.
+    Parameters
+    ----------
+    result : dict
+        A response as returned by `get_data()`.
 
-    ### Returns
-    - **dict**: The envelope object, or an empty dict where the response carries none or
-      reports its code as a bare value rather than in an object.
+    Returns
+    -------
+    dict
+        The envelope object, or an empty dict where the response carries none or
+        reports its code as a bare value rather than in an object.
 
-    ### Example
+    Examples
+    --------
     >>> get_status_envelope({'result': {'code': 0, 'description': 'ok'}})
     {'code': 0, 'description': 'ok'}
     >>> get_status_envelope({'result': 0})
@@ -1678,21 +1827,26 @@ def get_result_code(result):
     (`{'data': [...], 'error': {'code': 0, 'description': '0'}}`). A consumer that has to work
     with all of them should not have to know which one it is talking to.
 
-    ### Parameters
-    - **result** (`dict`): A response as returned by `get_data()`.
+    Parameters
+    ----------
+    result : dict
+        A response as returned by `get_data()`.
 
-    ### Returns
-    - **int**, **str** or **None**:
-      The status code as the appliance reported it (`0` means success in every shape), or
-      `None` if the response carries no outcome at all.
+    Returns
+    -------
+    int, str or None
+        The status code as the appliance reported it (`0` means success in every shape), or
+        `None` if the response carries no outcome at all.
 
-    ### Notes
+    Notes
+    -----
     - `result` wins over `error` where a response carries both. It is the one the REST
       Interface References document, and `error` is what some firmware sends in its place.
     - A response whose `result` is present but empty (`None`) falls through to `error`, so a
       firmware that sends the key without filling it does not mask the outcome next to it.
 
-    ### Example
+    Examples
+    --------
     >>> get_result_code({'result': {'code': 0}, 'data': []})
     0
     >>> get_result_code({'result': 0, 'nodeInfo': []})

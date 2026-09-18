@@ -126,19 +126,23 @@ def get_header_value(filename, field):
     and a theme through the same kind of block at the top of its `style.css`. Each field
     sits on its own line as `Field: value`, optionally preceded by comment markers.
 
-    ### Parameters
-    - **filename** *(str | os.PathLike)*:
-      Path to the file to read.
-    - **field** *(str)*:
-      Name of the header field, for example `'Plugin Name'`, `'Theme Name'` or
-      `'Version'`. Matched case-insensitively and taken literally, so a field name
-      containing regex metacharacters is safe.
+    Parameters
+    ----------
+    filename : str | os.PathLike
+        Path to the file to read.
+    field : str
+        Name of the header field, for example `'Plugin Name'`, `'Theme Name'` or
+        `'Version'`. Matched case-insensitively and taken literally, so a field name
+        containing regex metacharacters is safe.
 
-    ### Returns
-    - **str**: The value with surrounding whitespace removed, or the empty string when
-      the field is absent or the file cannot be read.
+    Returns
+    -------
+    str
+        The value with surrounding whitespace removed, or the empty string when
+        the field is absent or the file cannot be read.
 
-    ### Notes
+    Notes
+    -----
     - Only the leading `HEADER_BYTES` of the file are searched, the same amount
       WordPress reads in `get_file_data()`. A matching line further down is therefore
       not a header field here either, and a large file is never read completely.
@@ -146,7 +150,8 @@ def get_header_value(filename, field):
     - A field without a colon, such as the `@version` tag of a docblock, is not a header
       field and is deliberately not matched.
 
-    ### Example
+    Examples
+    --------
     >>> get_header_value('wp-content/plugins/akismet/akismet.php', 'Version')
     '5.7'
     """
@@ -162,22 +167,27 @@ def get_locale(path):
     that compares the installation against anything wordpress.org publishes needs to ask for
     the matching build.
 
-    ### Parameters
-    - **path** *(str | os.PathLike)*: Path to the installation root.
+    Parameters
+    ----------
+    path : str | os.PathLike
+        Path to the installation root.
 
-    ### Returns
-    - **tuple[bool, str]**:
-      - On success: `(True, locale)`, for example `'de_DE'`. The original English release
-        names no locale, and `'en_US'` is returned for it.
-      - On failure: `(False, error)` when the version file cannot be opened or read.
+    Returns
+    -------
+    tuple[bool, str]
+        - On success: `(True, locale)`, for example `'de_DE'`. The original English release
+          names no locale, and `'en_US'` is returned for it.
+        - On failure: `(False, error)` when the version file cannot be opened or read.
 
-    ### Notes
+    Notes
+    -----
     - Read from `$wp_local_package`, the same variable WordPress and `wp-cli` read it from.
     - A locale reported here is the one the *core* was built for. It says nothing about the
       language the site is displayed in, which an administrator can change at any time
       without replacing the core.
 
-    ### Example
+    Examples
+    --------
     >>> get_locale('/var/www/html/wordpress')
     (True, 'de_DE')
     """
@@ -203,17 +213,22 @@ def get_plugins(path):
     the remaining source files of a plugin. Nested directories are not searched, matching
     WordPress, which keeps the scan bounded on installations with many plugins.
 
-    ### Parameters
-    - **path** *(str | os.PathLike)*: Path to the installation root.
+    Parameters
+    ----------
+    path : str | os.PathLike
+        Path to the installation root.
 
-    ### Returns
-    - **dict**: `{slug: version}` for every plugin found. The slug is the directory name,
-      or the file name without its extension for a single-file plugin such as
-      `hello.php`. The version is the value of the `Version` header, or `'unknown'` when
-      the plugin declares none. An installation without a readable plugin directory
-      yields an empty dict.
+    Returns
+    -------
+    dict
+        `{slug: version}` for every plugin found. The slug is the directory name,
+        or the file name without its extension for a single-file plugin such as
+        `hello.php`. The version is the value of the `Version` header, or `'unknown'` when
+        the plugin declares none. An installation without a readable plugin directory
+        yields an empty dict.
 
-    ### Notes
+    Notes
+    -----
     - WordPress lists every header-bearing file separately and has no notion of a main
       file. One entry per directory is more useful to a consumer, so where a directory
       holds several such files the one named after the directory supplies the version,
@@ -225,7 +240,8 @@ def get_plugins(path):
       header fields end up in the caller's output. Where that matters, run the consumer
       against a path the web server cannot write to, or verify the tree separately.
 
-    ### Example
+    Examples
+    --------
     >>> get_plugins('/var/www/html/wordpress')
     {'akismet': '5.7', 'contact-form-7': '5.0', 'hello': '1.7.2'}
     """
@@ -243,15 +259,20 @@ def get_plugin_slugs(path):
     Since anything asked about a plugin on wordpress.org is asked by slug, a consumer that
     only has the directory name is asking about the wrong plugin, or about none at all.
 
-    ### Parameters
-    - **path** *(str | os.PathLike)*: Path to the installation root.
+    Parameters
+    ----------
+    path : str | os.PathLike
+        Path to the installation root.
 
-    ### Returns
-    - **dict**: `{directory_slug: wordpress_org_slug}` for every plugin `get_plugins()`
-      finds, so the keys of both are the same. The value falls back to the directory slug
-      where the plugin names no wordpress.org address.
+    Returns
+    -------
+    dict
+        `{directory_slug: wordpress_org_slug}` for every plugin `get_plugins()`
+        finds, so the keys of both are the same. The value falls back to the directory slug
+        where the plugin names no wordpress.org address.
 
-    ### Notes
+    Notes
+    -----
     - Taken from the `Plugin URI` header, which is the plugin's own statement of where it
       lives. Only an address below `wordpress.org/plugins/` is read as a slug; a plugin
       hosted on its author's own site keeps its directory name, that being the best guess
@@ -260,7 +281,8 @@ def get_plugin_slugs(path):
       what wordpress.org answers to, and a consumer that conflates them will look in the
       wrong place for one of the two.
 
-    ### Example
+    Examples
+    --------
     >>> get_plugin_slugs('/var/www/html/wordpress')
     {'akismet': 'akismet', 'hello': 'hello-dolly'}
     """
@@ -331,21 +353,27 @@ def get_themes(path):
     A theme is a directory below `wp-content/themes/` holding a `style.css`, whose
     header block carries the theme metadata.
 
-    ### Parameters
-    - **path** *(str | os.PathLike)*: Path to the installation root.
+    Parameters
+    ----------
+    path : str | os.PathLike
+        Path to the installation root.
 
-    ### Returns
-    - **dict**: `{slug: version}` for every theme found, the slug being the directory
-      name. The version is the value of the `Version` header, or `'unknown'` when the
-      theme declares none. An installation without a readable theme directory yields an
-      empty dict.
+    Returns
+    -------
+    dict
+        `{slug: version}` for every theme found, the slug being the directory
+        name. The version is the value of the `Version` header, or `'unknown'` when the
+        theme declares none. An installation without a readable theme directory yields an
+        empty dict.
 
-    ### Notes
+    Notes
+    -----
     - Symlinks are followed, and the theme directory carries the same web server write
       permissions as the plugin directory. See `get_plugins()` for what that means for
       a consumer.
 
-    ### Example
+    Examples
+    --------
     >>> get_themes('/var/www/html/wordpress')
     {'twentytwentyfive': '1.5', 'twentytwentyfour': '1.5'}
     """
@@ -369,16 +397,20 @@ def get_site_url(path):
     set, a consumer can address the site without being told the URL. Where they are not,
     the URL is simply not knowable from the filesystem and the caller has to ask for it.
 
-    ### Parameters
-    - **path** *(str | os.PathLike)*: Path to the installation root.
+    Parameters
+    ----------
+    path : str | os.PathLike
+        Path to the installation root.
 
-    ### Returns
-    - **tuple[bool, str]**:
-      - On success: `(True, url)`, where `url` is the empty string when the
-        configuration is readable but pins neither constant.
-      - On failure: `(False, error)` when no configuration file can be read.
+    Returns
+    -------
+    tuple[bool, str]
+        - On success: `(True, url)`, where `url` is the empty string when the
+          configuration is readable but pins neither constant.
+        - On failure: `(False, error)` when no configuration file can be read.
 
-    ### Notes
+    Notes
+    -----
     - `WP_HOME` wins over `WP_SITEURL`. The first is the address visitors use, the
       second the one the core itself is reached under; they differ on installations
       keeping the core in a subdirectory.
@@ -394,7 +426,8 @@ def get_site_url(path):
       usually get the failure branch, which is a permission problem and not an error in
       the installation.
 
-    ### Example
+    Examples
+    --------
     >>> get_site_url('/var/www/html/wordpress')
     (True, 'https://www.example.com')
     """
@@ -436,21 +469,26 @@ def get_version(path):
     Reads the same file WordPress reads to know its own version, so the result is the
     installed version, not one inferred from a fingerprint.
 
-    ### Parameters
-    - **path** *(str | os.PathLike)*: Path to the installation root.
+    Parameters
+    ----------
+    path : str | os.PathLike
+        Path to the installation root.
 
-    ### Returns
-    - **tuple[bool, str]**:
-      - On success: `(True, version)`, where `version` is the empty string when the file
-        is present but carries no recognizable version assignment.
-      - On failure: `(False, error)` when the file cannot be opened or read.
+    Returns
+    -------
+    tuple[bool, str]
+        - On success: `(True, version)`, where `version` is the empty string when the file
+          is present but carries no recognizable version assignment.
+        - On failure: `(False, error)` when the file cannot be opened or read.
 
-    ### Notes
+    Notes
+    -----
     - Read the same bounded, encoding-tolerant way as everything else in this module.
       The file is a few kilobytes of ASCII on every installation, but a consumer must
       not be handed a decoding error dressed up as a missing installation.
 
-    ### Example
+    Examples
+    --------
     >>> get_version('/var/www/html/wordpress')
     (True, '7.0.2')
     """
@@ -473,13 +511,18 @@ def is_installation(path):
     installation is there but empty", which the inventory functions above cannot express
     on their own: both would simply yield nothing.
 
-    ### Parameters
-    - **path** *(str | os.PathLike)*: Path to the installation root.
+    Parameters
+    ----------
+    path : str | os.PathLike
+        Path to the installation root.
 
-    ### Returns
-    - **bool**: True if the WordPress version file is present and readable below `path`.
+    Returns
+    -------
+    bool
+        True if the WordPress version file is present and readable below `path`.
 
-    ### Example
+    Examples
+    --------
     >>> is_installation('/var/www/html/wordpress')
     True
     """

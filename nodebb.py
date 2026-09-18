@@ -23,20 +23,26 @@ def get_data(args, uri=''):
     This function makes a request to the NodeBB API with the provided user token and returns the
     JSON response.
 
-    ### Parameters
-    - **args** (`object`): An object containing the URL (`args.URL`), token (`args.TOKEN`), and
-      other options (e.g., `INSECURE`, `NO_PROXY`, `TIMEOUT`).
-    - **uri** (`str`, optional): The specific URI to append to the base URL. Defaults to an
-      empty string.
+    Parameters
+    ----------
+    args : object
+        An object containing the URL (`args.URL`), token (`args.TOKEN`), and
+        other options (e.g., `INSECURE`, `NO_PROXY`, `TIMEOUT`).
+    uri : str, optional
+        The specific URI to append to the base URL. Defaults to an
+        empty string.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the API response if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the API response if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> get_data(args, uri='/api/v1/posts')
     (True, {'posts': [...], 'total': 100})
     """

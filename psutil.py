@@ -44,23 +44,30 @@ def get_partitions(ignore=None, include_all=False):
     answering: merely asking what is mounted then never comes back. Those two fields are
     dropped here and the lookup with them, so the answer comes from the mount table alone.
 
-    ### Parameters
-    - **ignore** (`list`, optional): A list of strings to ignore. Any partition whose mount
-      point contains any of the strings in this list will be excluded from the result.
-      Defaults to an empty list.
-    - **include_all** (`bool`, optional): Return every mounted filesystem instead of the
-      physical devices only. The default leaves out the pseudo and memory filesystems, and
-      with them the network filesystems, which the kernel also lists as `nodev`.
-      Defaults to False.
+    Parameters
+    ----------
+    ignore : list, optional
+        A list of strings to ignore. Any partition whose mount
+        point contains any of the strings in this list will be excluded from the result.
+        Defaults to an empty list.
+    include_all : bool, optional
+        Return every mounted filesystem instead of the
+        physical devices only. The default leaves out the pseudo and memory filesystems, and
+        with them the network filesystems, which the kernel also lists as `nodev`.
+        Defaults to False.
 
-    ### Returns
-    - **list**: A list of named tuples representing the disk partitions, each containing:
-      - **device**: The device name (e.g., `/dev/sda1`).
-      - **mountpoint**: The mount point (e.g., `/`).
-      - **fstype**: The filesystem type (e.g., `ext4`).
-      - **opts**: The mount options (e.g., `rw,relatime`).
+    Returns
+    -------
+    list
+        A list of named tuples representing the disk partitions, each containing:
 
-    ### Example
+        - **device**: The device name (e.g., `/dev/sda1`).
+        - **mountpoint**: The mount point (e.g., `/`).
+        - **fstype**: The filesystem type (e.g., `ext4`).
+        - **opts**: The mount options (e.g., `rw,relatime`).
+
+    Examples
+    --------
     >>> get_partitions(['/mnt'])
     [sdiskpart(device='/dev/sda1', mountpoint='/', fstype='ext4', opts='rw,relatime')]
     """
@@ -96,18 +103,23 @@ def get_process_accounts(names):
     a stray user that does not exist there. Two processes in the same mount namespace see
     the same filesystem, which is what makes them part of the same installation.
 
-    ### Parameters
-    - **names** (`iterable`): The process names to count, for example
-      `('httpd', 'apache2')`. Matched exactly against the name the kernel reports, which
-      is the executable rather than the command line.
+    Parameters
+    ----------
+    names : iterable
+        The process names to count, for example
+        `('httpd', 'apache2')`. Matched exactly against the name the kernel reports, which
+        is the executable rather than the command line.
 
-    ### Returns
-    - **list**: The account name of every matching process, one entry per process and
-      therefore with repeats. A process that vanished while the list was being built, or
-      that this user may not inspect, is left out rather than reported as an unknown
-      account.
+    Returns
+    -------
+    list
+        The account name of every matching process, one entry per process and
+        therefore with repeats. A process that vanished while the list was being built, or
+        that this user may not inspect, is left out rather than reported as an unknown
+        account.
 
-    ### Example
+    Examples
+    --------
     >>> get_process_accounts(('httpd', 'apache2'))
     ['root', 'apache', 'apache']
     """

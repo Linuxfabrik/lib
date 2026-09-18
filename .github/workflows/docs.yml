@@ -43,7 +43,7 @@ jobs:
           pip install pdoc==16.0.0
 
       - name: 'Build documentation'
-        run: 'pdoc --output-directory docs lib'
+        run: 'pdoc --docformat numpy --output-directory docs lib'
 
       - name: 'Add .nojekyll'
         run: 'touch docs/.nojekyll'

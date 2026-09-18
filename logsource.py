@@ -89,32 +89,39 @@ def count_within(lines, since, parse_line=None, key=None):
     which is also the quantity an intrusion prevention system counts before it blocks one, so
     thresholds derived from such a system compare against the same thing.
 
-    ### Parameters
-    - **lines** (`iterable` of `str`): The log lines to count.
-    - **since** (`datetime.datetime`): The start of the window, naive and in local time.
-    - **parse_line** (`callable`, optional): Handed to `timestamp()`.
-    - **key** (`callable`, optional):
-      Takes a line and returns what caused it - an address, an account, whatever the format
-      offers - or None where the line names nothing. Lines returning None are counted
-      together as one source, so a burst of unattributable lines still shows up. Without it
-      the lines are not grouped and `count` is the plain total.
+    Parameters
+    ----------
+    lines : iterable of str
+        The log lines to count.
+    since : datetime.datetime
+        The start of the window, naive and in local time.
+    parse_line : callable, optional
+        Handed to `timestamp()`.
+    key : callable, optional
+        Takes a line and returns what caused it - an address, an account, whatever the format
+        offers - or None where the line names nothing. Lines returning None are counted
+        together as one source, so a burst of unattributable lines still shows up. Without it
+        the lines are not grouped and `count` is the plain total.
 
-    ### Returns
-    - **dict**:
-        - `busiest` (`str | None`): The source that reached `count`. None without `key`, and
-          None where the lines that reached it name no source.
-        - `count` (**int**): The number to judge by: the total, or with `key` the largest any
-          single source reached.
-        - `sources` (**int**): How many distinct sources were seen. 0 without `key`.
-        - `total` (**int**): Every line within the window, whatever its source.
-        - `undated` (**int**): Lines carrying no timestamp either reader could find.
+    Returns
+    -------
+    dict
+          - `busiest` (`str | None`): The source that reached `count`. None without `key`, and
+            None where the lines that reached it name no source.
+          - `count` (**int**): The number to judge by: the total, or with `key` the largest any
+            single source reached.
+          - `sources` (**int**): How many distinct sources were seen. 0 without `key`.
+          - `total` (**int**): Every line within the window, whatever its source.
+          - `undated` (**int**): Lines carrying no timestamp either reader could find.
 
-    ### Notes
+    Notes
+    -----
     - The undated ones are reported separately rather than counted in or silently dropped,
       because a source whose format leaves the timestamp out would otherwise read as a quiet
       one and never raise anything.
 
-    ### Example
+    Examples
+    --------
     >>> count_within(lines, datetime.now() - timedelta(minutes=10))
     {'busiest': None, 'count': 37, 'sources': 0, 'total': 37, 'undated': 1}
     >>> count_within(lines, datetime.now() - timedelta(minutes=10), key=peer_of)
@@ -154,13 +161,18 @@ def syslog_identifier(line):
     systemd writes about the unit ("Starting ...", "Started ..."), which are about the service
     rather than from it.
 
-    ### Parameters
-    - **line** (`str`): One line of a log.
+    Parameters
+    ----------
+    line : str
+        One line of a log.
 
-    ### Returns
-    - **str | None**: The identifier, or None where the line carries no transport prefix.
+    Returns
+    -------
+    str | None
+        The identifier, or None where the line carries no transport prefix.
 
-    ### Example
+    Examples
+    --------
     >>> syslog_identifier('Aug 29 11:15:53 host sshd[1]: Server listening on 0.0.0.0.')
     'sshd'
 
@@ -187,15 +199,21 @@ def sort_by_time(lines, parse_line=None):
     sorts before everything dated, because the alternative - guessing a time for it - would
     move it somewhere it does not belong.
 
-    ### Parameters
-    - **lines** (`iterable` of `str`): The lines, in the order they were read.
-    - **parse_line** (`callable`, optional): Handed to `timestamp()` for a format it cannot
-      read on its own.
+    Parameters
+    ----------
+    lines : iterable of str
+        The lines, in the order they were read.
+    parse_line : callable, optional
+        Handed to `timestamp()` for a format it cannot
+        read on its own.
 
-    ### Returns
-    - **list** of `str`: The lines, oldest first.
+    Returns
+    -------
+    list of str
+        The lines, oldest first.
 
-    ### Example
+    Examples
+    --------
     >>> sort_by_time(['Aug 29 11:15:53 h x[1]: b', 'Aug 28 11:15:53 h x[1]: a'])[0][:6]
     'Aug 28'
     """
@@ -226,14 +244,19 @@ def strip_syslog_prefix(line):
     rsyslog wrote, `2026-08-29T11:15:53+0200 host sshd[1]: ...` from `journalctl`. What
     follows the prefix is byte for byte the same, which is what makes it comparable.
 
-    ### Parameters
-    - **line** (`str`): One line of a log.
+    Parameters
+    ----------
+    line : str
+        One line of a log.
 
-    ### Returns
-    - **str**: The message, or the line unchanged where it carries no such prefix - which is
-      what an application writing its own timestamps into a file of its own does.
+    Returns
+    -------
+    str
+        The message, or the line unchanged where it carries no such prefix - which is
+        what an application writing its own timestamps into a file of its own does.
 
-    ### Example
+    Examples
+    --------
     >>> strip_syslog_prefix(
     ...     'Aug 29 11:15:53 host sshd[1]: Server listening on 0.0.0.0.'
     ... )
@@ -258,19 +281,24 @@ def covered_window(line_groups, parse_line=None):
     would be wrong as soon as there is more than one: the logs arrive one after the other, so
     the newest line of the first one sits in the middle rather than at the end.
 
-    ### Parameters
-    - **line_groups** (`iterable` of `iterable` of `str`): One iterable of lines per log, each
-      in the order the log holds them.
-    - **parse_line** (`callable`, optional): Handed to `timestamp()` for a format it cannot
-      read on its own.
+    Parameters
+    ----------
+    line_groups : iterable of iterable of str
+        One iterable of lines per log, each
+        in the order the log holds them.
+    parse_line : callable, optional
+        Handed to `timestamp()` for a format it cannot
+        read on its own.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**datetime.datetime | None**): The earliest moment found, or None where no
-          line carries a time.
-        - tuple[1] (**datetime.datetime | None**): The latest moment found, or None.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**datetime.datetime | None**): The earliest moment found, or None where no
+            line carries a time.
+          - tuple[1] (**datetime.datetime | None**): The latest moment found, or None.
 
-    ### Example
+    Examples
+    --------
     >>> covered_window(
     ...     [['Aug 29 11:15:53 host sshd[1]: Accepted publickey for alice']]
     ... )[0].hour
@@ -305,19 +333,26 @@ def describe(source, size=None, size_threshold=None):
     predecessor is not a source the caller named, the reader found it, and it stays
     out of the size a caller trends.
 
-    ### Parameters
-    - **source** (`dict`): One entry of the `sources` a `read_many()` result carries,
-      holding at least a `label` and a `rotated` list.
-    - **size** (`int`, optional): The size of the live source in bytes, where the
-      caller has it and wants it named. Defaults to `None`, which names no size.
-    - **size_threshold** (`int`, optional): A size to compare against, so the fact
-      arrives with the verdict a caller reaches on it. Defaults to `None`, which
-      states the size on its own.
+    Parameters
+    ----------
+    source : dict
+        One entry of the `sources` a `read_many()` result carries,
+        holding at least a `label` and a `rotated` list.
+    size : int, optional
+        The size of the live source in bytes, where the
+        caller has it and wants it named. Defaults to `None`, which names no size.
+    size_threshold : int, optional
+        A size to compare against, so the fact
+        arrives with the verdict a caller reaches on it. Defaults to `None`, which
+        states the size on its own.
 
-    ### Returns
-    - **str**: The description, with every path in backticks.
+    Returns
+    -------
+    str
+        The description, with every path in backticks.
 
-    ### Example
+    Examples
+    --------
     >>> describe({'label': '/var/log/secure', 'rotated': []})
     '`/var/log/secure`'
 
@@ -346,21 +381,25 @@ def parse(source):
     """
     Split a log source specification into the storage it names and the target within it.
 
-    ### Parameters
-    - **source** (`str`):
-      Either a path to a file, or a prefixed target: `systemd:UNITNAME` for a unit in the
-      journal, and `docker:NAME`, `kubectl:NAME` or `podman:NAME` for the log of a container.
+    Parameters
+    ----------
+    source : str
+        Either a path to a file, or a prefixed target: `systemd:UNITNAME` for a unit in the
+        journal, and `docker:NAME`, `kubectl:NAME` or `podman:NAME` for the log of a container.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the source could be read, otherwise False.
-        - tuple[1] (**tuple | str**):
-          - If successful, a `(kind, engine, target)` tuple. `kind` is one of `KIND_CONTAINER`,
-            `KIND_FILE` or `KIND_JOURNALD`. `engine` names the container engine and is None for
-            everything else. `target` is the path, the unit name or the container name.
-          - If unsuccessful, an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the source could be read, otherwise False.
+          - tuple[1] (**tuple | str**):
 
-    ### Example
+            - If successful, a `(kind, engine, target)` tuple. `kind` is one of `KIND_CONTAINER`,
+              `KIND_FILE` or `KIND_JOURNALD`. `engine` names the container engine and is None for
+              everything else. `target` is the path, the unit name or the container name.
+            - If unsuccessful, an error message string.
+
+    Examples
+    --------
     >>> parse('/var/log/messages')
     (True, ('file', None, '/var/log/messages'))
     >>> parse('systemd:sshd')
@@ -805,59 +844,63 @@ def read(
     read from its beginning with `restarted` set, because everything after the stored offset is
     gone. The other storages have no equivalent, which is why `restarted` is never set for them.
 
-    ### Parameters
-    - **source** (`str`):
-      Where the log is kept. Either a path to a file, or a prefixed target: `systemd:UNITNAME`,
-      `docker:NAME`, `kubectl:NAME` or `podman:NAME`. See `parse()`.
-    - **position** (`dict`, optional):
-      The `position` of the previous call, or None to start fresh. A position taken from
-      another storage than the one `source` names is ignored rather than misread.
-    - **allowed_roots** (`iterable` of `str`, optional):
-      Directories a file source is allowed to resolve into. A path outside them is refused
-      instead of read. Applies to file sources only, and confines nothing when left at None,
-      which is why anything running with elevated privileges should name them.
-    - **max_lines** (`int`, optional):
-      At most this many lines are returned, the most recent ones. The position still advances
-      past everything that was there, so the lines a cap dropped do not come back on the next
-      run. Defaults to None, which is no cap. Where rotated files are read as well, the cap
-      applies to all of them together rather than to each one.
-    - **rotated** (`int`, optional):
-      How many rotated predecessors of a file source to read ahead of it, most recent first.
-      Defaults to 0, which reads the file alone. Only a read that has no `position` honours
-      this, because a caller that resumes where it stopped has seen those lines already. See
-      the notes on which files count as a predecessor.
-    - **since** (`str`, optional):
-      Where to start when there is no position: a timestamp for a container, and anything
-      `journalctl --since` accepts for a unit, for example `-8h`. Ignored for a file, which
-      always starts at its beginning. Defaults to None, which reads the current boot of a unit
-      and the whole log of a container.
-    - **timeout** (`int`, optional):
-      Seconds to wait for `journalctl` or the container engine. Defaults to 8. Not used for a
-      file, which is read directly.
+    Parameters
+    ----------
+    source : str
+        Where the log is kept. Either a path to a file, or a prefixed target: `systemd:UNITNAME`,
+        `docker:NAME`, `kubectl:NAME` or `podman:NAME`. See `parse()`.
+    position : dict, optional
+        The `position` of the previous call, or None to start fresh. A position taken from
+        another storage than the one `source` names is ignored rather than misread.
+    allowed_roots : iterable of str, optional
+        Directories a file source is allowed to resolve into. A path outside them is refused
+        instead of read. Applies to file sources only, and confines nothing when left at None,
+        which is why anything running with elevated privileges should name them.
+    max_lines : int, optional
+        At most this many lines are returned, the most recent ones. The position still advances
+        past everything that was there, so the lines a cap dropped do not come back on the next
+        run. Defaults to None, which is no cap. Where rotated files are read as well, the cap
+        applies to all of them together rather than to each one.
+    rotated : int, optional
+        How many rotated predecessors of a file source to read ahead of it, most recent first.
+        Defaults to 0, which reads the file alone. Only a read that has no `position` honours
+        this, because a caller that resumes where it stopped has seen those lines already. See
+        the notes on which files count as a predecessor.
+    since : str, optional
+        Where to start when there is no position: a timestamp for a container, and anything
+        `journalctl --since` accepts for a unit, for example `-8h`. Ignored for a file, which
+        always starts at its beginning. Defaults to None, which reads the current boot of a unit
+        and the whole log of a container.
+    timeout : int, optional
+        Seconds to wait for `journalctl` or the container engine. Defaults to 8. Not used for a
+        file, which is read directly.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the log could be read, otherwise False.
-        - tuple[1] (**dict | str**): If unsuccessful, an error message string. If successful, a
-          dict:
-          - `fidelity` (`str`): `FIDELITY_EXACT` if the position names the exact spot the run
-            stopped at, `FIDELITY_APPROXIMATE` if a line can repeat across runs.
-          - `kind` (`str`): the storage the lines came from.
-          - `label` (`str`): the source in words, for a consumer that reports where it read.
-          - `lines` (`list` of `str`): the new lines, without their line endings, and for a
-            container without the timestamp the engine prefixes them with.
-          - `notice` (`str`): what the source said about the read itself rather than about what
-            was logged, for example that it only showed what the caller is allowed to see.
-            Empty where there is nothing to report. A source that says so and returns nothing
-            at all fails instead, because an empty result would read as a quiet log.
-          - `position` (`dict`): to store and pass back on the next call.
-          - `restarted` (`bool`): True if the stored position had become meaningless and the
-            source was read from its beginning, so the lines are not only the new ones.
-          - `rotated` (`list` of `str`): the rotated files that were read ahead of the source,
-            in the order their lines appear. Empty unless `rotated` asked for them.
-          - `truncated` (`bool`): True if `max_lines` dropped lines from the result.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the log could be read, otherwise False.
+          - tuple[1] (**dict | str**): If unsuccessful, an error message string. If successful, a
+            dict:
 
-    ### Notes
+            - `fidelity` (`str`): `FIDELITY_EXACT` if the position names the exact spot the run
+              stopped at, `FIDELITY_APPROXIMATE` if a line can repeat across runs.
+            - `kind` (`str`): the storage the lines came from.
+            - `label` (`str`): the source in words, for a consumer that reports where it read.
+            - `lines` (`list` of `str`): the new lines, without their line endings, and for a
+              container without the timestamp the engine prefixes them with.
+            - `notice` (`str`): what the source said about the read itself rather than about what
+              was logged, for example that it only showed what the caller is allowed to see.
+              Empty where there is nothing to report. A source that says so and returns nothing
+              at all fails instead, because an empty result would read as a quiet log.
+            - `position` (`dict`): to store and pass back on the next call.
+            - `restarted` (`bool`): True if the stored position had become meaningless and the
+              source was read from its beginning, so the lines are not only the new ones.
+            - `rotated` (`list` of `str`): the rotated files that were read ahead of the source,
+              in the order their lines appear. Empty unless `rotated` asked for them.
+            - `truncated` (`bool`): True if `max_lines` dropped lines from the result.
+
+    Notes
+    -----
     - The position is a plain dict of strings and numbers, so it serializes to JSON and fits in
       a single column of a state database.
     - A consumer that stores the position has to survive not finding one, because the first run
@@ -875,7 +918,8 @@ def read(
       that could not be read is named in `notice` instead of failing the whole call, so the
       live file is still reported.
 
-    ### Example
+    Examples
+    --------
     >>> success, result = read('/var/log/messages', allowed_roots=['/var/log'])
     >>> success, result = read('/var/log/messages', max_lines=30000, rotated=1)
     >>> success, result = read('systemd:sshd', position=stored, since='-8h')
@@ -924,49 +968,60 @@ def read_many(
     For a consumer that reads a window rather than resumes where it stopped, which is why this
     takes no position; `read()` is the one to use for reading a log incrementally.
 
-    ### Parameters
-    - **sources** (`iterable` of `str`): What to read, each as `read()` takes it.
-    - **allowed_roots** (`iterable` of `str`, optional): Handed to `read()` for every source.
-    - **dedup_key** (`callable`, optional): Called with one line and returning what identifies
-      the event in it, for example its time and the message without the prefix a log transport
-      put in front of it (`strip_syslog_prefix()`). A line of a later source whose key a line
-      of an earlier one already produced is dropped, which is what keeps a file and the journal
-      of the same unit from counting the same event twice. Lines of one and the same source are
-      never dropped against each other: an application repeating a message is what a rate is
-      counted from. Without it nothing is dropped.
-    - **max_lines** (`int`, optional):
-      At most this many lines **per source**, the most recent ones. A window over several logs
-      is therefore at most this many times the number of sources, which is what keeps one busy
-      log from crowding out a quiet one that had the interesting line.
-    - **rotated** (`int`, optional): Handed to `read()` for every source.
-    - **since** (`str`, optional): Handed to `read()` for every source.
-    - **timeout** (`int`, optional): Handed to `read()` for every source, each in its own right.
+    Parameters
+    ----------
+    sources : iterable of str
+        What to read, each as `read()` takes it.
+    allowed_roots : iterable of str, optional
+        Handed to `read()` for every source.
+    dedup_key : callable, optional
+        Called with one line and returning what identifies
+        the event in it, for example its time and the message without the prefix a log transport
+        put in front of it (`strip_syslog_prefix()`). A line of a later source whose key a line
+        of an earlier one already produced is dropped, which is what keeps a file and the journal
+        of the same unit from counting the same event twice. Lines of one and the same source are
+        never dropped against each other: an application repeating a message is what a rate is
+        counted from. Without it nothing is dropped.
+    max_lines : int, optional
+        At most this many lines **per source**, the most recent ones. A window over several logs
+        is therefore at most this many times the number of sources, which is what keeps one busy
+        log from crowding out a quiet one that had the interesting line.
+    rotated : int, optional
+        Handed to `read()` for every source.
+    since : str, optional
+        Handed to `read()` for every source.
+    timeout : int, optional
+        Handed to `read()` for every source, each in its own right.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if at least one source could be read, otherwise False.
-        - tuple[1] (**dict | str**): If unsuccessful, a message naming what went wrong with
-          each source. If successful, a dict:
-          - `lines` (`list` of `str`): Every source's lines, in the order the sources were
-            given.
-          - `duplicates` (`int`): How many lines `dedup_key` identified as an event an
-            earlier source had already delivered. 0 without `dedup_key`.
-          - `failed` (`list` of `str`): One message per source that could not be read at all.
-            A source that failed is skipped rather than fatal, because a log an application
-            has not written yet is normal where several are read - but the window then has a
-            hole in it, which is a different matter from `notice` and is reported apart from
-            it for that reason.
-          - `notice` (`str`): What the sources said about the read itself rather than about
-            what they hold, for a consumer to pass on.
-          - `sources` (`list` of `dict`): What `read()` returned per source that could be read,
-            in the same order, so a consumer can name each one and what came from it.
-          - `truncated` (`bool`): Whether any source stopped at `max_lines`.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if at least one source could be read, otherwise False.
+          - tuple[1] (**dict | str**): If unsuccessful, a message naming what went wrong with
+            each source. If successful, a dict:
 
-    ### Notes
+            - `lines` (`list` of `str`): Every source's lines, in the order the sources were
+              given.
+            - `duplicates` (`int`): How many lines `dedup_key` identified as an event an
+              earlier source had already delivered. 0 without `dedup_key`.
+            - `failed` (`list` of `str`): One message per source that could not be read at all.
+              A source that failed is skipped rather than fatal, because a log an application
+              has not written yet is normal where several are read - but the window then has a
+              hole in it, which is a different matter from `notice` and is reported apart from
+              it for that reason.
+            - `notice` (`str`): What the sources said about the read itself rather than about
+              what they hold, for a consumer to pass on.
+            - `sources` (`list` of `dict`): What `read()` returned per source that could be read,
+              in the same order, so a consumer can name each one and what came from it.
+            - `truncated` (`bool`): Whether any source stopped at `max_lines`.
+
+    Notes
+    -----
     - A source named twice is read once, and so is one reached by two paths that resolve to the
       same file.
 
-    ### Example
+    Examples
+    --------
     >>> success, result = read_many(
     ...     ['/var/log/httpd/error_log', 'systemd:httpd.service']
     ... )
@@ -1122,26 +1177,31 @@ def timestamp(line, parse_line=None):
     What is read here without being told is the timestamp the transport prefixes, which is what
     stays when an application logs through syslog and leaves its own out.
 
-    ### Parameters
-    - **line** (`str`): One log line.
-    - **parse_line** (`callable`, optional):
-      The consumer's reader for the application's own timestamp. Takes the line and returns a
-      `datetime.datetime` or None. Tried first; the transport's timestamp is the fallback.
+    Parameters
+    ----------
+    line : str
+        One log line.
+    parse_line : callable, optional
+        The consumer's reader for the application's own timestamp. Takes the line and returns a
+        `datetime.datetime` or None. Tried first; the transport's timestamp is the fallback.
 
-    ### Returns
-    - **datetime.datetime | None**:
-      When the line was written, in local time and without a timezone attached, so it compares
-      against `datetime.now()`. None where neither reader found a timestamp, which is not an
-      error: a line an application wrote while starting up commonly carries none.
+    Returns
+    -------
+    datetime.datetime | None
+        When the line was written, in local time and without a timezone attached, so it compares
+        against `datetime.now()`. None where neither reader found a timestamp, which is not an
+        error: a line an application wrote while starting up commonly carries none.
 
-    ### Notes
+    Notes
+    -----
     - A transport timestamp that carries an offset is converted to local time, so lines written
       before and after a daylight saving change stay in order.
     - Both formats a syslog daemon writes are read: the ISO 8601 moment, and the traditional
       one of RFC 3164 (`Aug 28 19:34:14`). The traditional one names no year, so the year is
       inferred from the assumption that a line was not written in the future.
 
-    ### Example
+    Examples
+    --------
     >>> timestamp('2026-08-28T17:16:18+0200 host httpd[20]: [ssl:error] AH02032: ...')
     datetime.datetime(2026, 8, 28, 17, 16, 18)
     >>> timestamp('Aug 28 19:34:14 host sshd[193]: Server listening on port 22.')

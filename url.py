@@ -590,24 +590,33 @@ def compare_github_refs(
     the number says how many commits are on `head` and not on `base` - not that `base`
     is simply an ancestor of `head`.
 
-    ### Parameters
-    - **user** (`str`): The GitHub username or organization name.
-    - **repo** (`str`): The GitHub repository name.
-    - **base** (`str`): The ref to compare from, typically the installed tag.
-    - **head** (`str`): The ref to compare to, typically a branch such as `main`.
-    - **insecure**, **no_proxy**, **timeout**, **header**: See
-        `get_latest_version_from_github()`.
+    Parameters
+    ----------
+    user : str
+        The GitHub username or organization name.
+    repo : str
+        The GitHub repository name.
+    base : str
+        The ref to compare from, typically the installed tag.
+    head : str
+        The ref to compare to, typically a branch such as `main`.
+    insecure, no_proxy, timeout, header
+        See
+          `get_latest_version_from_github()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the comparison was successfully fetched, False
-        otherwise.
-      - **result** (`int` | `bool`):
-        - The number of commits `head` carries that `base` does not.
-        - `False` if GitHub did not answer with a comparison, for example because
-          one of the two refs does not exist.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the comparison was successfully fetched, False
+          otherwise.
+        - **result** (`int` | `bool`):
 
-    ### Example
+          - The number of commits `head` carries that `base` does not.
+          - `False` if GitHub did not answer with a comparison, for example because
+            one of the two refs does not exist.
+
+    Examples
+    --------
     >>> compare_github_refs('Linuxfabrik', 'monitoring-plugins', 'v1.2.3', 'main')
     (True, 38)
     """
@@ -936,90 +945,95 @@ def fetch(
          |    Return (True, extended_dict)   if extended is True
         End
 
-    ### Parameters
-    - **url** (`str`):
-        The URL to fetch.
-    - **cacert** (`str`, optional):
-        Path to a CA bundle to verify the certificate against, either a file of PEM
-        certificates or a directory of hashed ones, which is what `OS_CACERT`,
-        `REQUESTS_CA_BUNDLE` and `curl --cacert` name as well. It replaces the trust store of
-        the host instead of adding to it, so an endpoint signed by a public CA no longer
-        verifies once a private bundle is named. A bundle that cannot be read is an error
-        rather than a silent fallback to the trust store. Ignored when `insecure` is set,
-        because that switches verification off altogether.
-    - **insecure** (`bool`, optional):
-        If True, disables SSL certificate validation. Defaults to False.
-    - **proxy** (`str`, optional):
-        Proxy URL to reach the target through, for example
-        `http://user:password@proxy.example.com:3128`. The scheme defaults to `http` when
-        omitted. Overrides the proxy the environment names together with the exceptions it
-        lists in `NO_PROXY`, and is itself overridden by `no_proxy`. Defaults to `None`,
-        which leaves the choice to the environment.
-    - **no_proxy** (`bool`, optional):
-        If True, disables environment-based proxy detection (`HTTP_PROXY`, `HTTPS_PROXY`,
-        `NO_PROXY`). Defaults to False.
-    - **timeout** (`int`, optional):
-        Timeout in seconds for the request, applied to all phases (connect, read, write,
-        pool). Defaults to 8 seconds.
-    - **header** (`dict`, optional):
-        Headers to include in the request. Note: `Connection: close` and the
-        `User-Agent: Linuxfabrik Monitoring Plugins` header are always set after the user's
-        headers and override any user-supplied value of the same name. A `Content-Length`
-        header is always dropped; the HTTP engine derives the correct value from the body.
-    - **data** (`dict`, optional):
-        Data to send in the request body. Truthy data triggers a POST.
-    - **method** (`str`, optional):
-        Force the HTTP method (e.g. `'POST'`) regardless of the body. When omitted, the
-        method is inferred from `data`: POST if a truthy body is present, GET otherwise.
-        Use this to issue a bodyless POST (some APIs require POST as a pure verb but reject
-        a request body and the Content-Type that comes with it).
-    - **encoding** (`str`, optional):
-        The encoding type for the request body. Defaults to `'urlencode'`. Also supports
-        `'serialized-json'`.
-    - **digest_auth_user** (`str`, optional):
-        The username for HTTP Digest Authentication. Composes correctly with `insecure`.
-    - **digest_auth_password** (`str`, optional):
-        The password for HTTP Digest Authentication.
-    - **extended** (`bool`, optional):
-        If True, returns a dict with response body, status code, response headers, plus
-        connection telemetry (`timings`, `tls_version`, `alpn`, `peer_cert_der`).
-    - **to_text** (`bool`, optional):
-        If True (default), converts the response body to text via the response charset.
-    - **http_version** (`str`, optional):
-        One of `'1.0'`, `'1.1'`, `'2'`, `'3'`. `'1.0'` is served by the same h11 transport
-        as `'1.1'`. `'3'` is reserved and returns an error until QUIC support lands. Default
-        `'1.1'`.
-    - **tls_min** (`str`, optional):
-        Minimum TLS version, one of `'1.0'`, `'1.1'`, `'1.2'`, `'1.3'`. Default uses the
-        system default (typically TLS 1.2 on modern OpenSSL).
-    - **tls_max** (`str`, optional):
-        Maximum TLS version, same accepted values as `tls_min`.
-    - **response_on_error** (`bool`, optional):
-        If true, return the response for error conditions (useful when the response body of
-        an API contains error details)
-    - **retries** (`int`, optional):
-        How many extra attempts to make when the request fails. `0` (default) means a single
-        attempt. Useful against a flaky endpoint (a BMC, a storage controller) that drops the
-        odd request. There is no delay between the attempts, because a check has a limited
-        runtime and a timeout has usually passed already.
+    Parameters
+    ----------
+    url : str
+          The URL to fetch.
+    cacert : str, optional
+          Path to a CA bundle to verify the certificate against, either a file of PEM
+          certificates or a directory of hashed ones, which is what `OS_CACERT`,
+          `REQUESTS_CA_BUNDLE` and `curl --cacert` name as well. It replaces the trust store of
+          the host instead of adding to it, so an endpoint signed by a public CA no longer
+          verifies once a private bundle is named. A bundle that cannot be read is an error
+          rather than a silent fallback to the trust store. Ignored when `insecure` is set,
+          because that switches verification off altogether.
+    insecure : bool, optional
+          If True, disables SSL certificate validation. Defaults to False.
+    proxy : str, optional
+          Proxy URL to reach the target through, for example
+          `http://user:password@proxy.example.com:3128`. The scheme defaults to `http` when
+          omitted. Overrides the proxy the environment names together with the exceptions it
+          lists in `NO_PROXY`, and is itself overridden by `no_proxy`. Defaults to `None`,
+          which leaves the choice to the environment.
+    no_proxy : bool, optional
+          If True, disables environment-based proxy detection (`HTTP_PROXY`, `HTTPS_PROXY`,
+          `NO_PROXY`). Defaults to False.
+    timeout : int, optional
+          Timeout in seconds for the request, applied to all phases (connect, read, write,
+          pool). Defaults to 8 seconds.
+    header : dict, optional
+          Headers to include in the request. Note: `Connection: close` and the
+          `User-Agent: Linuxfabrik Monitoring Plugins` header are always set after the user's
+          headers and override any user-supplied value of the same name. A `Content-Length`
+          header is always dropped; the HTTP engine derives the correct value from the body.
+    data : dict, optional
+          Data to send in the request body. Truthy data triggers a POST.
+    method : str, optional
+          Force the HTTP method (e.g. `'POST'`) regardless of the body. When omitted, the
+          method is inferred from `data`: POST if a truthy body is present, GET otherwise.
+          Use this to issue a bodyless POST (some APIs require POST as a pure verb but reject
+          a request body and the Content-Type that comes with it).
+    encoding : str, optional
+          The encoding type for the request body. Defaults to `'urlencode'`. Also supports
+          `'serialized-json'`.
+    digest_auth_user : str, optional
+          The username for HTTP Digest Authentication. Composes correctly with `insecure`.
+    digest_auth_password : str, optional
+          The password for HTTP Digest Authentication.
+    extended : bool, optional
+          If True, returns a dict with response body, status code, response headers, plus
+          connection telemetry (`timings`, `tls_version`, `alpn`, `peer_cert_der`).
+    to_text : bool, optional
+          If True (default), converts the response body to text via the response charset.
+    http_version : str, optional
+          One of `'1.0'`, `'1.1'`, `'2'`, `'3'`. `'1.0'` is served by the same h11 transport
+          as `'1.1'`. `'3'` is reserved and returns an error until QUIC support lands. Default
+          `'1.1'`.
+    tls_min : str, optional
+          Minimum TLS version, one of `'1.0'`, `'1.1'`, `'1.2'`, `'1.3'`. Default uses the
+          system default (typically TLS 1.2 on modern OpenSSL).
+    tls_max : str, optional
+          Maximum TLS version, same accepted values as `tls_min`.
+    response_on_error : bool, optional
+          If true, return the response for error conditions (useful when the response body of
+          an API contains error details)
+    retries : int, optional
+          How many extra attempts to make when the request fails. `0` (default) means a single
+          attempt. Useful against a flaky endpoint (a BMC, a storage controller) that drops the
+          odd request. There is no delay between the attempts, because a check has a limited
+          runtime and a timeout has usually passed already.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the request was successful, False otherwise.
-      - **result** (`str` | `bytes` | `dict`):
-        - On success, the response body (text or bytes depending on `to_text`).
-        - On success with `extended=True`, a dict with keys:
-            - `response`: response body
-            - `status_code`: int
-            - `response_header`: dict of response headers, keys lower-cased
-            - `timings`: dict with at least `total` (seconds, float)
-            - `tls_version`: str like `'TLSv1.3'` or None over plain HTTP
-            - `alpn`: str like `'h2'` or `'http/1.1'` or None
-            - `peer_cert_der`: DER-encoded server certificate as bytes, or None
-        - On failure, an error message string.
-        - On failure with `response_on_error=True`, the response body.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the request was successful, False otherwise.
+        - **result** (`str` | `bytes` | `dict`):
 
-    ### Example
+          - On success, the response body (text or bytes depending on `to_text`).
+          - On success with `extended=True`, a dict with keys:
+
+              - `response`: response body
+              - `status_code`: int
+              - `response_header`: dict of response headers, keys lower-cased
+              - `timings`: dict with at least `total` (seconds, float)
+              - `tls_version`: str like `'TLSv1.3'` or None over plain HTTP
+              - `alpn`: str like `'h2'` or `'http/1.1'` or None
+              - `peer_cert_der`: DER-encoded server certificate as bytes, or None
+          - On failure, an error message string.
+          - On failure with `response_on_error=True`, the response body.
+
+    Examples
+    --------
     >>> result = fetch(
     ...     'https://api.example.com',
     ...     timeout=10,
@@ -1090,24 +1104,30 @@ def fetch_json(
     Thin wrapper around `fetch()` that decodes the response body as JSON. All `fetch()`
     parameters are forwarded; the only added behaviour is the JSON decode step.
 
-    ### Parameters
-    See `fetch()` for the shared parameters. `to_text` is forced to True because the JSON
+    Takes the parameters of `fetch()`. `to_text` is forced to True because the JSON
     decoder needs a string.
-    - **retries** (`int`, optional): Handed to `fetch()`, which repeats a request that
-      failed. A body that arrived intact but holds no JSON is not a failed request and is
-      therefore reported rather than fetched again.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the JSON was successfully fetched and parsed, False
-        otherwise.
-      - **result** (`dict` | `list` | `str`):
-        - On success without `extended`: the parsed JSON document.
-        - On success with `extended=True`: the same dict as `fetch()` plus a `response_json`
-          key holding the parsed JSON document.
-        - On failure (after all retries): an error message string.
+    Parameters
+    ----------
+    retries : int, optional
+        Handed to `fetch()`, which repeats a request that
+        failed. A body that arrived intact but holds no JSON is not a failed request and is
+        therefore reported rather than fetched again.
 
-    ### Example
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the JSON was successfully fetched and parsed, False
+          otherwise.
+        - **result** (`dict` | `list` | `str`):
+
+          - On success without `extended`: the parsed JSON document.
+          - On success with `extended=True`: the same dict as `fetch()` plus a `response_json`
+            key holding the parsed JSON document.
+          - On failure (after all retries): an error message string.
+
+    Examples
+    --------
     >>> fetch_json('https://192.0.2.74/api/v2/?resource=cpu')
     (True, {'cpu': {'usage': '45%', 'temperature': '50C'}})
     """
@@ -1158,18 +1178,20 @@ def get_latest_tag_from_github(
     release, where `get_latest_version_from_github()` answers with HTTP 404. GitHub
     returns the tags newest first, so the first entry is the newest one.
 
-    ### Parameters
-    See `get_latest_version_from_github()`.
+    Takes the parameters of `get_latest_version_from_github()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the tag list was successfully fetched,
-        False otherwise.
-      - **result** (`str` | `bool`):
-        - The name of the newest tag if successful.
-        - `False` if the repository has no tags at all.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the tag list was successfully fetched,
+          False otherwise.
+        - **result** (`str` | `bool`):
 
-    ### Example
+          - The name of the newest tag if successful.
+          - `False` if the repository has no tags at all.
+
+    Examples
+    --------
     >>> get_latest_tag_from_github('Icinga', 'icingaweb2-theme-company')
     (True, 'v1.0.0')
     """
@@ -1210,28 +1232,39 @@ def get_latest_version_from_github(
     retrieves the release tag. A repository that publishes tags but no releases answers
     with HTTP 404 here; use `get_latest_tag_from_github()` as the fallback for those.
 
-    ### Parameters
-    - **user** (`str`): The GitHub username or organization name.
-    - **repo** (`str`): The GitHub repository name.
-    - **key** (`str`, optional): The key to retrieve from the JSON response (default is
-        `'tag_name'`).
-    - **insecure** (`bool`, optional): Allow an untrusted certificate. Defaults to
-      False.
-    - **no_proxy** (`bool`, optional): Ignore the environment's proxy settings.
-      Defaults to False.
-    - **timeout** (`int`, optional): Network timeout in seconds. Defaults to 8.
-    - **header** (`dict`, optional): Additional request headers, for example the
-      one built by `github_token_header()`.
+    Parameters
+    ----------
+    user : str
+        The GitHub username or organization name.
+    repo : str
+        The GitHub repository name.
+    key : str, optional
+        The key to retrieve from the JSON response (default is
+          `'tag_name'`).
+    insecure : bool, optional
+        Allow an untrusted certificate. Defaults to
+        False.
+    no_proxy : bool, optional
+        Ignore the environment's proxy settings.
+        Defaults to False.
+    timeout : int, optional
+        Network timeout in seconds. Defaults to 8.
+    header : dict, optional
+        Additional request headers, for example the
+        one built by `github_token_header()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the latest version was successfully fetched, False
-        otherwise.
-      - **result** (`str` | `bool`):
-        - The value of the specified key (e.g., the latest release tag) if successful.
-        - `False` if no result was found or the GitHub API did not return any data.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the latest version was successfully fetched, False
+          otherwise.
+        - **result** (`str` | `bool`):
 
-    ### Example
+          - The value of the specified key (e.g., the latest release tag) if successful.
+          - `False` if no result was found or the GitHub API did not return any data.
+
+    Examples
+    --------
     >>> get_latest_version_from_github('Linuxfabrik', 'monitoring-plugins')
     (True, 'v1.2.3')
     """
@@ -1262,13 +1295,18 @@ def github_token_header(token):
     `*_from_github()` functions. Returns an empty dict for an empty or missing token, so
     a caller can hand its optional token straight through without a branch of its own.
 
-    ### Parameters
-    - **token** (`str` | `None`): The API token.
+    Parameters
+    ----------
+    token : str | None
+        The API token.
 
-    ### Returns
-    - **dict**: `{'Authorization': 'Bearer <token>'}`, or `{}` when there is no token.
+    Returns
+    -------
+    dict
+        `{'Authorization': 'Bearer <token>'}`, or `{}` when there is no token.
 
-    ### Example
+    Examples
+    --------
     >>> github_token_header('linuxfabrik')
     {'Authorization': 'Bearer linuxfabrik'}
     """
@@ -1286,17 +1324,21 @@ def server_product(response_header):
     part - to decide whether advice about a product applies at all, for instance, since
     naming a directive of software the host does not run is worse than saying nothing.
 
-    ### Parameters
-    - **response_header** (`dict`):
-      The response headers as `fetch(extended=True)` returns them, with lower-cased field
-      names.
+    Parameters
+    ----------
+    response_header : dict
+        The response headers as `fetch(extended=True)` returns them, with lower-cased field
+        names.
 
-    ### Returns
-    - **str**: The product token in lower case, or None where the response carries no
-      `Server` header or an empty one. None means the product is genuinely unknown, which
-      is not the same as it being something else.
+    Returns
+    -------
+    str
+        The product token in lower case, or None where the response carries no
+        `Server` header or an empty one. None means the product is genuinely unknown, which
+        is not the same as it being something else.
 
-    ### Example
+    Examples
+    --------
     >>> server_product({'server': 'Apache/2.4.62 (Rocky Linux)'})
     'apache'
     >>> server_product({'server': 'nginx'})
@@ -1354,13 +1396,18 @@ def strip_tags(html):
     This function removes any HTML tags from the input string, leaving only the raw text
     content.
 
-    ### Parameters
-    - **html** (`str`): The string containing HTML tags to be stripped.
+    Parameters
+    ----------
+    html : str
+        The string containing HTML tags to be stripped.
 
-    ### Returns
-    - **str**: The input string with all HTML tags removed.
+    Returns
+    -------
+    str
+        The input string with all HTML tags removed.
 
-    ### Example
+    Examples
+    --------
     >>> strip_tags('<div>Hello, <b>world</b>!</div>')
     'Hello, world!'
     """

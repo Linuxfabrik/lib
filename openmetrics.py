@@ -66,27 +66,32 @@ def get_samples(samples, name, labels=None):
     endpoint reported, which for many metrics is more than one entry. Narrow it down by passing
     the labels that identify the wanted combination.
 
-    ### Parameters
-    - **samples** (`list`):
-      The samples as returned by `parse()`.
-    - **name** (`str`):
-      The metric name to select, matched exactly.
-    - **labels** (`dict`, optional):
-      Labels the sample has to carry, as a subset: a sample matches if it has at least these
-      labels with these values, and it may carry any number of other labels. Defaults to `None`,
-      which matches every label combination.
+    Parameters
+    ----------
+    samples : list
+        The samples as returned by `parse()`.
+    name : str
+        The metric name to select, matched exactly.
+    labels : dict, optional
+        Labels the sample has to carry, as a subset: a sample matches if it has at least these
+        labels with these values, and it may carry any number of other labels. Defaults to `None`,
+        which matches every label combination.
 
-    ### Returns
-    - **list**: The matching samples, in the order the payload listed them.
+    Returns
+    -------
+    list
+        The matching samples, in the order the payload listed them.
 
-    ### Notes
+    Notes
+    -----
     - An empty result says "nothing matched", which does not distinguish a metric that is absent
       from one that is present under other labels. Where that difference matters, ask for the
       name alone first.
     - The samples are the ones `parse()` returned, not copies. Changing one changes the parsed
       payload.
 
-    ### Example
+    Examples
+    --------
     >>> get_samples(samples, 'nextcloud_app_enabled')
     >>> get_samples(samples, 'nextcloud_app_enabled', labels={'app_id': 'spreed'})
     """
@@ -105,20 +110,24 @@ def get_value(samples, name, labels=None, default=None):
 
     Shortcut around `get_samples()` for the common case of a metric that reports one number.
 
-    ### Parameters
-    - **samples** (`list`):
-      The samples as returned by `parse()`.
-    - **name** (`str`):
-      The metric name to select, matched exactly.
-    - **labels** (`dict`, optional):
-      Labels the sample has to carry, as a subset. Defaults to `None`, matching any.
-    - **default** (`any type`, optional):
-      What to return if nothing matches. Defaults to `None`.
+    Parameters
+    ----------
+    samples : list
+        The samples as returned by `parse()`.
+    name : str
+        The metric name to select, matched exactly.
+    labels : dict, optional
+        Labels the sample has to carry, as a subset. Defaults to `None`, matching any.
+    default : any type, optional
+        What to return if nothing matches. Defaults to `None`.
 
-    ### Returns
-    - **float | any type**: The value of the first matching sample, otherwise `default`.
+    Returns
+    -------
+    float | any type
+        The value of the first matching sample, otherwise `default`.
 
-    ### Notes
+    Notes
+    -----
     - Returns the *first* match, so a name that matches several label combinations returns an
       arbitrary one of them. Use `get_samples()` where more than one match is possible.
     - The value is a float even where the metric is conceptually an integer, because both text
@@ -126,7 +135,8 @@ def get_value(samples, name, labels=None, default=None):
       missing one under the default `default`. Pass a `default` that cannot be confused with a
       value where that difference matters.
 
-    ### Example
+    Examples
+    --------
     >>> get_value(samples, 'nextcloud_app_enabled', labels={'app_id': 'spreed'})
     1.0
     """
@@ -612,25 +622,29 @@ def parse(data, dialect=None):
     without anything looking wrong, so tell this function which format it reads whenever that is
     known, for instance from the `Content-Type` the endpoint answered with.
 
-    ### Parameters
-    - **data** (`str`):
-      The payload to read.
-    - **dialect** (`str`, optional):
-      `'openmetrics'`, `'prometheus'`, or `None` to tell the two apart by whether the payload
-      ends in the `# EOF` marker that OpenMetrics requires and Prometheus does not know.
-      Defaults to `None`.
+    Parameters
+    ----------
+    data : str
+        The payload to read.
+    dialect : str, optional
+        `'openmetrics'`, `'prometheus'`, or `None` to tell the two apart by whether the payload
+        ends in the `# EOF` marker that OpenMetrics requires and Prometheus does not know.
+        Defaults to `None`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the payload could be read, otherwise False.
-        - tuple[1] (**list | str**):
-          - If successful, one dict per sample, in the order the payload listed them, with the
-            keys `name` (`str`), `labels` (`dict`), `value` (`float`), `timestamp` (`float` in
-            seconds, or `None` if the sample carried none), `type` (one of `TYPES`), `help`
-            (`str` or `None`) and `unit` (`str` or `None`).
-          - If unsuccessful, an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the payload could be read, otherwise False.
+          - tuple[1] (**list | str**):
 
-    ### Notes
+            - If successful, one dict per sample, in the order the payload listed them, with the
+              keys `name` (`str`), `labels` (`dict`), `value` (`float`), `timestamp` (`float` in
+              seconds, or `None` if the sample carried none), `type` (one of `TYPES`), `help`
+              (`str` or `None`) and `unit` (`str` or `None`).
+            - If unsuccessful, an error message string.
+
+    Notes
+    -----
     - Autodetection reads the marker and nothing else, so it is wrong in both directions and
       wrong silently, because a timestamp of the other format parses rather than fails. A
       truncated OpenMetrics payload lacks the marker and is read as Prometheus, putting every
@@ -684,7 +698,8 @@ def parse(data, dialect=None):
       Endpoints in the field send all of that, and the specification forbids all of it. A reader
       that insisted would report nothing at all where a tolerant one reports the truth.
 
-    ### Example
+    Examples
+    --------
     >>> success, samples = parse(payload, dialect='openmetrics')
     >>> success, samples = parse(payload)
     """

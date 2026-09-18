@@ -29,36 +29,40 @@ def fetch_json(
     This function builds a full API URL, sends an authenticated HTTPS GET request, and parses the
     JSON response. It uses a token for authentication via the `X-ApiKey` header.
 
-    ### Parameters
-    - **token** (`str`):
-      The API token for authentication (passed as `X-ApiKey` header).
-    - **host** (`str`):
-      The Grassfish server hostname or IP address.
-    - **port** (`int`):
-      The port number on which the API is accessible (usually 443 for HTTPS).
-    - **uri** (`str`):
-      The base URI path before the version number, e.g., `/api`.
-    - **version** (`int` or `str`):
-      The API version number, without leading 'v'.
-    - **func** (`str`):
-      The specific API function or endpoint to call.
-    - **insecure** (`bool`, optional):
-      If `True`, disables SSL verification. Default is `False`.
-    - **no_proxy** (`bool`, optional):
-      If `True`, bypass system proxy settings. Default is `False`.
-    - **timeout** (`int`, optional):
-      Request timeout in seconds. Default is `8`.
+    Parameters
+    ----------
+    token : str
+        The API token for authentication (passed as `X-ApiKey` header).
+    host : str
+        The Grassfish server hostname or IP address.
+    port : int
+        The port number on which the API is accessible (usually 443 for HTTPS).
+    uri : str
+        The base URI path before the version number, e.g., `/api`.
+    version : int or str
+        The API version number, without leading 'v'.
+    func : str
+        The specific API function or endpoint to call.
+    insecure : bool, optional
+        If `True`, disables SSL verification. Default is `False`.
+    no_proxy : bool, optional
+        If `True`, bypass system proxy settings. Default is `False`.
+    timeout : int, optional
+        Request timeout in seconds. Default is `8`.
 
-    ### Returns
-    - **tuple**:
-      - `(True, dict)`: On success, parsed JSON data.
-      - `(False, str)`: On failure, an error message.
+    Returns
+    -------
+    tuple
+        - `(True, dict)`: On success, parsed JSON data.
+        - `(False, str)`: On failure, an error message.
 
-    ### Notes
+    Notes
+    -----
     - The function uses HTTPS by default.
     - If the API response is empty, an error is returned.
 
-    ### Example
+    Examples
+    --------
     >>> fetch_json(
     ...     token='your-api-token',
     ...     host='api.example.com',
@@ -95,19 +99,23 @@ def set_player_defaults(item):
     Grassfish API omits attributes that have no values. It ensures a consistent data structure for
     further processing.
 
-    ### Parameters
-    - **item** (`dict`):
-      A dictionary representing a player resource from the Grassfish API.
+    Parameters
+    ----------
+    item : dict
+        A dictionary representing a player resource from the Grassfish API.
 
-    ### Returns
-    - **dict**:
-      The modified player dictionary with all expected fields initialized.
+    Returns
+    -------
+    dict
+        The modified player dictionary with all expected fields initialized.
 
-    ### Notes
+    Notes
+    -----
     - If a field like `City`, `Longitude`, `IsInstalled`, etc. is missing, it will be set to `None`.
     - Useful for normalizing API responses before storing, processing, or comparing.
 
-    ### Example
+    Examples
+    --------
     >>> player = {'Name': 'Player1', 'City': 'Zurich'}
     >>> set_player_defaults(player)
     {
@@ -164,19 +172,23 @@ def set_screen_defaults(item):
     Grassfish API omits attributes that have no values. It ensures a consistent data structure for
     further processing.
 
-    ### Parameters
-    - **item** (`dict`):
-      A dictionary representing a screen resource from the Grassfish API.
+    Parameters
+    ----------
+    item : dict
+        A dictionary representing a screen resource from the Grassfish API.
 
-    ### Returns
-    - **dict**:
-      The modified screen dictionary with all expected fields initialized.
+    Returns
+    -------
+    dict
+        The modified screen dictionary with all expected fields initialized.
 
-    ### Notes
+    Notes
+    -----
     - If a field like `DisplayName`, `Orientation`, or `Status` is missing, it will be set to `None`.
     - Useful for normalizing API responses before storing, processing, or comparing.
 
-    ### Example
+    Examples
+    --------
     >>> screen = {'DisplayName': 'MainScreen'}
     >>> set_screen_defaults(screen)
     {

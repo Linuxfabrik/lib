@@ -20,12 +20,13 @@ read-only connection therefore needs neither root nor sudo nor membership in the
 `libvirt` group. Verified against libvirt 12.0.0 on Fedora 44.
 
 Typical use case:
-```python
+
+.. code-block:: python
+
     # One call covers every domain on the host.
     domains = lib.base.coe(lib.kvm.get_domstats(groups=['balloon', 'state']))
     for name, stats in domains.items():
         print(name, lib.kvm.DOMAIN_STATES.get(stats.get('state.state')))
-```
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
@@ -180,19 +181,25 @@ def get_domains(uri=DEFAULT_URI, filters=None, timeout=DEFAULT_TIMEOUT):
     """
     Return the names of the domains a connection knows, running or not.
 
-    ### Parameters
-    - **uri** (`str`, optional): libvirt connection URI. Defaults to `DEFAULT_URI`.
-    - **filters** (`list`, optional): Filters to narrow the result down, without the
-      leading dashes, for example `['autostart']`. See `DOMAIN_FILTERS` for the
-      accepted names. Defaults to None, which returns every domain.
-    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+    Parameters
+    ----------
+    uri : str, optional
+        libvirt connection URI. Defaults to `DEFAULT_URI`.
+    filters : list, optional
+        Filters to narrow the result down, without the
+        leading dashes, for example `['autostart']`. See `DOMAIN_FILTERS` for the
+        accepted names. Defaults to None, which returns every domain.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
 
-    ### Returns
-    - **tuple** (`bool`, `list` or `str`):
-      - `success` (`bool`): True if the command succeeded, False otherwise.
-      - `result` (`list` or `str`): Domain names, or an error message.
+    Returns
+    -------
+    tuple (bool, list or str)
+        - `success` (`bool`): True if the command succeeded, False otherwise.
+        - `result` (`list` or `str`): Domain names, or an error message.
 
-    ### Notes
+    Notes
+    -----
     - Asks for `--all` and `--name`. `--all` covers inactive domains too, which the
       filters would otherwise silently exclude: asked for `autostart` alone, virsh
       answers with the autostart domains that happen to be running, which is the
@@ -202,7 +209,8 @@ def get_domains(uri=DEFAULT_URI, filters=None, timeout=DEFAULT_TIMEOUT):
     - `filters=['autostart']` answers "which domains does this host expect to be
       up", so nobody has to maintain a list of expected domains next to the caller.
 
-    ### Example
+    Examples
+    --------
     >>> success, domains = get_domains(filters=['autostart'])
     """
     args = ['list', '--all', '--name']
@@ -229,25 +237,33 @@ def get_domstats(
     """
     Collect statistics for every domain on the connection in a single call.
 
-    ### Parameters
-    - **uri** (`str`, optional): libvirt connection URI. Defaults to `DEFAULT_URI`.
-    - **groups** (`list`, optional): Statistics groups to ask for, without the
-      leading dashes, for example `['balloon', 'cpu-total']`. See `DOMSTATS_GROUPS`
-      for the accepted names. Defaults to None, which returns libvirt's own default
-      selection.
-    - **running_only** (`bool`, optional): Restrict the report to running domains.
-      Defaults to True.
-    - **nowait** (`bool`, optional): Report only what can be answered without
-      querying the hypervisor. Defaults to False.
-    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+    Parameters
+    ----------
+    uri : str, optional
+        libvirt connection URI. Defaults to `DEFAULT_URI`.
+    groups : list, optional
+        Statistics groups to ask for, without the
+        leading dashes, for example `['balloon', 'cpu-total']`. See `DOMSTATS_GROUPS`
+        for the accepted names. Defaults to None, which returns libvirt's own default
+        selection.
+    running_only : bool, optional
+        Restrict the report to running domains.
+        Defaults to True.
+    nowait : bool, optional
+        Report only what can be answered without
+        querying the hypervisor. Defaults to False.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - `success` (`bool`): True if the command succeeded, False otherwise.
-      - `result` (`dict` or `str`): `{domain_name: {field_name: value}}`, or an
-        error message.
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - `success` (`bool`): True if the command succeeded, False otherwise.
+        - `result` (`dict` or `str`): `{domain_name: {field_name: value}}`, or an
+          error message.
 
-    ### Notes
+    Notes
+    -----
     - One call covers the whole host. Asking per domain and per device instead, the
       way `domblkstat` and `domifstat` require, multiplies the round trips without
       returning anything extra.
@@ -261,7 +277,8 @@ def get_domstats(
       caller reports that as the failure it is. Set to True, such a domain silently
       contributes fewer fields while the others are still reported.
 
-    ### Example
+    Examples
+    --------
     >>> success, domains = get_domstats(groups=['state', 'balloon'])
     """
     args = ['domstats']
@@ -286,14 +303,19 @@ def parse_pool_info(stdout):
     """
     Turn the output of `virsh pool-info` into a mapping.
 
-    ### Parameters
-    - **stdout** (`str`): Raw `virsh pool-info` output.
+    Parameters
+    ----------
+    stdout : str
+        Raw `virsh pool-info` output.
 
-    ### Returns
-    - **dict**: `{lowercased_key: value}`. A value made up of digits only is
-      returned as `int`, every other value as `str`.
+    Returns
+    -------
+    dict
+        `{lowercased_key: value}`. A value made up of digits only is
+        returned as `int`, every other value as `str`.
 
-    ### Notes
+    Notes
+    -----
     - Public for the same reason `parse_domstats()` is: a consumer that replays
       recorded output rather than talking to a hypervisor needs the same parser the
       live path uses, and reimplementing it would let the two drift apart.
@@ -315,19 +337,25 @@ def get_pool_info(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     """
     Return name, state, autostart and sizes of one storage pool.
 
-    ### Parameters
-    - **pool** (`str`): Name of the storage pool.
-    - **uri** (`str`, optional): libvirt connection URI. Defaults to `DEFAULT_URI`.
-    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+    Parameters
+    ----------
+    pool : str
+        Name of the storage pool.
+    uri : str, optional
+        libvirt connection URI. Defaults to `DEFAULT_URI`.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - `success` (`bool`): True if the command succeeded, False otherwise.
-      - `result` (`dict` or `str`): Keys `allocation`, `autostart`, `available`,
-        `capacity`, `name`, `persistent`, `state` and `uuid`, or an error message.
-        The three sizes are byte counts.
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - `success` (`bool`): True if the command succeeded, False otherwise.
+        - `result` (`dict` or `str`): Keys `allocation`, `autostart`, `available`,
+          `capacity`, `name`, `persistent`, `state` and `uuid`, or an error message.
+          The three sizes are byte counts.
 
-    ### Notes
+    Notes
+    -----
     - Asks for `--bytes`, so the sizes arrive as exact integers. Without it libvirt
       prints them rounded to two decimals with a unit (`1.82 TiB`), which a consumer
       would have to convert back and would lose precision doing so.
@@ -336,7 +364,8 @@ def get_pool_info(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     - The pool name reaches virsh as a positional argument, so a value that looks
       like an option is refused rather than handed to virsh as one.
 
-    ### Example
+    Examples
+    --------
     >>> success, info = get_pool_info('default')
     """
     success, pool = shell.safe_cli_value(pool, 'pool name')
@@ -356,17 +385,23 @@ def get_pool_xml(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     """
     Return the XML definition of one storage pool.
 
-    ### Parameters
-    - **pool** (`str`): Name of the storage pool.
-    - **uri** (`str`, optional): libvirt connection URI. Defaults to `DEFAULT_URI`.
-    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+    Parameters
+    ----------
+    pool : str
+        Name of the storage pool.
+    uri : str, optional
+        libvirt connection URI. Defaults to `DEFAULT_URI`.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
 
-    ### Returns
-    - **tuple** (`bool`, `str`):
-      - `success` (`bool`): True if the command succeeded, False otherwise.
-      - `result` (`str`): The pool's XML, or an error message.
+    Returns
+    -------
+    tuple (bool, str)
+        - `success` (`bool`): True if the command succeeded, False otherwise.
+        - `result` (`str`): The pool's XML, or an error message.
 
-    ### Notes
+    Notes
+    -----
     - Everything about a pool that is not a name, a state or a size lives here and
       nowhere else: what kind of pool it is, where it points, and what it is built on.
       `pool-info` reports none of it.
@@ -375,7 +410,8 @@ def get_pool_xml(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     - The pool name reaches virsh as a positional argument, so a value that looks like
       an option is refused rather than handed to virsh as one.
 
-    ### Example
+    Examples
+    --------
     >>> success, xml = get_pool_xml('default')
     """
     success, pool = shell.safe_cli_value(pool, 'pool name')
@@ -388,18 +424,24 @@ def group_by_store(measurements, drift=0.01):
     """
     Group the storage pools that are looking at one and the same store.
 
-    ### Parameters
-    - **measurements** (`list` of `dict`): One entry per pool, each carrying at least
-      an `available` and a `capacity` byte count, as `get_pool_info()` reports them.
-    - **drift** (`float`, optional): How far the free space two pools report may
-      differ and still count as the same store, as a fraction of its capacity.
-      Defaults to 0.01.
+    Parameters
+    ----------
+    measurements : list of dict
+        One entry per pool, each carrying at least
+        an `available` and a `capacity` byte count, as `get_pool_info()` reports them.
+    drift : float, optional
+        How far the free space two pools report may
+        differ and still count as the same store, as a fraction of its capacity.
+        Defaults to 0.01.
 
-    ### Returns
-    - **list** of `list`: One list per store, holding the measurements that belong to
-      it. Every input entry appears in exactly one of them.
+    Returns
+    -------
+    list of list
+        One list per store, holding the measurements that belong to
+        it. Every input entry appears in exactly one of them.
 
-    ### Notes
+    Notes
+    -----
     - libvirt never says what a pool sits on. For a directory-backed pool it fills the
       three sizes from the filesystem the pool's path is on (a `statvfs()`, see
       `storage_util.c`), so pools sharing a filesystem report it identically and that
@@ -417,7 +459,8 @@ def group_by_store(measurements, drift=0.01):
       storage: four pools of one filesystem each report the whole of it, so adding
       them up claims storage that exists once as if it existed four times.
 
-    ### Example
+    Examples
+    --------
     >>> stores = group_by_store([{'capacity': 100, 'available': 40, 'name': 'a'}])
     """
     groups = []
@@ -440,14 +483,19 @@ def parse_volumes(stdout):
     """
     Turn the output of `virsh vol-list --details` into a list of volumes.
 
-    ### Parameters
-    - **stdout** (`str`): Raw `virsh vol-list --details` output.
+    Parameters
+    ----------
+    stdout : str
+        Raw `virsh vol-list --details` output.
 
-    ### Returns
-    - **list** of `dict`: One entry per volume, with the keys `allocation`,
-      `capacity`, `name`, `path` and `type`. The two sizes are byte counts.
+    Returns
+    -------
+    list of dict
+        One entry per volume, with the keys `allocation`,
+        `capacity`, `name`, `path` and `type`. The two sizes are byte counts.
 
-    ### Notes
+    Notes
+    -----
     - The columns are cut at the offsets of the header words rather than split on
       whitespace, because a volume name may contain spaces and a path then does too.
       Verified against libvirt 12.0.0 on a volume named `name with spaces.qcow2`,
@@ -461,7 +509,8 @@ def parse_volumes(stdout):
     - A row whose sizes do not parse is skipped rather than counted as zero, so a
       column layout that changes cannot quietly turn every volume into an empty one.
 
-    ### Example
+    Examples
+    --------
     >>> volumes = parse_volumes(stdout)
     """
     lines = [line for line in stdout.splitlines() if line.strip()]
@@ -499,18 +548,24 @@ def get_volumes(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     """
     Return the volumes of one storage pool, with their sizes.
 
-    ### Parameters
-    - **pool** (`str`): Name of the storage pool.
-    - **uri** (`str`, optional): libvirt connection URI. Defaults to `DEFAULT_URI`.
-    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+    Parameters
+    ----------
+    pool : str
+        Name of the storage pool.
+    uri : str, optional
+        libvirt connection URI. Defaults to `DEFAULT_URI`.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
 
-    ### Returns
-    - **tuple** (`bool`, `list` or `str`):
-      - `success` (`bool`): True if the command succeeded, False otherwise.
-      - `result` (`list` or `str`): One `dict` per volume, see `parse_volumes()`, or
-        an error message.
+    Returns
+    -------
+    tuple (bool, list or str)
+        - `success` (`bool`): True if the command succeeded, False otherwise.
+        - `result` (`list` or `str`): One `dict` per volume, see `parse_volumes()`, or
+          an error message.
 
-    ### Notes
+    Notes
+    -----
     - This is what a pool really holds, which `pool-info` does not answer: its sizes
       describe the storage the pool sits on, everything else on that storage
       included.
@@ -519,7 +574,8 @@ def get_volumes(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     - The pool name reaches virsh as a positional argument, so a value that looks
       like an option is refused rather than handed to virsh as one.
 
-    ### Example
+    Examples
+    --------
     >>> success, volumes = get_volumes('default')
     """
     success, pool = shell.safe_cli_value(pool, 'pool name')
@@ -539,19 +595,25 @@ def get_pools(uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     """
     Return every storage pool known to the connection, running or not.
 
-    ### Parameters
-    - **uri** (`str`, optional): libvirt connection URI. Defaults to `DEFAULT_URI`.
-    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+    Parameters
+    ----------
+    uri : str, optional
+        libvirt connection URI. Defaults to `DEFAULT_URI`.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
 
-    ### Returns
-    - **tuple** (`bool`, `list` or `str`):
-      - `success` (`bool`): True if the command succeeded, False otherwise.
-      - `result` (`list` or `str`): Pool names, or an error message.
+    Returns
+    -------
+    tuple (bool, list or str)
+        - `success` (`bool`): True if the command succeeded, False otherwise.
+        - `result` (`list` or `str`): Pool names, or an error message.
 
-    ### Notes
+    Notes
+    -----
     - Reports names only. Pair it with `get_pool_info()` for state and sizes.
 
-    ### Example
+    Examples
+    --------
     >>> success, pools = get_pools()
     """
     success, stdout = virsh(
@@ -568,14 +630,19 @@ def parse_domstats(stdout):
     """
     Turn the output of `virsh domstats` into a mapping per domain.
 
-    ### Parameters
-    - **stdout** (`str`): Raw `virsh domstats` output.
+    Parameters
+    ----------
+    stdout : str
+        Raw `virsh domstats` output.
 
-    ### Returns
-    - **dict**: `{domain_name: {field_name: value}}`. A value made up of digits only
-      is returned as `int`, every other value as `str`.
+    Returns
+    -------
+    dict
+        `{domain_name: {field_name: value}}`. A value made up of digits only
+        is returned as `int`, every other value as `str`.
 
-    ### Notes
+    Notes
+    -----
     - The domain name is read from the quoted `Domain: '<name>'` header, so a name
       containing a space survives.
     - libvirt omits a field it cannot fill instead of reporting a placeholder, so a
@@ -603,14 +670,20 @@ def _explain_virsh_error(stderr, uri):
     """
     Turn a virsh error into a sentence that names the next step.
 
-    ### Parameters
-    - **stderr** (`str`): What virsh wrote to standard error.
-    - **uri** (`str`): The connection URI that was used.
+    Parameters
+    ----------
+    stderr : str
+        What virsh wrote to standard error.
+    uri : str
+        The connection URI that was used.
 
-    ### Returns
-    - **str**: The advice, followed by what virsh reported.
+    Returns
+    -------
+    str
+        The advice, followed by what virsh reported.
 
-    ### Notes
+    Notes
+    -----
     - Only the failures an administrator can act on are translated. Everything else
       is passed on as libvirt worded it, because libvirt says it better than a guess
       would. Error strings verified against libvirt 12.0.0.
@@ -644,27 +717,34 @@ def virsh(args, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     """
     Run a `virsh` sub-command on a read-only connection and return its output.
 
-    ### Parameters
-    - **args** (`list`): The sub-command and its options, for example
-      `['domstats', '--balloon']`.
-    - **uri** (`str`, optional): libvirt connection URI. Defaults to `DEFAULT_URI`.
-      Takes any URI libvirt understands, including `qemu+ssh://user@host/system` to
-      reach a hypervisor that runs no local agent.
-    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+    Parameters
+    ----------
+    args : list
+        The sub-command and its options, for example
+        `['domstats', '--balloon']`.
+    uri : str, optional
+        libvirt connection URI. Defaults to `DEFAULT_URI`.
+        Takes any URI libvirt understands, including `qemu+ssh://user@host/system` to
+        reach a hypervisor that runs no local agent.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
 
-    ### Returns
-    - **tuple** (`bool`, `str`):
-      - `success` (`bool`): True if virsh succeeded, False otherwise.
-      - `result` (`str`): Standard output, or an error message that says what to do
-        about it.
+    Returns
+    -------
+    tuple (bool, str)
+        - `success` (`bool`): True if virsh succeeded, False otherwise.
+        - `result` (`str`): Standard output, or an error message that says what to do
+          about it.
 
-    ### Notes
+    Notes
+    -----
     - Always connects read-only. Everything in this library reads, and a read-only
       connection is the only one that works unattended.
     - The URI is bound to its option as `--connect=<uri>`, so a value that starts
       with a dash cannot turn into an option of its own.
 
-    ### Example
+    Examples
+    --------
     >>> success, stdout = virsh(['list', '--all', '--name'])
     """
     if not shell.which('virsh'):

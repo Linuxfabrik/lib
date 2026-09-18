@@ -41,32 +41,48 @@ def check_eol(
     This function checks the EOL status based on local cache, online API or bundled definitions.
     It reports whether the installed version is outdated, nearing EOL, or fully supported.
 
-    ### Parameters
-    - **product** (`str`): Product name or endoflife.date JSON URL.
-    - **version_string** (`str`): The version string of the installed software.
-    - **offset_eol** (`int`, optional): Days before EOL to trigger a warning. Default: `-30`.
-    - **check_major** (`bool`, optional): Warn if a newer major version exists.
-    - **check_minor** (`bool`, optional): Warn if a newer minor version exists.
-    - **check_patch** (`bool`, optional): Warn if a newer patch version exists.
-    - **pattern** (`str`, optional): Datetime parsing pattern. Default: `'%Y-%m-%d'`.
-    - **extended_support** (`bool`, optional): Check extended support EOL if available.
-    - **insecure** (`bool`, optional): Disable SSL certificate verification.
-    - **no_proxy** (`bool`, optional): Ignore proxy settings.
-    - **timeout** (`int`, optional): Network timeout in seconds. Default: `8`.
-    - **unreachable_severity** (`str`, optional): State to report when endoflife.date is
-      unreachable and the lookup falls back to the bundled offline data. One of `'ok'`, `'warn'`,
-      `'crit'` or `'unknown'`. Default: `'ok'`.
+    Parameters
+    ----------
+    product : str
+        Product name or endoflife.date JSON URL.
+    version_string : str
+        The version string of the installed software.
+    offset_eol : int, optional
+        Days before EOL to trigger a warning. Default: `-30`.
+    check_major : bool, optional
+        Warn if a newer major version exists.
+    check_minor : bool, optional
+        Warn if a newer minor version exists.
+    check_patch : bool, optional
+        Warn if a newer patch version exists.
+    pattern : str, optional
+        Datetime parsing pattern. Default: `'%Y-%m-%d'`.
+    extended_support : bool, optional
+        Check extended support EOL if available.
+    insecure : bool, optional
+        Disable SSL certificate verification.
+    no_proxy : bool, optional
+        Ignore proxy settings.
+    timeout : int, optional
+        Network timeout in seconds. Default: `8`.
+    unreachable_severity : str, optional
+        State to report when endoflife.date is
+        unreachable and the lookup falls back to the bundled offline data. One of `'ok'`, `'warn'`,
+        `'crit'` or `'unknown'`. Default: `'ok'`.
 
-    ### Returns
-    - **tuple** (`int`, `str`):
-      Nagios state and a descriptive status message.
+    Returns
+    -------
+    tuple (int, str)
+        Nagios state and a descriptive status message.
 
-    ### Notes
+    Notes
+    -----
     - A successful online lookup is cached locally for 24 hours. The bundled offline fallback is
       not cached, so the next call retries the online source instead of masking a persistent
       outage from `unreachable_severity`.
 
-    ### Example
+    Examples
+    --------
     >>> check_eol('https://endoflife.date/api/python.json', '3.10')
     (STATE_WARN, 'EOL 2026-10-01')
     """
@@ -212,15 +228,19 @@ def cycle_bounds(eol):
     data has simply not caught up yet, below the lowest it is older than anything
     upstream still records.
 
-    ### Parameters
-    - **eol** (`list`): endoflife.date entries, each a dict that may carry a `cycle` key.
+    Parameters
+    ----------
+    eol : list
+        endoflife.date entries, each a dict that may carry a `cycle` key.
 
-    ### Returns
-    - **tuple** (`tuple` or `None`, `tuple` or `None`):
-      The lowest and the highest cycle as comparable version tuples, or `(None, None)`
-      when no entry names a parsable cycle.
+    Returns
+    -------
+    tuple (tuple or None, tuple or None)
+        The lowest and the highest cycle as comparable version tuples, or `(None, None)`
+        when no entry names a parsable cycle.
 
-    ### Example
+    Examples
+    --------
     >>> cycle_bounds([{'cycle': '8.4'}, {'cycle': '5.7'}])
     ((5, 7, 0), (8, 4, 0))
     """
@@ -251,15 +271,20 @@ def version(ver, maxlen=3):
     This function converts a (semantic) version string into a tuple of integers. Non-numeric
     characters (except for `.` and `-`) are ignored. Useful for comparing version numbers.
 
-    ### Parameters
-    - **ver** (`str`): A version string (e.g., "v5.13.19-4-pve").
-    - **maxlen** (`int`, optional): Desired tuple length. Defaults to `3`.
+    Parameters
+    ----------
+    ver : str
+        A version string (e.g., "v5.13.19-4-pve").
+    maxlen : int, optional
+        Desired tuple length. Defaults to `3`.
 
-    ### Returns
-    - **tuple**:
-      A tuple of integers representing the version, e.g., `(5, 13, 19)`.
+    Returns
+    -------
+    tuple
+        A tuple of integers representing the version, e.g., `(5, 13, 19)`.
 
-    ### Example
+    Examples
+    --------
     >>> version('1')
     (1, 0, 0)
     >>> version('1.2')
@@ -293,18 +318,23 @@ def version2float(ver):
     This function parses a version string, removes non-numeric characters except dots, and
     constructs a float for simple comparison purposes. Raises ValueError if no numbers are found.
 
-    ### Parameters
-    - **ver** (`str`): A version string, e.g., `"Version v17.3.2.0"`.
+    Parameters
+    ----------
+    ver : str
+        A version string, e.g., `"Version v17.3.2.0"`.
 
-    ### Returns
-    - **float**:
-      Version represented as a float.
+    Returns
+    -------
+    float
+        Version represented as a float.
 
-    ### Raises
-    - **ValueError**:
-      If the input does not contain any digits.
+    Raises
+    ------
+    ValueError
+        If the input does not contain any digits.
 
-    ### Example
+    Examples
+    --------
     >>> version2float('Version v17.3.2.0')
     17.320
     >>> version2float('Fedora Linux 41 (Workstation Edition)')

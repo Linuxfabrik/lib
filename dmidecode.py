@@ -82,19 +82,23 @@ def cpu_cores(dmi):
     This function sums the core count from all processor entries in the given DMI data structure.
     If a processor entry does not specify a core count, it is treated as zero.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
 
-    ### Returns
-    - **int**:
-      The total number of CPU cores found across all processors.
+    Returns
+    -------
+    int
+        The total number of CPU cores found across all processors.
 
-    ### Notes
+    Notes
+    -----
     - Entries are retrieved using `dmiget(dmi, 'Processor')`.
     - Missing or invalid core counts default to zero.
 
-    ### Example
+    Examples
+    --------
     >>> cpu_cores(parsed_dmi)
     8
     """
@@ -108,19 +112,23 @@ def cpu_cores_enabled(dmi):
     This function sums the enabled core count from all processor entries in the given DMI data
     structure. If a processor entry does not specify enabled cores, it is treated as zero.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
 
-    ### Returns
-    - **int**:
-      The total number of enabled CPU cores across all processors.
+    Returns
+    -------
+    int
+        The total number of enabled CPU cores across all processors.
 
-    ### Notes
+    Notes
+    -----
     - Entries are retrieved using `dmiget(dmi, 'Processor')`.
     - Missing or invalid enabled core counts default to zero.
 
-    ### Example
+    Examples
+    --------
     >>> cpu_cores_enabled(parsed_dmi)
     8
     """
@@ -134,19 +142,23 @@ def cpu_speed(dmi):
     This function checks all processor entries in the given DMI data and returns the speed
     of the first valid CPU found. Speeds are expected to be specified in MHz.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
 
-    ### Returns
-    - **int**:
-      The CPU speed in MHz. If no valid entry is found, returns `0`.
+    Returns
+    -------
+    int
+        The CPU speed in MHz. If no valid entry is found, returns `0`.
 
-    ### Notes
+    Notes
+    -----
     - Entries without a proper `Current Speed` field are skipped.
     - Only the first valid speed encountered is returned.
 
-    ### Example
+    Examples
+    --------
     >>> cpu_speed(parsed_dmi)
     3200
     """
@@ -164,19 +176,23 @@ def cpu_threads(dmi):
     This function sums the thread count from all processor entries in the given DMI data structure.
     If a processor entry does not specify a thread count, it is treated as zero.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
 
-    ### Returns
-    - **int**:
-      The total number of CPU threads across all processors.
+    Returns
+    -------
+    int
+        The total number of CPU threads across all processors.
 
-    ### Notes
+    Notes
+    -----
     - Entries are retrieved using `dmiget(dmi, 'Processor')`.
     - Missing or invalid thread counts default to zero.
 
-    ### Example
+    Examples
+    --------
     >>> cpu_threads(parsed_dmi)
     16
     """
@@ -190,19 +206,23 @@ def cpu_type(dmi):
     This function extracts the CPU type from the `Version` field of the first enabled processor
     entry in the given DMI data. Trademark symbols like `(R)` and `(TM)` are removed for clarity.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
 
-    ### Returns
-    - **str**:
-      The CPU type as a clean string. Returns `'n/a'` if no valid CPU entry is found.
+    Returns
+    -------
+    str
+        The CPU type as a clean string. Returns `'n/a'` if no valid CPU entry is found.
 
-    ### Notes
+    Notes
+    -----
     - The `Version` field is sanitized to remove `(R)`, `(TM)`, and `'NotSpecified'` strings.
     - Only the first enabled CPU entry is considered.
 
-    ### Example
+    Examples
+    --------
     >>> cpu_type(parsed_dmi)
     'Intel Xeon Silver 4210 CPU'
     """
@@ -222,19 +242,28 @@ def dmidecode_parse(output):
     Parse `dmidecode` output into a dict, collapsing near-duplicates in an admin-friendly way.
 
     Type-aware dedupe rules:
-      - Type 4 (Processor Information): ignore per-thread/core/socket noise fields; merge;
-        add dedup_count/dedup_sockets
-      - Type 17 (Memory Device): drop unpopulated; ignore slot labels; merge;
-        add dedup_count/dedup_slots
-      - Other types: generic dedupe (exact content after normalization)
 
-    Returns:
-      { dmi_handle_tuple: parsed_record_dict, ... }
-      where parsed_record_dict includes keys: dminame, dmisize, dmitype, parsed fields,
-      and possibly:
-        - dedup_count (int >= 1)
-        - dedup_sockets / dedup_slots (sorted list of labels encountered)
-        - dedup_handles (list of original DMI handle strings that were merged)
+    - Type 4 (Processor Information): ignore per-thread/core/socket noise fields; merge;
+      add dedup_count/dedup_sockets
+    - Type 17 (Memory Device): drop unpopulated; ignore slot labels; merge;
+      add dedup_count/dedup_slots
+    - Other types: generic dedupe (exact content after normalization)
+
+    Parameters
+    ----------
+    output : str
+        The output of `dmidecode`.
+
+    Returns
+    -------
+    dict
+        `{dmi_handle_tuple: parsed_record_dict, ...}`, where `parsed_record_dict`
+        includes the keys `dminame`, `dmisize`, `dmitype`, the parsed fields, and
+        possibly:
+
+        - `dedup_count` (int >= 1)
+        - `dedup_sockets` / `dedup_slots` (sorted list of labels encountered)
+        - `dedup_handles` (list of original DMI handle strings that were merged)
     """
     data = {}
     seen = {}  # fp -> (first_handle, aggregated_record)
@@ -406,22 +435,26 @@ def dmiget(dmi, type_id):
     This function filters a parsed DMI data structure, returning all entries matching the specified
     type ID. If a string type name is given, it is internally mapped to its numeric type ID.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
-    - **type_id** (`int` or `str`):
-      The DMI type as an integer or string. If a string is given, it is matched against known
-      type names.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    type_id : int or str
+        The DMI type as an integer or string. If a string is given, it is matched against known
+        type names.
 
-    ### Returns
-    - **list**:
-      A list of DMI entries (dicts) matching the specified type ID.
+    Returns
+    -------
+    list
+        A list of DMI entries (dicts) matching the specified type ID.
 
-    ### Notes
+    Notes
+    -----
     - The `TYPE2STR` mapping must be available globally to resolve string type names.
     - Useful for extracting subsets like BIOS information, baseboard details, or memory devices.
 
-    ### Example
+    Examples
+    --------
     >>> dmiget(parsed_dmi, 'Memory Device')
     [{'Handle': '0x1100', 'Size': '8 GB', 'Form Factor': 'SODIMM', ...}]
     """
@@ -447,18 +480,22 @@ def firmware(dmi):
     This function extracts the firmware revision string from the BIOS information in the given
     DMI data. If not available, returns `'n/a'`.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
 
-    ### Returns
-    - **str**:
-      The firmware revision string, or `'n/a'` if not found.
+    Returns
+    -------
+    str
+        The firmware revision string, or `'n/a'` if not found.
 
-    ### Notes
+    Notes
+    -----
     - Assumes that BIOS entries exist and uses the first entry (`dmiget(dmi, 'BIOS')[0]`).
 
-    ### Example
+    Examples
+    --------
     >>> firmware(parsed_dmi)
     '1.2.3'
     """
@@ -475,28 +512,27 @@ def get_data():
     This function executes the `dmidecode` command, parses its output, and returns structured
     DMI data. If execution fails or returns a non-zero exit code, returns `False`.
 
-    ### Parameters
-    - *(none)*
+    Returns
+    -------
+    dict
+        Parsed DMI data if successful.
+    bool
+        `False` on failure (e.g., command failed, permission denied, `dmidecode` not installed).
 
-    ### Returns
-    - **dict**:
-      Parsed DMI data if successful.
-
-    - **bool**:
-      `False` on failure (e.g., command failed, permission denied, `dmidecode` not installed).
-
-    ### Notes
+    Notes
+    -----
     - Requires root privileges to run `dmidecode`.
     - Depends on a shell execution helper (`shell.shell_exec`).
 
-    ### Example
+    Examples
+    --------
     >>> get_data()
     {
         ('0xDA00', '218', '251'): {
             'dminame': 'OEM-specific Type',
             'dmisize': 251,
             'dmitype': 218,
-            'H': 'D\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0\t\t0'
+            'H': 'D\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0\\t\\t0'
         },
         ('0x0001', '0', '26'): {
             'dminame': 'BIOS Information',
@@ -529,18 +565,22 @@ def manufacturer(dmi):
     This function extracts the manufacturer name from the system information in the given
     DMI data. If not available, returns `'n/a'`.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
 
-    ### Returns
-    - **str**:
-      The manufacturer name, or `'n/a'` if not found.
+    Returns
+    -------
+    str
+        The manufacturer name, or `'n/a'` if not found.
 
-    ### Notes
+    Notes
+    -----
     - Assumes that system entries exist and uses the first entry (`dmiget(dmi, 'System')[0]`).
 
-    ### Example
+    Examples
+    --------
     >>> manufacturer(parsed_dmi)
     'Dell Inc.'
     """
@@ -557,18 +597,22 @@ def model(dmi):
     This function extracts the model (product) name from the system information in the given
     DMI data. If not available, returns `'n/a'`.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
 
-    ### Returns
-    - **str**:
-      The model name, or `'n/a'` if not found.
+    Returns
+    -------
+    str
+        The model name, or `'n/a'` if not found.
 
-    ### Notes
+    Notes
+    -----
     - Assumes that system entries exist and uses the first entry (`dmiget(dmi, 'System')[0]`).
 
-    ### Example
+    Examples
+    --------
     >>> model(parsed_dmi)
     'PowerEdge R640'
     """
@@ -585,19 +629,23 @@ def ram(dmi):
     This function sums the memory size of all populated memory slots found in the given
     DMI data. Slot sizes given in megabytes (MB) or gigabytes (GB) are normalized to bytes.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
 
-    ### Returns
-    - **int**:
-      The total amount of RAM in bytes.
+    Returns
+    -------
+    int
+        The total amount of RAM in bytes.
 
-    ### Notes
+    Notes
+    -----
     - Only slots reporting a size in MB or GB are considered.
     - Entries reporting "No module installed" are skipped.
 
-    ### Example
+    Examples
+    --------
     >>> ram(parsed_dmi)
     34359738368
     """
@@ -620,19 +668,23 @@ def serno(dmi):
     This function extracts the serial number from the system information in the given DMI data.
     If the serial number is missing or marked as "Not Specified", returns `'n/a'`.
 
-    ### Parameters
-    - **dmi** (`dict`):
-      The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
+    Parameters
+    ----------
+    dmi : dict
+        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
 
-    ### Returns
-    - **str**:
-      The system serial number, or `'n/a'` if not found.
+    Returns
+    -------
+    str
+        The system serial number, or `'n/a'` if not found.
 
-    ### Notes
+    Notes
+    -----
     - Assumes that system entries exist and uses the first entry (`dmiget(dmi, 'System')[0]`).
     - Normalizes "Not Specified" to `'n/a'`.
 
-    ### Example
+    Examples
+    --------
     >>> serno(parsed_dmi)
     '4C4C4544-0032-5A10-8050-B5C04F503632'
     """

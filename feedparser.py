@@ -49,29 +49,32 @@ def fetch_soup(
     a feed content type but sends something other than a feed is a failure here rather than
     a feed without any entries.
 
-    ### Parameters
-    - **feed_url** (`str`):
-      The URL of the feed to fetch.
-    - **insecure** (`bool`, optional):
-      If `True`, disable SSL verification during download. Default is `False`.
-    - **no_proxy** (`bool`, optional):
-      If `True`, ignore any system proxy settings. Default is `False`.
-    - **timeout** (`int`, optional):
-      Timeout in seconds for the download request, per attempt. Default is `5`.
-    - **encoding** (`str`, optional):
-      Encoding to use for the URL fetch operation. Default is `'urlencode'`.
-    - **retries** (`int`, optional):
-      How many extra attempts to make if the request fails or the body is not a feed.
-      `0` (default) means a single attempt. Useful against flaky endpoints (e.g. a status
-      page behind a load balancer) that occasionally answer with something else.
+    Parameters
+    ----------
+    feed_url : str
+        The URL of the feed to fetch.
+    insecure : bool, optional
+        If `True`, disable SSL verification during download. Default is `False`.
+    no_proxy : bool, optional
+        If `True`, ignore any system proxy settings. Default is `False`.
+    timeout : int, optional
+        Timeout in seconds for the download request, per attempt. Default is `5`.
+    encoding : str, optional
+        Encoding to use for the URL fetch operation. Default is `'urlencode'`.
+    retries : int, optional
+        How many extra attempts to make if the request fails or the body is not a feed.
+        `0` (default) means a single attempt. Useful against flaky endpoints (e.g. a status
+        page behind a load balancer) that occasionally answer with something else.
 
-    ### Returns
-    - **tuple**:
-      - `(True, BeautifulSoup)`: On success, the parsed feed document.
-      - `(False, str or Exception)`: On failure (after all retries), an error message or
-        exception.
+    Returns
+    -------
+    tuple
+        - `(True, BeautifulSoup)`: On success, the parsed feed document.
+        - `(False, str or Exception)`: On failure (after all retries), an error message or
+          exception.
 
-    ### Example
+    Examples
+    --------
     >>> success, soup = fetch_soup('https://linuxfabrik.ch/feed.xml', retries=3)
     """
     attempt = 0
@@ -106,35 +109,39 @@ def parse(
     This function fetches a feed resource, parses it as XML using BeautifulSoup, and attempts to
     automatically detect and parse Atom or RSS formats into structured dictionaries.
 
-    ### Parameters
-    - **feed_url** (`str`):
-      The URL or file path of the feed to fetch and parse.
-    - **insecure** (`bool`, optional):
-      If `True`, disable SSL verification during download. Default is `False`.
-    - **no_proxy** (`bool`, optional):
-      If `True`, ignore any system proxy settings. Default is `False`.
-    - **timeout** (`int`, optional):
-      Timeout in seconds for the download request. Default is `5`.
-    - **encoding** (`str`, optional):
-      Encoding to use for the URL fetch operation. Default is `'urlencode'`.
-    - **retries** (`int`, optional):
-      How many extra attempts to make if the request fails or the body is not a feed.
-      `0` (default) means a single attempt. See `fetch_soup()`.
+    Parameters
+    ----------
+    feed_url : str
+        The URL or file path of the feed to fetch and parse.
+    insecure : bool, optional
+        If `True`, disable SSL verification during download. Default is `False`.
+    no_proxy : bool, optional
+        If `True`, ignore any system proxy settings. Default is `False`.
+    timeout : int, optional
+        Timeout in seconds for the download request. Default is `5`.
+    encoding : str, optional
+        Encoding to use for the URL fetch operation. Default is `'urlencode'`.
+    retries : int, optional
+        How many extra attempts to make if the request fails or the body is not a feed.
+        `0` (default) means a single attempt. See `fetch_soup()`.
 
-    ### Returns
-    - **tuple**:
-      - `(True, dict)`: On success, returns parsed feed data.
-      - `(False, str or Exception)`: On failure, returns an error message or exception.
+    Returns
+    -------
+    tuple
+        - `(True, dict)`: On success, returns parsed feed data.
+        - `(False, str or Exception)`: On failure, returns an error message or exception.
 
-    ### Notes
+    Notes
+    -----
     - Atom feeds must have a `<feed>` root element.
     - RSS feeds must have a `<rss>` root element.
     - Automatically detects the feed format (Atom or RSS).
 
-    ### Example
+    Examples
+    --------
     >>> success, result = parse('https://linuxfabrik.ch/feed.xml')
     >>> if success:
-    >>>     print(result)
+    ...     print(result)
     {
         'title': 'Linuxfabrik Posts',
         'updated': '2025-04-17T11:29:00.000Z',
@@ -175,19 +182,23 @@ def parse_atom(soup):
     This function processes an Atom feed using BeautifulSoup, extracting metadata such as the feed
     title, last updated timestamp, and a list of entries with their respective information.
 
-    ### Parameters
-    - **soup** (`BeautifulSoup`):
-      A BeautifulSoup object parsed from an Atom XML feed.
+    Parameters
+    ----------
+    soup : BeautifulSoup
+        A BeautifulSoup object parsed from an Atom XML feed.
 
-    ### Returns
-    - **dict**:
-      A dictionary containing feed metadata and a list of parsed entries.
+    Returns
+    -------
+    dict
+        A dictionary containing feed metadata and a list of parsed entries.
 
-    ### Notes
+    Notes
+    -----
     - The `updated` fields are also parsed into Python `datetime` objects (`updated_parsed`).
     - Summaries are extracted from either `<summary>` or `<content>`, cleaned of HTML tags.
 
-    ### Example
+    Examples
+    --------
     >>> parse_atom(soup)
     {
         'title': 'My Feed',
@@ -237,20 +248,24 @@ def parse_rss(soup):
     This function processes an RSS feed using BeautifulSoup, extracting metadata such as the feed
     title, last update timestamp, and a list of items with their respective information.
 
-    ### Parameters
-    - **soup** (`BeautifulSoup`):
-      A BeautifulSoup object parsed from an RSS XML feed.
+    Parameters
+    ----------
+    soup : BeautifulSoup
+        A BeautifulSoup object parsed from an RSS XML feed.
 
-    ### Returns
-    - **dict**:
-      A dictionary containing feed metadata and a list of parsed items.
+    Returns
+    -------
+    dict
+        A dictionary containing feed metadata and a list of parsed items.
 
-    ### Notes
+    Notes
+    -----
     - If `pubDate` is missing, `lastBuildDate` is used instead.
     - The `updated` fields are parsed into Python `datetime` objects (`updated_parsed`).
     - Summaries are extracted from the `<description>` tag, cleaned of HTML tags.
 
-    ### Example
+    Examples
+    --------
     >>> parse_rss(soup)
     {
         'title': 'My RSS Feed',
@@ -312,19 +327,22 @@ def parse_soup(xml, feed_url=''):
     Use this for a feed that did not come from `fetch_soup()`, for example one read from a
     file or from a test fixture, so that both paths apply the same validation.
 
-    ### Parameters
-    - **xml** (`str` | `bytes`):
-      The feed document.
-    - **feed_url** (`str`, optional):
-      Where the document came from. Only used to name the source in the error message.
+    Parameters
+    ----------
+    xml : str | bytes
+        The feed document.
+    feed_url : str, optional
+        Where the document came from. Only used to name the source in the error message.
 
-    ### Returns
-    - **tuple**:
-      - `(True, BeautifulSoup)`: On success, the parsed feed document.
-      - `(False, str or Exception)`: If the document has neither an `<rss>` nor a `<feed>`
-        root, or if it could not be parsed at all.
+    Returns
+    -------
+    tuple
+        - `(True, BeautifulSoup)`: On success, the parsed feed document.
+        - `(False, str or Exception)`: If the document has neither an `<rss>` nor a `<feed>`
+          root, or if it could not be parsed at all.
 
-    ### Example
+    Examples
+    --------
     >>> success, soup = parse_soup(open('feed.xml').read())
     """
     try:

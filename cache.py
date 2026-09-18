@@ -44,25 +44,33 @@ def get(
     the provided key, and returns either the value or the full record, depending on options.
     Expired records are automatically cleaned up.
 
-    ### Parameters
-    - **key** (`str`): The search key to look up in the cache.
-    - **as_dict** (`bool`, optional): If `True`, return the full database record as a dictionary
-      (`key`, `value`, and `timestamp`).
-      If `False`, return only the `value`. Defaults to `False`.
-    - **allow_stale** (`bool`, optional): If `True`, an expired record is returned instead of
-      being deleted, and no cleanup is performed. Defaults to `False`.
-    - **path** (`str`, optional): Path to the directory containing the cache database.
-      Defaults to an empty string (current directory).
-    - **filename** (`str`, optional): Name of the cache database file.
-      Defaults to `'linuxfabrik-monitoring-plugins-cache.db'`.
+    Parameters
+    ----------
+    key : str
+        The search key to look up in the cache.
+    as_dict : bool, optional
+        If `True`, return the full database record as a dictionary
+        (`key`, `value`, and `timestamp`).
+        If `False`, return only the `value`. Defaults to `False`.
+    allow_stale : bool, optional
+        If `True`, an expired record is returned instead of
+        being deleted, and no cleanup is performed. Defaults to `False`.
+    path : str, optional
+        Path to the directory containing the cache database.
+        Defaults to an empty string (current directory).
+    filename : str, optional
+        Name of the cache database file.
+        Defaults to `'linuxfabrik-monitoring-plugins-cache.db'`.
 
-    ### Returns
-    - **str**, **dict**, or **bool**:
-      - If `as_dict=False` (default): returns the cached `value` (`str`).
-      - If `as_dict=True`: returns the full record (`dict`).
-      - Returns `False` if the key is not found, expired, or on failure.
+    Returns
+    -------
+    str, dict, or bool
+        - If `as_dict=False` (default): returns the cached `value` (`str`).
+        - If `as_dict=True`: returns the full record (`dict`).
+        - Returns `False` if the key is not found, expired, or on failure.
 
-    ### Notes
+    Notes
+    -----
     - If the key exists but has expired (based on its `timestamp`), it is deleted and `False`
       is returned.
     - All expired keys are cleaned up on lookup when an expired key is found.
@@ -74,7 +82,8 @@ def get(
       value is and lets it say so.
     - On database connection or query failure, `False` is returned.
 
-    ### Example
+    Examples
+    --------
     >>> get('hostname')
     'server01.example.com'
 
@@ -132,26 +141,34 @@ def prune(before=None, path='', filename='linuxfabrik-monitoring-plugins-cache.d
     another identifier that moves on, the entry left behind by the previous one is never
     looked up again and never cleaned up either. Pruning is how that cache stays bounded.
 
-    ### Parameters
-    - **before** (`int`, optional): Delete entries that expired before this Unix timestamp.
-      Defaults to now, which deletes everything currently expired. Pass an earlier timestamp
-      to keep recently expired entries, which is what a caller that serves stale values
-      during an outage (`get(allow_stale=True)`) needs in order to still have something to
-      serve.
-    - **path** (`str`, optional): Path to the directory containing the cache database.
-      Defaults to an empty string (current directory).
-    - **filename** (`str`, optional): Name of the cache database file.
-      Defaults to `'linuxfabrik-monitoring-plugins-cache.db'`.
+    Parameters
+    ----------
+    before : int, optional
+        Delete entries that expired before this Unix timestamp.
+        Defaults to now, which deletes everything currently expired. Pass an earlier timestamp
+        to keep recently expired entries, which is what a caller that serves stale values
+        during an outage (`get(allow_stale=True)`) needs in order to still have something to
+        serve.
+    path : str, optional
+        Path to the directory containing the cache database.
+        Defaults to an empty string (current directory).
+    filename : str, optional
+        Name of the cache database file.
+        Defaults to `'linuxfabrik-monitoring-plugins-cache.db'`.
 
-    ### Returns
-    - **bool**: `True` if the delete succeeded, `False` on any database failure.
+    Returns
+    -------
+    bool
+        `True` if the delete succeeded, `False` on any database failure.
 
-    ### Notes
+    Notes
+    -----
     - Entries stored without an expiry (`set(expire=0)`) are never pruned.
     - Prune after a successful refresh, not before one. Dropping the old copy while the
       source is unreachable is how a cache ends up empty exactly when it is needed.
 
-    ### Example
+    Examples
+    --------
     >>> prune()
     True
 
@@ -190,28 +207,37 @@ def set(
     exist, and inserts or replaces the given key with its associated value. Expiration can be
     controlled by setting a Unix timestamp.
 
-    ### Parameters
-    - **key** (`str`): The cache key to set. Keys must be unique.
-    - **value** (`str`): The value to associate with the key. Always stored as a string.
-    - **expire** (`int`, optional): The expiration Unix timestamp in seconds.
-      If `0` (default), the key never expires.
-    - **path** (`str`, optional): Path to the directory containing the cache database.
-      Defaults to an empty string (current directory).
-    - **filename** (`str`, optional): Name of the cache database file.
-      Defaults to `'linuxfabrik-monitoring-plugins-cache.db'`.
+    Parameters
+    ----------
+    key : str
+        The cache key to set. Keys must be unique.
+    value : str
+        The value to associate with the key. Always stored as a string.
+    expire : int, optional
+        The expiration Unix timestamp in seconds.
+        If `0` (default), the key never expires.
+    path : str, optional
+        Path to the directory containing the cache database.
+        Defaults to an empty string (current directory).
+    filename : str, optional
+        Name of the cache database file.
+        Defaults to `'linuxfabrik-monitoring-plugins-cache.db'`.
 
-    ### Returns
-    - **bool**:
-      - `True` if the operation succeeded.
-      - `False` if the database connection, table creation, index creation, insert, or commit
-        failed.
+    Returns
+    -------
+    bool
+        - `True` if the operation succeeded.
+        - `False` if the database connection, table creation, index creation, insert, or commit
+          failed.
 
-    ### Notes
+    Notes
+    -----
     - If the key already exists, its value and expiration are overwritten.
     - The `cache` table and a unique index on `key` are automatically created if missing.
     - Expiration must be enforced manually during retrieval (`get()`), not automatically here.
 
-    ### Example
+    Examples
+    --------
     >>> set('hostname', 'server01.example.com')
     True
 

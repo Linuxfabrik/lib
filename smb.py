@@ -24,23 +24,33 @@ def glob(filename, username, password, timeout, pattern='*', encrypt=True):
 
     Connects to the SMB server and retrieves file entries matching the given pattern.
 
-    ### Parameters
-    - **filename** (`str`): Full SMB path to the file or directory.
-    - **username** (`str`): Username for authentication.
-    - **password** (`str`): Password for authentication.
-    - **timeout** (`int`): Connection timeout in seconds.
-    - **pattern** (`str`, optional): Glob pattern to match files. Default is `'*'`.
-    - **encrypt** (`bool`, optional): Enable SMB encryption if available. Defaults to `True`.
+    Parameters
+    ----------
+    filename : str
+        Full SMB path to the file or directory.
+    username : str
+        Username for authentication.
+    password : str
+        Password for authentication.
+    timeout : int
+        Connection timeout in seconds.
+    pattern : str, optional
+        Glob pattern to match files. Default is `'*'`.
+    encrypt : bool, optional
+        Enable SMB encryption if available. Defaults to `True`.
 
-    ### Returns
-    - **tuple** (`bool`, `list` or `str`):
-      - `True` and a list of file entries if successful.
-      - `False` and an error message otherwise.
+    Returns
+    -------
+    tuple (bool, list or str)
+        - `True` and a list of file entries if successful.
+        - `False` and an error message otherwise.
 
-    ### Notes
+    Notes
+    -----
     - Converts generator from `scandir()` to a list immediately to catch any exceptions early.
 
-    ### Example
+    Examples
+    --------
     >>> success, files = lib.smb.glob('smb://server/share', 'user', 'pass', timeout=5)
     """
     try:
@@ -90,24 +100,35 @@ def open_file(filename, username, password, timeout, encrypt=True):
     This function connects to an SMB server and attempts to open the specified file for reading
     in binary mode.
 
-    ### Parameters
-    - **filename** (`str`): The full SMB path to the file.
-    - **username** (`str`): Username for authentication.
-    - **password** (`str`): Password for authentication.
-    - **timeout** (`int`): Connection timeout in seconds.
-    - **encrypt** (`bool`, optional): Enable SMB encryption if available. Defaults to `True`.
+    Parameters
+    ----------
+    filename : str
+        The full SMB path to the file.
+    username : str
+        Username for authentication.
+    password : str
+        Password for authentication.
+    timeout : int
+        Connection timeout in seconds.
+    encrypt : bool, optional
+        Enable SMB encryption if available. Defaults to `True`.
 
-    ### Returns
-    - **tuple** (`bool`, `object` or `str`):
-      - `True` and a file descriptor if successful.
-      - `False` and an error message otherwise.
+    Returns
+    -------
+    tuple (bool, object or str)
+        - `True` and a file descriptor if successful.
+        - `False` and an error message otherwise.
 
-    ### Notes
+    Notes
+    -----
     - Wrap the returned file object in a `with` block to ensure it is properly closed.
 
-    ### Example
-    >>> with lib.base.coe(lib.smb.open_file(url, args.USERNAME, args.PASSWORD, args.TIMEOUT)) as fd:
-    >>>     result = lib.txt.to_text(fd.read())
+    Examples
+    --------
+    >>> with lib.base.coe(
+    ...     lib.smb.open_file(url, args.USERNAME, args.PASSWORD, args.TIMEOUT)
+    ... ) as fd:
+    ...     result = lib.txt.to_text(fd.read())
     """
     try:
         file_obj = smbclient.open_file(

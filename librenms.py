@@ -30,28 +30,32 @@ def get_data(args, uri=''):
     the provided token and fetches the data. If the API returns an error status, it exits or
     handles the error appropriately.
 
-    ### Parameters
-    - **args** (object):
-      An object containing:
-        - `URL` (`str`): Base URL of the LibreNMS API.
-        - `TOKEN` (`str`): API authentication token.
-        - `INSECURE` (`bool`): Whether to disable SSL verification.
-        - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
-        - `TIMEOUT` (`int`): Request timeout in seconds.
-        - `ALWAYS_OK` (`bool`): Whether to always exit cleanly even on errors.
+    Parameters
+    ----------
+    args : object
+        An object containing:
 
-    - **uri** (`str`, optional):
-      Endpoint URI to append to the base URL. Defaults to `''`.
+          - `URL` (`str`): Base URL of the LibreNMS API.
+          - `TOKEN` (`str`): API authentication token.
+          - `INSECURE` (`bool`): Whether to disable SSL verification.
+          - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `TIMEOUT` (`int`): Request timeout in seconds.
+          - `ALWAYS_OK` (`bool`): Whether to always exit cleanly even on errors.
+    uri : str, optional
+        Endpoint URI to append to the base URL. Defaults to `''`.
 
-    ### Returns
-    - **dict**:
-      The fetched data as a parsed JSON dictionary.
+    Returns
+    -------
+    dict
+        The fetched data as a parsed JSON dictionary.
 
-    ### Notes
+    Notes
+    -----
     - Automatically ensures correct URL formatting.
     - If the response status is not `ok`, the function exits or handles the error.
 
-    ### Example
+    Examples
+    --------
     >>> result = get_data(args, uri='/api/v0/devices')
     """
 
@@ -89,24 +93,28 @@ def get_prop(obj, prop, mytype='str'):
     might not exist or be `None`. For string types, it returns an empty string if missing; otherwise,
     it returns `None`.
 
-    ### Parameters
-    - **obj** (`dict`):
-      The dictionary object to query.
-    - **prop** (`str`):
-      The property name to retrieve.
-    - **mytype** (`str`, optional):
-      Expected type of the property. `'str'` ensures text formatting. Defaults to `'str'`.
+    Parameters
+    ----------
+    obj : dict
+        The dictionary object to query.
+    prop : str
+        The property name to retrieve.
+    mytype : str, optional
+        Expected type of the property. `'str'` ensures text formatting. Defaults to `'str'`.
 
-    ### Returns
-    - **str** or **any**:
-      - If `mytype` is `'str'`, returns a string.
-      - Otherwise, returns the original value or `None` if not found.
+    Returns
+    -------
+    str or any
+        - If `mytype` is `'str'`, returns a string.
+        - Otherwise, returns the original value or `None` if not found.
 
-    ### Notes
+    Notes
+    -----
     - Helps avoid KeyErrors and NoneType issues in chained lookups.
     - Useful for safely accessing fields in API responses.
 
-    ### Example
+    Examples
+    --------
     >>> get_prop(device, 'uptime')
     '3600'
     >>> get_prop(device, 'cpu_usage', mytype='int')
@@ -137,23 +145,28 @@ def get_state(librestate, severity='crit'):
     ACTIVE, WORSE, BETTER and CHANGED all represent an open, notifiable
     alert, so they map to WARN/CRIT. ACKNOWLEDGED and CLEAR map to OK.
 
-    ### Parameters
-    - **librestate** (`int`):
-      The LibreNMS state code to translate.
-    - **severity** (`str`, optional):
-      If `crit`, maps alert states to critical. Otherwise, maps to warning.
+    Parameters
+    ----------
+    librestate : int
+        The LibreNMS state code to translate.
+    severity : str, optional
+        If `crit`, maps alert states to critical. Otherwise, maps to warning.
 
-    ### Returns
-    - **int**:
-      Nagios-compatible state code:
-        - 0 = OK
-        - 1 = WARNING
-        - 2 = CRITICAL
+    Returns
+    -------
+    int
+        Nagios-compatible state code:
 
-    ### Notes
+          - 0 = OK
+          - 1 = WARNING
+          - 2 = CRITICAL
+
+    Notes
+    -----
     - Assumes STATE_OK, STATE_WARN, and STATE_CRIT constants are defined.
 
-    ### Example
+    Examples
+    --------
     >>> get_state(0)
     0
     >>> get_state(1, severity='warn')

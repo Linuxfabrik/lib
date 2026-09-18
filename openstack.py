@@ -329,38 +329,51 @@ def connect(
     A token from a previous run is reused where there is one, which saves the request a token
     costs on a busy Identity API.
 
-    ### Parameters
-    - **env** (`dict`): The variables of an OpenStack rc file, for example as returned by
-      `disk.read_env()`. Read are `OS_AUTH_URL`, `OS_CACERT`, `OS_ENDPOINT_TYPE`,
-      `OS_INTERFACE`, `OS_PASSWORD`, `OS_PROJECT_DOMAIN_ID`, `OS_PROJECT_DOMAIN_NAME`,
-      `OS_PROJECT_ID`, `OS_PROJECT_NAME`, `OS_REGION_NAME`, `OS_USERNAME`,
-      `OS_USER_DOMAIN_ID`, `OS_USER_DOMAIN_NAME` and `OS_USER_ID`.
-    - **service_types** (`list` of `str`): The catalog service types to look up, for example
-      `['compute', 'volumev3', 'network']`.
-    - **timeout** (`int`, optional): Time budget for the whole run in seconds, not per request:
-      every request is given what is left of it. Defaults to `8`.
-    - **insecure** (`bool`, optional): Do not verify the TLS certificate at all, which also
-      makes a CA bundle named in `OS_CACERT` moot. Defaults to `False`.
-    - **no_proxy** (`bool`, optional): Ignore the proxy the environment names.
-      Defaults to `False`.
-    - **proxy** (`str`, optional): The proxy to reach the cloud through. Defaults to `None`.
-    - **cache_expire** (`int`, optional): How long the token may be reused, in minutes. `0`
-      turns the cache off, so the run neither reads a token nor leaves one behind.
-      Defaults to `50`.
-    - **cache_name** (`str`, optional): Prefix of the cache key, so consumers do not read each
-      other's tokens. Defaults to `'openstack'`.
-    - **use_cache** (`bool`, optional): Reuse a cached token. Defaults to `True`.
+    Parameters
+    ----------
+    env : dict
+        The variables of an OpenStack rc file, for example as returned by
+        `disk.read_env()`. Read are `OS_AUTH_URL`, `OS_CACERT`, `OS_ENDPOINT_TYPE`,
+        `OS_INTERFACE`, `OS_PASSWORD`, `OS_PROJECT_DOMAIN_ID`, `OS_PROJECT_DOMAIN_NAME`,
+        `OS_PROJECT_ID`, `OS_PROJECT_NAME`, `OS_REGION_NAME`, `OS_USERNAME`,
+        `OS_USER_DOMAIN_ID`, `OS_USER_DOMAIN_NAME` and `OS_USER_ID`.
+    service_types : list of str
+        The catalog service types to look up, for example
+        `['compute', 'volumev3', 'network']`.
+    timeout : int, optional
+        Time budget for the whole run in seconds, not per request:
+        every request is given what is left of it. Defaults to `8`.
+    insecure : bool, optional
+        Do not verify the TLS certificate at all, which also
+        makes a CA bundle named in `OS_CACERT` moot. Defaults to `False`.
+    no_proxy : bool, optional
+        Ignore the proxy the environment names.
+        Defaults to `False`.
+    proxy : str, optional
+        The proxy to reach the cloud through. Defaults to `None`.
+    cache_expire : int, optional
+        How long the token may be reused, in minutes. `0`
+        turns the cache off, so the run neither reads a token nor leaves one behind.
+        Defaults to `50`.
+    cache_name : str, optional
+        Prefix of the cache key, so consumers do not read each
+        other's tokens. Defaults to `'openstack'`.
+    use_cache : bool, optional
+        Reuse a cached token. Defaults to `True`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the connection succeeded, otherwise False.
-        - tuple[1] (**dict or str**):
-          - If successful, a connection dict to hand to `fetch_json()`. Of interest to a caller
-            are `project_id` (the project the token is scoped to), which many an endpoint needs
-            in its path, and `endpoints` (the URL per service type that was found).
-          - If unsuccessful, an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the connection succeeded, otherwise False.
+          - tuple[1] (**dict or str**):
 
-    ### Notes
+            - If successful, a connection dict to hand to `fetch_json()`. Of interest to a caller
+              are `project_id` (the project the token is scoped to), which many an endpoint needs
+              in its path, and `endpoints` (the URL per service type that was found).
+            - If unsuccessful, an error message string.
+
+    Notes
+    -----
     - A service type the catalog does not offer is left out of `endpoints` instead of failing
       the connection, because a caller asking for several services usually has something to say
       about the ones that did answer.
@@ -370,7 +383,8 @@ def connect(
       store alone.
     - The connection dict carries the credentials and the token, so do not print it.
 
-    ### Example
+    Examples
+    --------
     >>> env = base.coe(disk.read_env('/var/spool/icinga2/.openstack.cnf'))
     >>> conn = base.coe(openstack.connect(env, ['compute'], timeout=8))
     >>> servers = base.coe(openstack.fetch_json(conn, 'compute', '/servers/detail'))
@@ -420,35 +434,45 @@ def fetch(conn, service_type, path, header=None, method=None, retries=0):
     how an object store reports what a container holds, and where a HEAD is the request that
     carries it. `fetch_json()` is the one to use for a service that answers with a document.
 
-    ### Parameters
-    - **conn** (`dict`): A connection as returned by `connect()`.
-    - **service_type** (`str`): The catalog service type to talk to, for example
-      `'object-store'`. Has to be one of the service types the connection was opened for.
-    - **path** (`str`): The path below the endpoint, starting with a slash, for example
-      `'/my-container'`. Anything a value contributes to it has to be URL-encoded by the
-      caller.
-    - **header** (`dict`, optional): Request headers on top of the ones every request carries,
-      for example `{'OpenStack-API-Version': 'compute 2.1'}` to pin the microversion of a
-      service that offers several. Defaults to `None`.
-    - **method** (`str`, optional): The HTTP method, for example `'HEAD'`. Defaults to `None`,
-      which is a GET. Defaults to `None`.
-    - **retries** (`int`, optional): How many extra attempts to make when the request fails.
-      Defaults to `0`.
+    Parameters
+    ----------
+    conn : dict
+        A connection as returned by `connect()`.
+    service_type : str
+        The catalog service type to talk to, for example
+        `'object-store'`. Has to be one of the service types the connection was opened for.
+    path : str
+        The path below the endpoint, starting with a slash, for example
+        `'/my-container'`. Anything a value contributes to it has to be URL-encoded by the
+        caller.
+    header : dict, optional
+        Request headers on top of the ones every request carries,
+        for example `{'OpenStack-API-Version': 'compute 2.1'}` to pin the microversion of a
+        service that offers several. Defaults to `None`.
+    method : str, optional
+        The HTTP method, for example `'HEAD'`. Defaults to `None`,
+        which is a GET. Defaults to `None`.
+    retries : int, optional
+        How many extra attempts to make when the request fails.
+        Defaults to `0`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the request succeeded, otherwise False.
-        - tuple[1] (**dict or str**): The extended answer of `url.fetch()`, whose
-          `response_header` holds the headers with their names in lower case, or an error
-          message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the request succeeded, otherwise False.
+          - tuple[1] (**dict or str**): The extended answer of `url.fetch()`, whose
+            `response_header` holds the headers with their names in lower case, or an error
+            message string.
 
-    ### Notes
+    Notes
+    -----
     - A cached token that the service rejects is replaced by a fresh one and the request is
       repeated once, so a token revoked between two runs costs one retry instead of an error.
     - The error message names the reason the service gave, and starts in lower case, so a
       caller can put it behind whatever it calls the service.
 
-    ### Example
+    Examples
+    --------
     >>> success, result = openstack.fetch(
     ...     conn, 'object-store', '/backups', method='HEAD'
     ... )
@@ -483,29 +507,38 @@ def fetch_json(conn, service_type, path, header=None, retries=0, extended=False)
 
     Everything `fetch()` does, plus the JSON step on the body it answers with.
 
-    ### Parameters
-    - **conn** (`dict`): A connection as returned by `connect()`.
-    - **service_type** (`str`): The catalog service type to talk to, for example `'compute'`.
-      Has to be one of the service types the connection was opened for.
-    - **path** (`str`): The path below the endpoint, starting with a slash, for example
-      `'/limits'`. Anything a value contributes to it has to be URL-encoded by the caller.
-    - **header** (`dict`, optional): Request headers on top of the ones every request carries,
-      for example `{'OpenStack-API-Version': 'compute 2.1'}` to pin the microversion of a
-      service that offers several. Defaults to `None`.
-    - **retries** (`int`, optional): How many extra attempts to make when the request fails.
-      Defaults to `0`.
-    - **extended** (`bool`, optional): Return the whole answer with the parsed document added
-      under `response_json`, rather than the document alone. For a service that says part of
-      what it has to say in its headers and the rest in its body, which an object store does
-      when it lists an account. Defaults to `False`.
+    Parameters
+    ----------
+    conn : dict
+        A connection as returned by `connect()`.
+    service_type : str
+        The catalog service type to talk to, for example `'compute'`.
+        Has to be one of the service types the connection was opened for.
+    path : str
+        The path below the endpoint, starting with a slash, for example
+        `'/limits'`. Anything a value contributes to it has to be URL-encoded by the caller.
+    header : dict, optional
+        Request headers on top of the ones every request carries,
+        for example `{'OpenStack-API-Version': 'compute 2.1'}` to pin the microversion of a
+        service that offers several. Defaults to `None`.
+    retries : int, optional
+        How many extra attempts to make when the request fails.
+        Defaults to `0`.
+    extended : bool, optional
+        Return the whole answer with the parsed document added
+        under `response_json`, rather than the document alone. For a service that says part of
+        what it has to say in its headers and the rest in its body, which an object store does
+        when it lists an account. Defaults to `False`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True if the request succeeded, otherwise False.
-        - tuple[1] (**dict or str**): The parsed document, the whole answer with
-          `response_json` added when `extended` is set, or an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the request succeeded, otherwise False.
+          - tuple[1] (**dict or str**): The parsed document, the whole answer with
+            `response_json` added when `extended` is set, or an error message string.
 
-    ### Example
+    Examples
+    --------
     >>> success, result = openstack.fetch_json(conn, 'compute', '/limits')
     """
     success, result = fetch(conn, service_type, path, header=header, retries=retries)

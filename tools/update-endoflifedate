@@ -94,14 +94,19 @@ def render(data):
     have to shell out to `ruff` and cannot be made to write a differently formatted file
     by a host that happens to have no `ruff` installed.
 
-    ### Parameters
-    - **data** (`dict`): Maps a product API URL to the list of release cycles the API
-      returned for it. Each cycle is a flat `dict` of scalar values.
+    Parameters
+    ----------
+    data : dict
+        Maps a product API URL to the list of release cycles the API
+        returned for it. Each cycle is a flat `dict` of scalar values.
 
-    ### Returns
-    - **str**: The complete file content, ending in a newline.
+    Returns
+    -------
+    str
+        The complete file content, ending in a newline.
 
-    ### Notes
+    Notes
+    -----
     - Every collection is written one element per line and closed with a trailing comma.
       `ruff format` honours that trailing comma (its "magic trailing comma") and keeps the
       collection expanded no matter how short it is, so the layout stays stable even if a

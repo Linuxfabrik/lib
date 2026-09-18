@@ -26,25 +26,29 @@ def get_data(args, _type='json'):
     This function calls the provided URL and returns the data in either JSON format (default) or
     raw format, based on the specified type.
 
-    ### Parameters
-    - **args** (`object`):
-      An object containing:
-        - `URL` (`str`): URL to fetch.
-        - `USERNAME` (`str`): Username for Basic Auth (optional).
-        - `PASSWORD` (`str`): Password for Basic Auth (optional).
-        - `TIMEOUT` (`int`): Request timeout in seconds.
-        - `INSECURE` (`bool`): Disable SSL verification.
-        - `NO_PROXY` (`bool`): Ignore proxy settings.
-    - **_type** (`str`, optional):
-      Either `'json'` for JSON parsing or anything else for raw fetch. Defaults to `'json'`.
+    Parameters
+    ----------
+    args : object
+        An object containing:
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): Whether the request succeeded.
-      - **result** (`dict` or `str`): Parsed JSON or raw response.
-      - **False** (`bool`): False if fetch failed.
+          - `URL` (`str`): URL to fetch.
+          - `USERNAME` (`str`): Username for Basic Auth (optional).
+          - `PASSWORD` (`str`): Password for Basic Auth (optional).
+          - `TIMEOUT` (`int`): Request timeout in seconds.
+          - `INSECURE` (`bool`): Disable SSL verification.
+          - `NO_PROXY` (`bool`): Ignore proxy settings.
+    _type : str, optional
+        Either `'json'` for JSON parsing or anything else for raw fetch. Defaults to `'json'`.
 
-    ### Example
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): Whether the request succeeded.
+        - **result** (`dict` or `str`): Parsed JSON or raw response.
+        - **False** (`bool`): False if fetch failed.
+
+    Examples
+    --------
     >>> success, result = get_data(args, _type='json')
     >>> print(result)
     """

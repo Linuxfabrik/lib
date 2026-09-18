@@ -82,29 +82,37 @@ def coe(result, state=STATE_UNKNOWN):
     tuple. If the operation fails, it sanitizes and prints the error message and exits with a given
     state. Otherwise, it returns the successful result and allows the script to continue.
 
-    ### Parameters
-    - **result** (`tuple`): A two-element tuple returned from a function.
-      - `result[0]` (`bool`): Success indicator (`True` if successful, `False` otherwise).
-      - `result[1]` (`any`): The actual result or an error message.
-    - **state** (`int`, optional): Exit code to use if the function fails.
-      Defaults to `STATE_UNKNOWN` (3).
+    Parameters
+    ----------
+    result : tuple
+        A two-element tuple returned from a function.
 
-    ### Returns
-    - **any type**: The second element of the result tuple (`result[1]`) if successful.
+        - `result[0]` (`bool`): Success indicator (`True` if successful, `False` otherwise).
+        - `result[1]` (`any`): The actual result or an error message.
+    state : int, optional
+        Exit code to use if the function fails.
+        Defaults to `STATE_UNKNOWN` (3).
 
-    ### Notes
+    Returns
+    -------
+    any type
+        The second element of the result tuple (`result[1]`) if successful.
+
+    Notes
+    -----
     - Sensitive information in error messages is automatically redacted before printing.
     - This function is intended to be used **only** inside the `main()` function of the
       calling script, not inside library functions.
     - If the function fails (`result[0]` is `False`), the script immediately exits after printing
       the sanitized message.
 
-    ### Example
+    Examples
+    --------
     Without `coe`:
     >>> success, html = lib.url.fetch(URL)
     >>> if not success:
-    >>>     print(html)
-    >>>     sys.exit(STATE_UNKNOWN)
+    ...     print(html)
+    ...     sys.exit(STATE_UNKNOWN)
 
     With `coe`:
     >>> html = lib.base.coe(lib.url.fetch(URL))
@@ -127,25 +135,31 @@ def cu(msg=None, traceback=True):
     and exits the script with `STATE_UNKNOWN`. It ensures output is safe for display in web GUIs
     by replacing `<` and `>` characters.
 
-    ### Parameters
-    - **msg** (`str`, optional): An optional message to print before exiting.
-      If provided, it will be stripped, sanitized, and printed.
-    - **traceback** (`bool`, optional):
-      Whether to attach the stack trace of the exception being handled. Defaults to
-      `True`. Pass `False` where the exception is the expected answer rather than a
-      defect: a socket that is not there because the service is not installed, a
-      command that is absent on this platform. The admin gets the sentence that says
-      so, and no Python stack trace for a situation nobody needs to debug.
+    Parameters
+    ----------
+    msg : str, optional
+        An optional message to print before exiting.
+        If provided, it will be stripped, sanitized, and printed.
+    traceback : bool, optional
+        Whether to attach the stack trace of the exception being handled. Defaults to
+        `True`. Pass `False` where the exception is the expected answer rather than a
+        defect: a socket that is not there because the service is not installed, a
+        command that is absent on this platform. The admin gets the sentence that says
+        so, and no Python stack trace for a situation nobody needs to debug.
 
-    ### Returns
-    - **None**: This function does not return; it always exits the script with `STATE_UNKNOWN`.
+    Returns
+    -------
+    None
+        This function does not return; it always exits the script with `STATE_UNKNOWN`.
 
-    ### Notes
+    Notes
+    -----
     - If a traceback exists, it is included for debugging, with `<` and `>` replaced by `'`.
     - Sensitive information in the message is automatically redacted before printing.
     - If no traceback is present, only the optional message (if any) is printed.
 
-    ### Example
+    Examples
+    --------
     >>> cu('Unable to connect to server')
 
     >>> cu()
@@ -178,28 +192,40 @@ def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=N
     Returns a Nagios performance data string in the format:
     `'label'=value[UOM];[warn];[crit];[min];[max]`
 
-    ### Parameters
-    - **label** (`str`): The name of the performance data label.
-    - **value** (`int` or `float`): The measured value. `None` means "nothing to report",
-      and yields an empty string rather than a metric.
-    - **uom** (`str`, optional): The unit of measurement (e.g., 's', 'B', '%'). Defaults to None.
-    - **warn** (`int` or `float`, optional): Warning threshold. Defaults to None.
-    - **crit** (`int` or `float`, optional): Critical threshold. Defaults to None.
-    - **_min** (`int` or `float`, optional): Minimum value. Defaults to None.
-    - **_max** (`int` or `float`, optional): Maximum value. Defaults to None.
+    Parameters
+    ----------
+    label : str
+        The name of the performance data label.
+    value : int or float
+        The measured value. `None` means "nothing to report",
+        and yields an empty string rather than a metric.
+    uom : str, optional
+        The unit of measurement (e.g., 's', 'B', '%'). Defaults to None.
+    warn : int or float, optional
+        Warning threshold. Defaults to None.
+    crit : int or float, optional
+        Critical threshold. Defaults to None.
+    _min : int or float, optional
+        Minimum value. Defaults to None.
+    _max : int or float, optional
+        Maximum value. Defaults to None.
 
-    ### Returns
-    - **str**: A properly formatted Nagios performance data string, or an empty string if
-      there is no value to report.
+    Returns
+    -------
+    str
+        A properly formatted Nagios performance data string, or an empty string if
+        there is no value to report.
 
-    ### Notes
+    Notes
+    -----
     - A `value` of `None` returns an empty string. A source that did not report the reading
       hands `None` through, and interpolating that would emit the literal `'label'=None`,
       which is not a number: consumers that parse the perfdata line drop the whole line over
       it, not just the one broken metric. Callers therefore no longer have to guard every
       single call.
 
-    ### Example
+    Examples
+    --------
     >>> get_perfdata('load1', 0.42, '', 1.0, 5.0, 0, 10)
     "'load1'=0.42;1.0;5.0;0;10 "
 
@@ -223,25 +249,34 @@ def get_state(value, warn, crit, _operator='ge'):
     Returns the STATE by comparing `value` to the given thresholds using
     a comparison `_operator`. `warn` and `crit` thresholds may also be `None`.
 
-    ### Parameters
-    - **value** (`float`): Numeric value to evaluate.
-    - **warn** (`float`): Numeric warning threshold.
-    - **crit** (`float`): Numeric critical threshold.
-    - **_operator** (`str`): Comparison operator to use:
-      - `eq`: equal to
-      - `ge`: greater or equal
-      - `gt`: greater than
-      - `le`: less or equal
-      - `lt`: less than
-      - `ne`: not equal to
-      - `range`: match Nagios range definition
+    Parameters
+    ----------
+    value : float
+        Numeric value to evaluate.
+    warn : float
+        Numeric warning threshold.
+    crit : float
+        Numeric critical threshold.
+    _operator : str
+        Comparison operator to use:
 
-    ### Returns
-    - **int**: `STATE_OK`, `STATE_WARN`, or `STATE_CRIT`. `STATE_UNKNOWN` for a
-      threshold that does not parse, an unknown `_operator`, or a `value` that is not
-      a number.
+        - `eq`: equal to
+        - `ge`: greater or equal
+        - `gt`: greater than
+        - `le`: less or equal
+        - `lt`: less than
+        - `ne`: not equal to
+        - `range`: match Nagios range definition
 
-    ### Example
+    Returns
+    -------
+    int
+        `STATE_OK`, `STATE_WARN`, or `STATE_CRIT`. `STATE_UNKNOWN` for a
+        threshold that does not parse, an unknown `_operator`, or a `value` that is not
+        a number.
+
+    Examples
+    --------
     >>> get_state(15, 10, 20, 'ge')
     1  # STATE_WARN
 
@@ -326,33 +361,43 @@ def get_table(
     what to print for the ones it does not. Optionally supports a custom header, sorting by
     a given key, and stripping whitespace from values.
 
-    ### Parameters
-    - **data** (`list`): List of dictionaries representing the table rows.
-    - **cols** (`list`): List of keys to display as table columns.
-    - **header** (`list`, optional): List of custom column headers. Defaults to None.
-    - **strip** (`bool`, optional): Whether to strip whitespace from values. Defaults to True.
-    - **sort_by_key** (`str`, optional): Column key to sort the table by. Defaults to None.
-    - **sort_order_reverse** (`bool`, optional): Sort descending if True. Defaults to False.
-    - **missing** (`str`, optional):
-      What to print in a cell whose key the row does not have. Defaults to `None`, which
-      reports the missing column instead of printing the table at all.
-    - **hide_empty** (`bool`, optional):
-      Leave out every column that no row filled in, that is one whose cells are all empty
-      or all a hyphen placeholder. Defaults to False.
-    - **max_rows** (`int`, optional):
-      Render at most this many data rows and state below the table how many were left out.
-      Defaults to `None`, which renders every row.
-    - **max_rows_label** (`str`, optional):
-      What the rows left out by `max_rows` are called in that sentence, in the singular.
-      It is pluralized as needed. Defaults to `'row'`.
-    - **max_rows_suffix** (`str`, optional):
-      How `max_rows_label` forms its plural, passed to `txt.pluralize()`, so an irregular
-      noun can be spelled out as `'entr'` plus `'y,ies'`. Defaults to `'s'`.
+    Parameters
+    ----------
+    data : list
+        List of dictionaries representing the table rows.
+    cols : list
+        List of keys to display as table columns.
+    header : list, optional
+        List of custom column headers. Defaults to None.
+    strip : bool, optional
+        Whether to strip whitespace from values. Defaults to True.
+    sort_by_key : str, optional
+        Column key to sort the table by. Defaults to None.
+    sort_order_reverse : bool, optional
+        Sort descending if True. Defaults to False.
+    missing : str, optional
+        What to print in a cell whose key the row does not have. Defaults to `None`, which
+        reports the missing column instead of printing the table at all.
+    hide_empty : bool, optional
+        Leave out every column that no row filled in, that is one whose cells are all empty
+        or all a hyphen placeholder. Defaults to False.
+    max_rows : int, optional
+        Render at most this many data rows and state below the table how many were left out.
+        Defaults to `None`, which renders every row.
+    max_rows_label : str, optional
+        What the rows left out by `max_rows` are called in that sentence, in the singular.
+        It is pluralized as needed. Defaults to `'row'`.
+    max_rows_suffix : str, optional
+        How `max_rows_label` forms its plural, passed to `txt.pluralize()`, so an irregular
+        noun can be spelled out as `'entr'` plus `'y,ies'`. Defaults to `'s'`.
 
-    ### Returns
-    - **str**: A string containing the formatted table.
+    Returns
+    -------
+    str
+        A string containing the formatted table.
 
-    ### Notes
+    Notes
+    -----
     - Without `missing`, a column no row carries is treated as a mistake in the calling
       code and reported as `Unknown column "..."`, which is what a mistyped column name
       deserves. That is the default because most consumers build their rows themselves and
@@ -383,7 +428,8 @@ def get_table(
     - Column widths come from the rows that are actually printed. A long value in a row
       that was cut does not widen the table it no longer appears in.
 
-    ### Example
+    Examples
+    --------
     >>> data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]
     >>> cols = ['name', 'age']
     >>> print(get_table(data, cols))
@@ -496,13 +542,18 @@ def get_worst(*states):
     Note that numerically the priority order does not match their integer
     values. Calling with no arguments returns `STATE_OK`.
 
-    ### Parameters
-    - ***states** (`int`): One or more states to compare.
+    Parameters
+    ----------
+    *states : int
+        One or more states to compare.
 
-    ### Returns
-    - **int**: The worse state according to the priority order.
+    Returns
+    -------
+    int
+        The worse state according to the priority order.
 
-    ### Example
+    Examples
+    --------
     >>> get_worst(STATE_OK, STATE_WARNING)
     STATE_WARNING
 
@@ -530,17 +581,22 @@ def guess_type(v, consumer='python'):
     For Python, it returns the actual value converted to its type (`int`, `float`, or `str`).
     For SQLite, it returns a string describing the type (`'integer'`, `'real'`, `'text'`).
 
-    ### Parameters
-    - **v** (`any`): The value to guess the type for.
-    - **consumer** (`str`, optional): The consumer type ('python' or 'sqlite'). Defaults to
-      'python'.
+    Parameters
+    ----------
+    v : any
+        The value to guess the type for.
+    consumer : str, optional
+        The consumer type ('python' or 'sqlite'). Defaults to
+        'python'.
 
-    ### Returns
-    - **any**:
-      - If `consumer='python'`, returns `None`, `int`, `float`, or `str`.
-      - If `consumer='sqlite'`, returns `'integer'`, `'real'`, or `'text'`.
+    Returns
+    -------
+    any
+        - If `consumer='python'`, returns `None`, `int`, `float`, or `str`.
+        - If `consumer='sqlite'`, returns `'integer'`, `'real'`, or `'text'`.
 
-    ### Example
+    Examples
+    --------
     >>> guess_type('1')
     1
 
@@ -561,7 +617,7 @@ def guess_type(v, consumer='python'):
 
     >>> value_type = lib.base.guess_type(value)
     >>> if isinstance(value_type, int) or isinstance(value_type, float):
-    >>>     ...
+    ...     ...
     """
     if v is None:
         return None if consumer == 'python' else 'text'
@@ -581,13 +637,18 @@ def is_empty_list(lst):
     """
     Check if a list only contains either empty elements or whitespace.
 
-    ### Parameters
-    - **l** (`list`): The list to check.
+    Parameters
+    ----------
+    lst : list
+        The list to check.
 
-    ### Returns
-    - **bool**: True if all elements are empty strings or whitespace, otherwise False.
+    Returns
+    -------
+    bool
+        True if all elements are empty strings or whitespace, otherwise False.
 
-    ### Example
+    Examples
+    --------
     >>> is_empty_list(['', '   ', ''])
     True
 
@@ -601,13 +662,18 @@ def is_numeric(value):
     """
     Return True if the value is truly numeric (int, float, etc.).
 
-    ### Parameters
-    - **value** (`any`): The value to check.
+    Parameters
+    ----------
+    value : any
+        The value to check.
 
-    ### Returns
-    - **bool**: True if the value is numeric, otherwise False.
+    Returns
+    -------
+    bool
+        True if the value is numeric, otherwise False.
 
-    ### Example
+    Examples
+    --------
     >>> is_numeric(+53.4)
     True
 
@@ -624,17 +690,23 @@ def lookup_lod(haystack, key, needle):
 
     Returns `(index, item)` if the needle was found, otherwise `(-1, None)`.
 
-    ### Parameters
-    - **haystack** (`list`): A list of dictionaries to search through.
-    - **key** (`str`): The key to look for in each dictionary.
-    - **needle** (`any`): The value to match against the specified key.
+    Parameters
+    ----------
+    haystack : list
+        A list of dictionaries to search through.
+    key : str
+        The key to look for in each dictionary.
+    needle : any
+        The value to match against the specified key.
 
-    ### Returns
-    - **tuple**:
-        - If found: (index, dictionary item).
-        - If not found: (-1, None).
+    Returns
+    -------
+    tuple
+          - If found: (index, dictionary item).
+          - If not found: (-1, None).
 
-    ### Example
+    Examples
+    --------
     >>> haystack = [
     ...     {'name': 'Tom', 'age': 10},
     ...     {'name': 'Mark', 'age': 5},
@@ -788,23 +860,29 @@ def match_range(value, spec):
     Decides if `value` is inside or outside the Nagios threshold
     specification.
 
-    ### Parameters
-    - **value** (`int` or `float` or `str`): The numeric value to check.
-    - **spec** (`str`): The Nagios range specification string.
+    Parameters
+    ----------
+    value : int or float or str
+        The numeric value to check.
+    spec : str
+        The Nagios range specification string.
 
-    ### Returns
-    - **tuple** of (`bool`, `bool` or `str`):
-      - On a `spec` that parses: (True, matched), where `matched` is True if `value` is
-        inside the bounds for a non-inverted `spec`, or outside the bounds for an
-        inverted one. Callers alert when `matched` is False.
-      - On a `spec` that does not parse: (False, reason). Callers turn this into UNKNOWN.
-      - On a `value` that is not a number: (False, reason), the same way.
+    Returns
+    -------
+    tuple of (bool, bool or str)
+        - On a `spec` that parses: (True, matched), where `matched` is True if `value` is
+          inside the bounds for a non-inverted `spec`, or outside the bounds for an
+          inverted one. Callers alert when `matched` is False.
+        - On a `spec` that does not parse: (False, reason). Callers turn this into UNKNOWN.
+        - On a `value` that is not a number: (False, reason), the same way.
 
-    ### Notes
+    Notes
+    -----
     - Both bounds are inclusive.
     - A trailing `%` on a bound is ignored, so `90:` and `90%:` mean the same.
 
-    ### Example
+    Examples
+    --------
     >>> match_range(15, '10')  # outside 0..10
     (True, False)
 
@@ -874,20 +952,29 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
     specified state code. Optionally, it can always exit with `STATE_OK` regardless of the given
     state.
 
-    ### Parameters
-    - **msg** (`str`): The message to print. Will be stripped, sanitized, and processed.
-    - **state** (`int`, optional): The exit code to use. Defaults to `STATE_OK`.
-    - **perfdata** (`str`, optional): Performance data to append after a `|` separator.
-      Defaults to an empty string (no performance data).
-    - **always_ok** (`bool`, optional): If `True`, forces the exit code to `STATE_OK` regardless
-      of the specified `state`. Defaults to `False`.
-    - **no_perfdata** (`bool`, optional): If `True`, suppresses the performance data section
-      entirely, printing only the message and preserving the exit code. Defaults to `False`.
+    Parameters
+    ----------
+    msg : str
+        The message to print. Will be stripped, sanitized, and processed.
+    state : int, optional
+        The exit code to use. Defaults to `STATE_OK`.
+    perfdata : str, optional
+        Performance data to append after a `|` separator.
+        Defaults to an empty string (no performance data).
+    always_ok : bool, optional
+        If `True`, forces the exit code to `STATE_OK` regardless
+        of the specified `state`. Defaults to `False`.
+    no_perfdata : bool, optional
+        If `True`, suppresses the performance data section
+        entirely, printing only the message and preserving the exit code. Defaults to `False`.
 
-    ### Returns
-    - **None**: This function does not return; it terminates the script via `sys.exit()`.
+    Returns
+    -------
+    None
+        This function does not return; it terminates the script via `sys.exit()`.
 
-    ### Notes
+    Notes
+    -----
     - Any `|` characters inside the message are replaced with `!`, the character being
       reserved as the performance data separator of the Monitoring Plugins output format.
     - A `<` that would open an HTML tag is replaced by `&lt;`, so a web interface cannot
@@ -902,7 +989,8 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
     - `no_perfdata` only affects what is printed; the message and the exit code are unchanged, so
       alerting keeps working while trending data is dropped from the output.
 
-    ### Example
+    Examples
+    --------
     >>> oao('Service is healthy', STATE_OK, 'load=0.12;1.00;5.00', always_ok=False)
     Service is healthy|load=0.12;1.00;5.00
     (and exits with code 0)
@@ -954,29 +1042,37 @@ def range2txt(spec, value=None, value_name='value', fmt=None, view='alert'):
     `WARN/CRIT if` column of THRESHOLDS.md, so a consumer that alerts can name what it
     alerted on. `view='ok'` gives the `OK if result is` column instead.
 
-    ### Parameters
-    - **spec** (`str`): The Nagios range specification string, as `match_range()` takes
-      it. Note the argument order: the range comes first here, the value is optional.
-    - **value** (`int` or `float` or `str`, optional): The value that was compared.
-      Without it, only the condition is returned.
-    - **value_name** (`str`, optional): What to call the value in the text. Defaults to
-      `value`.
-    - **fmt** (`callable`, optional): Turns a number into its human-readable form, for
-      example `human.seconds2human` or `human.bytes2human`. Without it, the numbers are
-      printed as they are.
-    - **view** (`str`, optional): `alert` for the condition that alerts, `ok` for the
-      condition that does not. Defaults to `alert`.
+    Parameters
+    ----------
+    spec : str
+        The Nagios range specification string, as `match_range()` takes
+        it. Note the argument order: the range comes first here, the value is optional.
+    value : int or float or str, optional
+        The value that was compared.
+        Without it, only the condition is returned.
+    value_name : str, optional
+        What to call the value in the text. Defaults to
+        `value`.
+    fmt : callable, optional
+        Turns a number into its human-readable form, for
+        example `human.seconds2human` or `human.bytes2human`. Without it, the numbers are
+        printed as they are.
+    view : str, optional
+        `alert` for the condition that alerts, `ok` for the
+        condition that does not. Defaults to `alert`.
 
-    ### Returns
-    - **tuple** of (`bool`, `str`):
-      - On success: (True, text), where `text` is `not in (start..end)`, or
-        `name=value not in (start..end)` when a `value` was given. Empty for a `spec`
-        of `None`, which is a threshold that was never set.
-      - On a `spec` that does not parse, a `value` that is not a number, or an unknown
-        `view`: (False, reason). Callers turn this into UNKNOWN, the same way they do
-        for `match_range()`.
+    Returns
+    -------
+    tuple of (bool, str)
+        - On success: (True, text), where `text` is `not in (start..end)`, or
+          `name=value not in (start..end)` when a `value` was given. Empty for a `spec`
+          of `None`, which is a threshold that was never set.
+        - On a `spec` that does not parse, a `value` that is not a number, or an unknown
+          `view`: (False, reason). Callers turn this into UNKNOWN, the same way they do
+          for `match_range()`.
 
-    ### Notes
+    Notes
+    -----
     - Both bounds are inclusive, and a trailing `%` on a bound or on the value is
       dropped, the way `match_range()` reads them.
     - The state marker is left to the caller, who can pick its wording with
@@ -984,7 +1080,8 @@ def range2txt(spec, value=None, value_name='value', fmt=None, view='alert'):
     - An inverted range alerts inside its bounds, so `10:20` and `@10:20` describe
       opposite conditions and never read alike.
 
-    ### Example
+    Examples
+    --------
     >>> range2txt('10')
     (True, 'not in (0..10)')
 
@@ -1073,19 +1170,26 @@ def resolve_time_threshold(threshold, total_seconds):
     the two shorthands cannot express the other one; an operator who needs that writes
     the range out.
 
-    ### Parameters
-    - **threshold** (`str`): The threshold as the operator wrote it.
-    - **total_seconds** (`float`): The whole lifetime the percentage form refers to.
-      Only read for that form.
+    Parameters
+    ----------
+    threshold : str
+        The threshold as the operator wrote it.
+    total_seconds : float
+        The whole lifetime the percentage form refers to.
+        Only read for that form.
 
-    ### Returns
-    - **str**: A Nagios range in days, ready for `get_state(..., _operator='range')`.
+    Returns
+    -------
+    str
+        A Nagios range in days, ready for `get_state(..., _operator='range')`.
 
-    ### Notes
+    Notes
+    -----
     - A percentage that does not parse as a number is passed through unchanged, so it
       reaches the range parser and is reported there rather than being read as zero.
 
-    ### Example
+    Examples
+    --------
     >>> resolve_time_threshold('14:', 7776000)
     '14:'
 
@@ -1115,16 +1219,20 @@ def smartcast(value):
     Returns the value converted to `float` if possible, else to `str`, else returns
     the uncasted value.
 
-    ### Parameters
-    - **value** (`any`): The value to attempt to cast.
+    Parameters
+    ----------
+    value : any
+        The value to attempt to cast.
 
-    ### Returns
-    - **float**, **str**, or **any**:
-      - If convertible to `float`, returns a `float`.
-      - If not, tries to convert to `str`.
-      - If neither succeeds, returns the original value unchanged.
+    Returns
+    -------
+    float, str, or any
+        - If convertible to `float`, returns a `float`.
+        - If not, tries to convert to `str`.
+        - If neither succeeds, returns the original value unchanged.
 
-    ### Example
+    Examples
+    --------
     >>> smartcast('3.14')
     3.14
 
@@ -1159,19 +1267,26 @@ def sort(array, reverse=True, sort_by_key=False):
     The sort order is descending by default (`reverse=True`).
     If the input is not a dictionary, the original input is returned unmodified.
 
-    ### Parameters
-    - **array** (`dict` or `any`): The dictionary to be sorted. If not a dictionary, the input is
-      returned as is.
-    - **reverse** (`bool`, optional): If True, sort in descending order; if False, ascending.
-      Defaults to True.
-    - **sort_by_key** (`bool`, optional): If True, sort by dictionary keys; if False, by values.
-      Defaults to False.
+    Parameters
+    ----------
+    array : dict or any
+        The dictionary to be sorted. If not a dictionary, the input is
+        returned as is.
+    reverse : bool, optional
+        If True, sort in descending order; if False, ascending.
+        Defaults to True.
+    sort_by_key : bool, optional
+        If True, sort by dictionary keys; if False, by values.
+        Defaults to False.
 
-    ### Returns
-    - **list** or **any**: A list of sorted (key, value) tuples if a dictionary is provided,
-      otherwise the original input.
+    Returns
+    -------
+    list or any
+        A list of sorted (key, value) tuples if a dictionary is provided,
+        otherwise the original input.
 
-    ### Example
+    Examples
+    --------
     >>> sort({'a': 2, 'b': 1})
     [('a', 2), ('b', 1)]
 
@@ -1197,17 +1312,25 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
 
     The square brackets around the state cause Icinga Web 2 to color the state.
 
-    ### Parameters
-    - **state** (`int`): The state code (e.g., 0, 1, 2, 3).
-    - **empty_ok** (`bool`, optional): If True and the state is OK (0), return an empty string.
-      Defaults to True.
-    - **prefix** (`str`, optional): A prefix string to prepend to the result. Defaults to ''.
-    - **suffix** (`str`, optional): A suffix string to append to the result. Defaults to ''.
+    Parameters
+    ----------
+    state : int
+        The state code (e.g., 0, 1, 2, 3).
+    empty_ok : bool, optional
+        If True and the state is OK (0), return an empty string.
+        Defaults to True.
+    prefix : str, optional
+        A prefix string to prepend to the result. Defaults to ''.
+    suffix : str, optional
+        A suffix string to append to the result. Defaults to ''.
 
-    ### Returns
-    - **str**: A formatted string representation of the state.
+    Returns
+    -------
+    str
+        A formatted string representation of the state.
 
-    ### Example
+    Examples
+    --------
     >>> lib.base.state2str(2)
     '[CRIT]'
 
@@ -1235,14 +1358,19 @@ def str2bool(s):
     """
     Return True or False depending on the given string.
 
-    ### Parameters
-    - **s** (`str`): The input string to evaluate.
+    Parameters
+    ----------
+    s : str
+        The input string to evaluate.
 
-    ### Returns
-    - **bool**: True if the string is not empty and not equal to "false" (case-insensitive),
-      otherwise False.
+    Returns
+    -------
+    bool
+        True if the string is not empty and not equal to "false" (case-insensitive),
+        otherwise False.
 
-    ### Example
+    Examples
+    --------
     >>> str2bool('')
     False
 
@@ -1273,18 +1401,23 @@ def str2state(string, ignore_error=True):
 
     Matches up to the first four characters of the input string.
 
-    ### Parameters
-    - **string** (`str`): The input string to match against known states.
-    - **ignore_error** (`bool`, optional): If True, unrecognized strings return `STATE_UNKNOWN`.
-      If False, unrecognized strings return None. Defaults to True.
+    Parameters
+    ----------
+    string : str
+        The input string to match against known states.
+    ignore_error : bool, optional
+        If True, unrecognized strings return `STATE_UNKNOWN`.
+        If False, unrecognized strings return None. Defaults to True.
 
-    ### Returns
-    - **int** or **None**:
-      - The numeric state code (`STATE_OK`, `STATE_WARN`, `STATE_CRIT`, `STATE_UNKNOWN`) if
-        recognized.
-      - Otherwise, `STATE_UNKNOWN` or None, depending on `ignore_error`.
+    Returns
+    -------
+    int or None
+        - The numeric state code (`STATE_OK`, `STATE_WARN`, `STATE_CRIT`, `STATE_UNKNOWN`) if
+          recognized.
+        - Otherwise, `STATE_UNKNOWN` or None, depending on `ignore_error`.
 
-    ### Example
+    Examples
+    --------
     >>> str2state('ok')
     0
 
@@ -1330,14 +1463,20 @@ def sum_dict(dict1, dict2):
 
     Only numeric values are considered for summation; non-numeric values are ignored.
 
-    ### Parameters
-    - **dict1** (`dict`): The first dictionary to sum.
-    - **dict2** (`dict`): The second dictionary to sum.
+    Parameters
+    ----------
+    dict1 : dict
+        The first dictionary to sum.
+    dict2 : dict
+        The second dictionary to sum.
 
-    ### Returns
-    - **dict**: A new dictionary with summed numeric values by key.
+    Returns
+    -------
+    dict
+        A new dictionary with summed numeric values by key.
 
-    ### Example
+    Examples
+    --------
     >>> sum_dict({'in': 100, 'out': 10}, {'in': 50, 'error': 5, 'uuid': '1234-xyz'})
     {'in': 150, 'out': 10, 'error': 5}
     """
@@ -1350,13 +1489,18 @@ def sum_lod(mylist):
 
     Only numeric values are considered for summation; non-numeric values are ignored.
 
-    ### Parameters
-    - **mylist** (`list`): A list of dictionaries to sum.
+    Parameters
+    ----------
+    mylist : list
+        A list of dictionaries to sum.
 
-    ### Returns
-    - **dict**: A dictionary with summed numeric values by key.
+    Returns
+    -------
+    dict
+        A dictionary with summed numeric values by key.
 
-    ### Example
+    Examples
+    --------
     >>> sum_lod(
     ...     [
     ...         {'in': 100, 'out': 10},
@@ -1393,15 +1537,20 @@ def verbose(enabled, msg):
     Progress messages routinely carry the command that was run or the error a helper
     returned, and either can contain a credential the caller never meant to print.
 
-    ### Parameters
-    - **enabled** (`bool`): Whether verbose output is switched on. Pass the value of the
-      consumer's own verbose switch.
-    - **msg** (`str`): The message to print.
+    Parameters
+    ----------
+    enabled : bool
+        Whether verbose output is switched on. Pass the value of the
+        consumer's own verbose switch.
+    msg : str
+        The message to print.
 
-    ### Returns
-    - **None**
+    Returns
+    -------
+    None
 
-    ### Example
+    Examples
+    --------
     >>> verbose(args.VERBOSE, f'Scanning {url}...')
     """
     if enabled:

@@ -355,13 +355,18 @@ class HelpFormatter(argparse.HelpFormatter):
 def csv(arg):
     """Converts a CSV string into a list of values.
 
-    ### Parameters
-    - **arg** (`str`): A string containing values separated by commas.
+    Parameters
+    ----------
+    arg : str
+        A string containing values separated by commas.
 
-    ### Returns
-    - **list**: A list of stripped strings.
+    Returns
+    -------
+    list
+        A list of stripped strings.
 
-    ### Example
+    Examples
+    --------
     >>> csv('apple, orange, banana, grape')
     ['apple', 'orange', 'banana', 'grape']
     """
@@ -401,19 +406,26 @@ def duration(arg):
     is the kind of silent misreading that makes a check quietly stop alerting,
     so this raises instead.
 
-    ### Parameters
-    - **arg** (`str`): A number followed by a unit: `s`, `m` (minutes), `h`,
-      `d`/`D`, `w`/`W`, `M` (months) or `Y`.
+    Parameters
+    ----------
+    arg : str
+        A number followed by a unit: `s`, `m` (minutes), `h`,
+        `d`/`D`, `w`/`W`, `M` (months) or `Y`.
 
-    ### Returns
-    - **int**: The duration in seconds. It renders as the text it was written with,
-      so a consumer can report the value the operator set without converting it back
-      and arriving at a different spelling of the same duration.
+    Returns
+    -------
+    int
+        The duration in seconds. It renders as the text it was written with,
+        so a consumer can report the value the operator set without converting it back
+        and arriving at a different spelling of the same duration.
 
-    ### Raises
-    - **argparse.ArgumentTypeError**: The value carries no unit or an unknown one.
+    Raises
+    ------
+    argparse.ArgumentTypeError
+        The value carries no unit or an unknown one.
 
-    ### Example
+    Examples
+    --------
     >>> duration('8d')
     691200
 
@@ -440,15 +452,21 @@ def epilog(path, section='check-plugins'):
 
     Use together with `HelpFormatter`, otherwise argparse breaks the URL at its hyphens.
 
-    ### Parameters
-    - **path** (`str`): Path of the calling script, normally `__file__`.
-    - **section** (`str`, optional): Section the document lives in.
-      Defaults to `check-plugins`.
+    Parameters
+    ----------
+    path : str
+        Path of the calling script, normally `__file__`.
+    section : str, optional
+        Section the document lives in.
+        Defaults to `check-plugins`.
 
-    ### Returns
-    - **str**: A single line pointing to the documentation URL.
+    Returns
+    -------
+    str
+        A single line pointing to the documentation URL.
 
-    ### Example
+    Examples
+    --------
     >>> epilog('/usr/lib64/nagios/plugins/example')
     'Documentation: https://linuxfabrik.github.io/monitoring-plugins/check-plugins/example/'
     """
@@ -463,13 +481,17 @@ def epilog(path, section='check-plugins'):
 def float_or_none(arg):
     """Converts an input to a float, or returns None if the input is 'none' or None.
 
-    ### Parameters
-    - **arg** (`str`, `None`, or `float`): The input value.
+    Parameters
+    ----------
+    arg : str, None, or float
+        The input value.
 
-    ### Returns
-    - **float** or **None**
+    Returns
+    -------
+    float or None
 
-    ### Example
+    Examples
+    --------
     >>> float_or_none('123.45')
     123.45
 
@@ -490,13 +512,18 @@ def help(param):
     The caller appends the default info as needed, e.g.:
         help=lib.args.help('--timeout') + ' Default: %(default)s (seconds)',
 
-    ### Parameters
-    - **param** (`str`): The parameter name (e.g. '--timeout').
+    Parameters
+    ----------
+    param : str
+        The parameter name (e.g. '--timeout').
 
-    ### Returns
-    - **str**: The help text, or an empty string if not found.
+    Returns
+    -------
+    str
+        The help text, or an empty string if not found.
 
-    ### Example
+    Examples
+    --------
     >>> help('--timeout')
     'Network timeout in seconds.'
     """
@@ -506,13 +533,17 @@ def help(param):
 def int_or_none(arg):
     """Converts a given argument to an integer or returns None.
 
-    ### Parameters
-    - **arg** (`str` or `None`): The input value.
+    Parameters
+    ----------
+    arg : str or None
+        The input value.
 
-    ### Returns
-    - **int** or **None**
+    Returns
+    -------
+    int or None
 
-    ### Example
+    Examples
+    --------
     >>> int_or_none('42')
     42
 
@@ -534,14 +565,20 @@ def load_secret(path, param='--password-file'):
     process runs, and a scheduled process runs again and again. Reading the secret from
     a file that only its own user can read keeps it out of the process list.
 
-    ### Parameters
-    - **path** (`str`): The file to read.
-    - **param** (`str`, optional): The parameter name to use in an error message.
+    Parameters
+    ----------
+    path : str
+        The file to read.
+    param : str, optional
+        The parameter name to use in an error message.
 
-    ### Returns
-    - **str**: The secret, without the trailing newline a text editor appends.
+    Returns
+    -------
+    str
+        The secret, without the trailing newline a text editor appends.
 
-    ### Notes
+    Notes
+    -----
     - Aborts the calling process (UNKNOWN) when the file cannot be read or holds nothing.
       A secret that silently comes out empty would be sent to the remote end as an empty
       password, which drives the account towards its lockout threshold.
@@ -553,7 +590,8 @@ def load_secret(path, param='--password-file'):
       working check down; keeping the file readable only by the monitoring user is the
       documented operator's job.
 
-    ### Example
+    Examples
+    --------
     >>> load_secret('/etc/icinga2/secrets/storage')
     'linuxfabrik'
     """
@@ -570,15 +608,22 @@ def load_secret(path, param='--password-file'):
 def number_unit_method(arg, unit='%', method='USED'):
     """Parses a string in the format `<number>[unit][method]` for threshold arguments.
 
-    ### Parameters
-    - **arg** (`str`): The input string.
-    - **unit** (`str`, optional): Default unit. Defaults to `%`.
-    - **method** (`str`, optional): Default method. Defaults to `USED`.
+    Parameters
+    ----------
+    arg : str
+        The input string.
+    unit : str, optional
+        Default unit. Defaults to `%`.
+    method : str, optional
+        Default method. Defaults to `USED`.
 
-    ### Returns
-    - **tuple**: (number, unit, method)
+    Returns
+    -------
+    tuple
+        (number, unit, method)
 
-    ### Example
+    Examples
+    --------
     >>> number_unit_method('95')
     ('95.0', '%', 'USED')
 
@@ -623,13 +668,17 @@ def range_or_none(arg):
 def str_or_none(arg):
     """Converts an input argument into a string or returns None.
 
-    ### Parameters
-    - **arg** (`any`): The input argument.
+    Parameters
+    ----------
+    arg : any
+        The input argument.
 
-    ### Returns
-    - **str** or **None**
+    Returns
+    -------
+    str or None
 
-    ### Example
+    Examples
+    --------
     >>> str_or_none(123)
     '123'
 

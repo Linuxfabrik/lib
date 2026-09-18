@@ -51,21 +51,24 @@ def check_privileges(conn, *required):
     The pseudo-grants `ALL PRIVILEGES` and `SUPER` short-circuit to success regardless of the
     requested set.
 
-    ### Parameters
-    - **conn** (`Connection`):
-      An active database connection object.
-    - **\\*required** (`str` or `list[str]` or `tuple[str, ...]`):
-      Zero or more privilege requirements. Strings are AND-ed together; a list/tuple denotes
-      an any-of group within that AND chain.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection object.
+    *required : str or list[str] or tuple[str, ...]
+        Zero or more privilege requirements. Strings are AND-ed together; a list/tuple denotes
+        an any-of group within that AND chain.
 
-    ### Returns
-    - **tuple** (`bool`, `any`):
-      - On success: `(True, <smoke-test row or list of grant rows>)`.
-      - On failure: `(False, <error message string>)`.
+    Returns
+    -------
+    tuple (bool, any)
+        Compatible with `lib.base.coe()`.
 
-    Compatible with `lib.base.coe()`.
+        - On success: `(True, <smoke-test row or list of grant rows>)`.
+        - On failure: `(False, <error message string>)`.
 
-    ### Example
+    Examples
+    --------
     Smoke test (login + USAGE):
     >>> success, _ = check_privileges(conn)
 
@@ -147,20 +150,24 @@ def close(conn):
     This function attempts to close an open database connection.
     If an exception occurs during closing, it is silently ignored to avoid affecting the main flow.
 
-    ### Parameters
-    - **conn** (`Connection`):
-      An active database connection object to close.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection object to close.
 
-    ### Returns
-    - **bool**:
-      Always returns `True` after attempting to close the connection.
+    Returns
+    -------
+    bool
+        Always returns `True` after attempting to close the connection.
 
-    ### Notes
+    Notes
+    -----
     - Any exceptions raised during connection closure are silently ignored.
     - This function is designed to be safe to call even if the connection is already closed or
       invalid.
 
-    ### Example
+    Examples
+    --------
     >>> close(conn)
     True
     """
@@ -178,27 +185,32 @@ def commit(conn):
     This function saves (commits) all changes made during the current database session.
     If the commit fails, it returns an error message.
 
-    ### Parameters
-    - **conn** (`Connection`):
-      An active database connection object.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection object.
 
-    ### Returns
-    - **tuple** (`bool`, `str or None`):
-      - First element (`bool`): `True` if the commit succeeded, `False` if it failed.
-      - Second element (`str` or `None`):
-        - `None` on success.
-        - Error message (`str`) on failure.
+    Returns
+    -------
+    tuple (bool, str or None)
+        - First element (`bool`): `True` if the commit succeeded, `False` if it failed.
+        - Second element (`str` or `None`):
 
-    ### Notes
+          - `None` on success.
+          - Error message (`str`) on failure.
+
+    Notes
+    -----
     - Any exceptions raised during commit are caught and returned as a formatted error message.
     - This function allows the caller to handle commit errors gracefully.
 
-    ### Example
+    Examples
+    --------
     >>> success, error = commit(conn)
     >>> if not success:
-    >>>     print(error)
+    ...     print(error)
     >>> else:
-    >>>     print("Changes committed successfully.")
+    ...     print("Changes committed successfully.")
     """
     try:
         conn.commit()
@@ -215,25 +227,30 @@ def connect(mysql_connection, **kwargs):
     such as configuration file, group, timeout, and cursor class. Additional connection options
     can be passed via `**kwargs`.
 
-    ### Parameters
-    - **mysql_connection** (`dict`):
-      A dictionary containing connection settings.
-      - `defaults_file` (`str`, optional): Path to a MySQL options file.
-      - `defaults_group` (`str`, optional): Group to read from the options file.
-        Defaults to `'client'`.
-      - `timeout` (`int`, optional): Connection timeout in seconds. Defaults to `3`.
-      - `cursorclass` (optional): Cursor class to use. Defaults to `DictCursor`.
-    - **kwargs** (`any`, optional):
-      Additional keyword arguments passed directly to `pymysql.connect()`.
+    Parameters
+    ----------
+    mysql_connection : dict
+        A dictionary containing connection settings.
 
-    ### Returns
-    - **tuple** (`bool`, `Connection or str`):
-      - First element (`bool`): `True` if connection succeeded, `False` if it failed.
-      - Second element (`Connection` or `str`):
-        - Database connection object on success.
-        - Error message string on failure.
+        - `defaults_file` (`str`, optional): Path to a MySQL options file.
+        - `defaults_group` (`str`, optional): Group to read from the options file.
+          Defaults to `'client'`.
+        - `timeout` (`int`, optional): Connection timeout in seconds. Defaults to `3`.
+        - `cursorclass` (optional): Cursor class to use. Defaults to `DictCursor`.
+    **kwargs : any, optional
+        Additional keyword arguments passed directly to `pymysql.connect()`.
 
-    ### Notes
+    Returns
+    -------
+    tuple (bool, Connection or str)
+        - First element (`bool`): `True` if connection succeeded, `False` if it failed.
+        - Second element (`Connection` or `str`):
+
+          - Database connection object on success.
+          - Error message string on failure.
+
+    Notes
+    -----
     - If connection fails, the error message contains the reason for failure.
     - `pymysql`'s `read_default_file` and `read_default_group` allow connection settings from a
       `.cnf` file.
@@ -246,18 +263,19 @@ def connect(mysql_connection, **kwargs):
       breaks the moment `collation_connection` and the column collation differ. The alignment
       is best-effort: on any error the connection stays usable with the server's defaults.
 
-    ### Example
+    Examples
+    --------
     >>> mysql_connection = {
-    >>>     'defaults_file': '/etc/mysql/my.cnf',
-    >>>     'defaults_group': 'client',
-    >>>     'timeout': 5,
+    ...     'defaults_file': '/etc/mysql/my.cnf',
+    ...     'defaults_group': 'client',
+    ...     'timeout': 5,
     >>> }
     >>> success, conn = connect(mysql_connection)
     >>> if success:
     >>> # Use conn
-    >>>     pass
+    ...     pass
     >>> else:
-    >>>     print(conn)
+    ...     print(conn)
     """
     try:
         conn = pymysql.connect(
@@ -322,15 +340,20 @@ def get_all_status(conn):
     than issuing many `SHOW GLOBAL STATUS LIKE '...'` queries when a caller
     needs more than a handful of values.
 
-    ### Parameters
-    - **conn** (`Connection`): An active database connection.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection.
 
-    ### Returns
-    - **dict** (`str: str`): All status variables. On error returns the same
-      `(False, errormessage)` tuple as `select()` via `lib.base.coe()` in the
-      caller.
+    Returns
+    -------
+    dict (str: str)
+        All status variables. On error returns the same
+        `(False, errormessage)` tuple as `select()` via `lib.base.coe()` in the
+        caller.
 
-    ### Example
+    Examples
+    --------
     >>> mystat = get_all_status(conn)
     >>> int(mystat['Uptime'])
     3600
@@ -346,13 +369,18 @@ def get_all_variables(conn):
     status counters. Use when a caller needs more than a handful of variables
     and wants to avoid the per-`LIKE` query overhead.
 
-    ### Parameters
-    - **conn** (`Connection`): An active database connection.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection.
 
-    ### Returns
-    - **dict** (`str: str`): All system variables.
+    Returns
+    -------
+    dict (str: str)
+        All system variables.
 
-    ### Example
+    Examples
+    --------
     >>> myvar = get_all_variables(conn)
     >>> int(myvar['max_connections'])
     151
@@ -369,17 +397,21 @@ def get_engines(conn):
     It emulates the old `have_*` status variables for compatibility with older codebases.
     Also works around MySQL bug #59393 related to `skip-innodb`.
 
-    ### Parameters
-    - **conn** (`Connection`):
-      An active database connection object.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection object.
 
-    ### Returns
-    - **dict** (`str: str`):
-      A dictionary where keys are `have_<engine>` and values are:
-      - `'YES'` if the engine is available by default.
-      - The actual support status reported otherwise (`DISABLED`, etc.).
+    Returns
+    -------
+    dict (str: str)
+        A dictionary where keys are `have_<engine>` and values are:
 
-    ### Notes
+        - `'YES'` if the engine is available by default.
+        - The actual support status reported otherwise (`DISABLED`, etc.).
+
+    Notes
+    -----
     - `have_*` variables are deprecated since MySQL 5.6 and removed afterward.
     - Special mappings:
       - `federated` → `have_federated_engine`
@@ -388,7 +420,8 @@ def get_engines(conn):
     - This function helps maintain compatibility with monitoring scripts expecting old-style
       `have_*` variables.
 
-    ### Example
+    Examples
+    --------
     >>> get_engines(conn)
     {
         'have_innodb': 'YES',
@@ -424,11 +457,14 @@ def get_flavor():
     Thin wrapper around `get_server_info()` for callers that only care
     about the flavor.
 
-    ### Returns
-    - **str | None**: `'mariadb'`, `'mysql'`, or `None` when no binary
-      responds.
+    Returns
+    -------
+    str | None
+        `'mariadb'`, `'mysql'`, or `None` when no binary
+        responds.
 
-    ### Example
+    Examples
+    --------
     >>> get_flavor()
     'mariadb'
     """
@@ -448,15 +484,19 @@ def get_replica_hosts(conn):
     falls back, so callers do not have to know which server flavour they are
     talking to.
 
-    ### Parameters
-    - **conn** (`Connection`): An active database connection.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection.
 
-    ### Returns
-    - **list**: One dict per registered replica, or `[]` when the server has
-      none. Also `[]` when the account may not list them: that needs
-      `REPLICATION SLAVE` on MySQL and `REPLICATION MASTER ADMIN` on
-      MariaDB 11+, while a monitoring account often holds only
-      `BINLOG MONITOR`.
+    Returns
+    -------
+    list
+        One dict per registered replica, or `[]` when the server has
+        none. Also `[]` when the account may not list them: that needs
+        `REPLICATION SLAVE` on MySQL and `REPLICATION MASTER ADMIN` on
+        MariaDB 11+, while a monitoring account often holds only
+        `BINLOG MONITOR`.
     """
     success, rows = select(conn, 'SHOW REPLICAS')
     if not success:
@@ -477,12 +517,16 @@ def get_replica_status(conn):
     form first and silently falls back, so a caller does not have to know which
     server flavour it is talking to.
 
-    ### Parameters
-    - **conn** (`Connection`): An active database connection.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection.
 
-    ### Returns
-    - **dict** or **None**: First row of the result, or `None` when neither
-      command returns rows (server is not a replica).
+    Returns
+    -------
+    dict or None
+        First row of the result, or `None` when neither
+        command returns rows (server is not a replica).
     """
     success, rows = select(conn, 'SHOW REPLICA STATUS')
     if not success:
@@ -576,15 +620,20 @@ def get_server_info(banner=None):
     `systemctl is-enabled mysql.service` reports `alias` rather than the
     underlying flavor.
 
-    ### Parameters
-    - **banner** (`str | None`): Optional pre-collected --version banner
-      to parse instead of probing.
+    Parameters
+    ----------
+    banner : str | None
+        Optional pre-collected --version banner
+        to parse instead of probing.
 
-    ### Returns
-    - **dict | None**: `{'flavor': 'mariadb'|'mysql', 'version': str,
-      'version_tuple': tuple}` or `None`.
+    Returns
+    -------
+    dict | None
+        `{'flavor': 'mariadb'|'mysql', 'version': str,
+        'version_tuple': tuple}` or `None`.
 
-    ### Example
+    Examples
+    --------
     >>> get_server_info()
     {'flavor': 'mariadb', 'version': '10.11.16', 'version_tuple': (10, 11, 16)}
     """
@@ -654,15 +703,19 @@ def get_version(conn):
     gate version-dependent behaviour with a plain comparison, for example
     `flavor == 'mysql' and version >= (8, 0, 0)`.
 
-    ### Parameters
-    - **conn** (`Connection`): An active database connection.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection.
 
-    ### Returns
-    - **tuple** (`str | None`, `tuple`):
-      - Flavor: `'mariadb'`, `'mysql'`, or `None` if the value is unparseable.
-      - Version: `(major, minor, patch)`, or `()` if the value is unparseable.
+    Returns
+    -------
+    tuple (str | None, tuple)
+        - Flavor: `'mariadb'`, `'mysql'`, or `None` if the value is unparseable.
+        - Version: `(major, minor, patch)`, or `()` if the value is unparseable.
 
-    ### Example
+    Examples
+    --------
     >>> get_version(conn)
     ('mariadb', (11, 8, 8))
     >>> flavor, version = get_version(conn)
@@ -683,11 +736,15 @@ def has_is_role_column(conn):
     empty `host` column). Use the return value to gate `IS_ROLE = 'N'`
     fragments in a `WHERE` clause.
 
-    ### Parameters
-    - **conn** (`Connection`): An active database connection.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection.
 
-    ### Returns
-    - **bool**: `True` if the column exists, `False` otherwise.
+    Returns
+    -------
+    bool
+        `True` if the column exists, `False` otherwise.
     """
     sql = """
         SELECT COUNT(*) AS cnt
@@ -709,22 +766,27 @@ def lod2dict(lod):
     It handles special cases where the input uses `Variable_name` and `Value` fields, as returned
     by SQL queries like `SHOW VARIABLES;`.
 
-    ### Parameters
-    - **lod** (`list` of `dict`):
-      A list where each element is a dictionary with either:
-      - A simple `{key: value}` structure.
-      - A special `{Variable_name: ..., Value: ...}` structure (from MySQL system queries).
+    Parameters
+    ----------
+    lod : list of dict
+        A list where each element is a dictionary with either:
 
-    ### Returns
-    - **dict** (`str: str`):
-      A dictionary with keys and values extracted from the input list.
+        - A simple `{key: value}` structure.
+        - A special `{Variable_name: ..., Value: ...}` structure (from MySQL system queries).
 
-    ### Notes
+    Returns
+    -------
+    dict (str: str)
+        A dictionary with keys and values extracted from the input list.
+
+    Notes
+    -----
     - If a dictionary contains `Variable_name` and `Value`, they are used as key and value.
     - Otherwise, the first key-value pair from the dictionary is used directly.
     - Later keys will overwrite earlier ones if duplicate keys exist.
 
-    ### Example
+    Examples
+    --------
     >>> lod2dict(
     ...     [{'Variable_name': 'a', 'Value': 'b'}, {'Variable_name': 'c', 'Value': 'd'}]
     ... )
@@ -750,33 +812,38 @@ def select(conn, sql, data=None, fetchone=False):
     optionally using provided parameters, and returns either one row or all rows.
     SELECT operations do not modify the database.
 
-    ### Parameters
-    - **conn** (`Connection`):
-      An active database connection object.
-    - **sql** (`str`):
-      The SQL SELECT query to execute.
-      Use placeholders (`%s`) for any parameters.
-    - **data** (`list`, optional):
-      A list of values to bind to the placeholders in the SQL query.
-      Defaults to an empty list (no parameters).
-    - **fetchone** (`bool`, optional):
-      If `True`, fetch only the first matching row.
-      If `False` (default), fetch all matching rows.
+    Parameters
+    ----------
+    conn : Connection
+        An active database connection object.
+    sql : str
+        The SQL SELECT query to execute.
+        Use placeholders (`%s`) for any parameters.
+    data : list, optional
+        A list of values to bind to the placeholders in the SQL query.
+        Defaults to an empty list (no parameters).
+    fetchone : bool, optional
+        If `True`, fetch only the first matching row.
+        If `False` (default), fetch all matching rows.
 
-    ### Returns
-    - **tuple** (`bool`, `any`):
-      - First element (`bool`): `True` if the query succeeded, `False` if it failed.
-      - Second element (`list`, `dict`, or `str`):
-        - The query result (one row as a dict if `fetchone=True`, or a list of dicts).
-        - Error message string on failure.
+    Returns
+    -------
+    tuple (bool, any)
+        - First element (`bool`): `True` if the query succeeded, `False` if it failed.
+        - Second element (`list`, `dict`, or `str`):
 
-    ### Notes
+          - The query result (one row as a dict if `fetchone=True`, or a list of dicts).
+          - Error message string on failure.
+
+    Notes
+    -----
     - On success, results are returned as dictionaries (one per row) if the connection uses
       `DictCursor`.
     - On failure, an error message is returned with the failed SQL, the exception, and any
       input data.
 
-    ### Example
+    Examples
+    --------
     Query using a LIKE pattern:
     >>> data = ['val1%']
     >>> sql = 'SELECT * FROM t WHERE c LIKE %s'

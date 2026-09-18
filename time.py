@@ -34,13 +34,18 @@ def epoch2iso(timestamp):
     This function takes a UNIX timestamp (int or float) and returns a string representing the local
     time in ISO 8601 format (YYYY-MM-DD HH:MM:SS).
 
-    ### Parameters
-    - **timestamp** (`int` or `float`): UNIX epoch timestamp (seconds since 1970-01-01).
+    Parameters
+    ----------
+    timestamp : int or float
+        UNIX epoch timestamp (seconds since 1970-01-01).
 
-    ### Returns
-    - **str**: Local date and time in ISO 8601 format.
+    Returns
+    -------
+    str
+        Local date and time in ISO 8601 format.
 
-    ### Example
+    Examples
+    --------
     >>> epoch2iso(1620459129)
     '2021-05-08 09:32:09'
     """
@@ -58,13 +63,18 @@ def get_timezone(tz_name):
     This function takes an IANA time-zone name (str) and returns the corresponding
     zoneinfo.ZoneInfo object. If loading fails, UTC ("Etc/UTC") is returned.
 
-    ### Parameters
-    - **tz_name** (`str`): IANA time-zone identifier (e.g. "Europe/London").
+    Parameters
+    ----------
+    tz_name : str
+        IANA time-zone identifier (e.g. "Europe/London").
 
-    ### Returns
-    - **ZoneInfo**: A `zoneinfo.ZoneInfo` object for the requested zone, or UTC if not found.
+    Returns
+    -------
+    ZoneInfo
+        A `zoneinfo.ZoneInfo` object for the requested zone, or UTC if not found.
 
-    ### Example
+    Examples
+    --------
     >>> get_timezone('Europe/London').key
     'Europe/London'
     >>> get_timezone('Invalid/Zone').key
@@ -90,13 +100,18 @@ def get_weekday(epoch):
     This function takes a UNIX timestamp (int or float) and returns the local weekday
     as a three-letter lowercase string: 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', or 'sun'.
 
-    ### Parameters
-    - **epoch** (`int` or `float`): UNIX epoch timestamp (seconds since 1970-01-01).
+    Parameters
+    ----------
+    epoch : int or float
+        UNIX epoch timestamp (seconds since 1970-01-01).
 
-    ### Returns
-    - **str**: Lowercase three-letter abbreviation of the weekday corresponding to the local date.
+    Returns
+    -------
+    str
+        Lowercase three-letter abbreviation of the weekday corresponding to the local date.
 
-    ### Example
+    Examples
+    --------
     >>> get_weekday(1620459129)
     'sat'
     """
@@ -124,15 +139,21 @@ def macro2timestr(s, format=''):
 
     Unknown tokens are passed through unchanged.
 
-    ### Parameters
-    - **s** (`str`): Template string.
-    - **format** (`str`, optional): strftime pattern used for `{today}`
-      and `{yesterday}`. Defaults to ISO 8601 date `%Y-%m-%d`.
+    Parameters
+    ----------
+    s : str
+        Template string.
+    format : str, optional
+        strftime pattern used for `{today}`
+        and `{yesterday}`. Defaults to ISO 8601 date `%Y-%m-%d`.
 
-    ### Returns
-    - **str**: `s` with all recognised macros replaced.
+    Returns
+    -------
+    str
+        `s` with all recognised macros replaced.
 
-    ### Example
+    Examples
+    --------
     >>> # Assuming today is 2026-04-22:
     >>> macro2timestr('/var/log/laravel/laravel-{today}.log')
     '/var/log/laravel/laravel-2026-04-22.log'
@@ -174,14 +195,18 @@ def now(as_type=''):
     Returned as naive (no tzinfo) so it drops in wherever the
     callee expects a naive datetime.
 
-    ### Parameters
-    - **as_type** (`str`, optional):
-      '', 'epoch', 'float', 'datetime', 'utc' or 'iso'. Defaults to ''.
+    Parameters
+    ----------
+    as_type : str, optional
+        '', 'epoch', 'float', 'datetime', 'utc' or 'iso'. Defaults to ''.
 
-    ### Returns
-    - **int**, **float**, **datetime.datetime**, or **str**: Current time in the requested format.
+    Returns
+    -------
+    int, float, datetime.datetime, or str
+        Current time in the requested format.
 
-    ### Example
+    Examples
+    --------
     >>> now()
     1586422786
     >>> now(as_type='float')
@@ -219,13 +244,18 @@ def _normalize_iso8601_fraction(timestr):
     RHEL 9 and RHEL 8: `.076976146` has too many digits, `.07` too few. Padding and trimming to
     six digits keeps the value within a microsecond and makes the string parse everywhere.
 
-    ### Parameters
-    - **timestr** (`str`): An ISO 8601 / RFC 3339 timestamp, with or without fractional seconds.
+    Parameters
+    ----------
+    timestr : str
+        An ISO 8601 / RFC 3339 timestamp, with or without fractional seconds.
 
-    ### Returns
-    - **str**: The timestamp with its fractional seconds normalized, unchanged if it carries none.
+    Returns
+    -------
+    str
+        The timestamp with its fractional seconds normalized, unchanged if it carries none.
 
-    ### Notes
+    Notes
+    -----
     - Verified against Python 3.9, 3.10, 3.11 and 3.14: only 3.11 and newer accept the raw
       nanosecond form.
     """
@@ -322,21 +352,28 @@ def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
     This function parses a string representing a date and time into a `datetime.datetime`
     object based on the provided format pattern. The default format is ISO (YYYY-MM-DD HH:MM:SS).
 
-    ### Parameters
-    - **timestr** (`str`): A string representing the date and time.
-    - **pattern** (`str`, optional): The format string corresponding to the structure of `timestr`.
-      Defaults to '%Y-%m-%d %H:%M:%S'. For more details on format codes, see:
-      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
-      Pass the special value `'iso8601'` to parse without knowing the exact layout in advance;
-      `timestr2epoch()` describes what that covers.
-    - **tzinfo** (`datetime.tzinfo`, optional): Timezone to tag a value that carries none.
-      A value that brings its own offset keeps it. Defaults to None, which leaves the result
-      naive.
+    Parameters
+    ----------
+    timestr : str
+        A string representing the date and time.
+    pattern : str, optional
+        The format string corresponding to the structure of `timestr`.
+        Defaults to '%Y-%m-%d %H:%M:%S'. For more details on format codes, see:
+        https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
+        Pass the special value `'iso8601'` to parse without knowing the exact layout in advance;
+        `timestr2epoch()` describes what that covers.
+    tzinfo : datetime.tzinfo, optional
+        Timezone to tag a value that carries none.
+        A value that brings its own offset keeps it. Defaults to None, which leaves the result
+        naive.
 
-    ### Returns
-    - **datetime.datetime**: A datetime object corresponding to the parsed date and time.
+    Returns
+    -------
+    datetime.datetime
+        A datetime object corresponding to the parsed date and time.
 
-    ### Example
+    Examples
+    --------
     >>> timestr2datetime('2021-05-08 09:32:09')
     datetime.datetime(2021, 5, 8, 9, 32, 9)
 
@@ -350,35 +387,44 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
     """
     Converts a time string to a UNIX epoch timestamp.
 
-    ### Parameters
-    - **timestr** (`str`): The time string to convert.
-    - **pattern** (`str`): The format of the time string (default is '%Y-%m-%d %H:%M:%S').
-      Pass the special value `'iso8601'` to parse without knowing the exact `strptime` layout in
-      advance. Despite the name, this mode is backed by `datetime.fromisoformat()` (with a trailing
-      `Z` normalized to `+00:00` first), not a full ISO 8601 parser: it reliably handles RFC 3339
-      timestamps (date, `T`, time, and a `Z` or `+hh:mm` offset) and date-only values, but rejects
-      other valid ISO 8601 forms such as ordinal dates (`2024-015`). Which further layouts are
-      accepted depends on the Python version, because `fromisoformat()` was narrow before 3.11 and
-      broad from 3.11 on; RFC 3339 works consistently on 3.7+, including the nanosecond precision
-      of Go-based tools, whose fractional seconds are normalized to microseconds first. A value
-      that carries an offset (or `Z`) keeps it; a value without one is treated per `tzinfo`
-      (local time if `tzinfo` is None). An offset written without the colon (`+0200`, which
-      `journalctl --output=short-iso` produces) is accepted on every supported Python, even
-      though `fromisoformat()` itself only takes it from 3.11 on.
-    - **tzinfo** (`datetime.tzinfo`, optional): Timezone information.
-      If provided, the parsed datetime is set to this timezone.
-      If None, the time is assumed to be local time.
-      A value that already carries its own offset (e.g. a `Z` or `+hh:mm` in an iso8601 string)
-      keeps it.
+    Parameters
+    ----------
+    timestr : str
+        The time string to convert.
+    pattern : str
+        The format of the time string (default is '%Y-%m-%d %H:%M:%S').
+        Pass the special value `'iso8601'` to parse without knowing the exact `strptime` layout in
+        advance. Despite the name, this mode is backed by `datetime.fromisoformat()` (with a trailing
+        `Z` normalized to `+00:00` first), not a full ISO 8601 parser: it reliably handles RFC 3339
+        timestamps (date, `T`, time, and a `Z` or `+hh:mm` offset) and date-only values, but rejects
+        other valid ISO 8601 forms such as ordinal dates (`2024-015`). Which further layouts are
+        accepted depends on the Python version, because `fromisoformat()` was narrow before 3.11 and
+        broad from 3.11 on; RFC 3339 works consistently on 3.7+, including the nanosecond precision
+        of Go-based tools, whose fractional seconds are normalized to microseconds first. A value
+        that carries an offset (or `Z`) keeps it; a value without one is treated per `tzinfo`
+        (local time if `tzinfo` is None). An offset written without the colon (`+0200`, which
+        `journalctl --output=short-iso` produces) is accepted on every supported Python, even
+        though `fromisoformat()` itself only takes it from 3.11 on.
+    tzinfo : datetime.tzinfo, optional
+        Timezone information.
+        If provided, the parsed datetime is set to this timezone.
+        If None, the time is assumed to be local time.
+        A value that already carries its own offset (e.g. a `Z` or `+hh:mm` in an iso8601 string)
+        keeps it.
 
-    ### Returns
-    - **float**: The UNIX epoch timestamp (seconds since January 1, 1970, 00:00:00 UTC).
+    Returns
+    -------
+    float
+        The UNIX epoch timestamp (seconds since January 1, 1970, 00:00:00 UTC).
 
-    ### Raises
-    - **ValueError**: If the time string does not match the provided format (or is not accepted by
-      `datetime.fromisoformat()` after `Z` normalization when `pattern='iso8601'`).
+    Raises
+    ------
+    ValueError
+        If the time string does not match the provided format (or is not accepted by
+        `datetime.fromisoformat()` after `Z` normalization when `pattern='iso8601'`).
 
-    ### Example
+    Examples
+    --------
         # Convert a time string in local time:
         epoch_local = timestr2epoch("2025-03-01 12:00:00")
 
@@ -401,18 +447,26 @@ def timestrdiff(
     their respective format patterns, then calculates the absolute time difference between them.
     By default, both strings are expected to be in ISO format (YYYY-MM-DD HH:MM:SS).
 
-    ### Parameters
-    - **timestr1** (`str`): The first datetime string.
-    - **timestr2** (`str`): The second datetime string.
-    - **pattern1** (`str`, optional): The format pattern for `timestr1`. Defaults to '%Y-%m-%d %H:%M:%S'.
-    - **pattern2** (`str`, optional): The format pattern for `timestr2`. Defaults to '%Y-%m-%d %H:%M:%S'.
-      For more information on format codes, refer to:
-      https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
+    Parameters
+    ----------
+    timestr1 : str
+        The first datetime string.
+    timestr2 : str
+        The second datetime string.
+    pattern1 : str, optional
+        The format pattern for `timestr1`. Defaults to '%Y-%m-%d %H:%M:%S'.
+    pattern2 : str, optional
+        The format pattern for `timestr2`. Defaults to '%Y-%m-%d %H:%M:%S'.
+        For more information on format codes, refer to:
+        https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
 
-    ### Returns
-    - **float**: The absolute difference between the two timestamps in seconds.
+    Returns
+    -------
+    float
+        The absolute difference between the two timestamps in seconds.
 
-    ### Example
+    Examples
+    --------
     >>> timestrdiff('2021-05-08 09:32:09', '2021-05-08 09:30:00')
     129.0
     """
@@ -429,10 +483,13 @@ def utc_offset():
     in the format ±HHMM (e.g., '+0200' or '-0500'), where HH represents hours and MM represents
     minutes.
 
-    ### Returns
-    - **str**: The current local UTC offset.
+    Returns
+    -------
+    str
+        The current local UTC offset.
 
-    ### Example
+    Examples
+    --------
     >>> utc_offset()
     '+0200'
     """

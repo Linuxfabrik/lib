@@ -38,12 +38,13 @@ through `lv_snapshot_invalid` alone.
 pool, which happens well before its metadata is full.
 
 Typical use case:
-```python
+
+.. code-block:: python
+
     volumes = lib.base.coe(lib.lvm.get_logical_volumes(timeout=8))
     for lv in volumes:
         if lib.lvm.is_thin_pool(lv):
             print(lv['lv_full_name'], lv['data_percent'], lv['metadata_percent'])
-```
 """
 
 import json
@@ -205,13 +206,18 @@ def created(lv):
     setting, and a volume created before LVM started recording the time at all, yield
     None rather than a wrong number.
 
-    ### Parameters
-    - **lv** (`dict`): One row of `get_logical_volumes()`.
+    Parameters
+    ----------
+    lv : dict
+        One row of `get_logical_volumes()`.
 
-    ### Returns
-    - **float** or **None**: The timestamp, or None where it could not be read.
+    Returns
+    -------
+    float or None
+        The timestamp, or None where it could not be read.
 
-    ### Example
+    Examples
+    --------
     >>> created({'lv_time': '2026-08-27 11:19:13 +0200'})
     1787822353.0
     """
@@ -234,13 +240,18 @@ def failure_state(message):
     is the reading that is broken and says nothing about the host, which is what
     UNKNOWN is for.
 
-    ### Parameters
-    - **message** (`str`): The message one of the reading functions returned.
+    Parameters
+    ----------
+    message : str
+        The message one of the reading functions returned.
 
-    ### Returns
-    - **int**: `STATE_WARN` or `STATE_UNKNOWN`.
+    Returns
+    -------
+    int
+        `STATE_WARN` or `STATE_UNKNOWN`.
 
-    ### Example
+    Examples
+    --------
     >>> failure_state('LVM did not answer within 8s. ...') == STATE_WARN
     True
     """
@@ -253,16 +264,20 @@ def get_logical_volumes(timeout=8):
     """
     Ask LVM for the logical volumes of this host.
 
-    ### Parameters
-    - **timeout** (`int`, optional): Seconds the command is given. Defaults to 8.
+    Parameters
+    ----------
+    timeout : int, optional
+        Seconds the command is given. Defaults to 8.
 
-    ### Returns
-    - **tuple**:
-      - On success: `(True, list)` - one dict per logical volume, keyed by the field
-        names in `LV_FIELDS`. An empty list means the host has no logical volume.
-      - On failure: `(False, error_message)`.
+    Returns
+    -------
+    tuple
+        - On success: `(True, list)` - one dict per logical volume, keyed by the field
+          names in `LV_FIELDS`. An empty list means the host has no logical volume.
+        - On failure: `(False, error_message)`.
 
-    ### Example
+    Examples
+    --------
     >>> get_logical_volumes()
     (True, [{'lv_full_name': 'vg0/root', 'lv_attr': '-wi-ao----', ...}])
     """
@@ -273,16 +288,20 @@ def get_volume_groups(timeout=8):
     """
     Ask LVM for the volume groups of this host.
 
-    ### Parameters
-    - **timeout** (`int`, optional): Seconds the command is given. Defaults to 8.
+    Parameters
+    ----------
+    timeout : int, optional
+        Seconds the command is given. Defaults to 8.
 
-    ### Returns
-    - **tuple**:
-      - On success: `(True, list)` - one dict per volume group, keyed by the field
-        names in `VG_FIELDS`. An empty list means the host has no volume group.
-      - On failure: `(False, error_message)`.
+    Returns
+    -------
+    tuple
+        - On success: `(True, list)` - one dict per volume group, keyed by the field
+          names in `VG_FIELDS`. An empty list means the host has no volume group.
+        - On failure: `(False, error_message)`.
 
-    ### Example
+    Examples
+    --------
     >>> get_volume_groups()
     (True, [{'vg_name': 'vg0', 'vg_size': '107369988096', 'vg_free': '0', ...}])
     """
@@ -297,13 +316,18 @@ def health(lv):
     snapshot the kernel threw away, and a snapshot whose merge back into its origin
     failed. Both leave `lv_health_status` empty.
 
-    ### Parameters
-    - **lv** (`dict`): One row of `get_logical_volumes()`.
+    Parameters
+    ----------
+    lv : dict
+        One row of `get_logical_volumes()`.
 
-    ### Returns
-    - **str**: The clause, or an empty string when nothing is wrong.
+    Returns
+    -------
+    str
+        The clause, or an empty string when nothing is wrong.
 
-    ### Example
+    Examples
+    --------
     >>> health({'lv_health_status': 'out_of_data'})
     'the pool is out of data space, so every write to a volume in it is queued and then failed'
     """
@@ -326,13 +350,17 @@ def is_snapshot(lv):
     """
     Tell a snapshot, of either kind, from everything else.
 
-    ### Parameters
-    - **lv** (`dict`): One row of `get_logical_volumes()`.
+    Parameters
+    ----------
+    lv : dict
+        One row of `get_logical_volumes()`.
 
-    ### Returns
-    - **bool**
+    Returns
+    -------
+    bool
 
-    ### Example
+    Examples
+    --------
     >>> is_snapshot({'lv_role': 'public,snapshot,thicksnapshot'})
     True
     """
@@ -347,13 +375,17 @@ def is_snapshot_invalid(lv):
     the snapshot answers every read with an I/O error, and `lv_health_status` says
     nothing about it.
 
-    ### Parameters
-    - **lv** (`dict`): One row of `get_logical_volumes()`.
+    Parameters
+    ----------
+    lv : dict
+        One row of `get_logical_volumes()`.
 
-    ### Returns
-    - **bool**
+    Returns
+    -------
+    bool
 
-    ### Example
+    Examples
+    --------
     >>> is_snapshot_invalid({'lv_snapshot_invalid': 'snapshot invalid'})
     True
     """
@@ -364,13 +396,17 @@ def is_thin(lv):
     """
     Tell a thin volume from a thick one. A thin pool is not a thin volume.
 
-    ### Parameters
-    - **lv** (`dict`): One row of `get_logical_volumes()`.
+    Parameters
+    ----------
+    lv : dict
+        One row of `get_logical_volumes()`.
 
-    ### Returns
-    - **bool**
+    Returns
+    -------
+    bool
 
-    ### Example
+    Examples
+    --------
     >>> is_thin({'lv_layout': 'thin,sparse'})
     True
     """
@@ -382,13 +418,17 @@ def is_thin_pool(lv):
     """
     Tell a thin pool from every other volume.
 
-    ### Parameters
-    - **lv** (`dict`): One row of `get_logical_volumes()`.
+    Parameters
+    ----------
+    lv : dict
+        One row of `get_logical_volumes()`.
 
-    ### Returns
-    - **bool**
+    Returns
+    -------
+    bool
 
-    ### Example
+    Examples
+    --------
     >>> is_thin_pool({'lv_layout': 'thin,pool'})
     True
     """
@@ -407,14 +447,19 @@ def metadata_limit(metadata_size):
     another snapshot, which is why it deserves an answer of its own rather than a flat
     percentage everywhere.
 
-    ### Parameters
-    - **metadata_size** (`int` or `str`): Size of the metadata volume in bytes, as
-      `lv_metadata_size` reports it.
+    Parameters
+    ----------
+    metadata_size : int or str
+        Size of the metadata volume in bytes, as
+        `lv_metadata_size` reports it.
 
-    ### Returns
-    - **float** or **None**: The limit in percent, or None where the size is unknown.
+    Returns
+    -------
+    float or None
+        The limit in percent, or None where the size is unknown.
 
-    ### Example
+    Examples
+    --------
     >>> metadata_limit(4 * 1024**2)
     75.0
     >>> metadata_limit(64 * 1024**2)
@@ -434,16 +479,21 @@ def parse_report(stdout, section):
     """
     Read the rows out of an LVM JSON report.
 
-    ### Parameters
-    - **stdout** (`str`): What the command printed on stdout.
-    - **section** (`str`): The report section to read, `lv` or `vg`.
+    Parameters
+    ----------
+    stdout : str
+        What the command printed on stdout.
+    section : str
+        The report section to read, `lv` or `vg`.
 
-    ### Returns
-    - **tuple**:
-      - On success: `(True, list)` - one dict per row.
-      - On failure: `(False, error_message)`.
+    Returns
+    -------
+    tuple
+        - On success: `(True, list)` - one dict per row.
+        - On failure: `(False, error_message)`.
 
-    ### Example
+    Examples
+    --------
     >>> parse_report('{"report": [{"lv": [{"lv_name": "root"}]}]}', 'lv')
     (True, [{'lv_name': 'root'}])
     """
@@ -464,14 +514,19 @@ def to_number(value):
     LVM leaves a field that does not apply to a volume empty rather than reporting a
     zero, so an empty percentage means "not measured here" and never "nothing used".
 
-    ### Parameters
-    - **value** (`str`): The reported value.
+    Parameters
+    ----------
+    value : str
+        The reported value.
 
-    ### Returns
-    - **float** or **None**: The number, or None where the field was empty or not a
-      number.
+    Returns
+    -------
+    float or None
+        The number, or None where the field was empty or not a
+        number.
 
-    ### Example
+    Examples
+    --------
     >>> to_number('74.34')
     74.34
     >>> to_number('') is None

@@ -13,29 +13,29 @@ needed by more than one Rocket.Chat consumer.
 
 Typical use-case:
 
-```python
-credentials = lib.base.coe(
-    lib.rocket.get_token(
-        args.URL,
-        args.USERNAME,
-        args.PASSWORD,
-        insecure=args.INSECURE,
-        no_proxy=args.NO_PROXY,
-        timeout=args.TIMEOUT,
+.. code-block:: python
+
+    credentials = lib.base.coe(
+        lib.rocket.get_token(
+            args.URL,
+            args.USERNAME,
+            args.PASSWORD,
+            insecure=args.INSECURE,
+            no_proxy=args.NO_PROXY,
+            timeout=args.TIMEOUT,
+        )
     )
-)
-auth_token, user_id = credentials.split(':')
-result = lib.base.coe(
-    lib.rocket.get_stats(
-        args.URL,
-        auth_token,
-        user_id,
-        insecure=args.INSECURE,
-        no_proxy=args.NO_PROXY,
-        timeout=args.TIMEOUT,
+    auth_token, user_id = credentials.split(':')
+    result = lib.base.coe(
+        lib.rocket.get_stats(
+            args.URL,
+            auth_token,
+            user_id,
+            insecure=args.INSECURE,
+            no_proxy=args.NO_PROXY,
+            timeout=args.TIMEOUT,
+        )
     )
-)
-```
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
@@ -52,16 +52,22 @@ def _flatten_params(params):
     or nested dictionaries, and converts it into a single query string. Nested dictionaries are
     rendered inside braces `{}` with their own `key=value` pairs joined by `&`.
 
-    ### Parameters
-    - **params** (`dict`): Mapping of parameter names to values. Values can be:
-      - Primitive types (`str`, `int`, etc.), rendered as `key=value`.
-      - Nested `dict`, rendered as `key={inner_key1=inner_val1&inner_key2=inner_val2}`.
+    Parameters
+    ----------
+    params : dict
+        Mapping of parameter names to values. Values can be:
 
-    ### Returns
-    - **str**: A query string with `&`-separated `key=value` pairs. Nested dicts are enclosed in
-      `{}`.
+        - Primitive types (`str`, `int`, etc.), rendered as `key=value`.
+        - Nested `dict`, rendered as `key={inner_key1=inner_val1&inner_key2=inner_val2}`.
 
-    ### Example
+    Returns
+    -------
+    str
+        A query string with `&`-separated `key=value` pairs. Nested dicts are enclosed in
+        `{}`.
+
+    Examples
+    --------
     >>> params = {
     ...     'key1': 'value1',
     ...     'key2': 'value2',
@@ -104,35 +110,47 @@ def get_groups_history(
 
     Equivalent to:
 
-    ```bash
-    curl -H "X-Auth-Token: <auth_token>" \
-         -H "X-User-Id: <user_id>" \
-         "https://chat.example.com/api/v1/groups.history?roomId=<roomId>&count=20&offset=0"
-    ```
+    .. code-block:: bash
 
-    ### Parameters
-    - **rc_url** (`str`): Rocket.Chat base URL or full endpoint URL. If it does not already end with
-      `/groups.history`, any trailing slashes will be stripped and `/groups.history` appended.
-    - **auth_token** (`str`): Authentication token from login (for the `X-Auth-Token` header).
-    - **user_id** (`str`): User ID from login (for the `X-User-Id` header).
-    - **room_id** (`str`): ID of the private group whose history you want to fetch. Required.
-    - **params** (`dict`, optional): Additional query parameters for pagination and date filtering,
-      such as:
-      - `count` (`int`): Number of messages to return.
-      - `offset` (`int`): Number of messages to skip.
-      - `oldest` (`str`): ISO8601 timestamp for the earliest message.
-      - `latest` (`str`): ISO8601 timestamp for the latest message.
-      Defaults to `{}`.
-    - **insecure** (`bool`, optional): Allow insecure SSL connections. Defaults to `False`.
-    - **no_proxy** (`bool`, optional): Bypass proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional): Request timeout in seconds. Defaults to `3`.
+        curl -H "X-Auth-Token: <auth_token>" \\
+             -H "X-User-Id: <user_id>" \\
+             "https://chat.example.com/api/v1/groups.history?roomId=<roomId>&count=20&offset=0"
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - On success: `(True, response_json)` where `response_json` contains the history payload.
-      - On failure: `(False, 'Error getting groups.history: <error message>')`.
+    Parameters
+    ----------
+    rc_url : str
+        Rocket.Chat base URL or full endpoint URL. If it does not already end with
+        `/groups.history`, any trailing slashes will be stripped and `/groups.history` appended.
+    auth_token : str
+        Authentication token from login (for the `X-Auth-Token` header).
+    user_id : str
+        User ID from login (for the `X-User-Id` header).
+    room_id : str
+        ID of the private group whose history you want to fetch. Required.
+    params : dict, optional
+        Additional query parameters for pagination and date filtering,
+        such as:
 
-    ### Example
+        - `count` (`int`): Number of messages to return.
+        - `offset` (`int`): Number of messages to skip.
+        - `oldest` (`str`): ISO8601 timestamp for the earliest message.
+        - `latest` (`str`): ISO8601 timestamp for the latest message.
+        Defaults to `{}`.
+    insecure : bool, optional
+        Allow insecure SSL connections. Defaults to `False`.
+    no_proxy : bool, optional
+        Bypass proxy settings. Defaults to `False`.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `3`.
+
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - On success: `(True, response_json)` where `response_json` contains the history payload.
+        - On failure: `(False, 'Error getting groups.history: <error message>')`.
+
+    Examples
+    --------
     >>> success, history = get_groups_history(
     ...     'https://chat.example.com',
     ...     'authTokenHere',
@@ -186,29 +204,38 @@ def get_rooms_get(
 
     Equivalent to:
 
-    ```bash
-    curl -H "X-Auth-Token: <auth_token>" \
-         -H "X-User-Id: <user_id>" \
-         https://chat.example.com/api/v1/rooms.get
-    ```
+    .. code-block:: bash
 
-    ### Parameters
-    - **rc_url** (`str`): Rocket.Chat base URL or full endpoint URL. If it does not already end with
-      `/rooms.get`, any trailing slashes will be stripped and `/rooms.get` appended.
-    - **auth_token** (`str`): Authentication token obtained from `login` (for the `X-Auth-Token`
-      header).
-    - **user_id** (`str`): User ID obtained from `login` (for the `X-User-Id` header).
-    - **insecure** (`bool`, optional): Allow insecure SSL connections. Defaults to `False`.
-    - **no_proxy** (`bool`, optional): Bypass proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional): Request timeout in seconds. Defaults to `3`.
+        curl -H "X-Auth-Token: <auth_token>" \\
+             -H "X-User-Id: <user_id>" \\
+             https://chat.example.com/api/v1/rooms.get
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - On success: `(True, response_json)` where `response_json` is the parsed JSON result from
-        the API.
-      - On failure: `(False, 'Error getting rooms.get: <error message>')`.
+    Parameters
+    ----------
+    rc_url : str
+        Rocket.Chat base URL or full endpoint URL. If it does not already end with
+        `/rooms.get`, any trailing slashes will be stripped and `/rooms.get` appended.
+    auth_token : str
+        Authentication token obtained from `login` (for the `X-Auth-Token`
+        header).
+    user_id : str
+        User ID obtained from `login` (for the `X-User-Id` header).
+    insecure : bool, optional
+        Allow insecure SSL connections. Defaults to `False`.
+    no_proxy : bool, optional
+        Bypass proxy settings. Defaults to `False`.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `3`.
 
-    ### Example
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - On success: `(True, response_json)` where `response_json` is the parsed JSON result from
+          the API.
+        - On failure: `(False, 'Error getting rooms.get: <error message>')`.
+
+    Examples
+    --------
     >>> success, rooms = get_rooms_get(
     ...     'https://chat.example.com',
     ...     'authTokenHere',
@@ -261,33 +288,44 @@ def get_rooms_info(
 
     Equivalent to:
 
-    ```bash
-    curl -H "X-Auth-Token: <auth_token>" \
-         -H "X-User-Id: <user_id>" \
-         "https://chat.example.com/api/v1/rooms.info?roomId=<roomId>&roomName=<roomName>"
-    ```
+    .. code-block:: bash
 
-    ### Parameters
-    - **rc_url** (`str`): Rocket.Chat base URL or full endpoint URL. If it does not already end with
-      `/rooms.info`, any trailing slashes will be stripped and `/rooms.info` appended.
-    - **auth_token** (`str`): Authentication token obtained from login (for the `X-Auth-Token`
-      header).
-    - **user_id** (`str`): User ID obtained from login (for the `X-User-Id` header).
-    - **room_id** (`str`, optional): ID of the room to fetch info for. Defaults to `None`.
-    - **room_name** (`str`, optional): Name (alias) of the room to fetch info for. Defaults to
-      `None`.
-      At least one of `room_id` or `room_name` should be provided.
-    - **insecure** (`bool`, optional): Allow insecure SSL connections. Defaults to `False`.
-    - **no_proxy** (`bool`, optional): Bypass proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional): Request timeout in seconds. Defaults to `3`.
+        curl -H "X-Auth-Token: <auth_token>" \\
+             -H "X-User-Id: <user_id>" \\
+             "https://chat.example.com/api/v1/rooms.info?roomId=<roomId>&roomName=<roomName>"
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - On success: `(True, response_json)` where `response_json` is the parsed JSON result from
-        the API.
-      - On failure: `(False, 'Error getting rooms.info: <error message>')`.
+    Parameters
+    ----------
+    rc_url : str
+        Rocket.Chat base URL or full endpoint URL. If it does not already end with
+        `/rooms.info`, any trailing slashes will be stripped and `/rooms.info` appended.
+    auth_token : str
+        Authentication token obtained from login (for the `X-Auth-Token`
+        header).
+    user_id : str
+        User ID obtained from login (for the `X-User-Id` header).
+    room_id : str, optional
+        ID of the room to fetch info for. Defaults to `None`.
+    room_name : str, optional
+        Name (alias) of the room to fetch info for. Defaults to
+        `None`.
+        At least one of `room_id` or `room_name` should be provided.
+    insecure : bool, optional
+        Allow insecure SSL connections. Defaults to `False`.
+    no_proxy : bool, optional
+        Bypass proxy settings. Defaults to `False`.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `3`.
 
-    ### Example
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - On success: `(True, response_json)` where `response_json` is the parsed JSON result from
+          the API.
+        - On failure: `(False, 'Error getting rooms.info: <error message>')`.
+
+    Examples
+    --------
     >>> success, info = get_rooms_info(
     ...     'https://chat.example.com',
     ...     'authTokenHere',
@@ -336,25 +374,35 @@ def get_stats(rc_url, auth_token, user_id, insecure=False, no_proxy=False, proxy
 
     Equivalent to:
 
-    ```bash
-    # https://rocket.chat/docs/developer-guides/rest-api/miscellaneous/statistics/
-    curl -H "X-Auth-Token: linuxfabrik"
-         -H "X-User-Id: linuxfabrik"
-         http://localhost:3000/api/v1/statistics
-    ```
+    .. code-block:: bash
 
-    ### Parameters
-    - **rc_url** (`str`): Rocket.Chat base URL.
-    - **auth_token** (`str`): Authentication token.
-    - **user_id** (`str`): User ID linked to the token.
-    - **insecure** (`bool`, optional): Allow insecure SSL. Defaults to `False`.
-    - **no_proxy** (`bool`, optional): Ignore proxy. Defaults to `False`.
-    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `3`.
+        # https://rocket.chat/docs/developer-guides/rest-api/miscellaneous/statistics/
+        curl -H "X-Auth-Token: linuxfabrik"
+             -H "X-User-Id: linuxfabrik"
+             http://localhost:3000/api/v1/statistics
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Success flag and stats data or error message.
+    Parameters
+    ----------
+    rc_url : str
+        Rocket.Chat base URL.
+    auth_token : str
+        Authentication token.
+    user_id : str
+        User ID linked to the token.
+    insecure : bool, optional
+        Allow insecure SSL. Defaults to `False`.
+    no_proxy : bool, optional
+        Ignore proxy. Defaults to `False`.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `3`.
 
-    ### Example
+    Returns
+    -------
+    tuple (bool, dict)
+        Success flag and stats data or error message.
+
+    Examples
+    --------
     >>> get_stats('https://chat.example.com', auth_token, user_id)
     (True, {...})
     """
@@ -390,25 +438,35 @@ def get_token(rc_url, user, password, insecure=False, no_proxy=False, proxy=None
 
     Equivalent to:
 
-    ```bash
-    curl -X "POST"
-         -d "user=admin&password=mypassword"
-         http://localhost:3000/api/v1/login
-    ```
+    .. code-block:: bash
 
-    ### Parameters
-    - **rc_url** (`str`): Rocket.Chat base URL.
-    - **user** (`str`): Username.
-    - **password** (`str`): Password.
-    - **insecure** (`bool`, optional): Allow insecure SSL. Defaults to `False`.
-    - **no_proxy** (`bool`, optional): Ignore proxy. Defaults to `False`.
-    - **timeout** (`int`, optional): Timeout in seconds. Defaults to `3`.
+        curl -X "POST"
+             -d "user=admin&password=linuxfabrik"
+             http://localhost:3000/api/v1/login
 
-    ### Returns
-    - **tuple** (`bool`, `str`): Success flag and result string or error.
+    Parameters
+    ----------
+    rc_url : str
+        Rocket.Chat base URL.
+    user : str
+        Username.
+    password : str
+        Password.
+    insecure : bool, optional
+        Allow insecure SSL. Defaults to `False`.
+    no_proxy : bool, optional
+        Ignore proxy. Defaults to `False`.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `3`.
 
-    ### Example
-    >>> get_token('https://chat.example.com', 'admin', 'mypassword')
+    Returns
+    -------
+    tuple (bool, str)
+        Success flag and result string or error.
+
+    Examples
+    --------
+    >>> get_token('https://chat.example.com', 'admin', 'linuxfabrik')
     (True, 'authToken:userId')
     """
     if not rc_url.endswith('/login'):
@@ -447,27 +505,36 @@ def send2webhook(rc_url, webhook, data, insecure=False, no_proxy=False, proxy=No
 
     Equivalent to:
 
-    ```bash
-    curl -X POST \
-         -H 'Content-type: application/json' \
-         -d '{"text":"Hello"}' \
-         https://chat.example.com/hooks/<webhook>
-    ```
+    .. code-block:: bash
 
-    ### Parameters
-    - **rc_url** (`str`): Rocket.Chat base URL. May include `/api/v1`; if so, it will be stripped.
-    - **webhook** (`str`): Incoming webhook identifier or token (e.g. `CWaA.../Zbpj...`).
-    - **data** (`dict`): JSON-serializable payload to send (e.g., `{'text': 'message'}`).
-    - **insecure** (`bool`, optional): Allow insecure SSL connections. Defaults to `False`.
-    - **no_proxy** (`bool`, optional): Bypass any proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional): Request timeout in seconds. Defaults to `3`.
+        curl -X POST \\
+             -H 'Content-type: application/json' \\
+             -d '{"text":"Hello"}' \\
+             https://chat.example.com/hooks/<webhook>
 
-    ### Returns
-    - **tuple** (`bool`, `bool` or `str`):
-      - On success: `(True, True)`.
-      - On failure: `(False, 'Error: <error message>')`.
+    Parameters
+    ----------
+    rc_url : str
+        Rocket.Chat base URL. May include `/api/v1`; if so, it will be stripped.
+    webhook : str
+        Incoming webhook identifier or token (e.g. `CWaA.../Zbpj...`).
+    data : dict
+        JSON-serializable payload to send (e.g., `{'text': 'message'}`).
+    insecure : bool, optional
+        Allow insecure SSL connections. Defaults to `False`.
+    no_proxy : bool, optional
+        Bypass any proxy settings. Defaults to `False`.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `3`.
 
-    ### Example
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - On success: `(True, True)`.
+        - On failure: `(False, 'Error: <error message>')`.
+
+    Examples
+    --------
     >>> data = { 'text': '\\n'.join(['bitte beantworten:'] + output) }
     >>> send2webhook('https://chat.example.com/api/v1', 'CWaA.../Zbpj...', data)
     (True, True)
@@ -499,22 +566,31 @@ def send_message(
     serialises `data` as JSON. This lets callers send rich payloads (custom emoji, attachments)
     together with their own headers, and receive the parsed response.
 
-    ### Parameters
-    - **webhook_url** (`str`): Complete Rocket.Chat incoming-webhook URL, for example
-      `https://chat.example.com/hooks/<id>/<token>`.
-    - **data** (`dict`): JSON-serializable payload to send (e.g. `{'text': 'message'}`).
-    - **header** (`dict`, optional): Request headers. Defaults to
-      `{'Content-Type': 'application/json'}` when omitted.
-    - **insecure** (`bool`, optional): Allow insecure SSL connections. Defaults to `False`.
-    - **no_proxy** (`bool`, optional): Bypass any proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional): Request timeout in seconds. Defaults to `3`.
+    Parameters
+    ----------
+    webhook_url : str
+        Complete Rocket.Chat incoming-webhook URL, for example
+        `https://chat.example.com/hooks/<id>/<token>`.
+    data : dict
+        JSON-serializable payload to send (e.g. `{'text': 'message'}`).
+    header : dict, optional
+        Request headers. Defaults to
+        `{'Content-Type': 'application/json'}` when omitted.
+    insecure : bool, optional
+        Allow insecure SSL connections. Defaults to `False`.
+    no_proxy : bool, optional
+        Bypass any proxy settings. Defaults to `False`.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `3`.
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - On success: `(True, <response dict>)`.
-      - On failure: `(False, '<error message>')`.
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - On success: `(True, <response dict>)`.
+        - On failure: `(False, '<error message>')`.
 
-    ### Example
+    Examples
+    --------
     >>> send_message('https://chat.example.com/hooks/abc/def', {'text': 'hello'})
     (True, {...})
     """

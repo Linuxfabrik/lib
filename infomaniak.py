@@ -25,28 +25,32 @@ def get_events(token, insecure=False, no_proxy=False, proxy=None, timeout=8):
     This function queries the Infomaniak API to retrieve all available events. Requires an
     OAuth Bearer token for authentication.
 
-    ### Parameters
-    - **token** (`str`):
-      OAuth2 Bearer token used for authentication.
-    - **insecure** (`bool`, optional):
-      Disable SSL verification. Default is `False`.
-    - **no_proxy** (`bool`, optional):
-      Ignore proxy settings. Default is `False`.
-    - **timeout** (`int`, optional):
-      Timeout for the request in seconds. Default is 8.
+    Parameters
+    ----------
+    token : str
+        OAuth2 Bearer token used for authentication.
+    insecure : bool, optional
+        Disable SSL verification. Default is `False`.
+    no_proxy : bool, optional
+        Ignore proxy settings. Default is `False`.
+    timeout : int, optional
+        Timeout for the request in seconds. Default is 8.
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - If successful, returns `(True, events dictionary)`.
-      - If failed, returns `(False, error message)`.
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - If successful, returns `(True, events dictionary)`.
+        - If failed, returns `(False, error message)`.
 
-    ### Notes
+    Notes
+    -----
     - API documentation: https://developer.infomaniak.com/docs/api/get/2/events
 
-    ### Example
+    Examples
+    --------
     >>> success, events = get_events(token)
     >>> if success:
-    >>>     print(events)
+    ...     print(events)
     """
     uri = f'{BASE_URL}/2/events?locale=en'
     headers = {'Authorization': f'Bearer {token}'}
@@ -78,30 +82,34 @@ def get_swiss_backup_products(
     This function queries the Infomaniak API to retrieve all Swiss Backup products for a given
     account ID. Requires an OAuth Bearer token for authentication.
 
-    ### Parameters
-    - **account_id** (`str`):
-      ID of the Infomaniak account.
-    - **token** (`str`):
-      OAuth2 Bearer token used for authentication.
-    - **insecure** (`bool`, optional):
-      Disable SSL verification. Default is `False`.
-    - **no_proxy** (`bool`, optional):
-      Ignore proxy settings. Default is `False`.
-    - **timeout** (`int`, optional):
-      Timeout for the request in seconds. Default is 8.
+    Parameters
+    ----------
+    account_id : str
+        ID of the Infomaniak account.
+    token : str
+        OAuth2 Bearer token used for authentication.
+    insecure : bool, optional
+        Disable SSL verification. Default is `False`.
+    no_proxy : bool, optional
+        Ignore proxy settings. Default is `False`.
+    timeout : int, optional
+        Timeout for the request in seconds. Default is 8.
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - If successful, returns `(True, products dictionary)`.
-      - If failed, returns `(False, error message)`.
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - If successful, returns `(True, products dictionary)`.
+        - If failed, returns `(False, error message)`.
 
-    ### Notes
+    Notes
+    -----
     - API documentation: https://developer.infomaniak.com/docs/api/get/1/swiss_backups
 
-    ### Example
+    Examples
+    --------
     >>> success, products = get_swiss_backup_products(account_id, token)
     >>> if success:
-    >>>     print(products)
+    ...     print(products)
     """
     uri = f'{BASE_URL}/1/swiss_backups?account_id={account_id}'
     headers = {'Authorization': f'Bearer {token}'}
@@ -133,31 +141,35 @@ def get_swiss_backup_slots(
     This function retrieves all devices (slots) for every Swiss Backup product under a specific
     Infomaniak account.
 
-    ### Parameters
-    - **account_id** (`str`):
-      ID of the Infomaniak account.
-    - **token** (`str`):
-      OAuth2 Bearer token used for authentication.
-    - **insecure** (`bool`, optional):
-      Disable SSL verification. Default is `False`.
-    - **no_proxy** (`bool`, optional):
-      Ignore proxy settings. Default is `False`.
-    - **timeout** (`int`, optional):
-      Timeout for the request in seconds. Default is 8.
+    Parameters
+    ----------
+    account_id : str
+        ID of the Infomaniak account.
+    token : str
+        OAuth2 Bearer token used for authentication.
+    insecure : bool, optional
+        Disable SSL verification. Default is `False`.
+    no_proxy : bool, optional
+        Ignore proxy settings. Default is `False`.
+    timeout : int, optional
+        Timeout for the request in seconds. Default is 8.
 
-    ### Returns
-    - **tuple** (`bool`, `list` or `str`):
-      - If successful, returns `(True, list of slots with additional info)`.
-      - If failed, returns `(False, error message)`.
+    Returns
+    -------
+    tuple (bool, list or str)
+        - If successful, returns `(True, list of slots with additional info)`.
+        - If failed, returns `(False, error message)`.
 
-    ### Notes
+    Notes
+    -----
     - API documentation:
       https://developer.infomaniak.com/docs/api/get/1/swiss_backups/{swiss_backup_id}/slots/{slot_id}
 
-    ### Example
+    Examples
+    --------
     >>> success, slots = get_swiss_backup_slots(account_id, token)
     >>> if success:
-    >>>     print(slots)
+    ...     print(slots)
     """
     success, products = get_swiss_backup_products(account_id, token)
     if not success:

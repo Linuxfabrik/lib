@@ -168,39 +168,43 @@ def _socket_fetch(
     single send-receive roundtrip (banner mode) or a multi-step request-response conversation
     (dialog mode). It supports both TCP/IP and Unix domain sockets transparently.
 
-    ### Parameters
-    - **open_socket_func** (`callable`):
-      A function that creates and returns a new socket object.
-    - **connect_args** (`tuple` or `str`):
-      Arguments passed to the socket's `connect()` method.
-    - **payload** (`bytes`, optional):
-      Banner mode only. A payload to send after connecting. If `None`, no payload is sent.
-      Mutually exclusive with `dialog`.
-    - **dialog** (`list` of `(bytes_or_None, str_or_None)` tuples, optional):
-      Dialog mode. Each step is `(send, expect)`:
-        * `send` (`bytes` or `None`): payload to write. `None` skips the send.
-        * `expect` (`str` or `None`): regex matched against the cumulative recv buffer for the
-          step. `None` records an empty response and continues to the next step.
-      No half-close is performed, so the server can keep reading further sends. Mutually
-      exclusive with `payload`.
-    - **timeout** (`int`, optional):
-      Socket timeout in seconds. Defaults to `3`.
-    - **socket_name** (`str`, optional):
-      A human-readable name used in error messages for context. Defaults to `"socket"`.
+    Parameters
+    ----------
+    open_socket_func : callable
+        A function that creates and returns a new socket object.
+    connect_args : tuple or str
+        Arguments passed to the socket's `connect()` method.
+    payload : bytes, optional
+        Banner mode only. A payload to send after connecting. If `None`, no payload is sent.
+        Mutually exclusive with `dialog`.
+    dialog : list of (bytes_or_None, str_or_None) tuples, optional
+        Dialog mode. Each step is `(send, expect)`:
+          * `send` (`bytes` or `None`): payload to write. `None` skips the send.
+          * `expect` (`str` or `None`): regex matched against the cumulative recv buffer for the
+            step. `None` records an empty response and continues to the next step.
+        No half-close is performed, so the server can keep reading further sends. Mutually
+        exclusive with `payload`.
+    timeout : int, optional
+        Socket timeout in seconds. Defaults to `3`.
+    socket_name : str, optional
+        A human-readable name used in error messages for context. Defaults to `"socket"`.
 
-    ### Returns
-    - **tuple** (`bool`, `str` or `list`):
-      - Banner mode: `(True, response_str)` on success.
-      - Dialog mode: `(True, [response_str, ...])` with one entry per step, in order.
-      - `(False, error_message)` on failure.
+    Returns
+    -------
+    tuple (bool, str or list)
+        - Banner mode: `(True, response_str)` on success.
+        - Dialog mode: `(True, [response_str, ...])` with one entry per step, in order.
+        - `(False, error_message)` on failure.
 
-    ### Notes
+    Notes
+    -----
     - Timeout and socket errors are handled gracefully.
     - Responses are decoded into UTF-8 text with replacement for decode errors.
     - This is an internal function intended for use by `fetch()`, `fetch_socket()`, and similar
       functions.
 
-    ### Example
+    Examples
+    --------
     >>> success, response = _socket_fetch(
     ...     open_socket_func, connect_args, payload=b'ping'
     ... )
@@ -290,40 +294,44 @@ def fetch(host, port, msg=None, dialog=None, timeout=3, ipv6=False, tls=False):
     send-receive roundtrip (banner mode, via `msg`) or a multi-step conversation (dialog mode,
     via `dialog`). Supports IPv4, IPv6, and TLS-wrapped sockets.
 
-    ### Parameters
-    - **host** (`str`):
-      Target hostname or IP address.
-    - **port** (`int`):
-      Target TCP port number.
-    - **msg** (`bytes`, optional):
-      Banner mode. A message sent once after connecting. The function then half-closes the
-      write side and reads until EOF. Mutually exclusive with `dialog`.
-    - **dialog** (`list` of `(bytes_or_None, str_or_None)` tuples, optional):
-      Dialog mode. A list of `(send, expect)` steps walked in order. `expect` is a regex
-      matched against the per-step recv buffer; `None` skips reading. No half-close is
-      performed, so multi-step protocols (SMTP, NUT, IMAP, POP3, FTP, ...) work. Mutually
-      exclusive with `msg`. See `_socket_fetch` for details.
-    - **timeout** (`int`, optional):
-      Socket timeout in seconds. Defaults to `3`.
-    - **ipv6** (`bool`, optional):
-      Use an IPv6 connection instead of IPv4. Defaults to `False`.
-    - **tls** (`bool`, optional):
-      Wrap the socket in a TLS 1.2+ context with SNI. Defaults to `False`. The legacy
-      `fetch_ssl()` helper is equivalent to `fetch(..., tls=True)` and remains available for
-      backward compatibility.
+    Parameters
+    ----------
+    host : str
+        Target hostname or IP address.
+    port : int
+        Target TCP port number.
+    msg : bytes, optional
+        Banner mode. A message sent once after connecting. The function then half-closes the
+        write side and reads until EOF. Mutually exclusive with `dialog`.
+    dialog : list of (bytes_or_None, str_or_None) tuples, optional
+        Dialog mode. A list of `(send, expect)` steps walked in order. `expect` is a regex
+        matched against the per-step recv buffer; `None` skips reading. No half-close is
+        performed, so multi-step protocols (SMTP, NUT, IMAP, POP3, FTP, ...) work. Mutually
+        exclusive with `msg`. See `_socket_fetch` for details.
+    timeout : int, optional
+        Socket timeout in seconds. Defaults to `3`.
+    ipv6 : bool, optional
+        Use an IPv6 connection instead of IPv4. Defaults to `False`.
+    tls : bool, optional
+        Wrap the socket in a TLS 1.2+ context with SNI. Defaults to `False`. The legacy
+        `fetch_ssl()` helper is equivalent to `fetch(..., tls=True)` and remains available for
+        backward compatibility.
 
-    ### Returns
-    - **tuple** (`bool`, `str` or `list`):
-      - Banner mode: `(True, response_str)` on success.
-      - Dialog mode: `(True, [response_str, ...])` with one entry per step.
-      - `(False, error_message)` on failure.
+    Returns
+    -------
+    tuple (bool, str or list)
+        - Banner mode: `(True, response_str)` on success.
+        - Dialog mode: `(True, [response_str, ...])` with one entry per step.
+        - `(False, error_message)` on failure.
 
-    ### Notes
+    Notes
+    -----
     - Timeout and socket errors are handled gracefully.
     - Responses are decoded into text.
     - IPv6 addresses are supported when `ipv6=True`.
 
-    ### Example
+    Examples
+    --------
     >>> success, response = fetch('example.com', 80)
     >>> ok, [hello, vars_block, _] = fetch(
     ...     '127.0.0.1',
@@ -369,28 +377,32 @@ def fetch_socket(sock_file, cmd=None, dialog=None, timeout=3):
     send-receive roundtrip (`cmd`) or a multi-step conversation (`dialog`). It is similar to
     `fetch()` but operates over local filesystem sockets.
 
-    ### Parameters
-    - **sock_file** (`str`):
-      Path to the Unix domain socket file.
-    - **cmd** (`bytes`, optional):
-      Banner mode. A command sent once after connecting. Mutually exclusive with `dialog`.
-    - **dialog** (`list` of `(bytes_or_None, str_or_None)` tuples, optional):
-      Dialog mode. See `fetch()` for the step format. Mutually exclusive with `cmd`.
-    - **timeout** (`int`, optional):
-      Socket timeout in seconds. Defaults to `3`.
+    Parameters
+    ----------
+    sock_file : str
+        Path to the Unix domain socket file.
+    cmd : bytes, optional
+        Banner mode. A command sent once after connecting. Mutually exclusive with `dialog`.
+    dialog : list of (bytes_or_None, str_or_None) tuples, optional
+        Dialog mode. See `fetch()` for the step format. Mutually exclusive with `cmd`.
+    timeout : int, optional
+        Socket timeout in seconds. Defaults to `3`.
 
-    ### Returns
-    - **tuple** (`bool`, `str` or `list`):
-      - Banner mode: `(True, response_str)` on success.
-      - Dialog mode: `(True, [response_str, ...])` with one entry per step.
-      - `(False, error_message)` on failure.
+    Returns
+    -------
+    tuple (bool, str or list)
+        - Banner mode: `(True, response_str)` on success.
+        - Dialog mode: `(True, [response_str, ...])` with one entry per step.
+        - `(False, error_message)` on failure.
 
-    ### Notes
+    Notes
+    -----
     - Timeout and socket errors are handled gracefully.
     - Responses are decoded into text.
     - Unix domain sockets must exist and have appropriate permissions.
 
-    ### Example
+    Examples
+    --------
     >>> success, response = fetch_socket('/var/run/haproxy.sock', b'show stat\\n')
     """
 
@@ -432,22 +444,25 @@ def fetch_ssl(host, port, msg=None, timeout=3):
     sends a message, and returns the received response. It uses the system's default trusted CA
     certificates.
 
-    ### Parameters
-    - **host** (`str`):
-      Target hostname or IP address for the SSL connection.
-    - **port** (`int`):
-      Target TCP port number (usually 443 for HTTPS services).
-    - **msg** (`bytes`, optional):
-      A message to send after connecting. If `None`, no message is sent.
-    - **timeout** (`int`, optional):
-      Socket timeout in seconds. Defaults to `3`.
+    Parameters
+    ----------
+    host : str
+        Target hostname or IP address for the SSL connection.
+    port : int
+        Target TCP port number (usually 443 for HTTPS services).
+    msg : bytes, optional
+        A message to send after connecting. If `None`, no message is sent.
+    timeout : int, optional
+        Socket timeout in seconds. Defaults to `3`.
 
-    ### Returns
-    - **tuple** (`bool`, `str`):
-      - `True`, followed by the received response text if successful.
-      - `False`, followed by an error message if failed.
+    Returns
+    -------
+    tuple (bool, str)
+        - `True`, followed by the received response text if successful.
+        - `False`, followed by an error message if failed.
 
-    ### Notes
+    Notes
+    -----
     - Deprecated wrapper kept for backward compatibility. Prefer `fetch(..., tls=True)` in new
       code; both call paths share the same TLS context.
     - Timeout, SSL, and socket errors are handled gracefully.
@@ -455,7 +470,8 @@ def fetch_ssl(host, port, msg=None, timeout=3):
     - SSL certificate validation is performed automatically based on the system's trusted CAs.
     - Uses `server_hostname` to support Server Name Indication (SNI).
 
-    ### Example
+    Examples
+    --------
     >>> success, response = fetch_ssl(
     ...     'example.com', 443, b'GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n'
     ... )
@@ -493,11 +509,15 @@ def _default_route_ip(family=socket.AF_INET):
     Linux, Windows and macOS without external tools or privileges, and offline as long as a default
     route exists.
 
-    ### Parameters
-    - **family** (`int`, optional): `socket.AF_INET` (default) or `socket.AF_INET6`.
+    Parameters
+    ----------
+    family : int, optional
+        `socket.AF_INET` (default) or `socket.AF_INET6`.
 
-    ### Returns
-    - **str** or **None**: The selected source address, or `None` if no route is available.
+    Returns
+    -------
+    str or None
+        The selected source address, or `None` if no route is available.
     """
     probe = '192.0.2.1' if family == socket.AF_INET else '2001:db8::1'
     try:
@@ -521,8 +541,10 @@ def _default_gateway():
     the gateway is not available through a dependency-free, cross-platform API, so `None` is
     returned rather than guessing.
 
-    ### Returns
-    - **str** or **None**: The default gateway IPv4 address, or `None`.
+    Returns
+    -------
+    str or None
+        The default gateway IPv4 address, or `None`.
     """
     try:
         with open('/proc/net/route', encoding='ascii') as routes:
@@ -547,11 +569,15 @@ def _iface_for_ip(ip):
 
     Matches the address against psutil's per-interface address list, so it is platform-independent.
 
-    ### Parameters
-    - **ip** (`str`): The IPv4 or IPv6 address to look up.
+    Parameters
+    ----------
+    ip : str
+        The IPv4 or IPv6 address to look up.
 
-    ### Returns
-    - **tuple** (`str` or `None`, `str` or `None`): The interface name and its netmask.
+    Returns
+    -------
+    tuple (str or None, str or None)
+        The interface name and its netmask.
     """
     try:
         wanted = ipaddress.ip_address(ip)
@@ -577,25 +603,26 @@ def get_netinfo():
     and public IP address. Addresses come from `psutil` (platform-independent); the default gateway
     is read from the Linux routing table and is `None` on other platforms.
 
-    ### Parameters
-    - None
+    Returns
+    -------
+    dict
+        A dictionary containing:
 
-    ### Returns
-    - **dict**:
-      A dictionary containing:
-        - `address` (`str`): The local IP address.
-        - `mask` (`str`): The subnet mask.
-        - `mask_cidr` (`str`): The subnet mask as CIDR.
-        - `gateway` (`str` or `None`): The default gateway address.
-        - `public_address` (`str`): The public IP address.
+          - `address` (`str`): The local IP address.
+          - `mask` (`str`): The subnet mask.
+          - `mask_cidr` (`str`): The subnet mask as CIDR.
+          - `gateway` (`str` or `None`): The default gateway address.
+          - `public_address` (`str`): The public IP address.
 
-    ### Notes
+    Notes
+    -----
     - If fetching any required information fails, an empty list is returned.
     - Requires `psutil` and the `ip_to_cidr()` helper.
     - The `public_address` field is always `None`; callers that want the public
       IP must call `get_public_ip()` separately with a list of lookup services.
 
-    ### Example
+    Examples
+    --------
     >>> netinfo = get_netinfo()
     >>> print(netinfo['address'])
     '192.168.1.10'
@@ -627,20 +654,28 @@ def get_public_ip(services, insecure=False, no_proxy=False, proxy=None, timeout=
     IP address of the system. The list is shuffled before being used, and the first service that
     returns a valid IP address is used.
 
-    ### Parameters
-    - **services** (`str`): Comma-separated URLs of services to query for the public IP.
-    - **insecure** (`bool`, optional): Disable SSL verification. Defaults to `False`.
-    - **no_proxy** (`bool`, optional): Ignore proxy settings. Defaults to `False`.
-    - **proxy** (`str`, optional): Proxy URL to reach the services through, overriding the one
-      the environment names. Defaults to `None`, which leaves the choice to the environment.
-    - **timeout** (`int`, optional): Request timeout in seconds. Defaults to `2`.
+    Parameters
+    ----------
+    services : str
+        Comma-separated URLs of services to query for the public IP.
+    insecure : bool, optional
+        Disable SSL verification. Defaults to `False`.
+    no_proxy : bool, optional
+        Ignore proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy URL to reach the services through, overriding the one
+        the environment names. Defaults to `None`, which leaves the choice to the environment.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `2`.
 
-    ### Returns
-    - **tuple** (`bool`, `str` or `None`):
-      - `True` and the IP address (`str`) if successful.
-      - `False` and `None` if no IP could be retrieved.
+    Returns
+    -------
+    tuple (bool, str or None)
+        - `True` and the IP address (`str`) if successful.
+        - `False` and `None` if no IP could be retrieved.
 
-    ### Example
+    Examples
+    --------
     >>> get_public_ip(
     ...     'https://ipv4.icanhazip.com,https://ipecho.net/plain,https://ipinfo.io/ip'
     ... )
@@ -674,15 +709,17 @@ def _split_no_proxy_entry(entry):
     """
     Split one `no_proxy` entry into its scheme, host and port part.
 
-    ### Parameters
-    - **entry** (`str`):
-      A single entry, for example `example.com`, `.example.com`, `[2001:db8::1]:8443`,
-      `192.0.2.0/24` or `https://example.com`.
+    Parameters
+    ----------
+    entry : str
+        A single entry, for example `example.com`, `.example.com`, `[2001:db8::1]:8443`,
+        `192.0.2.0/24` or `https://example.com`.
 
-    ### Returns
-    - **tuple** (`str`, `str`, `int` or `None`):
-      The scheme (empty when the entry names none or names `all`), the host part and the
-      port, if the entry pins one.
+    Returns
+    -------
+    tuple (str, str, int or None)
+        The scheme (empty when the entry names none or names `all`), the host part and the
+        port, if the entry pins one.
     """
     scheme = ''
     if '://' in entry:
@@ -710,13 +747,15 @@ def _is_ip_entry(entry):
     """
     Return whether an entry names an IP address or an IP network rather than a hostname.
 
-    ### Parameters
-    - **entry** (`str`):
-      The host part of a `no_proxy` entry.
+    Parameters
+    ----------
+    entry : str
+        The host part of a `no_proxy` entry.
 
-    ### Returns
-    - **bool**:
-      `True` for `192.0.2.1`, `2001:db8::1` and `192.0.2.0/24`, `False` for `example.com`.
+    Returns
+    -------
+    bool
+        `True` for `192.0.2.1`, `2001:db8::1` and `192.0.2.0/24`, `False` for `example.com`.
     """
     try:
         ipaddress.ip_network(entry, strict=False)
@@ -740,15 +779,21 @@ def _no_proxy_matches(entry, scheme, host, port):
     * An entry may pin a scheme (`https://example.com`) and a port (`example.com:8443`),
       both of which then have to match as well.
 
-    ### Parameters
-    - **entry** (`str`): One entry of the `no_proxy` list.
-    - **scheme** (`str`): Scheme of the target, lowercase.
-    - **host** (`str`): Hostname or address of the target, lowercase and without brackets.
-    - **port** (`int`): Port of the target.
+    Parameters
+    ----------
+    entry : str
+        One entry of the `no_proxy` list.
+    scheme : str
+        Scheme of the target, lowercase.
+    host : str
+        Hostname or address of the target, lowercase and without brackets.
+    port : int
+        Port of the target.
 
-    ### Returns
-    - **bool**:
-      `True` if the target has to be reached without a proxy.
+    Returns
+    -------
+    bool
+        `True` if the target has to be reached without a proxy.
     """
     entry = entry.strip()
     if not entry:
@@ -795,20 +840,23 @@ def get_proxy(target_url, no_proxy=False):
     proxy anyway; sending traffic to a proxy the operator meant to bypass is the more
     harmful of the two readings, which is why the network is honoured here.
 
-    ### Parameters
-    - **target_url** (`str`):
-      The target, as a URL. Its scheme selects between `http_proxy` and `https_proxy`, its
-      host and port are matched against `no_proxy`.
-    - **no_proxy** (`bool`, optional):
-      If `True`, ignore the environment entirely and return `None`. Defaults to `False`.
+    Parameters
+    ----------
+    target_url : str
+        The target, as a URL. Its scheme selects between `http_proxy` and `https_proxy`, its
+        host and port are matched against `no_proxy`.
+    no_proxy : bool, optional
+        If `True`, ignore the environment entirely and return `None`. Defaults to `False`.
 
-    ### Returns
-    - **tuple** (`bool`, `str` or `None`):
-      - `True` and the proxy URL, always carrying a scheme.
-      - `True` and `None` if the target has to be reached directly.
-      - `False` and an error message if the environment names an unusable proxy.
+    Returns
+    -------
+    tuple (bool, str or None)
+        - `True` and the proxy URL, always carrying a scheme.
+        - `True` and `None` if the target has to be reached directly.
+        - `False` and an error message if the environment names an unusable proxy.
 
-    ### Example
+    Examples
+    --------
     >>> get_proxy('https://www.example.com/')
     (True, 'http://proxy.example.com:3128')
     """
@@ -855,19 +903,24 @@ def cidr_to_hosts(cidr, max_hosts=65536):
     broadcast address are excluded. Host bits set in the input are tolerated
     (`strict=False`).
 
-    ### Parameters
-    - **cidr** (`str`): Network in CIDR notation, e.g. `10.1.1.0/24`.
-    - **max_hosts** (`int`, optional): Refuse to enumerate networks with more
-      addresses than this, which protects against accidentally expanding a large
-      range such as an IPv6 `/64` (2^64 addresses). Set to `None` to disable the
-      limit. Defaults to `65536` (an IPv4 `/16`).
+    Parameters
+    ----------
+    cidr : str
+        Network in CIDR notation, e.g. `10.1.1.0/24`.
+    max_hosts : int, optional
+        Refuse to enumerate networks with more
+        addresses than this, which protects against accidentally expanding a large
+        range such as an IPv6 `/64` (2^64 addresses). Set to `None` to disable the
+        limit. Defaults to `65536` (an IPv4 `/16`).
 
-    ### Returns
-    - **tuple** (`bool`, `list` or `str`):
-      - `True` and the list of host IP address strings (IPv4 or IPv6) on success.
-      - `False` and an error message on failure.
+    Returns
+    -------
+    tuple (bool, list or str)
+        - `True` and the list of host IP address strings (IPv4 or IPv6) on success.
+        - `False` and an error message on failure.
 
-    ### Example
+    Examples
+    --------
     >>> cidr_to_hosts('10.1.1.0/30')
     (True, ['10.1.1.1', '10.1.1.2'])
     >>> cidr_to_hosts('2001:db8::/126')
@@ -894,11 +947,15 @@ def _ipv6_prefixlen(netmask):
     "mask/prefix" string, or as `None`. All three are normalised to a prefix length, defaulting to
     "128" (a single host) when it cannot be derived.
 
-    ### Parameters
-    - **netmask** (`str` or `None`): The IPv6 netmask as reported by psutil.
+    Parameters
+    ----------
+    netmask : str or None
+        The IPv6 netmask as reported by psutil.
 
-    ### Returns
-    - **str**: The prefix length, e.g. "64".
+    Returns
+    -------
+    str
+        The prefix length, e.g. "64".
     """
     if not netmask:
         return '128'
@@ -921,21 +978,27 @@ def get_subnet_hosts(interface=None, max_hosts=65536):
     IPv6 subnet is used. Note that an IPv6 `/64` exceeds `max_hosts` and is
     therefore reported as too large rather than enumerated.
 
-    ### Parameters
-    - **interface** (`str`, optional): Network interface name (e.g. `eth0`). If
-      `None`, the default interface is used.
-    - **max_hosts** (`int`, optional): Passed through to `cidr_to_hosts()` to cap
-      enumeration. Defaults to `65536`.
+    Parameters
+    ----------
+    interface : str, optional
+        Network interface name (e.g. `eth0`). If
+        `None`, the default interface is used.
+    max_hosts : int, optional
+        Passed through to `cidr_to_hosts()` to cap
+        enumeration. Defaults to `65536`.
 
-    ### Returns
-    - **tuple** (`bool`, `list` or `str`):
-      - `True` and the list of host IP address strings on success.
-      - `False` and an error message on failure.
+    Returns
+    -------
+    tuple (bool, list or str)
+        - `True` and the list of host IP address strings on success.
+        - `False` and an error message on failure.
 
-    ### Notes
+    Notes
+    -----
     - Requires the `psutil` library.
 
-    ### Example
+    Examples
+    --------
     >>> get_subnet_hosts('eth0')
     (True, ['192.168.1.1', '192.168.1.2', ..., '192.168.1.254'])
     """
@@ -980,15 +1043,18 @@ def ip_to_cidr(ip):
     This function converts a traditional IPv4 netmask (e.g., '255.255.255.0') into its CIDR
     equivalent (e.g., `24`).
 
-    ### Parameters
-    - **ip** (`str` or `None`):
-      The IP address mask to convert. If `None`, returns `0`.
+    Parameters
+    ----------
+    ip : str or None
+        The IP address mask to convert. If `None`, returns `0`.
 
-    ### Returns
-    - **int**:
-      The corresponding CIDR number (e.g., 24).
+    Returns
+    -------
+    int
+        The corresponding CIDR number (e.g., 24).
 
-    ### Example
+    Examples
+    --------
     >>> ip_to_cidr('255.255.255.0')
     24
     """
@@ -1010,23 +1076,28 @@ def normalize_address(text):
     address is written in upper case here and expanded there. Counting those as different
     sources splits a burst across buckets and hides it.
 
-    ### Parameters
-    - **text** (`str`): The address as the line holds it, brackets and all.
+    Parameters
+    ----------
+    text : str
+        The address as the line holds it, brackets and all.
 
-    ### Returns
-    - **str | None**:
-      The address in the one form this function gives it, or None where the text is not an
-      address at all. An IPv6 address that carries an IPv4 one comes back as that IPv4
-      address, which is how the two spellings of one client become one name.
+    Returns
+    -------
+    str | None
+        The address in the one form this function gives it, or None where the text is not an
+        address at all. An IPv6 address that carries an IPv4 one comes back as that IPv4
+        address, which is how the two spellings of one client become one name.
 
-    ### Notes
+    Notes
+    -----
     - The brackets an IPv6 address is written in to separate it from a port are taken off.
     - A zone (`fe80::1%eth0`) is kept, because two hosts on different links can carry the same
       link-local address and are not the same peer.
     - This is what decides whether something is an address, rather than the pattern that found
       it: `999.1.2.3` has the shape of one and is not one.
 
-    ### Example
+    Examples
+    --------
     >>> normalize_address('::ffff:198.51.100.7')
     '198.51.100.7'
     >>> normalize_address('[2001:DB8:0:0:0:0:0:1]')
@@ -1054,24 +1125,29 @@ def is_valid_hostname(hostname):
     hostname ending with a dot is allowed (representing the null byte), but must be less than
     254 bytes total.
 
-    ### Parameters
-    - **hostname** (`str`):
-      The hostname to validate.
+    Parameters
+    ----------
+    hostname : str
+        The hostname to validate.
 
-    ### Returns
-    - **bool**:
-      `True` if the hostname is valid, `False` otherwise.
+    Returns
+    -------
+    bool
+        `True` if the hostname is valid, `False` otherwise.
 
-    ### Notes
+    Notes
+    -----
     - Complies fully with RFC 1035 and the preferred form of RFC 3696 Section 2.
     - Absolute FQDNs (ending with a dot) must be ≤ 254 bytes.
     - Relative FQDNs must be < 253 bytes.
 
-    ### References
+    References
+    ----------
     - https://tools.ietf.org/html/rfc3696#section-2
     - https://tools.ietf.org/html/rfc1035
 
-    ### Example
+    Examples
+    --------
     >>> is_valid_hostname('example.com')
     True
     """
@@ -1092,23 +1168,28 @@ def is_valid_absolute_hostname(hostname):
     This function checks if the hostname is a valid FQDN according to the RFC preferred-form
     and ensures it does not end with a dot (`.`).
 
-    ### Parameters
-    - **hostname** (`str`):
-      The hostname to validate.
+    Parameters
+    ----------
+    hostname : str
+        The hostname to validate.
 
-    ### Returns
-    - **bool**:
-      `True` if the hostname is a valid absolute FQDN (does not end with a dot), `False` otherwise.
+    Returns
+    -------
+    bool
+        `True` if the hostname is a valid absolute FQDN (does not end with a dot), `False` otherwise.
 
-    ### Notes
+    Notes
+    -----
     - Based on RFC 1035 and RFC 3696 specifications.
     - Absolute FQDNs are typically used without appending search domains in DNS lookups.
 
-    ### References
+    References
+    ----------
     - https://tools.ietf.org/html/rfc3696#section-2
     - https://tools.ietf.org/html/rfc1035
 
-    ### Example
+    Examples
+    --------
     >>> is_valid_absolute_hostname('example.com')
     True
     >>> is_valid_absolute_hostname('example.com.')
@@ -1127,23 +1208,28 @@ def is_valid_relative_hostname(hostname):
     This function checks if the hostname is a valid FQDN in the preferred RFC form, and ensures
     it ends with a dot (`.`).
 
-    ### Parameters
-    - **hostname** (`str`):
-      The hostname to validate.
+    Parameters
+    ----------
+    hostname : str
+        The hostname to validate.
 
-    ### Returns
-    - **bool**:
-      `True` if the hostname is a valid relative FQDN (ends with a dot), `False` otherwise.
+    Returns
+    -------
+    bool
+        `True` if the hostname is a valid relative FQDN (ends with a dot), `False` otherwise.
 
-    ### Notes
+    Notes
+    -----
     - Based on the preferred form from RFC 1035 and RFC 3696.
     - Relative FQDNs ending with a dot can cause DNS resolvers to append search domains.
 
-    ### References
+    References
+    ----------
     - https://tools.ietf.org/html/rfc3696#section-2
     - https://tools.ietf.org/html/rfc1035
 
-    ### Example
+    Examples
+    --------
     >>> is_valid_relative_hostname('example.com.')
     True
     >>> is_valid_relative_hostname('example.com')
@@ -1162,27 +1248,32 @@ def netmask_to_cidr(ip):
     This function converts a standard IPv4 netmask (e.g., `255.255.255.0`) into its
     equivalent CIDR prefix length (e.g., `24`).
 
-    ### Parameters
-    - **ip** (`str`):
-      Netmask IP address in string format (e.g., '255.255.255.0').
+    Parameters
+    ----------
+    ip : str
+        Netmask IP address in string format (e.g., '255.255.255.0').
 
-    ### Returns
-    - **int**:
-      CIDR prefix length corresponding to the given netmask.
-      Returns 0 if input is `None`.
+    Returns
+    -------
+    int
+        CIDR prefix length corresponding to the given netmask.
+        Returns 0 if input is `None`.
 
-    ### Notes
+    Notes
+    -----
     - Based on Glances project logic.
     - Each octet is converted to binary and counted for the number of '1' bits.
 
-    ### Example
+    References
+    ----------
+    - https://github.com/nicolargo/glances/issues/1417#issuecomment-469894399
+
+    Examples
+    --------
     >>> netmask_to_cidr('255.255.255.0')
     24
     >>> netmask_to_cidr('255.255.0.0')
     16
-
-    ### References
-    - https://github.com/nicolargo/glances/issues/1417#issuecomment-469894399
     """
     if not ip:
         return 0

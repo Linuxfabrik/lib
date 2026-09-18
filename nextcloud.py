@@ -35,28 +35,31 @@ def run_occ(path, cmd, _format='json', timeout=None):
     prefixed with `sudo -u '#<uid>'`; if it already is, `sudo` is skipped, so no sudoers
     entry is needed and the call also works in containers that ship without `sudo`.
 
-    ### Parameters
-    - **path** *(str | os.PathLike)*:
-      Absolute path to the root of the Nextcloud installation (directory that contains `occ` and
-      `config/`).
-    - **cmd** *(str)*:
-      The `occ` subcommand and arguments to execute (e.g., `"status"`, `"user:list --output=json"`).
-    - **_format** *(str, optional)*:
-      Use `"json"` to parse `stdout` as JSON and return a Python object, or any other value
-      (e.g., `"text"`) to return the raw string output. Defaults to `"json"`.
-    - **timeout** *(int | float | None, optional)*:
-      Seconds to wait for `occ` before killing it. `None` (the default) waits indefinitely,
-      which is what long-running commands such as `app:update` need.
+    Parameters
+    ----------
+    path : str | os.PathLike
+        Absolute path to the root of the Nextcloud installation (directory that contains `occ` and
+        `config/`).
+    cmd : str
+        The `occ` subcommand and arguments to execute (e.g., `"status"`, `"user:list --output=json"`).
+    _format : str, optional
+        Use `"json"` to parse `stdout` as JSON and return a Python object, or any other value
+        (e.g., `"text"`) to return the raw string output. Defaults to `"json"`.
+    timeout : int | float | None, optional
+        Seconds to wait for `occ` before killing it. `None` (the default) waits indefinitely,
+        which is what long-running commands such as `app:update` need.
 
-    ### Returns
-    - **tuple[bool, Any]**:
-      - On success: `(True, result)` where `result` is a Python object if `_format == "json"`,
-        otherwise a trimmed `str` of `stdout`.
-      - On failure: `(False, error)` where `error` is a message describing the failed
-        precondition, the failure reported by `shell.shell_exec()` (interpreter not found,
-        timeout), the captured output of a non-zero exit, or the JSON decode error.
+    Returns
+    -------
+    tuple[bool, Any]
+        - On success: `(True, result)` where `result` is a Python object if `_format == "json"`,
+          otherwise a trimmed `str` of `stdout`.
+        - On failure: `(False, error)` where `error` is a message describing the failed
+          precondition, the failure reported by `shell.shell_exec()` (interpreter not found,
+          timeout), the captured output of a non-zero exit, or the JSON decode error.
 
-    ### Notes
+    Notes
+    -----
     - `_format` only selects how the output is parsed. It does not add `--output=json` to the
       command; the caller has to do that. Not every `occ` command accepts that option, and the
       only valid values are `plain`, `json` and `json_pretty`. Some commands, `config:list`
@@ -74,7 +77,8 @@ def run_occ(path, cmd, _format='json', timeout=None):
       those are caught by the failing parse. In text mode they are indistinguishable from
       regular output, and one of them is translated, so no attempt is made to detect them.
 
-    ### Example
+    Examples
+    --------
     >>> ok, result = run_occ('/var/www/nextcloud', 'status --output=json')
     >>> ok
     True

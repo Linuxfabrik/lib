@@ -55,22 +55,25 @@ def call_api(api_token, path, data=None, method=None):
     """
     Makes an HTTP GET or POST call against the Bexio API and returns the parsed JSON.
 
-    ### Parameters
-    - **api_token** (`str`)
-        Bexio API Token. Create at https://developer.bexio.com/pat.
-    - **path** (`str`)
-        The URL part to call.
-    - **data** (`dict`, optional)
-        Dictionary that will be sent as JSON data.
-    - **method** (`str`, optional)
-        HTTP method to use for the request. Defaults to GET if data is None else POST.
+    Parameters
+    ----------
+    api_token : str
+          Bexio API Token. Create at https://developer.bexio.com/pat.
+    path : str
+          The URL part to call.
+    data : dict, optional
+          Dictionary that will be sent as JSON data.
+    method : str, optional
+          HTTP method to use for the request. Defaults to GET if data is None else POST.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `list` | `str`):
-        - On success, the parsed JSON document from the Bexio API
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `list` | `str`):
+
+          - On success, the parsed JSON document from the Bexio API
+          - On failure, an error message string.
     """
 
     headers = {
@@ -98,20 +101,24 @@ def create_contact(api_token, data=None):
     """
     Creates a contact using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **data** (`dict`, optional):
-        Contact data to be created, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    data : dict, optional
+          Contact data to be created, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the created contact.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the created contact.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Contacts/operation/v2CreateContact
     """
     return call_api(api_token, BEXIO_API_CONTACT_URL, data)
@@ -121,20 +128,24 @@ def create_contact_relation(api_token, data=None):
     """
     Creates a contact relation using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **data** (`dict`):
-        Contact relation data to be created, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    data : dict
+          Contact relation data to be created, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the created contact relation.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the created contact relation.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc:
     https://docs.bexio.com/#tag/Contact-Relations/operation/v2CreateContactRelation
     """
@@ -145,20 +156,24 @@ def create_invoice(api_token, data=None):
     """
     Creates an invoice using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **data** (`dict`, optional):
-        Invoice data to be created, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    data : dict, optional
+          Invoice data to be created, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the created invoice.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the created invoice.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Invoices/operation/v2CreateInvoice
     """
     return call_api(api_token, BEXIO_API_INVOICE_URL, data)
@@ -168,20 +183,24 @@ def create_item(api_token, data=None):
     """
     Creates an item using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **data** (`dict`, optional):
-        Item data to be created, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    data : dict, optional
+          Item data to be created, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the created item.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the created item.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Items/operation/v2CreateItem
     """
     return call_api(api_token, BEXIO_API_ITEM_URL, data)
@@ -191,20 +210,24 @@ def create_project(api_token, data=None):
     """
     Creates a project using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **data** (`dict`, optional):
-        Project data to be created, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    data : dict, optional
+          Project data to be created, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the created project.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the created project.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Projects/operation/v2CreateProject
     """
     return call_api(api_token, BEXIO_API_PROJECT_URL, data)
@@ -214,20 +237,24 @@ def create_timesheet(api_token, data=None):
     """
     Creates a timesheet using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **data** (`dict`, optional):
-        Timesheet data to be created, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    data : dict, optional
+          Timesheet data to be created, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the created timesheet.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the created timesheet.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Timesheets/operation/v2CreateTimesheet
     """
     return call_api(api_token, BEXIO_API_TIMESHEET_URL, data)
@@ -237,20 +264,24 @@ def delete_contact_relation(api_token, contact_relation_id):
     """
     Deletes a contact relation using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **contact_relation_id** (`int`):
-        ID of the contact relation to delete.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    contact_relation_id : int
+          ID of the contact relation to delete.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the deletion status.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the deletion status.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc:
     https://docs.bexio.com/#tag/Contact-Relations/operation/v2DeleteContactRelation
     """
@@ -265,22 +296,26 @@ def edit_contact(api_token, contact_id, data=None):
     """
     Edits a contact using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **contact_id** (`int`):
-        ID of the contact to edit.
-    - **data** (`dict`):
-        Contact data to be edited, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    contact_id : int
+          ID of the contact to edit.
+    data : dict
+          Contact data to be edited, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the edited contact.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the edited contact.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Contacts/operation/v2EditContact
     """
     return call_api(api_token, BEXIO_API_CONTACT_URL + '/' + str(contact_id), data)
@@ -290,22 +325,26 @@ def edit_contact_relation(api_token, contact_relation_id, data=None):
     """
     Edits a contact relation using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **contact_relation_id** (`int`):
-        ID of the contact relation to edit.
-    - **data** (`dict`):
-        Contact relation data to be edited, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    contact_relation_id : int
+          ID of the contact relation to edit.
+    data : dict
+          Contact relation data to be edited, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the edited contact relation.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the edited contact relation.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc:
     https://docs.bexio.com/#tag/Contact-Relations/operation/v2EditContactRelation
     """
@@ -320,22 +359,26 @@ def edit_invoice(api_token, invoice_id, data=None):
     """
     Edits an invoice using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **invoice_id** (`int`):
-        ID of the invoice to edit.
-    - **data** (`dict`, optional):
-        Invoice data to be edited, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    invoice_id : int
+          ID of the invoice to edit.
+    data : dict, optional
+          Invoice data to be edited, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the edited invoice.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the edited invoice.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Invoices/operation/v2EditInvoice
     """
     return call_api(api_token, BEXIO_API_INVOICE_URL + '/' + str(invoice_id), data)
@@ -345,22 +388,26 @@ def edit_item(api_token, item_id, data=None):
     """
     Edits an item using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **item_id** (`int`):
-        ID of the item to edit.
-    - **data** (`dict`, optional):
-        Item data to be edited, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    item_id : int
+          ID of the item to edit.
+    data : dict, optional
+          Item data to be edited, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the edited item.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the edited item.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Items/operation/v2EditItem
     """
     return call_api(api_token, BEXIO_API_ITEM_URL + '/' + str(item_id), data)
@@ -370,22 +417,26 @@ def edit_project(api_token, project_id, data=None):
     """
     Edits a project using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **project_id** (`int`):
-        ID of the project to edit.
-    - **data** (`dict`, optional):
-        Project data to be edited, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    project_id : int
+          ID of the project to edit.
+    data : dict, optional
+          Project data to be edited, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the edited project.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the edited project.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Projects/operation/v2EditProject
     """
     return call_api(api_token, BEXIO_API_PROJECT_URL + '/' + str(project_id), data)
@@ -395,22 +446,26 @@ def edit_timesheet(api_token, timesheet_id, data=None):
     """
     Edits a timesheet using the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **timesheet_id** (`int`):
-        ID of the timesheet to edit.
-    - **data** (`dict`, optional):
-        Project data to be edited, as per the Bexio API documentation.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    timesheet_id : int
+          ID of the timesheet to edit.
+    data : dict, optional
+          Project data to be edited, as per the Bexio API documentation.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`dict` | `str`):
-        - On success, a dictionary of the edited timesheet.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`dict` | `str`):
 
-    ### Notes
+          - On success, a dictionary of the edited timesheet.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Timesheets/operation/v2EditTimesheet
     """
     return call_api(api_token, BEXIO_API_TIMESHEET_URL + '/' + str(timesheet_id), data)
@@ -420,18 +475,22 @@ def fetch_accounts(api_token):
     """
     Fetches all accounts from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all accounts as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all accounts as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Accounts/operation/v2ListAccounts
     """
     return get_all(api_token, BEXIO_API_ACCOUNT_URL)
@@ -441,18 +500,22 @@ def fetch_bank_accounts(api_token):
     """
     Fetches all bank accounts from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all bank accounts as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all bank accounts as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to API doc: https://docs.bexio.com/#tag/Bank-Accounts/operation/ListBankAccounts
     """
     return get_all(api_token, BEXIO_API_BANK_ACCOUNT_URL)
@@ -462,18 +525,22 @@ def fetch_business_activities(api_token):
     """
     Fetches all business activities from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all business activities as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all business activities as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to API doc:
     https://docs.bexio.com/#tag/Business-Activities/operation/v2ListBusinessActivities
     """
@@ -484,18 +551,22 @@ def fetch_contact_groups(api_token):
     """
     Fetches all contact groups from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all contact groups as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all contact groups as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Contact-Groups/operation/v2ListContactGroups
     """
     return get_all(api_token, BEXIO_API_CONTACT_GROUP_URL)
@@ -505,18 +576,22 @@ def fetch_contact_relations(api_token):
     """
     Fetches all contact relations from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all contact relations as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all contact relations as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc:
     https://docs.bexio.com/#tag/Contact-Relations/operation/v2ListContactRelations
     """
@@ -527,18 +602,22 @@ def fetch_contact_sectors(api_token):
     """
     Fetches all contact sectors (branches) from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all contact sectors (branches) as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all contact sectors (branches) as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc:
     https://docs.bexio.com/#tag/Contact-Sectors/operation/v2ListContactSectors
     """
@@ -549,20 +628,24 @@ def fetch_contacts(api_token, archived=False):
     """
     Fetches all (optionally including archived) contacts from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
-    - **archived** (`bool`, optional):
-        If `True`, also request archived contacts from the API. Defaults to `False`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
+    archived : bool, optional
+          If `True`, also request archived contacts from the API. Defaults to `False`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all contacts as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all contacts as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Contacts/operation/v2ListContacts
     """
     return get_all(api_token, BEXIO_API_CONTACT_URL, {'show_archived': archived})
@@ -572,18 +655,22 @@ def fetch_countries(api_token):
     """
     Fetches all countries from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all countries as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all countries as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Countries/operation/v2ListCountries
     """
     return get_all(api_token, BEXIO_API_COUNTRY_URL)
@@ -593,18 +680,22 @@ def fetch_currencies(api_token):
     """
     Fetches all currencies from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all currencies as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all currencies as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Currencies/operation/ListCurrencies
     """
     return get_all(api_token, BEXIO_API_CURRENCY_URL)
@@ -614,18 +705,22 @@ def fetch_invoices(api_token):
     """
     Fetches all invoices from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all invoices as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all invoices as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Invoices/operation/v2ListInvoices
     """
     return get_all(api_token, BEXIO_API_INVOICE_URL)
@@ -635,18 +730,22 @@ def fetch_items(api_token):
     """
     Fetches all items from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all items as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all items as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Items/operation/v2ListItems
     """
     return get_all(api_token, BEXIO_API_ITEM_URL)
@@ -656,18 +755,22 @@ def fetch_languages(api_token):
     """
     Fetches all languages from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all languages as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all languages as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Languages/operation/v2ListLanguages
     """
     return get_all(api_token, BEXIO_API_LANGUAGE_URL)
@@ -677,18 +780,22 @@ def fetch_payment_types(api_token):
     """
     Fetches all payment types from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all payment types as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all payment types as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Payment-Types/operation/v2ListPaymentTypes
     """
     return get_all(api_token, BEXIO_API_PAYMENT_TYPE_URL)
@@ -698,18 +805,22 @@ def fetch_project_statuses(api_token):
     """
     Fetches all project statuses from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all project statuses as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all project statuses as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Projects/operation/v2ListProjectStatus
     """
     return get_all(api_token, BEXIO_API_PROJECT_STATUS_URL)
@@ -719,18 +830,22 @@ def fetch_project_types(api_token):
     """
     Fetches all project types from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all project types as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all project types as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Projects/operation/v2ListProjectType
     """
     return get_all(api_token, BEXIO_API_PROJECT_TYPE_URL)
@@ -740,18 +855,22 @@ def fetch_projects(api_token):
     """
     Fetches all projects from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all projects as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all projects as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Projects/operation/v2ListProjects
     """
     return get_all(api_token, BEXIO_API_PROJECT_URL)
@@ -761,18 +880,22 @@ def fetch_salutations(api_token):
     """
     Fetches all salutations from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all salutations as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all salutations as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Salutations/operation/v2ListSalutations
     """
     return get_all(api_token, BEXIO_API_SALUTATION_URL)
@@ -782,18 +905,22 @@ def fetch_stock_areas(api_token):
     """
     Fetches all stock areas from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all stock areas as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all stock areas as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Stock-Areas/operation/v2ListStockAreas
     """
     return get_all(api_token, BEXIO_API_STOCK_AREA_URL)
@@ -803,18 +930,22 @@ def fetch_stock_locations(api_token):
     """
     Fetches all stock locations from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all stock locations as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all stock locations as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc:
     https://docs.bexio.com/#tag/Stock-locations/operation/v2ListStockLocations
     """
@@ -825,18 +956,22 @@ def fetch_taxes(api_token):
     """
     Fetches all taxes from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all taxes as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all taxes as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Taxes/operation/ListTaxes
     """
     return get_all(api_token, BEXIO_API_TAX_URL)
@@ -846,18 +981,22 @@ def fetch_timesheet_statuses(api_token):
     """
     Fetches all timesheet statuses from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all timesheet statuses as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all timesheet statuses as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Timesheets/operation/v2ListTimesheets
     """
     return get_all(api_token, BEXIO_API_TIMESHEET_STATUS_URL)
@@ -867,18 +1006,22 @@ def fetch_timesheets(api_token):
     """
     Fetches all timesheets from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all timesheets as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all timesheets as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Timesheets/operation/v2ListTimesheets
     """
     return get_all(api_token, BEXIO_API_TIMESHEET_URL)
@@ -888,18 +1031,22 @@ def fetch_titles(api_token):
     """
     Fetches all titles from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all titles as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all titles as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Titles/operation/v2ListTitles
     """
     return get_all(api_token, BEXIO_API_TITLE_URL)
@@ -909,18 +1056,22 @@ def fetch_units(api_token):
     """
     Fetches all units from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all units as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all units as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/Units/operation/v2ListUnits
     """
     return get_all(api_token, BEXIO_API_UNIT_URL)
@@ -930,18 +1081,22 @@ def fetch_users(api_token):
     """
     Fetches all users from the Bexio API.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `get_all()`.
+    Parameters
+    ----------
+    api_token : str
+          See `get_all()`.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): `True` if the request was successful, `False` otherwise.
-      - **result** (`list` | `str`):
-        - On success, a list of all users as dictionaries.
-        - On failure, an error message string.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): `True` if the request was successful, `False` otherwise.
+        - **result** (`list` | `str`):
 
-    ### Notes
+          - On success, a list of all users as dictionaries.
+          - On failure, an error message string.
+
+    Notes
+    -----
     - Refer to the API doc: https://docs.bexio.com/#tag/User-Management/operation/v3ListUsers
     """
     return get_all(api_token, BEXIO_API_USER_URL)
@@ -952,17 +1107,19 @@ def get_all(api_token, path, params=None):
     A wrapper function around `call_api()` that handles the pagination of the Bexio API and
     returns all items.
 
-    ### Parameters
-    - **api_token** (`str`):
-        See `call_api()`.
-    - **path** (`str`):
-        See `call_api()`.
-    - **params** (`dict` | optional):
-        Additional URL parameters to be added to the request.
+    Parameters
+    ----------
+    api_token : str
+          See `call_api()`.
+    path : str
+          See `call_api()`.
+    params : dict | optional
+          Additional URL parameters to be added to the request.
 
-    ### Returns
-    - **tuple**:
-        See `call_api()`.
+    Returns
+    -------
+    tuple
+          See `call_api()`.
     """
     if params is None:
         params = {}

@@ -111,24 +111,30 @@ def acknowledge(conn, findings, table=DEFAULT_TABLE):
     A finding that is not on record yet is recorded as it is acknowledged, so a consumer that
     only ever writes on an acknowledgement does not have to record everything it sees first.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`): An open connection from `connect()`.
-    - **findings** (`iterable` of `dict`):
-      The findings to acknowledge, in the shape `record()` takes. Rows from `pending()` can be
-      passed straight back in.
-    - **table** (`str`, optional): Table to write to. Defaults to `'findings'`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An open connection from `connect()`.
+    findings : iterable of dict
+        The findings to acknowledge, in the shape `record()` takes. Rows from `pending()` can be
+        passed straight back in.
+    table : str, optional
+        Table to write to. Defaults to `'findings'`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True on success, otherwise False.
-        - tuple[1] (**None | str**): None on success, otherwise an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**None | str**): None on success, otherwise an error message string.
 
-    ### Notes
+    Notes
+    -----
     - An acknowledged finding is kept rather than deleted, because a consumer that re-reads its
       whole source finds the same line again on the next run and has to recognize it as one that
       was already dealt with. `prune()` is what eventually removes it.
 
-    ### Example
+    Examples
+    --------
     >>> lib.base.coe(lib.logmatch.acknowledge(conn, pending_findings))
     """
     return _write(conn, findings, table, acknowledged=True)
@@ -143,21 +149,24 @@ def connect(name, instance='', path=''):
     keeps them apart, and `instance_id()` derives one from whatever decides which lines a
     consumer flags.
 
-    ### Parameters
-    - **name** (`str`):
-      Name of the consumer, used in the file name, for example `'logfile'`.
-    - **instance** (`str`, optional):
-      Distinguishes several instances of the same consumer. Defaults to `''`, for a consumer
-      that only ever runs once per host.
-    - **path** (`str`, optional):
-      Directory to keep the database in. Defaults to `''`, which is the per-user temp directory.
+    Parameters
+    ----------
+    name : str
+        Name of the consumer, used in the file name, for example `'logfile'`.
+    instance : str, optional
+        Distinguishes several instances of the same consumer. Defaults to `''`, for a consumer
+        that only ever runs once per host.
+    path : str, optional
+        Directory to keep the database in. Defaults to `''`, which is the per-user temp directory.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True on success, otherwise False.
-        - tuple[1] (**sqlite3.Connection | str**): The connection, or an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**sqlite3.Connection | str**): The connection, or an error message string.
 
-    ### Example
+    Examples
+    --------
     >>> instance = lib.logmatch.instance_id({'pattern': args.PATTERN})
     >>> conn = lib.base.coe(lib.logmatch.connect('logfile', instance))
     """
@@ -186,26 +195,31 @@ def get_position(conn, source):
     """
     Return the read position stored for a log source, or None if there is none yet.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`): An open connection from `connect()`.
-    - **source** (`str`):
-      What the position belongs to. Use the source as the consumer was configured with it, not
-      as it resolved on this run, so a log whose file name carries the current date keeps its
-      position across the change of day.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An open connection from `connect()`.
+    source : str
+        What the position belongs to. Use the source as the consumer was configured with it, not
+        as it resolved on this run, so a log whose file name carries the current date keeps its
+        position across the change of day.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True on success, otherwise False.
-        - tuple[1] (**dict | None | str**):
-          The stored position, None where the source has none yet, otherwise an error message
-          string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**dict | None | str**):
+            The stored position, None where the source has none yet, otherwise an error message
+            string.
 
-    ### Notes
+    Notes
+    -----
     - A stored position that cannot be read back is reported as None rather than as an error, so
       a state database written by an incompatible version costs one re-read instead of taking
       the consumer down.
 
-    ### Example
+    Examples
+    --------
     >>> position = lib.base.coe(lib.logmatch.get_position(conn, args.FILENAME))
     >>> result = lib.base.coe(lib.logsource.read(args.FILENAME, position=position))
     """
@@ -234,21 +248,27 @@ def instance_id(payload, length=10):
     file name. Nesting, ordering and types are normalized first, so two consumers configured
     alike share an id no matter in which order the values were given.
 
-    ### Parameters
-    - **payload** (`any`):
-      Anything JSON serializable, typically a dict of the parameters that select and classify
-      lines. Lists are sorted, so the order they were given in does not change the id.
-    - **length** (`int`, optional): How many hex characters to return. Defaults to 10.
+    Parameters
+    ----------
+    payload : any
+        Anything JSON serializable, typically a dict of the parameters that select and classify
+        lines. Lists are sorted, so the order they were given in does not change the id.
+    length : int, optional
+        How many hex characters to return. Defaults to 10.
 
-    ### Returns
-    - **str**: The id.
+    Returns
+    -------
+    str
+        The id.
 
-    ### Notes
+    Notes
+    -----
     - Include every parameter that changes which lines are flagged, and nothing else. A
       parameter that only changes the wording of the output would split the state in two for no
       reason, and one that is left out lets two differently configured services share a state.
 
-    ### Example
+    Examples
+    --------
     >>> instance_id({'critical': ['fatal'], 'warning': ['error', 'warn']})
     'd41d8cd98f'
     """
@@ -274,11 +294,15 @@ def key(line):
     incrementally, leave the key to `record()` instead, so a line that turns up again after an
     acknowledgement is reported again.
 
-    ### Parameters
-    - **line** (`str`): The line to derive a key from.
+    Parameters
+    ----------
+    line : str
+        The line to derive a key from.
 
-    ### Returns
-    - **str**: The key.
+    Returns
+    -------
+    str
+        The key.
     """
     return hashlib.sha256(line.encode('utf-8')).hexdigest()
 
@@ -292,21 +316,26 @@ def pending(conn, max_age=None, table=DEFAULT_TABLE):
     when it was last seen, so a line that keeps repeating still stops counting eventually
     instead of renewing itself forever.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`): An open connection from `connect()`.
-    - **max_age** (`int`, optional):
-      Minutes a finding counts for. Defaults to None, which lets a finding count until it is
-      acknowledged.
-    - **table** (`str`, optional): Table to read from. Defaults to `'findings'`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An open connection from `connect()`.
+    max_age : int, optional
+        Minutes a finding counts for. Defaults to None, which lets a finding count until it is
+        acknowledged.
+    table : str, optional
+        Table to read from. Defaults to `'findings'`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True on success, otherwise False.
-        - tuple[1] (**list | str**):
-          On success a list of rows, each with `key`, `line`, `state`, `first_seen` and
-          `last_seen`, oldest first. Otherwise an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**list | str**):
+            On success a list of rows, each with `key`, `line`, `state`, `first_seen` and
+            `last_seen`, oldest first. Otherwise an error message string.
 
-    ### Example
+    Examples
+    --------
     >>> findings = lib.base.coe(lib.logmatch.pending(conn, max_age=args.ALARM_DURATION))
     >>> state = lib.base.get_worst(*[item['state'] for item in findings])
     """
@@ -323,18 +352,24 @@ def prune(conn, retention=DEFAULT_RETENTION, table=DEFAULT_TABLE):
     """
     Drop findings nobody has seen for a while, to keep the state database bounded.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`): An open connection from `connect()`.
-    - **retention** (`int`, optional): Days to keep a finding after it was last seen.
-      Defaults to 30.
-    - **table** (`str`, optional): Table to prune. Defaults to `'findings'`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An open connection from `connect()`.
+    retention : int, optional
+        Days to keep a finding after it was last seen.
+        Defaults to 30.
+    table : str, optional
+        Table to prune. Defaults to `'findings'`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True on success, otherwise False.
-        - tuple[1] (**None | str**): None on success, otherwise an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**None | str**): None on success, otherwise an error message string.
 
-    ### Notes
+    Notes
+    -----
     - Keep the retention longer than the source itself keeps a line. Pruning an acknowledged
       finding that the source still holds makes the next run report it as new, which is exactly
       the alert the acknowledgement was meant to end.
@@ -358,24 +393,30 @@ def record(conn, findings, table=DEFAULT_TABLE):
     its `last_seen` moves, so neither ageing nor an acknowledgement is reset by the source
     reporting the same thing again.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`): An open connection from `connect()`.
-    - **findings** (`iterable` of `dict`):
-      One dict per finding, with:
-      - `line` (`str`): the text to report.
-      - `state` (`int`, optional): the state it stands for, for example `STATE_WARN`.
-        Defaults to `STATE_WARN` (1).
-      - `key` (`str`, optional): what makes two occurrences the same finding. Defaults to a
-        value unique to this occurrence, which is what a consumer reading its source
-        incrementally wants; pass `key(line)` where the whole source is re-read instead.
-    - **table** (`str`, optional): Table to write to. Defaults to `'findings'`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An open connection from `connect()`.
+    findings : iterable of dict
+        One dict per finding, with:
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True on success, otherwise False.
-        - tuple[1] (**None | str**): None on success, otherwise an error message string.
+        - `line` (`str`): the text to report.
+        - `state` (`int`, optional): the state it stands for, for example `STATE_WARN`.
+          Defaults to `STATE_WARN` (1).
+        - `key` (`str`, optional): what makes two occurrences the same finding. Defaults to a
+          value unique to this occurrence, which is what a consumer reading its source
+          incrementally wants; pass `key(line)` where the whole source is re-read instead.
+    table : str, optional
+        Table to write to. Defaults to `'findings'`.
 
-    ### Example
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**None | str**): None on success, otherwise an error message string.
+
+    Examples
+    --------
     >>> lib.base.coe(lib.logmatch.record(conn, [{'line': line, 'state': STATE_CRIT}]))
     >>> lib.base.coe(
     ...     lib.logmatch.record(conn, [{'key': lib.logmatch.key(line), 'line': line}])
@@ -403,20 +444,26 @@ def suppressed(conn, table=DEFAULT_TABLE):
     right now, so it filters that against this set rather than asking `pending()` for a list
     that would keep growing past what the source still holds.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`): An open connection from `connect()`.
-    - **table** (`str`, optional): Table to read from. Defaults to `'findings'`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An open connection from `connect()`.
+    table : str, optional
+        Table to read from. Defaults to `'findings'`.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True on success, otherwise False.
-        - tuple[1] (**set | str**): The acknowledged keys, otherwise an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**set | str**): The acknowledged keys, otherwise an error message string.
 
-    ### Notes
+    Notes
+    -----
     - Derive the keys with `key()`, so that the same line yields the same key on the next run.
       An acknowledgement is worth nothing against a key that is unique per occurrence.
 
-    ### Example
+    Examples
+    --------
     >>> acknowledged = lib.base.coe(lib.logmatch.suppressed(conn))
     >>> lines = [line for line in lines if lib.logmatch.key(line) not in acknowledged]
     """
@@ -447,25 +494,37 @@ def service_acknowledged(
     does not resolve itself. A consumer asks here, and where the answer is yes, stops reporting
     the findings it currently holds.
 
-    ### Parameters
-    - **url** (`str`): Base API URL of the monitoring server, for example
-      `https://monitoring.example.com:5665`.
-    - **username** (`str`): API username.
-    - **password** (`str`): API password.
-    - **servicename** (`str`): Unique name of the service, in the form `hostname!service`.
-    - **insecure** (`bool`, optional): Disable certificate verification. Defaults to False.
-    - **no_proxy** (`bool`, optional): Ignore the proxy of the environment. Defaults to False.
-    - **proxy** (`str`, optional): Proxy to use. Defaults to None.
-    - **timeout** (`int`, optional): Seconds to wait for the API. Defaults to 3.
+    Parameters
+    ----------
+    url : str
+        Base API URL of the monitoring server, for example
+        `https://monitoring.example.com:5665`.
+    username : str
+        API username.
+    password : str
+        API password.
+    servicename : str
+        Unique name of the service, in the form `hostname!service`.
+    insecure : bool, optional
+        Disable certificate verification. Defaults to False.
+    no_proxy : bool, optional
+        Ignore the proxy of the environment. Defaults to False.
+    proxy : str, optional
+        Proxy to use. Defaults to None.
+    timeout : int, optional
+        Seconds to wait for the API. Defaults to 3.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): Always True. See the notes.
-        - tuple[1] (**tuple**): An `(acknowledged, note)` tuple.
-          - `acknowledged` (`bool`): True if the service is acknowledged.
-          - `note` (`str`): What to add to the output, empty where there is nothing to say.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): Always True. See the notes.
+          - tuple[1] (**tuple**): An `(acknowledged, note)` tuple.
 
-    ### Notes
+            - `acknowledged` (`bool`): True if the service is acknowledged.
+            - `note` (`str`): What to add to the output, empty where there is nothing to say.
+
+    Notes
+    -----
     - An API that cannot be reached or does not know the service is reported through `note` and
       never as a failure of this function. A check that went UNKNOWN because it could not ask
       about an acknowledgement would replace a real finding with a question about the monitoring
@@ -473,7 +532,8 @@ def service_acknowledged(
     - Verify the certificate wherever the server presents one that the host trusts. An
       acknowledgement lookup carries API credentials.
 
-    ### Example
+    Examples
+    --------
     >>> acknowledged, note = lib.base.coe(
     ...     lib.logmatch.service_acknowledged(
     ...         args.ICINGA_URL,
@@ -513,17 +573,23 @@ def set_position(conn, source, position):
     """
     Store the read position of a log source, to pass back to `logsource.read()` next run.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`): An open connection from `connect()`.
-    - **source** (`str`): What the position belongs to. See `get_position()`.
-    - **position** (`dict`): The position `logsource.read()` returned.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An open connection from `connect()`.
+    source : str
+        What the position belongs to. See `get_position()`.
+    position : dict
+        The position `logsource.read()` returned.
 
-    ### Returns
-    - **tuple**:
-        - tuple[0] (**bool**): True on success, otherwise False.
-        - tuple[1] (**None | str**): None on success, otherwise an error message string.
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**None | str**): None on success, otherwise an error message string.
 
-    ### Notes
+    Notes
+    -----
     - Store the position even where the run found nothing, or the consumer reads the same lines
       again on the next run.
     """

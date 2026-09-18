@@ -147,19 +147,25 @@ def compile_regex(regex, key='', flags=0):
 
     Optionally, add a key qualifier or string to help identify the regex in case of an error.
 
-    ### Parameters
-    - **regex** (`str` or `list`): A regex string or a list of regex strings to compile.
-    - **key** (`str`, optional): A label or identifier string for better error messages. Defaults to ''.
-    - **flags** (`int`, optional): Flags passed to `re.compile`, e.g. `re.IGNORECASE`. Defaults to `0`.
+    Parameters
+    ----------
+    regex : str or list
+        A regex string or a list of regex strings to compile.
+    key : str, optional
+        A label or identifier string for better error messages. Defaults to ''.
+    flags : int, optional
+        Flags passed to `re.compile`, e.g. `re.IGNORECASE`. Defaults to `0`.
 
-    ### Returns
-    - **tuple** or **list of tuples**:
-      - For a single regex string:
-        `(True, compiled_regex)` on success, or `(False, error_message)` on failure.
-      - For a list of regex strings:
-        A list of such (success, result) tuples.
+    Returns
+    -------
+    tuple or list of tuples
+        - For a single regex string:
+          `(True, compiled_regex)` on success, or `(False, error_message)` on failure.
+        - For a list of regex strings:
+          A list of such (success, result) tuples.
 
-    ### Example
+    Examples
+    --------
     >>> compile_regex(r'^[a-z]+$')
     (True, re.compile('^[a-z]+$'))
 
@@ -190,13 +196,18 @@ def exception2text(e):
     obtain a meaningful message. As a last resort, it returns `repr(e)` to avoid
     losing error context.
 
-    ### Parameters
-    - **e** (`Exception`): The exception instance to stringify.
+    Parameters
+    ----------
+    e : Exception
+        The exception instance to stringify.
 
-    ### Returns
-    - **str**: A stable, readable string such as `"ValueError: invalid literal for int() with base 10: 'x'"`.
+    Returns
+    -------
+    str
+        A stable, readable string such as `"ValueError: invalid literal for int() with base 10: 'x'"`.
 
-    ### Example
+    Examples
+    --------
     >>> try:
     ...     int('x')
     ... except Exception as exc:
@@ -235,20 +246,29 @@ def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
           - If `include_fromto` is False (default): return text between `from_txt` and `to_txt`.
           - If `include_fromto` is True: return text including `from_txt` and `to_txt`.
 
-    ### Parameters
-    - **s** (`str`): The input string.
-    - **from_txt** (`str`): The starting marker.
-    - **to_txt** (`str`): The ending marker.
-    - **include_fromto** (`bool`, optional): Whether to include the markers in the result.
-      Defaults to False.
-    - **be_tolerant** (`bool`, optional): Whether to return remaining string if `to_txt` isn't
-      found. Defaults to True.
+    Parameters
+    ----------
+    s : str
+        The input string.
+    from_txt : str
+        The starting marker.
+    to_txt : str
+        The ending marker.
+    include_fromto : bool, optional
+        Whether to include the markers in the result.
+        Defaults to False.
+    be_tolerant : bool, optional
+        Whether to return remaining string if `to_txt` isn't
+        found. Defaults to True.
 
-    ### Returns
-    - **str**: The extracted substring, or an empty string if markers are missing
-      (depending on tolerance).
+    Returns
+    -------
+    str
+        The extracted substring, or an empty string if markers are missing
+        (depending on tolerance).
 
-    ### Example
+    Examples
+    --------
     >>> extract_str('abcde', 'x', 'y')
     ''
 
@@ -298,15 +318,21 @@ def filter_mltext(_input, ignore):
 
     `ignore` must be provided as a list of strings.
 
-    ### Parameters
-    - **_input** (`str`): The multi-line input text to filter.
-    - **ignore** (`list`): A list of strings; lines containing any of these substrings will be
-      removed.
+    Parameters
+    ----------
+    _input : str
+        The multi-line input text to filter.
+    ignore : list
+        A list of strings; lines containing any of these substrings will be
+        removed.
 
-    ### Returns
-    - **str**: The filtered multi-line text.
+    Returns
+    -------
+    str
+        The filtered multi-line text.
 
-    ### Example
+    Examples
+    --------
     >>> filter_mltext('abcde', 'a')  # "ignore" has to be a list
     ''
 
@@ -344,18 +370,24 @@ def match_regex(regex, string, key=''):
 
     Optionally, add a key qualifier or string to help identify the regex in case of an error.
 
-    ### Parameters
-    - **regex** (`str`): The regular expression pattern to match.
-    - **string** (`str`): The string to apply the regex match on.
-    - **key** (`str`, optional): An optional label or identifier for better error messages.
-      Defaults to ''.
+    Parameters
+    ----------
+    regex : str
+        The regular expression pattern to match.
+    string : str
+        The string to apply the regex match on.
+    key : str, optional
+        An optional label or identifier for better error messages.
+        Defaults to ''.
 
-    ### Returns
-    - **tuple**:
-      - On success: (True, match_object)
-      - On regex error: (False, error_message)
+    Returns
+    -------
+    tuple
+        - On success: (True, match_object)
+        - On regex error: (False, error_message)
 
-    ### Example
+    Examples
+    --------
     >>> match_regex(r'^abc$', 'abc')
     (True, <re.Match object>)
 
@@ -375,16 +407,23 @@ def mltext2array(_input, skip_header=False, sort_key=-1):
 
     Allows optional skipping of the first line (as header) and sorting by a specific column.
 
-    ### Parameters
-    - **_input** (`str`): The multi-line input text to process.
-    - **skip_header** (`bool`, optional): If True, skip the first line. Defaults to False.
-    - **sort_key** (`int`, optional): Index of the column to sort by. Set to -1 to disable sorting.
-      Defaults to -1.
+    Parameters
+    ----------
+    _input : str
+        The multi-line input text to process.
+    skip_header : bool, optional
+        If True, skip the first line. Defaults to False.
+    sort_key : int, optional
+        Index of the column to sort by. Set to -1 to disable sorting.
+        Defaults to -1.
 
-    ### Returns
-    - **list of list**: A list where each inner list represents a line split by whitespace.
+    Returns
+    -------
+    list of list
+        A list where each inner list represents a line split by whitespace.
 
-    ### Example
+    Examples
+    --------
     >>> s = '1662130953 timedatex\\n1662130757 python3-pip-wheel\\n1662130975 python3-dateutil'
 
     >>> mltext2array(s, skip_header=False, sort_key=0)
@@ -406,15 +445,21 @@ def multi_replace(text, replacements):
     """
     Replace all occurrences in a string based on the provided mapping.
 
-    ### Parameters
-    - **text** (`str`): The input text in which to perform replacements.
-    - **replacements** (`dict`): A dictionary where each key is a substring to replace,
-      and each value is its replacement.
+    Parameters
+    ----------
+    text : str
+        The input text in which to perform replacements.
+    replacements : dict
+        A dictionary where each key is a substring to replace,
+        and each value is its replacement.
 
-    ### Returns
-    - **str**: The text after all replacements have been applied.
+    Returns
+    -------
+    str
+        The text after all replacements have been applied.
 
-    ### Example
+    Examples
+    --------
     >>> multi_replace('Hello World!', {'Hello': 'Hi', 'World': 'Universe'})
     'Hi Universe!'
     """
@@ -430,19 +475,25 @@ def pluralize(noun, value, suffix='s'):
     Based on:
     https://kite.com/python/docs/django.template.defaultfilters.pluralize
 
-    ### Parameters
-    - **noun** (`str`): The base noun to pluralize.
-    - **value** (`int`): The numeric value to determine singular or plural form.
-    - **suffix** (`str`, optional):
-      - If a simple string (e.g., `'s'` or `'es'`), it is appended when plural.
-      - If a comma-separated string (e.g., `'y,ies'`), the first part is used for singular, the
-        second for plural.
-      Defaults to `'s'`.
+    Parameters
+    ----------
+    noun : str
+        The base noun to pluralize.
+    value : int
+        The numeric value to determine singular or plural form.
+    suffix : str, optional
+        - If a simple string (e.g., `'s'` or `'es'`), it is appended when plural.
+        - If a comma-separated string (e.g., `'y,ies'`), the first part is used for singular, the
+          second for plural.
+        Defaults to `'s'`.
 
-    ### Returns
-    - **str**: The correctly pluralized word.
+    Returns
+    -------
+    str
+        The correctly pluralized word.
 
-    ### Example
+    Examples
+    --------
     >>> pluralize('vote', 0)
     'votes'
 
@@ -494,17 +545,23 @@ def sanitize_sensitive_data(msg, replacement='******'):
     'token', 'key') and replaces their values with asterisks or a custom string to prevent
     accidental exposure.
 
-    ### Parameters
-    - **msg** (`str` or `any`): The input message that may contain sensitive data.
-      If not a string, it is returned unchanged.
-    - **replacement** (`str`, optional): The string to replace sensitive values with.
-      Defaults to '******'.
+    Parameters
+    ----------
+    msg : str or any
+        The input message that may contain sensitive data.
+        If not a string, it is returned unchanged.
+    replacement : str, optional
+        The string to replace sensitive values with.
+        Defaults to '******'.
 
-    ### Returns
-    - **str** or **original type**: The sanitized string with sensitive values redacted,
-      or the original object if it is not a string.
+    Returns
+    -------
+    str or original type
+        The sanitized string with sensitive values redacted,
+        or the original object if it is not a string.
 
-    ### Notes
+    Notes
+    -----
     - Matching is case-insensitive and tolerant of whitespace around '='.
     - Only parameters in the format key=value are sanitized.
     - Fields sanitized: 'password', 'pass', 'token', 'key', 'secret', 'api-key',
@@ -516,7 +573,8 @@ def sanitize_sensitive_data(msg, replacement='******'):
     - A name that merely starts with a sensitive word keeps its value, so an option
       naming a credential *file* still shows the path an admin needs to see.
 
-    ### Example
+    Examples
+    --------
     >>> sanitize_sensitive_data('user=admin&password=secret123')
     'user=admin&password=******'
 
@@ -556,19 +614,26 @@ def shorten(text, max_len, ellipsis='...'):
     where one long value would otherwise widen the whole table: a list of names, a
     command line, an identifier.
 
-    ### Parameters
-    - **text** (`str`): The string to shorten.
-    - **max_len** (`int`): Maximum length of the result, including the marker.
-    - **ellipsis** (`str`, optional): The marker put in place of what was cut.
-      Defaults to `'...'`, plain ASCII, so it renders in a monospace table on any
-      terminal and survives any transport.
+    Parameters
+    ----------
+    text : str
+        The string to shorten.
+    max_len : int
+        Maximum length of the result, including the marker.
+    ellipsis : str, optional
+        The marker put in place of what was cut.
+        Defaults to `'...'`, plain ASCII, so it renders in a monospace table on any
+        terminal and survives any transport.
 
-    ### Returns
-    - **str**: The shortened string, or the original when it already fits. A `max_len`
-      too small to hold the marker yields a plain head-truncation, since a result
-      consisting only of a marker would carry no information.
+    Returns
+    -------
+    str
+        The shortened string, or the original when it already fits. A `max_len`
+        too small to hold the marker yields a plain head-truncation, since a result
+        consisting only of a marker would carry no information.
 
-    ### Example
+    Examples
+    --------
     >>> shorten('alice, bob, carol, dave, erin, frank', 20)
     'alice, b...in, frank'
 
@@ -594,17 +659,24 @@ def shorten_list(items, head=5, tail=5):
     only push the rest of the message off the screen. The count belongs next to it, so
     the reader knows how much was left out.
 
-    ### Parameters
-    - **items** (`list`): The items to collapse.
-    - **head** (`int`, optional): How many items to keep at the front. Defaults to `5`.
-    - **tail** (`int`, optional): How many items to keep at the end. Defaults to `5`.
+    Parameters
+    ----------
+    items : list
+        The items to collapse.
+    head : int, optional
+        How many items to keep at the front. Defaults to `5`.
+    tail : int, optional
+        How many items to keep at the end. Defaults to `5`.
 
-    ### Returns
-    - **list**: The collapsed list, with the string `'...'` in place of what was left
-      out, or the original list when it is short enough to be printed whole. The
-      original is never modified.
+    Returns
+    -------
+    list
+        The collapsed list, with the string `'...'` in place of what was left
+        out, or the original list when it is short enough to be printed whole. The
+        original is never modified.
 
-    ### Example
+    Examples
+    --------
     >>> shorten_list([1, 2, 3], head=1, tail=1)
     [1, '...', 3]
 
@@ -628,16 +700,21 @@ def strip_ansi(text):
     any comparison, regex or column alignment done on it, so they are stripped before the
     text is examined or printed.
 
-    ### Parameters
-    - **text** (`str` or `any`): The text to clean. Anything that is not a string is
-      returned unchanged, which keeps the function usable in a chain that also handles
-      `None` and numbers.
+    Parameters
+    ----------
+    text : str or any
+        The text to clean. Anything that is not a string is
+        returned unchanged, which keeps the function usable in a chain that also handles
+        `None` and numbers.
 
-    ### Returns
-    - **str** or **original type**: The text without escape sequences, or the object
-      itself if it was not a string.
+    Returns
+    -------
+    str or original type
+        The text without escape sequences, or the object
+        itself if it was not a string.
 
-    ### Notes
+    Notes
+    -----
     - Matches the whole CSI family (`ESC [ ... final-byte`), not just the color codes.
       Cursor movement, line erasure and similar sequences show up in progress indicators
       and would otherwise survive a color-only filter.
@@ -648,7 +725,8 @@ def strip_ansi(text):
       `ESC[0;32m` are both green). Matching the family rather than a list of known
       sequences is what makes the function independent of how the source spells them.
 
-    ### Example
+    Examples
+    --------
     >>> strip_ansi('[\\x1b[0;32mOK\\x1b[0m]    Database Connected')
     '[OK]    Database Connected'
 
@@ -686,28 +764,37 @@ def to_bytes(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     is a `str`, it is encoded. Otherwise the `nonstring` strategy
     decides what happens.
 
-    ### Parameters
-    - **obj** (`any`): The object to convert.
-    - **encoding** (`str`, optional): Encoding to use.
-      Defaults to `'utf-8'`.
-    - **errors** (`str`, optional): Error handler for encoding.
-      Surrogate-related strategies (`surrogate_or_strict`,
-      `surrogate_or_replace`, `surrogate_then_replace`, or
-      `None`) are mapped to `'surrogateescape'`.
-      Defaults to `None`.
-    - **nonstring** (`str`, optional): Strategy for non-string
-      objects:
-      - `simplerepr`: Convert via `str(obj)`, then encode.
-      - `empty`: Return `b''`.
-      - `passthru`: Return `obj` unchanged.
-      - `strict`: Raise a `TypeError`.
-      Defaults to `'simplerepr'`.
+    Parameters
+    ----------
+    obj : any
+        The object to convert.
+    encoding : str, optional
+        Encoding to use.
+        Defaults to `'utf-8'`.
+    errors : str, optional
+        Error handler for encoding.
+        Surrogate-related strategies (`surrogate_or_strict`,
+        `surrogate_or_replace`, `surrogate_then_replace`, or
+        `None`) are mapped to `'surrogateescape'`.
+        Defaults to `None`.
+    nonstring : str, optional
+        Strategy for non-string
+        objects:
 
-    ### Returns
-    - **bytes** or **other type**: A byte string, or the
-      original object if `nonstring='passthru'`.
+        - `simplerepr`: Convert via `str(obj)`, then encode.
+        - `empty`: Return `b''`.
+        - `passthru`: Return `obj` unchanged.
+        - `strict`: Raise a `TypeError`.
+        Defaults to `'simplerepr'`.
 
-    ### Example
+    Returns
+    -------
+    bytes or other type
+        A byte string, or the
+        original object if `nonstring='passthru'`.
+
+    Examples
+    --------
     >>> to_bytes('hello')
     b'hello'
 
@@ -764,36 +851,45 @@ def to_text(obj, encoding='utf-8', errors=None, nonstring='simplerepr'):
     is `bytes`, it is decoded. Otherwise the `nonstring` strategy
     decides what happens.
 
-    ### Parameters
-    - **obj** (`any`): The object to convert.
-    - **encoding** (`str`, optional): Encoding to use when
-      decoding byte strings. Defaults to `'utf-8'`.
-    - **errors** (`str`, optional): Error handler for decoding.
-      Surrogate-related strategies (`surrogate_or_strict`,
-      `surrogate_or_replace`, `surrogate_then_replace`, or
-      `None`) are mapped to `'surrogateescape'`. The special value
-      `'strict_or_latin1'` decodes with `encoding` and, on any
-      invalid byte, retries the whole input as Latin-1 instead of
-      raising. Prefer it over `'surrogateescape'` whenever the
-      result is later re-encoded for output (for example printed to
-      stdout): `'surrogateescape'` maps an invalid byte to a lone
-      surrogate that decodes fine but raises `UnicodeEncodeError` at
-      the re-encode, whereas Latin-1 maps to real scalars that
-      survive the round trip.
-      Defaults to `None`.
-    - **nonstring** (`str`, optional): Strategy for non-string
-      objects:
-      - `simplerepr`: Convert via `str(obj)`.
-      - `empty`: Return `''`.
-      - `passthru`: Return `obj` unchanged.
-      - `strict`: Raise a `TypeError`.
-      Defaults to `'simplerepr'`.
+    Parameters
+    ----------
+    obj : any
+        The object to convert.
+    encoding : str, optional
+        Encoding to use when
+        decoding byte strings. Defaults to `'utf-8'`.
+    errors : str, optional
+        Error handler for decoding.
+        Surrogate-related strategies (`surrogate_or_strict`,
+        `surrogate_or_replace`, `surrogate_then_replace`, or
+        `None`) are mapped to `'surrogateescape'`. The special value
+        `'strict_or_latin1'` decodes with `encoding` and, on any
+        invalid byte, retries the whole input as Latin-1 instead of
+        raising. Prefer it over `'surrogateescape'` whenever the
+        result is later re-encoded for output (for example printed to
+        stdout): `'surrogateescape'` maps an invalid byte to a lone
+        surrogate that decodes fine but raises `UnicodeEncodeError` at
+        the re-encode, whereas Latin-1 maps to real scalars that
+        survive the round trip.
+        Defaults to `None`.
+    nonstring : str, optional
+        Strategy for non-string
+        objects:
 
-    ### Returns
-    - **str** or **other type**: A text string, or the original
-      object if `nonstring='passthru'`.
+        - `simplerepr`: Convert via `str(obj)`.
+        - `empty`: Return `''`.
+        - `passthru`: Return `obj` unchanged.
+        - `strict`: Raise a `TypeError`.
+        Defaults to `'simplerepr'`.
 
-    ### Example
+    Returns
+    -------
+    str or other type
+        A text string, or the original
+        object if `nonstring='passthru'`.
+
+    Examples
+    --------
     >>> to_text(b'hello')
     'hello'
 
@@ -843,28 +939,32 @@ def unescape(obj, keys=None):
     Printed unresolved, a hardware model reads as `Expansion Module&#40;24 Cores&#41;` instead
     of `Expansion Module(24 Cores)`.
 
-    ### Parameters
-    - **obj** (`str`, `dict` or any):
-      A string to resolve, or a mapping whose values are resolved in place of a copy.
-      Anything else is returned unchanged, so a consumer can hand a field through without
-      first checking what it holds.
-    - **keys** (iterable of `str`, optional):
-      For a mapping, the keys to resolve. `None` resolves every string value. Naming the
-      keys keeps the resolution off identifiers and serialised payloads, where an ampersand
-      may be part of the value rather than the start of a reference.
+    Parameters
+    ----------
+    obj : str, dict or any
+        A string to resolve, or a mapping whose values are resolved in place of a copy.
+        Anything else is returned unchanged, so a consumer can hand a field through without
+        first checking what it holds.
+    keys : iterable of str, optional
+        For a mapping, the keys to resolve. `None` resolves every string value. Naming the
+        keys keeps the resolution off identifiers and serialised payloads, where an ampersand
+        may be part of the value rather than the start of a reference.
 
-    ### Returns
-    - **str**, **dict** or the input unchanged:
-      A resolved string, a new mapping with the selected values resolved, or the input.
+    Returns
+    -------
+    str, dict or the input unchanged
+        A resolved string, a new mapping with the selected values resolved, or the input.
 
-    ### Notes
+    Notes
+    -----
     - A mapping is copied rather than modified, so the caller's source data keeps its
       original values and can still be compared against what the source sent.
     - Text without a `&` is returned as it is. `html.unescape()` also rewrites bare
       ampersand sequences that were never meant as references, so it is worth not calling
       it on text that cannot contain one.
 
-    ### Example
+    Examples
+    --------
     >>> unescape('Expansion Module&#40;24 Cores&#41;')
     'Expansion Module(24 Cores)'
 
@@ -894,13 +994,18 @@ def uniq(string):
 
     The original sequence of the words is preserved.
 
-    ### Parameters
-    - **string** (`str`): The input string containing words.
+    Parameters
+    ----------
+    string : str
+        The input string containing words.
 
-    ### Returns
-    - **str**: A string with duplicate words removed, preserving the original order.
+    Returns
+    -------
+    str
+        A string with duplicate words removed, preserving the original order.
 
-    ### Example
+    Examples
+    --------
     >>> uniq('This is a test. This is a second test. And this is a third test.')
     'This is a test. second And this third'
     """

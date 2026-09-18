@@ -25,18 +25,25 @@ def get_data(args, data, uri=''):
     This function fetches data from a server management API, with configurable authentication,
     headers, and error handling.
 
-    ### Parameters
-    - **args** (`object`): An object containing the URL (`args.URL`), mode (`args.MODE`),
-      node (`args.NODE`), instance (`args.INSTANCE`), username (`args.USERNAME`),
-      password (`args.PASSWORD`), and other options
-      (e.g., `INSECURE`, `NO_PROXY`, `TIMEOUT`, `ALWAYS_OK`).
-    - **data** (`dict`): The data to send in the request body (used for POST requests).
-    - **uri** (`str`, optional): The URI to append to the base URL. Defaults to an empty string.
+    Parameters
+    ----------
+    args : object
+        An object containing the URL (`args.URL`), mode (`args.MODE`),
+        node (`args.NODE`), instance (`args.INSTANCE`), username (`args.USERNAME`),
+        password (`args.PASSWORD`), and other options
+        (e.g., `INSECURE`, `NO_PROXY`, `TIMEOUT`, `ALWAYS_OK`).
+    data : dict
+        The data to send in the request body (used for POST requests).
+    uri : str, optional
+        The URI to append to the base URL. Defaults to an empty string.
 
-    ### Returns
-    - **dict**: The result of the API request, extracted from the 'result' key of the response.
+    Returns
+    -------
+    dict
+        The result of the API request, extracted from the 'result' key of the response.
 
-    ### Example
+    Examples
+    --------
     >>> get_data(args, data={'key': 'value'})
     {'status': 'success', 'data': {'key': 'value'}}
     """

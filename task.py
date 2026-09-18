@@ -61,19 +61,24 @@ def run(func, timeout=8):
     Shorthand for `run_each()` with a single job. See there for what a callable may
     return and how failures are reported.
 
-    ### Parameters
-    - **func** (`callable`): Takes no arguments. Its return value has to be
-      JSON-serialisable.
-    - **timeout** (`int` or `float`, optional): Seconds the callable is given. Defaults
-      to 8.
+    Parameters
+    ----------
+    func : callable
+        Takes no arguments. Its return value has to be
+        JSON-serialisable.
+    timeout : int or float, optional
+        Seconds the callable is given. Defaults
+        to 8.
 
-    ### Returns
-    - **tuple**:
-      - On success: `(True, result)` - whatever `func` returned.
-      - On failure: `(False, error_message)`. The message is `TIMEOUT` when the deadline
-        passed, and the exception text when the callable raised.
+    Returns
+    -------
+    tuple
+        - On success: `(True, result)` - whatever `func` returned.
+        - On failure: `(False, error_message)`. The message is `TIMEOUT` when the deadline
+          passed, and the exception text when the callable raised.
 
-    ### Example
+    Examples
+    --------
     >>> run(lambda: os.statvfs('/mnt/data').f_bfree, timeout=5)
     (True, 3244913)
     """
@@ -96,19 +101,25 @@ def run_each(jobs, timeout=8):
     the first means the work was done and the answer was no, the second means no answer
     was reached at all.
 
-    ### Parameters
-    - **jobs** (`list` of `tuple`): `(key, callable)` pairs. The key identifies the job in
-      the result and can be any hashable value. The callable takes no arguments and
-      returns something JSON-serialisable.
-    - **timeout** (`int` or `float`, optional): Seconds the whole batch is given.
-      Defaults to 8. A value of zero or less gives no job any time, so every one of them
-      is reported as `TIMEOUT`.
+    Parameters
+    ----------
+    jobs : list of tuple
+        `(key, callable)` pairs. The key identifies the job in
+        the result and can be any hashable value. The callable takes no arguments and
+        returns something JSON-serialisable.
+    timeout : int or float, optional
+        Seconds the whole batch is given.
+        Defaults to 8. A value of zero or less gives no job any time, so every one of them
+        is reported as `TIMEOUT`.
 
-    ### Returns
-    - **dict**: One entry per job, keyed by its key, each value a
-      `(True, result)` or `(False, error_message)` tuple.
+    Returns
+    -------
+    dict
+        One entry per job, keyed by its key, each value a
+        `(True, result)` or `(False, error_message)` tuple.
 
-    ### Example
+    Examples
+    --------
     >>> jobs = [(mp, lambda mp=mp: os.statvfs(mp).f_bfree) for mp in ('/', '/mnt/data')]
     >>> run_each(jobs, timeout=5)
     {'/': (True, 3244913), '/mnt/data': (False, 'did not answer in time')}

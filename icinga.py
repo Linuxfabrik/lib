@@ -43,43 +43,47 @@ def api_post(
     This function manually crafts a POST request to the Icinga REST API, adding basic authentication
     headers and optionally overriding the HTTP method via `X-HTTP-Method-Override`.
 
-    ### Parameters
-    - **uri** (`str`):
-      Full API endpoint URL (e.g., `https://icinga-server:5665/v1/objects/services`).
-    - **username** (`str`):
-      API username.
-    - **password** (`str`):
-      API password.
-    - **data** (`dict`, optional):
-      Payload to send with the request. Defaults to `{}`.
-    - **method_override** (`str`, optional):
-      If set, override HTTP method (e.g., `'GET'`). Defaults to `''`.
-    - **insecure** (`bool`, optional):
-      Disable SSL certificate verification. Defaults to `False`.
-    - **no_proxy** (`bool`, optional):
-      Bypass proxy. Defaults to `False`.
-    - **timeout** (`int`, optional):
-      Timeout for the request in seconds. Defaults to `3`.
+    Parameters
+    ----------
+    uri : str
+        Full API endpoint URL (e.g., `https://icinga-server:5665/v1/objects/services`).
+    username : str
+        API username.
+    password : str
+        API password.
+    data : dict, optional
+        Payload to send with the request. Defaults to `{}`.
+    method_override : str, optional
+        If set, override HTTP method (e.g., `'GET'`). Defaults to `''`.
+    insecure : bool, optional
+        Disable SSL certificate verification. Defaults to `False`.
+    no_proxy : bool, optional
+        Bypass proxy. Defaults to `False`.
+    timeout : int, optional
+        Timeout for the request in seconds. Defaults to `3`.
 
-    ### Returns
-    - **tuple** (`bool`, `object`):
-      The result from the `url.fetch_json` call.
+    Returns
+    -------
+    tuple (bool, object)
+        The result from the `url.fetch_json` call.
 
-    ### Notes
+    Notes
+    -----
     - Replaces double slashes `//v1` or `//v2` in the URI to ensure correct URL formatting.
     - Pauses execution for a short duration after sending the request (`DEFAULT_SLEEP`).
 
-    ### Example
+    Examples
+    --------
     >>> uri = 'https://icinga-server:5665/v1/objects/services'
     >>> data = {
-    >>>     'filter': 'match("special-service", service.name)',
-    >>>     'attrs': ['name', 'state', 'acknowledgement'],
+    ...     'filter': 'match("special-service", service.name)',
+    ...     'attrs': ['name', 'state', 'acknowledgement'],
     >>> }
     >>> result = lib.base.coe(
-    >>>     lib.icinga.api_post(
-    >>>         uri, args.USERNAME, args.PASSWORD, data=data,
-    >>>         method_override='GET', timeout=3
-    >>>     )
+    ...     lib.icinga.api_post(
+    ...         uri, args.USERNAME, args.PASSWORD, data=data,
+    ...         method_override='GET', timeout=3
+    ...     )
     >>> )
     """
     uri = uri.replace('//v1', '/v1').replace('//v2', '/v2')
@@ -118,21 +122,29 @@ def build_icingaweb2_url(base_url, hostname, servicename=None):
     also pins the scheme to `http`/`https` and never emits a `javascript:`, `data:` or `file:` URL
     from a malformed base URL.
 
-    ### Parameters
-    - **base_url** (`str`): Base Icinga Web 2 URL, e.g. `https://example.com/icingaweb2`.
-    - **hostname** (`str`): Host object name.
-    - **servicename** (`str`, optional): Service object name. When a non-empty string, a service
-      detail URL is built; otherwise a host detail URL. Defaults to `None`.
+    Parameters
+    ----------
+    base_url : str
+        Base Icinga Web 2 URL, e.g. `https://example.com/icingaweb2`.
+    hostname : str
+        Host object name.
+    servicename : str, optional
+        Service object name. When a non-empty string, a service
+        detail URL is built; otherwise a host detail URL. Defaults to `None`.
 
-    ### Returns
-    - **str** or **None**: The composed URL, or `None` when `base_url`/`hostname` is missing, not a
-      string, or when `base_url` does not use the `http`/`https` scheme.
+    Returns
+    -------
+    str or None
+        The composed URL, or `None` when `base_url`/`hostname` is missing, not a
+        string, or when `base_url` does not use the `http`/`https` scheme.
 
-    ### Notes
+    Notes
+    -----
     - Callers that embed the URL in HTML must still HTML-escape it; encoding a URL is not the same
       as escaping it for an HTML attribute.
 
-    ### Example
+    Examples
+    --------
     >>> build_icingaweb2_url('https://example.com/icingaweb2', 'web01')
     'https://example.com/icingaweb2/icingadb/host?name=web01'
     >>> build_icingaweb2_url('https://example.com/icingaweb2', 'web01', 'http')
@@ -194,10 +206,13 @@ def get_logo():
 
     Provides the bundled Icinga logo as a 100x35 px PNG.
 
-    ### Returns
-    - **bytes**: The decoded PNG image data.
+    Returns
+    -------
+    bytes
+        The decoded PNG image data.
 
-    ### Example
+    Examples
+    --------
     >>> get_logo()[:8]
     b'\\x89PNG\\r\\n\\x1a\\n'
     """
@@ -221,42 +236,46 @@ def get_service(
     This function sends a high-level request to the Icinga `/v1/objects/services` endpoint
     to retrieve attributes for a specific service, identified by its `__name`.
 
-    ### Parameters
-    - **uri** (`str`):
-      Base API URL (e.g., `https://icinga-server:5665`).
-    - **username** (`str`):
-      API username.
-    - **password** (`str`):
-      API password.
-    - **servicename** (`str`):
-      Unique service name, typically in the format `hostname!service`.
-    - **attrs** (`str`, optional):
-      Comma-separated list of attributes to retrieve. Defaults to `'state'`.
-    - **insecure** (`bool`, optional):
-      Disable SSL certificate verification. Defaults to `False`.
-    - **no_proxy** (`bool`, optional):
-      Ignore proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional):
-      Request timeout in seconds. Defaults to `3`.
+    Parameters
+    ----------
+    uri : str
+        Base API URL (e.g., `https://icinga-server:5665`).
+    username : str
+        API username.
+    password : str
+        API password.
+    servicename : str
+        Unique service name, typically in the format `hostname!service`.
+    attrs : str, optional
+        Comma-separated list of attributes to retrieve. Defaults to `'state'`.
+    insecure : bool, optional
+        Disable SSL certificate verification. Defaults to `False`.
+    no_proxy : bool, optional
+        Ignore proxy settings. Defaults to `False`.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `3`.
 
-    ### Returns
-    - **tuple** (`bool`, `object`):
-      The result from the Icinga API request.
+    Returns
+    -------
+    tuple (bool, object)
+        The result from the Icinga API request.
 
-    ### Notes
+    Notes
+    -----
     - The `servicename` must match the `__name` attribute exactly.
     - Uses a `GET` override on a `POST` request (`X-HTTP-Method-Override` header).
 
-    ### Example
+    Examples
+    --------
     >>> uri = 'https://icinga-server:5665'
     >>> result = lib.base.coe(
-    >>>     lib.icinga.get_service(
-    >>>         uri,
-    >>>         args.USERNAME,
-    >>>         args.PASSWORD,
-    >>>         servicename='hostname!special-service',
-    >>>         attrs='state,acknowledgement',
-    >>>     )
+    ...     lib.icinga.get_service(
+    ...         uri,
+    ...         args.USERNAME,
+    ...         args.PASSWORD,
+    ...         servicename='hostname!special-service',
+    ...         attrs='state,acknowledgement',
+    ...     )
     >>> )
     >>> print(result['result'][0]['attrs'])
     """
@@ -295,35 +314,39 @@ def remove_ack(
     This function posts a request to the Icinga API to remove an active acknowledgement. Once the
     acknowledgement is removed, notifications will be triggered again on state changes.
 
-    ### Parameters
-    - **uri** (`str`):
-      Base API URL (e.g., `https://icinga-server:5665`).
-    - **username** (`str`):
-      API username.
-    - **password** (`str`):
-      API password.
-    - **objectname** (`str`):
-      Host or service name (must match the `__name` attribute).
-    - **_type** (`str`, optional):
-      Object type: `host` or `service`. Defaults to `'service'`.
-    - **insecure** (`bool`, optional):
-      Disable SSL certificate verification. Defaults to `False`.
-    - **no_proxy** (`bool`, optional):
-      Ignore proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional):
-      Request timeout in seconds. Defaults to `3`.
+    Parameters
+    ----------
+    uri : str
+        Base API URL (e.g., `https://icinga-server:5665`).
+    username : str
+        API username.
+    password : str
+        API password.
+    objectname : str
+        Host or service name (must match the `__name` attribute).
+    _type : str, optional
+        Object type: `host` or `service`. Defaults to `'service'`.
+    insecure : bool, optional
+        Disable SSL certificate verification. Defaults to `False`.
+    no_proxy : bool, optional
+        Ignore proxy settings. Defaults to `False`.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `3`.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`):
-      API call result as a tuple (success flag, response body).
+    Returns
+    -------
+    tuple (bool, dict)
+        API call result as a tuple (success flag, response body).
 
-    ### Notes
+    Notes
+    -----
     - Even if the host or service was not acknowledged, calling this is safe and returns success.
 
-    ### Example
+    Examples
+    --------
     >>> uri = 'https://icinga-server:5665'
     >>> icinga.remove_ack(
-    >>>     uri, username, password, objectname='hostname!special-service'
+    ...     uri, username, password, objectname='hostname!special-service'
     >>> )
     """
     uri = f'{uri.rstrip("/")}/v1/actions/remove-acknowledgement'
@@ -352,34 +375,38 @@ def remove_downtime(
     This function posts a request to the Icinga API to remove a scheduled downtime. The downtime
     must be identified by the unique name returned earlier by `set_downtime()`.
 
-    ### Parameters
-    - **uri** (`str`):
-      Base API URL (e.g., `https://icinga-server:5665`).
-    - **username** (`str`):
-      API username.
-    - **password** (`str`):
-      API password.
-    - **downtime** (`str`):
-      Downtime identifier (name).
-    - **insecure** (`bool`, optional):
-      Disable SSL certificate verification. Defaults to `False`.
-    - **no_proxy** (`bool`, optional):
-      Ignore proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional):
-      Request timeout in seconds. Defaults to `3`.
+    Parameters
+    ----------
+    uri : str
+        Base API URL (e.g., `https://icinga-server:5665`).
+    username : str
+        API username.
+    password : str
+        API password.
+    downtime : str
+        Downtime identifier (name).
+    insecure : bool, optional
+        Disable SSL certificate verification. Defaults to `False`.
+    no_proxy : bool, optional
+        Ignore proxy settings. Defaults to `False`.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `3`.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`):
-      API call result as a tuple (success flag, response body).
+    Returns
+    -------
+    tuple (bool, dict)
+        API call result as a tuple (success flag, response body).
 
-    ### Notes
+    Notes
+    -----
     - Safe to call even if the downtime is already expired or invalid.
 
-    ### Example
+    Examples
+    --------
     >>> uri = 'https://icinga-server:5665'
     >>> icinga.remove_downtime(
-    >>>     uri, args.ICINGA_USERNAME, args.ICINGA_PASSWORD,
-    >>>     downtime='hostname!service!uuid'
+    ...     uri, args.ICINGA_USERNAME, args.ICINGA_PASSWORD,
+    ...     downtime='hostname!service!uuid'
     >>> )
     """
     uri = uri + '/v1/actions/remove-downtime'
@@ -406,22 +433,30 @@ def render_notification_mail(rows, logo_cid, hostname):
     HTML version whose header references the bundled logo by Content-ID. Cell values are treated as
     untrusted and HTML-escaped; a newline becomes `<br>` and a value that is a URL becomes a link.
 
-    ### Parameters
-    - **rows** (`list` of `dict`): One row per line. Each dict has:
-      - `left_column` (`str`): The label.
-      - `right_column` (`str` or falsy): The value. Escaped before it reaches the HTML.
-      - `right_column_attributes` (`str`, optional): Extra attributes inserted verbatim into the
-        value cell's `<td>` (e.g. a fixed `style="..."`). The caller must keep this trusted; it is
-        not escaped.
-    - **logo_cid** (`str`): Content-ID of the inline logo image as produced by
-      `email.utils.make_msgid()` (with angle brackets); the brackets are stripped for the `cid:`
-      reference.
-    - **hostname** (`str`): Name of the host generating the notification, shown in the footer.
+    Parameters
+    ----------
+    rows : list of dict
+        One row per line. Each dict has:
 
-    ### Returns
-    - **tuple** (`str`, `str`): `(plain_text, html)`.
+        - `left_column` (`str`): The label.
+        - `right_column` (`str` or falsy): The value. Escaped before it reaches the HTML.
+        - `right_column_attributes` (`str`, optional): Extra attributes inserted verbatim into the
+          value cell's `<td>` (e.g. a fixed `style="..."`). The caller must keep this trusted; it is
+          not escaped.
+    logo_cid : str
+        Content-ID of the inline logo image as produced by
+        `email.utils.make_msgid()` (with angle brackets); the brackets are stripped for the `cid:`
+        reference.
+    hostname : str
+        Name of the host generating the notification, shown in the footer.
 
-    ### Notes
+    Returns
+    -------
+    tuple (str, str)
+        `(plain_text, html)`.
+
+    Notes
+    -----
     - `right_column_attributes` is the only field inserted without escaping, so callers must build
       it from trusted data only (a state-keyed color lookup, not raw external input).
     """
@@ -510,38 +545,42 @@ def set_ack(
     Icinga API. Acknowledged problems disable future notifications for the same state (if sticky
     is false).
 
-    ### Parameters
-    - **uri** (`str`):
-      Base API URL (e.g., `https://icinga-server:5665`).
-    - **username** (`str`):
-      API username.
-    - **password** (`str`):
-      API password.
-    - **objectname** (`str`):
-      Host or service name (must match the `__name` attribute).
-    - **_type** (`str`, optional):
-      Type of object to acknowledge (`host` or `service`). Defaults to `'service'`.
-    - **author** (`str`, optional):
-      Author of the acknowledgement. Defaults to `'Linuxfabrik lib.icinga'`.
-    - **insecure** (`bool`, optional):
-      Disable SSL certificate verification. Defaults to `False`.
-    - **no_proxy** (`bool`, optional):
-      Ignore proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional):
-      Request timeout in seconds. Defaults to `3`.
+    Parameters
+    ----------
+    uri : str
+        Base API URL (e.g., `https://icinga-server:5665`).
+    username : str
+        API username.
+    password : str
+        API password.
+    objectname : str
+        Host or service name (must match the `__name` attribute).
+    _type : str, optional
+        Type of object to acknowledge (`host` or `service`). Defaults to `'service'`.
+    author : str, optional
+        Author of the acknowledgement. Defaults to `'Linuxfabrik lib.icinga'`.
+    insecure : bool, optional
+        Disable SSL certificate verification. Defaults to `False`.
+    no_proxy : bool, optional
+        Ignore proxy settings. Defaults to `False`.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `3`.
 
-    ### Returns
-    - **tuple** (`bool`, `object`):
-      The result from the Icinga API request.
+    Returns
+    -------
+    tuple (bool, object)
+        The result from the Icinga API request.
 
-    ### Notes
+    Notes
+    -----
     - Acknowledging a host/service that is already acknowledged is allowed until Icinga 2.11.
     - Acknowledging a host/service in OK state leads to a *500 Internal Server Error*.
 
-    ### Example
+    Examples
+    --------
     >>> uri = 'https://icinga-server:5665'
     >>> result = lib.icinga.set_ack(
-    >>>     uri, username, password, 'hostname!special-service', _type='service'
+    ...     uri, username, password, 'hostname!special-service', _type='service'
     >>> )
     """
     uri = f'{uri.rstrip("/")}/v1/actions/acknowledge-problem'
@@ -584,42 +623,46 @@ def set_downtime(
     This function posts a request to the Icinga API to schedule a downtime for a given host or
     service. The object must match the `__name` attribute in Icinga.
 
-    ### Parameters
-    - **uri** (`str`):
-      Base API URL (e.g., `https://icinga-server:5665`).
-    - **username** (`str`):
-      API username.
-    - **password** (`str`):
-      API password.
-    - **objectname** (`str`):
-      Host or service name (must match the `__name` attribute).
-    - **_type** (`str`, optional):
-      Object type: `host` or `service`. Defaults to `'service'`.
-    - **starttime** (`int`, optional):
-      Unix timestamp when the downtime starts. Defaults to now.
-    - **endtime** (`int`, optional):
-      Unix timestamp when the downtime ends. Defaults to now + 1 hour.
-    - **author** (`str`, optional):
-      Author of the downtime entry. Defaults to `'Linuxfabrik lib.icinga'`.
-    - **insecure** (`bool`, optional):
-      Disable SSL certificate verification. Defaults to `False`.
-    - **no_proxy** (`bool`, optional):
-      Ignore proxy settings. Defaults to `False`.
-    - **timeout** (`int`, optional):
-      Request timeout in seconds. Defaults to `3`.
+    Parameters
+    ----------
+    uri : str
+        Base API URL (e.g., `https://icinga-server:5665`).
+    username : str
+        API username.
+    password : str
+        API password.
+    objectname : str
+        Host or service name (must match the `__name` attribute).
+    _type : str, optional
+        Object type: `host` or `service`. Defaults to `'service'`.
+    starttime : int, optional
+        Unix timestamp when the downtime starts. Defaults to now.
+    endtime : int, optional
+        Unix timestamp when the downtime ends. Defaults to now + 1 hour.
+    author : str, optional
+        Author of the downtime entry. Defaults to `'Linuxfabrik lib.icinga'`.
+    insecure : bool, optional
+        Disable SSL certificate verification. Defaults to `False`.
+    no_proxy : bool, optional
+        Ignore proxy settings. Defaults to `False`.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `3`.
 
-    ### Returns
-    - **tuple** (`bool`, `str` or `dict`):
-      If successful, returns the downtime name.
-      If failed, returns the original API result.
+    Returns
+    -------
+    tuple (bool, str or dict)
+        If successful, returns the downtime name.
+        If failed, returns the original API result.
 
-    ### Notes
+    Notes
+    -----
     - The returned downtime name is needed if you want to remove the downtime later.
 
-    ### Example
+    Examples
+    --------
     >>> uri = 'https://icinga-server:5665'
     >>> result = lib.icinga.set_downtime(
-    >>>     uri, username, password, objectname='hostname!special-service'
+    ...     uri, username, password, objectname='hostname!special-service'
     >>> )
     'hostname!special-service!3ad20784-52f9-4acc-b2df-90788667d587'
     """

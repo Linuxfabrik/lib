@@ -52,20 +52,26 @@ def quote_cli_value(value):
     Values that reach a command as an argument list instead are quoted by nothing and
     need nothing: `shell_exec()` passes them verbatim. Use `safe_cli_value()` there.
 
-    ### Parameters
-    - **value** (`any`): The value to quote. Anything that is not a string is
-      converted to one first, so a number or a path object can be passed as it is.
+    Parameters
+    ----------
+    value : any
+        The value to quote. Anything that is not a string is
+        converted to one first, so a number or a path object can be passed as it is.
 
-    ### Returns
-    - **str**: The value as a single shell word, quoted where it has to be.
+    Returns
+    -------
+    str
+        The value as a single shell word, quoted where it has to be.
 
-    ### Notes
+    Notes
+    -----
     - POSIX shell quoting. A command meant for `cmd.exe` or PowerShell needs different
       quoting and this is the wrong helper for it.
     - Quoting keeps a hostile value from becoming a second command, it does not make
       it a sensible one. Where a value has a known shape, validate it as well.
 
-    ### Example
+    Examples
+    --------
     >>> quote_cli_value('www.example.com')
     'www.example.com'
 
@@ -95,12 +101,16 @@ def _decode_windows_output(raw):
     both (Linuxfabrik/monitoring-plugins#681). `chcp 65001` does not help: it changes
     the console, which is not where a pipe gets its encoding from.
 
-    ### Parameters
-    - **raw** (`bytes`): The captured output.
+    Parameters
+    ----------
+    raw : bytes
+        The captured output.
 
-    ### Returns
-    - **str**: The decoded text. A byte the OEM code page does not define becomes
-      U+FFFD instead of an exception.
+    Returns
+    -------
+    str
+        The decoded text. A byte the OEM code page does not define becomes
+        U+FFFD instead of an exception.
     """
     try:
         return txt.to_text(raw, encoding='utf-8', errors='strict')
@@ -133,56 +143,60 @@ def shell_exec(
     running the stages and connecting them explicitly, or by post-processing the first command's
     output; it can no longer be expressed as a shell string.
 
-    ### Parameters
-    - **cmd** (`list`):
-      The command to execute, as a list of arguments (argv), e.g. `['ls', '-l', '/tmp']`.
-      The first element is the program, the rest are its arguments.
-    - **env** (`dict`, optional):
-      A dictionary of environment variables to merge with the current OS environment.
-      An entry whose value is None removes that variable from the child's environment
-      rather than setting it, which is the only way to run a command *without* a
-      variable this process exports. Defaults to the current environment.
-    - **stdin** (`str`, optional):
-      A string to pass as standard input to the command. Defaults to an empty string.
-    - **cwd** (`str`, optional):
-      Working directory in which to execute the command. Defaults to None (current directory).
-    - **timeout** (`int` or `float`, optional):
-      Maximum time (in seconds) to allow the command to run. If exceeded, the process is
-      terminated. Defaults to None (no timeout).
-    - **lc_all** (`str`, optional):
-      Value to set for the `LC_ALL` environment variable, forcing command output locale.
-      Defaults to `'C'` (POSIX "C" locale, i.e., English).
-    - **run_as** (`str`, optional):
-      Local user name to run the command as. The command is wrapped so it runs as that
-      user with the user's session runtime directory exported
-      (`sudo -u <user> env XDG_RUNTIME_DIR=/run/user/<uid> ...`), which per-user session
-      services such as rootless Podman or `systemctl --user` need in order to find the
-      right session when invoked from root or another account. The caller must already
-      be allowed to `sudo -u <user>` (root is, by default). When `run_as` is set and no
-      `cwd` is given, `cwd` defaults to `/` so `sudo` can chdir as the target user
-      without a harmless warning. An unknown user yields `(False, error_message)`.
-      Defaults to None (run as the current user). Unix-only.
-    - **run_as_session** (`bool`, optional):
-      Only meaningful together with `run_as`. When False, the command is wrapped as
-      `sudo -u <user> ...` without the session runtime directory, so what `sudo` sees is
-      exactly the program and the arguments the caller passed. A sudo rule that spells
-      out the permitted command with its exact arguments (the safe way to grant one
-      specific command instead of an interpreter with free arguments) only matches that
-      plain form; the session wrapper turns the permitted program into `env` and makes
-      the rule miss. Leave it at True wherever a per-user session service such as
-      rootless Podman or `systemctl --user` has to be reached. Defaults to True.
+    Parameters
+    ----------
+    cmd : list
+        The command to execute, as a list of arguments (argv), e.g. `['ls', '-l', '/tmp']`.
+        The first element is the program, the rest are its arguments.
+    env : dict, optional
+        A dictionary of environment variables to merge with the current OS environment.
+        An entry whose value is None removes that variable from the child's environment
+        rather than setting it, which is the only way to run a command *without* a
+        variable this process exports. Defaults to the current environment.
+    stdin : str, optional
+        A string to pass as standard input to the command. Defaults to an empty string.
+    cwd : str, optional
+        Working directory in which to execute the command. Defaults to None (current directory).
+    timeout : int or float, optional
+        Maximum time (in seconds) to allow the command to run. If exceeded, the process is
+        terminated. Defaults to None (no timeout).
+    lc_all : str, optional
+        Value to set for the `LC_ALL` environment variable, forcing command output locale.
+        Defaults to `'C'` (POSIX "C" locale, i.e., English).
+    run_as : str, optional
+        Local user name to run the command as. The command is wrapped so it runs as that
+        user with the user's session runtime directory exported
+        (`sudo -u <user> env XDG_RUNTIME_DIR=/run/user/<uid> ...`), which per-user session
+        services such as rootless Podman or `systemctl --user` need in order to find the
+        right session when invoked from root or another account. The caller must already
+        be allowed to `sudo -u <user>` (root is, by default). When `run_as` is set and no
+        `cwd` is given, `cwd` defaults to `/` so `sudo` can chdir as the target user
+        without a harmless warning. An unknown user yields `(False, error_message)`.
+        Defaults to None (run as the current user). Unix-only.
+    run_as_session : bool, optional
+        Only meaningful together with `run_as`. When False, the command is wrapped as
+        `sudo -u <user> ...` without the session runtime directory, so what `sudo` sees is
+        exactly the program and the arguments the caller passed. A sudo rule that spells
+        out the permitted command with its exact arguments (the safe way to grant one
+        specific command instead of an interpreter with free arguments) only matches that
+        plain form; the session wrapper turns the permitted program into `env` and makes
+        the rule miss. Leave it at True wherever a per-user session service such as
+        rootless Podman or `systemctl --user` has to be reached. Defaults to True.
 
-    ### Returns
-    - **tuple**:
-      - On success:
-        `(True, (stdout, stderr, return_code))`
-        - **stdout** (`str`): Standard output of the command (decoded to text).
-        - **stderr** (`str`): Standard error of the command (decoded to text).
-        - **return_code** (`int`): Exit status of the command.
-      - On failure:
-        `(False, error_message)` — a string describing the error.
+    Returns
+    -------
+    tuple
+        - On success:
+          `(True, (stdout, stderr, return_code))`
 
-    ### Notes
+          - **stdout** (`str`): Standard output of the command (decoded to text).
+          - **stderr** (`str`): Standard error of the command (decoded to text).
+          - **return_code** (`int`): Exit status of the command.
+        - On failure:
+          `(False, error_message)` — a string describing the error.
+
+    Notes
+    -----
     - The environment is merged with `env`, entries set to None are removed from it, and it
       always includes `LC_ALL=<lc_all>`, forcing output to the specified locale.
     - Exceptions such as `OSError`, `ValueError`, or other execution errors during process
@@ -301,16 +315,22 @@ def safe_cli_value(value, name='value'):
     meaning. Values that are bound to an explicit option (`--name=<value>` or `-H <value>`) do not
     need this guard.
 
-    ### Parameters
-    - **value** (`any`): The value to check. Non-string values pass through unchanged.
-    - **name** (`str`, optional): Human-readable name used in the error message. Defaults to
-      `'value'`.
+    Parameters
+    ----------
+    value : any
+        The value to check. Non-string values pass through unchanged.
+    name : str, optional
+        Human-readable name used in the error message. Defaults to
+        `'value'`.
 
-    ### Returns
-    - **tuple**: `(True, value)` if the value is safe, else `(False, error_message)`. The shape
-      is suitable for `lib.base.coe()`.
+    Returns
+    -------
+    tuple
+        `(True, value)` if the value is safe, else `(False, error_message)`. The shape
+        is suitable for `lib.base.coe()`.
 
-    ### Example
+    Examples
+    --------
     >>> host = lib.base.coe(lib.shell.safe_cli_value(args.HOSTNAME, '--hostname'))
     """
     if isinstance(value, str) and value.startswith('-'):
@@ -325,14 +345,19 @@ def which(name):
     Thin wrapper around `shutil.which()` so callers do not need to import it
     directly and the lookup stays consistent across consumers.
 
-    ### Parameters
-    - **name** (`str`): Program name to look for (e.g. `lynis`).
+    Parameters
+    ----------
+    name : str
+        Program name to look for (e.g. `lynis`).
 
-    ### Returns
-    - **str or None**: The absolute path to the executable, or `None` if it is
-      not found in PATH.
+    Returns
+    -------
+    str or None
+        The absolute path to the executable, or `None` if it is
+        not found in PATH.
 
-    ### Example
+    Examples
+    --------
     >>> which('sh')
     '/usr/bin/sh'
     """

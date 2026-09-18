@@ -181,17 +181,24 @@ def bits2human(n, decimals=1, space=False):
     """
     Converts a given number of bits to a human-readable string.
 
-    ### Parameters
-    - **n** (`int` or `float`): The number of bits to convert.
-    - **decimals** (`int`, optional): Number of decimal places.
-      Defaults to 1.
-    - **space** (`bool`, optional): If True, adds a space between
-      the value and unit. Defaults to False.
+    Parameters
+    ----------
+    n : int or float
+        The number of bits to convert.
+    decimals : int, optional
+        Number of decimal places.
+        Defaults to 1.
+    space : bool, optional
+        If True, adds a space between
+        the value and unit. Defaults to False.
 
-    ### Returns
-    - **str**: A string like '1.0KiB' or '1.0 KiB'.
+    Returns
+    -------
+    str
+        A string like '1.0KiB' or '1.0 KiB'.
 
-    ### Example
+    Examples
+    --------
     >>> bits2human(8192)
     '1.0KiB'
 
@@ -212,19 +219,26 @@ def bps2human(n, decimals=1, space=False):
     Converts a given number of bits per second to a
     human-readable format (e.g., bps, Kbps, Mbps, etc.).
 
-    ### Parameters
-    - **n** (`int` or `float`): The number of bits per second
-      to convert.
-    - **decimals** (`int`, optional): Number of decimal places.
-      Defaults to 1.
-    - **space** (`bool`, optional): If True, adds a space between
-      the value and unit. Defaults to False.
+    Parameters
+    ----------
+    n : int or float
+        The number of bits per second
+        to convert.
+    decimals : int, optional
+        Number of decimal places.
+        Defaults to 1.
+    space : bool, optional
+        If True, adds a space between
+        the value and unit. Defaults to False.
 
-    ### Returns
-    - **str**: The human-readable representation of the input
-      bits per second with the appropriate unit (e.g., '72Mbps').
+    Returns
+    -------
+    str
+        The human-readable representation of the input
+        bits per second with the appropriate unit (e.g., '72Mbps').
 
-    ### Example
+    Examples
+    --------
     >>> bps2human(72000000)
     '72.0Mbps'
 
@@ -242,18 +256,25 @@ def bytes2human(n, decimals=1, space=False):
     Converts a given number of bytes to a human-readable format
     (e.g., B, KiB, MiB, etc.).
 
-    ### Parameters
-    - **n** (`int` or `float`): The number of bytes to convert.
-    - **decimals** (`int`, optional): Number of decimal places.
-      Defaults to 1.
-    - **space** (`bool`, optional): Whether to add a space between
-      value and unit. Defaults to False.
+    Parameters
+    ----------
+    n : int or float
+        The number of bytes to convert.
+    decimals : int, optional
+        Number of decimal places.
+        Defaults to 1.
+    space : bool, optional
+        Whether to add a space between
+        value and unit. Defaults to False.
 
-    ### Returns
-    - **str**: The human-readable representation of the input
-      bytes with the appropriate unit (e.g., '1.0KiB').
+    Returns
+    -------
+    str
+        The human-readable representation of the input
+        bytes with the appropriate unit (e.g., '1.0KiB').
 
-    ### Example
+    Examples
+    --------
     >>> bytes2human(1023)
     '1023.0B'
 
@@ -277,15 +298,21 @@ def extract_hrnumbers(s, boundaries=None):
     with a known boundary character (such as 's', 'm', 'h', etc.), and returns these substrings
     as a list.
 
-    ### Parameters
-    - **s** (`str`): The input string to extract numbers from.
-    - **boundaries** (`list`, optional): A list of boundary characters that signify the end of
-      a number. Defaults to ['s', 'm', 'h', 'D', 'W', 'M', 'Y'].
+    Parameters
+    ----------
+    s : str
+        The input string to extract numbers from.
+    boundaries : list, optional
+        A list of boundary characters that signify the end of
+        a number. Defaults to ['s', 'm', 'h', 'D', 'W', 'M', 'Y'].
 
-    ### Returns
-    - **list**: A list of strings representing the extracted numbers along with their boundaries.
+    Returns
+    -------
+    list
+        A list of strings representing the extracted numbers along with their boundaries.
 
-    ### Example
+    Examples
+    --------
     >>> string = '31Y 20M7s  88  abc12xyz   4s 5'
     >>> extract_hrnumbers(string)
     ['31Y', '20M', '7s', '4s']
@@ -322,20 +349,27 @@ def human2bytes(string, binary=True):
     into the corresponding number of bytes. It supports both binary (base 1024) and decimal
     (base 1000) units.
 
-    ### Parameters
-    - **string** (`str`): A string representing the size to convert. It can include any of the
-      common size units like 'GiB', 'GB', 'MB', 'kB', etc. A string carrying no unit at all is
-      read as a plain byte count.
-    - **binary** (`bool`, optional): If True (default), the function will use binary units
-      (base 1024). If False, it will use decimal units (base 1000).
+    Parameters
+    ----------
+    string : str
+        A string representing the size to convert. It can include any of the
+        common size units like 'GiB', 'GB', 'MB', 'kB', etc. A string carrying no unit at all is
+        read as a plain byte count.
+    binary : bool, optional
+        If True (default), the function will use binary units
+        (base 1024). If False, it will use decimal units (base 1000).
 
-    ### Returns
-    - **int**: The equivalent size in bytes, or 0 if the conversion fails.
+    Returns
+    -------
+    int
+        The equivalent size in bytes, or 0 if the conversion fails.
 
-    ### Notes
+    Notes
+    -----
     - The result is truncated towards zero, so '3.7' and '3.7B' both yield 3.
 
-    ### Example
+    Examples
+    --------
     >>> human2bytes('3.072GiB')
     3298534883
 
@@ -382,15 +416,20 @@ def human2seconds(string):
     into the corresponding number of seconds. The units supported are: years (Y), months (M),
     weeks (W), days (D), hours (h), minutes (m), and seconds (s).
 
-    ### Parameters
-    - **string** (`str`): A string representing the duration. It should include a numeric
-      value followed by one of the supported units ('Y', 'M', 'W', 'D', 'h', 'm', or 's').
+    Parameters
+    ----------
+    string : str
+        A string representing the duration. It should include a numeric
+        value followed by one of the supported units ('Y', 'M', 'W', 'D', 'h', 'm', or 's').
 
-    ### Returns
-    - **int**: The equivalent duration in seconds, rounded down to the nearest integer.
-      Returns 0 if invalid.
+    Returns
+    -------
+    int
+        The equivalent duration in seconds, rounded down to the nearest integer.
+        Returns 0 if invalid.
 
-    ### Example
+    Examples
+    --------
     >>> human2seconds('26Y')
     819936000
 
@@ -453,16 +492,21 @@ def humanduration2seconds(text):
     (e.g., '3Y 2M 7s') and converts each component into seconds. It ignores non-valid components
     (e.g., 'any-error') and sums the valid ones.
 
-    ### Parameters
-    - **text** (`str`): A string containing one or more human-readable durations, where each
-      duration is represented by a number followed by a unit (e.g., '3Y', '2M', '7s').
-      Invalid components are ignored.
+    Parameters
+    ----------
+    text : str
+        A string containing one or more human-readable durations, where each
+        duration is represented by a number followed by a unit (e.g., '3Y', '2M', '7s').
+        Invalid components are ignored.
 
-    ### Returns
-    - **int**: The total duration in seconds, summing all valid duration components. Returns 0 if
-      no valid components are found.
+    Returns
+    -------
+    int
+        The total duration in seconds, summing all valid duration components. Returns 0 if
+        no valid components are found.
 
-    ### Example
+    Examples
+    --------
     >>> text = '3Y 2M any-error 3d7s'  # means: valid is '3Y 2M 7s'
     >>> humanduration2seconds(text)
     99792007
@@ -523,21 +567,27 @@ def humanrange2bytes(text):
     Converts a Nagios range (e.g., `@4K:5 MiB`) into a range
     in bytes, where the base is always 1024.
 
-    ### Parameters
-    - **text** (`str`): A Nagios-style range string, such as
-      '@4K:5 MiB', where units like K, M, or B are used. A bound
-      without a unit is taken as a byte count.
+    Parameters
+    ----------
+    text : str
+        A Nagios-style range string, such as
+        '@4K:5 MiB', where units like K, M, or B are used. A bound
+        without a unit is taken as a byte count.
 
-    ### Returns
-    - **str**: The range with each value converted into bytes,
-      using 1024 as the base for conversions.
+    Returns
+    -------
+    str
+        The range with each value converted into bytes,
+        using 1024 as the base for conversions.
 
-    ### Notes
+    Notes
+    -----
     - The markers of the range syntax are preserved: an omitted
       bound, `~` for negative infinity, the `@` of an inverted
       range, and the sign of a negative bound.
 
-    ### Example
+    Examples
+    --------
     >>> text = '@4K:5 MiB'
     >>> humanrange2bytes(text)
     '@4096:5242880'
@@ -553,14 +603,19 @@ def humanrange2seconds(string):
     Converts a Nagios range to seconds by interpreting the
     duration components and summing them.
 
-    ### Parameters
-    - **string** (`str`): A Nagios-style range string, such as
-      '@10m:1Y1D', where units like 'm', 'Y', 'D' are used.
+    Parameters
+    ----------
+    string : str
+        A Nagios-style range string, such as
+        '@10m:1Y1D', where units like 'm', 'Y', 'D' are used.
 
-    ### Returns
-    - **str**: The range with each value converted into seconds.
+    Returns
+    -------
+    str
+        The range with each value converted into seconds.
 
-    ### Example
+    Examples
+    --------
     >>> string = '@10m:1Y1D'
     >>> humanrange2seconds(string)
     '@600:31622400'
@@ -576,18 +631,24 @@ def number2human(number):
     (e.g., 1,000 becomes '1K', 1,000,000 becomes '1M'). It supports values from 1 to extremely large
     numbers (up to 'Y' for 10^24).
 
-    ### Parameters
-    - **number** (`int` or `float`): The number to convert into a human-readable format.
+    Parameters
+    ----------
+    number : int or float
+        The number to convert into a human-readable format.
 
-    ### Returns
-    - **str**: The number formatted with an appropriate SI prefix.
+    Returns
+    -------
+    str
+        The number formatted with an appropriate SI prefix.
 
-    ### Notes
+    Notes
+    -----
     - A fraction that turns out to be zero is dropped: `2` rather than `2.0`. Most of what
       this formats are counts of things, and a decimal place claims a precision a count does
       not have.
 
-    ### Example
+    Examples
+    --------
     >>> number2human(2)
     '2'
 
@@ -623,17 +684,24 @@ def seconds2human(seconds, keep_short=True, full_name=False):
     a more understandable format. It supports both short and full-form time units (e.g., "1m" for
     minutes, "1 hour 30 minutes" for the full form).
 
-    ### Parameters
-    - **seconds** (`int` or `float` or `str`): The number of seconds to convert.
-    - **keep_short** (`bool`, optional): If True, returns only the largest two time units
-      (default is True).
-    - **full_name** (`bool`, optional): If True, returns full names for the time units
-      (default is False).
+    Parameters
+    ----------
+    seconds : int or float or str
+        The number of seconds to convert.
+    keep_short : bool, optional
+        If True, returns only the largest two time units
+        (default is True).
+    full_name : bool, optional
+        If True, returns full names for the time units
+        (default is False).
 
-    ### Returns
-    - **str**: The formatted time duration in a human-readable format.
+    Returns
+    -------
+    str
+        The formatted time duration in a human-readable format.
 
-    ### Example
+    Examples
+    --------
     >>> seconds2human(0.125)
     '125ms'
 

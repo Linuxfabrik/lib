@@ -22,11 +22,12 @@ On a system without the Unix account databases every lookup degrades to the plai
 number or an empty answer, so a caller does not have to branch on the platform.
 
 Typical use case:
-```python
+
+.. code-block:: python
+
     state, password = lib.user.get_shadow_password('www-data')
     if state == 'found' and lib.user.password_state(password) == 'usable':
         print('The account carries a password somebody can log in with.')
-```
 """
 
 import os
@@ -77,14 +78,19 @@ def get_gid_name(gid):
     """
     Resolve a numeric group id to its name.
 
-    ### Parameters
-    - **gid** (`int`): The group id to resolve.
+    Parameters
+    ----------
+    gid : int
+        The group id to resolve.
 
-    ### Returns
-    - **str**: The group name, or the number as a string where the host does not
-      know it or has no group database at all.
+    Returns
+    -------
+    str
+        The group name, or the number as a string where the host does not
+        know it or has no group database at all.
 
-    ### Example
+    Examples
+    --------
     >>> get_gid_name(0)
     'root'
     """
@@ -100,14 +106,19 @@ def get_interactive_shells(path=SHELLS):
     """
     Return the shells the host itself lists as usable for logging in.
 
-    ### Parameters
-    - **path** (`str`, optional): The file to read. Defaults to `/etc/shells`.
+    Parameters
+    ----------
+    path : str, optional
+        The file to read. Defaults to `/etc/shells`.
 
-    ### Returns
-    - **set**: The shells listed there. Empty where the file does not exist, which
-      is a host that makes no such statement rather than one that allows nothing.
+    Returns
+    -------
+    set
+        The shells listed there. Empty where the file does not exist, which
+        is a host that makes no such statement rather than one that allows nothing.
 
-    ### Example
+    Examples
+    --------
     >>> '/bin/bash' in get_interactive_shells()
     True
     """
@@ -129,19 +140,25 @@ def get_shadow_password(user, path=SHADOW):
     Read from the shadow database directly rather than through `passwd -S`, whose
     output format differs between distributions.
 
-    ### Parameters
-    - **user** (`str`): The account name to look up.
-    - **path** (`str`, optional): The file to read. Defaults to `/etc/shadow`.
+    Parameters
+    ----------
+    user : str
+        The account name to look up.
+    path : str, optional
+        The file to read. Defaults to `/etc/shadow`.
 
-    ### Returns
-    - **tuple**: `(state, password)`. `state` is `'found'` with the password field
-      as the second element, `'unreadable'` where the database could not be read,
-      and `'missing'` where it was read and holds no such account. The two absent
-      cases mean different things and are told apart on purpose: `unreadable` is a
-      missing privilege on this run, `missing` is an account served by a directory
-      service rather than by local files.
+    Returns
+    -------
+    tuple
+        `(state, password)`. `state` is `'found'` with the password field
+        as the second element, `'unreadable'` where the database could not be read,
+        and `'missing'` where it was read and holds no such account. The two absent
+        cases mean different things and are told apart on purpose: `unreadable` is a
+        missing privilege on this run, `missing` is an account served by a directory
+        service rather than by local files.
 
-    ### Example
+    Examples
+    --------
     >>> get_shadow_password('root')
     ('found', '!!')
     """
@@ -159,14 +176,19 @@ def get_uid_min(path=LOGIN_DEFS):
     """
     Return `UID_MIN`, the boundary between system and regular accounts.
 
-    ### Parameters
-    - **path** (`str`, optional): The file to read. Defaults to `/etc/login.defs`.
+    Parameters
+    ----------
+    path : str, optional
+        The file to read. Defaults to `/etc/login.defs`.
 
-    ### Returns
-    - **int**: The configured boundary, or `DEFAULT_UID_MIN` where the host does not
-      state one or states something that is not a number.
+    Returns
+    -------
+    int
+        The configured boundary, or `DEFAULT_UID_MIN` where the host does not
+        state one or states something that is not a number.
 
-    ### Example
+    Examples
+    --------
     >>> get_uid_min()
     1000
     """
@@ -192,14 +214,19 @@ def get_uid_name(uid):
     """
     Resolve a numeric user id to its name.
 
-    ### Parameters
-    - **uid** (`int`): The user id to resolve.
+    Parameters
+    ----------
+    uid : int
+        The user id to resolve.
 
-    ### Returns
-    - **str**: The account name, or the number as a string where the host does not
-      know it or has no account database at all.
+    Returns
+    -------
+    str
+        The account name, or the number as a string where the host does not
+        know it or has no account database at all.
 
-    ### Example
+    Examples
+    --------
     >>> get_uid_name(0)
     'root'
     """
@@ -219,11 +246,14 @@ def own_mount_namespace():
     a consumer needs to know before it reads a path on behalf of another process:
     the same path means a different file inside a container.
 
-    ### Returns
-    - **str**: The namespace as the kernel names it, or `None` where the kernel does
-      not publish one, which is every system that is not Linux.
+    Returns
+    -------
+    str
+        The namespace as the kernel names it, or `None` where the kernel does
+        not publish one, which is every system that is not Linux.
 
-    ### Example
+    Examples
+    --------
     >>> own_mount_namespace()
     'mnt:[4026531841]'
     """
@@ -237,23 +267,28 @@ def password_state(shadow):
     """
     Say what the password field of a shadow entry means.
 
-    ### Parameters
-    - **shadow** (`str`): The second field of a shadow entry, as
-      `get_shadow_password()` returns it.
+    Parameters
+    ----------
+    shadow : str
+        The second field of a shadow entry, as
+        `get_shadow_password()` returns it.
 
-    ### Returns
-    - **str**: One of
+    Returns
+    -------
+    str
+        One of
 
-        - `'locked'`: the field is prefixed with `!`, which is what `passwd --lock`
-          writes in front of whatever was there. `!!` is the same thing on an account
-          that never had a password.
-        - `'no-login'`: the field is `*` or starts with it, the distribution default
-          for an account that is not meant to be logged into with a password.
-        - `'none'`: the field is empty. This is the dangerous one and is not a locked
-          account: it is a password of no characters, which anybody can use.
-        - `'usable'`: the field holds a hash somebody can authenticate against.
+          - `'locked'`: the field is prefixed with `!`, which is what `passwd --lock`
+            writes in front of whatever was there. `!!` is the same thing on an account
+            that never had a password.
+          - `'no-login'`: the field is `*` or starts with it, the distribution default
+            for an account that is not meant to be logged into with a password.
+          - `'none'`: the field is empty. This is the dangerous one and is not a locked
+            account: it is a password of no characters, which anybody can use.
+          - `'usable'`: the field holds a hash somebody can authenticate against.
 
-    ### Example
+    Examples
+    --------
     >>> password_state('!!')
     'locked'
     >>> password_state('')

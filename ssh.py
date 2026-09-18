@@ -45,12 +45,17 @@ def _with_password(cmd, password):
     process cannot be started at all. An environment is only readable by the owner of
     the process and by root.
 
-    ### Parameters
-    - **cmd** (`list`): The command to run, as an argument list.
-    - **password** (`str` or `None`): The SSH password. Falsy means no `sshpass` wrapper.
+    Parameters
+    ----------
+    cmd : list
+        The command to run, as an argument list.
+    password : str or None
+        The SSH password. Falsy means no `sshpass` wrapper.
 
-    ### Returns
-    - **tuple**: `(cmd, env)`, where `env` is `None` unless a password is given.
+    Returns
+    -------
+    tuple
+        `(cmd, env)`, where `env` is `None` unless a password is given.
     """
     if not password:
         return cmd, None
@@ -74,23 +79,36 @@ def build_options(
     The result intentionally omits the port, because `ssh` uses `-p` while `scp`
     uses `-P`; `run()` and `scp()` add the port themselves.
 
-    ### Parameters
-    - **configfile** (`str`, optional): Path passed as `-F`.
-    - **identity** (`list`, optional): Identity files, each passed as `-i`.
-    - **ssh_option** (`list`, optional): Raw options, each passed as `-o`.
-    - **ipv4** (`bool`, optional): Force IPv4 (`-4`).
-    - **ipv6** (`bool`, optional): Force IPv6 (`-6`).
-    - **quiet** (`bool`, optional): Quiet mode (`-q`).
-    - **batch_mode** (`bool`, optional): Add `-o BatchMode=yes` to never prompt
-      for a password or passphrase (non-interactive runs).
-    - **connect_timeout** (`int`, optional): Seconds for `-o ConnectTimeout`.
-    - **log_level** (`str`, optional): Value for `-o LogLevel` (e.g. `ERROR` to
-      suppress the "Permanently added to known_hosts" warning).
+    Parameters
+    ----------
+    configfile : str, optional
+        Path passed as `-F`.
+    identity : list, optional
+        Identity files, each passed as `-i`.
+    ssh_option : list, optional
+        Raw options, each passed as `-o`.
+    ipv4 : bool, optional
+        Force IPv4 (`-4`).
+    ipv6 : bool, optional
+        Force IPv6 (`-6`).
+    quiet : bool, optional
+        Quiet mode (`-q`).
+    batch_mode : bool, optional
+        Add `-o BatchMode=yes` to never prompt
+        for a password or passphrase (non-interactive runs).
+    connect_timeout : int, optional
+        Seconds for `-o ConnectTimeout`.
+    log_level : str, optional
+        Value for `-o LogLevel` (e.g. `ERROR` to
+        suppress the "Permanently added to known_hosts" warning).
 
-    ### Returns
-    - **list**: The assembled option tokens (may be empty).
+    Returns
+    -------
+    list
+        The assembled option tokens (may be empty).
 
-    ### Example
+    Examples
+    --------
     >>> build_options(identity=['~/.ssh/id_ed25519'], batch_mode=True)
     ['-i', '~/.ssh/id_ed25519', '-o', 'BatchMode=yes']
     """
@@ -124,12 +142,17 @@ def target(host, username=None):
     `~/.ssh/config` (or fall back to the current local user), so host aliases
     keep working.
 
-    ### Parameters
-    - **host** (`str`): Hostname, IP address or `~/.ssh/config` alias.
-    - **username** (`str`, optional): Login user. If falsy, omitted.
+    Parameters
+    ----------
+    host : str
+        Hostname, IP address or `~/.ssh/config` alias.
+    username : str, optional
+        Login user. If falsy, omitted.
 
-    ### Returns
-    - **str**: e.g. `root@host` or `host`.
+    Returns
+    -------
+    str
+        e.g. `root@host` or `host`.
     """
     if username:
         return f'{username}@{host}'
@@ -154,21 +177,32 @@ def run(
     remote `command` is sent to the host as a single argument; the remote shell
     expands `~`, `$VAR`, `&&`, pipes etc.
 
-    ### Parameters
-    - **host** (`str`): Target host (name, IP or alias).
-    - **command** (`str`): Command to run on the remote host.
-    - **username** (`str`, optional): Login user (see `target()`).
-    - **port** (`int` or `str`, optional): Remote port (`-p`).
-    - **options** (`list`, optional): Option tokens from `build_options()`.
-    - **disable_pseudo_terminal** (`bool`, optional): Add `-T`.
-    - **password** (`str`, optional): If set, run the command through `sshpass`
-      (requires `sshpass`). The password is handed over in the environment, so it
-      does not show up in the process list.
-    - **timeout** (`int`, optional): Overall timeout in seconds.
+    Parameters
+    ----------
+    host : str
+        Target host (name, IP or alias).
+    command : str
+        Command to run on the remote host.
+    username : str, optional
+        Login user (see `target()`).
+    port : int or str, optional
+        Remote port (`-p`).
+    options : list, optional
+        Option tokens from `build_options()`.
+    disable_pseudo_terminal : bool, optional
+        Add `-T`.
+    password : str, optional
+        If set, run the command through `sshpass`
+        (requires `sshpass`). The password is handed over in the environment, so it
+        does not show up in the process list.
+    timeout : int, optional
+        Overall timeout in seconds.
 
-    ### Returns
-    - **tuple**: `(True, (stdout, stderr, retc))` on success, else
-      `(False, error_message)`. Same contract as `lib.shell.shell_exec()`.
+    Returns
+    -------
+    tuple
+        `(True, (stdout, stderr, retc))` on success, else
+        `(False, error_message)`. Same contract as `lib.shell.shell_exec()`.
     """
     ok, msg = _check_target(host, username)
     if not ok:
@@ -199,24 +233,36 @@ def scp(
 
     scp shares ssh's options except that the port flag is `-P`, not `-p`.
 
-    ### Parameters
-    - **host** (`str`): Target host (name, IP or alias).
-    - **local** (`str`): Local source path (a directory if `recursive=True`).
-    - **remote** (`str`): Remote destination path (relative paths are resolved
-      against the login home).
-    - **username** (`str`, optional): Login user (see `target()`).
-    - **port** (`int` or `str`, optional): Remote port (`-P`).
-    - **options** (`list`, optional): Option tokens from `build_options()`.
-    - **password** (`str`, optional): If set, run the command through `sshpass`
-      (requires `sshpass`). The password is handed over in the environment, so it
-      does not show up in the process list.
-    - **timeout** (`int`, optional): Overall timeout in seconds.
-    - **recursive** (`bool`, optional): Copy a directory tree (`-r`), preserving
-      modes (`-p`). Useful when the target lacks `tar`. Defaults to `False`.
+    Parameters
+    ----------
+    host : str
+        Target host (name, IP or alias).
+    local : str
+        Local source path (a directory if `recursive=True`).
+    remote : str
+        Remote destination path (relative paths are resolved
+        against the login home).
+    username : str, optional
+        Login user (see `target()`).
+    port : int or str, optional
+        Remote port (`-P`).
+    options : list, optional
+        Option tokens from `build_options()`.
+    password : str, optional
+        If set, run the command through `sshpass`
+        (requires `sshpass`). The password is handed over in the environment, so it
+        does not show up in the process list.
+    timeout : int, optional
+        Overall timeout in seconds.
+    recursive : bool, optional
+        Copy a directory tree (`-r`), preserving
+        modes (`-p`). Useful when the target lacks `tar`. Defaults to `False`.
 
-    ### Returns
-    - **tuple**: `(True, (stdout, stderr, retc))` on success, else
-      `(False, error_message)`.
+    Returns
+    -------
+    tuple
+        `(True, (stdout, stderr, retc))` on success, else
+        `(False, error_message)`.
     """
     ok, msg = _check_target(host, username)
     if not ok:
@@ -251,25 +297,37 @@ def rsync(
     `remote` (both are treated as directories). Callers that cannot guarantee
     rsync on the target should fall back to `scp(..., recursive=True)`.
 
-    ### Parameters
-    - **host** (`str`): Target host (name, IP or alias).
-    - **local** (`str`): Local source directory.
-    - **remote** (`str`): Remote destination directory.
-    - **username** (`str`, optional): Login user (see `target()`).
-    - **port** (`int` or `str`, optional): Remote port.
-    - **options** (`list`, optional): ssh option tokens from `build_options()`,
-      passed through to rsync via `--rsh`.
-    - **password** (`str`, optional): If set, run the command through `sshpass`
-      (requires `sshpass`). The password is handed over in the environment, so it
-      does not show up in the process list.
-    - **timeout** (`int`, optional): Overall timeout in seconds.
-    - **sudo** (`bool`, optional): Run the remote rsync via `sudo`
-      (`--rsync-path="sudo rsync"`), so files land root-owned and writes are
-      privileged. Requires password-less sudo on the target. Defaults to `False`.
+    Parameters
+    ----------
+    host : str
+        Target host (name, IP or alias).
+    local : str
+        Local source directory.
+    remote : str
+        Remote destination directory.
+    username : str, optional
+        Login user (see `target()`).
+    port : int or str, optional
+        Remote port.
+    options : list, optional
+        ssh option tokens from `build_options()`,
+        passed through to rsync via `--rsh`.
+    password : str, optional
+        If set, run the command through `sshpass`
+        (requires `sshpass`). The password is handed over in the environment, so it
+        does not show up in the process list.
+    timeout : int, optional
+        Overall timeout in seconds.
+    sudo : bool, optional
+        Run the remote rsync via `sudo`
+        (`--rsync-path="sudo rsync"`), so files land root-owned and writes are
+        privileged. Requires password-less sudo on the target. Defaults to `False`.
 
-    ### Returns
-    - **tuple**: `(True, (stdout, stderr, retc))` on success, else
-      `(False, error_message)`.
+    Returns
+    -------
+    tuple
+        `(True, (stdout, stderr, retc))` on success, else
+        `(False, error_message)`.
     """
     ok, msg = _check_target(host, username)
     if not ok:

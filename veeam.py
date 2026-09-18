@@ -27,26 +27,31 @@ def get_token(args):
     authentication. It returns allowed methods and the `X-RestSvcSessionId` token used for further
     API requests.
 
-    ### Parameters
-    - **args** (object):
-      An argument object containing:
-        - `URL` (`str`): Base URL of the Veeam API.
-        - `USERNAME` (`str`): API Username.
-        - `PASSWORD` (`str`): API Password.
-        - `INSECURE` (`bool`): Whether to disable SSL verification.
-        - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
-        - `TIMEOUT` (`int`): Request timeout in seconds.
+    Parameters
+    ----------
+    args : object
+        An argument object containing:
 
-    ### Returns
-    - **tuple** (`bool`, `dict` or `str`):
-      - `success` (`bool`): Whether authentication was successful.
-      - `result` (`dict`): Result dictionary containing session token on success, error otherwise.
+          - `URL` (`str`): Base URL of the Veeam API.
+          - `USERNAME` (`str`): API Username.
+          - `PASSWORD` (`str`): API Password.
+          - `INSECURE` (`bool`): Whether to disable SSL verification.
+          - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `TIMEOUT` (`int`): Request timeout in seconds.
 
-    ### Notes
+    Returns
+    -------
+    tuple (bool, dict or str)
+        - `success` (`bool`): Whether authentication was successful.
+        - `result` (`dict`): Result dictionary containing session token on success, error otherwise.
+
+    Notes
+    -----
     - The session token `X-RestSvcSessionId` is extracted from the HTTP response headers.
     - If authentication fails or no token is found, returns an error message.
 
-    ### Example
+    Examples
+    --------
     >>> get_token(args)
     (True, {'X-RestSvcSessionId': 'zwiw....'})
     """

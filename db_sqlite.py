@@ -118,22 +118,26 @@ def __filter_str(s, charclass='a-zA-Z0-9_'):
     and underscores (`_`), making the output safe for use in variable names, table names,
     index names, and similar identifiers.
 
-    ### Parameters
-    - **s** (`str`):
-      The input string to sanitize.
-    - **charclass** (`str`, optional):
-      A regex character class defining allowed characters.
-      Defaults to `'a-zA-Z0-9_'`.
+    Parameters
+    ----------
+    s : str
+        The input string to sanitize.
+    charclass : str, optional
+        A regex character class defining allowed characters.
+        Defaults to `'a-zA-Z0-9_'`.
 
-    ### Returns
-    - **str**:
-      A sanitized string containing only characters matching the allowed character class.
+    Returns
+    -------
+    str
+        A sanitized string containing only characters matching the allowed character class.
 
-    ### Notes
+    Notes
+    -----
     - Useful for cleaning user input before using it in database object names or variable names.
     - The function uses regular expressions for filtering.
 
-    ### Example
+    Examples
+    --------
     >>> __filter_str('user@example.ch')
     'userexamplech'
 
@@ -151,20 +155,24 @@ def __sha1sum(string):
     This function encodes the input as bytes (if necessary) and returns its SHA-1 checksum
     as a hexadecimal string.
 
-    ### Parameters
-    - **string** (`str`):
-      The input string to hash.
+    Parameters
+    ----------
+    string : str
+        The input string to hash.
 
-    ### Returns
-    - **str**:
-      The SHA-1 hash of the input string, represented as a 40-character hexadecimal string.
+    Returns
+    -------
+    str
+        The SHA-1 hash of the input string, represented as a 40-character hexadecimal string.
 
-    ### Notes
+    Notes
+    -----
     - Internally, the input is safely converted to bytes before hashing using `txt.to_bytes()`.
     - SHA-1 produces a fixed-size 160-bit (20-byte) hash, commonly used for checksums and
       identifiers.
 
-    ### Example
+    Examples
+    --------
     >>> __sha1sum('linuxfabrik')
     '74301e766db4a4006ec1fbd6e031760e7e322223'
     """
@@ -182,15 +190,18 @@ def __compile_regex(expr):
     prepared statement and is dropped as soon as the pattern argument changes, whereas this one
     is process-wide and keeps the last 128 patterns for as long as the process runs.
 
-    ### Parameters
-    - **expr** (`str`):
-      The regular expression pattern.
+    Parameters
+    ----------
+    expr : str
+        The regular expression pattern.
 
-    ### Returns
-    - **re.Pattern**:
-      The compiled pattern.
+    Returns
+    -------
+    re.Pattern
+        The compiled pattern.
 
-    ### Example
+    Examples
+    --------
     >>> __compile_regex('^abc').search('abcdef') is not None
     True
     """
@@ -206,15 +217,18 @@ def __quote_ident(name):
     syntax inert instead of executable, and additionally allows names that are SQLite keywords
     (`select`) or start with a digit.
 
-    ### Parameters
-    - **name** (`str`):
-      The identifier to quote.
+    Parameters
+    ----------
+    name : str
+        The identifier to quote.
 
-    ### Returns
-    - **str**:
-      The identifier wrapped in double quotes, with embedded double quotes doubled.
+    Returns
+    -------
+    str
+        The identifier wrapped in double quotes, with embedded double quotes doubled.
 
-    ### Example
+    Examples
+    --------
     >>> __quote_ident('perfdata')
     '"perfdata"'
 
@@ -229,15 +243,18 @@ def __quote_ident_list(column_list):
     """
     Quote every column of a comma-separated column list.
 
-    ### Parameters
-    - **column_list** (`str`):
-      A comma-separated list of column names, for example `'col1, col2'`.
+    Parameters
+    ----------
+    column_list : str
+        A comma-separated list of column names, for example `'col1, col2'`.
 
-    ### Returns
-    - **str**:
-      The same list with every column quoted, for example `'"col1","col2"'`.
+    Returns
+    -------
+    str
+        The same list with every column quoted, for example `'"col1","col2"'`.
 
-    ### Example
+    Examples
+    --------
     >>> __quote_ident_list('host_id, service_id')
     '"host_id","service_id"'
     """
@@ -253,24 +270,28 @@ def __unquote_ident(part, closing_quote):
     The inverse of `__quote_ident()`, used to recover a column name from a column definition. A
     quoted name may contain spaces and commas, so it cannot be taken apart with `split()`.
 
-    ### Parameters
-    - **part** (`str`):
-      A string starting with an opening quote character, for example `'"a b" TEXT'`.
-    - **closing_quote** (`str`):
-      The quote character that ends the identifier. Equal to the opening one for `"`, `'` and
-      `` ` ``, but `]` for the `[name]` form.
+    Parameters
+    ----------
+    part : str
+        A string starting with an opening quote character, for example `'"a b" TEXT'`.
+    closing_quote : str
+        The quote character that ends the identifier. Equal to the opening one for `"`, `'` and
+        `` ` ``, but `]` for the `[name]` form.
 
-    ### Returns
-    - **str**:
-      The identifier without its quotes. If the closing quote is missing, everything after the
-      opening one is returned.
+    Returns
+    -------
+    str
+        The identifier without its quotes. If the closing quote is missing, everything after the
+        opening one is returned.
 
-    ### Notes
+    Notes
+    -----
     - Inside a quoted identifier SQLite reads a doubled quote character as one literal character,
       so `"a""b"` is the column `a"b`. The `[...]` form has no such escape and ends at the first
       `]`.
 
-    ### Example
+    Examples
+    --------
     >>> __unquote_ident('"a b" TEXT', '"')
     'a b'
 
@@ -304,17 +325,20 @@ def __table_columns(conn, table):
     `SQLITE_DQS` build option only arrived in 3.29, and it is enabled in the builds CPython links
     against anyway.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **table** (`str`):
-      Name of the table to inspect.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    table : str
+        Name of the table to inspect.
 
-    ### Returns
-    - **list** of `str`:
-      The column names, or an empty list if the table does not exist or cannot be inspected.
+    Returns
+    -------
+    list of str
+        The column names, or an empty list if the table does not exist or cannot be inspected.
 
-    ### Example
+    Examples
+    --------
     >>> __table_columns(conn, 'perfdata')
     ['name', 'timestamp', 'rx_bytes']
     """
@@ -355,15 +379,18 @@ def __is_unusable_db(e):
     store, a row that violates a constraint) is transient, a caller bug or ordinary data: the cache
     is fine and has to survive.
 
-    ### Parameters
-    - **e** (`Exception`):
-      The exception raised by the failed statement.
+    Parameters
+    ----------
+    e : Exception
+        The exception raised by the failed statement.
 
-    ### Returns
-    - **bool**:
-      `True` if the database file is unusable and should be removed, `False` otherwise.
+    Returns
+    -------
+    bool
+        `True` if the database file is unusable and should be removed, `False` otherwise.
 
-    ### Example
+    Examples
+    --------
     >>> __is_unusable_db(sqlite3.OperationalError('no such column: foo'))
     True
 
@@ -408,23 +435,26 @@ def __handle_db_error(conn, e, sql, data=None, delete_db=True):
     Turn an `sqlite3` exception into this library's error tuple, deleting the database first if
     the file turned out to be unusable.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      The connection the statement was executed on.
-    - **e** (`Exception`):
-      The exception raised by the failed statement.
-    - **sql** (`str`):
-      The statement that failed, included in the error message.
-    - **data** (`dict` or `tuple`, optional):
-      The bind parameters of the failed statement, included in the error message when given.
-    - **delete_db** (`bool`, optional):
-      Whether deleting an unusable database file is allowed at all. Defaults to `True`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        The connection the statement was executed on.
+    e : Exception
+        The exception raised by the failed statement.
+    sql : str
+        The statement that failed, included in the error message.
+    data : dict or tuple, optional
+        The bind parameters of the failed statement, included in the error message when given.
+    delete_db : bool, optional
+        Whether deleting an unusable database file is allowed at all. Defaults to `True`.
 
-    ### Returns
-    - **tuple** (`bool`, `str`):
-      Always `False` plus an error message describing the failure.
+    Returns
+    -------
+    tuple (bool, str)
+        Always `False` plus an error message describing the failure.
 
-    ### Notes
+    Notes
+    -----
     - The message wording is part of this library's contract: consumer documentation and
       unit tests match on `Operational Error: <sqlite message>, Query: ...`.
     """
@@ -447,20 +477,24 @@ def close(conn):
     It does not automatically commit any uncommitted changes — if you close the connection
     without calling `commit()` first, any uncommitted changes will be lost.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection` or compatible):
-      An active database connection object.
+    Parameters
+    ----------
+    conn : sqlite3.Connection or compatible
+        An active database connection object.
 
-    ### Returns
-    - **bool**:
-      - `True` if the connection was closed successfully.
-      - `False` if an exception occurred during closing.
+    Returns
+    -------
+    bool
+        - `True` if the connection was closed successfully.
+        - `False` if an exception occurred during closing.
 
-    ### Notes
+    Notes
+    -----
     - Always call `commit()` manually before calling `close()` if you want to save changes.
     - Exceptions during closing are caught and handled silently.
 
-    ### Example
+    Examples
+    --------
     >>> close(conn)
     True
     """
@@ -478,27 +512,32 @@ def commit(conn):
     This function saves (commits) all changes made during the current database session.
     If committing fails, an error message is returned.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection` or compatible):
-      An active database connection object.
+    Parameters
+    ----------
+    conn : sqlite3.Connection or compatible
+        An active database connection object.
 
-    ### Returns
-    - **tuple** (`bool`, `str or None`):
-      - First element (`bool`): `True` if the commit succeeded, `False` if it failed.
-      - Second element (`str` or `None`):
-        - `None` on success.
-        - Error message (`str`) describing the failure if commit fails.
+    Returns
+    -------
+    tuple (bool, str or None)
+        - First element (`bool`): `True` if the commit succeeded, `False` if it failed.
+        - Second element (`str` or `None`):
 
-    ### Notes
+          - `None` on success.
+          - Error message (`str`) describing the failure if commit fails.
+
+    Notes
+    -----
     - Always commit before closing the connection if you want to preserve changes.
     - Exceptions during commit are caught and returned as part of the result.
 
-    ### Example
+    Examples
+    --------
     >>> success, error = commit(conn)
     >>> if not success:
-    >>>     print(error)
+    ...     print(error)
     >>> else:
-    >>>     print("Changes committed successfully.")
+    ...     print("Changes committed successfully.")
     """
     try:
         conn.commit()
@@ -514,30 +553,34 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     This function calculates `Load1` (over the last 1 interval) and `Loadn` (over the last `count` intervals)
     for one or more sensors, based on timestamped performance data.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **sensorcol** (`str`):
-      Column name that identifies the sensor (e.g., `'interface'`).
-    - **datacols** (`list` of `str`):
-      List of columns for which to calculate per-second loads (e.g., `['tx_bytes', 'rx_bytes']`).
-    - **count** (`int`):
-      Number of historical entries to use for calculating `Loadn`. Must be at least 2, because
-      both metrics are a difference between two rows.
-    - **table** (`str`, optional):
-      Name of the table containing the performance data.
-      Defaults to `'perfdata'`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    sensorcol : str
+        Column name that identifies the sensor (e.g., `'interface'`).
+    datacols : list of str
+        List of columns for which to calculate per-second loads (e.g., `['tx_bytes', 'rx_bytes']`).
+    count : int
+        Number of historical entries to use for calculating `Loadn`. Must be at least 2, because
+        both metrics are a difference between two rows.
+    table : str, optional
+        Name of the table containing the performance data.
+        Defaults to `'perfdata'`.
 
-    ### Returns
-    - **tuple** (`bool`, `list or bool or str`):
-      - First element (`bool`): `True` if the calculation succeeded, `False` if a database error occurred.
-      - Second element:
-        - A `list` of dictionaries containing per-sensor load values on success. Only the
-          sensors that already have `count` entries appear in it.
-        - `False` if not one sensor has enough data yet.
-        - Error message (`str`) on database failure.
+    Returns
+    -------
+    tuple (bool, list or bool or str)
+        - First element (`bool`): `True` if the calculation succeeded, `False` if a database error occurred.
+        - Second element:
 
-    ### Notes
+          - A `list` of dictionaries containing per-sensor load values on success. Only the
+            sensors that already have `count` entries appear in it.
+          - `False` if not one sensor has enough data yet.
+          - Error message (`str`) on database failure.
+
+    Notes
+    -----
     - The table must contain a `timestamp` column (UNIX epoch seconds).
     - A sensor whose counter is lower than it was is left out too. The counter did not
       go backwards, it started over, and no rate can be computed across a restart.
@@ -553,7 +596,8 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     - The table name is quoted, so keywords and names containing punctuation work.
     - A `count` below 2 is rejected instead of raising further down.
 
-    ### Example
+    Examples
+    --------
     Calculate loads for `tx_bytes` and `rx_bytes` over 5 intervals:
     >>> compute_load(
     ...     conn,
@@ -673,7 +717,8 @@ class __DbConnection(sqlite3.Connection):
     `sqlite3.Connection` is a C type without an attribute dictionary and cannot carry the path,
     hence this subclass.
 
-    ### Notes
+    Notes
+    -----
     - `db_path` is a class attribute, so reading it is safe even if a connection never got its
       own value assigned.
     """
@@ -694,31 +739,35 @@ def connect(path='', filename='', timeout=5.0, in_memory=False):
     private to the connection, so two consumers running at the same time cannot see, lock or
     discard each other's data.
 
-    ### Parameters
-    - **path** (`str`, optional):
-      Path to the directory containing the database file.
-      Defaults to the system temporary directory (e.g., `/tmp`).
-      Ignored when `in_memory` is `True`.
-    - **filename** (`str`, optional):
-      Name of the database file.
-      Defaults to `'linuxfabrik-monitoring-plugins-sqlite.db'`.
-      Ignored when `in_memory` is `True`.
-    - **in_memory** (`bool`, optional):
-      If `True`, open a private in-memory database instead of a file. Nothing is written to
-      disk and the data is gone when the connection closes. Defaults to `False`.
-    - **timeout** (`float`, optional):
-      Seconds to wait for a lock held by another process before giving up with
-      `database is locked`. Defaults to `5.0`. Raise it when several consumers share one database
-      file and run concurrently.
+    Parameters
+    ----------
+    path : str, optional
+        Path to the directory containing the database file.
+        Defaults to the system temporary directory (e.g., `/tmp`).
+        Ignored when `in_memory` is `True`.
+    filename : str, optional
+        Name of the database file.
+        Defaults to `'linuxfabrik-monitoring-plugins-sqlite.db'`.
+        Ignored when `in_memory` is `True`.
+    in_memory : bool, optional
+        If `True`, open a private in-memory database instead of a file. Nothing is written to
+        disk and the data is gone when the connection closes. Defaults to `False`.
+    timeout : float, optional
+        Seconds to wait for a lock held by another process before giving up with
+        `database is locked`. Defaults to `5.0`. Raise it when several consumers share one database
+        file and run concurrently.
 
-    ### Returns
-    - **tuple** (`bool`, `Connection or str`):
-      - First element (`bool`): `True` if connection succeeded, `False` if it failed.
-      - Second element (`Connection` or `str`):
-        - Database connection object on success.
-        - Error message string on failure.
+    Returns
+    -------
+    tuple (bool, Connection or str)
+        - First element (`bool`): `True` if connection succeeded, `False` if it failed.
+        - Second element (`Connection` or `str`):
 
-    ### Notes
+          - Database connection object on success.
+          - Error message string on failure.
+
+    Notes
+    -----
     - On POSIX systems the database is stored in a per-user, `0700`-protected subdirectory of the
       temporary directory (see `get_db_dir()`), not directly in the shared, world-writable `/tmp`.
       This isolates each user's databases and prevents symlink attacks on the predictable paths
@@ -734,13 +783,14 @@ def connect(path='', filename='', timeout=5.0, in_memory=False):
       then read each other's rows or drop each other's tables. Anything that has to survive the
       process, a counter to compute a rate against for example, needs the file.
 
-    ### Example
+    Examples
+    --------
     >>> success, conn = connect()
     >>> if success:
     >>> # Use conn
-    >>>     pass
+    ...     pass
     >>> else:
-    >>>     print(conn)
+    ...     print(conn)
 
     >>> success, conn = connect(in_memory=True)
     """
@@ -786,36 +836,41 @@ def create_index(
     If the database structure has changed and an `OperationalError` occurs, the database file
     can optionally be deleted automatically.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **column_list** (`str`):
-      A comma-separated list of columns to index, for example `'col1, col2'`.
-    - **table** (`str`, optional):
-      The table name. Defaults to `'perfdata'`.
-    - **unique** (`bool`, optional):
-      If `True`, creates a unique index.
-      If `False`, creates a standard (non-unique) index. Defaults to `False`.
-    - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when the on-disk database turns out
-      to be unusable (e.g. a schema mismatch between releases).
-      Defaults to `True`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    column_list : str
+        A comma-separated list of columns to index, for example `'col1, col2'`.
+    table : str, optional
+        The table name. Defaults to `'perfdata'`.
+    unique : bool, optional
+        If `True`, creates a unique index.
+        If `False`, creates a standard (non-unique) index. Defaults to `False`.
+    delete_db_on_operational_error : bool, optional
+        If `True`, deletes the database file when the on-disk database turns out
+        to be unusable (e.g. a schema mismatch between releases).
+        Defaults to `True`.
 
-    ### Returns
-    - **tuple** (`bool`, `bool or str`):
-      - First element (`bool`): `True` if the operation succeeded, `False` if it failed.
-      - Second element (`bool` or `str`):
-        - `True` on success.
-        - Error message (`str`) describing the failure.
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - First element (`bool`): `True` if the operation succeeded, `False` if it failed.
+        - Second element (`bool` or `str`):
 
-    ### Notes
+          - `True` on success.
+          - Error message (`str`) describing the failure.
+
+    Notes
+    -----
     - The table name is sanitized to only allow safe characters.
     - The index name is automatically generated as `idx_<sha1sum>`, based on the table name, the
       column names and whether the index is unique. A unique and a non-unique index over the
       same columns are therefore two separate indices.
     - Index creation uses `IF NOT EXISTS` to avoid errors if the index already exists.
 
-    ### Example
+    Examples
+    --------
     >>> create_index(conn, 'hostname, service')
     (True, True)
 
@@ -876,29 +931,33 @@ def create_table(
     This function creates a table in the SQLite database based on the given column definition.
     Optionally, the table can be dropped first if it already exists.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **definition** (`str`):
-      Column definitions for the table, e.g., `'col1 TEXT, col2 INTEGER NOT NULL'`.
-    - **table** (`str`, optional):
-      Name of the table to create. Defaults to `'perfdata'`.
-    - **drop_table_first** (`bool`, optional):
-      If `True`, drops the table before creating it. Defaults to `False`.
-    - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when the on-disk database turns out
-      to be unusable (e.g. a file that is not a database at all).
-      Defaults to `True`. Passed on to the `drop_table()` call as well.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    definition : str
+        Column definitions for the table, e.g., `'col1 TEXT, col2 INTEGER NOT NULL'`.
+    table : str, optional
+        Name of the table to create. Defaults to `'perfdata'`.
+    drop_table_first : bool, optional
+        If `True`, drops the table before creating it. Defaults to `False`.
+    delete_db_on_operational_error : bool, optional
+        If `True`, deletes the database file when the on-disk database turns out
+        to be unusable (e.g. a file that is not a database at all).
+        Defaults to `True`. Passed on to the `drop_table()` call as well.
 
-    ### Returns
-    - **tuple** (`bool`, `bool or str`):
-      - First element (`bool`): `True` if the table was created successfully, `False` if an
-        error occurred.
-      - Second element (`bool` or `str`):
-        - `True` on success.
-        - Error message (`str`) describing the failure.
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - First element (`bool`): `True` if the table was created successfully, `False` if an
+          error occurred.
+        - Second element (`bool` or `str`):
 
-    ### Notes
+          - `True` on success.
+          - Error message (`str`) describing the failure.
+
+    Notes
+    -----
     - The table name is quoted, so keywords and names containing punctuation work.
     - `definition` is inserted into the statement verbatim, because a column definition is SQL
       and not a value that could be bound. It must therefore come from the caller's own code and
@@ -910,7 +969,8 @@ def create_table(
       database file first shows up. Such a file is discarded here, and the next run starts from
       a healthy one.
 
-    ### Example
+    Examples
+    --------
     Create a new table with three columns:
     >>> create_table(conn, 'a TEXT, b TEXT, c INTEGER NOT NULL', table='test')
 
@@ -946,26 +1006,30 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     This function deletes older rows from a table, keeping only the most recent `_max` entries
     according to the SQLite built-in `rowid`. Useful for maintaining lightweight, capped tables.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **table** (`str`, optional):
-      Name of the table to prune. Defaults to `'perfdata'`.
-    - **_max** (`int`, optional):
-      Number of most recent records to keep. Must be a non-negative `int`. Defaults to `5`.
-    - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when the on-disk database turns out
-      to be unusable (e.g. a schema mismatch between releases).
-      Defaults to `True`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    table : str, optional
+        Name of the table to prune. Defaults to `'perfdata'`.
+    _max : int, optional
+        Number of most recent records to keep. Must be a non-negative `int`. Defaults to `5`.
+    delete_db_on_operational_error : bool, optional
+        If `True`, deletes the database file when the on-disk database turns out
+        to be unusable (e.g. a schema mismatch between releases).
+        Defaults to `True`.
 
-    ### Returns
-    - **tuple** (`bool`, `bool or str`):
-      - First element (`bool`): `True` if deletion succeeded, `False` if it failed.
-      - Second element (`bool` or `str`):
-        - `True` on success.
-        - Error message (`str`) describing the failure.
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - First element (`bool`): `True` if deletion succeeded, `False` if it failed.
+        - Second element (`bool` or `str`):
 
-    ### Notes
+          - `True` on success.
+          - Error message (`str`) describing the failure.
+
+    Notes
+    -----
     - The function relies on the implicit `rowid` column for ordering. A `WITHOUT ROWID` table
       normally has no such column and cannot be pruned this way; the call reports
       `no such column: rowid` and leaves the database alone. If such a table declares a real
@@ -977,7 +1041,8 @@ def cut(conn, table='perfdata', _max=5, delete_db_on_operational_error=True):
     - Anything but a non-negative `int` is rejected, because SQLite would delete every row while
       reporting success.
 
-    ### Example
+    Examples
+    --------
     >>> cut(conn, table='logs', _max=1000)
     (True, True)
     """
@@ -1039,28 +1104,37 @@ def cut_per_sensor(
     the same cache (a manual run next to the scheduled one) or the set of sensors
     changes between runs.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`): An active database connection object.
-    - **sensorcol** (`str`): Column that identifies the sensor, for example
-      `'interface'` or `'name'`.
-    - **_max** (`int`, optional): Number of rows to keep per sensor. Defaults to 5.
-    - **table** (`str`, optional): Name of the table. Defaults to `'perfdata'`.
-    - **delete_db_on_operational_error** (`bool`, optional): Delete the database file
-      on `sqlite3.OperationalError`. Defaults to True.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    sensorcol : str
+        Column that identifies the sensor, for example
+        `'interface'` or `'name'`.
+    _max : int, optional
+        Number of rows to keep per sensor. Defaults to 5.
+    table : str, optional
+        Name of the table. Defaults to `'perfdata'`.
+    delete_db_on_operational_error : bool, optional
+        Delete the database file
+        on `sqlite3.OperationalError`. Defaults to True.
 
-    ### Returns
-    - **tuple** (`bool`, `bool` or `str`):
-      - `(True, True)` on success.
-      - `(False, error_message)` on failure.
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - `(True, True)` on success.
+        - `(False, error_message)` on failure.
 
-    ### Notes
+    Notes
+    -----
     - The table must contain a `timestamp` column. Rows are ranked newest first, with
       `rowid` breaking a tie, so two samples sharing a timestamp keep a deterministic
       order.
     - Deliberately written without a window function, so it also runs on the SQLite
       versions shipped with older distributions.
 
-    ### Example
+    Examples
+    --------
     Keep the five newest samples of every interface:
     >>> cut_per_sensor(conn, sensorcol='interface', _max=5)
     """
@@ -1109,33 +1183,38 @@ def delete(conn, sql, data=None, delete_db_on_operational_error=True):
     If no WHERE clause is provided, all records are deleted.
     Parameter binding is supported for safety.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **sql** (`str`):
-      The SQL DELETE statement to execute.
-      Use placeholders (`:key`) for parameterized queries.
-    - **data** (`dict`, optional):
-      Dictionary of parameters to bind to the SQL statement.
-      Defaults to an empty dict (no parameters).
-    - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when the on-disk database turns out
-      to be unusable (e.g. a schema mismatch between releases).
-      Defaults to `True`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    sql : str
+        The SQL DELETE statement to execute.
+        Use placeholders (`:key`) for parameterized queries.
+    data : dict, optional
+        Dictionary of parameters to bind to the SQL statement.
+        Defaults to an empty dict (no parameters).
+    delete_db_on_operational_error : bool, optional
+        If `True`, deletes the database file when the on-disk database turns out
+        to be unusable (e.g. a schema mismatch between releases).
+        Defaults to `True`.
 
-    ### Returns
-    - **tuple** (`bool`, `int or str`):
-      - First element (`bool`): `True` if the delete succeeded, `False` if it failed.
-      - Second element (`int` or `str`):
-        - Number of rows affected (`int`) on success.
-        - Error message (`str`) on failure.
+    Returns
+    -------
+    tuple (bool, int or str)
+        - First element (`bool`): `True` if the delete succeeded, `False` if it failed.
+        - Second element (`int` or `str`):
 
-    ### Notes
+          - Number of rows affected (`int`) on success.
+          - Error message (`str`) on failure.
+
+    Notes
+    -----
     - If the WHERE clause is omitted, all rows in the table will be deleted.
     - Always use a WHERE clause carefully to avoid unintended full table deletion.
     - On schema-related `OperationalError`, the database file can be deleted automatically.
 
-    ### Example
+    Examples
+    --------
     Delete records older than a specific timestamp:
     >>> sql = 'DELETE FROM logs WHERE timestamp < :cutoff'
     >>> data = {'cutoff': 1700000000}
@@ -1164,30 +1243,35 @@ def drop_table(conn, table='perfdata', delete_db_on_operational_error=True):
     This function removes a table and all associated indices and triggers from the database.
     If the table does not exist, no error is raised.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **table** (`str`, optional):
-      Name of the table to drop.
-      Defaults to `'perfdata'`.
-    - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when the on-disk database turns out
-      to be unusable (e.g. a file that is not a database at all).
-      Defaults to `True`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    table : str, optional
+        Name of the table to drop.
+        Defaults to `'perfdata'`.
+    delete_db_on_operational_error : bool, optional
+        If `True`, deletes the database file when the on-disk database turns out
+        to be unusable (e.g. a file that is not a database at all).
+        Defaults to `True`.
 
-    ### Returns
-    - **tuple** (`bool`, `bool or str`):
-      - First element (`bool`): `True` if the operation succeeded, `False` if an error occurred.
-      - Second element (`bool` or `str`):
-        - `True` on success.
-        - Error message (`str`) describing the failure.
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - First element (`bool`): `True` if the operation succeeded, `False` if an error occurred.
+        - Second element (`bool` or `str`):
 
-    ### Notes
+          - `True` on success.
+          - Error message (`str`) describing the failure.
+
+    Notes
+    -----
     - The table name is quoted, so keywords and names containing punctuation work.
     - Dropping a table is permanent: all table data, indices, and triggers are permanently deleted.
     - The statement uses `DROP TABLE IF EXISTS` to avoid errors if the table is missing.
 
-    ### Example
+    Examples
+    --------
     >>> drop_table(conn, table='logs')
     (True, True)
     """
@@ -1220,28 +1304,33 @@ def first_seen(filename, name, keys):
     consumers, or one consumer observing several sets, can share one cache
     file without ageing each other's items.
 
-    ### Parameters
-    - **filename** (`str`):
-      SQLite cache filename, e.g. `'linuxfabrik-monitoring-plugins-<name>.db'`.
-      Lives under `$TEMP`. Pick a per-consumer name so caches do not collide.
-    - **name** (`str`):
-      Set identifier stored in the `name` column (e.g. the consumer's own
-      name). Two consumers writing the same `name` into the same file will
-      delete each other's keys on every run.
-    - **keys** (`iterable[str]`):
-      The keys observed right now. Pick a key that stays stable while the
-      condition lasts: keying a pending package update on the package name
-      keeps the clock running across a newer candidate version, whereas
-      keying it on the version restarts the clock on every rebuild.
+    Parameters
+    ----------
+    filename : str
+        SQLite cache filename, e.g. `'linuxfabrik-monitoring-plugins-<name>.db'`.
+        Lives under `$TEMP`. Pick a per-consumer name so caches do not collide.
+    name : str
+        Set identifier stored in the `name` column (e.g. the consumer's own
+        name). Two consumers writing the same `name` into the same file will
+        delete each other's keys on every run.
+    keys : iterable[str]
+        The keys observed right now. Pick a key that stays stable while the
+        condition lasts: keying a pending package update on the package name
+        keeps the clock running across a newer candidate version, whereas
+        keying it on the version restarts the clock on every rebuild.
 
-    ### Returns
-    - **dict[str, int]**: `{key: age_in_seconds}` for every key passed in.
-      A key seen for the first time has an age of `0`.
-    - **None**: any SQLite operation failed. Callers must treat this as
-      "ages unknown" and fall back to acting on every key, so a cache that
-      cannot be read never silences a consumer.
+    Returns
+    -------
+    dict[str, int]
+        `{key: age_in_seconds}` for every key passed in.
+        A key seen for the first time has an age of `0`.
+    None
+        any SQLite operation failed. Callers must treat this as
+        "ages unknown" and fall back to acting on every key, so a cache that
+        cannot be read never silences a consumer.
 
-    ### Example
+    Examples
+    --------
     Alert only on updates that have been pending for more than a week:
 
     >>> ages = lib.db_sqlite.first_seen(
@@ -1328,22 +1417,30 @@ def forget_sensors(
     short-lived workload grows without limit. Passing the sensors that exist right
     now forgets the others.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`): An active database connection object.
-    - **sensorcol** (`str`): Column that identifies the sensor, for example
-      `'interface'` or `'name'`.
-    - **keep** (`iterable[str]`): The sensors whose rows stay. An empty iterable
-      deletes every row.
-    - **table** (`str`, optional): Name of the table. Defaults to `'perfdata'`.
-    - **delete_db_on_operational_error** (`bool`, optional): Delete the database file
-      on `sqlite3.OperationalError`. Defaults to True.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    sensorcol : str
+        Column that identifies the sensor, for example
+        `'interface'` or `'name'`.
+    keep : iterable[str]
+        The sensors whose rows stay. An empty iterable
+        deletes every row.
+    table : str, optional
+        Name of the table. Defaults to `'perfdata'`.
+    delete_db_on_operational_error : bool, optional
+        Delete the database file
+        on `sqlite3.OperationalError`. Defaults to True.
 
-    ### Returns
-    - **tuple** (`bool`, `bool` or `str`):
-      - `(True, True)` on success.
-      - `(False, error_message)` on failure.
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - `(True, True)` on success.
+        - `(False, error_message)` on failure.
 
-    ### Notes
+    Notes
+    -----
     - Pass every sensor that still exists, not only the ones the current run looked
       at. Two callers sharing a table while each filters its own subset would
       otherwise delete each other's history on every run.
@@ -1354,7 +1451,8 @@ def forget_sensors(
       the number of sensors is not bound by the host parameter limit of older SQLite
       versions.
 
-    ### Example
+    Examples
+    --------
     Forget the interfaces that no longer exist:
     >>> forget_sensors(conn, sensorcol='interface', keep=['eth0', 'eth1'])
     """
@@ -1406,15 +1504,18 @@ def get_colnames(col_definition):
     This function parses a SQL-style column definition string and returns a list
     of column names, ignoring types and constraints.
 
-    ### Parameters
-    - **col_definition** (`str`):
-      A string defining columns in SQL format, e.g., `'col1 TEXT, col2 INTEGER NOT NULL'`.
+    Parameters
+    ----------
+    col_definition : str
+        A string defining columns in SQL format, e.g., `'col1 TEXT, col2 INTEGER NOT NULL'`.
 
-    ### Returns
-    - **list** (`list` of `str`):
-      A list of extracted column names.
+    Returns
+    -------
+    list (list of str)
+        A list of extracted column names.
 
-    ### Notes
+    Notes
+    -----
     - Only the first word of each column definition is considered the column name.
     - Column constraints (`PRIMARY KEY`, `NOT NULL`) and data types are ignored.
     - Splitting happens on top-level commas only, so a comma inside a type (`DECIMAL(10,2)`) or
@@ -1425,7 +1526,8 @@ def get_colnames(col_definition):
       `"name"`, `'name'`, `` `name` `` and `[name]`. A doubled quote character inside a quoted
       name is one literal character, as SQLite reads it.
 
-    ### Example
+    Examples
+    --------
     >>> get_colnames('date TEXT PRIMARY KEY, count FLOAT, name TEXT')
     ['date', 'count', 'name']
 
@@ -1492,25 +1594,30 @@ def get_db_dir(path):
     current user with `0700` permissions, and the directory is rejected if anything about it looks
     tampered with.
 
-    ### Parameters
-    - **path** (`str`):
-      The base directory (typically the system temporary directory) in which to create the
-      per-user subdirectory.
+    Parameters
+    ----------
+    path : str
+        The base directory (typically the system temporary directory) in which to create the
+        per-user subdirectory.
 
-    ### Returns
-    - **tuple** (`bool`, `str`):
-      - First element (`bool`): `True` on success, `False` on failure.
-      - Second element (`str`):
-        - The absolute path to the secure subdirectory on success.
-        - An error message describing the failure otherwise.
+    Returns
+    -------
+    tuple (bool, str)
+        - First element (`bool`): `True` on success, `False` on failure.
+        - Second element (`str`):
 
-    ### Notes
+          - The absolute path to the secure subdirectory on success.
+          - An error message describing the failure otherwise.
+
+    Notes
+    -----
     - `os.geteuid()` does not exist on Windows, where the temporary directory is already per-user
       rather than a shared, world-writable location. There the base `path` is returned unchanged.
     - The directory is validated with `os.lstat()` so a symlink planted at its path is detected
       instead of being followed.
 
-    ### Example
+    Examples
+    --------
     >>> get_db_dir('/tmp')
     (True, '/tmp/linuxfabrik-monitoring-plugins-uid1000')
     """
@@ -1560,20 +1667,24 @@ def get_db_path(path='', filename=''):
     `connect()` (for example to seed, migrate or remove the file), so the path is built in exactly
     one place instead of being reconstructed by every caller.
 
-    ### Parameters
-    - **path** (`str`, optional):
-      Directory to resolve the database in. Defaults to the system temporary directory.
-    - **filename** (`str`, optional):
-      Name of the database file. Defaults to `'linuxfabrik-monitoring-plugins-sqlite.db'`.
+    Parameters
+    ----------
+    path : str, optional
+        Directory to resolve the database in. Defaults to the system temporary directory.
+    filename : str, optional
+        Name of the database file. Defaults to `'linuxfabrik-monitoring-plugins-sqlite.db'`.
 
-    ### Returns
-    - **tuple** (`bool`, `str`):
-      - First element (`bool`): `True` on success, `False` on failure.
-      - Second element (`str`):
-        - The absolute path to the database file on success.
-        - An error message describing the failure otherwise.
+    Returns
+    -------
+    tuple (bool, str)
+        - First element (`bool`): `True` on success, `False` on failure.
+        - Second element (`str`):
 
-    ### Example
+          - The absolute path to the database file on success.
+          - An error message describing the failure otherwise.
+
+    Examples
+    --------
     >>> get_db_path(filename='example.db')
     (True, '/tmp/linuxfabrik-monitoring-plugins-uid1000/example.db')
     """
@@ -1601,18 +1712,22 @@ def get_tables(conn):
     keeps for itself under the reserved `'sqlite_'` prefix (`sqlite_sequence`, `sqlite_stat1`
     and friends).
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
 
-    ### Returns
-    - **tuple** (`bool`, `list or str`):
-      - First element (`bool`): `True` if the query succeeded, `False` if it failed.
-      - Second element (`list` or `str`):
-        - A list of table names (`str`) on success.
-        - An error message (`str`) on failure.
+    Returns
+    -------
+    tuple (bool, list or str)
+        - First element (`bool`): `True` if the query succeeded, `False` if it failed.
+        - Second element (`list` or `str`):
 
-    ### Notes
+          - A list of table names (`str`) on success.
+          - An error message (`str`) on failure.
+
+    Notes
+    -----
     - The filter goes by name, so it covers exactly the `sqlite_` prefix that SQLite reserves for
       itself. The shadow tables an extension creates for a virtual table are ordinary tables with
       ordinary names (`<name>_content` and `<name>_segments` for FTS, `<name>_node` for R-Tree,
@@ -1622,12 +1737,13 @@ def get_tables(conn):
     - Views are not tables and are not returned either.
     - Internally calls the `select()` helper function.
 
-    ### Example
+    Examples
+    --------
     >>> success, tables = get_tables(conn)
     >>> if success:
-    >>>     print(tables)  # ['users', 'orders', 'logs']
+    ...     print(tables)  # ['users', 'orders', 'logs']
     >>> else:
-    >>>     print(tables)
+    ...     print(tables)
     """
     # `ESCAPE '_'` makes the doubled underscore a literal one. Without it `_` is a LIKE wildcard
     # matching any single character, so a user table named `sqliteXfoo` would be hidden as well.
@@ -1666,40 +1782,44 @@ def import_csv(
     Field names for the table are taken from the provided `fieldnames` string, not from
     the CSV header. Supports importing large files efficiently by committing in chunks.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **filename** (`str`):
-      Path to the CSV file to import.
-    - **table** (`str`, optional):
-      Name of the table to import into.
-      Defaults to `'data'`.
-      If `None`, uses a sanitized version of the filename as the table name.
-    - **fieldnames** (`str`, optional):
-      A SQL-style column definition string, e.g., `'col1 TEXT, col2 FLOAT'`.
-      Used to create the table.
-      Must match the number of columns in the CSV.
-    - **skip_header** (`bool`, optional):
-      If `True`, skip the first line of the CSV file. Defaults to `False`.
-    - **delimiter** (`str`, optional):
-      Field delimiter used in the CSV file. Defaults to `','`.
-    - **quotechar** (`str`, optional):
-      Character used to quote fields in the CSV file. Defaults to `'"'`.
-    - **newline** (`str`, optional):
-      Newline control when opening the file. Defaults to `''`.
-    - **chunksize** (`int`, optional):
-      Number of rows after which a database commit occurs. Defaults to `1000`.
-    - **encoding** (`str`, optional):
-      Character encoding of the CSV file. Defaults to `'utf-8'`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    filename : str
+        Path to the CSV file to import.
+    table : str, optional
+        Name of the table to import into.
+        Defaults to `'data'`.
+        If `None`, uses a sanitized version of the filename as the table name.
+    fieldnames : str, optional
+        A SQL-style column definition string, e.g., `'col1 TEXT, col2 FLOAT'`.
+        Used to create the table.
+        Must match the number of columns in the CSV.
+    skip_header : bool, optional
+        If `True`, skip the first line of the CSV file. Defaults to `False`.
+    delimiter : str, optional
+        Field delimiter used in the CSV file. Defaults to `','`.
+    quotechar : str, optional
+        Character used to quote fields in the CSV file. Defaults to `'"'`.
+    newline : str, optional
+        Newline control when opening the file. Defaults to `''`.
+    chunksize : int, optional
+        Number of rows after which a database commit occurs. Defaults to `1000`.
+    encoding : str, optional
+        Character encoding of the CSV file. Defaults to `'utf-8'`.
 
-    ### Returns
-    - **tuple** (`bool`, `bool or str`):
-      - First element (`bool`): `True` if import succeeded, `False` if it failed.
-      - Second element (`bool` or `str`):
-        - `True` on success.
-        - Error message (`str`) describing the failure.
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - First element (`bool`): `True` if import succeeded, `False` if it failed.
+        - Second element (`bool` or `str`):
 
-    ### Notes
+          - `True` on success.
+          - Error message (`str`) describing the failure.
+
+    Notes
+    -----
     - This function creates the destination table before import, replacing it if it exists.
     - Field names are taken from `fieldnames`, not from the CSV header.
     - `fieldnames` reaches `CREATE TABLE` verbatim (see `create_table()`), so it must come from
@@ -1711,7 +1831,8 @@ def import_csv(
     - The import aborts on the first row that cannot be inserted, reporting the offending line.
       The database is kept so the caller can inspect the partial import.
 
-    ### Example
+    Examples
+    --------
     >>> import_csv(
     ...     conn,
     ...     'examples/EXAMPLE01.csv',
@@ -1779,33 +1900,38 @@ def insert(conn, data, table='perfdata', delete_db_on_operational_error=True):
     The data must be provided as a dictionary, where keys are column names
     and values are the corresponding field values.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **data** (`dict`):
-      A dictionary where each key is a column name and each value is the value to insert.
-    - **table** (`str`, optional):
-      Name of the table to insert into.
-      Defaults to `'perfdata'`.
-    - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when the on-disk database turns out
-      to be unusable (e.g. a schema mismatch between releases).
-      Defaults to `True`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    data : dict
+        A dictionary where each key is a column name and each value is the value to insert.
+    table : str, optional
+        Name of the table to insert into.
+        Defaults to `'perfdata'`.
+    delete_db_on_operational_error : bool, optional
+        If `True`, deletes the database file when the on-disk database turns out
+        to be unusable (e.g. a schema mismatch between releases).
+        Defaults to `True`.
 
-    ### Returns
-    - **tuple** (`bool`, `bool or str`):
-      - First element (`bool`): `True` if the insert succeeded, `False` if it failed.
-      - Second element (`bool` or `str`):
-        - `True` on success.
-        - Error message (`str`) describing the failure.
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - First element (`bool`): `True` if the insert succeeded, `False` if it failed.
+        - Second element (`bool` or `str`):
 
-    ### Notes
+          - `True` on success.
+          - Error message (`str`) describing the failure.
+
+    Notes
+    -----
     - The table name is quoted, so keywords and names containing punctuation work.
     - Field names and values are safely parameterized to prevent SQL injection.
     - If an `OperationalError` occurs (e.g., due to a schema mismatch), the database can optionally
       be deleted automatically.
 
-    ### Example
+    Examples
+    --------
     >>> insert(
     ...     conn,
     ...     {'hostname': 'server1', 'service': 'http', 'status': 0},
@@ -1860,29 +1986,34 @@ def per_second_deltas(filename, name, counters):
     drops and rebuilds the table once; the previous baseline is lost but
     the next run produces a valid delta again.
 
-    ### Parameters
-    - **filename** (`str`):
-      SQLite cache filename, e.g. `'linuxfabrik-monitoring-plugins-<name>.db'`.
-      Lives under `$TEMP`. Pick a per-consumer name so caches do not collide.
-    - **name** (`str`):
-      Sample identifier stored in the `name` column (e.g. the consumer's
-      own name). Lets multiple consumers share a single cache file when
-      convenient, but typically one name per filename.
-    - **counters** (`dict[str, int]`):
-      Mapping from counter name to cumulative counter value. Characters
-      outside `[a-zA-Z0-9_]` are stripped for the database column, so
-      `rx-bytes` is stored in a column `rxbytes`. The returned mapping
-      keeps the names as passed in. Pick names that already match
-      `[a-zA-Z0-9_]+` so two counters cannot collapse onto one column.
+    Parameters
+    ----------
+    filename : str
+        SQLite cache filename, e.g. `'linuxfabrik-monitoring-plugins-<name>.db'`.
+        Lives under `$TEMP`. Pick a per-consumer name so caches do not collide.
+    name : str
+        Sample identifier stored in the `name` column (e.g. the consumer's
+        own name). Lets multiple consumers share a single cache file when
+        convenient, but typically one name per filename.
+    counters : dict[str, int]
+        Mapping from counter name to cumulative counter value. Characters
+        outside `[a-zA-Z0-9_]` are stripped for the database column, so
+        `rx-bytes` is stored in a column `rxbytes`. The returned mapping
+        keeps the names as passed in. Pick names that already match
+        `[a-zA-Z0-9_]+` so two counters cannot collapse onto one column.
 
-    ### Returns
-    - **dict[str, float]**: `{counter_name: per_second_rate}` on success.
-    - **None**: fewer than 2 samples recorded yet (fresh install or
-      cache wiped), counter reset detected (delta < 0; happens on
-      restart of the monitored service or any `FLUSH`-style reset),
-      zero or negative time delta, or any SQLite operation failed.
+    Returns
+    -------
+    dict[str, float]
+        `{counter_name: per_second_rate}` on success.
+    None
+        fewer than 2 samples recorded yet (fresh install or
+        cache wiped), counter reset detected (delta < 0; happens on
+        restart of the monitored service or any `FLUSH`-style reset),
+        zero or negative time delta, or any SQLite operation failed.
 
-    ### Example
+    Examples
+    --------
     Network traffic rates from `/proc/net/dev`:
 
     >>> rates = lib.db_sqlite.per_second_deltas(
@@ -2020,18 +2151,21 @@ def regexp(expr, item):
     This function enables REGEXP support by providing a Python implementation
     that can be registered with a SQLite connection.
 
-    ### Parameters
-    - **expr** (`str`):
-      The regular expression pattern to match.
-    - **item** (`str`):
-      The string to test against the regular expression.
+    Parameters
+    ----------
+    expr : str
+        The regular expression pattern to match.
+    item : str
+        The string to test against the regular expression.
 
-    ### Returns
-    - **bool** or **None**:
-      `True` if the regular expression matches the string, `False` if it does not, and `None`
-      (SQL `NULL`) if either argument is `NULL`.
+    Returns
+    -------
+    bool or None
+        `True` if the regular expression matches the string, `False` if it does not, and `None`
+        (SQL `NULL`) if either argument is `NULL`.
 
-    ### Notes
+    Notes
+    -----
     - Must be registered on the SQLite connection using `create_function('REGEXP', 2, regexp)`.
     - SQLite passes the pattern as the first and the value as the second argument: `X REGEXP Y`
       is evaluated as `regexp(Y, X)`.
@@ -2059,7 +2193,8 @@ def regexp(expr, item):
     - Commonly used in queries like:
       `SELECT * FROM table WHERE column REGEXP 'pattern'`.
 
-    ### Example
+    Examples
+    --------
     >>> regexp('^abc', 'abcdef')
     True
 
@@ -2094,27 +2229,31 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
     `INSERT`, but if a UNIQUE or PRIMARY KEY constraint violation occurs, it first deletes
     the existing row and then inserts the new row.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **data** (`dict`):
-      A dictionary where each key is a column name and each value is the value to insert.
-    - **table** (`str`, optional):
-      Name of the table to operate on.
-      Defaults to `'perfdata'`.
-    - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when the on-disk database turns out
-      to be unusable (e.g. a schema mismatch between releases).
-      Defaults to `True`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    data : dict
+        A dictionary where each key is a column name and each value is the value to insert.
+    table : str, optional
+        Name of the table to operate on.
+        Defaults to `'perfdata'`.
+    delete_db_on_operational_error : bool, optional
+        If `True`, deletes the database file when the on-disk database turns out
+        to be unusable (e.g. a schema mismatch between releases).
+        Defaults to `True`.
 
-    ### Returns
-    - **tuple** (`bool`, `bool or str`):
-      - First element (`bool`): `True` if the operation succeeded, `False` if it failed.
-      - Second element (`bool` or `str`):
-        - `True` on success.
-        - Error message (`str`) describing the failure.
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - First element (`bool`): `True` if the operation succeeded, `False` if it failed.
+        - Second element (`bool` or `str`):
 
-    ### Notes
+          - `True` on success.
+          - Error message (`str`) describing the failure.
+
+    Notes
+    -----
     - `REPLACE` deletes the existing conflicting row, then inserts the new one.
     - `NOT NULL` and `CHECK` constraints are evaluated before that, on the row being inserted, so
       a violation aborts without anything having been deleted.
@@ -2130,7 +2269,8 @@ def replace(conn, data, table='perfdata', delete_db_on_operational_error=True):
     - Field names and values are safely parameterized to prevent SQL injection.
     - The table name is quoted, so keywords and names containing punctuation work.
 
-    ### Example
+    Examples
+    --------
     >>> replace(
     ...     conn,
     ...     {'hostname': 'server1', 'service': 'http', 'status': 0},
@@ -2166,15 +2306,18 @@ def rm_db(conn):
     This function retrieves the file path of the SQLite database from the active connection,
     closes the connection, and deletes the database file from disk.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
 
-    ### Returns
-    - **bool**:
-      Always returns `True`.
+    Returns
+    -------
+    bool
+        Always returns `True`.
 
-    ### Notes
+    Notes
+    -----
     - Useful when the on-disk database turns out to be unusable, for example because its schema
       no longer matches what the current release writes.
     - Only the `main` database is deleted (attached databases are ignored). Its rollback
@@ -2188,7 +2331,8 @@ def rm_db(conn):
       file to delete.
     - Any errors from file deletion are handled externally (through `disk.rm_file()`).
 
-    ### Example
+    Examples
+    --------
     >>> rm_db(conn)
     True
     """
@@ -2235,47 +2379,52 @@ def select(
     It supports optional parameter binding, returning results either as dictionaries
     or as default SQLite row objects.
 
-    ### Parameters
-    - **conn** (`sqlite3.Connection`):
-      An active database connection object.
-    - **sql** (`str`):
-      The SQL SELECT statement to execute.
-      Use placeholders (`:key`) for parameterized queries.
-    - **data** (`dict`, optional):
-      Dictionary of parameters to bind to the SQL query.
-      Defaults to an empty dict (no parameters).
-    - **fetchone** (`bool`, optional):
-      If `True`, fetch only the first row.
-      If `False` (default), fetch all rows.
-    - **as_dict** (`bool`, optional):
-      If `True`, return results as a list of dictionaries.
-      If `False`, return raw SQLite row objects. Defaults to `True`.
-    - **delete_db_on_operational_error** (`bool`, optional):
-      If `True`, deletes the database file when the on-disk database turns out
-      to be unusable (e.g. a schema mismatch between releases).
-      Defaults to `True`.
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An active database connection object.
+    sql : str
+        The SQL SELECT statement to execute.
+        Use placeholders (`:key`) for parameterized queries.
+    data : dict, optional
+        Dictionary of parameters to bind to the SQL query.
+        Defaults to an empty dict (no parameters).
+    fetchone : bool, optional
+        If `True`, fetch only the first row.
+        If `False` (default), fetch all rows.
+    as_dict : bool, optional
+        If `True`, return results as a list of dictionaries.
+        If `False`, return raw SQLite row objects. Defaults to `True`.
+    delete_db_on_operational_error : bool, optional
+        If `True`, deletes the database file when the on-disk database turns out
+        to be unusable (e.g. a schema mismatch between releases).
+        Defaults to `True`.
 
-    ### Returns
-    - **tuple** (`bool`, `list or dict or str`):
-      - First element (`bool`): `True` if the query succeeded, `False` if it failed.
-      - Second element (`list`, `dict`, or `str`):
-        - A list of rows, or a single row if `fetchone=True`.
-        - Error message (`str`) on failure.
+    Returns
+    -------
+    tuple (bool, list or dict or str)
+        - First element (`bool`): `True` if the query succeeded, `False` if it failed.
+        - Second element (`list`, `dict`, or `str`):
 
-    ### Notes
+          - A list of rows, or a single row if `fetchone=True`.
+          - Error message (`str`) on failure.
+
+    Notes
+    -----
     - Results are returned as dictionaries if `as_dict=True`.
     - If no results are found when `fetchone=True`, returns an empty list `[]`.
     - On schema-related `OperationalError`, the database file can optionally be deleted.
 
-    ### Example
+    Examples
+    --------
     >>> sql = 'SELECT hostname, service FROM status WHERE status = :status'
     >>> data = {'status': 0}
     >>> success, rows = select(conn, sql, data)
     >>> if success:
-    >>>     for row in rows:
-    >>>         print(row['hostname'], row['service'])
+    ...     for row in rows:
+    ...         print(row['hostname'], row['service'])
     >>> else:
-    >>>     print(rows)
+    ...     print(rows)
     """
     if data is None:
         data = {}

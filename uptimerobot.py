@@ -23,18 +23,23 @@ def delete_alert_contact(params):
     This function filters the input parameters to include only the allowed keys and then calls the
     API to delete the specified alert contact.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary containing the parameters to delete the alert contact.
-      Only the allowed keys (`'api_key'`, `'id'`) will be kept.
+    Parameters
+    ----------
+    params : dict
+        A dictionary containing the parameters to delete the alert contact.
+        Only the allowed keys (`'api_key'`, `'id'`) will be kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the deleted alert contact's details if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the deleted alert contact's details if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> delete_alert_contact({'api_key': 'your_api_key', 'id': 123456})
     (True, {'id': 123456, 'status': 'deleted'})
     """
@@ -60,18 +65,23 @@ def delete_monitor(params):
     This function filters the input parameters to include only the allowed keys and then calls the
     API to delete the specified monitor.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary containing the monitor's parameters. Only the allowed keys
-      (`'api_key'`, `'id'`) are included.
+    Parameters
+    ----------
+    params : dict
+        A dictionary containing the monitor's parameters. Only the allowed keys
+        (`'api_key'`, `'id'`) are included.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the deleted monitor's details if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the deleted monitor's details if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> delete_monitor({'api_key': 'your_api_key', 'id': 123456})
     (True, {'id': 123456, 'status': 'deleted'})
     """
@@ -97,18 +107,23 @@ def delete_mwindow(params):
     This function filters the input parameters to include only the allowed keys and then calls the
     API to delete the specified monitoring window.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary containing the parameters for deleting the monitoring
-      window. Only the allowed keys (`'api_key'`, `'id'`) will be kept.
+    Parameters
+    ----------
+    params : dict
+        A dictionary containing the parameters for deleting the monitoring
+        window. Only the allowed keys (`'api_key'`, `'id'`) will be kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the deleted monitoring window's details if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the deleted monitoring window's details if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> delete_mwindow({'api_key': 'your_api_key', 'id': 123456})
     (True, {'id': 123456, 'status': 'deleted'})
     """
@@ -134,18 +149,23 @@ def delete_psp(params):
     This function filters the input parameters to include only the allowed keys and then calls the
     API to delete the specified PSP.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary containing the parameters for deleting the PSP. Only the
-      allowed keys (`'api_key'`, `'id'`) will be kept.
+    Parameters
+    ----------
+    params : dict
+        A dictionary containing the parameters for deleting the PSP. Only the
+        allowed keys (`'api_key'`, `'id'`) will be kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the deleted PSP's details if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the deleted PSP's details if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> delete_psp({'api_key': 'your_api_key', 'id': 123456})
     (True, {'id': 123456, 'status': 'deleted'})
     """
@@ -173,18 +193,23 @@ def edit_monitor(params):
     - Converts human-readable values (e.g., protocol types, methods, status) to UptimeRobot's
       API-compatible values.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary of parameters for editing the monitor. Only the allowed keys
-      will be kept and translated accordingly.
+    Parameters
+    ----------
+    params : dict
+        A dictionary of parameters for editing the monitor. Only the allowed keys
+        will be kept and translated accordingly.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the updated monitor's details if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the updated monitor's details if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> edit_monitor(
     ...     {
     ...         'api_key': 'your_api_key',
@@ -299,19 +324,24 @@ def edit_mwindow(params):
     - Converts human-readable values (e.g., type, value, and status) to UptimeRobot's API-compatible
       values.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary of parameters for editing the monitoring window. Only the
-      allowed keys (`'api_key'`, `'id'`, `'friendly_name'`, `'type'`, `'value'`, `'start_time'`,
-      `'duration'`, `'status'`) will be kept.
+    Parameters
+    ----------
+    params : dict
+        A dictionary of parameters for editing the monitoring window. Only the
+        allowed keys (`'api_key'`, `'id'`, `'friendly_name'`, `'type'`, `'value'`, `'start_time'`,
+        `'duration'`, `'status'`) will be kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the edited monitoring window's details if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the edited monitoring window's details if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> edit_mwindow(
     ...     {
     ...         'api_key': 'your_api_key',
@@ -381,19 +411,24 @@ def edit_psp(params):
     - Filters the input parameters to include only the allowed keys.
     - Converts human-readable values (e.g., sort and status) to UptimeRobot's API-compatible values.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary of parameters for editing the PSP. Only the allowed keys
-      (`'api_key'`, `'id'`, `'friendly_name'`, `'monitors'`, `'custom_domain'`, `'password'`,
-      `'sort'`, `'hide_url_links'`, `'status'`) will be kept.
+    Parameters
+    ----------
+    params : dict
+        A dictionary of parameters for editing the PSP. Only the allowed keys
+        (`'api_key'`, `'id'`, `'friendly_name'`, `'monitors'`, `'custom_domain'`, `'password'`,
+        `'sort'`, `'hide_url_links'`, `'status'`) will be kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the edited PSP's details if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the edited PSP's details if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> edit_psp(
     ...     {
     ...         'api_key': 'your_api_key',
@@ -450,17 +485,21 @@ def get_account_details(data):
 
     Filters the input data to include only allowed keys before making the request.
 
-    ### Parameters
-    - **data** (`dict`): A dictionary containing API parameters.
-      Only keys listed in `allowed_keys` (e.g., `'api_key'`) are kept.
+    Parameters
+    ----------
+    data : dict
+        A dictionary containing API parameters.
+        Only keys listed in `allowed_keys` (e.g., `'api_key'`) are kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **account** (`dict` or `str`): The account details if successful, or an error message.
-      - **rl** (`dict`): The response headers from the API call.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **account** (`dict` or `str`): The account details if successful, or an error message.
+        - **rl** (`dict`): The response headers from the API call.
 
-    ### Example
+    Examples
+    --------
     >>> get_account_details({'api_key': 'your_api_key_here', 'extra_key': 'ignored'})
     (True, {'email': 'user@example.com', 'monitor_limit': 50, ...}, {'Content-Type': 'application/json', ...})
     """
@@ -495,18 +534,23 @@ def get_alert_contacts(params):
     - Retrieves the alert contacts, then converts UptimeRobot's status and type values to
       human-readable formats.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary containing parameters to filter the alert contacts. Only
-      the allowed keys (`'api_key'`, `'alert_contacts'`, `'offset'`, `'limit'`) will be kept.
+    Parameters
+    ----------
+    params : dict
+        A dictionary containing parameters to filter the alert contacts. Only
+        the allowed keys (`'api_key'`, `'alert_contacts'`, `'offset'`, `'limit'`) will be kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`list` or `str`):
-        - A list of alert contact dictionaries if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`list` or `str`):
 
-    ### Example
+          - A list of alert contact dictionaries if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> get_alert_contacts({'api_key': 'your_api_key', 'limit': 10})
     (True, [{'id': 1, 'status': 'active', 'type': 'sms', ...}, ...])
     """
@@ -582,18 +626,24 @@ def get_data(uri, data, result_key):
     Automatically handles offset-based pagination by requesting subsequent pages until all data is
     fetched.
 
-    ### Parameters
-    - **uri** (`str`): The URI of the REST API endpoint.
-    - **data** (`dict`): A dictionary of parameters to send with the request.
-      `'format': 'json'` will be automatically added.
-    - **result_key** (`str`): The key under which the desired data is stored in the API response.
+    Parameters
+    ----------
+    uri : str
+        The URI of the REST API endpoint.
+    data : dict
+        A dictionary of parameters to send with the request.
+        `'format': 'json'` will be automatically added.
+    result_key : str
+        The key under which the desired data is stored in the API response.
 
-    ### Returns
-    - **tuple**:
-      - On success: (True, list_of_results)
-      - On failure: (False, error_message)
+    Returns
+    -------
+    tuple
+        - On success: (True, list_of_results)
+        - On failure: (False, error_message)
 
-    ### Example
+    Examples
+    --------
     >>> get_data('https://example.com/api', {'key': 'value'}, 'items')
     (True, [{'id': 1, 'name': 'A'}, {'id': 2, 'name': 'B'}, ...])
     """
@@ -642,20 +692,24 @@ def get_monitors(params):
     - Converts human-readable parameters into API-compatible values before sending.
     - Converts API results back into human-readable values after retrieval.
 
-    ### Parameters
-    - **params** (`dict`):
-      Parameters to send to the API.
-      Only allowed keys will be kept, and certain fields will be auto-translated (e.g., status
-      names to numbers).
+    Parameters
+    ----------
+    params : dict
+        Parameters to send to the API.
+        Only allowed keys will be kept, and certain fields will be auto-translated (e.g., status
+        names to numbers).
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`list` or `str`):
-        - A list of monitor dictionaries if successful.
-        - An error message string if failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`list` or `str`):
 
-    ### Example
+          - A list of monitor dictionaries if successful.
+          - An error message string if failed.
+
+    Examples
+    --------
     >>> get_monitors({'api_key': 'your_api_key', 'statuses': 'up', 'types': 'http'})
     (True, [{'id': 12345, 'status': 'up', 'type': 'http', ...}, ...])
     """
@@ -840,18 +894,23 @@ def get_mwindows(params):
     - Retrieves the monitoring windows, then converts UptimeRobot's status values to human-readable
       formats.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary containing parameters to filter the monitoring windows.
-      Only the allowed keys (`'api_key'`, `'mwindows'`, `'offset'`, `'limit'`) will be kept.
+    Parameters
+    ----------
+    params : dict
+        A dictionary containing parameters to filter the monitoring windows.
+        Only the allowed keys (`'api_key'`, `'mwindows'`, `'offset'`, `'limit'`) will be kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`list` or `str`):
-        - A list of monitoring window dictionaries if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`list` or `str`):
 
-    ### Example
+          - A list of monitoring window dictionaries if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> get_mwindows({'api_key': 'your_api_key', 'limit': 10})
     (True, [{'id': 1, 'status': 'active', 'start_date': '2022-01-01', ...}, ...])
     """
@@ -905,18 +964,23 @@ def get_psps(params):
     - Retrieves the PSPs, then converts UptimeRobot's status and sort values to human-readable
       formats.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary containing parameters to filter the PSPs. Only the allowed
-      keys (`'api_key'`, `'psps'`, `'offset'`, `'limit'`) will be kept.
+    Parameters
+    ----------
+    params : dict
+        A dictionary containing parameters to filter the PSPs. Only the allowed
+        keys (`'api_key'`, `'psps'`, `'offset'`, `'limit'`) will be kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`list` or `str`):
-        - A list of PSP dictionaries if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`list` or `str`):
 
-    ### Example
+          - A list of PSP dictionaries if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> get_psps({'api_key': 'your_api_key', 'limit': 10})
     (True, [{'id': 12345, 'sort': 'a-z', 'status': 'active', ...}, ...])
     """
@@ -979,17 +1043,22 @@ def get_response_header(uri, data):
     Sends a request with specific headers and optional form data, expecting a JSON-formatted
     response.
 
-    ### Parameters
-    - **uri** (`str`): The URI of the REST API endpoint.
-    - **data** (`dict`): A dictionary of data to send in the request body.
-      `'format': 'json'` will be automatically added.
+    Parameters
+    ----------
+    uri : str
+        The URI of the REST API endpoint.
+    data : dict
+        A dictionary of data to send in the request body.
+        `'format': 'json'` will be automatically added.
 
-    ### Returns
-    - **tuple**:
-      - On success: (True, response_headers)
-      - On failure: (False, error_message)
+    Returns
+    -------
+    tuple
+        - On success: (True, response_headers)
+        - On failure: (False, error_message)
 
-    ### Example
+    Examples
+    --------
     >>> get_response_header('https://example.com/api', {'key': 'value'})
     (True, {'Content-Type': 'application/json', 'Content-Length': '123', ...})
     """
@@ -1019,18 +1088,23 @@ def new_monitor(params):
     - Converts human-readable values (e.g., protocol types, methods) to UptimeRobot's API-compatible
       values.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary of parameters for the new monitor. Only the allowed keys
-      will be kept and translated accordingly.
+    Parameters
+    ----------
+    params : dict
+        A dictionary of parameters for the new monitor. Only the allowed keys
+        will be kept and translated accordingly.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the created monitor's details if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the created monitor's details if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> new_monitor(
     ...     {
     ...         'api_key': 'your_api_key',
@@ -1146,19 +1220,24 @@ def new_mwindow(params):
     - Filters the input parameters to include only the allowed keys.
     - Converts human-readable values (e.g., type and value) to UptimeRobot's API-compatible values.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary of parameters for the new monitoring window. Only the
-      allowed keys (`'api_key'`, `'friendly_name'`, `'type'`, `'value'`, `'start_time'`,
-      `'duration'`) will be kept.
+    Parameters
+    ----------
+    params : dict
+        A dictionary of parameters for the new monitoring window. Only the
+        allowed keys (`'api_key'`, `'friendly_name'`, `'type'`, `'value'`, `'start_time'`,
+        `'duration'`) will be kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the created monitoring window's details if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the created monitoring window's details if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> new_mwindow(
     ...     {
     ...         'api_key': 'your_api_key',
@@ -1220,19 +1299,24 @@ def new_psp(params):
     - Filters the input parameters to include only the allowed keys.
     - Converts human-readable values (e.g., sort and status) to UptimeRobot's API-compatible values.
 
-    ### Parameters
-    - **params** (`dict`): A dictionary of parameters for the new PSP. Only the allowed keys
-      (`'api_key'`, `'friendly_name'`, `'monitors'`, `'custom_domain'`, `'password'`, `'sort'`,
-      `'hide_url_links'`) will be kept.
+    Parameters
+    ----------
+    params : dict
+        A dictionary of parameters for the new PSP. Only the allowed keys
+        (`'api_key'`, `'friendly_name'`, `'monitors'`, `'custom_domain'`, `'password'`, `'sort'`,
+        `'hide_url_links'`) will be kept.
 
-    ### Returns
-    - **tuple**:
-      - **success** (`bool`): True if the API call succeeded, False otherwise.
-      - **result** (`dict` or `str`):
-        - A dictionary containing the created PSP's details if successful.
-        - An error message string if the API call failed.
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the API call succeeded, False otherwise.
+        - **result** (`dict` or `str`):
 
-    ### Example
+          - A dictionary containing the created PSP's details if successful.
+          - An error message string if the API call failed.
+
+    Examples
+    --------
     >>> new_psp(
     ...     {
     ...         'api_key': 'your_api_key',

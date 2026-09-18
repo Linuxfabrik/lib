@@ -257,18 +257,21 @@ def _file_exists(path, allow_empty=False):
     This function verifies the existence of a file at the given path. If `allow_empty` is
     `False`, it additionally checks that the file is not empty.
 
-    ### Parameters
-    - **path** (`str`):
-      Path to the file to check.
-    - **allow_empty** (`bool`, optional):
-      Whether to allow empty files as valid. Defaults to `False`.
+    Parameters
+    ----------
+    path : str
+        Path to the file to check.
+    allow_empty : bool, optional
+        Whether to allow empty files as valid. Defaults to `False`.
 
-    ### Returns
-    - **bool**:
-      `True` if the file exists (and is non-empty unless `allow_empty=True`), otherwise
-      `False`.
+    Returns
+    -------
+    bool
+        `True` if the file exists (and is non-empty unless `allow_empty=True`), otherwise
+        `False`.
 
-    ### Example
+    Examples
+    --------
     >>> _file_exists('/etc/os-release')
     True
     """
@@ -283,17 +286,20 @@ def _get_best_version(distro_id, candidates):
     """
     Pick the most precise version out of the candidates.
 
-    ### Parameters
-    - **distro_id** (`str`):
-      The lowercase distribution ID, as found in `ID=` of /etc/os-release.
-    - **candidates** (`list`):
-      The result of `_get_version_candidates()`.
+    Parameters
+    ----------
+    distro_id : str
+        The lowercase distribution ID, as found in `ID=` of /etc/os-release.
+    candidates : list
+        The result of `_get_version_candidates()`.
 
-    ### Returns
-    - **str**:
-      The most precise version, or an empty string if there is no candidate.
+    Returns
+    -------
+    str
+        The most precise version, or an empty string if there is no candidate.
 
-    ### Notes
+    Notes
+    -----
     - CentOS ships only the major version in /etc/os-release while admins expect
       `7.9`, and Debian omits the minor version there entirely (Debian bug #931197).
       Ansible asks the `distro` package for its "best" version for exactly these
@@ -302,7 +308,8 @@ def _get_best_version(distro_id, candidates):
       and unstable hold a release name such as `trixie/sid` there, which the `distro`
       package happily reports as the version.
 
-    ### Example
+    Examples
+    --------
     >>> _get_best_version('debian', ['12'])
     '12.14'
     """
@@ -327,27 +334,31 @@ def _get_codename(distro_id, os_release, lsb_release, release_info):
     """
     Determine the release name, asking every source in the order Ansible does.
 
-    ### Parameters
-    - **distro_id** (`str`):
-      The lowercase distribution ID, as found in `ID=` of /etc/os-release.
-    - **os_release** (`dict`):
-      The result of `_get_os_release_info()`.
-    - **lsb_release** (`dict`):
-      The result of `_get_lsb_release_info()`.
-    - **release_info** (`dict`):
-      The result of `_get_distro_release_info()`.
+    Parameters
+    ----------
+    distro_id : str
+        The lowercase distribution ID, as found in `ID=` of /etc/os-release.
+    os_release : dict
+        The result of `_get_os_release_info()`.
+    lsb_release : dict
+        The result of `_get_lsb_release_info()`.
+    release_info : dict
+        The result of `_get_distro_release_info()`.
 
-    ### Returns
-    - **str or None**:
-      The release name, or `None` if no source carries one.
+    Returns
+    -------
+    str or None
+        The release name, or `None` if no source carries one.
 
-    ### Notes
+    Notes
+    -----
     - The order is `VERSION_CODENAME`, `UBUNTU_CODENAME`, /etc/lsb-release for
       Ubuntu, whatever `VERSION` of /etc/os-release stands for, /etc/lsb-release for
       everyone else, and finally the release file.
     - An empty release name is an answer in itself and survives the first two steps.
 
-    ### Example
+    Examples
+    --------
     >>> _get_codename('kali', {}, {'distrib_codename': 'kali-rolling'}, {})
     'kali-rolling'
     """
@@ -391,19 +402,22 @@ def _get_distro_id(os_release, lsb_release, release_info):
     """
     Determine the distribution ID, asking every source in the order Ansible does.
 
-    ### Parameters
-    - **os_release** (`dict`):
-      The result of `_get_os_release_info()`.
-    - **lsb_release** (`dict`):
-      The result of `_get_lsb_release_info()`.
-    - **release_info** (`dict`):
-      The result of `_get_distro_release_info()`.
+    Parameters
+    ----------
+    os_release : dict
+        The result of `_get_os_release_info()`.
+    lsb_release : dict
+        The result of `_get_lsb_release_info()`.
+    release_info : dict
+        The result of `_get_distro_release_info()`.
 
-    ### Returns
-    - **str**:
-      The lowercase distribution ID, or an empty string if no source names one.
+    Returns
+    -------
+    str
+        The lowercase distribution ID, or an empty string if no source names one.
 
-    ### Notes
+    Notes
+    -----
     - The order is `ID` of /etc/os-release, `DISTRIB_ID` of /etc/lsb-release and the
       basename of the release file. Each source has its own translation table, so
       that a distribution ends up under one ID no matter which of them answered.
@@ -413,7 +427,8 @@ def _get_distro_id(os_release, lsb_release, release_info):
       difference in practice: the `distro` package discards that output as soon as
       the system name is `Linux`.
 
-    ### Example
+    Examples
+    --------
     >>> _get_distro_id({}, {}, {'id': 'redhat'})
     'rhel'
     """
@@ -432,22 +447,22 @@ def _get_distro_release_info():
     """
     Extract ID, name, version and release name from the first matching release file.
 
-    ### Parameters
-    - *None*
+    Returns
+    -------
+    dict
+        Any of the keys `id`, `name`, `version` and `codename` that could be
+        determined. Empty if no release file in /etc is readable or none of them
+        parses.
 
-    ### Returns
-    - **dict**:
-      Any of the keys `id`, `name`, `version` and `codename` that could be
-      determined. Empty if no release file in /etc is readable or none of them
-      parses.
-
-    ### Notes
+    Notes
+    -----
     - Replaces the release file handling of the `distro` package Ansible relies on.
     - Candidates are sorted so that the result stays stable where a distribution
       ships several of them, for example Oracle Linux with /etc/oracle-release next
       to /etc/redhat-release.
 
-    ### Example
+    Examples
+    --------
     >>> _get_distro_release_info()
     {'name': 'Red Hat Enterprise Linux', 'version': '9.7', 'codename': 'Plow',
     'id': 'redhat'}
@@ -487,23 +502,27 @@ def _get_file_content(path, default=None, strip=True):
     Mirrors Ansible's `get_file_content`. Reading never raises: containers and jails
     regularly expose release files that look readable but are not.
 
-    ### Parameters
-    - **path** (`str`):
-      Path to the file to read.
-    - **default** (`any type`, optional):
-      Value to return if the file cannot be read or is empty. Defaults to `None`.
-    - **strip** (`bool`, optional):
-      Whether to strip surrounding whitespace. Defaults to `True`.
+    Parameters
+    ----------
+    path : str
+        Path to the file to read.
+    default : any type, optional
+        Value to return if the file cannot be read or is empty. Defaults to `None`.
+    strip : bool, optional
+        Whether to strip surrounding whitespace. Defaults to `True`.
 
-    ### Returns
-    - **str or any type**:
-      The file contents, or `default` if the file is missing, unreadable or empty.
+    Returns
+    -------
+    str or any type
+        The file contents, or `default` if the file is missing, unreadable or empty.
 
-    ### Notes
+    Notes
+    -----
     - Stripping matters for single-value files such as /etc/alpine-release, whose
       content is used as a version verbatim.
 
-    ### Example
+    Examples
+    --------
     >>> _get_file_content('/etc/alpine-release')
     '3.21.7'
     """
@@ -523,15 +542,18 @@ def _get_file_lines(path):
     """
     Read a text file and return its lines.
 
-    ### Parameters
-    - **path** (`str`):
-      Path to the file to read.
+    Parameters
+    ----------
+    path : str
+        Path to the file to read.
 
-    ### Returns
-    - **list**:
-      The lines of the file, or an empty list if it cannot be read.
+    Returns
+    -------
+    list
+        The lines of the file, or an empty list if it cannot be read.
 
-    ### Example
+    Examples
+    --------
     >>> _get_file_lines('/etc/debian_version')
     ['12.14']
     """
@@ -543,22 +565,22 @@ def _get_lsb_release_info():
     """
     Read /etc/lsb-release into a dictionary.
 
-    ### Parameters
-    - *None*
+    Returns
+    -------
+    dict
+        The `KEY=value` pairs of the file, with keys lowercased and quotes stripped
+        from the values. Empty if the file cannot be read.
 
-    ### Returns
-    - **dict**:
-      The `KEY=value` pairs of the file, with keys lowercased and quotes stripped
-      from the values. Empty if the file cannot be read.
-
-    ### Notes
+    Notes
+    -----
     - Ansible runs `lsb_release -a` here and never looks at the file. Reading the
       file keeps this module free of subprocess calls. The `DISTRIB_` keys stand in
       for the `Distributor ID`, `Release`, `Codename` and `Description` fields of
       the command, which is not the same set of sources: a host can ship one without
       the other. See the module docstring for what that costs and what it gains.
 
-    ### Example
+    Examples
+    --------
     >>> _get_lsb_release_info()
     {'distrib_id': 'Ubuntu', 'distrib_release': '24.04', 'distrib_codename': 'noble', ...}
     """
@@ -579,22 +601,26 @@ def _get_os_release_codename(os_release):
     """
     Determine the release name /etc/os-release stands for.
 
-    ### Parameters
-    - **os_release** (`dict`):
-      The result of `_get_os_release_info()`.
+    Parameters
+    ----------
+    os_release : dict
+        The result of `_get_os_release_info()`.
 
-    ### Returns
-    - **str or None**:
-      The release name, or `None` if the file carries none.
+    Returns
+    -------
+    str or None
+        The release name, or `None` if the file carries none.
 
-    ### Notes
+    Notes
+    -----
     - `VERSION_CODENAME` and `UBUNTU_CODENAME` win over anything derived from
       `VERSION`, even when they are empty: a distribution setting them to nothing
       states that it has no release name. That is how Fedora ends up without one.
     - Deriving the release name from `VERSION` is what makes openEuler report `LTS`
       and AlmaLinux `Purple Manul`, neither of which carries a `VERSION_CODENAME`.
 
-    ### Example
+    Examples
+    --------
     >>> _get_os_release_codename({'version': '8.3 (Purple Manul)'})
     'Purple Manul'
     """
@@ -615,15 +641,14 @@ def _get_os_release_info():
     """
     Read the first available os-release file into a dictionary.
 
-    ### Parameters
-    - *None*
+    Returns
+    -------
+    dict
+        The `KEY=value` pairs of the file, with keys lowercased and quotes stripped
+        from the values. Empty if no os-release file can be read.
 
-    ### Returns
-    - **dict**:
-      The `KEY=value` pairs of the file, with keys lowercased and quotes stripped
-      from the values. Empty if no os-release file can be read.
-
-    ### Example
+    Examples
+    --------
     >>> _get_os_release_info()
     {'name': 'Fedora Linux', 'version': '41 (Workstation Edition)', 'id': 'fedora', ...}
     """
@@ -646,26 +671,30 @@ def _get_version_candidates(os_release, lsb_release, release_info):
     """
     Collect every version the release files offer, in the order Ansible prefers them.
 
-    ### Parameters
-    - **os_release** (`dict`):
-      The result of `_get_os_release_info()`.
-    - **lsb_release** (`dict`):
-      The result of `_get_lsb_release_info()`.
-    - **release_info** (`dict`):
-      The result of `_get_distro_release_info()`.
+    Parameters
+    ----------
+    os_release : dict
+        The result of `_get_os_release_info()`.
+    lsb_release : dict
+        The result of `_get_lsb_release_info()`.
+    release_info : dict
+        The result of `_get_distro_release_info()`.
 
-    ### Returns
-    - **list**:
-      The candidates, most preferred first. Sources that carry no version are left
-      out.
+    Returns
+    -------
+    list
+        The candidates, most preferred first. Sources that carry no version are left
+        out.
 
-    ### Notes
+    Notes
+    -----
     - Mirrors the candidate list of `distro.version()`. Its uname candidate is left
       out, which is no difference in practice: the `distro` package discards the
       output of `uname -rs` as soon as the system name is `Linux`, so on Linux that
       candidate is always empty.
 
-    ### Example
+    Examples
+    --------
     >>> _get_version_candidates({'version_id': '9.7'}, {}, {'version': '9.7'})
     ['9.7', '9.7']
     """
@@ -689,19 +718,19 @@ def _guess_distribution():
     same four facts Ansible derives from the `distro` package. The release file
     parsers refine these afterwards.
 
-    ### Parameters
-    - *None*
+    Returns
+    -------
+    dict
+        `distribution`, `distribution_version`, `distribution_release` and
+        `distribution_major_version`. Unknown values are reported as `NA`.
 
-    ### Returns
-    - **dict**:
-      `distribution`, `distribution_version`, `distribution_release` and
-      `distribution_major_version`. Unknown values are reported as `NA`.
-
-    ### Notes
+    Notes
+    -----
     - `distribution_release` is the release name (`Plow`, `noble`, `bookworm`), not
       the kernel release.
 
-    ### Example
+    Examples
+    --------
     >>> _guess_distribution()
     {'distribution': 'Redhat', 'distribution_version': '9.7', 'distribution_release':
     'Plow', 'distribution_major_version': '9'}
@@ -746,15 +775,18 @@ def _map_os_family(distribution):
     """
     Map a detected distribution to its OS family.
 
-    ### Parameters
-    - **distribution** (`str`):
-      The detected distribution name.
+    Parameters
+    ----------
+    distribution : str
+        The detected distribution name.
 
-    ### Returns
-    - **str**:
-      The mapped OS family name, or the distribution itself if it has no family.
+    Returns
+    -------
+    str
+        The mapped OS family name, or the distribution itself if it has no family.
 
-    ### Example
+    Examples
+    --------
     >>> _map_os_family('Fedora')
     'RedHat'
     """
@@ -765,26 +797,30 @@ def _parse_dist_file(name, data, path, collected_facts):
     """
     Dispatch a release file to the parser responsible for it.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`):
-      - First element: `True` if the file belongs to this variety, `False` otherwise.
-      - Second element: The parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        - First element: `True` if the file belongs to this variety, `False` otherwise.
+        - Second element: The parsed facts.
 
-    ### Notes
+    Notes
+    -----
     - A variety without a parser reports no match, which lets `_process_dist_files`
       move on to the next candidate.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_dist_file(
     ...     'RedHat',
     ...     'Red Hat Enterprise Linux release 9.7 (Plow)',
@@ -824,23 +860,28 @@ def _parse_distribution_file_alpine(name, data, path, collected_facts):
     """
     Parse /etc/alpine-release.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Notes
+    Notes
+    -----
     - The file holds nothing but the version, so there is no marker to check for.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_alpine('Alpine', '3.21.7', '/etc/alpine-release', {})
     (True, {'distribution': 'Alpine', 'distribution_version': '3.21.7'})
     """
@@ -851,20 +892,24 @@ def _parse_distribution_file_amazon(name, data, path, collected_facts):
     """
     Parse the Amazon Linux release files.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_amazon(
     ...     'Amazon', 'NAME="Amazon Linux"\\nVERSION_ID="2023"', '/etc/os-release', {}
     ... )
@@ -897,24 +942,29 @@ def _parse_distribution_file_centos(name, data, path, collected_facts):
     """
     Parse /etc/centos-release.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Notes
+    Notes
+    -----
     - Plain CentOS reports no match on purpose, so that /etc/redhat-release gets a
       turn and picks the distribution name out of the file content.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_centos(
     ...     'CentOS', 'CentOS Stream release 9', '/etc/centos-release', {}
     ... )
@@ -933,20 +983,24 @@ def _parse_distribution_file_clearlinux(name, data, path, collected_facts):
     """
     Parse the Clear Linux os-release file.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_clearlinux(
     ...     'ClearLinux', 'NAME="Clear Linux OS"', '/usr/lib/os-release', {}
     ... )
@@ -974,20 +1028,24 @@ def _parse_distribution_file_coreos(name, data, path, collected_facts):
     """
     Parse /etc/coreos/update.conf.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_coreos(
     ...     'Coreos', 'GROUP=stable', '/etc/coreos/update.conf', {}
     ... )
@@ -1017,24 +1075,29 @@ def _parse_distribution_file_debian(name, data, path, collected_facts):
     Covers Debian and its derivatives, all of which are told apart by markers in
     /etc/os-release or /etc/lsb-release rather than by a file of their own.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Notes
+    Notes
+    -----
     - Reports no match for anything it does not recognise. Without that, every
       os-release based distribution would be classified as Debian.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_debian(
     ...     'Debian', 'NAME="Ubuntu"', '/etc/os-release', {}
     ... )
@@ -1130,20 +1193,24 @@ def _parse_distribution_file_flatcar(name, data, path, collected_facts):
     """
     Parse the Flatcar os-release file.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_flatcar(
     ...     'Flatcar',
     ...     'VERSION="3975.2.0"',
@@ -1170,20 +1237,24 @@ def _parse_distribution_file_mandriva(name, data, path, collected_facts):
     """
     Parse the Mandriva lsb-release file.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_mandriva(
     ...     'Mandriva', 'DISTRIB_ID=Mandriva', '/etc/lsb-release', {}
     ... )
@@ -1210,20 +1281,24 @@ def _parse_distribution_file_na(name, data, path, collected_facts):
     distribution name from `NAME=` and, if nothing better was found, the version
     from `VERSION=`.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_na(
     ...     'NA', 'NAME="Gentoo"', '/etc/os-release', {'distribution_version': 'NA'}
     ... )
@@ -1244,20 +1319,24 @@ def _parse_distribution_file_openwrt(name, data, path, collected_facts):
     """
     Parse /etc/openwrt_release.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_openwrt(
     ...     'OpenWrt', 'DISTRIB_RELEASE="23.05.5"', '/etc/openwrt_release', {}
     ... )
@@ -1280,20 +1359,24 @@ def _parse_distribution_file_slackware(name, data, path, collected_facts):
     """
     Parse /etc/slackware-version.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_slackware(
     ...     'Slackware', 'Slackware 15.0', '/etc/slackware-version', {}
     ... )
@@ -1318,20 +1401,24 @@ def _parse_distribution_file_suse(name, data, path, collected_facts):
     Handles both the modern /etc/os-release and the /etc/SuSE-release of SLES 11 and
     older, and recognises the SLES for SAP and SUSE Linux Micro variants.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_suse(
     ...     'SUSE', 'NAME="openSUSE Leap"\\nVERSION_ID="16.0"', '/etc/os-release', {}
     ... )
@@ -1415,24 +1502,29 @@ def _parse_distribution_file_uniontech(name, data, path, collected_facts):
     """
     Parse the release files of UnionTech OS Server.
 
-    ### Parameters
-    - **name** (`str`):
-      The variety name from `OSDIST_LIST`.
-    - **data** (`str`):
-      The contents of the release file.
-    - **path** (`str`):
-      The path the content was read from.
-    - **collected_facts** (`dict`):
-      The facts gathered so far.
+    Parameters
+    ----------
+    name : str
+        The variety name from `OSDIST_LIST`.
+    data : str
+        The contents of the release file.
+    path : str
+        The path the content was read from.
+    collected_facts : dict
+        The facts gathered so far.
 
-    ### Returns
-    - **tuple** (`bool`, `dict`): Whether the file was parsed, plus the parsed facts.
+    Returns
+    -------
+    tuple (bool, dict)
+        Whether the file was parsed, plus the parsed facts.
 
-    ### Notes
+    Notes
+    -----
     - Only the RHEL based UOS Server is claimed here. The Debian based UOS Desktop
       carries no `PLATFORM_ID` and is left to `_parse_distribution_file_debian`.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_distribution_file_uniontech(
     ...     'UnionTech',
     ...     'UnionTech OS Server release 20 (kongzi)',
@@ -1497,16 +1589,19 @@ def _parse_release_content(line):
     Also used on the `PRETTY_NAME` of /etc/os-release and the `DISTRIB_DESCRIPTION`
     of /etc/lsb-release, both of which carry the same wording.
 
-    ### Parameters
-    - **line** (`str`):
-      A single line, for example `Red Hat Enterprise Linux release 9.7 (Plow)`.
+    Parameters
+    ----------
+    line : str
+        A single line, for example `Red Hat Enterprise Linux release 9.7 (Plow)`.
 
-    ### Returns
-    - **dict**:
-      Any of the keys `name`, `version` and `codename` that could be determined.
-      Empty if the line carries none of them.
+    Returns
+    -------
+    dict
+        Any of the keys `name`, `version` and `codename` that could be determined.
+        Empty if the line carries none of them.
 
-    ### Example
+    Examples
+    --------
     >>> _parse_release_content('Red Hat Enterprise Linux release 9.7 (Plow)')
     {'name': 'Red Hat Enterprise Linux', 'version': '9.7', 'codename': 'Plow'}
     """
@@ -1525,15 +1620,14 @@ def _process_dist_files():
     Starts from the baseline facts of `_guess_distribution()` and refines them with
     whatever the matching release file parser reports.
 
-    ### Parameters
-    - *None*
+    Returns
+    -------
+    dict
+        The collected facts, including `distribution_file_path` and
+        `distribution_file_variety` if a release file matched.
 
-    ### Returns
-    - **dict**:
-      The collected facts, including `distribution_file_path` and
-      `distribution_file_variety` if a release file matched.
-
-    ### Example
+    Examples
+    --------
     >>> _process_dist_files()
     {'distribution': 'RedHat', 'distribution_version': '9.7', 'distribution_release':
     'Plow', 'distribution_major_version': '9', 'distribution_file_path':
@@ -1596,25 +1690,25 @@ def get_distribution_facts():
     Collects detailed information about the Linux distribution based on release files,
     and assigns a standardized OS family name.
 
-    ### Parameters
-    - *None*
+    Returns
+    -------
+    dict
+        Dictionary of collected distribution facts:
 
-    ### Returns
-    - **dict**:
-      Dictionary of collected distribution facts:
-      - `distribution`
-      - `distribution_version`
-      - `distribution_release`
-      - `distribution_major_version`
-      - `distribution_minor_version` (only for some distributions)
-      - `distribution_file_path` (only if a release file matched)
-      - `distribution_file_variety` (only if a release file matched)
-      - `distribution_file_search_string` (only if a marker string matched)
-      - `distribution_file_parsed` (only if a release file matched)
-      - `os_family`
-      - `os_info` (only if /etc/os-release is readable)
+        - `distribution`
+        - `distribution_version`
+        - `distribution_release`
+        - `distribution_major_version`
+        - `distribution_minor_version` (only for some distributions)
+        - `distribution_file_path` (only if a release file matched)
+        - `distribution_file_variety` (only if a release file matched)
+        - `distribution_file_search_string` (only if a marker string matched)
+        - `distribution_file_parsed` (only if a release file matched)
+        - `os_family`
+        - `os_info` (only if /etc/os-release is readable)
 
-    ### Notes
+    Notes
+    -----
     - All keys except `os_info` carry the same meaning as the `ansible_facts` of the
       same name. In particular, `distribution_release` is the release name such as
       `Plow` or `noble`, not the kernel release.
@@ -1627,7 +1721,8 @@ def get_distribution_facts():
       kernel version. `distribution_major_version` is absent there. This is Ansible's
       baseline for a system it has no dedicated code for.
 
-    ### Example
+    Examples
+    --------
     >>> get_distribution_facts()
     {'distribution': 'Fedora', 'distribution_version': '41', 'distribution_release':
     '', 'distribution_major_version': '41', 'distribution_file_path':

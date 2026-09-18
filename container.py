@@ -20,7 +20,9 @@ report. Deciding that per consumer is how one of them ends up waking somebody at
 night over a missing group membership, so the decision is made here once.
 
 Typical use case:
-```python
+
+.. code-block:: python
+
     started = lib.time.now(as_type='float')
     cmd = ['docker', 'ps', '--format={{json .}}']
     success, result = lib.container.run(cmd, 8, started)
@@ -29,7 +31,6 @@ Typical use case:
     stdout, stderr, retc = result
     if retc != 0:
         lib.base.oao(*lib.container.get_engine_error(stderr, stdout))
-```
 """
 
 import math
@@ -86,20 +87,27 @@ def get_engine_error(stderr, stdout='', fallback_state=STATE_CRIT):
     there or an engine that does not answer, is an outage and carries
     `fallback_state`.
 
-    ### Parameters
-    - **stderr** (`str`, `bytes` or `None`): What the client wrote to its standard
-      error. `None` and undecoded bytes are accepted, because that is what a caller
-      passing a command result straight through has.
-    - **stdout** (`str`, `bytes` or `None`, optional): What it wrote to its standard
-      output. Some clients put the reason there. Defaults to `''`.
-    - **fallback_state** (`int`, optional): The state to report for a failure that is
-      not a refused permission. Defaults to `STATE_CRIT`. A consumer that cannot say
-      anything about the engine either way passes `STATE_UNKNOWN`.
+    Parameters
+    ----------
+    stderr : str, bytes or None
+        What the client wrote to its standard
+        error. `None` and undecoded bytes are accepted, because that is what a caller
+        passing a command result straight through has.
+    stdout : str, bytes or None, optional
+        What it wrote to its standard
+        output. Some clients put the reason there. Defaults to `''`.
+    fallback_state : int, optional
+        The state to report for a failure that is
+        not a refused permission. Defaults to `STATE_CRIT`. A consumer that cannot say
+        anything about the engine either way passes `STATE_UNKNOWN`.
 
-    ### Returns
-    - **tuple**: `(message, state)`, ready to be handed to `lib.base.oao()`.
+    Returns
+    -------
+    tuple
+        `(message, state)`, ready to be handed to `lib.base.oao()`.
 
-    ### Example
+    Examples
+    --------
     >>> get_engine_error('permission denied while trying to connect')
     ('No permission to talk to the container engine, ...', 3)
     """
@@ -144,31 +152,39 @@ def run(cmd, timeout, started=None, run_as=None):
     the client is not judged here, since what a non-zero one means differs between
     commands; hand it to `get_engine_error()` or evaluate it yourself.
 
-    ### Parameters
-    - **cmd** (`list` or `tuple`): The command and its arguments.
-    - **timeout** (`int` or `float`): The budget in seconds, counted from `started`.
-    - **started** (`float`, optional): When the budget began, as returned by
-      `time.now(as_type='float')`. Defaults to now, which gives this command the
-      whole budget.
-    - **run_as** (`str`, optional): Run the client as this user, for an engine that
-      keeps the containers of every user apart. Defaults to the current user.
+    Parameters
+    ----------
+    cmd : list or tuple
+        The command and its arguments.
+    timeout : int or float
+        The budget in seconds, counted from `started`.
+    started : float, optional
+        When the budget began, as returned by
+        `time.now(as_type='float')`. Defaults to now, which gives this command the
+        whole budget.
+    run_as : str, optional
+        Run the client as this user, for an engine that
+        keeps the containers of every user apart. Defaults to the current user.
 
-    ### Returns
-    - **tuple** (`bool`, `tuple`):
-      - `(True, (stdout, stderr, retc))` once the client has run, whatever its exit
-        code.
-      - `(False, (message, state))` otherwise, ready to be handed to `lib.base.oao()`:
-        `STATE_WARN` when the budget ran out, `STATE_UNKNOWN` when the client could not
-        be started or the arguments are unusable.
+    Returns
+    -------
+    tuple (bool, tuple)
+        - `(True, (stdout, stderr, retc))` once the client has run, whatever its exit
+          code.
+        - `(False, (message, state))` otherwise, ready to be handed to `lib.base.oao()`:
+          `STATE_WARN` when the budget ran out, `STATE_UNKNOWN` when the client could not
+          be started or the arguments are unusable.
 
-    ### Notes
+    Notes
+    -----
     - A budget that is already spent does not start the client at all.
     - The message names the whole budget, not what was left of it, because that is the
       value the operator configured.
     - A long command is quoted up to about 100 characters, whole arguments only, and
       the message says how many arguments were left out.
 
-    ### Example
+    Examples
+    --------
     >>> started = time.now(as_type='float')
     >>> run(['podman', 'info', '--format', 'json'], 8, started, run_as='rocketchat')
     (True, ('{...}', '', 0))
@@ -221,14 +237,19 @@ def strip_daemon_error(message):
     """
     Reduce the answer of a container engine to the sentence somebody can act on.
 
-    ### Parameters
-    - **message** (`str`, `bytes` or `None`): What the client wrote, typically its
-      standard error.
+    Parameters
+    ----------
+    message : str, bytes or None
+        What the client wrote, typically its
+        standard error.
 
-    ### Returns
-    - **str**: The message with the client's prefixes removed, on a single line.
+    Returns
+    -------
+    str
+        The message with the client's prefixes removed, on a single line.
 
-    ### Example
+    Examples
+    --------
     >>> strip_daemon_error(
     ...     'Error response from daemon: rpc error: code = Unknown desc = '
     ...     'The swarm does not have a leader.'
@@ -244,14 +265,19 @@ def strip_task_id(name):
     """
     Return the name of a container without the task id a swarm appended to it.
 
-    ### Parameters
-    - **name** (`str`, `bytes` or `None`): The name as the engine reports it.
+    Parameters
+    ----------
+    name : str, bytes or None
+        The name as the engine reports it.
 
-    ### Returns
-    - **str**: The name without the trailing task id. A name that carries none is
-      returned unchanged.
+    Returns
+    -------
+    str
+        The name without the trailing task id. A name that carries none is
+        returned unchanged.
 
-    ### Example
+    Examples
+    --------
     >>> strip_task_id('traefik_traefik.2.1idw12p2yqpxutlzkcwign4at')
     'traefik_traefik.2'
 

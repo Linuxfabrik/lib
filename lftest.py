@@ -31,29 +31,35 @@ def run(test_instance, plugin, testcase):
     data-driven test definitions. Each testcase is a dict describing what
     to run and what to expect.
 
-    ### Parameters
-    - **test_instance** (`unittest.TestCase`): The test instance (self)
-      for assertions.
-    - **plugin** (`str`): Path to the executable under test.
-    - **testcase** (`dict`): Test definition with keys:
-      - `test` (`str`): --test parameter value,
-        e.g. `'stdout/ok-healthy,,0'`.
-      - `params` (`str`, optional): Additional parameters to pass.
-        Default: `''`.
-      - `assert-retc` (`int`, optional): Expected return code (STATE_OK,
-        etc.). Omit it when the resulting state depends on something the
-        testcase does not control, for example an end-of-life date that
-        moves the verdict from OK to WARNING as the calendar advances.
-      - `assert-in` (`list` of `str`, optional): Strings that must
-        appear in stdout.
-      - `assert-not-in` (`list` of `str`, optional): Strings that must
-        not appear in stdout.
-      - `assert-regex` (`str`, optional): Regex pattern that must match
-        stdout.
-      - `assert-stderr` (`str`, optional): Expected stderr content.
-        Default: `''`.
+    Parameters
+    ----------
+    test_instance : unittest.TestCase
+        The test instance (self)
+        for assertions.
+    plugin : str
+        Path to the executable under test.
+    testcase : dict
+        Test definition with keys:
 
-    ### Example
+        - `test` (`str`): --test parameter value,
+          e.g. `'stdout/ok-healthy,,0'`.
+        - `params` (`str`, optional): Additional parameters to pass.
+          Default: `''`.
+        - `assert-retc` (`int`, optional): Expected return code (STATE_OK,
+          etc.). Omit it when the resulting state depends on something the
+          testcase does not control, for example an end-of-life date that
+          moves the verdict from OK to WARNING as the calendar advances.
+        - `assert-in` (`list` of `str`, optional): Strings that must
+          appear in stdout.
+        - `assert-not-in` (`list` of `str`, optional): Strings that must
+          not appear in stdout.
+        - `assert-regex` (`str`, optional): Regex pattern that must match
+          stdout.
+        - `assert-stderr` (`str`, optional): Expected stderr content.
+          Default: `''`.
+
+    Examples
+    --------
     >>> TESTS = [
     ...     {
     ...         'id': 'ok-all-healthy',
@@ -108,14 +114,16 @@ def run(test_instance, plugin, testcase):
 
 
 def attach_tests(test_class, tests, plugin_attr='check'):
-    """Dynamically attach one ``test_<id>`` method per testcase to a
-    ``unittest.TestCase`` subclass, so that every entry in the TESTS
-    list shows up as an individual test in the unittest discovery
-    output instead of being collapsed into a single ``test`` method
-    with sub-tests.
+    """
+    Attach one ``test_<id>`` method per testcase to a ``unittest.TestCase`` subclass.
 
-    ### Why
-    The naive approach is::
+    Every entry in the TESTS list shows up as an individual test in the unittest
+    discovery output instead of being collapsed into a single ``test`` method with
+    sub-tests.
+
+    The naive approach is:
+
+    .. code-block:: python
 
         class TestCheck(unittest.TestCase):
             def test(self):
@@ -131,17 +139,22 @@ def attach_tests(test_class, tests, plugin_attr='check'):
     test method per testcase so the count is accurate and verbose
     output names every scenario.
 
-    ### Parameters
-    - **test_class** (`type`): a ``unittest.TestCase`` subclass with a
-      ``check`` (or other ``plugin_attr``-named) attribute pointing at
-      the executable under test.
-    - **tests** (`list[dict]`): a TESTS list of testcase dicts, each
-      shaped as ``run()`` expects, with a unique ``id`` field.
-    - **plugin_attr** (`str`, optional): the attribute name on
-      ``test_class`` that holds the path of the executable. Defaults to
-      ``'check'``.
+    Parameters
+    ----------
+    test_class : type
+        a ``unittest.TestCase`` subclass with a
+        ``check`` (or other ``plugin_attr``-named) attribute pointing at
+        the executable under test.
+    tests : list[dict]
+        a TESTS list of testcase dicts, each
+        shaped as ``run()`` expects, with a unique ``id`` field.
+    plugin_attr : str, optional
+        the attribute name on
+        ``test_class`` that holds the path of the executable. Defaults to
+        ``'check'``.
 
-    ### Example
+    Examples
+    --------
     >>> class TestCheck(unittest.TestCase):
     ...     check = '../my-script'
     >>> attach_tests(TestCheck, TESTS)
@@ -188,21 +201,27 @@ def attach_each(test_class, items, action, id_func=str):
     item so unittest counts and names them individually instead of
     collapsing the whole loop into a single ``test`` method.
 
-    ### Parameters
-    - **test_class** (`type`): a ``unittest.TestCase`` subclass.
-    - **items** (`iterable`): the things to iterate over (image
-      tuples, fixture paths, scenario dicts, ...).
-    - **action** (`callable`): a function ``action(self, item)``
-      that the generated test method calls with the captured item.
-      ``self`` is the ``unittest.TestCase`` instance and may be
-      used to issue assertions.
-    - **id_func** (`callable`, optional): a function that turns one
-      item into a short, human-readable string used as the test
-      method name. Defaults to ``str``, which is fine for plain
-      strings; pass ``lambda it: it[1]`` (or similar) for tuples
-      and dicts.
+    Parameters
+    ----------
+    test_class : type
+        a ``unittest.TestCase`` subclass.
+    items : iterable
+        the things to iterate over (image
+        tuples, fixture paths, scenario dicts, ...).
+    action : callable
+        a function ``action(self, item)``
+        that the generated test method calls with the captured item.
+        ``self`` is the ``unittest.TestCase`` instance and may be
+        used to issue assertions.
+    id_func : callable, optional
+        a function that turns one
+        item into a short, human-readable string used as the test
+        method name. Defaults to ``str``, which is fine for plain
+        strings; pass ``lambda it: it[1]`` (or similar) for tuples
+        and dicts.
 
-    ### Example
+    Examples
+    --------
     >>> IMAGES = [
     ...     ('quay.io/keycloak/keycloak:25.0.6', 'v25'),
     ...     ('quay.io/keycloak/keycloak:26.6', 'v26'),
@@ -294,10 +313,13 @@ def network():
     network to :func:`run_container` via its `network` / `network_alias`
     arguments so the application can reach the backend by alias.
 
-    ### Yields
-    - **Network**: a created docker/podman network.
+    Yields
+    ------
+    Network
+        a created docker/podman network.
 
-    ### Example
+    Examples
+    --------
     >>> with lib.lftest.network() as net:
     ...     with lib.lftest.run_container(
     ...         'docker.io/library/mariadb:11',
@@ -344,35 +366,47 @@ def run_container(
     `TESTCONTAINERS_RYUK_DISABLED=true` (Ryuk hangs on Podman).
     The helper itself is daemon-agnostic.
 
-    ### Parameters
-    - **image** (`str`): The image reference to pull and run, e.g.
-      `'quay.io/keycloak/keycloak:25.0.4'`.
-    - **env** (`dict`, optional): Environment variables to pass into
-      the container (e.g. `{'KEYCLOAK_ADMIN': 'admin'}`).
-    - **ports** (`list` of `int`, optional): Container ports to
-      expose to the host. Use `container.get_exposed_port(port)` to
-      get the ephemeral host port after start.
-    - **command** (`str`, optional): Command to run instead of the
-      image's default ENTRYPOINT/CMD (e.g. `'start-dev'`).
-    - **wait_log** (`str`, optional): Substring to wait for in the
-      container's logs before yielding control. Most services write
-      a "ready" marker line like "Listening on:" or "ready for
-      connections". If `None`, the helper yields as soon as the
-      container is running.
-    - **wait_log_timeout** (`int`, optional): Maximum time to wait
-      for the log marker, in seconds. Defaults to `120`.
-    - **network** (`Network`, optional): A network from :func:`network`
-      to attach the container to, so it can reach sibling containers by
-      alias (multi-container tests).
-    - **network_alias** (`str`, optional): Hostname this container is
-      reachable under on `network` (e.g. `'db'`).
+    Parameters
+    ----------
+    image : str
+        The image reference to pull and run, e.g.
+        `'quay.io/keycloak/keycloak:25.0.4'`.
+    env : dict, optional
+        Environment variables to pass into
+        the container (e.g. `{'KEYCLOAK_ADMIN': 'admin'}`).
+    ports : list of int, optional
+        Container ports to
+        expose to the host. Use `container.get_exposed_port(port)` to
+        get the ephemeral host port after start.
+    command : str, optional
+        Command to run instead of the
+        image's default ENTRYPOINT/CMD (e.g. `'start-dev'`).
+    wait_log : str, optional
+        Substring to wait for in the
+        container's logs before yielding control. Most services write
+        a "ready" marker line like "Listening on:" or "ready for
+        connections". If `None`, the helper yields as soon as the
+        container is running.
+    wait_log_timeout : int, optional
+        Maximum time to wait
+        for the log marker, in seconds. Defaults to `120`.
+    network : Network, optional
+        A network from :func:`network`
+        to attach the container to, so it can reach sibling containers by
+        alias (multi-container tests).
+    network_alias : str, optional
+        Hostname this container is
+        reachable under on `network` (e.g. `'db'`).
 
-    ### Yields
-    - **DockerContainer**: The running container, with
-      `get_container_host_ip()` / `get_exposed_port(port)` usable for
-      building a host-side URL.
+    Yields
+    ------
+    DockerContainer
+        The running container, with
+        `get_container_host_ip()` / `get_exposed_port(port)` usable for
+        building a host-side URL.
 
-    ### Example
+    Examples
+    --------
     >>> with lib.lftest.run_container(
     ...     'quay.io/keycloak/keycloak:25.0.4',
     ...     env={'KEYCLOAK_ADMIN': 'admin', 'KEYCLOAK_ADMIN_PASSWORD': 'admin'},
@@ -565,21 +599,26 @@ def run_mysql_compatible(image, *, extra_args=None, seed=None):
     See :func:`_mysql_compatible_startup_command` for the
     family-specific differences.
 
-    ### Parameters
-    - **image** (`str`): image reference.
-    - **extra_args** (`str`, optional): Extra server flags appended to
-      the startup command (`mariadbd` on MariaDB, `mysqld` on MySQL,
-      and to the sclorg `run-mysqld` wrapper otherwise).
-    - **seed** (`str`, optional): SQL statement executed once via
-      `container.exec` right after the container is ready. Used to
-      seed happy-path state (e.g. creating an empty InnoDB table so
-      storage-engine checks see the engine "in use").
+    Parameters
+    ----------
+    image : str
+        image reference.
+    extra_args : str, optional
+        Extra server flags appended to
+        the startup command (`mariadbd` on MariaDB, `mysqld` on MySQL,
+        and to the sclorg `run-mysqld` wrapper otherwise).
+    seed : str, optional
+        SQL statement executed once via
+        `container.exec` right after the container is ready. Used to
+        seed happy-path state (e.g. creating an empty InnoDB table so
+        storage-engine checks see the engine "in use").
 
-    ### Yields
-    - **tuple** (`DockerContainer`, `str`):
-      - The running container.
-      - Absolute path to a temporary `[client]` `.cnf` file deleted
-        when the context manager exits.
+    Yields
+    ------
+    tuple (DockerContainer, str)
+        - The running container.
+        - Absolute path to a temporary `[client]` `.cnf` file deleted
+          when the context manager exits.
     """
     command = _mysql_compatible_startup_command(image, extra_args)
     with _run_mysql_compatible_resolved(image, command, seed) as result:
@@ -610,17 +649,24 @@ def run_mysql_compatible_from_containerfile(
     kept around (`clean_up=False`) so subsequent runs reuse the cached
     layers.
 
-    ### Parameters
-    - **containerfile_path** (`str`): Path to the Containerfile, e.g.
-      `os.path.join(HERE, 'containerfiles', 'mariadb-v118')`.
-    - **extra_args** (`str`, optional): same as :func:`run_mysql_compatible`.
-    - **seed** (`str`, optional): same as :func:`run_mysql_compatible`.
+    Parameters
+    ----------
+    containerfile_path : str
+        Path to the Containerfile, e.g.
+        `os.path.join(HERE, 'containerfiles', 'mariadb-v118')`.
+    extra_args : str, optional
+        same as :func:`run_mysql_compatible`.
+    seed : str, optional
+        same as :func:`run_mysql_compatible`.
 
-    ### Yields
-    - **tuple** (`DockerContainer`, `str`): same as
-      :func:`run_mysql_compatible`.
+    Yields
+    ------
+    tuple (DockerContainer, str)
+        same as
+        :func:`run_mysql_compatible`.
 
-    ### Example
+    Examples
+    --------
     >>> with lib.lftest.run_mysql_compatible_from_containerfile(
     ...     os.path.join(HERE, 'containerfiles', 'mysql-v84'),
     ... ) as (container, defaults_file):
@@ -679,20 +725,25 @@ def test(args):
     the empty string and 0, so callers can pass `--test=path/to/stdout`
     without trailing commas.
 
-    ### Parameters
-    - **args** (`list`): A list containing:
-      - The path to the file representing STDOUT or the string to be used as STDOUT.
-      - Optional: the path to the file representing STDERR or the string to be used
-        as STDERR. Defaults to the empty string if not provided.
-      - Optional: the return code (integer or string). Defaults to 0 if not provided.
+    Parameters
+    ----------
+    args : list
+        A list containing:
 
-    ### Returns
-    - **tuple**:
-      - **stdout** (`str`): The content of the first file or the provided STDOUT string.
-      - **stderr** (`str`): The content of the second file or the provided STDERR string.
-      - **retc** (`int`): The return code, either from the provided value or defaulted to 0.
+        - The path to the file representing STDOUT or the string to be used as STDOUT.
+        - Optional: the path to the file representing STDERR or the string to be used
+          as STDERR. Defaults to the empty string if not provided.
+        - Optional: the return code (integer or string). Defaults to 0 if not provided.
 
-    ### Example
+    Returns
+    -------
+    tuple
+        - **stdout** (`str`): The content of the first file or the provided STDOUT string.
+        - **stderr** (`str`): The content of the second file or the provided STDERR string.
+        - **retc** (`int`): The return code, either from the provided value or defaulted to 0.
+
+    Examples
+    --------
     >>> test(['path/to/stdout.txt', 'path/to/stderr.txt', 128])
     ('This is stdout content', 'This is stderr content', 128)
     >>> test(['path/to/stdout.txt'])
@@ -719,22 +770,26 @@ def test_http_response(args, path=None):
     the `--test` argument, which is what lets an error page be tested without a server
     that produces one.
 
-    ### Parameters
-    - **args** (`list`):
-      The `--test` argument as `lib.args.csv` parsed it. It is not modified, so the
-      caller's own value keeps pointing at the base path and stays usable for the next
-      request.
-    - **path** (`str`, optional):
-      The base path of the fixture pair, without the `-header` and `-body` suffix.
-      Typically the base path with a request-specific part, for example
-      `stdout/stock-error`. Defaults to the fixture `args` already names.
+    Parameters
+    ----------
+    args : list
+        The `--test` argument as `lib.args.csv` parsed it. It is not modified, so the
+        caller's own value keeps pointing at the base path and stays usable for the next
+        request.
+    path : str, optional
+        The base path of the fixture pair, without the `-header` and `-body` suffix.
+        Typically the base path with a request-specific part, for example
+        `stdout/stock-error`. Defaults to the fixture `args` already names.
 
-    ### Returns
-    - **dict**: `response`, `response_header` and `status_code`, the keys an extended
-      `url.fetch()` fills, with the status as the integer `fetch()` also returns, or None
-      where the header fixture does not exist.
+    Returns
+    -------
+    dict
+        `response`, `response_header` and `status_code`, the keys an extended
+        `url.fetch()` fills, with the status as the integer `fetch()` also returns, or None
+        where the header fixture does not exist.
 
-    ### Notes
+    Notes
+    -----
     - A missing header fixture is data, not a mistake: it stands for a request that did
       not answer at all, which is a case worth testing. A missing body fixture yields an
       empty body, for a response that carries none.
@@ -744,7 +799,8 @@ def test_http_response(args, path=None):
     - The fixture paths are resolved by `test()` and are never checked against the file
       system, so a consumer run from a different working directory sees the same result.
 
-    ### Example
+    Examples
+    --------
     >>> test_http_response(['stdout/stock', '', '404'], 'stdout/stock-error')
     {'response': '<html>...', 'response_header': {'server': 'Apache/2.4.62'},
      'status_code': 404}
@@ -784,20 +840,24 @@ def test_json(args, path=None):
     and parses it, so the consumer does not have to spell out the same read, the same
     "fixture not found" and the same "not valid JSON" handling for every endpoint.
 
-    ### Parameters
-    - **args** (`list`):
-      The `--test` argument as `lib.args.csv` parsed it. It is not modified, so the
-      caller's own value keeps pointing at the base path and stays usable for the next
-      fixture.
-    - **path** (`str`, optional):
-      The fixture to read instead of the one in `args`. Typically the base path with an
-      endpoint-specific suffix, for example `stdout/two-nodes-capacity`. Defaults to the
-      fixture `args` already names.
+    Parameters
+    ----------
+    args : list
+        The `--test` argument as `lib.args.csv` parsed it. It is not modified, so the
+        caller's own value keeps pointing at the base path and stays usable for the next
+        fixture.
+    path : str, optional
+        The fixture to read instead of the one in `args`. Typically the base path with an
+        endpoint-specific suffix, for example `stdout/two-nodes-capacity`. Defaults to the
+        fixture `args` already names.
 
-    ### Returns
-    - The parsed JSON document.
+    Returns
+    -------
+    any
+        The parsed JSON document.
 
-    ### Notes
+    Notes
+    -----
     - Aborts the calling process (UNKNOWN) when the fixture does not exist or does not
       hold valid JSON. Both are developer errors in a test fixture, and a clear message
       beats the traceback `json.loads()` would raise.
@@ -806,7 +866,8 @@ def test_json(args, path=None):
       path is deliberately not checked against the file system here: fixtures are anchored
       to the consumer's own `unit-test/` directory, not to the current working directory.
 
-    ### Example
+    Examples
+    --------
     >>> test_json(['stdout/two-nodes'], 'stdout/two-nodes-capacity')
     {'data': {...}, 'result': {'code': 0}}
     """
@@ -835,26 +896,30 @@ def test_text(args, path=None, missing_ok=False):
     carries, so this resolves such a fixture and reports a missing one the same way for
     everybody instead of leaving each consumer to spell out its own read.
 
-    ### Parameters
-    - **args** (`list`):
-      The `--test` argument as `lib.args.csv` parsed it. It is not modified, so the
-      caller's own value keeps pointing at the base path and stays usable for the next
-      fixture.
-    - **path** (`str`, optional):
-      The fixture to read instead of the one in `args`. Typically the base path with a
-      run-specific suffix, for example `stdout/all-ok-second-pass`. Defaults to the
-      fixture `args` already names.
-    - **missing_ok** (`bool`, optional):
-      Return None instead of aborting when the fixture does not exist. For a consumer to
-      which a missing fixture is data rather than a mistake: where the fixture stands for
-      a file that is absent on the system under test, "not there" is the case being
-      tested. Defaults to False.
+    Parameters
+    ----------
+    args : list
+        The `--test` argument as `lib.args.csv` parsed it. It is not modified, so the
+        caller's own value keeps pointing at the base path and stays usable for the next
+        fixture.
+    path : str, optional
+        The fixture to read instead of the one in `args`. Typically the base path with a
+        run-specific suffix, for example `stdout/all-ok-second-pass`. Defaults to the
+        fixture `args` already names.
+    missing_ok : bool, optional
+        Return None instead of aborting when the fixture does not exist. For a consumer to
+        which a missing fixture is data rather than a mistake: where the fixture stands for
+        a file that is absent on the system under test, "not there" is the case being
+        tested. Defaults to False.
 
-    ### Returns
-    - **str**: The content of the fixture, or None where `missing_ok` is set and it does
-      not exist.
+    Returns
+    -------
+    str
+        The content of the fixture, or None where `missing_ok` is set and it does
+        not exist.
 
-    ### Notes
+    Notes
+    -----
     - Aborts the calling process (UNKNOWN) when the fixture does not exist and
       `missing_ok` is not set. That is a developer error in a test fixture, and a clear
       message beats a run that silently parses the path itself as if it were data.
@@ -865,7 +930,8 @@ def test_text(args, path=None, missing_ok=False):
     - An empty fixture is a valid one. It stands for a command that produced no output,
       which is a case worth testing.
 
-    ### Example
+    Examples
+    --------
     >>> test_text(['stdout/all-ok'], 'stdout/all-ok-second-pass')
     'Checking disk: OK\\n'
     """

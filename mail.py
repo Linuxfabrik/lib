@@ -87,45 +87,61 @@ def send(
     `password` is set, the connection authenticates before sending, and only after it
     has been encrypted.
 
-    ### Parameters
-    - **server** (`str`): SMTP server hostname or IP address. With `encryption`, the
-      server certificate has to be valid for exactly this name.
-    - **sender** (`str`): Envelope and header `From` address.
-    - **recipient** (`str`): Header `To` address.
-    - **subject** (`str`, optional): Message subject. Only set as a header when
-      non-empty. Defaults to `''`.
-    - **plain** (`str`, optional): Plain-text body. Defaults to `''`.
-    - **html** (`str`, optional): HTML body. When set, the message becomes a
-      `multipart/alternative` with the plain-text part first. Defaults to `''`
-      (plain-text only).
-    - **images** (`list` of `dict`, optional): Inline images related to the HTML body.
-      Each dict holds `data` (`bytes`), `maintype` (`str`), `subtype` (`str`) and `cid`
-      (`str`, the Content-ID the HTML refers to via `cid:`). Ignored when `html` is
-      empty. Defaults to `None`.
-    - **port** (`int`, optional): SMTP server port. Defaults to `25`.
-    - **username** (`str`, optional): Login user. When omitted while `password` is set,
-      `sender` is used as the login user. Defaults to `None`.
-    - **password** (`str`, optional): Login password. When set, the connection
-      authenticates. Defaults to `None`.
-    - **timeout** (`int`, optional): Connection timeout in seconds. Defaults to `8`.
-    - **encryption** (`str`, optional): One of `ENCRYPTIONS`. `'none'` sends the message
-      and the login in plaintext. `'starttls'` upgrades the connection with STARTTLS
-      before anything else is sent, and fails if the server does not offer it.
-      `'tls'` encrypts the connection from the first byte (SMTPS, implicit TLS). The
-      server certificate is verified against the trust store of the host. Defaults to
-      `'none'`.
-    - **insecure** (`bool`, optional): Skip the verification of the server certificate
-      and its name. Has no effect without `encryption`. Defaults to `False`.
+    Parameters
+    ----------
+    server : str
+        SMTP server hostname or IP address. With `encryption`, the
+        server certificate has to be valid for exactly this name.
+    sender : str
+        Envelope and header `From` address.
+    recipient : str
+        Header `To` address.
+    subject : str, optional
+        Message subject. Only set as a header when
+        non-empty. Defaults to `''`.
+    plain : str, optional
+        Plain-text body. Defaults to `''`.
+    html : str, optional
+        HTML body. When set, the message becomes a
+        `multipart/alternative` with the plain-text part first. Defaults to `''`
+        (plain-text only).
+    images : list of dict, optional
+        Inline images related to the HTML body.
+        Each dict holds `data` (`bytes`), `maintype` (`str`), `subtype` (`str`) and `cid`
+        (`str`, the Content-ID the HTML refers to via `cid:`). Ignored when `html` is
+        empty. Defaults to `None`.
+    port : int, optional
+        SMTP server port. Defaults to `25`.
+    username : str, optional
+        Login user. When omitted while `password` is set,
+        `sender` is used as the login user. Defaults to `None`.
+    password : str, optional
+        Login password. When set, the connection
+        authenticates. Defaults to `None`.
+    timeout : int, optional
+        Connection timeout in seconds. Defaults to `8`.
+    encryption : str, optional
+        One of `ENCRYPTIONS`. `'none'` sends the message
+        and the login in plaintext. `'starttls'` upgrades the connection with STARTTLS
+        before anything else is sent, and fails if the server does not offer it.
+        `'tls'` encrypts the connection from the first byte (SMTPS, implicit TLS). The
+        server certificate is verified against the trust store of the host. Defaults to
+        `'none'`.
+    insecure : bool, optional
+        Skip the verification of the server certificate
+        and its name. Has no effect without `encryption`. Defaults to `False`.
 
-    ### Returns
-    - **tuple** (`bool`, `bool` or `str`):
-      - On success: `(True, True)`.
-      - On failure: `(False, 'Error: <error message>')`, also for an unknown
-        `encryption`, in which case no connection is opened. The answer of the server
-        is decoded to text, and a certificate that does not verify or a port that does
-        not speak TLS is explained.
+    Returns
+    -------
+    tuple (bool, bool or str)
+        - On success: `(True, True)`.
+        - On failure: `(False, 'Error: <error message>')`, also for an unknown
+          `encryption`, in which case no connection is opened. The answer of the server
+          is decoded to text, and a certificate that does not verify or a port that does
+          not speak TLS is explained.
 
-    ### Example
+    Examples
+    --------
     >>> send(
     ...     'smtp.example.com',
     ...     'icinga@example.com',
