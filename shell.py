@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026083001'
+__version__ = '2026091801'
 
 
 import os
@@ -73,6 +73,39 @@ def quote_cli_value(value):
     "'a b; rm -rf /'"
     """
     return shlex.quote(str(value))
+
+
+# Python's codec for the OEM code page of the running Windows (cp437, cp850, ...).
+_OEM_CODEC = 'oem'
+
+
+def _decode_windows_output(raw):
+    """
+    Decode what a program on Windows wrote into a pipe.
+
+    There is no one code page to ask for. `net.exe` writes the OEM code page into a
+    pipe whatever the console says, while `cmd.exe` and PowerShell follow the console
+    output code page. Icinga 2 sets that one to UTF-8 (`SetConsoleOutputCP(65001)` in
+    `DaemonCommand::Run()`) and its plugins inherit the console, so under the agent the
+    same user "müller" arrives as `0x81` from one program and as `0xC3 0xBC` from the
+    other, and in an interactive session as `0x81` from both. Measured with Icinga 2
+    v2.16.5 on Windows Server 2025 (`net user`, `net localgroup` and `query user` write
+    the OEM code page, `cmd /c echo` and `powershell` follow the console). Non-ASCII text in an OEM code page is practically never valid
+    UTF-8, so trying UTF-8 strictly first and falling back to the OEM code page reads
+    both (Linuxfabrik/monitoring-plugins#681). `chcp 65001` does not help: it changes
+    the console, which is not where a pipe gets its encoding from.
+
+    ### Parameters
+    - **raw** (`bytes`): The captured output.
+
+    ### Returns
+    - **str**: The decoded text. A byte the OEM code page does not define becomes
+      U+FFFD instead of an exception.
+    """
+    try:
+        return txt.to_text(raw, encoding='utf-8', errors='strict')
+    except UnicodeDecodeError:
+        return txt.to_text(raw, encoding=_OEM_CODEC, errors='replace')
 
 
 def shell_exec(
@@ -238,15 +271,12 @@ def shell_exec(
                     pass
         return False, f'Timeout after {timeout} seconds.'
 
-    # Decode the captured bytes. On Windows, console programs (query, schtasks,
-    # w32tm, ...) write their piped output in the OEM / console output code page
-    # (e.g. cp437, cp850), not UTF-8 and not the ANSI code page, so a username
-    # like "müller" would otherwise be mangled (Linuxfabrik/monitoring-plugins#681).
+    # Decode the captured bytes. On Windows a program picks the code page of its
+    # piped output itself, see _decode_windows_output().
     if os.name == 'nt':
-        encoding = _windows_output_encoding()
         return True, (
-            txt.to_text(stdout, encoding=encoding, errors='replace'),
-            txt.to_text(stderr, encoding=encoding, errors='replace'),
+            _decode_windows_output(stdout),
+            _decode_windows_output(stderr),
             p.returncode,
         )
     # On Unix decode as UTF-8, but fall back to Latin-1 on invalid bytes instead of
@@ -257,30 +287,6 @@ def shell_exec(
         txt.to_text(stderr, errors='strict_or_latin1'),
         p.returncode,
     )
-
-
-def _windows_output_encoding():
-    """
-    Best-effort code page name for decoding a Windows subprocess's piped output.
-
-    Console programs emit their pipe output in the OEM / console output code page, not UTF-8 and
-    not the ANSI code page (`chcp 65001` has no effect on a pipe; see PEP 528). Prefer the console
-    output code page, fall back to the OEM code page when the process has no console (for example
-    when run headless by a monitoring agent), and fall back to UTF-8 if neither is available.
-
-    ### Returns
-    - **str**: A Python codec name such as `'cp437'`, or `'utf-8'` as a last resort.
-    """
-    try:
-        import ctypes
-
-        kernel32 = ctypes.windll.kernel32
-        code_page = kernel32.GetConsoleOutputCP() or kernel32.GetOEMCP()
-        if code_page:
-            return f'cp{code_page}'
-    except (OSError, AttributeError, ValueError):
-        pass
-    return 'utf-8'
 
 
 def safe_cli_value(value, name='value'):

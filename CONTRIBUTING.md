@@ -154,7 +154,7 @@ This decodes as UTF-8 and, on any invalid byte, retries the whole input as Latin
 
 Do **not** leave such data on the default handler (`errors=None`, which maps to `surrogateescape`). `surrogateescape` turns an invalid byte into a lone surrogate that decodes without error but raises `UnicodeEncodeError` later, at the stdout re-encode. That moves the crash away from the cause and makes it hard to diagnose (see [Linuxfabrik/lib#256](https://github.com/Linuxfabrik/lib/issues/256)).
 
-When the source declares its encoding, decode with that codec first and only fall back. `url.fetch()` already does this for response bodies (declared HTTP charset, Latin-1 fallback only when none is declared), and `shell.py` decodes Windows subprocess output with the console code page.
+When the source declares its encoding, decode with that codec first and only fall back. `url.fetch()` already does this for response bodies (declared HTTP charset, Latin-1 fallback only when none is declared), and `shell.py` decodes Windows subprocess output as UTF-8 where it is valid and in the OEM code page otherwise, because a program on Windows picks the code page of its piped output itself.
 
 Encoding text back to bytes for stdin, hashing, sockets, or a base64 input: use `to_bytes()`. Base64 output is pure ASCII, so `to_text(base64.b64encode(...))` needs no special handler.
 

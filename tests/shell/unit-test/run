@@ -285,18 +285,43 @@ class TestShellExec(unittest.TestCase):
         self.assertEqual(result[0], 'Müller\n')
         result[0].encode('utf-8')  # would raise under surrogateescape
 
-    def test_windows_decodes_with_console_code_page(self):
-        # 'ü' from a console program is OEM cp437 (byte 0x81), not UTF-8. The
-        # Windows path must decode with the console output code page so the
-        # username is not mangled (monitoring-plugins#681).
-        Fake = make_popen(stdout=b'm\x81ller\n')
+    # On Windows a program picks the code page of its piped output itself. Under the
+    # Icinga 2 agent, whose console is set to UTF-8, net.exe still writes the OEM code
+    # page while cmd.exe and PowerShell write UTF-8 (monitoring-plugins#681). The OEM
+    # codec only exists on Windows, so cp437 stands in for it here.
+    def _windows(self, stdout, stderr=b''):
+        Fake = make_popen(stdout=stdout, stderr=stderr)
         with (
             mock.patch.object(shell.os, 'name', 'nt'),
-            mock.patch.object(shell, '_windows_output_encoding', return_value='cp437'),
+            mock.patch.object(shell, '_OEM_CODEC', 'cp437'),
             mock.patch.object(shell.subprocess, 'Popen', Fake),
         ):
-            _success, result = shell.shell_exec(['query', 'user'])
-        self.assertEqual(result[0], 'müller\n')
+            _success, result = shell.shell_exec(['net', 'user'])
+        return result
+
+    def test_windows_reads_the_oem_code_page(self):
+        # net.exe: 'ü' is byte 0x81 in cp437
+        self.assertEqual(self._windows(b'm\x81ller\n')[0], 'müller\n')
+
+    def test_windows_reads_utf8(self):
+        # cmd.exe and PowerShell under the agent
+        self.assertEqual(self._windows('müller\n'.encode())[0], 'müller\n')
+
+    def test_windows_decodes_stdout_and_stderr_each_on_their_own(self):
+        result = self._windows(b'm\x81ller\n', 'müller\n'.encode())
+        self.assertEqual(result[:2], ('müller\n', 'müller\n'))
+
+    def test_windows_ascii_passes_through(self):
+        self.assertEqual(self._windows(b'Administrator\n')[0], 'Administrator\n')
+
+    def test_windows_empty_output(self):
+        self.assertEqual(self._windows(b'')[0], '')
+
+    def test_windows_byte_the_code_page_lacks_is_replaced(self):
+        # cp1253 (Greek) leaves 0xAA undefined, and the result must still be text
+        with mock.patch.object(shell, '_OEM_CODEC', 'cp1253'):
+            text = shell._decode_windows_output(b'a\xaab')
+        self.assertEqual(text, 'a\ufffdb')
 
 
 # ---------------------------------------------------------------------------
