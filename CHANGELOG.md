@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * time.py: `timestr2datetime()` and `timestr2epoch()` read an ISO 8601 timestamp on RHEL 8's system Python too, and an offset written without a colon (`+0200`, which `journalctl` writes) on every supported Python
 * url.py: `fetch(extended=True)` takes the proxy it is told to take, and tries every address a hostname resolves to instead of only the first
 
+### Security
+
+* shell.py: `shell_exec()` names only the program when a command cannot be started, so a password or SNMP community on its command line no longer ends up in the result
+
 
 ## [v7.1.1] - 2026-08-18
 

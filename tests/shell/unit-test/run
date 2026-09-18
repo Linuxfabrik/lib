@@ -245,6 +245,41 @@ class TestShellExec(unittest.TestCase):
         self.assertIn('Error', result)
         self.assertIn('nonexistent-binary', result)
 
+    def test_popen_construction_error_hides_the_arguments(self):
+        # A missing program is the common case, and its arguments carry credentials in
+        # shapes no name-based redaction recognizes (short options, positional values).
+        def boom(*args, **kwargs):
+            raise FileNotFoundError(2, 'No such file or directory', 'ipmitool')
+
+        cmd = ['ipmitool', '-P', 'linuxfabrik', '-U', 'admin', 'sel', 'elist']
+        with mock.patch.object(shell.subprocess, 'Popen', boom):
+            success, result = shell.shell_exec(cmd)
+        self.assertFalse(success)
+        self.assertIn('ipmitool', result)
+        self.assertNotIn('linuxfabrik', result)
+        self.assertNotIn('admin', result)
+
+    def test_popen_construction_error_names_the_program_behind_sudo(self):
+        def boom(*args, **kwargs):
+            raise FileNotFoundError(2, 'No such file or directory', 'sudo')
+
+        entry = mock.Mock(pw_uid=1234)
+        with (
+            mock.patch('pwd.getpwnam', return_value=entry),
+            mock.patch.object(shell.subprocess, 'Popen', boom),
+        ):
+            success, result = shell.shell_exec(
+                ['redis-cli', '-a', 'linuxfabrik', 'info'], run_as='appuser'
+            )
+        self.assertFalse(success)
+        self.assertIn('"redis-cli"', result)
+        self.assertNotIn('linuxfabrik', result)
+
+    def test_empty_argument_list_reports_instead_of_raising(self):
+        success, result = shell.shell_exec([])
+        self.assertFalse(success)
+        self.assertIn('Error', result)
+
     def test_value_error_during_construction_returns_false(self):
         def boom(*args, **kwargs):
             raise ValueError('bad args')
@@ -543,19 +578,30 @@ class TestWhich(unittest.TestCase):
             self.assertIsNone(shell.which('does-not-exist'))
 
 
-class TestShellExecRedactsCommandOnSpawnFailure(unittest.TestCase):
-    """A command that cannot be started at all is reported back with its argument list,
-    which may carry a credential. The message is routinely printed as part of a check
-    result, so the credential has to be gone from it.
+class TestShellExecHidesArgumentsOnSpawnFailure(unittest.TestCase):
+    """A command that cannot be started at all is reported back by its program name
+    only. Its argument list may carry a credential, and the message is routinely
+    printed as part of a result.
     """
 
-    def test_argv_credential_is_redacted(self):
+    def test_argv_credential_is_not_reported(self):
         ok, msg = shell.shell_exec(['/nonexistent-binary', '--password', 'secret123'])
         self.assertFalse(ok)
         self.assertNotIn('secret123', msg)
-        self.assertIn('******', msg)
+        self.assertNotIn('--password', msg)
         # the program name stays readable, otherwise the message is useless
         self.assertIn('/nonexistent-binary', msg)
+
+    def test_short_option_credential_is_not_reported(self):
+        # the shapes a name-based redaction misses: `-P <password>`, `-c <community>`
+        for cmd in (
+            ['/nonexistent-binary', '-P', 'secret123'],
+            ['/nonexistent-binary', '-c', 'secret123', '192.0.2.1'],
+            ['/nonexistent-binary', '-psecret123'],
+        ):
+            ok, msg = shell.shell_exec(cmd)
+            self.assertFalse(ok)
+            self.assertNotIn('secret123', msg)
 
 
 if __name__ == '__main__':

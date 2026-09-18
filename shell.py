@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091801'
+__version__ = '2026091802'
 
 
 import os
@@ -200,7 +200,9 @@ def shell_exec(
     - The environment is merged with `env`, entries set to None are removed from it, and it
       always includes `LC_ALL=<lc_all>`, forcing output to the specified locale.
     - Exceptions such as `OSError`, `ValueError`, or other execution errors during process
-      creation are caught and reported as `(False, <error message>)`.
+      creation are caught and reported as `(False, <error message>)`. The message names
+      the program, never its arguments, so a credential passed on the command line does
+      not end up in it.
     - If the process exceeds the specified `timeout`, it is killed, and the function returns
       `(False, "Timeout after <timeout> seconds.")`. The call returns even where the kill
       cannot take effect: a command blocked on storage that has gone away sits in an
@@ -213,6 +215,8 @@ def shell_exec(
             'shell_exec() requires cmd as a list of arguments '
             f'(for example ["df", "-h"]), got {type(cmd).__name__}.'
         )
+    # The program the caller asked for, before `run_as` puts `sudo` in front of it.
+    program = cmd[0] if cmd else ''
 
     if run_as:
         import pwd  # Unix-only; per-user session switching does not apply on Windows
@@ -246,13 +250,12 @@ def shell_exec(
             cwd=cwd,
         )
     except (OSError, ValueError, Exception) as e:
-        # The command is reported so the caller can see what failed to start, but it is
-        # redacted first: an argument list can carry a credential, and this message is
-        # routinely printed as part of a result.
-        return (
-            False,
-            f'Error "{e}" while calling command "{txt.sanitize_sensitive_data(str(cmd))}"',
-        )
+        # Name the program only, never its arguments. An argument list carries
+        # credentials in forms no redaction knows by name (`ipmitool -P <password>`,
+        # `redis-cli -a <password>`, `snmpget -c <community>`), and this message is
+        # routinely printed as part of a result, which is exactly the case where the
+        # program is missing and every argument would otherwise be shown.
+        return False, f'Error "{e}" while calling command "{program}"'
 
     try:
         stdout, stderr = p.communicate(

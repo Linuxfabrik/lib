@@ -19,7 +19,7 @@ subject to local shell interpretation. All functions return the same
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026080601'
+__version__ = '2026091801'
 
 from . import shell
 
@@ -40,10 +40,8 @@ def _with_password(cmd, password):
 
     The password travels in the `SSHPASS` environment variable rather than in
     `sshpass -p`, which sshpass itself labels "security unwise": an argv is world-
-    readable through `/proc/<pid>/cmdline` for the lifetime of the process, and it also
-    ends up in the error message `shell.shell_exec()` builds out of the command when the
-    process cannot be started at all. An environment is only readable by the owner of
-    the process and by root.
+    readable through `/proc/<pid>/cmdline` for the lifetime of the process. An
+    environment is only readable by the owner of the process and by root.
 
     Parameters
     ----------
