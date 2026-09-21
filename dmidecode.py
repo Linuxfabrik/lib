@@ -14,7 +14,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026061201'
+__version__ = '2026092101'
 
 import re
 
@@ -75,66 +75,6 @@ TYPE2STR = {
 # ('0x0400', '4', '48'): {'dminame': 'Processor Information', 'dmisize': 48, 'dmitype': 4, 'Socket Designation': 'CPU 1', 'Type': 'Central Processor', 'Family': 'Core i7', 'Manufacturer': 'Intel(R) Corporation', 'ID': 'C1 06 08 00 FF FB EB BF', 'Signature': 'Type 0, Family 6, Model 140, Stepping 1', 'Version': '11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz', 'Voltage': '0.8 V', 'External Clock': '100 MHz', 'Max Speed': '3000 MHz', 'Current Speed': '3000 MHz', 'Status': 'Populated, Enabled', 'Upgrade': 'Other', 'L1 Cache Handle': '0x0701', 'L2 Cache Handle': '0x0702', 'L3 Cache Handle': '0x0703', 'Serial Number': ' ', 'Asset Tag': ' ', 'Part Number': ' ', 'Core Count': '4', 'Core Enabled': '4', 'Thread Count': '8'},
 
 
-def cpu_cores(dmi):
-    """
-    Calculate the total number of CPU cores.
-
-    This function sums the core count from all processor entries in the given DMI data structure.
-    If a processor entry does not specify a core count, it is treated as zero.
-
-    Parameters
-    ----------
-    dmi : dict
-        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
-
-    Returns
-    -------
-    int
-        The total number of CPU cores found across all processors.
-
-    Notes
-    -----
-    - Entries are retrieved using `dmiget(dmi, 'Processor')`.
-    - Missing or invalid core counts default to zero.
-
-    Examples
-    --------
-    >>> cpu_cores(parsed_dmi)
-    8
-    """
-    return sum(int(cpu.get('Core Count', 0)) for cpu in dmiget(dmi, 'Processor'))
-
-
-def cpu_cores_enabled(dmi):
-    """
-    Calculate the total number of enabled CPU cores.
-
-    This function sums the enabled core count from all processor entries in the given DMI data
-    structure. If a processor entry does not specify enabled cores, it is treated as zero.
-
-    Parameters
-    ----------
-    dmi : dict
-        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
-
-    Returns
-    -------
-    int
-        The total number of enabled CPU cores across all processors.
-
-    Notes
-    -----
-    - Entries are retrieved using `dmiget(dmi, 'Processor')`.
-    - Missing or invalid enabled core counts default to zero.
-
-    Examples
-    --------
-    >>> cpu_cores_enabled(parsed_dmi)
-    8
-    """
-    return sum(int(cpu.get('Core Enabled', 0)) for cpu in dmiget(dmi, 'Processor'))
-
-
 def cpu_speed(dmi):
     """
     Retrieve the CPU speed in megahertz (MHz).
@@ -167,36 +107,6 @@ def cpu_speed(dmi):
         if current_speed.endswith(' MHz'):
             return int(current_speed.replace(' MHz', '').strip())
     return 0
-
-
-def cpu_threads(dmi):
-    """
-    Calculate the total number of CPU threads.
-
-    This function sums the thread count from all processor entries in the given DMI data structure.
-    If a processor entry does not specify a thread count, it is treated as zero.
-
-    Parameters
-    ----------
-    dmi : dict
-        The parsed DMI data, typically a dictionary from SMBIOS or `dmidecode` output.
-
-    Returns
-    -------
-    int
-        The total number of CPU threads across all processors.
-
-    Notes
-    -----
-    - Entries are retrieved using `dmiget(dmi, 'Processor')`.
-    - Missing or invalid thread counts default to zero.
-
-    Examples
-    --------
-    >>> cpu_threads(parsed_dmi)
-    16
-    """
-    return sum(int(cpu.get('Thread Count', 0)) for cpu in dmiget(dmi, 'Processor'))
 
 
 def cpu_type(dmi):

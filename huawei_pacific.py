@@ -15,7 +15,7 @@ generation of endpoints below /dsware/service/ and /dfv/service/.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026092101'
 
 import json
 from time import sleep as _sleep
@@ -280,46 +280,6 @@ def get_alarm_severity_state(sev):
     if code == 6:
         return STATE_CRIT
     return STATE_WARN
-
-
-def get_alarm_status(st):
-    """
-    Convert a Huawei OceanStor Pacific alarm status code into a human-readable description.
-
-    Parameters
-    ----------
-    st : int or str
-        The alarm status code.
-        A missing or malformed value renders as `'Unknown'`.
-
-    Returns
-    -------
-    str
-        A human-readable description including the original code in brackets.
-        Returns `'Unknown'` if the code is not recognized.
-
-    Notes
-    -----
-    - Scoped to the field named `alarmStatus`. The `status` field of `fms/alarms` shares the
-      codes `1` and `2` but words them as uncleared and cleared, and never reports `4`.
-    - Code `-1` is not in the enumeration table of the field. It is carried here because the
-      response examples of `fms/events` and of the historical alarms and events endpoint show
-      it in both REST Interface References: a plain event has nothing to recover from, so it
-      reports no recovery state. Without the entry every row of an event listing would render
-      as `'Unknown'`.
-
-    Examples
-    --------
-    >>> get_alarm_status(1)
-    'Unrecovered (1)'
-    """
-    mapping = {
-        -1: 'Not applicable (-1)',
-        1: 'Unrecovered (1)',
-        2: 'Cleared (2)',
-        4: 'Recovered (4)',
-    }
-    return mapping.get(as_code(st), 'Unknown')
 
 
 def get_all_data(
@@ -1161,31 +1121,6 @@ def get_disk_type(t):
             'SSD_DISK': 'SSD',
         },
     )
-
-
-def get_management_ips(args):
-    """
-    Query the cluster nodes and return their internal management IP addresses.
-
-    Convenience wrapper around `get_cluster_nodes()` for a caller that needs nothing but the
-    `server_list` of a node-scoped hardware endpoint.
-
-    Parameters
-    ----------
-    args : object
-        The argument object read by `get_data()` / `get_creds()`.
-
-    Returns
-    -------
-    list of str
-        The `management_ip` of every cluster node.
-
-    Examples
-    --------
-    >>> get_management_ips(args)
-    ['192.0.2.11', '192.0.2.12']
-    """
-    return [node['management_ip'] for node in get_cluster_nodes(args)]
 
 
 def get_node_names_by_ip(nodes):

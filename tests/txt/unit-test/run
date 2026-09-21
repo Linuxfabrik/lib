@@ -81,20 +81,6 @@ class TestExtractStr(unittest.TestCase):
         self.assertEqual(txt.extract_str('abcde', 'b', 'x', be_tolerant=False), '')
 
 
-class TestFilterMltext(unittest.TestCase):
-    def setUp(self):
-        self.s = 'Lorem ipsum\n\ndolor sit amet\n\nconsectetur adipisicing'
-
-    def test_drops_paragraphs_matching_any_pattern(self):
-        self.assertEqual(
-            txt.filter_mltext(self.s, ['ipsum']),
-            '\ndolor sit amet\n\nconsectetur adipisicing\n',
-        )
-
-    def test_substring_match(self):
-        self.assertEqual(txt.filter_mltext(self.s, ['d']), 'Lorem ipsum\n\n\n')
-
-
 class TestMatchRegex(unittest.TestCase):
     def test_match(self):
         ok, m = txt.match_regex(r'^abc$', 'abc')

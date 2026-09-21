@@ -18,7 +18,7 @@ import textwrap
 from . import base, disk, human
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091401'
+__version__ = '2026092101'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -478,33 +478,6 @@ def epilog(path, section='check-plugins'):
     return f'Documentation: {DOCS_BASE_URL}/{section}/{name}/'
 
 
-def float_or_none(arg):
-    """Converts an input to a float, or returns None if the input is 'none' or None.
-
-    Parameters
-    ----------
-    arg : str, None, or float
-        The input value.
-
-    Returns
-    -------
-    float or None
-
-    Examples
-    --------
-    >>> float_or_none('123.45')
-    123.45
-
-    >>> float_or_none('none')
-    None
-    """
-    if arg is None:
-        return None
-    if isinstance(arg, str) and arg.strip().lower() == 'none':
-        return None
-    return float(arg)
-
-
 def help(param):
     """Retrieves the global help text for a given parameter.
 
@@ -660,34 +633,6 @@ def number_unit_method(arg, unit='%', method='USED'):
         method = method_part
 
     return number, unit.upper(), method.upper()
-
-
-def range_or_none(arg):
-    """
-    Convert an input argument into a threshold range, or return None.
-
-    The same conversion as `str_or_none()`, under the name that says what the
-    value is used for, so an argparse definition reads as what it accepts.
-
-    Parameters
-    ----------
-    arg : any
-        The input argument.
-
-    Returns
-    -------
-    str or None
-        The argument as a string, or `None` where it is `None`.
-
-    Examples
-    --------
-    >>> range_or_none('90:')
-    '90:'
-
-    >>> range_or_none(None) is None
-    True
-    """
-    return str_or_none(arg)
 
 
 def str_or_none(arg):

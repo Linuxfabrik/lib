@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026092101'
 
 import json
 from time import sleep as _sleep
@@ -1123,44 +1123,6 @@ def get_data(endpoint, args, max_attempts=3):
     return result
 
 
-def get_dr_star_running_status(rs):
-    """
-    Convert a DR Star trio's `RUNNINGSTATUS` code into a human-readable description.
-
-    Parameters
-    ----------
-    rs : int or str
-        The running status code to interpret.
-        A missing or malformed value renders as `'Unknown'`.
-
-    Returns
-    -------
-    str
-        A human-readable description of the running status, including the original code in
-        brackets.
-        Returns `'Unknown'` if the code is not recognized.
-
-    Notes
-    -----
-    - Scoped to the `dr_star` object, which renumbers `RUNNINGSTATUS` rather than sharing the
-      enumeration `get_running_status()` covers. Read through that function a disabled trio
-      would come out as `'Running (2)'`, which reads like the opposite of what it is.
-    - Both REST Interface References agree on these four values.
-
-    Examples
-    --------
-    >>> get_dr_star_running_status(2)
-    'Disabled (2)'
-    """
-    mapping = {
-        0: 'Unknown (0)',
-        1: 'Enabled (1)',
-        2: 'Disabled (2)',
-        3: 'Invalid (3)',
-    }
-    return mapping.get(as_code(rs), 'Unknown')
-
-
 def get_enclosure_logic_type(lt):
     """
     Convert an enclosure's `LOGICTYPE` code into a human-readable description.
@@ -1432,49 +1394,6 @@ def get_host_access_state(has):
         3: 'Read/write',
     }
     return mapping.get(as_code(has), 'Unknown')
-
-
-def get_hypermetro_domain_running_status(rs):
-    """
-    Convert a HyperMetro domain's `RUNNINGSTATUS` code into a human-readable description.
-
-    Parameters
-    ----------
-    rs : int or str
-        The running status code to interpret.
-        A missing or malformed value renders as `'Unknown'`.
-
-    Returns
-    -------
-    str
-        A human-readable description of the running status, including the original code in
-        brackets.
-        Returns `'Unknown'` if the code is not recognized.
-
-    Notes
-    -----
-    - Scoped to the `HyperMetroDomain` object, which renumbers `RUNNINGSTATUS` from `0` up
-      rather than sharing the enumeration `get_running_status()` covers. Every code below
-      collides: read through that function a faulty domain would come out as `'Running (2)'`
-      and an invalid one as `'Sleep in High Temperature (5)'`, so a broken HyperMetro pair
-      would look healthy in the output.
-    - Documented in the V700R001C10 REST Interface Reference. Code `4` exists nowhere else
-      and is deliberately absent from `get_running_status()`.
-
-    Examples
-    --------
-    >>> get_hypermetro_domain_running_status(2)
-    'Faulty (2)'
-    """
-    mapping = {
-        0: 'Normal (0)',
-        1: 'Recovering (1)',
-        2: 'Faulty (2)',
-        3: 'Split (3)',
-        4: 'Force started (4)',
-        5: 'Invalid (5)',
-    }
-    return mapping.get(as_code(rs), 'Unknown')
 
 
 def get_hypermetro_domain_running_status_state(rs):

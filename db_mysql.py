@@ -20,7 +20,7 @@ from .globals import STATE_UNKNOWN
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026092101'
 
 try:
     import pymysql.cursors
@@ -130,17 +130,6 @@ def check_privileges(conn, *required):
             + '.',
         )
     return True, rows
-
-
-def check_select_privileges(conn):
-    """
-    Deprecated. Backwards-compatible shim for an already-deployed consumer that still
-    calls `check_select_privileges()` against an upgraded lib. Equivalent to
-    `check_privileges(conn)` (the functional `SELECT VERSION()` smoke test). Will be
-    removed once a consumer re-deployment cycle has propagated everywhere; new code
-    should call `check_privileges()` directly.
-    """
-    return check_privileges(conn)
 
 
 def close(conn):

@@ -21,7 +21,6 @@ Public functions under test:
 - get_data()   -> builds the API URL + X-Auth-Token header, forwards SSL/proxy/
                   timeout flags, returns the parsed JSON on `status == ok`, and
                   exits (UNKNOWN, or OK with --always-ok) on any error.
-- get_prop()   -> safe dict lookup with str/non-str type handling.
 - get_state()  -> LibreNMS alert-state code -> Nagios state translation.
 
 Behaviour was probed against the real module with a mocked transport before the
@@ -351,77 +350,6 @@ class TestGetDataTransportFailure(LibrenmsTestBase):
         with self.assertRaises(SystemExit) as cm, redirect_stdout(io.StringIO()):
             librenms.get_data(A())
         self.assertEqual(cm.exception.code, STATE_UNKNOWN)
-
-
-# ---------------------------------------------------------------------------
-# get_prop()
-# ---------------------------------------------------------------------------
-
-
-class TestGetProp(unittest.TestCase):
-    # --- default mytype='str' ------------------------------------------------
-
-    def test_str_existing_string_returned_unchanged(self):
-        self.assertEqual(librenms.get_prop({'os': 'ios'}, 'os'), 'ios')
-
-    def test_str_int_value_stringified(self):
-        self.assertEqual(librenms.get_prop({'uptime': 3600}, 'uptime'), '3600')
-
-    def test_str_zero_int_stringified_not_dropped(self):
-        # 0 is falsy but present; must become '0', not ''.
-        self.assertEqual(librenms.get_prop({'uptime': 0}, 'uptime'), '0')
-
-    def test_str_false_bool_stringified(self):
-        self.assertEqual(librenms.get_prop({'flag': False}, 'flag'), 'False')
-
-    def test_str_empty_string_stays_empty(self):
-        self.assertEqual(librenms.get_prop({'x': ''}, 'x'), '')
-
-    def test_str_list_value_uses_str_repr(self):
-        self.assertEqual(librenms.get_prop({'x': [1, 2]}, 'x'), '[1, 2]')
-
-    def test_str_missing_key_returns_empty_string(self):
-        self.assertEqual(librenms.get_prop({}, 'nope'), '')
-
-    def test_str_none_value_returns_empty_string(self):
-        self.assertEqual(librenms.get_prop({'x': None}, 'x'), '')
-
-    def test_str_explicit_mytype_str(self):
-        self.assertEqual(librenms.get_prop({'os': 'ios'}, 'os', mytype='str'), 'ios')
-
-    # --- non-str mytype ------------------------------------------------------
-
-    def test_int_existing_value_returned_as_is(self):
-        self.assertEqual(librenms.get_prop({'n': 5}, 'n', mytype='int'), 5)
-        self.assertIsInstance(librenms.get_prop({'n': 5}, 'n', mytype='int'), int)
-
-    def test_int_zero_returned_not_none(self):
-        # value is 0: `value if value is not None else None` keeps the 0.
-        self.assertEqual(librenms.get_prop({'n': 0}, 'n', mytype='int'), 0)
-
-    def test_int_false_returned_not_none(self):
-        self.assertIs(librenms.get_prop({'n': False}, 'n', mytype='int'), False)
-
-    def test_int_missing_returns_none(self):
-        self.assertIsNone(librenms.get_prop({}, 'n', mytype='int'))
-
-    def test_int_none_value_returns_none(self):
-        self.assertIsNone(librenms.get_prop({'n': None}, 'n', mytype='int'))
-
-    def test_nonstr_type_does_not_stringify_int(self):
-        # any non-'str' mytype takes the passthrough branch.
-        self.assertEqual(librenms.get_prop({'n': 42}, 'n', mytype='float'), 42)
-        self.assertIsInstance(librenms.get_prop({'n': 42}, 'n', mytype='float'), int)
-
-    def test_nonstr_type_list_passed_through(self):
-        self.assertEqual(librenms.get_prop({'x': [1, 2]}, 'x', mytype='list'), [1, 2])
-
-    def test_realistic_device_dict(self):
-        dev = DEVICES_OK['devices'][1]
-        self.assertEqual(librenms.get_prop(dev, 'hostname'), 'edge-fw-01.example.com')
-        self.assertEqual(librenms.get_prop(dev, 'uptime'), '0')
-        self.assertEqual(librenms.get_prop(dev, 'hardware'), '')  # None -> ''
-        self.assertEqual(librenms.get_prop(dev, 'status', mytype='int'), 0)
 
 
 # ---------------------------------------------------------------------------

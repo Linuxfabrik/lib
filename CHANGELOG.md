@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking Changes
 
+* Nineteen functions no Linuxfabrik repository calls are gone, checked against the full history of both repository roots: `args.py` (`float_or_none()`, `range_or_none()`), `base.py` (`is_empty_list()`), `db_mysql.py` (`check_select_privileges()`, a shim for `check_privileges()` since May 2026), `disk.py` (`get_cwd()`), `dmidecode.py` (`cpu_cores()`, `cpu_cores_enabled()`, `cpu_threads()`), `huawei_dorado.py` (`get_dr_star_running_status()`, `get_hypermetro_domain_running_status()`), `huawei_pacific.py` (`get_alarm_status()`, `get_management_ips()`, whose job `get_node_names_by_ip()` does), `icinga.py` (`remove_ack()`, `remove_downtime()`, `set_ack()`, `set_downtime()`; reading an acknowledgement through `get_service()` stays), `librenms.py` (`get_prop()`), `rocket.py` (`get_rooms_info()`) and `txt.py` (`filter_mltext()`). Whoever needs one of them outside our repositories finds it in the git history
 * net.py: `fetch_ssl()`, `is_valid_hostname()`, `is_valid_absolute_hostname()`, `is_valid_relative_hostname()` and `netmask_to_cidr()` are gone. Use `fetch(tls=True)` in place of `fetch_ssl()` and `ip_to_cidr()` in place of `netmask_to_cidr()`; the hostname validators had no replacement and no consumer
 
 ### Added

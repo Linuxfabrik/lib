@@ -18,7 +18,7 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081001'
+__version__ = '2026092101'
 
 import html
 import operator
@@ -309,59 +309,6 @@ def extract_str(s, from_txt, to_txt, include_fromto=False, be_tolerant=True):
     if include_fromto:
         return s[pos1:]
     return s[pos1 + len(from_txt) :]
-
-
-def filter_mltext(_input, ignore):
-    """
-    Filter multi-line text, removing lines that match any simple text pattern from the ignore list
-    (no regex).
-
-    `ignore` must be provided as a list of strings.
-
-    Parameters
-    ----------
-    _input : str
-        The multi-line input text to filter.
-    ignore : list
-        A list of strings; lines containing any of these substrings will be
-        removed.
-
-    Returns
-    -------
-    str
-        The filtered multi-line text.
-
-    Examples
-    --------
-    >>> filter_mltext('abcde', 'a')  # "ignore" has to be a list
-    ''
-
-    >>> s = 'Lorem ipsum\\n\\ndolor sit amet\\n\\nconsectetur adipisicing'
-    >>> filter_mltext(s, ['ipsum'])
-    '\\ndolor sit amet\\n\\nconsectetur adipisicing\\n'
-
-    >>> filter_mltext(s, ['dol'])
-    'Lorem ipsum\\n\\n\\nconsectetur adipisicing\\n'
-
-    >>> filter_mltext(s, ['Dol'])
-    'Lorem ipsum\\n\\ndolor sit amet\\n\\nconsectetur adipisicing\\n'
-
-    >>> filter_mltext(s, ['d'])
-    'Lorem ipsum\\n\\n\\n'
-
-    >>> s = 'Lorem ipsum'
-    >>> filter_mltext(s, ['Dol'])
-    'Lorem ipsum\\n'
-
-    >>> filter_mltext(s, ['ipsum'])
-    ''
-    """
-    lines = [
-        line
-        for line in _input.splitlines()
-        if not any(i_line in line for i_line in ignore)
-    ]
-    return '\n'.join(lines) + '\n' if lines else ''
 
 
 def match_regex(regex, string, key=''):

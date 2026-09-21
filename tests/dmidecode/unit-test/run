@@ -262,16 +262,6 @@ class TestCpuAccessors(unittest.TestCase):
     def setUp(self):
         self.dmi = dmidecode.dmidecode_parse(REALISTIC_OUTPUT)
 
-    def test_cpu_cores(self):
-        # Deduped record retains its own Core Count (10); only one record.
-        self.assertEqual(dmidecode.cpu_cores(self.dmi), 10)
-
-    def test_cpu_cores_enabled(self):
-        self.assertEqual(dmidecode.cpu_cores_enabled(self.dmi), 10)
-
-    def test_cpu_threads(self):
-        self.assertEqual(dmidecode.cpu_threads(self.dmi), 20)
-
     def test_cpu_speed(self):
         self.assertEqual(dmidecode.cpu_speed(self.dmi), 2200)
 
@@ -280,9 +270,6 @@ class TestCpuAccessors(unittest.TestCase):
             dmidecode.cpu_type(self.dmi),
             'Intel Xeon Silver 4210 CPU @ 2.20GHz',
         )
-
-    def test_cpu_cores_missing_field_defaults_zero(self):
-        self.assertEqual(dmidecode.cpu_cores({}), 0)
 
     def test_cpu_speed_no_processor_returns_zero(self):
         self.assertEqual(dmidecode.cpu_speed({}), 0)

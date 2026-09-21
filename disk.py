@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091401'
+__version__ = '2026092101'
 
 import csv
 import glob as _glob
@@ -266,27 +266,6 @@ def get_block_devices():
         disks.append({'bd': bd, 'dmd': dmd, 'mp': mp})
 
     return disks
-
-
-def get_cwd():
-    """
-    Get the current working directory.
-
-    Returns
-    -------
-    str
-        The absolute path of the current working directory.
-
-    Examples
-    --------
-    >>> get_cwd()
-    '/home/user/project'
-    """
-    try:
-        return os.getcwd()
-    except OSError:
-        # Optional: handle rare cases where the cwd is invalid (e.g., directory was deleted)
-        return ''
 
 
 def get_fingerprint(filename, length=256, algorithm='sha256'):

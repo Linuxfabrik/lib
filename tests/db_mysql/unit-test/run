@@ -209,15 +209,6 @@ class TestCheckPrivileges(unittest.TestCase):
         self.assertFalse(success)
         self.assertEqual(message, 'gone away')
 
-    def test_the_deprecated_shim_runs_the_smoke_test(self):
-        with mock.patch.object(
-            db_mysql, 'select', return_value=(True, {'version': '8.0.36'})
-        ):
-            self.assertEqual(
-                db_mysql.check_select_privileges(None), (True, {'version': '8.0.36'})
-            )
-
-
 class TestGetFlavor(unittest.TestCase):
     def test_reports_the_flavor_of_the_server_info(self):
         with mock.patch.object(

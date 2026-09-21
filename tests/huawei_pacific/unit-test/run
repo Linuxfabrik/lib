@@ -23,7 +23,6 @@ Public functions under test:
 - get_creds()           -> login (POST /api/v2/aa/sessions) + X-Auth-Token caching
 - get_data()            -> authenticated GET/POST, re-login on a rejected request
 - get_disk_status_state()         -> code -> STATE_* mapping
-- get_management_ips()  -> node enumeration for the node-scoped hwm/* endpoints
 - get_performance()     -> newest sample per object and indicator (POST)
 - get_node_running_status_state() -> node running status -> STATE_*
 - get_pool_status_state()         -> code -> STATE_* mapping
@@ -100,8 +99,6 @@ class TestMappingHelpers(unittest.TestCase):
     KNOWN: typing.ClassVar = [
         (huawei_pacific.get_alarm_severity, 3, 'Warning (3)'),
         (huawei_pacific.get_alarm_severity, 6, 'Critical (6)'),
-        (huawei_pacific.get_alarm_status, 1, 'Unrecovered (1)'),
-        (huawei_pacific.get_alarm_status, 4, 'Recovered (4)'),
         (huawei_pacific.get_disk_status, 0, 'healthy (0)'),
         (huawei_pacific.get_disk_status, 1, 'faulty (1)'),
         (huawei_pacific.get_disk_status, 2, 'sub-healthy (2)'),
@@ -113,7 +110,6 @@ class TestMappingHelpers(unittest.TestCase):
 
     FUNCS: typing.ClassVar = [
         huawei_pacific.get_alarm_severity,
-        huawei_pacific.get_alarm_status,
         huawei_pacific.get_disk_status,
         huawei_pacific.get_oam_agent_status,
     ]
@@ -974,110 +970,6 @@ class TestGetData(PacificHttpTestBase):
         result = huawei_pacific.get_data('hwm/power', self.args)
         self.assertEqual(result['result']['code'], -401)
         self.assertEqual(result['result']['description'], 'authentication failed')
-
-
-class TestGetManagementIps(PacificHttpTestBase):
-    """get_management_ips() collects the node IPs the hwm/* endpoints need."""
-
-    def setUp(self):
-        super().setUp()
-        self._p_creds = mock.patch.object(
-            huawei_pacific, 'get_creds', return_value='TOKEN'
-        )
-        self._p_creds.start()
-        self.addCleanup(self._p_creds.stop)
-
-    def respond(self, nodes, count=None):
-        """Answer cluster/servers with `nodes` and cluster/servers/count with `count`."""
-        if count is None:
-            count = len(nodes)
-
-        def fake(uri, **_):
-            if uri.endswith('/count'):
-                return True, {'data': {'count': count}, 'result': {'code': 0}}
-            return True, {'data': nodes, 'result': {'code': 0}}
-
-        self.fetch_json.side_effect = fake
-
-    def test_returns_management_ips_of_nodes_in_the_cluster(self):
-        self.respond(
-            [
-                {'id': 1, 'in_cluster': True, 'management_ip': '192.0.2.11'},
-                {'id': 2, 'in_cluster': True, 'management_ip': '192.0.2.12'},
-            ]
-        )
-        self.assertEqual(
-            huawei_pacific.get_management_ips(self.args), ['192.0.2.11', '192.0.2.12']
-        )
-
-    def test_node_not_in_the_cluster_is_skipped(self):
-        self.respond(
-            [
-                {'id': 1, 'in_cluster': True, 'management_ip': '192.0.2.11'},
-                {'id': 2, 'in_cluster': False, 'management_ip': '192.0.2.12'},
-            ]
-        )
-        self.assertEqual(huawei_pacific.get_management_ips(self.args), ['192.0.2.11'])
-
-    def test_node_about_to_be_added_is_skipped(self):
-        # in_cluster is tri-state: false (not added), true (added) and null (to be
-        # added). A node still being added holds no cluster hardware, and its missing
-        # management IP must not take the whole check to UNKNOWN.
-        self.respond(
-            [
-                {'id': 1, 'in_cluster': True, 'management_ip': '192.0.2.11'},
-                {'id': 2, 'in_cluster': None, 'management_ip': None},
-            ]
-        )
-        self.assertEqual(huawei_pacific.get_management_ips(self.args), ['192.0.2.11'])
-
-    def test_node_without_the_field_is_kept(self):
-        # A firmware that does not report in_cluster must not narrow the result.
-        self.respond([{'id': 1, 'management_ip': '192.0.2.11'}])
-        self.assertEqual(huawei_pacific.get_management_ips(self.args), ['192.0.2.11'])
-
-    def test_clustered_node_without_ip_aborts(self):
-        # Returning the rest would let a hardware check cover part of the cluster and
-        # still report OK, hiding a failed component on the nodes that were dropped.
-        self.respond(
-            [
-                {'id': 1, 'in_cluster': True, 'management_ip': '192.0.2.11'},
-                {'id': 2, 'name': 'node02', 'in_cluster': True},
-            ]
-        )
-        with self.assertRaises(SystemExit):
-            huawei_pacific.get_management_ips(self.args)
-
-    def test_truncated_node_list_aborts(self):
-        # The API-wide default caps a list response at 100 entries, and the endpoint
-        # does not document whether it is affected. A silently short list would leave
-        # nodes unmonitored while the check still reports OK.
-        self.respond(
-            [{'id': 1, 'in_cluster': True, 'management_ip': '192.0.2.11'}], count=2
-        )
-        with self.assertRaises(SystemExit):
-            huawei_pacific.get_management_ips(self.args)
-
-    def test_unavailable_count_endpoint_is_not_fatal(self):
-        # The count is a cross-check, not the data itself.
-        def fake(uri, **_):
-            if uri.endswith('/count'):
-                return True, {'result': {'code': 1, 'description': 'not supported'}}
-            return True, {
-                'data': [{'id': 1, 'in_cluster': True, 'management_ip': '192.0.2.11'}],
-                'result': {'code': 0},
-            }
-
-        self.fetch_json.side_effect = fake
-        self.assertEqual(huawei_pacific.get_management_ips(self.args), ['192.0.2.11'])
-
-    def test_failed_node_query_aborts(self):
-        self.fetch_json.return_value = (
-            True,
-            {'result': {'code': 1, 'description': 'internal error'}},
-        )
-        with self.assertRaises(SystemExit):
-            huawei_pacific.get_management_ips(self.args)
 
 
 class TestGetPerformance(PacificHttpTestBase):

@@ -12,11 +12,10 @@
 needed by more than one LibreNMS consumer."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026092101'
 
 from . import (
     base,  # pylint: disable=C0413
-    txt,  # pylint: disable=C0413
     url,  # pylint: disable=C0413
 )
 from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
@@ -85,50 +84,6 @@ def get_data(args, uri=''):
         )
 
     return result
-
-
-def get_prop(obj, prop, mytype='str'):
-    """
-    Retrieve a property from a dictionary with safe type handling.
-
-    This function fetches a specific property from a dictionary and handles cases where the property
-    might not exist or be `None`. For string types, it returns an empty string if missing; otherwise,
-    it returns `None`.
-
-    Parameters
-    ----------
-    obj : dict
-        The dictionary object to query.
-    prop : str
-        The property name to retrieve.
-    mytype : str, optional
-        Expected type of the property. `'str'` ensures text formatting. Defaults to `'str'`.
-
-    Returns
-    -------
-    str or any
-        - If `mytype` is `'str'`, returns a string.
-        - Otherwise, returns the original value or `None` if not found.
-
-    Notes
-    -----
-    - Helps avoid KeyErrors and NoneType issues in chained lookups.
-    - Useful for safely accessing fields in API responses.
-
-    Examples
-    --------
-    >>> get_prop(device, 'uptime')
-    '3600'
-    >>> get_prop(device, 'cpu_usage', mytype='int')
-    15
-    """
-
-    value = obj.get(prop)
-
-    if mytype == 'str':
-        return txt.to_text(value) if value is not None else ''
-
-    return value if value is not None else None
 
 
 def get_state(librestate, severity='crit'):

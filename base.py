@@ -637,31 +637,6 @@ def guess_type(v, consumer='python'):
             return str(v) if consumer == 'python' else 'text'
 
 
-def is_empty_list(lst):
-    """
-    Check if a list only contains either empty elements or whitespace.
-
-    Parameters
-    ----------
-    lst : list
-        The list to check.
-
-    Returns
-    -------
-    bool
-        True if all elements are empty strings or whitespace, otherwise False.
-
-    Examples
-    --------
-    >>> is_empty_list(['', '   ', ''])
-    True
-
-    >>> is_empty_list(['text', ''])
-    False
-    """
-    return all(not s.strip() for s in lst)
-
-
 def is_numeric(value):
     """
     Return True if the value is truly numeric (int, float, etc.).

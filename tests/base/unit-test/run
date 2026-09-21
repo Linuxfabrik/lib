@@ -485,17 +485,6 @@ class TestGuessType(unittest.TestCase):
         self.assertEqual(base.guess_type(None, 'sqlite'), 'text')
 
 
-class TestIsEmptyList(unittest.TestCase):
-    def test_all_empty(self):
-        self.assertTrue(base.is_empty_list(['', '   ', '']))
-
-    def test_has_content(self):
-        self.assertFalse(base.is_empty_list(['text', '']))
-
-    def test_empty_input_list(self):
-        self.assertTrue(base.is_empty_list([]))
-
-
 class TestIsNumeric(unittest.TestCase):
     def test_numeric(self):
         self.assertTrue(base.is_numeric(53.4))

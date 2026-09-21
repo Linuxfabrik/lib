@@ -389,9 +389,6 @@ class TestHostHelpers(unittest.TestCase):
         self.assertTrue(os.path.isabs(tmp))
         self.assertFalse(tmp.endswith('/'))
 
-    def test_get_cwd_returns_path(self):
-        self.assertTrue(os.path.isdir(disk.get_cwd()))
-
     def test_get_block_devices_returns_list(self):
         self.assertIsInstance(disk.get_block_devices(), list)
 

@@ -39,7 +39,7 @@ Typical use-case:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026092101'
 
 from . import url
 
@@ -269,107 +269,6 @@ def get_rooms_get(
 
     if not success or not result:
         return False, f'Error getting rooms.get: {result}'
-
-    return True, result
-
-
-def get_rooms_info(
-    rc_url,
-    auth_token,
-    user_id,
-    room_id=None,
-    room_name=None,
-    insecure=False,
-    no_proxy=False,
-    proxy=None,
-    timeout=3,
-):
-    """
-    Retrieve detailed information about a specific Rocket.Chat room via the `rooms.info` API.
-
-    This function constructs the correct endpoint URL for `rooms.info`, optionally appending
-    a `roomId` or `roomName` query parameter, attaches the required authentication headers
-    (`X-Auth-Token` and `X-User-Id`), and performs a GET request to fetch metadata for the
-    specified room.
-
-    Equivalent to:
-
-    .. code-block:: bash
-
-        curl -H "X-Auth-Token: <auth_token>" \\
-             -H "X-User-Id: <user_id>" \\
-             "https://chat.example.com/api/v1/rooms.info?roomId=<roomId>&roomName=<roomName>"
-
-    Parameters
-    ----------
-    rc_url : str
-        Rocket.Chat base URL or full endpoint URL. If it does not already end with
-        `/rooms.info`, any trailing slashes will be stripped and `/rooms.info` appended.
-    auth_token : str
-        Authentication token obtained from login (for the `X-Auth-Token`
-        header).
-    user_id : str
-        User ID obtained from login (for the `X-User-Id` header).
-    room_id : str, optional
-        ID of the room to fetch info for. Defaults to `None`.
-    room_name : str, optional
-        Name (alias) of the room to fetch info for. Defaults to
-        `None`.
-        At least one of `room_id` or `room_name` should be provided.
-    insecure : bool, optional
-        Allow insecure SSL connections. Defaults to `False`.
-    no_proxy : bool, optional
-        Bypass proxy settings. Defaults to `False`.
-    proxy : str, optional
-        Proxy to reach the target through, overriding the one the environment names.
-        Defaults to `None`, which leaves the choice to the environment.
-    timeout : int, optional
-        Request timeout in seconds. Defaults to `3`.
-
-    Returns
-    -------
-    tuple (bool, dict or str)
-        - On success: `(True, response_json)` where `response_json` is the parsed JSON result from
-          the API.
-        - On failure: `(False, 'Error getting rooms.info: <error message>')`.
-
-    Examples
-    --------
-    >>> success, info = get_rooms_info(
-    ...     'https://chat.example.com',
-    ...     'authTokenHere',
-    ...     'userIdHere',
-    ...     room_id='GENERAL'
-    ... )
-    >>> if success:
-    ...     print(info)
-    """
-    if not rc_url.endswith('/rooms.info'):
-        rc_url = rc_url.rstrip('/') + '/rooms.info'
-
-    params = {
-        'roomId': room_id,
-        'roomName': room_name,
-    }
-    query = _flatten_params(params)
-    rc_url = rc_url + f'{"?" + query if query else ""}'
-
-    headers = {
-        'X-Auth-Token': auth_token,
-        'X-User-Id': user_id,
-    }
-
-    success, result = url.fetch_json(
-        rc_url,
-        header=headers,
-        insecure=insecure,
-        no_proxy=no_proxy,
-        proxy=proxy,
-        timeout=timeout,
-    )
-
-    if not success or not result:
-        return False, f'Error getting rooms.info: {result}'
 
     return True, result
 
