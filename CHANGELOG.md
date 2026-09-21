@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v8.0.0] - 2026-09-21
+
 **Highlights:** Nine new modules, among them incremental log reading that keeps its findings across runs, plus coverage for libvirt hosts, LVM, OpenStack clouds and the kernel's pressure stall information. Every module that talks HTTP now takes an explicit proxy instead of leaving the choice to the environment. Redfish sessions survive as long as the controller keeps them, and a `shell_exec()` timeout holds even when the killed command is stuck in the kernel. Plugins on Windows report their result to the monitoring agent in UTF-8, so a non-Latin character no longer turns a check into a WARNING, and multi-line output no longer shows an empty line after every line.
 
 ### Breaking Changes
@@ -56,13 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * base.py: `get_state()`, `match_range()`, and output on Windows, now UTF-8 without extra empty lines
 * db_sqlite.py: `per_second_deltas()`, `regexp()`
-* human.py: `humanrange2bytes()`, `humanrange2seconds()`, `number2human()`, `seconds2human()`
+* human.py: `human2bytes()`, `humanrange2bytes()`, `humanrange2seconds()`, `number2human()`, `seconds2human()`
 * net.py: `get_public_ip()` asks the next service instead of reporting whatever a service answered. A rate-limiting or redirecting service made the check print an HTML page where the address belongs. `get_proxy()` honours the exceptions of a proxy from the Windows or macOS system settings, and `fetch_socket()` reports a platform without Unix sockets
 * redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, and re-authenticates on a "401 Unauthorized" instead of falling back to HTTP Basic. A capacity a controller reports as text rather than as a number, and a traced argument the host cannot decode, no longer take the check down
 * shell.py: `shell_exec()` keeps to its `timeout` even when the killed command cannot die, such as one blocked on storage that has gone away, and decodes umlauts in the output of Windows programs ([monitoring-plugins#681](https://github.com/Linuxfabrik/monitoring-plugins/issues/681)). `shell_exec(run_as=...)` and `nextcloud.run_occ()` call sudo with `--user` instead of `-u`; a sudo rule is unaffected, it matches the command, not the option
-* version.py: `check_eol()` reads all three shapes endoflife.date answers the end-of-life field in. A cycle marked end of life without a date took the check down with a Python error, and one with no announced end was reported as a gap in the data. A version endoflife.date has not catalogued yet is placed against the cycles it does list instead of going UNKNOWN, so staying current no longer raises an alert nobody can act on, and the available-upgrade note survives either way
 * time.py: `timestr2datetime()` and `timestr2epoch()` read an ISO 8601 timestamp on RHEL 8's system Python too, and an offset written without a colon (`+0200`, which `journalctl` writes) on every supported Python
 * url.py: `fetch(extended=True)` takes the proxy it is told to take, and tries every address a hostname resolves to instead of only the first
+* version.py: `check_eol()` reads all three shapes endoflife.date answers the end-of-life field in. A cycle marked end of life without a date took the check down with a Python error, and one with no announced end was reported as a gap in the data. A version endoflife.date has not catalogued yet is placed against the cycles it does list instead of going UNKNOWN, so staying current no longer raises an alert nobody can act on, and the available-upgrade note survives either way
 * winrm.py: `run_cmd()` runs again when pypsrp is installed
 
 ### Security
@@ -70,14 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * shell.py: `shell_exec()` names only the program when a command cannot be started, so a password or SNMP community on its command line no longer ends up in the result
 * url.py: `fetch()` no longer resends a request body to another host on a redirect ([GHSA-pq9x-4pp3-p5r9](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-pq9x-4pp3-p5r9)), no longer sends a request through a proxy that `no_proxy` exempts by network, and masks a password in the URL in its errors
 * winrm.py: `run_cmd()` and `run_ps()` pass every argument and parameter value as one literal, so a value holding `&`, `;` or a typographic quote can no longer run a second command on the Windows host
-
-
-## [v7.1.1] - 2026-08-18
-
-### Fixed
-
-* base.py: `match_range()` accepts a threshold with a percent sign (`90%:`) or an exponent (`1e3`)
-* human.py: `humanrange2bytes()`, `humanrange2seconds()`, and `human2bytes()`, which read a size without a qualifier (`1048576`) as zero
 
 
 ## [v7.1.0] - 2026-08-14
@@ -824,8 +821,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v7.1.1...HEAD
-[v7.1.1]: https://github.com/Linuxfabrik/lib/compare/v7.1.0...v7.1.1
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v8.0.0...HEAD
+[v8.0.0]: https://github.com/Linuxfabrik/lib/compare/v7.1.0...v8.0.0
 [v7.1.0]: https://github.com/Linuxfabrik/lib/compare/v7.0.0...v7.1.0
 [v7.0.0]: https://github.com/Linuxfabrik/lib/compare/v6.1.0...v7.0.0
 [v6.1.0]: https://github.com/Linuxfabrik/lib/compare/v6.0.0...v6.1.0
