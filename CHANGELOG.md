@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * shell.py: `quote_cli_value()` quotes a value for a command a consumer prints for somebody to run, where a value carrying a space or a semicolon would otherwise turn one command into two
 * task.py: new module for work that cannot be interrupted from inside the process. `run()` and `run_each()` run callables in processes of their own, sharing one deadline, and kill the ones that miss it. A call waiting on a network filesystem whose server has gone away blocks in the kernel, where no timeout inside the process reaches it
 * txt.py: `shorten_list()` collapses a long list to its first and last few items for a message
-* url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host. `fetch()` takes `retries`, which only `fetch_json()` offered so far. `server_product()` returns the product token of a `Server` response header, so a consumer can tell what answered before it offers advice about a product
+* url.py: `fetch()` and `fetch_json()` take a `cacert`, so a consumer can verify against the CA bundle an endpoint was signed by instead of needing that authority in the trust store of the host. `fetch()` takes `retries`, which only `fetch_json()` offered so far. `server_product()` returns the product token of a `Server` response header, so a consumer can tell what answered before it offers advice about a product. `fetch()` and `fetch_json()` take `max_bytes`
 * user.py: new module for what a host says about a local account. It resolves a numeric user or group id to its name, reads `UID_MIN`, the shells a login may use and the password field of a shadow entry, and says what that field means, telling an account that is locked apart from one that carries no password at all. An account the host does not manage locally is reported as absent rather than as broken
 * version.py: `cycle_bounds()` returns the lowest and highest release cycle a set of endoflife.date entries names
 
@@ -50,14 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * mail.py: `send()` returns the answer of the server as text, and explains a certificate that does not verify or a port that does not speak TLS
 * psutil.py: `get_partitions()` also returns the mount options, takes `include_all` to list every mounted filesystem instead of the physical devices only, and no longer waits on the filesystems it lists
 * redfish.py: `get_expand_suffix()` asks for a single `$expand` level, which already inlines every member of a collection, instead of the deepest one a controller offers, which made its answers many times larger
-* url.py: `fetch()` says what is wrong with a certificate that does not verify, and points out a plaintext request sent to a port that speaks TLS. Installing the package pulls in httpx 0.26 or newer, which `fetch()` needs
+* url.py: `fetch()` says what is wrong with a certificate that does not verify, and points out a plaintext request sent to a port that speaks TLS. Installing the package pulls in httpx 0.26 or newer, which `fetch()` needs. A response body larger than 64 MiB is refused
 
 ### Fixed
 
 * base.py: `get_state()`, `match_range()`, and output on Windows, now UTF-8 without extra empty lines
 * db_sqlite.py: `per_second_deltas()`, `regexp()`
 * human.py: `humanrange2bytes()`, `humanrange2seconds()`, `number2human()`, `seconds2human()`
-* net.py: `get_public_ip()` asks the next service instead of reporting whatever a service answered. A rate-limiting or redirecting service made the check print an HTML page where the address belongs
+* net.py: `get_public_ip()` asks the next service instead of reporting whatever a service answered. A rate-limiting or redirecting service made the check print an HTML page where the address belongs. `get_proxy()` honours the exceptions of a proxy from the Windows or macOS system settings
 * redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, and re-authenticates on a "401 Unauthorized" instead of falling back to HTTP Basic. A capacity a controller reports as text rather than as a number, and a traced argument the host cannot decode, no longer take the check down
 * shell.py: `shell_exec()` keeps to its `timeout` even when the killed command cannot die, such as one blocked on storage that has gone away, and decodes umlauts in the output of Windows programs ([monitoring-plugins#681](https://github.com/Linuxfabrik/monitoring-plugins/issues/681)). `shell_exec(run_as=...)` and `nextcloud.run_occ()` call sudo with `--user` instead of `-u`; a sudo rule is unaffected, it matches the command, not the option
 * version.py: `check_eol()` reads all three shapes endoflife.date answers the end-of-life field in. A cycle marked end of life without a date took the check down with a Python error, and one with no announced end was reported as a gap in the data. A version endoflife.date has not catalogued yet is placed against the cycles it does list instead of going UNKNOWN, so staying current no longer raises an alert nobody can act on, and the available-upgrade note survives either way
@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 * shell.py: `shell_exec()` names only the program when a command cannot be started, so a password or SNMP community on its command line no longer ends up in the result
+* url.py: `fetch()` no longer resends a request body to another host on a redirect ([GHSA-pq9x-4pp3-p5r9](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-pq9x-4pp3-p5r9)), no longer sends a request through a proxy that `no_proxy` exempts by network, and masks a password in the URL in its errors
 * winrm.py: `run_cmd()` and `run_ps()` pass every argument and parameter value as one literal, so a value holding `&`, `;` or a typographic quote can no longer run a second command on the Windows host
 
 

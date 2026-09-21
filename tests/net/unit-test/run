@@ -311,6 +311,55 @@ class TestGetProxy(unittest.TestCase):
     def test_without_an_environment_there_is_no_proxy(self):
         self.assertEqual(self._proxy('https://host.example.com/x', {}), (True, None))
 
+    def _system_proxy(self, target, bypass):
+        # a proxy from the Windows or macOS system settings: getproxies() names it,
+        # the environment does not, and proxy_bypass() reads its exception list
+        no_env = mock.patch.dict(os.environ, {}, clear=True)
+        system = mock.patch.object(
+            net.urllib.request,
+            'getproxies',
+            return_value={'https': 'proxy.example.com:3128'},
+        )
+        exceptions = mock.patch.object(
+            net.urllib.request, 'proxy_bypass', return_value=bypass
+        )
+        with no_env, system, exceptions as proxy_bypass:
+            return net.get_proxy(target), proxy_bypass
+
+    def test_system_proxy_exception_wins(self):
+        result, proxy_bypass = self._system_proxy('https://10.1.2.3/x', True)
+        self.assertEqual(result, (True, None))
+        proxy_bypass.assert_called_once_with('10.1.2.3')
+
+    def test_system_proxy_applies_outside_its_exceptions(self):
+        result, _ = self._system_proxy('https://host.example.com/x', False)
+        self.assertEqual(result, (True, 'http://proxy.example.com:3128'))
+
+    def test_environment_proxy_ignores_the_system_exceptions(self):
+        # with a proxy in the environment, only its own no_proxy list counts
+        env = mock.patch.dict(
+            os.environ, {'https_proxy': 'http://proxy.example.com:3128'}, clear=True
+        )
+        exceptions = mock.patch.object(
+            net.urllib.request, 'proxy_bypass', return_value=True
+        )
+        with env, exceptions as proxy_bypass:
+            result = net.get_proxy('https://host.example.com/x')
+        self.assertEqual(result, (True, 'http://proxy.example.com:3128'))
+        proxy_bypass.assert_not_called()
+
+    def test_cidr_entry_covers_the_whole_network(self):
+        self.assertEqual(
+            self._proxy(
+                'http://10.1.2.3/x',
+                {
+                    'http_proxy': 'http://proxy.example.com:3128',
+                    'no_proxy': '10.0.0.0/8',
+                },
+            ),
+            (True, None),
+        )
+
 
 class TestGetPublicIp(unittest.TestCase):
     def test_returns_the_address_a_service_answered(self):

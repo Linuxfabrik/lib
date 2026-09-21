@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082505'
+__version__ = '2026092101'
 
 import base64
 import json
@@ -33,7 +33,7 @@ try:
 except ImportError:
     httpcore = None
 
-from . import txt
+from . import human, txt
 
 # stdlib ssl version names; '1.0' first because it is the most permissive minimum.
 # `ssl.TLSVersion` was added in Python 3.7. Build the dict only when available so
@@ -70,6 +70,14 @@ _REDIRECT_SAFE_HEADERS = frozenset(
         'user-agent',
     }
 )
+
+# Upper bound for a response body, counted after decompression, so a server cannot
+# exhaust the memory of the caller with an endless or inflated answer. The timeout does
+# not help here, because it bounds every phase on its own, not the whole transfer.
+# Largest legitimate answers measured: 0.9 MiB (WordPress plugin checksums), 2.7 MiB
+# (the complete endoflife.date catalogue), an estimated 20 MiB for a REST API listing
+# 100'000 objects. A caller expecting more passes `max_bytes`.
+DEFAULT_MAX_BYTES = 64 * 1024 * 1024
 
 
 # Certificate verification failures an operator runs into in practice, keyed by
@@ -156,9 +164,10 @@ def _default_port(url):
 
 def _leaks_credentials_on_redirect(src, dst):
     """Return True if a redirect from `src` to `dst` crosses the origin in a way
-    that must not carry credential headers. Mirrors httpx's own condition for
-    stripping `Authorization`: a plain same-host HTTP-to-HTTPS upgrade is allowed,
-    every other scheme/host/port change is treated as cross-origin."""
+    that must not carry credential headers or the request body. Mirrors httpx's
+    own condition for stripping `Authorization`: a plain same-host HTTP-to-HTTPS
+    upgrade is allowed, every other scheme/host/port change is treated as
+    cross-origin."""
     same_origin = (
         src.scheme == dst.scheme
         and src.host == dst.host
@@ -177,31 +186,61 @@ def _leaks_credentials_on_redirect(src, dst):
 
 
 def _install_safe_redirect_stripping(client):
-    """Wrap an httpx client's redirect-header logic so credential headers are
-    dropped when a redirect crosses the origin. Patched on the instance (not via
-    subclassing) so it also works when a caller has replaced `httpx.Client` with
-    a test double, and so importing lib.url never touches `httpx` at module
-    scope. httpx looks `_redirect_headers` up on the instance, so the wrapper
-    shadows the original bound method."""
-    original = getattr(client, '_redirect_headers', None)
-    if original is None:
-        # A test double or a future httpx without this internal: nothing to wrap.
-        return client
+    """Wrap an httpx client's redirect logic so nothing a caller sent to one
+    origin reaches another one. Credential headers are dropped when a redirect
+    crosses the origin, and a redirect that would resend the request body there
+    is refused. Patched on the instance (not via subclassing) so it also works
+    when a caller has replaced `httpx.Client` with a test double, and so
+    importing lib.url never touches `httpx` at module scope. httpx looks both
+    internals up on the instance, so each wrapper shadows the original bound
+    method."""
+    # A test double or a future httpx without one of these internals leaves that
+    # one unwrapped; the unit tests run against the real httpx to catch the latter.
+    original_headers = getattr(client, '_redirect_headers', None)
+    original_build = getattr(client, '_build_redirect_request', None)
 
     def _redirect_headers(request, url, method):
-        headers = original(request, url, method)
+        headers = original_headers(request, url, method)
         if _leaks_credentials_on_redirect(request.url, url):
             for name in list(headers.keys()):
                 if name.lower() not in _REDIRECT_SAFE_HEADERS:
                     del headers[name]
         return headers
 
-    client._redirect_headers = _redirect_headers
+    def _build_redirect_request(request, response):
+        # A 307 or 308 keeps the method and resends the body unchanged; only 301,
+        # 302 and 303 turn it into a GET without one. A body can carry a password
+        # (an OAuth password grant, a JSON login), so it must not follow a
+        # redirect to another origin. Dropping it instead would send a request
+        # the caller never built, so refuse the redirect.
+        # Verified against httpx 0.26.0 to 0.28.1 (`_redirect_method`,
+        # `_redirect_stream`).
+        redirect = original_build(request, response)
+        if (
+            redirect.stream is request.stream
+            and request.content
+            and _leaks_credentials_on_redirect(request.url, redirect.url)
+        ):
+            raise RuntimeError(
+                f'Refused to resend the request body to another host after an'
+                f' HTTP {response.status_code} redirect to'
+                f' {_redact_url(str(redirect.url))}'
+            )
+        return redirect
+
+    if original_build is not None:
+        client._build_redirect_request = _build_redirect_request
+    if original_headers is not None:
+        client._redirect_headers = _redirect_headers
     return client
 
 
 def _redact_url(url):
-    """Strip `token=...` and `password=...` query parameters before logging."""
+    """Mask the password of a `user:password@` prefix and the values of `token=...`
+    and `password=...` query parameters, so a URL can be put into a message."""
+    # The userinfo ends at the last `@` before the path, since a password may carry
+    # an unescaped `@` of its own.
+    url = re.sub(r'(://[^/?#@:]*):[^/?#]*@', r'\1:********@', url)
     return re.sub(r'(token|password)=([^&]+)', r'\1=********', url)
 
 
@@ -646,6 +685,27 @@ def compare_github_refs(
         return True, False
 
 
+def _read_limited(response, max_bytes):
+    """Return the decoded body of a streamed httpx response, raising ValueError as soon
+    as it grows past `max_bytes` (`None` reads without a limit). Only gzip and deflate
+    are decoded, which inflate a received block by about a thousandfold at most, so a
+    single block overshoots the limit by a bounded amount before it is refused."""
+    if max_bytes is None:
+        return response.read()
+    message = f'Refused to read a response larger than {human.bytes2human(max_bytes)}'
+    declared = response.headers.get('content-length', '')
+    if declared.isdigit() and int(declared) > max_bytes:
+        raise ValueError(message)
+    chunks = []
+    size = 0
+    for chunk in response.iter_bytes():
+        size += len(chunk)
+        if size > max_bytes:
+            raise ValueError(message)
+        chunks.append(chunk)
+    return b''.join(chunks)
+
+
 def _fetch_once(
     url,
     insecure=False,
@@ -665,6 +725,7 @@ def _fetch_once(
     method=None,
     response_on_error=False,
     cacert=None,
+    max_bytes=DEFAULT_MAX_BYTES,
 ):
     """Make one attempt of `fetch()`, which documents every parameter and wraps this
     in its retry loop.
@@ -681,6 +742,12 @@ def _fetch_once(
             '`dnf install python3-httpx python3-h2`.'
         )
 
+    if max_bytes is not None and (
+        isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 0
+    ):
+        return False, (
+            f'`max_bytes` must be a non-negative integer or None, not {max_bytes!r}'
+        )
     if http_version == '3':
         return False, f'HTTP/3 not implemented yet, while fetching {_redact_url(url)}'
     if http_version not in ('1.0', '1.1', '2'):
@@ -733,22 +800,25 @@ def _fetch_once(
 
     # Which proxy the request takes. `no_proxy` wins over everything, an explicit `proxy`
     # wins over the environment including the exceptions it lists in `no_proxy`, and
-    # without either the environment applies. The environment is resolved here rather than
-    # left to httpx only because the extended path installs a transport of its own, and
-    # httpx skips its environment handling as soon as a caller does that.
+    # without either the environment applies. The environment is resolved here and
+    # never left to httpx, which ignores a `no_proxy` entry written as a network
+    # (`10.0.0.0/8`) and the exceptions of the Windows system settings, and so would
+    # send a request the operator meant to keep internal through the proxy. Verified
+    # against httpx 0.28.1.
     effective_proxy = None
     if not no_proxy:
         if proxy:
             # a bare `proxy.example.com:3128` means a plain HTTP proxy
             effective_proxy = proxy if '://' in proxy else f'http://{proxy}'
-        elif extended:
+        else:
             # imported here and not at module scope: lib.net imports this module, so the
             # dependency only works in this direction at call time
             from . import net
 
             success, resolved = net.get_proxy(url)
-            if success:
-                effective_proxy = resolved
+            if not success:
+                return False, f'{resolved}, while fetching {url_safe}'
+            effective_proxy = resolved
 
     # Phase-by-phase timings are only collected when the caller asks for the extended
     # response. The default fast path uses httpx's built-in transport with no
@@ -766,7 +836,8 @@ def _fetch_once(
     try:
         client_kwargs = {
             'timeout': timeout,
-            'trust_env': not no_proxy,
+            # the proxy is resolved above; the TLS context is our own either way
+            'trust_env': False,
             'auth': auth,
             'follow_redirects': True,
         }
@@ -806,7 +877,7 @@ def _fetch_once(
             # Read body and capture metadata before raise_for_status() so the
             # response_on_error path can surface error bodies, status codes and
             # timings to the caller (when using response_on_error).
-            body_bytes = response.read()
+            body_bytes = _read_limited(response, max_bytes)
             status_code = response.status_code
             # HTTP header field names are case-insensitive (RFC 9110, section 5.1).
             # Canonicalize them to lower case so callers can look a header up
@@ -883,7 +954,7 @@ def _fetch_once(
             'peer_cert_der': peer_cert_der,
         }
     except Exception as e:
-        return False, f'{e} while fetching {url}'
+        return False, f'{e} while fetching {url_safe}'
 
 
 
@@ -908,6 +979,7 @@ def fetch(
     response_on_error=False,
     cacert=None,
     retries=0,
+    max_bytes=DEFAULT_MAX_BYTES,
 ):
     """
     Fetch any URL with optional POST, basic/digest authentication and SSL/TLS handling.
@@ -935,7 +1007,7 @@ def fetch(
          |
          |--> client.stream(method, url, ...)
          |    |--> Capture TLS metadata from network stream
-         |    |--> Read body
+         |    |--> Read body, refuse it beyond `max_bytes`
          |    |--> raise_for_status() on 4xx/5xx
          |
          |--> Decode body via response charset (default UTF-8)
@@ -958,6 +1030,11 @@ def fetch(
           because that switches verification off altogether.
     insecure : bool, optional
           If True, disables SSL certificate validation. Defaults to False.
+    max_bytes : int or None, optional
+          Largest response body accepted, in bytes after decompression. A larger one
+          is refused with an error instead of being read into memory, so a hostile or
+          broken server cannot exhaust the memory of the caller. `None` reads without a
+          limit. Defaults to `DEFAULT_MAX_BYTES` (64 MiB).
     proxy : str, optional
           Proxy URL to reach the target through, for example
           `http://user:password@proxy.example.com:3128`. The scheme defaults to `http` when
@@ -1063,6 +1140,7 @@ def fetch(
             header=header,
             http_version=http_version,
             insecure=insecure,
+            max_bytes=max_bytes,
             method=method,
             no_proxy=no_proxy,
             proxy=proxy,
@@ -1096,6 +1174,7 @@ def fetch_json(
     retries=0,
     response_on_error=False,
     cacert=None,
+    max_bytes=DEFAULT_MAX_BYTES,
 ):
     """
     Fetch JSON from a URL with optional POST, authentication and SSL/TLS handling.
@@ -1108,7 +1187,7 @@ def fetch_json(
 
     Parameters
     ----------
-    url, insecure, no_proxy, proxy, timeout, header, data, encoding, digest_auth_user, digest_auth_password, extended, http_version, tls_min, tls_max, method, response_on_error, cacert
+    url, insecure, no_proxy, proxy, timeout, header, data, encoding, digest_auth_user, digest_auth_password, extended, http_version, tls_min, tls_max, method, response_on_error, cacert, max_bytes
         See `fetch()`. `to_text` is not offered here, the JSON decoder needs a string.
     retries : int, optional
         Handed to `fetch()`, which repeats a request that
@@ -1143,6 +1222,7 @@ def fetch_json(
         header=header,
         http_version=http_version,
         insecure=insecure,
+        max_bytes=max_bytes,
         method=method,
         no_proxy=no_proxy,
         proxy=proxy,

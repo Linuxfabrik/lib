@@ -58,7 +58,7 @@ class FakeStreamResponse:
 
     Implements just enough of the context-manager + streaming-response surface
     that lib.url.fetch() touches: __enter__/__exit__, raise_for_status(),
-    read(), status_code, headers, charset_encoding, elapsed, extensions.
+    read(), iter_bytes(), status_code, headers, charset_encoding, elapsed, extensions.
     """
 
     def __init__(
@@ -92,6 +92,9 @@ class FakeStreamResponse:
 
     def read(self):
         return self._body
+
+    def iter_bytes(self):
+        yield self._body
 
 
 def make_fake_client(response=None, captured=None, stream_exc=None, init_exc=None):
@@ -141,6 +144,19 @@ def no_timing_transport():
     return mock.patch.object(url, '_build_timing_transport', return_value=(None, None))
 
 
+def patch_mock_transport(handler):
+    """Let `fetch()` run the real httpx client over an in-memory transport, so its
+    redirect and error handling is exercised without a socket. `handler` gets each
+    request and returns an `httpx.Response` or raises an `httpx` exception."""
+    real_client = httpx.Client
+
+    def client_factory(**kwargs):
+        kwargs.pop('verify', None)
+        return real_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    return mock.patch.object(url.httpx, 'Client', side_effect=client_factory)
+
+
 # -----------------------------------------------------------------------------
 # Pure helpers: no httpx needed
 # -----------------------------------------------------------------------------
@@ -163,6 +179,36 @@ class TestRedactUrl(unittest.TestCase):
         self.assertIn('password=********', out)
         self.assertIn('keep=yes', out)
         self.assertNotIn('p%40ss', out)
+
+    def test_redacts_the_password_in_the_userinfo(self):
+        self.assertEqual(
+            url._redact_url('http://admin:linuxfabrik@h:8080/p'),
+            'http://admin:********@h:8080/p',
+        )
+        # an unescaped `@` inside the password is masked along with it
+        self.assertEqual(
+            url._redact_url('https://admin:linux@fabrik@h/p?q=1'),
+            'https://admin:********@h/p?q=1',
+        )
+        # a user without a password is no secret
+        self.assertEqual(url._redact_url('https://admin@h/p'), 'https://admin@h/p')
+
+    def test_leaves_an_at_sign_in_path_and_query_alone(self):
+        clean = 'https://h/users/a:b@c?mail=a:b@example.com'
+        self.assertEqual(url._redact_url(clean), clean)
+
+    @skip_without_httpx
+    def test_fetch_error_masks_the_userinfo_password(self):
+        def handler(request):
+            raise httpx.ConnectError('Connection refused', request=request)
+
+        with patch_mock_transport(handler):
+            success, message = url.fetch(
+                'http://admin:linuxfabrik@127.0.0.1/', timeout=1
+            )
+        self.assertFalse(success)
+        self.assertNotIn('linuxfabrik', message)
+        self.assertIn('admin:********@127.0.0.1', message)
 
 
 class TestStripTags(unittest.TestCase):
@@ -605,17 +651,51 @@ class TestFetchSuccess(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(res, '25.3 °C')
 
-    def test_no_proxy_disables_trust_env(self):
+    def _fetch_with_env(self, target, env, **kwargs):
         fake, cap = make_fake_client(FakeStreamResponse())
-        with patch_client(fake):
-            url.fetch('https://example.com', no_proxy=True)
-        self.assertFalse(cap['init_kwargs']['trust_env'])
+        with mock.patch.dict(os.environ, env, clear=True), patch_client(fake):
+            result = url.fetch(target, **kwargs)
+        return result, cap
 
-    def test_proxy_enabled_by_default(self):
-        fake, cap = make_fake_client(FakeStreamResponse())
-        with patch_client(fake):
-            url.fetch('https://example.com')
-        self.assertTrue(cap['init_kwargs']['trust_env'])
+    def test_httpx_never_reads_the_environment(self):
+        # lib.net.get_proxy() decides; httpx would ignore a network in no_proxy
+        for kwargs in ({}, {'no_proxy': True}):
+            with self.subTest(kwargs=kwargs):
+                _, cap = self._fetch_with_env(
+                    'https://example.com',
+                    {'https_proxy': 'http://proxy.example.com:3128'},
+                    **kwargs,
+                )
+                self.assertFalse(cap['init_kwargs']['trust_env'])
+
+    def test_environment_proxy_is_passed_on(self):
+        _, cap = self._fetch_with_env(
+            'https://example.com', {'https_proxy': 'http://proxy.example.com:3128'}
+        )
+        self.assertEqual(cap['init_kwargs']['proxy'], 'http://proxy.example.com:3128')
+
+    def test_no_proxy_network_is_honoured(self):
+        _, cap = self._fetch_with_env(
+            'http://10.1.2.3/',
+            {'http_proxy': 'http://proxy.example.com:3128', 'no_proxy': '10.0.0.0/8'},
+        )
+        self.assertNotIn('proxy', cap['init_kwargs'])
+
+    def test_no_proxy_argument_skips_the_environment(self):
+        _, cap = self._fetch_with_env(
+            'https://example.com',
+            {'https_proxy': 'http://proxy.example.com:3128'},
+            no_proxy=True,
+        )
+        self.assertNotIn('proxy', cap['init_kwargs'])
+
+    def test_unusable_environment_proxy_is_reported(self):
+        (success, message), cap = self._fetch_with_env(
+            'https://example.com', {'https_proxy': 'http://:3128'}
+        )
+        self.assertFalse(success)
+        self.assertIn('Cannot read a hostname from the configured proxy', message)
+        self.assertNotIn('init_kwargs', cap)
 
     def test_timeout_passed_through(self):
         fake, cap = make_fake_client(FakeStreamResponse())
@@ -1435,6 +1515,172 @@ class TestRedirectCredentialStripping(unittest.TestCase):
             'http://bmc/x', 'http://bmc/y', {'X-Auth-Token': 'secret'}
         )
         self.assertIn('x-auth-token', keys)
+
+
+@skip_without_httpx
+class TestRedirectBodyRefusal(unittest.TestCase):
+    """`fetch()` must never resend a request body to another origin. Runs the
+    real httpx redirect logic end to end over a `MockTransport` (no socket), for
+    every redirect status code, so it also fails loudly if a future httpx changes
+    which codes keep the body. Regression guard for GHSA-pq9x-4pp3-p5r9."""
+
+    SECRET = 'linuxfabrik'
+
+    def _fetch(self, status, location, data=None, method=None, encoding='urlencode'):
+        seen = []
+
+        def handler(request):
+            seen.append((str(request.url), request.method, request.read()))
+            if request.url.host == 'kc' and request.url.path == '/token':
+                return httpx.Response(status, headers={'Location': location})
+            # a stream, not text=: only a read stream sets `elapsed`, as on the wire
+            return httpx.Response(200, stream=httpx.ByteStream(b'ok'))
+
+        with patch_mock_transport(handler):
+            result = url.fetch(
+                'https://kc/token',
+                data=data,
+                encoding=encoding,
+                method=method,
+                timeout=1,
+            )
+        # every hop after the first one
+        return result, seen[1:]
+
+    def _leaked(self, hops):
+        return any(self.SECRET.encode() in body for _, _, body in hops)
+
+    def test_cross_origin_307_308_with_body_is_refused(self):
+        for status in (307, 308):
+            with self.subTest(status=status):
+                result, hops = self._fetch(
+                    status, 'https://evil/collect', data={'password': self.SECRET}
+                )
+                self.assertFalse(result[0])
+                self.assertIn('Refused to resend the request body', result[1])
+                self.assertIn('https://evil/collect', result[1])
+                self.assertEqual(hops, [])
+
+    def test_cross_origin_other_port_or_scheme_is_refused(self):
+        for location in ('https://kc:8443/token', 'http://kc/token'):
+            with self.subTest(location=location):
+                result, hops = self._fetch(
+                    307, location, data={'password': self.SECRET}
+                )
+                self.assertFalse(result[0])
+                self.assertEqual(hops, [])
+
+    def test_cross_origin_301_302_303_drop_the_body(self):
+        # httpx turns these into a GET without a body, so following is safe
+        for status in (301, 302, 303):
+            with self.subTest(status=status):
+                result, hops = self._fetch(
+                    status, 'https://evil/collect', data={'password': self.SECRET}
+                )
+                self.assertEqual(result, (True, 'ok'))
+                self.assertEqual(hops[0][1], 'GET')
+                self.assertFalse(self._leaked(hops))
+
+    def test_same_origin_307_308_keep_the_body(self):
+        # e.g. a proxy adding a trailing slash in front of the token endpoint
+        for status in (307, 308):
+            with self.subTest(status=status):
+                result, hops = self._fetch(
+                    status, 'https://kc/token/', data={'password': self.SECRET}
+                )
+                self.assertEqual(result, (True, 'ok'))
+                self.assertEqual(hops[0][1], 'POST')
+                self.assertTrue(self._leaked(hops))
+
+    def test_cross_origin_307_without_body_is_followed(self):
+        for method in ('GET', 'DELETE'):
+            with self.subTest(method=method):
+                result, hops = self._fetch(307, 'https://other/x', method=method)
+                self.assertEqual(result, (True, 'ok'))
+                self.assertEqual(hops[0][:2], ('https://other/x', method))
+
+    def test_serialized_json_body_is_refused_too(self):
+        # the OpenStack and Huawei logins send the password as JSON
+        result, hops = self._fetch(
+            308,
+            'https://evil/collect',
+            data={'password': self.SECRET},
+            encoding='serialized-json',
+        )
+        self.assertFalse(result[0])
+        self.assertEqual(hops, [])
+
+
+@skip_without_httpx
+class TestResponseSizeLimit(unittest.TestCase):
+    """`fetch()` refuses a response body larger than `max_bytes`, counted after
+    decompression, so a hostile server cannot exhaust the caller's memory. Runs the
+    real httpx over a `MockTransport`, so gzip is decoded as on the wire."""
+
+    def _fetch(self, response, fetcher=None, **kwargs):
+        with patch_mock_transport(lambda request: response):
+            return (fetcher or url.fetch)('https://example.com/', timeout=1, **kwargs)
+
+    def _stream(self, body, headers=None):
+        # a stream, not content=: httpx then reads and decodes it block by block
+        return httpx.Response(200, headers=headers, stream=httpx.ByteStream(body))
+
+    def test_default_limit_is_64_mib(self):
+        self.assertEqual(url.DEFAULT_MAX_BYTES, 64 * 1024 * 1024)
+
+    def test_body_at_the_limit_is_read(self):
+        success, body = self._fetch(self._stream(b'x' * 1000), max_bytes=1000)
+        self.assertTrue(success)
+        self.assertEqual(len(body), 1000)
+
+    def test_body_beyond_the_limit_is_refused(self):
+        success, message = self._fetch(self._stream(b'x' * 1001), max_bytes=1000)
+        self.assertFalse(success)
+        self.assertIn('Refused to read a response larger than 1000.0B', message)
+
+    def test_declared_length_beyond_the_limit_is_refused_up_front(self):
+        response = self._stream(b'x' * 10, headers={'Content-Length': '5000'})
+        success, message = self._fetch(response, max_bytes=1000)
+        self.assertFalse(success)
+        self.assertIn('Refused to read', message)
+
+    def test_limit_counts_the_decompressed_size(self):
+        # 2 MiB of zeros shrink to about 2 KiB on the wire
+        import gzip
+
+        packed = gzip.compress(b'\0' * 2 * 1024 * 1024)
+        self.assertLess(len(packed), 1024 * 1024)
+        success, message = self._fetch(
+            self._stream(packed, headers={'Content-Encoding': 'gzip'}),
+            max_bytes=1024 * 1024,
+        )
+        self.assertFalse(success)
+        self.assertIn('Refused to read', message)
+
+    def test_zero_accepts_only_an_empty_body(self):
+        self.assertEqual(self._fetch(self._stream(b''), max_bytes=0), (True, ''))
+        self.assertFalse(self._fetch(self._stream(b'x'), max_bytes=0)[0])
+
+    def test_invalid_limit_is_rejected_before_any_request(self):
+        for value in (-1, '1000', 1.5, True):
+            with self.subTest(value=value):
+                success, message = self._fetch(self._stream(b'x'), max_bytes=value)
+                self.assertFalse(success)
+                self.assertIn('`max_bytes` must be a non-negative integer', message)
+
+    def test_none_reads_without_a_limit(self):
+        success, body = self._fetch(self._stream(b'x' * 5000), max_bytes=None)
+        self.assertTrue(success)
+        self.assertEqual(len(body), 5000)
+
+    def test_fetch_json_passes_the_limit_on(self):
+        success, message = self._fetch(
+            self._stream(b'{"a": "' + b'x' * 2000 + b'"}'),
+            fetcher=url.fetch_json,
+            max_bytes=1000,
+        )
+        self.assertFalse(success)
+        self.assertIn('Refused to read', message)
 
 
 class TestBodyHint(unittest.TestCase):

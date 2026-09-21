@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092102'
 
 import ipaddress
 import random
@@ -756,7 +756,9 @@ def get_proxy(target_url, no_proxy=False):
     An entry of `no_proxy` written as a network in CIDR notation covers every address of
     that network. Some HTTP client libraries silently ignore such an entry and use the
     proxy anyway; sending traffic to a proxy the operator meant to bypass is the more
-    harmful of the two readings, which is why the network is honoured here.
+    harmful of the two readings, which is why the network is honoured here. A proxy
+    taken from the system settings of Windows or macOS is bypassed for the exceptions
+    listed there.
 
     Parameters
     ----------
@@ -803,6 +805,12 @@ def get_proxy(target_url, no_proxy=False):
 
     proxy = proxies.get(scheme) or proxies.get('all')
     if not proxy:
+        return (True, None)
+    # A proxy from the system settings of Windows or macOS brings an exception list of
+    # its own, which getproxies() leaves out. proxy_bypass() reads it as long as the
+    # environment names no proxy; otherwise the environment's list above applies.
+    from_system = not urllib.request.getproxies_environment()
+    if from_system and urllib.request.proxy_bypass(host):
         return (True, None)
     if '://' not in proxy:
         # a bare `proxy.example.com:3128` means a plain HTTP proxy
