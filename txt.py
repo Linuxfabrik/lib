@@ -218,7 +218,7 @@ def exception2text(e):
     ...     def __str__(self):
     ...         return ''
     >>> exception2text(EmptyStrError())
-    "EmptyStrError: EmptyStrError()"
+    'EmptyStrError: EmptyStrError'
     """
     try:
         msg = str(e)

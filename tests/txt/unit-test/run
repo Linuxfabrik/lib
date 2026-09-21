@@ -36,9 +36,29 @@ class TestCompileRegex(unittest.TestCase):
         self.assertIn('errors', msg)
 
 
+class EmptyStrError(Exception):
+    """An exception whose `__str__` is empty, as some library exceptions are."""
+
+    def __str__(self):
+        return ''
+
+
 class TestExceptionToText(unittest.TestCase):
     def test_formats_type_and_message(self):
         self.assertEqual(txt.exception2text(ValueError('boom')), 'ValueError: boom')
+
+    def test_exception_without_a_message_still_names_itself(self):
+        # an exception whose __str__ is empty would otherwise read as "X: ".
+        # Python's own formatter prints the qualified name, which is why the
+        # class lives at module level here and not inside this method.
+        self.assertEqual(
+            txt.exception2text(EmptyStrError()), 'EmptyStrError: EmptyStrError'
+        )
+
+    def test_exception_with_several_arguments(self):
+        self.assertEqual(
+            txt.exception2text(ValueError('boom', 42)), "ValueError: ('boom', 42)"
+        )
 
 
 class TestExtractStr(unittest.TestCase):

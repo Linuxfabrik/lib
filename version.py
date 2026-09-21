@@ -63,6 +63,10 @@ def check_eol(
         Disable SSL certificate verification.
     no_proxy : bool, optional
         Ignore proxy settings.
+    proxy : str, optional
+        Proxy to reach the endoflife.date API through, overriding the one the
+        environment names. Defaults to `None`, which leaves the choice to the
+        environment.
     timeout : int, optional
         Network timeout in seconds. Default: `8`.
     unreachable_severity : str, optional
@@ -84,7 +88,7 @@ def check_eol(
     Examples
     --------
     >>> check_eol('https://endoflife.date/api/python.json', '3.10')
-    (STATE_WARN, 'EOL 2026-10-01')
+    (1, 'EOL 2026-10-01')
     """
     # Imported here, not at module level: `check_eol()` is the only consumer of
     # these, and importing them eagerly would pull cache, db_sqlite and url into
@@ -336,7 +340,7 @@ def version2float(ver):
     Examples
     --------
     >>> version2float('Version v17.3.2.0')
-    17.320
+    17.32
     >>> version2float('Fedora Linux 41 (Workstation Edition)')
     41.0
     >>> version2float('21.60-53-93285')
