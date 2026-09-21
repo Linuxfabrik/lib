@@ -269,12 +269,11 @@ def connect(mysql_connection, **kwargs):
     ...     'defaults_file': '/etc/mysql/my.cnf',
     ...     'defaults_group': 'client',
     ...     'timeout': 5,
-    >>> }
+    ... }
     >>> success, conn = connect(mysql_connection)
     >>> if success:
-    >>> # Use conn
-    ...     pass
-    >>> else:
+    ...     pass  # use conn
+    ... else:
     ...     print(conn)
     """
     try:
@@ -851,7 +850,7 @@ def select(conn, sql, data=None, fetchone=False):
 
     Query using an IN clause:
     >>> data = ['val1', 'val2']
-    >>> sql = 'SELECT * FROM t WHERE c IN (f{", ".join("%s" for _ in data)})'
+    >>> sql = f'SELECT * FROM t WHERE c IN ({", ".join("%s" for _ in data)})'
     >>> success, result = select(conn, sql, data)
     """
     data = data or []

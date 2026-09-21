@@ -18,7 +18,9 @@ a container test (run via tools/run-container-tests; podman required).
 
 import os
 import sys
+import typing
 import unittest
+from unittest import mock
 
 sys.path.insert(0, '..')
 
@@ -129,6 +131,103 @@ class TestLod2Dict(unittest.TestCase):
 
     def test_empty(self):
         self.assertEqual(db_mysql.lod2dict([]), {})
+
+
+class TestCheckPrivileges(unittest.TestCase):
+    """The grant parsing, driven through a mocked select(), no server needed."""
+
+    GRANTS: typing.ClassVar = [{'Grants for u@h': "GRANT SELECT, PROCESS ON *.* TO `u`@`h`"}]
+
+    def _with_grants(self, grants):
+        return mock.patch.object(db_mysql, 'select', return_value=(True, grants))
+
+    def test_without_arguments_it_runs_the_smoke_test(self):
+        with mock.patch.object(
+            db_mysql, 'select', return_value=(True, {'version': '8.0.36'})
+        ) as select_mock:
+            success, result = db_mysql.check_privileges(None)
+        self.assertTrue(success)
+        self.assertEqual(result, {'version': '8.0.36'})
+        self.assertIn('SELECT VERSION()', select_mock.call_args[0][1])
+
+    def test_a_failed_smoke_test_names_usage(self):
+        with mock.patch.object(db_mysql, 'select', return_value=(True, None)):
+            success, message = db_mysql.check_privileges(None)
+        self.assertFalse(success)
+        self.assertIn('USAGE', message)
+
+    def test_a_granted_privilege_is_found(self):
+        with self._with_grants(self.GRANTS):
+            success, _ = db_mysql.check_privileges(None, 'SELECT')
+        self.assertTrue(success)
+
+    def test_a_missing_privilege_is_named(self):
+        with self._with_grants(self.GRANTS):
+            success, message = db_mysql.check_privileges(None, 'REPLICATION CLIENT')
+        self.assertFalse(success)
+        self.assertIn('REPLICATION CLIENT', message)
+
+    def test_several_privileges_are_and_ed(self):
+        with self._with_grants(self.GRANTS):
+            success, _ = db_mysql.check_privileges(None, 'SELECT', 'PROCESS')
+        self.assertTrue(success)
+        with self._with_grants(self.GRANTS):
+            success, message = db_mysql.check_privileges(None, 'SELECT', 'SHUTDOWN')
+        self.assertFalse(success)
+        self.assertIn('SHUTDOWN', message)
+
+    def test_a_list_is_any_of(self):
+        # MariaDB 10.5+ split REPLICATION CLIENT into BINLOG MONITOR / SLAVE MONITOR
+        grants = [{'g': 'GRANT BINLOG MONITOR ON *.* TO `u`@`h`'}]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(
+                None, ['REPLICATION CLIENT', 'BINLOG MONITOR']
+            )
+        self.assertTrue(success)
+
+    def test_a_missing_any_of_group_is_named_with_or(self):
+        with self._with_grants(self.GRANTS):
+            success, message = db_mysql.check_privileges(None, ['A GRANT', 'B GRANT'])
+        self.assertFalse(success)
+        self.assertIn('A GRANT or B GRANT', message)
+
+    def test_all_privileges_short_circuits(self):
+        grants = [{'g': 'GRANT ALL PRIVILEGES ON *.* TO `u`@`h`'}]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'REPLICATION CLIENT')
+        self.assertTrue(success)
+
+    def test_super_short_circuits(self):
+        grants = [{'g': 'GRANT SUPER ON *.* TO `u`@`h`'}]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'PROCESS')
+        self.assertTrue(success)
+
+    def test_a_failed_grant_query_is_passed_on(self):
+        with mock.patch.object(db_mysql, 'select', return_value=(False, 'gone away')):
+            success, message = db_mysql.check_privileges(None, 'SELECT')
+        self.assertFalse(success)
+        self.assertEqual(message, 'gone away')
+
+    def test_the_deprecated_shim_runs_the_smoke_test(self):
+        with mock.patch.object(
+            db_mysql, 'select', return_value=(True, {'version': '8.0.36'})
+        ):
+            self.assertEqual(
+                db_mysql.check_select_privileges(None), (True, {'version': '8.0.36'})
+            )
+
+
+class TestGetFlavor(unittest.TestCase):
+    def test_reports_the_flavor_of_the_server_info(self):
+        with mock.patch.object(
+            db_mysql, 'get_server_info', return_value={'flavor': 'mariadb'}
+        ):
+            self.assertEqual(db_mysql.get_flavor(), 'mariadb')
+
+    def test_without_a_responding_binary_it_is_none(self):
+        with mock.patch.object(db_mysql, 'get_server_info', return_value=None):
+            self.assertIsNone(db_mysql.get_flavor())
 
 
 class TestContainer(unittest.TestCase):
