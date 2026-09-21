@@ -187,8 +187,22 @@ class TestHuman2Seconds(unittest.TestCase):
         self.assertEqual(human.human2seconds('1d'), 86400)
         self.assertEqual(human.human2seconds('0s'), 0)
 
+    def test_every_unit(self):
+        # a month is 30 days and a year 365, which is what makes '26M' 67392000
+        self.assertEqual(human.human2seconds('5s'), 5)
+        self.assertEqual(human.human2seconds('2m'), 120)
+        self.assertEqual(human.human2seconds('1D'), 86400)
+        self.assertEqual(human.human2seconds('1W'), 604800)
+        self.assertEqual(human.human2seconds('1M'), 2592000)
+        self.assertEqual(human.human2seconds('1Y'), 31536000)
+
+    def test_a_number_without_a_unit_is_zero(self):
+        self.assertEqual(human.human2seconds('1'), 0)
+
     def test_garbage_returns_zero(self):
         self.assertEqual(human.human2seconds('xyz'), 0)
+        self.assertEqual(human.human2seconds(''), 0)
+        self.assertEqual(human.human2seconds('x'), 0)
 
 
 class TestHumanDuration2Seconds(unittest.TestCase):
@@ -300,6 +314,27 @@ class TestHumanRangeFeedsTheRangeParser(unittest.TestCase):
 class TestExtractHrNumbers(unittest.TestCase):
     def test_extracts_integer_with_unit(self):
         self.assertEqual(human.extract_hrnumbers('cpu 1.5K mem 2M'), ['2M'])
+
+    def test_reads_components_that_are_not_separated(self):
+        self.assertEqual(
+            human.extract_hrnumbers('31Y 20M7s  88  abc12xyz   4s 5'),
+            ['31Y', '20M', '7s', '4s'],
+        )
+
+    def test_lowercase_day_and_week_are_aliases(self):
+        self.assertEqual(human.extract_hrnumbers('3d 2w'), ['3d', '2w'])
+
+    def test_own_boundaries_replace_the_default(self):
+        self.assertEqual(
+            human.extract_hrnumbers('17G 3M 4B', boundaries=['G', 'M', 'B']),
+            ['17G', '3M', '4B'],
+        )
+        # 's' is no boundary any more once the caller names its own
+        self.assertEqual(human.extract_hrnumbers('4s', boundaries=['G']), [])
+
+    def test_nothing_to_extract(self):
+        self.assertEqual(human.extract_hrnumbers(''), [])
+        self.assertEqual(human.extract_hrnumbers('no numbers here'), [])
 
 
 if __name__ == '__main__':

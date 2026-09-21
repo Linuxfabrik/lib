@@ -166,6 +166,12 @@ _TIME_UNITS_SHORT = (
 
 
 def _to_human(n, thresholds, fallback_unit, decimals=1, space=False):
+    """Render `n` with the largest unit of `thresholds` that leaves a value >= 1.
+
+    The shared body of `bytes2human()`, `number2human()` and `seconds2human()`:
+    each passes its own thresholds and the unit to fall back to where no
+    threshold is reached.
+    """
     # compare against the absolute value so negative deltas (counter resets,
     # memory reclaimed, bandwidth swings) still get scaled to a unit that
     # matches their magnitude. e.g. -1048576 bytes reads as '-1.0MiB'.
@@ -304,7 +310,8 @@ def extract_hrnumbers(s, boundaries=None):
         The input string to extract numbers from.
     boundaries : list, optional
         A list of boundary characters that signify the end of
-        a number. Defaults to ['s', 'm', 'h', 'D', 'W', 'M', 'Y'].
+        a number. Defaults to `['s', 'm', 'h', 'd', 'D', 'w', 'W', 'M', 'Y']`, where
+        `d` and `w` are aliases of `D` and `W`.
 
     Returns
     -------
@@ -434,7 +441,7 @@ def human2seconds(string):
     819936000
 
     >>> human2seconds('26M')
-    62899200
+    67392000
 
     >>> human2seconds('26W')
     15724800
@@ -507,9 +514,10 @@ def humanduration2seconds(text):
 
     Examples
     --------
-    >>> text = '3Y 2M any-error 3d7s'  # means: valid is '3Y 2M 7s'
-    >>> humanduration2seconds(text)
-    99792007
+    A component the text does not separate is still read, and `d` counts as a day:
+
+    >>> humanduration2seconds('3Y 2M any-error 3d7s')
+    100051207
     """
     return sum(human2seconds(duration) for duration in extract_hrnumbers(text))
 
@@ -537,6 +545,11 @@ _QUANTITY = re.compile(
 
 
 def _convert_range(text, convert_fn):
+    """Convert every bound of a Nagios range with `convert_fn`, marker by marker.
+
+    A range is split on `:`, and the markers a bound may carry (`-`, `~`, `@`)
+    are kept as they are, so only the number itself is converted.
+    """
     parts = []
     for part in text.split(':'):
         raw = part.replace('-', '').replace('~', '').replace('@', '')
