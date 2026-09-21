@@ -619,13 +619,15 @@ def number_unit_method(arg, unit='%', method='USED'):
 
     Returns
     -------
-    tuple
-        (number, unit, method)
+    tuple (str, str, str)
+        The number as it was written, the unit and the method, both upper case.
+        An argument carrying no digits yields `('0.0', unit, method)`, and a unit
+        or method the parser does not know falls back to the default.
 
     Examples
     --------
     >>> number_unit_method('95')
-    ('95.0', '%', 'USED')
+    ('95', '%', 'USED')
 
     >>> number_unit_method('9.5GFREE')
     ('9.5', 'G', 'FREE')
@@ -661,7 +663,30 @@ def number_unit_method(arg, unit='%', method='USED'):
 
 
 def range_or_none(arg):
-    """See str_or_none()."""
+    """
+    Convert an input argument into a threshold range, or return None.
+
+    The same conversion as `str_or_none()`, under the name that says what the
+    value is used for, so an argparse definition reads as what it accepts.
+
+    Parameters
+    ----------
+    arg : any
+        The input argument.
+
+    Returns
+    -------
+    str or None
+        The argument as a string, or `None` where it is `None`.
+
+    Examples
+    --------
+    >>> range_or_none('90:')
+    '90:'
+
+    >>> range_or_none(None) is None
+    True
+    """
     return str_or_none(arg)
 
 

@@ -152,6 +152,16 @@ class TestLoadSecret(unittest.TestCase):
 
 
 class TestNumberUnitMethod(unittest.TestCase):
+    def test_no_digits_yields_zero(self):
+        self.assertEqual(args.number_unit_method(''), ('0.0', '%', 'USED'))
+        self.assertEqual(args.number_unit_method('abc'), ('0.0', '%', 'USED'))
+
+    def test_unknown_unit_falls_back_to_the_default(self):
+        self.assertEqual(args.number_unit_method('50XUSED'), ('50', '%', 'USED'))
+
+    def test_unknown_method_falls_back_to_the_default(self):
+        self.assertEqual(args.number_unit_method('50%BOGUS'), ('50', '%', 'USED'))
+
     def test_defaults(self):
         self.assertEqual(args.number_unit_method('50'), ('50', '%', 'USED'))
 
@@ -161,6 +171,20 @@ class TestNumberUnitMethod(unittest.TestCase):
             args.number_unit_method('80', unit='GiB', method='FREE'),
             ('80', 'GIB', 'FREE'),
         )
+
+
+class TestHelp(unittest.TestCase):
+    def test_returns_the_shared_text(self):
+        self.assertEqual(args.help('--timeout'), 'Network timeout in seconds.')
+
+    def test_unknown_parameter_yields_an_empty_string(self):
+        # a consumer appends its own "Default: ..." to whatever comes back, so an
+        # unknown parameter must not raise and must not leak a placeholder
+        self.assertEqual(args.help('--no-such-parameter'), '')
+
+    def test_text_carries_no_default_suffix(self):
+        for param in ('--timeout', '--proxy', '--insecure'):
+            self.assertNotIn('Default:', args.help(param))
 
 
 class TestDuration(unittest.TestCase):
