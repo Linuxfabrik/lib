@@ -1176,6 +1176,27 @@ class TestGetData(HuaweiHttpTestBase):
 # ---------------------------------------------------------------------------
 
 
+class TestGetAccountState(unittest.TestCase):
+    def test_names_every_documented_state(self):
+        self.assertEqual(huawei.get_account_state(1), 'normal (1)')
+        self.assertEqual(huawei.get_account_state(3), 'password expired (3)')
+        self.assertEqual(
+            huawei.get_account_state(4), 'initial password, which must be reset (4)'
+        )
+        self.assertEqual(
+            huawei.get_account_state(5), 'password about to expire (5)'
+        )
+
+    def test_an_undocumented_code_is_unknown(self):
+        # a firmware may report a code this library does not know; the consumer
+        # gets a word rather than a KeyError
+        self.assertEqual(huawei.get_account_state(99), 'Unknown')
+        self.assertEqual(huawei.get_account_state(None), 'Unknown')
+
+    def test_a_code_as_text(self):
+        self.assertEqual(huawei.get_account_state('1'), 'normal (1)')
+
+
 class TestGetErrorCode(unittest.TestCase):
     def test_reads_the_documented_object(self):
         self.assertEqual(huawei.get_error_code({'error': {'code': 0}}), 0)

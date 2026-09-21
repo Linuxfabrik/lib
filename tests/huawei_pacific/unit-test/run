@@ -616,6 +616,55 @@ class PacificHttpTestBase(unittest.TestCase):
         return self.last_call().kwargs
 
 
+class TestPureHelpers(unittest.TestCase):
+    """The lookups that turn an appliance code into something an admin reads."""
+
+    def test_node_names_by_ip(self):
+        nodes = [
+            {'management_ip': '192.0.2.11', 'name': 'node01'},
+            {'management_ip': '192.0.2.12', 'name': 'node02'},
+        ]
+        self.assertEqual(
+            huawei_pacific.get_node_names_by_ip(nodes),
+            {'192.0.2.11': 'node01', '192.0.2.12': 'node02'},
+        )
+
+    def test_node_names_skips_what_it_cannot_map(self):
+        nodes = [
+            {'management_ip': '192.0.2.11'},  # no name
+            {'name': 'node02'},  # no address
+            'not a dict',
+            {'management_ip': '', 'name': 'node03'},
+        ]
+        self.assertEqual(huawei_pacific.get_node_names_by_ip(nodes), {})
+
+    def test_password_status(self):
+        self.assertEqual(huawei_pacific.get_password_status(1), 'normal (1)')
+        self.assertEqual(huawei_pacific.get_password_status(99), 'Unknown')
+
+    def test_warranty_status(self):
+        self.assertEqual(
+            huawei_pacific.get_warranty_status(0), 'non-storage node (0)'
+        )
+        self.assertEqual(
+            huawei_pacific.get_warranty_status(1), 'normal, more than six months (1)'
+        )
+        self.assertEqual(huawei_pacific.get_warranty_status(99), 'Unknown')
+
+    def test_quota_bytes_applies_the_unit(self):
+        # unit type 2 is MB
+        self.assertEqual(huawei_pacific.get_quota_bytes(10, 2), 10485760)
+
+    def test_quota_bytes_of_an_unset_quota(self):
+        # the appliance reports "no quota" as the largest unsigned 64-bit value,
+        # and a negative value is no size either
+        self.assertIsNone(
+            huawei_pacific.get_quota_bytes(huawei_pacific.QUOTA_INVALID_VALUE64, 2)
+        )
+        self.assertIsNone(huawei_pacific.get_quota_bytes(-1, 2))
+        self.assertIsNone(huawei_pacific.get_quota_bytes(None, 2))
+
+
 class TestGetCreds(PacificHttpTestBase):
     def test_login_returns_token(self):
         self.fetch_json.return_value = LOGIN_OK
