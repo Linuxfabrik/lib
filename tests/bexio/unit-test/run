@@ -25,15 +25,20 @@ The tests probe three things:
     funnels through it, so this gets the bulk of the assertions.
   * `get_all()` implements the pagination loop (offset/limit, terminate on
     empty page, short-circuit on failure) and is covered end-to-end.
-  * The thin CRUD wrappers (~30 of them) all reduce to "call `get_all` or
-    `call_api` with the right URL constant". One representative per category
-    is asserted, plus the wrappers with non-trivial argument handling
-    (`fetch_contacts(archived=...)`, `delete_contact_relation` with its
-    DELETE method, `edit_*` with the id-to-string conversion) and a single
-    `test_url_constants_match_documented_endpoints` to pin the URL constants.
+  * The thin CRUD wrappers all reduce to "call `get_all` or `call_api` with the
+    right URL constant", and every one of them is called against the endpoint
+    it names: a copy-and-paste slip between two of them is invisible in the
+    module and lands on the customer's data. The wrappers with non-trivial
+    argument handling (`fetch_contacts(archived=...)`,
+    `delete_contact_relation` with its DELETE method, `edit_*` with the
+    id-to-string conversion) are asserted on their own as well, and
+    `test_url_constants_match_documented_endpoints` pins the URL constants.
+    `test_every_wrapper_is_in_the_table` fails once a wrapper is added to the
+    module without being added here.
 """
 
 import sys
+import typing
 import unittest
 import urllib.parse
 from unittest import mock
@@ -381,6 +386,138 @@ class TestThinWrappers(BexioTestBase):
         self.assertEqual(bexio.BEXIO_API_TITLE_URL, '/2.0/title')
         self.assertEqual(bexio.BEXIO_API_UNIT_URL, '/2.0/unit')
         self.assertEqual(bexio.BEXIO_API_USER_URL, '/3.0/users')
+
+
+# ---------------------------------------------------------------------------
+# Every wrapper, one table
+# ---------------------------------------------------------------------------
+
+
+class TestEveryWrapperTargetsItsEndpoint(BexioTestBase):
+    """Each wrapper against the endpoint it names, so none is covered by proxy.
+
+    A wrapper is one line, and the line is the whole contract: the right URL
+    constant, the right HTTP method, and the payload or id where there is one.
+    A copy-and-paste slip between two of them is invisible in the module and
+    lands on the customer's data, so every one of them is called here rather
+    than one per category.
+    """
+
+    # (function, arguments, expected path, paginated)
+    READERS: typing.ClassVar = [
+        (bexio.fetch_accounts, bexio.BEXIO_API_ACCOUNT_URL),
+        (bexio.fetch_bank_accounts, bexio.BEXIO_API_BANK_ACCOUNT_URL),
+        (bexio.fetch_business_activities, bexio.BEXIO_API_BUSINESS_ACTIVITY_URL),
+        (bexio.fetch_contact_groups, bexio.BEXIO_API_CONTACT_GROUP_URL),
+        (bexio.fetch_contact_relations, bexio.BEXIO_API_CONTACT_RELATION_URL),
+        (bexio.fetch_contact_sectors, bexio.BEXIO_API_CONTACT_SECTOR_URL),
+        (bexio.fetch_contacts, bexio.BEXIO_API_CONTACT_URL),
+        (bexio.fetch_countries, bexio.BEXIO_API_COUNTRY_URL),
+        (bexio.fetch_currencies, bexio.BEXIO_API_CURRENCY_URL),
+        (bexio.fetch_invoices, bexio.BEXIO_API_INVOICE_URL),
+        (bexio.fetch_items, bexio.BEXIO_API_ITEM_URL),
+        (bexio.fetch_languages, bexio.BEXIO_API_LANGUAGE_URL),
+        (bexio.fetch_payment_types, bexio.BEXIO_API_PAYMENT_TYPE_URL),
+        (bexio.fetch_project_statuses, bexio.BEXIO_API_PROJECT_STATUS_URL),
+        (bexio.fetch_project_types, bexio.BEXIO_API_PROJECT_TYPE_URL),
+        (bexio.fetch_projects, bexio.BEXIO_API_PROJECT_URL),
+        (bexio.fetch_salutations, bexio.BEXIO_API_SALUTATION_URL),
+        (bexio.fetch_stock_areas, bexio.BEXIO_API_STOCK_AREA_URL),
+        (bexio.fetch_stock_locations, bexio.BEXIO_API_STOCK_LOCATION_URL),
+        (bexio.fetch_taxes, bexio.BEXIO_API_TAX_URL),
+        (bexio.fetch_timesheet_statuses, bexio.BEXIO_API_TIMESHEET_STATUS_URL),
+        (bexio.fetch_timesheets, bexio.BEXIO_API_TIMESHEET_URL),
+        (bexio.fetch_titles, bexio.BEXIO_API_TITLE_URL),
+        (bexio.fetch_units, bexio.BEXIO_API_UNIT_URL),
+        (bexio.fetch_users, bexio.BEXIO_API_USER_URL),
+    ]
+
+    CREATORS: typing.ClassVar = [
+        (bexio.create_contact, bexio.BEXIO_API_CONTACT_URL),
+        (bexio.create_contact_relation, bexio.BEXIO_API_CONTACT_RELATION_URL),
+        (bexio.create_invoice, bexio.BEXIO_API_INVOICE_URL),
+        (bexio.create_item, bexio.BEXIO_API_ITEM_URL),
+        (bexio.create_project, bexio.BEXIO_API_PROJECT_URL),
+        (bexio.create_timesheet, bexio.BEXIO_API_TIMESHEET_URL),
+    ]
+
+    EDITORS: typing.ClassVar = [
+        (bexio.edit_contact, bexio.BEXIO_API_CONTACT_URL),
+        (bexio.edit_contact_relation, bexio.BEXIO_API_CONTACT_RELATION_URL),
+        (bexio.edit_invoice, bexio.BEXIO_API_INVOICE_URL),
+        (bexio.edit_item, bexio.BEXIO_API_ITEM_URL),
+        (bexio.edit_project, bexio.BEXIO_API_PROJECT_URL),
+        (bexio.edit_timesheet, bexio.BEXIO_API_TIMESHEET_URL),
+    ]
+
+    def test_every_reader_asks_its_own_endpoint(self):
+        for func, path in self.READERS:
+            with self.subTest(func=func.__name__):
+                self.fetch_json.reset_mock()
+                self.fetch_json.return_value = (True, [])
+                func(API_TOKEN)
+                self.assertTrue(
+                    self.sent_url().startswith(
+                        f'{bexio.BEXIO_API_BASE_URL}{path}?'
+                    ),
+                    self.sent_url(),
+                )
+
+    def test_every_reader_paginates(self):
+        # a reader goes through get_all(), so it carries offset and limit
+        for func, _ in self.READERS:
+            with self.subTest(func=func.__name__):
+                self.fetch_json.reset_mock()
+                self.fetch_json.return_value = (True, [])
+                func(API_TOKEN)
+                query = _query(self.sent_url())
+                self.assertEqual(query['offset'], '0')
+                self.assertEqual(query['limit'], '2000')
+
+    def test_every_reader_passes_a_failure_on(self):
+        for func, _ in self.READERS:
+            with self.subTest(func=func.__name__):
+                self.fetch_json.reset_mock()
+                self.fetch_json.return_value = (False, 'HTTP 401: invalid token')
+                self.assertEqual(
+                    func(API_TOKEN), (False, 'HTTP 401: invalid token')
+                )
+
+    def test_every_creator_posts_its_payload(self):
+        for func, path in self.CREATORS:
+            with self.subTest(func=func.__name__):
+                self.fetch_json.reset_mock()
+                self.fetch_json.return_value = (True, {'id': 42})
+                payload = {'name': 'linuxfabrik'}
+                func(API_TOKEN, data=payload)
+                self.assertEqual(
+                    self.sent_url(), f'{bexio.BEXIO_API_BASE_URL}{path}'
+                )
+                self.assertEqual(self.sent_kwargs()['data'], payload)
+                self.assertIsNone(self.sent_kwargs()['method'])
+
+    def test_every_editor_appends_the_id(self):
+        for func, path in self.EDITORS:
+            with self.subTest(func=func.__name__):
+                self.fetch_json.reset_mock()
+                self.fetch_json.return_value = (True, {'id': 7})
+                func(API_TOKEN, 7, {'name': 'linuxfabrik'})
+                self.assertEqual(
+                    self.sent_url(), f'{bexio.BEXIO_API_BASE_URL}{path}/7'
+                )
+
+    def test_every_wrapper_is_in_the_table(self):
+        # a wrapper added later has to be added here too, or this fails
+        covered = {func.__name__ for func, _ in self.READERS + self.CREATORS + self.EDITORS}
+        covered |= {'call_api', 'get_all', 'delete_contact_relation'}
+        public = {
+            name
+            for name in dir(bexio)
+            if callable(getattr(bexio, name))
+            and not name.startswith('_')
+            and getattr(getattr(bexio, name), '__module__', '') == bexio.__name__
+        }
+        self.assertEqual(public - covered, set())
 
 
 if __name__ == '__main__':
