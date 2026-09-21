@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.kvm.
+
+Nothing here talks to libvirt. Everything that would run `virsh` is driven
+through a mocked `lib.shell.shell_exec()`, and the parsers are fed the output a
+hypervisor produced, so the whole file runs in a fraction of a second and needs
+neither a hypervisor nor root.
+
+All expected values were probed against the module first, then pinned. Notably:
+`parse_volumes()` returns an empty list unless the header carries both a
+capacity and an allocation column, and `group_by_store()` groups by capacity
+first and only then by how far the free space drifted.
+"""
+
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.kvm as kvm
+
+DOMSTATS = """Domain: 'web01'
+  state.state=1
+  state.reason=1
+  balloon.current=2097152
+  balloon.maximum=2097152
+  vcpu.current=2
+
+Domain: 'db 01'
+  state.state=5
+  balloon.current=1048576
+"""
+
+POOL_INFO = """Name:           default
+UUID:           abc-123
+State:          running
+Persistent:     yes
+Autostart:      yes
+Capacity:       100.00 GiB
+Allocation:     20.00 GiB
+Available:      80.00 GiB
+"""
+
+VOL_LIST = """ Name          Path                                  Capacity   Allocation
+-------------------------------------------------------------------------
+ web01.qcow2   /var/lib/libvirt/images/web01.qcow2   20.00 GiB  8.00 GiB
+ db01.qcow2    /var/lib/libvirt/images/db01.qcow2    50.00 GiB  50.00 GiB
+"""
+
+
+def _virsh(stdout='', stderr='', retc=0, success=True):
+    """Answer `shell.shell_exec()` the way virsh would have."""
+    return mock.patch.object(
+        kvm.shell, 'shell_exec', return_value=(success, (stdout, stderr, retc))
+    )
+
+
+class TestParseDomstats(unittest.TestCase):
+    def test_reads_every_domain(self):
+        self.assertEqual(sorted(kvm.parse_domstats(DOMSTATS)), ['db 01', 'web01'])
+
+    def test_a_name_with_a_space_survives(self):
+        # the name comes from the quoted `Domain: '<name>'` header
+        self.assertIn('db 01', kvm.parse_domstats(DOMSTATS))
+
+    def test_digits_become_int_everything_else_stays_text(self):
+        stats = kvm.parse_domstats(DOMSTATS + "  block.0.name=vda\n")
+        self.assertEqual(stats['db 01']['balloon.current'], 1048576)
+        self.assertEqual(stats['db 01']['block.0.name'], 'vda')
+
+    def test_empty_output(self):
+        self.assertEqual(kvm.parse_domstats(''), {})
+
+
+class TestParsePoolInfo(unittest.TestCase):
+    def test_keys_are_lowercased(self):
+        info = kvm.parse_pool_info(POOL_INFO)
+        self.assertEqual(info['name'], 'default')
+        self.assertEqual(info['state'], 'running')
+        self.assertEqual(info['capacity'], '100.00 GiB')
+
+    def test_empty_output(self):
+        self.assertEqual(kvm.parse_pool_info(''), {})
+
+
+class TestParseVolumes(unittest.TestCase):
+    def test_reads_name_path_and_sizes(self):
+        volumes = kvm.parse_volumes(VOL_LIST)
+        self.assertEqual([v['name'] for v in volumes], ['web01.qcow2', 'db01.qcow2'])
+        self.assertEqual(volumes[0]['capacity'], 21474836480)
+        self.assertEqual(volumes[0]['allocation'], 8589934592)
+        self.assertEqual(volumes[0]['path'], '/var/lib/libvirt/images/web01.qcow2')
+
+    def test_without_the_size_columns_nothing_is_read(self):
+        # `vol-list` without --details carries no capacity, and a consumer must not
+        # mistake that for a pool without volumes carrying sizes
+        plain = ' Name         Path\n------------------\n a.qcow2     /tmp/a.qcow2\n'
+        self.assertEqual(kvm.parse_volumes(plain), [])
+
+    def test_empty_output(self):
+        self.assertEqual(kvm.parse_volumes(''), [])
+
+
+class TestGroupByStore(unittest.TestCase):
+    POOLS = (
+        {'name': 'a', 'capacity': 1000, 'available': 400},
+        {'name': 'b', 'capacity': 1000, 'available': 404},
+        {'name': 'c', 'capacity': 1000, 'available': 900},
+        {'name': 'd', 'capacity': 2000, 'available': 400},
+    )
+
+    def _names(self, drift=0.01):
+        return [
+            [entry['name'] for entry in group]
+            for group in kvm.group_by_store(list(self.POOLS), drift=drift)
+        ]
+
+    def test_pools_of_one_filesystem_end_up_together(self):
+        # 4 of 1000 bytes is 0.4%, within the default drift
+        self.assertIn(['a', 'b'], self._names())
+
+    def test_the_same_size_but_a_different_fill_stays_apart(self):
+        self.assertIn(['c'], self._names())
+
+    def test_a_different_capacity_stays_apart(self):
+        self.assertIn(['d'], self._names())
+
+    def test_every_entry_appears_exactly_once(self):
+        groups = self._names()
+        self.assertEqual(sum(len(g) for g in groups), len(self.POOLS))
+
+    def test_a_wider_drift_merges_more(self):
+        self.assertIn(['a', 'b', 'c'], self._names(drift=0.6))
+
+    def test_empty_input(self):
+        self.assertEqual(kvm.group_by_store([]), [])
+
+
+class TestVirsh(unittest.TestCase):
+    def test_connects_read_only_to_the_uri(self):
+        with mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'), \
+             _virsh(stdout='ok') as exec_mock:
+            success, stdout = kvm.virsh(['list', '--all'], uri='qemu:///system')
+        self.assertTrue(success)
+        self.assertEqual(stdout, 'ok')
+        argv = exec_mock.call_args[0][0]
+        self.assertEqual(argv[:3], ['virsh', '--readonly', '--connect=qemu:///system'])
+        self.assertEqual(argv[3:], ['list', '--all'])
+
+    def test_without_virsh_it_names_the_package(self):
+        with mock.patch.object(kvm.shell, 'which', return_value=None):
+            success, message = kvm.virsh(['list'])
+        self.assertFalse(success)
+        self.assertIn('libvirt-client', message)
+
+    def test_a_non_zero_return_code_is_explained(self):
+        with mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'), \
+             _virsh(stderr='error: failed to connect to the hypervisor', retc=1):
+            success, message = kvm.virsh(['list'])
+        self.assertFalse(success)
+        self.assertNotEqual(message, '')
+
+    def test_a_failed_call_is_passed_on(self):
+        with mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'), \
+             mock.patch.object(
+                 kvm.shell, 'shell_exec', return_value=(False, 'timed out')
+             ):
+            self.assertEqual(kvm.virsh(['list']), (False, 'timed out'))
+
+
+class TestReaders(unittest.TestCase):
+    """The functions that put a virsh call and a parser together."""
+
+    def _with_virsh(self, answer):
+        return mock.patch.object(kvm, 'virsh', return_value=answer)
+
+    def test_get_domstats_parses_what_virsh_answered(self):
+        with self._with_virsh((True, DOMSTATS)) as virsh_mock:
+            success, domains = kvm.get_domstats(groups=['balloon', 'state'])
+        self.assertTrue(success)
+        self.assertEqual(domains['web01']['state.state'], 1)
+        args = virsh_mock.call_args[0][0]
+        self.assertEqual(args[0], 'domstats')
+        self.assertIn('--balloon', args)
+        self.assertIn('--state', args)
+
+    def test_get_domstats_passes_a_failure_on(self):
+        with self._with_virsh((False, 'no hypervisor')):
+            self.assertEqual(kvm.get_domstats(), (False, 'no hypervisor'))
+
+    def test_get_pool_info_parses_what_virsh_answered(self):
+        with self._with_virsh((True, POOL_INFO)):
+            success, info = kvm.get_pool_info('default')
+        self.assertTrue(success)
+        self.assertEqual(info['state'], 'running')
+
+    def test_get_volumes_parses_what_virsh_answered(self):
+        with self._with_virsh((True, VOL_LIST)):
+            success, volumes = kvm.get_volumes('default')
+        self.assertTrue(success)
+        self.assertEqual(len(volumes), 2)
+
+    def test_get_pools_lists_the_names(self):
+        with self._with_virsh((True, ' default\n images\n')):
+            success, pools = kvm.get_pools()
+        self.assertTrue(success)
+        self.assertEqual(pools, ['default', 'images'])
+
+    def test_get_domains_lists_the_names(self):
+        with self._with_virsh((True, 'web01\ndb01\n')):
+            success, domains = kvm.get_domains()
+        self.assertTrue(success)
+        self.assertEqual(domains, ['web01', 'db01'])
+
+    def test_get_pool_xml_hands_the_document_over(self):
+        with self._with_virsh((True, '<pool type="dir"/>')):
+            success, xml = kvm.get_pool_xml('default')
+        self.assertTrue(success)
+        self.assertIn('<pool', xml)
+
+
+class TestStateTables(unittest.TestCase):
+    def test_domain_states_name_every_libvirt_state(self):
+        self.assertEqual(kvm.DOMAIN_STATES[1], 'running')
+        self.assertEqual(kvm.DOMAIN_STATES[5], 'shut off')
+
+    def test_a_reason_is_named_per_state(self):
+        self.assertIn(5, kvm.DOMAIN_STATE_REASONS)
+
+
+if __name__ == '__main__':
+    unittest.main()
