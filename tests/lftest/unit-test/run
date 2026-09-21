@@ -109,6 +109,94 @@ class TestTestText(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 3)
 
 
+class TestTestJson(unittest.TestCase):
+    """test_json(): one fixture of a consumer that reads a JSON endpoint."""
+
+    def setUp(self):
+        self.cwd = os.getcwd()
+        os.chdir(HERE)
+        self._argv0 = sys.argv[0]
+        sys.argv[0] = os.path.join(os.path.dirname(HERE), 'lftest-plugin')
+
+    def tearDown(self):
+        sys.argv[0] = self._argv0
+        os.chdir(self.cwd)
+
+    def test_parses_the_fixture(self):
+        self.assertEqual(
+            lftest.test_json(['stdout/json-case']), {'cluster': {'nodes': 3}}
+        )
+
+    def test_reads_the_fixture_the_path_names(self):
+        self.assertEqual(
+            lftest.test_json(['stdout/case'], 'stdout/json-case'),
+            {'cluster': {'nodes': 3}},
+        )
+
+    def test_a_fixture_that_is_no_json_aborts(self):
+        with self.assertRaises(SystemExit) as ctx:
+            lftest.test_json(['stdout/broken-json'])
+        self.assertEqual(ctx.exception.code, 3)
+
+    def test_missing_fixture_aborts(self):
+        with self.assertRaises(SystemExit) as ctx:
+            lftest.test_json(['stdout/does-not-exist'])
+        self.assertEqual(ctx.exception.code, 3)
+
+
+class TestContainerRuntimeGuard(unittest.TestCase):
+    """What a test is told when it may not or cannot start a container."""
+
+    def test_the_switch_a_runner_sets_turns_containers_off(self):
+        with mock.patch.dict(os.environ, {lftest.NO_CONTAINER_ENV: '1'}):
+            self.assertFalse(lftest.container_runtime_available())
+
+    def test_require_skips_the_single_test(self):
+        with mock.patch.dict(os.environ, {lftest.NO_CONTAINER_ENV: '1'}), \
+             self.assertRaises(unittest.SkipTest), \
+             lftest.require_container_runtime():
+            pass
+
+    def test_the_reason_names_the_switch(self):
+        with mock.patch.dict(os.environ, {lftest.NO_CONTAINER_ENV: '1'}):
+            self.assertIn(lftest.NO_CONTAINER_ENV, lftest._container_runtime_problem())
+
+
+class TestPrepareContainerEnv(unittest.TestCase):
+    """Where testcontainers is pointed, and what the caller keeps."""
+
+    def test_fills_in_the_rootless_podman_socket(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            lftest.prepare_container_env()
+            self.assertEqual(
+                os.environ['DOCKER_HOST'],
+                f'unix:///run/user/{os.getuid()}/podman/podman.sock',
+            )
+            # the reaper never becomes reachable under rootless podman
+            self.assertEqual(os.environ['TESTCONTAINERS_RYUK_DISABLED'], 'true')
+
+    def test_a_docker_host_the_caller_set_stays(self):
+        with mock.patch.dict(
+            os.environ, {'DOCKER_HOST': 'unix:///var/run/docker.sock'}, clear=True
+        ):
+            lftest.prepare_container_env()
+            self.assertEqual(os.environ['DOCKER_HOST'], 'unix:///var/run/docker.sock')
+
+    def test_container_host_is_read_as_the_socket(self):
+        with mock.patch.dict(
+            os.environ, {'CONTAINER_HOST': 'unix:///run/podman.sock'}, clear=True
+        ):
+            lftest.prepare_container_env()
+            self.assertEqual(os.environ['DOCKER_HOST'], 'unix:///run/podman.sock')
+
+    def test_a_running_reaper_stays_in_charge(self):
+        with mock.patch.dict(
+            os.environ, {'TESTCONTAINERS_RYUK_DISABLED': 'false'}, clear=True
+        ):
+            lftest.prepare_container_env()
+            self.assertEqual(os.environ['TESTCONTAINERS_RYUK_DISABLED'], 'false')
+
+
 class TestTestTextMissingOk(unittest.TestCase):
     """test_text(missing_ok=True): a fixture that is not there is data."""
 

@@ -612,6 +612,160 @@ class PacificHttpTestBase(unittest.TestCase):
         return self.last_call().kwargs
 
 
+class TestAsCode(unittest.TestCase):
+    def test_reads_a_number_however_it_is_spelled(self):
+        self.assertEqual(huawei_pacific.as_code(5), 5)
+        self.assertEqual(huawei_pacific.as_code('5'), 5)
+
+    def test_anything_that_is_no_code_is_none(self):
+        self.assertIsNone(huawei_pacific.as_code('x'))
+        self.assertIsNone(huawei_pacific.as_code(None))
+        self.assertIsNone(huawei_pacific.as_code({}))
+
+
+class TestPoolStatus(unittest.TestCase):
+    def test_a_documented_code(self):
+        self.assertEqual(huawei_pacific.get_pool_status(0), 'normal (0)')
+
+    def test_an_undocumented_code(self):
+        self.assertEqual(huawei_pacific.get_pool_status(99), 'Unknown')
+
+
+class TestFormatResponses(unittest.TestCase):
+    def setUp(self):
+        huawei_pacific._recorded_responses.clear()
+        self.addCleanup(huawei_pacific._recorded_responses.clear)
+
+    def test_nothing_recorded_nothing_rendered(self):
+        self.assertEqual(huawei_pacific.format_responses(), '')
+
+    def test_a_recorded_response_becomes_a_block(self):
+        huawei_pacific.record_response('cluster/servers', {'data': [{'id': 1}]})
+        rendered = huawei_pacific.format_responses()
+        self.assertIn('### GET cluster/servers', rendered)
+        self.assertIn('"id": 1', rendered)
+
+    def test_a_credential_never_reaches_the_output(self):
+        huawei_pacific.record_response('login', {'data': {'password': 'linuxfabrik'}})
+        self.assertNotIn('linuxfabrik', huawei_pacific.format_responses())
+
+
+class TestGetAllData(unittest.TestCase):
+    """The paging walk, driven through a mocked get_data()."""
+
+    @staticmethod
+    def _envelope(data):
+        return {'data': data, 'result': {'code': 0}}
+
+    def test_walks_until_a_short_page_arrives(self):
+        pages = [
+            self._envelope([{'id': i} for i in range(100)]),
+            self._envelope([{'id': 100}]),
+        ]
+        with mock.patch.object(
+            huawei_pacific, 'get_data', side_effect=pages
+        ) as get_data:
+            result, truncated = huawei_pacific.get_all_data(
+                'namespaces', Args(), page_size=100
+            )
+        self.assertEqual(len(result['data']), 101)
+        self.assertFalse(truncated)
+        self.assertEqual(get_data.call_count, 2)
+        self.assertEqual(
+            [call.args[0] for call in get_data.call_args_list],
+            [
+                'namespaces?range={"offset":0,"limit":100}',
+                'namespaces?range={"offset":100,"limit":100}',
+            ],
+        )
+
+    def test_the_bracket_style_of_the_alarm_endpoints(self):
+        with mock.patch.object(
+            huawei_pacific, 'get_data', return_value=self._envelope([{'id': 1}])
+        ) as get_data:
+            huawei_pacific.get_all_data(
+                'alarms', Args(), page_size=100, range_style='bracket'
+            )
+        self.assertEqual(get_data.call_args_list[0].args[0], 'alarms?range=[0-100]')
+
+    def test_a_failed_page_is_handed_back_whole(self):
+        # a partial inventory must not be presented as a complete one
+        failure = {'result': {'code': 3}, 'data': []}
+        with mock.patch.object(huawei_pacific, 'get_data', return_value=failure):
+            result, truncated = huawei_pacific.get_all_data('x', Args())
+        self.assertIs(result, failure)
+        self.assertFalse(truncated)
+
+    def test_max_pages_cuts_the_walk_and_says_so(self):
+        page = self._envelope([{'id': 1}, {'id': 2}])
+        with mock.patch.object(
+            huawei_pacific, 'get_data', side_effect=[page] * 3
+        ) as get_data:
+            _, truncated = huawei_pacific.get_all_data(
+                'x', Args(), page_size=2, max_pages=3
+            )
+        self.assertTrue(truncated)
+        self.assertEqual(get_data.call_count, 3)
+
+    def test_an_endpoint_that_does_not_page(self):
+        single = self._envelope({'id': 1})
+        with mock.patch.object(huawei_pacific, 'get_data', return_value=single):
+            result, truncated = huawei_pacific.get_all_data('x', Args())
+        self.assertEqual(result['data'], {'id': 1})
+        self.assertFalse(truncated)
+
+
+class TestGetClusterNodes(unittest.TestCase):
+    """Which nodes a hardware query is run against."""
+
+    @staticmethod
+    def _envelope(nodes):
+        return {'data': nodes, 'result': {'code': 0}}
+
+    def _nodes(self, nodes):
+        with mock.patch.object(
+            huawei_pacific, 'get_data', return_value=self._envelope(nodes)
+        ), mock.patch.object(huawei_pacific, '_assert_all_nodes_listed'):
+            return huawei_pacific.get_cluster_nodes(Args())
+
+    def test_keeps_a_node_in_the_cluster_and_one_that_says_nothing(self):
+        # a firmware that does not report in_cluster must not narrow the result
+        nodes = self._nodes(
+            [
+                {'name': 'node01', 'management_ip': '192.0.2.11', 'in_cluster': True},
+                {'name': 'node02', 'management_ip': '192.0.2.12'},
+            ]
+        )
+        self.assertEqual([node['name'] for node in nodes], ['node01', 'node02'])
+
+    def test_leaves_out_a_node_that_is_not_in_the_cluster(self):
+        nodes = self._nodes(
+            [
+                {'name': 'node01', 'management_ip': '192.0.2.11', 'in_cluster': True},
+                {'name': 'node03', 'management_ip': '192.0.2.13', 'in_cluster': False},
+                {'name': 'node04', 'management_ip': '192.0.2.14', 'in_cluster': None},
+            ]
+        )
+        self.assertEqual([node['name'] for node in nodes], ['node01'])
+
+    def test_a_node_that_is_no_object_is_skipped(self):
+        nodes = self._nodes(
+            ['a string', {'name': 'node01', 'management_ip': '192.0.2.11'}]
+        )
+        self.assertEqual([node['name'] for node in nodes], ['node01'])
+
+    def test_a_node_in_the_cluster_without_an_address_aborts(self):
+        # covering part of the cluster and reporting OK would be the worse answer
+        with self.assertRaises(SystemExit) as raised:
+            self._nodes([{'name': 'node01', 'in_cluster': True}])
+        self.assertEqual(raised.exception.code, STATE_UNKNOWN)
+
+    def test_no_node_at_all_aborts(self):
+        with self.assertRaises(SystemExit) as raised:
+            self._nodes([])
+        self.assertEqual(raised.exception.code, STATE_UNKNOWN)
+
+
 class TestPureHelpers(unittest.TestCase):
     """The lookups that turn an appliance code into something an admin reads."""
 
