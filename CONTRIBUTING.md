@@ -159,6 +159,35 @@ When the source declares its encoding, decode with that codec first and only fal
 Encoding text back to bytes for stdin, hashing, sockets, or a base64 input: use `to_bytes()`. Base64 output is pure ASCII, so `to_text(base64.b64encode(...))` needs no special handler.
 
 
+### Security
+
+Most security advisories filed against the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories) were rooted in this library, and every one of them affected all consumers at once. A function here is called with values nobody sanitized, from processes that may run as root, against servers nobody vouches for. Write it for that.
+
+**Two attackers.** Check every function against both:
+
+* A local, unprivileged account that makes a process running as root (e.g. via sudo) call the function. It controls every argument, and every file and directory it can create, `/tmp` included.
+* The remote system the function talks to: a server, a management controller, a storage appliance. A malicious or compromised one controls every byte of its responses, including status codes, headers, redirects and links.
+
+**Fix the invariant, not the report.** An advisory names one channel. The fix has to close the rule behind it. Before changing code:
+
+1. State the invariant in one sentence, for example "a credential never leaves the origin it was given for".
+2. List every channel through which it can break (for a credential: headers, request body, query string, cookies, URL userinfo, each redirect status code, error messages) and check each one against the source of the library underneath, not against its documentation.
+3. Write one test per channel that fails without the fix. Run it against the unfixed code before trusting it.
+4. Search the whole library for the same class, not only the reported function.
+
+The header fix for [GHSA-4jc5-g844-4x33](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-4jc5-g844-4x33) left the request body open ([GHSA-pq9x-4pp3-p5r9](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-pq9x-4pp3-p5r9)), and the state database fix for [GHSA-r35r-fpx2-jgr4](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-r35r-fpx2-jgr4) left a migration path open ([GHSA-w2gg-hx6w-24w3](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-w2gg-hx6w-24w3)). Both were follow-up reports on a fix that closed only the channel it was shown.
+
+* **Arguments are hostile.** Check the type, reject what does not fit, and return `(False, message)` instead of repairing the value. A string builder is not harmless: its output becomes a URL that is fetched, a command that is run, or a link that is clicked.
+* **Responses are hostile.** Never take a request target from a response. Build a follow-up URL only from a relative path, with scheme, host and port pinned to the base URL the caller supplied (`redfish.build_url()`, [GHSA-96fx-pqc3-28xv](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-96fx-pqc3-28xv)). An endpoint announced in a discovery document is rebuilt from the caller's configuration, not used as is (`keycloak.obtain_admin_token()`, [GHSA-88fj-95f7-w68m](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-88fj-95f7-w68m)). Nothing is read without a bound: `url.fetch()` refuses a body beyond `max_bytes`, counted after decompression.
+* **Credentials stay with their origin, on every channel.** `url.fetch()` drops caller headers and refuses to resend a request body when a redirect crosses the origin. The proxy is chosen by `net.get_proxy()`, which honours every exception the operator set, never by the HTTP library's own reading of the environment. A new HTTP path keeps all of these guarantees. A credential never appears in a returned message or an error: redact URLs (`url._redact_url()`), and name only the program when a command fails (`shell.shell_exec()`).
+* **Commands are argv lists.** `shell.shell_exec()` takes a list and runs without a shell ([GHSA-798h-hpph-m24j](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-798h-hpph-m24j)). A value in a positional slot is guarded with `shell.safe_cli_value()`, so it cannot be read as an option. A program that runs code from its options (`apt-get -o`, `ssh -o`, an interpreter) is only safe with fixed arguments ([GHSA-8w6w-23mq-h8rg](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-8w6w-23mq-h8rg)).
+* **A caller-chosen path is confined at every edge.** Canonicalize with `realpath()`, check containment with `disk.is_within()`, and open with symlink following disabled (`disk.read_file(allowed_roots=..., nofollow=True)`). This applies to the directory scanned, every entry found inside it and the final read, not only the first one. A filename check binds the symlink's name, never its target ([GHSA-f54c-p5vg-mr5c](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-f54c-p5vg-mr5c), [GHSA-q8c8-wxhc-3h4c](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-q8c8-wxhc-3h4c)). Where a module reads files on a caller's behalf, the confinement belongs in the module (`logsource` and its `allowed_roots`).
+* **A hidden input is a live input.** Whatever the argument parser accepts is reachable in production, suppressed help text or not. `lftest.test()` reads fixtures only from below the running program's own `unit-test/` directory ([GHSA-rh9c-rqvg-f7pr](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-rh9c-rqvg-f7pr)).
+* **No predictable paths in shared directories.** State and cache files live in a per-user directory that `db_sqlite.get_db_dir()` validates with `os.lstat()`: a real directory, owned by the effective user, no group or other permissions ([GHSA-r35r-fpx2-jgr4](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-r35r-fpx2-jgr4)). Never rename, move or open a file taken from `/tmp`; `os.rename()` moves a planted symlink along ([GHSA-w2gg-hx6w-24w3](https://github.com/Linuxfabrik/monitoring-plugins/security/advisories/GHSA-w2gg-hx6w-24w3)). Code that runs only once, such as a migration or a cleanup, gets the same scrutiny.
+* **Fail closed.** When a guard cannot decide, refuse with a message that says why. Do not drop the offending part and carry on, since that sends something the caller never built.
+* **Guards on third-party internals are tested against the real library.** Where a guard wraps a private attribute of a dependency (the redirect hooks of `httpx`), a test runs the real dependency through it, so a rename in a new release fails the test instead of silently switching the guard off. Record the versions the guard was verified against in a comment next to it.
+
+
 ### PyLint
 
 To improve code quality, we use [PyLint](https://www.pylint.org/):
