@@ -842,7 +842,10 @@ def get_public_ip(services, insecure=False, no_proxy=False, proxy=None, timeout=
 
     Examples
     --------
-    >>> get_public_ip('https://ip.example.com,https://ip2.example.com')
+    >>> get_public_ip(
+    ...     'https://ip.linuxfabrik.ch,https://ipv4.icanhazip.com,'
+    ...     'https://ipecho.net/plain,https://ipinfo.io/ip'
+    ... )
     (True, '192.0.2.1')
     """
     if not services:
