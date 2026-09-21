@@ -290,6 +290,45 @@ class TestGetAuthHeader(unittest.TestCase):
     @mock.patch.object(redfish, 'time')
     @mock.patch.object(redfish, 'cache')
     @mock.patch.object(redfish, 'url')
+    def test_an_absurd_session_timeout_is_capped_at_the_schema_maximum(
+        self, url_mock, cache_mock, time_mock
+    ):
+        # beyond what SQLite stores as an integer, the token could not be cached at all
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.side_effect = [
+            SESSION_CREATED,
+            (True, {'SessionTimeout': 10**20}),
+        ]
+        redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=3600)
+        self.assertEqual(
+            cache_mock.set.call_args_list[0][0], (TOKEN_KEY, 'new-token', 1000 + 86392)
+        )
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_an_unusable_session_timeout_falls_back_to_cache_expire(
+        self, url_mock, cache_mock, time_mock
+    ):
+        for value in (True, 'inf', -300, [300]):
+            with self.subTest(value=value):
+                cache_mock.reset_mock()
+                cache_mock.get.return_value = False
+                time_mock.now.return_value = 1000
+                url_mock.fetch_json.side_effect = [
+                    SESSION_CREATED,
+                    (True, {'SessionTimeout': value}),
+                ]
+                redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=3600)
+                self.assertEqual(
+                    cache_mock.set.call_args_list[0][0],
+                    (TOKEN_KEY, 'new-token', 1000 + 3600),
+                )
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
     def test_margin_never_drops_below_one_second(self, url_mock, cache_mock, time_mock):
         # SessionTimeout below the margin would go negative; clamped to 1.
         cache_mock.get.return_value = False
@@ -482,6 +521,34 @@ class TestSessionLifecycle(unittest.TestCase):
         _, writes, _ = self._reuse(self._session(timeout='300'))
         self.assertEqual(writes[0], (TOKEN_KEY, 'cached-token', 2000 + 292))
 
+    def test_an_absurd_stored_timeout_is_capped_at_the_schema_maximum(self):
+        _, writes, _ = self._reuse(self._session(timeout=10**20))
+        self.assertEqual(writes[0], (TOKEN_KEY, 'cached-token', 2000 + 86400 - 8))
+        self.assertEqual(writes[1][2], 2000 + 86400)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_re_arming_uses_the_caller_s_cache_file(
+        self, url_mock, cache_mock, time_mock
+    ):
+        session = self._session()
+        cache_mock.get.side_effect = lambda key, **kwargs: (
+            'cached-token' if key == TOKEN_KEY else session
+        )
+        time_mock.now.return_value = 2000
+        redfish.get_auth_header(_args(), cache_expire=300, cache_filename='other.db')
+        for call in cache_mock.get.call_args_list + cache_mock.set.call_args_list:
+            self.assertEqual(call[1], {'filename': 'other.db'})
+        self.assertEqual(cache_mock.set.call_count, 2)
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_without_caching_nothing_is_read_or_re_armed(self, url_mock, cache_mock):
+        url_mock.fetch_json.side_effect = [SESSION_CREATED]
+        redfish.get_auth_header(_args())
+        self.assertEqual(cache_mock.method_calls, [])
+
     def test_nothing_is_re_armed_without_a_matching_session(self):
         # another session's token, no known timeout, an entry written before the timeout
         # was stored, no entry at all, and whatever else the cache might hold: the token
@@ -491,6 +558,8 @@ class TestSessionLifecycle(unittest.TestCase):
             'timeout zero': self._session(timeout=0),
             'negative timeout': self._session(timeout=-5),
             'timeout not a number': self._session(timeout='abc'),
+            'timeout a boolean': self._session(timeout=True),
+            'timeout infinite': self._session(timeout='inf'),
             'entry without timeout': json.dumps({'uri': 'u', 'token': 'cached-token'}),
             'no entry': False,
             'no JSON': 'x{',

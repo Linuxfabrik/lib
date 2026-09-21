@@ -1419,10 +1419,12 @@ def _extend_session(args, token_key, token, cache_filename):
         return
     try:
         session = json.loads(stored)
-        session_timeout = int(session.get('timeout') or 0)
-    except (AttributeError, TypeError, ValueError):
+    except ValueError:
         return
-    if session.get('token') != token or session_timeout <= 0:
+    if not isinstance(session, dict) or session.get('token') != token:
+        return
+    session_timeout = _session_timeout(session.get('timeout'))
+    if not session_timeout:
         return
     token_ttl = max(session_timeout - args.TIMEOUT, 1)
     now = time.now()
@@ -1453,6 +1455,29 @@ def _remember_session(
         time.now() + ttl,
         filename=cache_filename,
     )
+
+
+# Upper bound the Redfish schema sets for `SessionTimeout` (SessionService, 30 to
+# 86400 seconds). A larger value cannot be meant, and one beyond what SQLite stores as
+# an integer made every write of the token to the cache fail silently, so each run
+# logged in again.
+_SESSION_TIMEOUT_MAX = 86400
+
+
+def _session_timeout(value):
+    """Read a `SessionTimeout` as whole seconds, `0` when it is missing or unusable.
+
+    The value comes from the controller, or from a cache entry built from its answer,
+    so it is not trusted: anything but a positive number is `0`, and a number beyond
+    the schema's maximum is capped there.
+    """
+    if isinstance(value, bool):
+        return 0
+    try:
+        seconds = int(value or 0)
+    except (OverflowError, TypeError, ValueError):
+        return 0
+    return min(max(seconds, 0), _SESSION_TIMEOUT_MAX)
 
 
 def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
@@ -1501,8 +1526,9 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
         `TIMEOUT`. An optional `PROXY` names the proxy to reach the controller through, and an
         optional `RETRIES` is honoured for the login, capped at `MAX_LOGIN_RETRIES`.
     cache_expire : int, optional
-        Token cache lifetime cap in seconds; `0` (default) fetches
-        a fresh session and does not cache the token.
+        Non-zero caches the session token for the consumers on this host; its
+        lifetime then follows the controller's `SessionTimeout`, not this value. `0`
+        (default) fetches a fresh session and does not cache the token.
     cache_filename : str, optional
         Cache database filename (default `CACHE_FILENAME`).
 
@@ -1602,10 +1628,7 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
             )
             session_timeout = 0
             if success and isinstance(result, dict):
-                try:
-                    session_timeout = int(result.get('SessionTimeout') or 0)
-                except (TypeError, ValueError):
-                    session_timeout = 0
+                session_timeout = _session_timeout(result.get('SessionTimeout'))
             if session_timeout > 0:
                 # Keep the token for as long as the controller keeps the session, less a
                 # TIMEOUT-sized margin so a token cached at the very edge of the window still
