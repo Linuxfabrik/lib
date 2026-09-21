@@ -34,14 +34,14 @@ own finding and a line that turns up again after an acknowledgement is reported 
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082801'
+__version__ = '2026092101'
 
 import datetime
 import hashlib
 import json
 import uuid
 
-from . import db_sqlite, icinga, time
+from . import db_sqlite, icinga, time, txt
 
 DEFAULT_RETENTION = 30  # days
 DEFAULT_TABLE = 'findings'
@@ -270,7 +270,7 @@ def instance_id(payload, length=10):
     Examples
     --------
     >>> instance_id({'critical': ['fatal'], 'warning': ['error', 'warn']})
-    'd41d8cd98f'
+    '29e59fb861'
     """
 
     def _normalize(value):
@@ -280,7 +280,7 @@ def instance_id(payload, length=10):
             return sorted(_normalize(item) for item in value)
         return value
 
-    serialized = json.dumps(_normalize(payload), sort_keys=True).encode('utf-8')
+    serialized = txt.to_bytes(json.dumps(_normalize(payload), sort_keys=True))
     return hashlib.sha256(serialized).hexdigest()[:length]
 
 
@@ -304,7 +304,7 @@ def key(line):
     str
         The key.
     """
-    return hashlib.sha256(line.encode('utf-8')).hexdigest()
+    return hashlib.sha256(txt.to_bytes(line)).hexdigest()
 
 
 def pending(conn, max_age=None, table=DEFAULT_TABLE):
@@ -435,48 +435,6 @@ _NOTE_NO_RESULT = (
 )
 
 
-def suppressed(conn, table=DEFAULT_TABLE):
-    """
-    Return the keys of every finding that has been acknowledged.
-
-    For a consumer that re-reads its whole source on every run, a kernel ring buffer or a time
-    window of the journal for example. What such a consumer reports is what the source shows
-    right now, so it filters that against this set rather than asking `pending()` for a list
-    that would keep growing past what the source still holds.
-
-    Parameters
-    ----------
-    conn : sqlite3.Connection
-        An open connection from `connect()`.
-    table : str, optional
-        Table to read from. Defaults to `'findings'`.
-
-    Returns
-    -------
-    tuple
-          - tuple[0] (**bool**): True on success, otherwise False.
-          - tuple[1] (**set | str**): The acknowledged keys, otherwise an error message string.
-
-    Notes
-    -----
-    - Derive the keys with `key()`, so that the same line yields the same key on the next run.
-      An acknowledgement is worth nothing against a key that is unique per occurrence.
-
-    Examples
-    --------
-    >>> acknowledged = lib.base.coe(lib.logmatch.suppressed(conn))
-    >>> lines = [line for line in lines if lib.logmatch.key(line) not in acknowledged]
-    """
-    success, rows = db_sqlite.select(
-        conn,
-        f'SELECT key FROM {table} WHERE acked_at IS NOT NULL',
-        fetchone=False,
-    )
-    if not success:
-        return False, rows
-    return True, {row['key'] for row in rows}
-
-
 def service_acknowledged(
     url,
     username,
@@ -601,3 +559,45 @@ def set_position(conn, source, position):
     if not success:
         return False, result
     return db_sqlite.commit(conn)
+
+
+def suppressed(conn, table=DEFAULT_TABLE):
+    """
+    Return the keys of every finding that has been acknowledged.
+
+    For a consumer that re-reads its whole source on every run, a kernel ring buffer or a time
+    window of the journal for example. What such a consumer reports is what the source shows
+    right now, so it filters that against this set rather than asking `pending()` for a list
+    that would keep growing past what the source still holds.
+
+    Parameters
+    ----------
+    conn : sqlite3.Connection
+        An open connection from `connect()`.
+    table : str, optional
+        Table to read from. Defaults to `'findings'`.
+
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**set | str**): The acknowledged keys, otherwise an error message string.
+
+    Notes
+    -----
+    - Derive the keys with `key()`, so that the same line yields the same key on the next run.
+      An acknowledgement is worth nothing against a key that is unique per occurrence.
+
+    Examples
+    --------
+    >>> acknowledged = lib.base.coe(lib.logmatch.suppressed(conn))
+    >>> lines = [line for line in lines if lib.logmatch.key(line) not in acknowledged]
+    """
+    success, rows = db_sqlite.select(
+        conn,
+        f'SELECT key FROM {table} WHERE acked_at IS NOT NULL',
+        fetchone=False,
+    )
+    if not success:
+        return False, rows
+    return True, {row['key'] for row in rows}
