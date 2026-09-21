@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091802'
+__version__ = '2026092101'
 
 
 import os
@@ -201,16 +201,16 @@ def shell_exec(
     run_as : str, optional
         Local user name to run the command as. The command is wrapped so it runs as that
         user with the user's session runtime directory exported
-        (`sudo -u <user> env XDG_RUNTIME_DIR=/run/user/<uid> ...`), which per-user session
+        (`sudo --user <user> env XDG_RUNTIME_DIR=/run/user/<uid> ...`), which per-user session
         services such as rootless Podman or `systemctl --user` need in order to find the
         right session when invoked from root or another account. The caller must already
-        be allowed to `sudo -u <user>` (root is, by default). When `run_as` is set and no
+        be allowed to `sudo --user <user>` (root is, by default). When `run_as` is set and no
         `cwd` is given, `cwd` defaults to `/` so `sudo` can chdir as the target user
         without a harmless warning. An unknown user yields `(False, error_message)`.
         Defaults to None (run as the current user). Unix-only.
     run_as_session : bool, optional
         Only meaningful together with `run_as`. When False, the command is wrapped as
-        `sudo -u <user> ...` without the session runtime directory, so what `sudo` sees is
+        `sudo --user <user> ...` without the session runtime directory, so what `sudo` sees is
         exactly the program and the arguments the caller passed. A sudo rule that spells
         out the permitted command with its exact arguments (the safe way to grant one
         specific command instead of an interpreter with free arguments) only matches that
@@ -261,7 +261,7 @@ def shell_exec(
         except KeyError:
             return False, f'Unknown user: {run_as}'
         session = ['env', f'XDG_RUNTIME_DIR=/run/user/{uid}'] if run_as_session else []
-        cmd = ['sudo', '-u', run_as, *session, *cmd]
+        cmd = ['sudo', '--user', run_as, *session, *cmd]
         if cwd is None:
             cwd = '/'
 

@@ -189,7 +189,7 @@ def run_cmd(args, cmd, params=None):
     params : list[str], optional
         Positional arguments passed to the command. Each
          one reaches the program as a single argument, whatever it contains: `cmd.exe`
-         never parses them. Defaults to `[]`.
+         never parses them. Defaults to `None`, which sends no arguments.
 
     Returns
     -------

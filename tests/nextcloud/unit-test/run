@@ -21,7 +21,7 @@ hermetic (no PHP, no `occ`, no `sudo`, no filesystem stat, no subprocess):
 - `shell.shell_exec(...)` -> run the assembled `sudo ... php occ <cmd>` line
 
 We assert the full command-building contract (PHP lookup, owner lookup path,
-the exact `['sudo', '-u', '#<uid>', <php>, <occ>, '--no-warnings', *<cmd>]`
+the exact `['sudo', '--user', '#<uid>', <php>, <occ>, '--no-warnings', *<cmd>]`
 argument list, the dropped sudo prefix when the process already runs as the
 owner, and the `cwd` / `timeout` handover) and the full response-handling
 contract: JSON parsing (incl. case-insensitive `_format`), raw-text mode,
@@ -193,11 +193,11 @@ class TestCommandConstruction(_Base):
 
     def test_full_command_list(self):
         self.run_occ(NC_PATH, 'status')
-        self.assertEqual(self.argv(), ['sudo', '-u', '#33', *OCC_ARGV, 'status'])
+        self.assertEqual(self.argv(), ['sudo', '--user', '#33', *OCC_ARGV, 'status'])
 
-    def test_command_uses_sudo_u_with_uid(self):
+    def test_command_uses_sudo_user_with_uid(self):
         self.run_occ(NC_PATH, 'status')
-        self.assertEqual(self.argv()[:3], ['sudo', '-u', '#33'])
+        self.assertEqual(self.argv()[:3], ['sudo', '--user', '#33'])
 
     def test_command_uses_resolved_php_path(self):
         self.run_occ(NC_PATH, 'status', which='/opt/php8/bin/php')
@@ -252,11 +252,11 @@ class TestCommandConstruction(_Base):
         ):
             nextcloud.run_occ(NC_PATH, 'status')
         (cmd,), _kwargs = shell_mock.call_args
-        self.assertEqual(cmd[:3], ['sudo', '-u', '#33'])
+        self.assertEqual(cmd[:3], ['sudo', '--user', '#33'])
 
     def test_root_still_sudoes_down_to_the_owner(self):
         self.run_occ(NC_PATH, 'status', owner=UID, euid=0)
-        self.assertEqual(self.argv()[:3], ['sudo', '-u', '#33'])
+        self.assertEqual(self.argv()[:3], ['sudo', '--user', '#33'])
 
     def test_cwd_is_the_nextcloud_root(self):
         # console.php chdirs there itself; doing it up front avoids its complaint
@@ -301,7 +301,7 @@ class TestUnknownOwner(_Base):
         self.assertIn('/var/www/nextcloud/config/config.php', msg)
 
     def test_occ_is_not_executed(self):
-        # Without a UID there is nothing sensible to pass to sudo -u.
+        # Without a UID there is nothing sensible to pass to sudo --user.
         self.run_occ(NC_PATH, 'status', owner=-1)
         self.shell_mock.assert_not_called()
 
@@ -467,7 +467,7 @@ class TestFailurePath(_Base):
     def test_failure_message_contains_command(self):
         _ok, msg = self.run_occ(NC_PATH, 'status', shell_ret=(True, ('', 'boom', 1)))
         self.assertIn(
-            'sudo -u #33 /usr/bin/php /var/www/nextcloud/occ --no-warnings status', msg
+            'sudo --user #33 /usr/bin/php /var/www/nextcloud/occ --no-warnings status', msg
         )
 
     def test_failure_message_contains_rc(self):

@@ -11,7 +11,7 @@
 """This library collects some Nextcloud related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026092101'
 
 import json
 import os
@@ -32,7 +32,7 @@ def run_occ(path, cmd, _format='json', timeout=None):
 
     Nextcloud's `console.php` aborts unless the calling process runs under the UID that
     owns `config/config.php`. If the current process is not that owner, the command is
-    prefixed with `sudo -u '#<uid>'`; if it already is, `sudo` is skipped, so no sudoers
+    prefixed with `sudo --user '#<uid>'`; if it already is, `sudo` is skipped, so no sudoers
     entry is needed and the call also works in containers that ship without `sudo`.
 
     Parameters
@@ -112,11 +112,11 @@ def run_occ(path, cmd, _format='json', timeout=None):
     # of a preceding optional-value option. Symfony parses global options anywhere.
     occ_cmd = [php, occ, '--no-warnings', *shlex.split(cmd)]
 
-    # Only switch users if we are not the owner already. `sudo -u '#<uid>'` selects the user
+    # Only switch users if we are not the owner already. `sudo --user '#<uid>'` selects the user
     # by UID; the `#` only needs escaping for a shell, which we do not use. geteuid() is
     # POSIX-only, so probe for it instead of testing the platform.
     if not hasattr(os, 'geteuid') or os.geteuid() != user:
-        occ_cmd = ['sudo', '-u', f'#{user}', *occ_cmd]
+        occ_cmd = ['sudo', '--user', f'#{user}', *occ_cmd]
 
     success, result = shell.shell_exec(occ_cmd, cwd=path, timeout=timeout)
     # shell_exec() reports its own failures (spawn error, timeout) as (False, <message>),

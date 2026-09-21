@@ -381,7 +381,7 @@ class TestShellExecRunAs(unittest.TestCase):
             self._run(run_as='appuser').args[0],
             [
                 'sudo',
-                '-u',
+                '--user',
                 'appuser',
                 'env',
                 'XDG_RUNTIME_DIR=/run/user/1234',
@@ -396,7 +396,7 @@ class TestShellExecRunAs(unittest.TestCase):
         # matches: no `env` in front of the program the caller asked for.
         self.assertEqual(
             self._run(run_as='appuser', run_as_session=False).args[0],
-            ['sudo', '-u', 'appuser', 'php', '/opt/app/validate.php', '-s'],
+            ['sudo', '--user', 'appuser', 'php', '/opt/app/validate.php', '-s'],
         )
 
     def test_run_as_defaults_the_working_directory_to_root(self):

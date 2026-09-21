@@ -1113,7 +1113,7 @@ def get_all(api_token, path, params=None):
           See `call_api()`.
     path : str
           See `call_api()`.
-    params : dict | optional
+    params : dict, optional
           Additional URL parameters to be added to the request.
 
     Returns

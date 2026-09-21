@@ -1202,8 +1202,11 @@ def timestamp(line, parse_line=None):
 
     Examples
     --------
+    The result is naive local time, so the same line reads differently depending on
+    the host's timezone. On a host running UTC:
+
     >>> timestamp('2026-08-28T17:16:18+0200 host httpd[20]: [ssl:error] AH02032: ...')
-    datetime.datetime(2026, 8, 28, 17, 16, 18)
+    datetime.datetime(2026, 8, 28, 15, 16, 18)
     >>> timestamp('Aug 28 19:34:14 host sshd[193]: Server listening on port 22.')
     datetime.datetime(2026, 8, 28, 19, 34, 14)
     """
