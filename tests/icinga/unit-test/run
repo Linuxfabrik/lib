@@ -612,6 +612,15 @@ class TestRenderNotificationMail(unittest.TestCase):
         self.assertIn('Host: web01', plain)
         self.assertIn('<html>', html_body)
 
+    def test_no_rows_yields_an_empty_body(self):
+        plain, html_body = self.render([])
+        self.assertEqual(plain, '')
+        self.assertIn('<html>', html_body)
+
+    def test_a_row_without_a_value_still_renders_its_label(self):
+        plain, _ = self.render([{'left_column': 'Host:'}])
+        self.assertEqual(plain, 'Host: \n')
+
     def test_value_is_html_escaped(self):
         _, html_body = self.render(
             [{'left_column': 'Output:', 'right_column': '<script>alert(1)</script>'}]

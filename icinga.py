@@ -46,13 +46,13 @@ def api_post(
     Parameters
     ----------
     uri : str
-        Full API endpoint URL (e.g., `https://icinga-server:5665/v1/objects/services`).
+        Full API endpoint URL (e.g., `https://icinga.example.com:5665/v1/objects/services`).
     username : str
         API username.
     password : str
         API password.
     data : dict, optional
-        Payload to send with the request. Defaults to `{}`.
+        Payload to send with the request. Defaults to `None`.
     method_override : str, optional
         If set, override HTTP method (e.g., `'GET'`). Defaults to `''`.
     insecure : bool, optional
@@ -77,17 +77,17 @@ def api_post(
 
     Examples
     --------
-    >>> uri = 'https://icinga-server:5665/v1/objects/services'
+    >>> uri = 'https://icinga.example.com:5665/v1/objects/services'
     >>> data = {
     ...     'filter': 'match("special-service", service.name)',
     ...     'attrs': ['name', 'state', 'acknowledgement'],
-    >>> }
+    ... }
     >>> result = lib.base.coe(
     ...     lib.icinga.api_post(
     ...         uri, args.USERNAME, args.PASSWORD, data=data,
     ...         method_override='GET', timeout=3
     ...     )
-    >>> )
+    ... )
     """
     uri = uri.replace('//v1', '/v1').replace('//v2', '/v2')
     headers = {
@@ -242,7 +242,7 @@ def get_service(
     Parameters
     ----------
     uri : str
-        Base API URL (e.g., `https://icinga-server:5665`).
+        Base API URL (e.g., `https://icinga.example.com:5665`).
     username : str
         API username.
     password : str
@@ -273,7 +273,7 @@ def get_service(
 
     Examples
     --------
-    >>> uri = 'https://icinga-server:5665'
+    >>> uri = 'https://icinga.example.com:5665'
     >>> result = lib.base.coe(
     ...     lib.icinga.get_service(
     ...         uri,
@@ -282,7 +282,7 @@ def get_service(
     ...         servicename='hostname!special-service',
     ...         attrs='state,acknowledgement',
     ...     )
-    >>> )
+    ... )
     >>> print(result['result'][0]['attrs'])
     """
     uri = f'{uri.rstrip("/")}/v1/objects/services'
@@ -323,7 +323,7 @@ def remove_ack(
     Parameters
     ----------
     uri : str
-        Base API URL (e.g., `https://icinga-server:5665`).
+        Base API URL (e.g., `https://icinga.example.com:5665`).
     username : str
         API username.
     password : str
@@ -353,10 +353,10 @@ def remove_ack(
 
     Examples
     --------
-    >>> uri = 'https://icinga-server:5665'
+    >>> uri = 'https://icinga.example.com:5665'
     >>> icinga.remove_ack(
     ...     uri, username, password, objectname='hostname!special-service'
-    >>> )
+    ... )
     """
     uri = f'{uri.rstrip("/")}/v1/actions/remove-acknowledgement'
     data = {
@@ -387,7 +387,7 @@ def remove_downtime(
     Parameters
     ----------
     uri : str
-        Base API URL (e.g., `https://icinga-server:5665`).
+        Base API URL (e.g., `https://icinga.example.com:5665`).
     username : str
         API username.
     password : str
@@ -415,11 +415,11 @@ def remove_downtime(
 
     Examples
     --------
-    >>> uri = 'https://icinga-server:5665'
+    >>> uri = 'https://icinga.example.com:5665'
     >>> icinga.remove_downtime(
     ...     uri, args.ICINGA_USERNAME, args.ICINGA_PASSWORD,
     ...     downtime='hostname!service!uuid'
-    >>> )
+    ... )
     """
     uri = uri + '/v1/actions/remove-downtime'
     data = {
@@ -560,7 +560,7 @@ def set_ack(
     Parameters
     ----------
     uri : str
-        Base API URL (e.g., `https://icinga-server:5665`).
+        Base API URL (e.g., `https://icinga.example.com:5665`).
     username : str
         API username.
     password : str
@@ -593,10 +593,10 @@ def set_ack(
 
     Examples
     --------
-    >>> uri = 'https://icinga-server:5665'
+    >>> uri = 'https://icinga.example.com:5665'
     >>> result = lib.icinga.set_ack(
     ...     uri, username, password, 'hostname!special-service', _type='service'
-    >>> )
+    ... )
     """
     uri = f'{uri.rstrip("/")}/v1/actions/acknowledge-problem'
     data = {
@@ -641,7 +641,7 @@ def set_downtime(
     Parameters
     ----------
     uri : str
-        Base API URL (e.g., `https://icinga-server:5665`).
+        Base API URL (e.g., `https://icinga.example.com:5665`).
     username : str
         API username.
     password : str
@@ -678,11 +678,11 @@ def set_downtime(
 
     Examples
     --------
-    >>> uri = 'https://icinga-server:5665'
-    >>> result = lib.icinga.set_downtime(
+    >>> uri = 'https://icinga.example.com:5665'
+    >>> lib.icinga.set_downtime(
     ...     uri, username, password, objectname='hostname!special-service'
-    >>> )
-    'hostname!special-service!3ad20784-52f9-4acc-b2df-90788667d587'
+    ... )
+    (True, 'hostname!special-service!3ad20784-52f9-4acc-b2df-90788667d587')
     """
     now = int(time.time())
     starttime = starttime if starttime is not None else now
