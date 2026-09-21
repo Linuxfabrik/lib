@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091001'
+__version__ = '2026092101'
 
 import atexit
 import base64
@@ -512,7 +512,13 @@ def _trace(event, detail):
     elapsed = time.now(as_type='float') - _TRACE['started']
     line = f'{_trace_timestamp()}  {_trace_pid()}  +{elapsed:7.3f}s  {event:<9}  {detail}\n'
     try:
-        os.write(_TRACE['fd'], txt.sanitize_sensitive_data(line).encode('utf-8'))
+        # `errors='replace'` because this must not raise: a detail can carry a lone
+        # surrogate (a path or an argument the host handed over as undecodable bytes),
+        # and both a bare `.encode()` and `to_bytes()`'s default handler raise on one.
+        os.write(
+            _TRACE['fd'],
+            txt.to_bytes(txt.sanitize_sensitive_data(line), errors='replace'),
+        )
     except OSError:
         pass
 
@@ -568,108 +574,6 @@ def _consumer():
     return name, version
 
 
-def start_trace(path='', filename=TRACE_FILENAME):
-    """
-    Start writing a diagnostic trace of every Redfish request this run makes.
-
-    Turn this on from a `--verbose` switch. It records, line by line and with millisecond
-    timestamps, which URL was requested with which timeout and retry budget, how long the
-    controller took to answer, whether an answer came from the shared cache, which `$expand`
-    support the controller advertised, whether its members arrived inlined or had to be fetched
-    one by one, and which of the three authentication paths (cached token, fresh session, Basic
-    fallback) the run took. Between them, those lines answer why a run against a slow management
-    controller takes long, without an admin having to reproduce the walk by hand.
-
-    The trace goes to a file rather than to the caller's output on purpose. A run that takes long
-    enough to be diagnosed is usually one that is terminated from outside with `SIGTERM`, and a
-    terminated run produces no output at all: whatever it would have printed dies with it. The
-    file is written as the run progresses, so it survives that termination and still shows where
-    the time went.
-
-    The file lives in the same per-user, `0700` directory as the cache database, and is created
-    with `0600` and `O_NOFOLLOW`, so a symlink planted at a predictable path under a shared
-    temporary directory cannot redirect the write (CWE-59/CWE-377, the same reasoning as
-    `db_sqlite.get_db_dir()`).
-
-    Repeated runs append, so a flapping check can be left tracing for several cycles and compared
-    across them; a header line separates the runs. Once the file has grown past
-    `TRACE_MAX_BYTES` this refuses instead of appending.
-
-    Parameters
-    ----------
-    path : str, optional
-        Directory to place the trace file in. Defaults to the system
-        temporary directory.
-    filename : str, optional
-        Name of the trace file (a plain basename).
-        Defaults to `TRACE_FILENAME`.
-
-    Returns
-    -------
-    tuple (bool, str)
-        - `(True, path)` with the absolute path of the trace file on success. Tell the admin where
-          it is: a trace nobody can find is not a diagnostic.
-        - `(False, error)` if the file cannot be opened, so a `--verbose` run that silently traces
-          nowhere is impossible.
-
-    Examples
-    --------
-    >>> success, trace_path = start_trace()
-    >>> success
-    True
-    """
-    if _TRACE['fd'] is not None:
-        return True, _TRACE['path']
-    if filename in ('.', '..') or os.path.basename(filename) != filename:
-        return False, f'Refusing unsafe trace filename: {filename!r}'
-    if not path:
-        path = disk.get_tmpdir()
-    # Reuse the hardened per-user directory the cache database already lives in, so the trace
-    # inherits its ownership and permission checks instead of repeating them here.
-    success, trace_dir = db_sqlite.get_db_dir(path)
-    if not success:
-        return False, trace_dir
-    trace_path = os.path.join(trace_dir, filename)
-    try:
-        size = os.path.getsize(trace_path)
-    except OSError:
-        size = 0
-    if size > TRACE_MAX_BYTES:
-        return False, (
-            f'Trace file {trace_path} has grown past {human.bytes2human(TRACE_MAX_BYTES)}, '
-            f'refusing to append. Move it away to start a new one.'
-        )
-    try:
-        # O_NOFOLLOW: refuse to open a symlink sitting at the trace path. O_APPEND: several
-        # Redfish checks on the same host trace into the same file, and append-mode writes of
-        # this size do not interleave. 0o600: the trace names hosts and URLs.
-        fd = os.open(
-            trace_path,
-            os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
-            0o600,
-        )
-    except OSError as e:
-        return False, f'Cannot open trace file {trace_path}: {e}'
-
-    _TRACE['fd'] = fd
-    _TRACE['path'] = trace_path
-    _TRACE['started'] = time.now(as_type='float')
-    _TRACE['requests'] = 0
-    _TRACE['seconds'] = 0.0
-    atexit.register(_trace_summary)
-
-    # Identify the run: which check, which version of it, which version of this library, and the
-    # process id, so lines from Redfish checks tracing concurrently into this file can be told
-    # apart.
-    check, check_version = _consumer()
-    _trace(
-        'start',
-        f'{check} v{check_version}, lib/redfish.py v{__version__}. Columns: timestamp, pid, '
-        f'seconds since this run started, event, detail',
-    )
-    return True, trace_path
-
-
 def _replay_key(url_string):
     """Return the key a replay files a response under: the path of `url_string`.
 
@@ -690,9 +594,10 @@ def _replay_response(url_string):
     as well.
     """
     key = _replay_key(url_string)
-    if key not in _REPLAY['responses']:
+    responses = _REPLAY['responses'] or {}
+    if key not in responses:
         return False, f'HTTP error "404 Not Found" while fetching {key}'
-    payload = _REPLAY['responses'][key]
+    payload = responses[key]
     if isinstance(payload, str):
         return False, payload
     return True, payload
@@ -720,7 +625,8 @@ def _fetch_json(what, url_string, timeout=8, retries=0, **kwargs):
     url_string : str
         The URL to fetch.
     timeout, retries, **kwargs
-        Forwarded to `url.fetch_json()`.
+        Forwarded to `url.fetch_json()`, `**kwargs` including `insecure`, `no_proxy`
+        and `proxy`.
 
     Returns
     -------
@@ -764,7 +670,7 @@ def _fetch_json(what, url_string, timeout=8, retries=0, **kwargs):
     else:
         # `url.fetch_json()` appends ' while fetching <url>' to its errors. The URL is already
         # this line's last column, so strip the repetition and keep the line readable.
-        outcome = f'FAILED {str(payload).split(" while fetching ")[0]}'
+        outcome = f'FAILED {str(payload).split(" while fetching ", maxsplit=1)[0]}'
     _trace(
         'request',
         f'{elapsed:7.3f}s  {method:<4} {what:<10} timeout={timeout} retries={retries}  '
@@ -813,7 +719,8 @@ def _redact(value):
 
     Returns
     -------
-    The same structure, with each sensitive field's value replaced by ''.
+    any
+        The same structure, with each sensitive field's value replaced by `'******'`.
     """
     if isinstance(value, dict):
         return {
@@ -895,9 +802,9 @@ def build_url(base_url, odata_id):
     Redfish responses reference sub-resources by an `@odata.id` field that is expected to be a
     server-relative path such as `/redfish/v1/Systems/1`. Concatenating it onto the base URL
     without validation lets a malicious or compromised controller inject a different authority
-    (for example an `@host` userinfo prefix that turns `https://bmc` + `@evil/x` into
-    `https://bmc@evil/x`), turning the next authenticated request into a server-side request
-    forgery that also forwards the Redfish auth header to the attacker-chosen host
+    (for example an `@host` userinfo prefix that turns `https://bmc.example.com` plus
+    `@evil/x` into `https://bmc.example.com@evil/x`), turning the next request into a
+    server-side request forgery that also forwards the Redfish auth header to that host
     (CWE-918/CWE-20). This helper rejects any `@odata.id` that is not a single-slash-rooted
     relative path and pins scheme and host to `base_url`, so a response can never redirect the
     request to another host.
@@ -905,7 +812,7 @@ def build_url(base_url, odata_id):
     Parameters
     ----------
     base_url : str
-        The operator-supplied Redfish base URL, e.g. `https://bmc`.
+        The operator-supplied Redfish base URL, e.g. `https://bmc.example.com`.
     odata_id : str
         The `@odata.id` value taken from the controller's response.
 
@@ -917,9 +824,9 @@ def build_url(base_url, odata_id):
 
     Examples
     --------
-    >>> build_url('https://bmc', '/redfish/v1/Systems/1')
-    (True, 'https://bmc/redfish/v1/Systems/1')
-    >>> build_url('https://bmc', '@evil.example.com/x')
+    >>> build_url('https://bmc.example.com', '/redfish/v1/Systems/1')
+    (True, 'https://bmc.example.com/redfish/v1/Systems/1')
+    >>> build_url('https://bmc.example.com', '@evil.example.com/x')
     (False, "Refusing non-relative Redfish @odata.id link: '@evil.example.com/x'")
     """
     if (
@@ -978,7 +885,7 @@ def fetch_collection(
         The `$expand` query suffix to append (default `DEFAULT_EXPAND`).
     header : dict, optional
         Request headers (including the auth header).
-    insecure, no_proxy, timeout, retries
+    insecure, no_proxy, proxy, timeout, retries
         Forwarded to `url.fetch_json()`.
     cache_expire : int, optional
         Cache lifetime in seconds; `0` (default) disables caching.
@@ -995,7 +902,7 @@ def fetch_collection(
     Examples
     --------
     >>> success, collection = fetch_collection(
-    ...     'https://bmc/redfish/v1/Chassis/1U/Sensors'
+    ...     'https://bmc.example.com/redfish/v1/Chassis/1U/Sensors'
     ... )
     >>> members = collection.get('Members', [])
     """
@@ -1096,7 +1003,7 @@ def fetch_members(
         follow-up request.
     header : dict, optional
         Request headers (including the auth header).
-    insecure, no_proxy, timeout, retries
+    insecure, no_proxy, proxy, timeout, retries
         Forwarded to `url.fetch_json()`.
     cache_expire : int, optional
         Cache lifetime in seconds; `0` (default) disables caching.
@@ -1112,9 +1019,11 @@ def fetch_members(
     Examples
     --------
     >>> success, collection = fetch_collection(
-    ...     'https://bmc/redfish/v1/Chassis/1U/Sensors'
+    ...     'https://bmc.example.com/redfish/v1/Chassis/1U/Sensors'
     ... )
-    >>> success, sensors = fetch_members(collection.get('Members', []), 'https://bmc')
+    >>> success, sensors = fetch_members(
+    ...     collection.get('Members', []), 'https://bmc.example.com'
+    ... )
     """
     result = []
     for member in members:
@@ -1180,7 +1089,7 @@ def fetch_resource(
         The absolute URL of the resource.
     header : dict, optional
         Request headers (including the auth header).
-    insecure, no_proxy, timeout, retries
+    insecure, no_proxy, proxy, timeout, retries
         Forwarded to `url.fetch_json()`.
     cache_expire : int, optional
         Cache lifetime in seconds; `0` (default) disables caching.
@@ -1195,7 +1104,7 @@ def fetch_resource(
 
     Examples
     --------
-    >>> success, root = fetch_resource('https://bmc/redfish/v1/')
+    >>> success, root = fetch_resource('https://bmc.example.com/redfish/v1/')
     """
     cache_key = f'redfish-{resource_url}'
     cached = _cache_read(cache_key, cache_expire, cache_filename)
@@ -1925,23 +1834,30 @@ def get_chassis_sensors(redfish):
         - **ReadingRangeMin** (`str`): The minimum reading range of the sensor.
         - **ReadingUnits** (`str`): The units of the sensor reading.
         - **Thresholds_LowerCaution** (`str`): The lower caution threshold for the sensor.
+        - **Thresholds_LowerCautionUser** (`str`): User-defined lower caution threshold.
         - **Thresholds_LowerCritical** (`str`): The lower critical threshold for the sensor.
+        - **Thresholds_LowerCriticalUser** (`str`): User-defined lower critical threshold.
         - **Thresholds_UpperCaution** (`str`): The upper caution threshold for the sensor.
+        - **Thresholds_UpperCautionUser** (`str`): User-defined upper caution threshold.
         - **Thresholds_UpperCritical** (`str`): The upper critical threshold for the sensor.
+        - **Thresholds_UpperCriticalUser** (`str`): User-defined upper critical threshold.
         - **Status_State** (`str`): The state of the sensor (e.g., "Enabled").
         - **Status_Health** (`str`): The health status of the sensor (e.g., "OK").
         - **Status_HealthRollup** (`str`): The health rollup status of the sensor (e.g., "OK").
+
+    Every key above is always present: a field the response does not carry reads as an
+    empty string.
 
     Examples
     --------
     >>> redfish_data = {
     ...     'Id': 'sensor1',
     ...     'Reading': 75,
-    ...     'ReadingRangeMax': 100,
-    ...     'Thresholds_LowerCaution': 30,
+    ...     'Thresholds': {'LowerCaution': {'Reading': 30}},
     ... }
-    >>> get_chassis_sensors(redfish_data)
-    {'Id': 'sensor1', 'Reading': 75, 'ReadingRangeMax': 100, 'Thresholds_LowerCaution': 30, ...}
+    >>> sensor = get_chassis_sensors(redfish_data)
+    >>> sensor['Reading'], sensor['Thresholds_LowerCaution'], sensor['Status_Health']
+    (75, 30, '')
     """
     data = {key: redfish.get(key, '') for key in CHASSIS_SENSOR_KEYS}
 
@@ -2145,10 +2061,10 @@ def get_expand_suffix(
     Parameters
     ----------
     base_url : str
-        The operator-supplied Redfish base URL, e.g. `https://bmc`.
+        The operator-supplied Redfish base URL, e.g. `https://bmc.example.com`.
     header : dict, optional
         Request headers (including the auth header).
-    insecure, no_proxy, timeout, retries
+    insecure, no_proxy, proxy, timeout, retries
         Forwarded to `url.fetch_json()`.
     cache_expire : int, optional
         Cache lifetime in seconds; `0` (default) disables caching.
@@ -2383,11 +2299,11 @@ def get_perfdata(data, key='Reading'):
     ...     'ReadingUnits': '%',
     ...     'Thresholds_UpperCaution': 80,
     ...     'Thresholds_UpperCritical': 90,
-    ...     'ReadingRangeMin': 0,
+    ...     'ReadingRangeMin': 10,
     ...     'ReadingRangeMax': 100,
     ... }
     >>> get_perfdata(data)
-    'Chassis_Temperature_Sensor_1=75.0%;80;90;0;100'
+    "'Chassis_Temperature_Sensor_1'=75.0%;80;90;10;100 "
     """
     value = data.get(key)
     if not isinstance(value, (int, float)):
@@ -2471,8 +2387,10 @@ def get_sensor_state(data, key='Reading'):
     ...     'Thresholds_LowerCritical': 10,
     ...     'Thresholds_LowerCaution': 20,
     ... }
+    The reading is above the user-defined upper critical threshold:
+
     >>> get_sensor_state(sample)
-    2  # STATE_CRIT (reading > user-defined upper critical)
+    2
     """
 
     # helper to parse floats, treating '', None, or bad strings as None
@@ -2601,7 +2519,7 @@ def get_state(data):
     ...     'Status_HealthRollup': 'Critical',
     ... }
     >>> get_state(data)
-    2  # STATE_CRIT
+    2
     """
     if data.get('Status_State') not in ('Enabled', 'Quiesced'):
         return STATE_OK
@@ -2636,6 +2554,9 @@ def get_systems(redfish):
     dict
         A dictionary containing the following system details:
 
+        - `EthernetInterfaces_@odata.id`: The OData ID of the network interfaces.
+        - `Memory_@odata.id`: The OData ID for the system's memory.
+        - `Processors_@odata.id`: The OData ID for the system's processors.
         - `BiosVersion`: The BIOS version.
         - `HostName`: The system's host name.
         - `Id`: The unique identifier for the system.
@@ -2667,25 +2588,9 @@ def get_systems(redfish):
     ...     },
     ...     'PowerState': 'On',
     ... }
-    >>> get_systems(redfish_data)
-    {
-        'BiosVersion': '1.0.0',
-        'HostName': 'System1',
-        'Id': '12345',
-        'IndicatorLED': '',
-        'Manufacturer': '',
-        'Model': '',
-        'PowerState': 'On',
-        'ProcessorSummary_Count': 2,
-        'ProcessorSummary_LogicalProcessorCount': 4,
-        'ProcessorSummary_Model': 'Intel Xeon',
-        'SerialNumber': '',
-        'SKU': '',
-        'Storage_@odata.id': '',
-        'Status_State': 'Enabled',
-        'Status_Health': 'OK',
-        'Status_HealthRollup': 'OK',
-    }
+    >>> system = get_systems(redfish_data)
+    >>> system['BiosVersion'], system['ProcessorSummary_Count'], system['Manufacturer']
+    ('1.0.0', 2, '')
     """
     data = {key: redfish.get(key, '') for key in SYSTEMS_KEYS}
 
@@ -2752,6 +2657,25 @@ def get_systems_ethernetinterfaces(redfish):
     return data
 
 
+def _capacity(value):
+    """Return a size a controller reported as a number, or None where it is not one.
+
+    Redfish says a capacity is an integer, but firmware in the field sends it as a
+    string (`"1000204886016"`), as `"N/A"` for a slot it cannot read, or as `null`.
+    Handing any of those to `human.bytes2human()` raises, which takes the whole check
+    down over one unreadable member, so anything that is not a number is reported as
+    "no value" instead. A bool is not a size either, however well it passes for an int.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def get_systems_memory(redfish):
     """
     Retrieves memory module (DIMM) details from a Redfish API response.
@@ -2813,7 +2737,7 @@ def get_systems_memory(redfish):
     # vendor quirk: some controllers report the module size as "SizeMB"; Dell
     # iDRAC 8 even reports decimal MB instead of binary MiB, so a value that is
     # not a clean MiB multiple is converted back to a MiB count.
-    capacity = redfish.get('SizeMB') or redfish.get('CapacityMiB')
+    capacity = _capacity(redfish.get('SizeMB') or redfish.get('CapacityMiB'))
     if capacity:
         capacity = int(capacity)
         if vendor == 'dell' and capacity % 1024 != 0:
@@ -2936,6 +2860,7 @@ def get_systems_storage(redfish):
         - `Drives@odata.count`: The number of drives in the storage system.
         - `Id`: The unique identifier for the storage system.
         - `Name`: The name of the storage system.
+        - `Volumes_@odata.id`: The OData ID for the storage system's volumes.
         - `Status_State`: The status state of the storage system (e.g., "Enabled").
         - `Status_Health`: The health status of the storage system (e.g., "OK").
         - `Status_HealthRollup`: The rollup health status of the storage system.
@@ -2949,16 +2874,9 @@ def get_systems_storage(redfish):
     ...     'Name': 'StorageSystem1',
     ...     'Status': {'State': 'Enabled', 'Health': 'OK', 'HealthRollup': 'OK'},
     ... }
-    >>> get_systems_storage(redfish_data)
-    {
-        'Description': 'RAID Storage',
-        'Drives@odata.count': 5,
-        'Id': '6789',
-        'Name': 'StorageSystem1',
-        'Status_State': 'Enabled',
-        'Status_Health': 'OK',
-        'Status_HealthRollup': 'OK',
-    }
+    >>> storage = get_systems_storage(redfish_data)
+    >>> storage['Drives@odata.count'], storage['Volumes_@odata.id']
+    (5, '')
     """
     data = {key: redfish.get(key, '') for key in SYSTEMS_STORAGE_KEYS}
 
@@ -3028,17 +2946,9 @@ def get_systems_storage_drives(redfish):
     ...     'SerialNumber': '1234567890',
     ...     'Status': {'State': 'Enabled', 'Health': 'OK', 'HealthRollup': 'OK'},
     ... }
-    >>> get_systems_storage_drives(redfish_data)
-    {
-        'CapacityBytes': '500.0 GB',
-        'Description': 'SSD Drive',
-        'Manufacturer': 'Samsung',
-        'Model': '970 EVO',
-        'SerialNumber': '1234567890',
-        'Status_State': 'Enabled',
-        'Status_Health': 'OK',
-        'Status_HealthRollup': 'OK',
-    }
+    >>> drive = get_systems_storage_drives(redfish_data)
+    >>> drive['CapacityBytes'], drive['Model'], drive['Temperature']
+    ('465.7GiB', '970 EVO', '')
     """
     data = {key: redfish.get(key, '') for key in SYSTEMS_STORAGE_DRIVES_KEYS}
 
@@ -3048,7 +2958,7 @@ def get_systems_storage_drives(redfish):
             ref = ref.get(step, {})
         data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
 
-    capacity = redfish.get('CapacityBytes')
+    capacity = _capacity(redfish.get('CapacityBytes'))
     data['CapacityBytes'] = human.bytes2human(capacity) if capacity else ''
 
     # vendor quirk: drive temperature is not a standard Drive property. HPE
@@ -3116,7 +3026,7 @@ def get_systems_storage_volumes(redfish):
             ref = ref.get(step, {})
         data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
 
-    capacity = redfish.get('CapacityBytes')
+    capacity = _capacity(redfish.get('CapacityBytes'))
     data['CapacityBytes'] = human.bytes2human(capacity) if capacity else ''
 
     return data
@@ -3286,7 +3196,9 @@ def record_responses():
     Examples
     --------
     >>> record_responses()
-    >>> success, chassis = fetch_collection('https://bmc/redfish/v1/Chassis')
+    >>> success, chassis = fetch_collection(
+    ...     'https://bmc.example.com/redfish/v1/Chassis'
+    ... )
     >>> print(format_responses())
     """
     if _RESPONSES['on']:
@@ -3347,3 +3259,105 @@ def replay(text):
         return False, 'Found no recorded Redfish responses to replay.'
     _REPLAY['responses'] = responses
     return True, len(responses)
+
+
+def start_trace(path='', filename=TRACE_FILENAME):
+    """
+    Start writing a diagnostic trace of every Redfish request this run makes.
+
+    Turn this on from a `--verbose` switch. It records, line by line and with millisecond
+    timestamps, which URL was requested with which timeout and retry budget, how long the
+    controller took to answer, whether an answer came from the shared cache, which `$expand`
+    support the controller advertised, whether its members arrived inlined or had to be fetched
+    one by one, and which of the three authentication paths (cached token, fresh session, Basic
+    fallback) the run took. Between them, those lines answer why a run against a slow management
+    controller takes long, without an admin having to reproduce the walk by hand.
+
+    The trace goes to a file rather than to the caller's output on purpose. A run that takes long
+    enough to be diagnosed is usually one that is terminated from outside with `SIGTERM`, and a
+    terminated run produces no output at all: whatever it would have printed dies with it. The
+    file is written as the run progresses, so it survives that termination and still shows where
+    the time went.
+
+    The file lives in the same per-user, `0700` directory as the cache database, and is created
+    with `0600` and `O_NOFOLLOW`, so a symlink planted at a predictable path under a shared
+    temporary directory cannot redirect the write (CWE-59/CWE-377, the same reasoning as
+    `db_sqlite.get_db_dir()`).
+
+    Repeated runs append, so a flapping check can be left tracing for several cycles and compared
+    across them; a header line separates the runs. Once the file has grown past
+    `TRACE_MAX_BYTES` this refuses instead of appending.
+
+    Parameters
+    ----------
+    path : str, optional
+        Directory to place the trace file in. Defaults to the system
+        temporary directory.
+    filename : str, optional
+        Name of the trace file (a plain basename).
+        Defaults to `TRACE_FILENAME`.
+
+    Returns
+    -------
+    tuple (bool, str)
+        - `(True, path)` with the absolute path of the trace file on success. Tell the admin where
+          it is: a trace nobody can find is not a diagnostic.
+        - `(False, error)` if the file cannot be opened, so a `--verbose` run that silently traces
+          nowhere is impossible.
+
+    Examples
+    --------
+    >>> success, trace_path = start_trace()
+    >>> success
+    True
+    """
+    if _TRACE['fd'] is not None:
+        return True, _TRACE['path']
+    if filename in ('.', '..') or os.path.basename(filename) != filename:
+        return False, f'Refusing unsafe trace filename: {filename!r}'
+    if not path:
+        path = disk.get_tmpdir()
+    # Reuse the hardened per-user directory the cache database already lives in, so the trace
+    # inherits its ownership and permission checks instead of repeating them here.
+    success, trace_dir = db_sqlite.get_db_dir(path)
+    if not success:
+        return False, trace_dir
+    trace_path = os.path.join(trace_dir, filename)
+    try:
+        size = os.path.getsize(trace_path)
+    except OSError:
+        size = 0
+    if size > TRACE_MAX_BYTES:
+        return False, (
+            f'Trace file {trace_path} has grown past {human.bytes2human(TRACE_MAX_BYTES)}, '
+            f'refusing to append. Move it away to start a new one.'
+        )
+    try:
+        # O_NOFOLLOW: refuse to open a symlink sitting at the trace path. O_APPEND: several
+        # Redfish checks on the same host trace into the same file, and append-mode writes of
+        # this size do not interleave. 0o600: the trace names hosts and URLs.
+        fd = os.open(
+            trace_path,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
+            0o600,
+        )
+    except OSError as e:
+        return False, f'Cannot open trace file {trace_path}: {e}'
+
+    _TRACE['fd'] = fd
+    _TRACE['path'] = trace_path
+    _TRACE['started'] = time.now(as_type='float')
+    _TRACE['requests'] = 0
+    _TRACE['seconds'] = 0.0
+    atexit.register(_trace_summary)
+
+    # Identify the run: which check, which version of it, which version of this library, and the
+    # process id, so lines from Redfish checks tracing concurrently into this file can be told
+    # apart.
+    check, check_version = _consumer()
+    _trace(
+        'start',
+        f'{check} v{check_version}, lib/redfish.py v{__version__}. Columns: timestamp, pid, '
+        f'seconds since this run started, event, detail',
+    )
+    return True, trace_path

@@ -26,7 +26,7 @@ and touches no cache. get_auth_header() returns just a header fragment and cache
 session token itself when asked; get_expand_suffix() probes the service root and
 caches the derived suffix when asked.
 
-Public functions under test (27):
+Public functions under test (33):
 
 - build_url()                              -> @odata.id SSRF pinning
 - fetch_collection()                       -> $expand + plain fallback + cache (mocked I/O)
@@ -43,29 +43,40 @@ Public functions under test (27):
 - get_chassis_thermal_fans()               -> projection + RPM/percent quirk
 - get_chassis_thermal_redundancy()         -> projection
 - get_chassis_thermal_temperatures()       -> projection
+- get_manager()                            -> projection
 - get_manager_logservices_sel_entries()    -> SEL formatting + worst-state rollup
 - get_perfdata()                           -> Nagios perfdata builder
 - get_sensor_state()                       -> state by status/health/thresholds/range
 - get_state()                              -> state by status/health
 - get_systems()                            -> projection
+- get_systems_ethernetinterfaces()         -> projection
 - get_systems_memory()                     -> projection + CapacityMiB + vendor quirks
+- get_systems_processors()                 -> projection + 3-level location path
 - get_systems_storage()                    -> projection
 - get_systems_storage_drives()             -> projection + CapacityBytes + temperature
+- get_systems_storage_volumes()            -> projection + CapacityBytes
+- get_updateservice_firmwareinventory()    -> projection
 - get_vendor()                             -> Vendor / Oem / 'generic' resolution
 - is_member_expanded()                     -> populated vs bare-reference detection
 - record_responses()                       -> recording switch, exit handler
 - replay()                                 -> recorded responses instead of a controller
+- start_trace()                            -> trace file, redaction, undecodable input
 
 All expected values were probed against the live module first, then pinned.
 Notably: lib.base.state2str renders [CRITICAL]/[WARNING] (not [CRIT]/[WARN]),
 lib.human.bytes2human uses binary units (465.7GiB for 5e11), a falsy-but-valid
 LastPowerOutputWatts of 0 does NOT trigger the PowerOutputWatts fallback, and
-ReadingRangeMin/Max of 0 are dropped from perfdata because of the `or None`.
+ReadingRangeMin/Max of 0 are dropped from perfdata because of the `or None`, and a
+capacity a controller reports as a non-numeric string is reported as no value
+rather than raising.
 """
 
 import json
+import os
 import re
+import shutil
 import sys
+import tempfile
 import types
 import typing
 import unittest
@@ -2191,6 +2202,250 @@ class TestRecordAndReplay(unittest.TestCase):
         with mock.patch('builtins.print') as print_mock:
             redfish._print_unformatted_responses()
         print_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# get_manager, get_systems_ethernetinterfaces, get_systems_processors,
+# get_systems_storage_volumes, get_updateservice_firmwareinventory: the
+# remaining flat+nested projections. Same contract as the ones above: every
+# documented key is always present, a field the controller omits reads as ''.
+# ---------------------------------------------------------------------------
+class TestGetManager(unittest.TestCase):
+    BODY: typing.ClassVar = {
+        'FirmwareVersion': '1.45',
+        'Id': 'iDRAC.Embedded.1',
+        'ManagerType': 'BMC',
+        'Model': '13G Monolithic',
+        'Name': 'Manager',
+        'PowerState': 'On',
+        'Status': {'State': 'Enabled', 'Health': 'OK', 'HealthRollup': 'OK'},
+        'UUID': '3242-4a34',
+    }
+
+    def test_full_payload(self):
+        out = redfish.get_manager(self.BODY)
+        self.assertEqual(out['FirmwareVersion'], '1.45')
+        self.assertEqual(out['ManagerType'], 'BMC')
+        self.assertEqual(out['UUID'], '3242-4a34')
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_HealthRollup'], 'OK')
+
+    def test_empty(self):
+        out = redfish.get_manager({})
+        self.assertEqual(set(out.values()), {''})
+
+    def test_output_key_set_is_exact(self):
+        expected = set(redfish.MANAGER_KEYS) | set(redfish.MANAGER_NESTED_KEYS)
+        self.assertEqual(set(redfish.get_manager({})), expected)
+
+    def test_missing_healthrollup_reads_empty(self):
+        body = dict(self.BODY, Status={'State': 'Enabled', 'Health': 'OK'})
+        self.assertEqual(redfish.get_manager(body)['Status_HealthRollup'], '')
+
+
+class TestGetSystemsEthernetInterfaces(unittest.TestCase):
+    BODY: typing.ClassVar = {
+        'Description': 'NIC 1',
+        'FQDN': 'host.example.com',
+        'FullDuplex': True,
+        'HostName': 'host',
+        'Id': 'NIC.1',
+        'LinkStatus': 'LinkUp',
+        'MACAddress': '00-00-5E-00-53-00',
+        'Name': 'System NIC 1',
+        'PermanentMACAddress': '00-00-5E-00-53-00',
+        'SpeedMbps': 1000,
+        'Status': {'State': 'Enabled', 'Health': 'OK'},
+    }
+
+    def test_full_payload(self):
+        out = redfish.get_systems_ethernetinterfaces(self.BODY)
+        self.assertEqual(out['MACAddress'], '00-00-5E-00-53-00')
+        self.assertEqual(out['LinkStatus'], 'LinkUp')
+        self.assertEqual(out['SpeedMbps'], 1000)
+        self.assertIs(out['FullDuplex'], True)
+        self.assertEqual(out['Status_Health'], 'OK')
+        # the controller sent no rollup
+        self.assertEqual(out['Status_HealthRollup'], '')
+
+    def test_empty(self):
+        out = redfish.get_systems_ethernetinterfaces({})
+        self.assertEqual(set(out.values()), {''})
+
+    def test_output_key_set_is_exact(self):
+        expected = set(redfish.ETHERNET_KEYS) | set(redfish.ETHERNET_NESTED_KEYS)
+        self.assertEqual(set(redfish.get_systems_ethernetinterfaces({})), expected)
+
+    def test_down_link_is_passed_through(self):
+        body = dict(self.BODY, LinkStatus='LinkDown', SpeedMbps=None)
+        out = redfish.get_systems_ethernetinterfaces(body)
+        self.assertEqual(out['LinkStatus'], 'LinkDown')
+        self.assertIsNone(out['SpeedMbps'])
+
+
+class TestGetSystemsProcessors(unittest.TestCase):
+    BODY: typing.ClassVar = {
+        'Id': 'CPU.Socket.1',
+        'InstructionSet': 'x86-64',
+        'Location': {'PartLocation': {'ServiceLabel': 'CPU 1'}},
+        'Manufacturer': 'Intel',
+        'MaxSpeedMHz': 3600,
+        'Model': 'Xeon Gold 6338',
+        'Name': 'CPU 1',
+        'ProcessorArchitecture': 'x86',
+        'ProcessorType': 'CPU',
+        'Socket': 'CPU.Socket.1',
+        'Status': {'State': 'Enabled', 'Health': 'OK'},
+        'TotalCores': 32,
+        'TotalThreads': 64,
+    }
+
+    def test_full_payload(self):
+        out = redfish.get_systems_processors(self.BODY)
+        self.assertEqual(out['Model'], 'Xeon Gold 6338')
+        self.assertEqual(out['TotalCores'], 32)
+        self.assertEqual(out['TotalThreads'], 64)
+        self.assertEqual(out['MaxSpeedMHz'], 3600)
+        self.assertEqual(out['Status_Health'], 'OK')
+
+    def test_three_level_location_path(self):
+        out = redfish.get_systems_processors(self.BODY)
+        self.assertEqual(out['Location_ServiceLabel'], 'CPU 1')
+
+    def test_partial_location_reads_empty(self):
+        body = dict(self.BODY, Location={'PartLocation': {}})
+        self.assertEqual(
+            redfish.get_systems_processors(body)['Location_ServiceLabel'], ''
+        )
+
+    def test_empty(self):
+        out = redfish.get_systems_processors({})
+        self.assertEqual(set(out.values()), {''})
+
+    def test_output_key_set_is_exact(self):
+        expected = set(redfish.PROCESSOR_KEYS) | set(redfish.PROCESSOR_NESTED_KEYS)
+        self.assertEqual(set(redfish.get_systems_processors({})), expected)
+
+
+class TestGetSystemsStorageVolumes(unittest.TestCase):
+    BODY: typing.ClassVar = {
+        'CapacityBytes': 1000000000000,
+        'Encrypted': False,
+        'Id': 'Disk.Virtual.0',
+        'Name': 'Virtual Disk 0',
+        'RAIDType': 'RAID1',
+        'Status': {'State': 'Enabled', 'Health': 'OK'},
+        'VolumeType': 'Mirrored',
+    }
+
+    def test_capacity_is_humanized(self):
+        out = redfish.get_systems_storage_volumes(self.BODY)
+        # binary units, as lib.human.bytes2human renders them
+        self.assertEqual(out['CapacityBytes'], '931.3GiB')
+        self.assertEqual(out['RAIDType'], 'RAID1')
+        self.assertIs(out['Encrypted'], False)
+
+    def test_missing_capacity_reads_empty(self):
+        body = dict(self.BODY)
+        del body['CapacityBytes']
+        self.assertEqual(redfish.get_systems_storage_volumes(body)['CapacityBytes'], '')
+
+    def test_non_numeric_capacity_reads_empty(self):
+        # firmware that answers "N/A" for a member it cannot read must not take
+        # the whole check down
+        body = dict(self.BODY, CapacityBytes='N/A')
+        self.assertEqual(redfish.get_systems_storage_volumes(body)['CapacityBytes'], '')
+
+    def test_numeric_string_capacity_is_humanized(self):
+        body = dict(self.BODY, CapacityBytes='1000000000000')
+        out = redfish.get_systems_storage_volumes(body)
+        self.assertEqual(out['CapacityBytes'], '931.3GiB')
+
+    def test_output_key_set_is_exact(self):
+        expected = set(redfish.VOLUME_KEYS) | set(redfish.VOLUME_NESTED_KEYS)
+        self.assertEqual(set(redfish.get_systems_storage_volumes({})), expected)
+
+
+class TestGetUpdateserviceFirmwareInventory(unittest.TestCase):
+    BODY: typing.ClassVar = {
+        'Id': 'Installed-BIOS',
+        'Manufacturer': 'Dell',
+        'Name': 'BIOS',
+        'ReleaseDate': '2026-01-15T00:00:00Z',
+        'SoftwareId': '159',
+        'Status': {'State': 'Enabled', 'Health': 'OK'},
+        'Updateable': True,
+        'Version': '2.19.1',
+    }
+
+    def test_full_payload(self):
+        out = redfish.get_updateservice_firmwareinventory(self.BODY)
+        self.assertEqual(out['Version'], '2.19.1')
+        self.assertEqual(out['ReleaseDate'], '2026-01-15T00:00:00Z')
+        self.assertIs(out['Updateable'], True)
+        self.assertEqual(out['Status_State'], 'Enabled')
+
+    def test_empty(self):
+        out = redfish.get_updateservice_firmwareinventory({})
+        self.assertEqual(set(out.values()), {''})
+
+    def test_output_key_set_is_exact(self):
+        expected = set(redfish.FIRMWARE_KEYS) | set(redfish.FIRMWARE_NESTED_KEYS)
+        self.assertEqual(
+            set(redfish.get_updateservice_firmwareinventory({})), expected
+        )
+
+
+# ---------------------------------------------------------------------------
+# start_trace: writes the trace file the --verbose switch produces. Everything
+# here runs against a temporary directory, never the real per-user one.
+# ---------------------------------------------------------------------------
+class TestStartTrace(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmpdir, True)
+        self._trace_before = dict(redfish._TRACE)
+
+        def restore():
+            redfish._TRACE.clear()
+            redfish._TRACE.update(self._trace_before)
+
+        self.addCleanup(restore)
+
+    def _read_trace(self, path):
+        with open(path, 'rb') as file_handle:
+            return file_handle.read().decode('utf-8', 'replace')
+
+    def test_creates_file_and_writes_header(self):
+        success, path = redfish.start_trace(self.tmpdir, filename='trace.log')
+        self.assertTrue(success)
+        self.assertTrue(path.startswith(self.tmpdir))
+        self.assertIn('lib/redfish.py v', self._read_trace(path))
+
+    def test_trace_line_is_appended(self):
+        _, path = redfish.start_trace(self.tmpdir, filename='trace.log')
+        redfish._trace('request', 'GET /redfish/v1/')
+        self.assertIn('GET /redfish/v1/', self._read_trace(path))
+
+    def test_credentials_are_redacted(self):
+        _, path = redfish.start_trace(self.tmpdir, filename='trace.log')
+        redfish._trace('request', 'token=supersecret')
+        content = self._read_trace(path)
+        self.assertNotIn('supersecret', content)
+        self.assertIn('token=******', content)
+
+    def test_lone_surrogate_does_not_raise(self):
+        # An argument the host handed over as undecodable bytes arrives as a lone
+        # surrogate. Writing it must not turn a working check into an UNKNOWN.
+        _, path = redfish.start_trace(self.tmpdir, filename='trace.log')
+        redfish._trace('request', 'GET /redfish/v1/\udcff and \ud800')
+        self.assertIn('GET /redfish/v1/', self._read_trace(path))
+
+    def test_trace_off_writes_nothing(self):
+        path = os.path.join(self.tmpdir, 'untouched.log')
+        redfish._TRACE['fd'] = None
+        redfish._trace('request', 'GET /redfish/v1/')
+        self.assertFalse(os.path.exists(path))
 
 
 if __name__ == '__main__':
