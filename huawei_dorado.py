@@ -71,167 +71,6 @@ _REDACTED_FIELDS = frozenset(
 _recorded_responses = []
 
 
-def _redact(value):
-    """
-    Return a copy of an API response with every sensitive field's value replaced.
-
-    Parameters
-    ----------
-    value : any
-        A decoded response, or any part of one.
-
-    Returns
-    -------
-    any
-        The same structure, with the value of every field named in `_REDACTED_FIELDS`
-        replaced by `'******'`.
-    """
-    if isinstance(value, dict):
-        return {
-            key: ('******' if str(key).lower() in _REDACTED_FIELDS else _redact(inner))
-            for key, inner in value.items()
-        }
-    if isinstance(value, list):
-        return [_redact(item) for item in value]
-    return value
-
-
-def record_response(endpoint, result):
-    """
-    Remember what an endpoint answered, so a consumer can print it under `--verbose`.
-
-    Parameters
-    ----------
-    endpoint : str
-        The endpoint that was queried, as it was requested.
-    result : dict
-        The response envelope, as `get_data()` built it.
-
-    Notes
-    -----
-    - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal run
-      does not keep a second copy of every response in memory.
-    - The login response is deliberately never recorded. It is the one response that
-      carries a session token, and a token in the output is a credential in whatever
-      stores, forwards and logs that output downstream.
-    """
-    _recorded_responses.append((endpoint, _redact(result)))
-
-
-def format_responses():
-    """
-    Render everything `record_response()` collected, for a `--verbose` output.
-
-    Returns
-    -------
-    str
-        One block per request, naming the endpoint and pretty-printing what came back.
-        Empty when nothing was recorded, which is the case on a normal run and in test mode.
-
-    Notes
-    -----
-    - Meant for working out what an appliance actually reports, so a consumer can be built
-      against it. The output is as long as the appliance's answers are, which on a list
-      endpoint of a large array is very long indeed. It is a command-line tool, not
-      something to switch on in a service definition.
-
-    Examples
-    --------
-    >>> print(format_responses())
-    ### GET controller
-    {
-      "data": [
-        ...
-      ],
-      "error": {"code": 0}
-    }
-    """
-    blocks = []
-    for endpoint, result in _recorded_responses:
-        blocks.append(
-            f'### GET {endpoint}\n{json.dumps(result, indent=2, sort_keys=True)}'
-        )
-    return '\n\n'.join(blocks)
-
-
-def _with_recorded_responses(message):
-    """
-    Append the recorded responses to an abort message, where any were recorded.
-
-    Nothing is recorded unless the caller asked for verbose output, so a normal run gets
-    the message unchanged and a verbose one gets the answers that explain it.
-
-    Parameters
-    ----------
-    message : str
-        The message the consumer is about to abort with.
-
-    Returns
-    -------
-    str
-        The message, followed by what every request returned.
-    """
-    recorded = format_responses()
-    return f'{message}\n\n{recorded}' if recorded else message
-
-
-def assert_ok(result, what):
-    """
-    Abort the calling process (UNKNOWN) unless the appliance reported success.
-
-    Every consumer has to check the response envelope before it reads anything out of it,
-    and that check is easy to get subtly wrong: the appliance reports success as the number
-    `0` on some endpoints and as the string `'0'` on others, and a response that carries no
-    `error` object at all turns a naive `result['error']['code']` into an `AttributeError`
-    instead of a clean UNKNOWN.
-
-    Parameters
-    ----------
-    result : dict
-        A response envelope as `get_data()` returns it.
-    what : str
-        What was being queried, as a noun phrase for the message ("the fans", "the storage
-        pools"). It is the only part of the output that tells an operator which of a caller's
-        several requests failed.
-
-    Returns
-    -------
-    None
-        Returns on success, and does not return otherwise.
-
-    Notes
-    -----
-    - An empty response is an error as well. `get_data()` always answers with an envelope,
-      so nothing at all means the consumer never reached the appliance.
-    - The appliance's own description and suggestion are printed where it sends them. They
-      name the cause far better than anything a consumer could infer from the code.
-    - Under verbose output the appliance's answers are appended to the abort message. This
-      is the moment they are needed most, and printing them at the end of a successful run
-      only would hide them from exactly the run that has to be explained.
-
-    Examples
-    --------
-    >>> assert_ok({'error': {'code': 0}, 'data': []}, 'the fans')
-    """
-    if not result:
-        base.cu(_with_recorded_responses('Got no response from the appliance.'))
-
-    code = get_error_code(result)
-    if code in (0, '0'):
-        return
-
-    error = result.get('error') if isinstance(result, dict) else None
-    if not isinstance(error, dict):
-        error = {}
-    description = error.get('description') or 'no description'
-    suggestion = error.get('suggestion') or ''
-    base.cu(
-        _with_recorded_responses(
-            f'Failed to query {what} (code {code}): {description} {suggestion}'.strip()
-        )
-    )
-
-
 def as_code(value):
     """
     Normalise an API status code into an `int`, or `None` if it is unusable.
@@ -314,6 +153,84 @@ def as_temperature(value):
     return code
 
 
+def _with_recorded_responses(message):
+    """
+    Append the recorded responses to an abort message, where any were recorded.
+
+    Nothing is recorded unless the caller asked for verbose output, so a normal run gets
+    the message unchanged and a verbose one gets the answers that explain it.
+
+    Parameters
+    ----------
+    message : str
+        The message the consumer is about to abort with.
+
+    Returns
+    -------
+    str
+        The message, followed by what every request returned.
+    """
+    recorded = format_responses()
+    return f'{message}\n\n{recorded}' if recorded else message
+
+
+def assert_ok(result, what):
+    """
+    Abort the calling process (UNKNOWN) unless the appliance reported success.
+
+    Every consumer has to check the response envelope before it reads anything out of it,
+    and that check is easy to get subtly wrong: the appliance reports success as the number
+    `0` on some endpoints and as the string `'0'` on others, and a response that carries no
+    `error` object at all turns a naive `result['error']['code']` into an `AttributeError`
+    instead of a clean UNKNOWN.
+
+    Parameters
+    ----------
+    result : dict
+        A response envelope as `get_data()` returns it.
+    what : str
+        What was being queried, as a noun phrase for the message ("the fans", "the storage
+        pools"). It is the only part of the output that tells an operator which of a caller's
+        several requests failed.
+
+    Returns
+    -------
+    None
+        Returns on success, and does not return otherwise.
+
+    Notes
+    -----
+    - An empty response is an error as well. `get_data()` always answers with an envelope,
+      so nothing at all means the consumer never reached the appliance.
+    - The appliance's own description and suggestion are printed where it sends them. They
+      name the cause far better than anything a consumer could infer from the code.
+    - Under verbose output the appliance's answers are appended to the abort message. This
+      is the moment they are needed most, and printing them at the end of a successful run
+      only would hide them from exactly the run that has to be explained.
+
+    Examples
+    --------
+    >>> assert_ok({'error': {'code': 0}, 'data': []}, 'the fans')
+    """
+    if not result:
+        base.cu(_with_recorded_responses('Got no response from the appliance.'))
+
+    code = get_error_code(result)
+    if code in (0, '0'):
+        return
+
+    error = result.get('error') if isinstance(result, dict) else None
+    if not isinstance(error, dict):
+        error = {}
+    description = error.get('description') or 'no description'
+    suggestion = error.get('suggestion') or ''
+    base.cu(
+        _with_recorded_responses(
+            f'Failed to query {what} (code {code}): {description} {suggestion}'.strip()
+        )
+    )
+
+
 def field(data, *names, default=None):
     """
     Read a field whose name the appliance spells differently depending on the firmware.
@@ -369,6 +286,42 @@ def field(data, *names, default=None):
             return data[key]
 
     return default
+
+
+def format_responses():
+    """
+    Render everything `record_response()` collected, for a `--verbose` output.
+
+    Returns
+    -------
+    str
+        One block per request, naming the endpoint and pretty-printing what came back.
+        Empty when nothing was recorded, which is the case on a normal run and in test mode.
+
+    Notes
+    -----
+    - Meant for working out what an appliance actually reports, so a consumer can be built
+      against it. The output is as long as the appliance's answers are, which on a list
+      endpoint of a large array is very long indeed. It is a command-line tool, not
+      something to switch on in a service definition.
+
+    Examples
+    --------
+    >>> print(format_responses())
+    ### GET controller
+    {
+      "data": [
+        ...
+      ],
+      "error": {"code": 0}
+    }
+    """
+    blocks = []
+    for endpoint, result in _recorded_responses:
+        blocks.append(
+            f'### GET {endpoint}\n{json.dumps(result, indent=2, sort_keys=True)}'
+        )
+    return '\n\n'.join(blocks)
 
 
 def get_account_state(st):
@@ -2443,6 +2396,53 @@ def get_uuid(data):
     '207:--'
     """
     return f'{data.get("TYPE", "--")}:{data.get("ID", "--")}'
+
+
+def _redact(value):
+    """
+    Return a copy of an API response with every sensitive field's value replaced.
+
+    Parameters
+    ----------
+    value : any
+        A decoded response, or any part of one.
+
+    Returns
+    -------
+    any
+        The same structure, with the value of every field named in `_REDACTED_FIELDS`
+        replaced by `'******'`.
+    """
+    if isinstance(value, dict):
+        return {
+            key: ('******' if str(key).lower() in _REDACTED_FIELDS else _redact(inner))
+            for key, inner in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    return value
+
+
+def record_response(endpoint, result):
+    """
+    Remember what an endpoint answered, so a consumer can print it under `--verbose`.
+
+    Parameters
+    ----------
+    endpoint : str
+        The endpoint that was queried, as it was requested.
+    result : dict
+        The response envelope, as `get_data()` built it.
+
+    Notes
+    -----
+    - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal run
+      does not keep a second copy of every response in memory.
+    - The login response is deliberately never recorded. It is the one response that
+      carries a session token, and a token in the output is a credential in whatever
+      stores, forwards and logs that output downstream.
+    """
+    _recorded_responses.append((endpoint, _redact(result)))
 
 
 def sectors2bytes(sectors, sector_size=DEFAULT_SECTOR_SIZE):

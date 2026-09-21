@@ -132,29 +132,68 @@ def build_options(
     return parts
 
 
-def target(host, username=None):
+def rsync(
+    host,
+    local,
+    remote,
+    username=None,
+    port=None,
+    options=None,
+    password=None,
+    timeout=None,
+    sudo=False,
+):
     """
-    Build the `user@host` (or bare `host`) token.
+    Copy a directory tree to `remote` on `host` with rsync over SSH.
 
-    Leaving `username` empty lets `ssh`/`scp` determine the user from
-    `~/.ssh/config` (or fall back to the current local user), so host aliases
-    keep working.
+    rsync is faster than `scp -r` for trees with many files, but requires rsync
+    to be installed on both ends. The contents of `local` are mirrored into
+    `remote` (both are treated as directories). Callers that cannot guarantee
+    rsync on the target should fall back to `scp(..., recursive=True)`.
 
     Parameters
     ----------
     host : str
-        Hostname, IP address or `~/.ssh/config` alias.
+        Target host (name, IP or alias).
+    local : str
+        Local source directory.
+    remote : str
+        Remote destination directory.
     username : str, optional
-        Login user. If falsy, omitted.
+        Login user (see `target()`).
+    port : int or str, optional
+        Remote port.
+    options : list, optional
+        ssh option tokens from `build_options()`,
+        passed through to rsync via `--rsh`.
+    password : str, optional
+        If set, run the command through `sshpass`
+        (requires `sshpass`). The password is handed over in the environment, so it
+        does not show up in the process list.
+    timeout : int, optional
+        Overall timeout in seconds.
+    sudo : bool, optional
+        Run the remote rsync via `sudo`
+        (`--rsync-path="sudo rsync"`), so files land root-owned and writes are
+        privileged. Requires password-less sudo on the target. Defaults to `False`.
 
     Returns
     -------
-    str
-        e.g. `root@host` or `host`.
+    tuple
+        `(True, (stdout, stderr, retc))` on success, else
+        `(False, error_message)`.
     """
-    if username:
-        return f'{username}@{host}'
-    return host
+    ok, msg = _check_target(host, username)
+    if not ok:
+        return False, msg
+    # rsync's --rsh takes the remote-shell command as a single string.
+    rsh = ' '.join(['ssh', *(options or [])]) + (f' -p {port}' if port else '')
+    cmd = ['rsync', '--archive']
+    if sudo:
+        cmd += ['--rsync-path', 'sudo rsync']
+    cmd += ['--rsh', rsh, f'{local}/', f'{target(host, username)}:{remote}/']
+    cmd, env = _with_password(cmd, password)
+    return shell.shell_exec(cmd, env=env, timeout=timeout)
 
 
 def run(
@@ -276,65 +315,26 @@ def scp(
     return shell.shell_exec(cmd, env=env, timeout=timeout)
 
 
-def rsync(
-    host,
-    local,
-    remote,
-    username=None,
-    port=None,
-    options=None,
-    password=None,
-    timeout=None,
-    sudo=False,
-):
+def target(host, username=None):
     """
-    Copy a directory tree to `remote` on `host` with rsync over SSH.
+    Build the `user@host` (or bare `host`) token.
 
-    rsync is faster than `scp -r` for trees with many files, but requires rsync
-    to be installed on both ends. The contents of `local` are mirrored into
-    `remote` (both are treated as directories). Callers that cannot guarantee
-    rsync on the target should fall back to `scp(..., recursive=True)`.
+    Leaving `username` empty lets `ssh`/`scp` determine the user from
+    `~/.ssh/config` (or fall back to the current local user), so host aliases
+    keep working.
 
     Parameters
     ----------
     host : str
-        Target host (name, IP or alias).
-    local : str
-        Local source directory.
-    remote : str
-        Remote destination directory.
+        Hostname, IP address or `~/.ssh/config` alias.
     username : str, optional
-        Login user (see `target()`).
-    port : int or str, optional
-        Remote port.
-    options : list, optional
-        ssh option tokens from `build_options()`,
-        passed through to rsync via `--rsh`.
-    password : str, optional
-        If set, run the command through `sshpass`
-        (requires `sshpass`). The password is handed over in the environment, so it
-        does not show up in the process list.
-    timeout : int, optional
-        Overall timeout in seconds.
-    sudo : bool, optional
-        Run the remote rsync via `sudo`
-        (`--rsync-path="sudo rsync"`), so files land root-owned and writes are
-        privileged. Requires password-less sudo on the target. Defaults to `False`.
+        Login user. If falsy, omitted.
 
     Returns
     -------
-    tuple
-        `(True, (stdout, stderr, retc))` on success, else
-        `(False, error_message)`.
+    str
+        e.g. `root@host` or `host`.
     """
-    ok, msg = _check_target(host, username)
-    if not ok:
-        return False, msg
-    # rsync's --rsh takes the remote-shell command as a single string.
-    rsh = ' '.join(['ssh', *(options or [])]) + (f' -p {port}' if port else '')
-    cmd = ['rsync', '--archive']
-    if sudo:
-        cmd += ['--rsync-path', 'sudo rsync']
-    cmd += ['--rsh', rsh, f'{local}/', f'{target(host, username)}:{remote}/']
-    cmd, env = _with_password(cmd, password)
-    return shell.shell_exec(cmd, env=env, timeout=timeout)
+    if username:
+        return f'{username}@{host}'
+    return host

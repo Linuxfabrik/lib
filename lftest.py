@@ -24,6 +24,234 @@ __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026082503'
 
 
+def attach_each(test_class, items, action, id_func=str):
+    """Attach one ``test_<id>`` method per item to a ``unittest.TestCase``
+    subclass.
+
+    Sister of :func:`attach_tests`. Where ``attach_tests`` works on a
+    TESTS list of dicts that ``run()`` knows how to execute,
+    ``attach_each`` accepts an arbitrary iterable plus a callable that
+    decides what to do with each item. Useful for container-image
+    matrices, file-based fixtures with stateful per-item setup, and
+    any other pattern that doesn't fit the TESTS-dict shape.
+
+    Like ``attach_tests``, this materialises one real test method per
+    item so unittest counts and names them individually instead of
+    collapsing the whole loop into a single ``test`` method.
+
+    Parameters
+    ----------
+    test_class : type
+        a ``unittest.TestCase`` subclass.
+    items : iterable
+        the things to iterate over (image
+        tuples, fixture paths, scenario dicts, ...).
+    action : callable
+        a function ``action(self, item)``
+        that the generated test method calls with the captured item.
+        ``self`` is the ``unittest.TestCase`` instance and may be
+        used to issue assertions.
+    id_func : callable, optional
+        a function that turns one
+        item into a short, human-readable string used as the test
+        method name. Defaults to ``str``, which is fine for plain
+        strings; pass ``lambda it: it[1]`` (or similar) for tuples
+        and dicts.
+
+    Examples
+    --------
+    >>> IMAGES = [
+    ...     ('quay.io/keycloak/keycloak:25.0.6', 'v25'),
+    ...     ('quay.io/keycloak/keycloak:26.6', 'v26'),
+    ... ]
+    >>>
+    >>> def _check(test, image_pair):
+    ...     image, version_tag = image_pair
+    ...     with lib.lftest.run_container(image, ...) as container:
+    ...         # ... run the executable, assert ...
+    ...         pass
+    >>>
+    >>> class TestCheck(unittest.TestCase):
+    ...     pass
+    >>>
+    >>> attach_each(TestCheck, IMAGES, _check, id_func=lambda it: it[1])
+    """
+    seen = set()
+    for item in items:
+        raw_id = id_func(item)
+        method_name = 'test_' + re.sub(r'\W+', '_', str(raw_id)).strip('_')
+        if method_name in seen:
+            raise ValueError(
+                f'attach_each: duplicate id "{raw_id}" '
+                f'maps to method name "{method_name}"'
+            )
+        seen.add(method_name)
+
+        def _make(captured_item):
+            def _method(self):
+                action(self, captured_item)
+
+            return _method
+
+        setattr(test_class, method_name, _make(item))
+
+
+# Set by a runner that wants a fast pass without containers, see
+# `tools/run-unit-tests --no-container`.
+NO_CONTAINER_ENV = 'LFTEST_NO_CONTAINER'
+
+
+def attach_tests(test_class, tests, plugin_attr='check'):
+    """
+    Attach one ``test_<id>`` method per testcase to a ``unittest.TestCase`` subclass.
+
+    Every entry in the TESTS list shows up as an individual test in the unittest
+    discovery output instead of being collapsed into a single ``test`` method with
+    sub-tests.
+
+    The naive approach is:
+
+    .. code-block:: python
+
+        class TestCheck(unittest.TestCase):
+            def test(self):
+                for t in TESTS:
+                    with self.subTest(id=t['id']):
+                        lib.lftest.run(self, self.check, t)
+
+    That works, but unittest counts the whole loop as **one** test, so
+    the user sees ``Ran 1 test`` regardless of how many fixtures the
+    file actually exercises. Failures still surface (sub-tests print
+    their `id`), but the test count is misleading and `./run -v` does
+    not list each scenario. ``attach_tests()`` materialises one real
+    test method per testcase so the count is accurate and verbose
+    output names every scenario.
+
+    Parameters
+    ----------
+    test_class : type
+        a ``unittest.TestCase`` subclass with a
+        ``check`` (or other ``plugin_attr``-named) attribute pointing at
+        the executable under test.
+    tests : list[dict]
+        a TESTS list of testcase dicts, each
+        shaped as ``run()`` expects, with a unique ``id`` field.
+    plugin_attr : str, optional
+        the attribute name on
+        ``test_class`` that holds the path of the executable. Defaults to
+        ``'check'``.
+
+    Examples
+    --------
+    >>> class TestCheck(unittest.TestCase):
+    ...     check = '../my-script'
+    >>> attach_tests(TestCheck, TESTS)
+    >>>
+    >>> if __name__ == '__main__':
+    ...     unittest.main()
+
+    The resulting class has a ``test_<sanitised id>`` method per
+    entry in ``TESTS``. Running ``./run -v`` then lists every test
+    by name and ``./run`` reports the real test count.
+    """
+    seen = set()
+    for testcase in tests:
+        raw_id = testcase['id']
+        method_name = 'test_' + re.sub(r'\W+', '_', raw_id).strip('_')
+        if method_name in seen:
+            raise ValueError(
+                f'attach_tests: duplicate test id "{raw_id}" '
+                f'maps to method name "{method_name}"'
+            )
+        seen.add(method_name)
+
+        def _make(captured_testcase):
+            def _method(self):
+                run(self, getattr(self, plugin_attr), captured_testcase)
+
+            return _method
+
+        setattr(test_class, method_name, _make(testcase))
+
+
+def _container_runtime_problem():
+    """Say why a container may not or cannot be started, or `None` if it can."""
+    if os.environ.get(NO_CONTAINER_ENV):
+        return f'{NO_CONTAINER_ENV} is set'
+    try:
+        import testcontainers  # noqa: F401
+    except ImportError:
+        return 'testcontainers is not installed; run `pip install testcontainers`'
+    return None
+
+
+def container_runtime_available():
+    """Say whether a test may and can start a container.
+
+    For a `setUpModule()` that prepares containers for the tests that need
+    them: it must return quietly rather than skip, because skipping there
+    takes the whole file with it, including the tests that need no container.
+    A single test asks with :func:`require_container_runtime` instead.
+    """
+    return _container_runtime_problem() is None
+
+
+@contextlib.contextmanager
+def network():
+    """Yield a testcontainers `Network`, removed on exit.
+
+    Used to wire a multi-container test together: start a backend (e.g. a
+    database) and the application container on the same network, passing the
+    network to :func:`run_container` via its `network` / `network_alias`
+    arguments so the application can reach the backend by alias.
+
+    Yields
+    ------
+    Network
+        a created docker/podman network.
+
+    Examples
+    --------
+    >>> with lib.lftest.network() as net:
+    ...     with lib.lftest.run_container(
+    ...         'docker.io/library/mariadb:11',
+    ...         env={'MARIADB_ROOT_PASSWORD': 'linuxfabrik'},
+    ...         network=net,
+    ...         network_alias='db',
+    ...         wait_log='ready for connections',
+    ...     ):
+    ...         pass
+    """
+    require_container_runtime()
+    from testcontainers.core.network import Network
+
+    net = Network()
+    net.create()
+    try:
+        yield net
+    finally:
+        net.remove()
+
+
+def require_container_runtime():
+    """Skip the calling test unless it may and can start a container.
+
+    Raises `unittest.SkipTest` when `LFTEST_NO_CONTAINER` is set in the
+    environment, or when testcontainers is not installed. A test that is not
+    allowed to start a container, or has nothing to start it with, has not
+    failed, and reporting it as an error buries the tests that did run.
+
+    Call it before importing anything from testcontainers, so a test file that
+    mixes container tests with ordinary ones stays importable either way, and
+    a fast pass can run the ordinary tests beside them.
+    """
+    import unittest
+
+    problem = _container_runtime_problem()
+    if problem:
+        raise unittest.SkipTest(problem)
+
+
 def run(test_instance, plugin, testcase):
     """Run a single testcase against a script and assert the results.
 
@@ -111,234 +339,6 @@ def run(test_instance, plugin, testcase):
 
     if 'assert-regex' in testcase:
         test_instance.assertRegex(stdout, testcase['assert-regex'])
-
-
-def attach_tests(test_class, tests, plugin_attr='check'):
-    """
-    Attach one ``test_<id>`` method per testcase to a ``unittest.TestCase`` subclass.
-
-    Every entry in the TESTS list shows up as an individual test in the unittest
-    discovery output instead of being collapsed into a single ``test`` method with
-    sub-tests.
-
-    The naive approach is:
-
-    .. code-block:: python
-
-        class TestCheck(unittest.TestCase):
-            def test(self):
-                for t in TESTS:
-                    with self.subTest(id=t['id']):
-                        lib.lftest.run(self, self.check, t)
-
-    That works, but unittest counts the whole loop as **one** test, so
-    the user sees ``Ran 1 test`` regardless of how many fixtures the
-    file actually exercises. Failures still surface (sub-tests print
-    their `id`), but the test count is misleading and `./run -v` does
-    not list each scenario. ``attach_tests()`` materialises one real
-    test method per testcase so the count is accurate and verbose
-    output names every scenario.
-
-    Parameters
-    ----------
-    test_class : type
-        a ``unittest.TestCase`` subclass with a
-        ``check`` (or other ``plugin_attr``-named) attribute pointing at
-        the executable under test.
-    tests : list[dict]
-        a TESTS list of testcase dicts, each
-        shaped as ``run()`` expects, with a unique ``id`` field.
-    plugin_attr : str, optional
-        the attribute name on
-        ``test_class`` that holds the path of the executable. Defaults to
-        ``'check'``.
-
-    Examples
-    --------
-    >>> class TestCheck(unittest.TestCase):
-    ...     check = '../my-script'
-    >>> attach_tests(TestCheck, TESTS)
-    >>>
-    >>> if __name__ == '__main__':
-    ...     unittest.main()
-
-    The resulting class has a ``test_<sanitised id>`` method per
-    entry in ``TESTS``. Running ``./run -v`` then lists every test
-    by name and ``./run`` reports the real test count.
-    """
-    seen = set()
-    for testcase in tests:
-        raw_id = testcase['id']
-        method_name = 'test_' + re.sub(r'\W+', '_', raw_id).strip('_')
-        if method_name in seen:
-            raise ValueError(
-                f'attach_tests: duplicate test id "{raw_id}" '
-                f'maps to method name "{method_name}"'
-            )
-        seen.add(method_name)
-
-        def _make(captured_testcase):
-            def _method(self):
-                run(self, getattr(self, plugin_attr), captured_testcase)
-
-            return _method
-
-        setattr(test_class, method_name, _make(testcase))
-
-
-def attach_each(test_class, items, action, id_func=str):
-    """Attach one ``test_<id>`` method per item to a ``unittest.TestCase``
-    subclass.
-
-    Sister of :func:`attach_tests`. Where ``attach_tests`` works on a
-    TESTS list of dicts that ``run()`` knows how to execute,
-    ``attach_each`` accepts an arbitrary iterable plus a callable that
-    decides what to do with each item. Useful for container-image
-    matrices, file-based fixtures with stateful per-item setup, and
-    any other pattern that doesn't fit the TESTS-dict shape.
-
-    Like ``attach_tests``, this materialises one real test method per
-    item so unittest counts and names them individually instead of
-    collapsing the whole loop into a single ``test`` method.
-
-    Parameters
-    ----------
-    test_class : type
-        a ``unittest.TestCase`` subclass.
-    items : iterable
-        the things to iterate over (image
-        tuples, fixture paths, scenario dicts, ...).
-    action : callable
-        a function ``action(self, item)``
-        that the generated test method calls with the captured item.
-        ``self`` is the ``unittest.TestCase`` instance and may be
-        used to issue assertions.
-    id_func : callable, optional
-        a function that turns one
-        item into a short, human-readable string used as the test
-        method name. Defaults to ``str``, which is fine for plain
-        strings; pass ``lambda it: it[1]`` (or similar) for tuples
-        and dicts.
-
-    Examples
-    --------
-    >>> IMAGES = [
-    ...     ('quay.io/keycloak/keycloak:25.0.6', 'v25'),
-    ...     ('quay.io/keycloak/keycloak:26.6', 'v26'),
-    ... ]
-    >>>
-    >>> def _check(test, image_pair):
-    ...     image, version_tag = image_pair
-    ...     with lib.lftest.run_container(image, ...) as container:
-    ...         # ... run the executable, assert ...
-    ...         pass
-    >>>
-    >>> class TestCheck(unittest.TestCase):
-    ...     pass
-    >>>
-    >>> attach_each(TestCheck, IMAGES, _check, id_func=lambda it: it[1])
-    """
-    seen = set()
-    for item in items:
-        raw_id = id_func(item)
-        method_name = 'test_' + re.sub(r'\W+', '_', str(raw_id)).strip('_')
-        if method_name in seen:
-            raise ValueError(
-                f'attach_each: duplicate id "{raw_id}" '
-                f'maps to method name "{method_name}"'
-            )
-        seen.add(method_name)
-
-        def _make(captured_item):
-            def _method(self):
-                action(self, captured_item)
-
-            return _method
-
-        setattr(test_class, method_name, _make(item))
-
-
-# Set by a runner that wants a fast pass without containers, see
-# `tools/run-unit-tests --no-container`.
-NO_CONTAINER_ENV = 'LFTEST_NO_CONTAINER'
-
-
-def _container_runtime_problem():
-    """Say why a container may not or cannot be started, or `None` if it can."""
-    if os.environ.get(NO_CONTAINER_ENV):
-        return f'{NO_CONTAINER_ENV} is set'
-    try:
-        import testcontainers  # noqa: F401
-    except ImportError:
-        return 'testcontainers is not installed; run `pip install testcontainers`'
-    return None
-
-
-def container_runtime_available():
-    """Say whether a test may and can start a container.
-
-    For a `setUpModule()` that prepares containers for the tests that need
-    them: it must return quietly rather than skip, because skipping there
-    takes the whole file with it, including the tests that need no container.
-    A single test asks with :func:`require_container_runtime` instead.
-    """
-    return _container_runtime_problem() is None
-
-
-def require_container_runtime():
-    """Skip the calling test unless it may and can start a container.
-
-    Raises `unittest.SkipTest` when `LFTEST_NO_CONTAINER` is set in the
-    environment, or when testcontainers is not installed. A test that is not
-    allowed to start a container, or has nothing to start it with, has not
-    failed, and reporting it as an error buries the tests that did run.
-
-    Call it before importing anything from testcontainers, so a test file that
-    mixes container tests with ordinary ones stays importable either way, and
-    a fast pass can run the ordinary tests beside them.
-    """
-    import unittest
-
-    problem = _container_runtime_problem()
-    if problem:
-        raise unittest.SkipTest(problem)
-
-
-@contextlib.contextmanager
-def network():
-    """Yield a testcontainers `Network`, removed on exit.
-
-    Used to wire a multi-container test together: start a backend (e.g. a
-    database) and the application container on the same network, passing the
-    network to :func:`run_container` via its `network` / `network_alias`
-    arguments so the application can reach the backend by alias.
-
-    Yields
-    ------
-    Network
-        a created docker/podman network.
-
-    Examples
-    --------
-    >>> with lib.lftest.network() as net:
-    ...     with lib.lftest.run_container(
-    ...         'docker.io/library/mariadb:11',
-    ...         env={'MARIADB_ROOT_PASSWORD': 'linuxfabrik'},
-    ...         network=net,
-    ...         network_alias='db',
-    ...         wait_log='ready for connections',
-    ...     ):
-    ...         pass
-    """
-    require_container_runtime()
-    from testcontainers.core.network import Network
-
-    net = Network()
-    net.create()
-    try:
-        yield net
-    finally:
-        net.remove()
 
 
 @contextlib.contextmanager

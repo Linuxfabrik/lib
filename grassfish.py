@@ -67,7 +67,7 @@ def fetch_json(
     Examples
     --------
     >>> fetch_json(
-    ...     token='your-api-token',
+    ...     token='linuxfabrik',
     ...     host='api.example.com',
     ...     port=443,
     ...     uri='/api',

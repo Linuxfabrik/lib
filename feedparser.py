@@ -78,7 +78,7 @@ def fetch_soup(
 
     Examples
     --------
-    >>> success, soup = fetch_soup('https://linuxfabrik.ch/feed.xml', retries=3)
+    >>> success, soup = fetch_soup('https://example.com/feed.xml', retries=3)
     """
     attempt = 0
     while True:
@@ -145,7 +145,7 @@ def parse(
 
     Examples
     --------
-    >>> success, result = parse('https://linuxfabrik.ch/feed.xml')
+    >>> success, result = parse('https://example.com/feed.xml')
     >>> if success:
     ...     print(result)
     {
@@ -155,7 +155,7 @@ def parse(
         'entries': [
             {
                 'title': 'Lorem ipsum',
-                'id': 'https://linuxfabrik.ch',
+                'id': 'https://example.com',
                 'updated': '2017-04-17T11:29:00.000Z',
                 ...
             },

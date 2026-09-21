@@ -202,6 +202,47 @@ def get_locale(path):
     return (True, match.group(1) if match and match.group(1) else DEFAULT_LOCALE)
 
 
+def get_plugin_slugs(path):
+    """
+    Map every installed plugin to the slug the wordpress.org plugin directory knows it by.
+
+    A plugin's directory name and its slug in the directory are usually the same, because
+    installing from the directory is what creates the directory. They come apart for a
+    single-file plugin, whose file name is not its slug - `hello.php`, shipped with every
+    WordPress, is `hello-dolly` there - and wherever the directory was renamed by hand.
+    Since anything asked about a plugin on wordpress.org is asked by slug, a consumer that
+    only has the directory name is asking about the wrong plugin, or about none at all.
+
+    Parameters
+    ----------
+    path : str | os.PathLike
+        Path to the installation root.
+
+    Returns
+    -------
+    dict
+        `{directory_slug: wordpress_org_slug}` for every plugin `get_plugins()`
+        finds, so the keys of both are the same. The value falls back to the directory slug
+        where the plugin names no wordpress.org address.
+
+    Notes
+    -----
+    - Taken from the `Plugin URI` header, which is the plugin's own statement of where it
+      lives. Only an address below `wordpress.org/plugins/` is read as a slug; a plugin
+      hosted on its author's own site keeps its directory name, that being the best guess
+      available and the right one whenever it was installed from the directory anyway.
+    - Both keys and values are needed. The key is the directory on disk and the value is
+      what wordpress.org answers to, and a consumer that conflates them will look in the
+      wrong place for one of the two.
+
+    Examples
+    --------
+    >>> get_plugin_slugs('/var/www/html/wordpress')
+    {'akismet': 'akismet', 'hello': 'hello-dolly'}
+    """
+    return {slug: entry['slug'] for slug, entry in _scan_plugins(path).items()}
+
+
 def get_plugins(path):
     """
     List the plugins installed in a local WordPress installation.
@@ -248,16 +289,14 @@ def get_plugins(path):
     return {slug: entry['version'] for slug, entry in _scan_plugins(path).items()}
 
 
-def get_plugin_slugs(path):
+def get_site_url(path):
     """
-    Map every installed plugin to the slug the wordpress.org plugin directory knows it by.
+    Read the site URL a local WordPress installation is served under.
 
-    A plugin's directory name and its slug in the directory are usually the same, because
-    installing from the directory is what creates the directory. They come apart for a
-    single-file plugin, whose file name is not its slug - `hello.php`, shipped with every
-    WordPress, is `hello-dolly` there - and wherever the directory was renamed by hand.
-    Since anything asked about a plugin on wordpress.org is asked by slug, a consumer that
-    only has the directory name is asking about the wrong plugin, or about none at all.
+    WordPress keeps the site URL in its database, but an installation may pin it in
+    `wp-config.php` through the `WP_HOME` and `WP_SITEURL` constants. Where they are
+    set, a consumer can address the site without being told the URL. Where they are not,
+    the URL is simply not knowable from the filesystem and the caller has to ask for it.
 
     Parameters
     ----------
@@ -266,27 +305,62 @@ def get_plugin_slugs(path):
 
     Returns
     -------
-    dict
-        `{directory_slug: wordpress_org_slug}` for every plugin `get_plugins()`
-        finds, so the keys of both are the same. The value falls back to the directory slug
-        where the plugin names no wordpress.org address.
+    tuple[bool, str]
+        - On success: `(True, url)`, where `url` is the empty string when the
+          configuration is readable but pins neither constant.
+        - On failure: `(False, error)` when no configuration file can be read.
 
     Notes
     -----
-    - Taken from the `Plugin URI` header, which is the plugin's own statement of where it
-      lives. Only an address below `wordpress.org/plugins/` is read as a slug; a plugin
-      hosted on its author's own site keeps its directory name, that being the best guess
-      available and the right one whenever it was installed from the directory anyway.
-    - Both keys and values are needed. The key is the directory on disk and the value is
-      what wordpress.org answers to, and a consumer that conflates them will look in the
-      wrong place for one of the two.
+    - `WP_HOME` wins over `WP_SITEURL`. The first is the address visitors use, the
+      second the one the core itself is reached under; they differ on installations
+      keeping the core in a subdirectory.
+    - Looked up in `<path>/wp-config.php` first, then one directory above, which is the
+      only other place WordPress itself accepts the file in.
+    - A value assembled at runtime, such as `'https://' . $_SERVER['HTTP_HOST']`, is not
+      a fixed URL and is skipped rather than returned half-read.
+    - `define()`, `@define()` and `const` are all read, and a definition PHP would skip
+      because it sits in a comment is skipped here too.
+    - `wp-config.php` holds the database credentials. Only the two constants above are
+      ever extracted; no other part of the file is returned to the caller. On a typical
+      installation the file is not world-readable, so an unprivileged consumer will
+      usually get the failure branch, which is a permission problem and not an error in
+      the installation.
 
     Examples
     --------
-    >>> get_plugin_slugs('/var/www/html/wordpress')
-    {'akismet': 'akismet', 'hello': 'hello-dolly'}
+    >>> get_site_url('/var/www/html/wordpress')
+    (True, 'https://www.example.com')
     """
-    return {slug: entry['slug'] for slug, entry in _scan_plugins(path).items()}
+    error = ''
+    for candidate in (
+        os.path.join(path, CONFIG_FILE),
+        os.path.join(path, os.pardir, CONFIG_FILE),
+    ):
+        success, config = disk.read_file(candidate, binary=True, max_bytes=CONFIG_BYTES)
+        if not success:
+            error = error or config
+            continue
+        config = BLOCK_COMMENT.sub('', txt.to_text(config, errors='strict_or_latin1'))
+        for constant in SITE_URL_CONSTANTS:
+            # Matches both PHP quoting styles and tolerates whitespace anywhere the
+            # language does. The closing quote must be followed by the end of the
+            # argument, so a concatenated expression does not match at all. `@define()`
+            # is the same call with its warnings suppressed, and `const` is the other
+            # spelling PHP makes visible to `defined()`, so WordPress honours all three.
+            match = re.search(
+                LINE_START + rf"""@?define\s*\(\s*(['"]){constant}\1\s*,\s*"""
+                r"""(['"])(?P<url>https?://[^'"]+)\2\s*[,)]""",
+                config,
+            ) or re.search(
+                LINE_START + rf"""const\s+{constant}\s*=\s*"""
+                r"""(['"])(?P<url>https?://[^'"]+)\1\s*;""",
+                config,
+            )
+            if match:
+                return (True, match.group('url').rstrip('/'))
+        return (True, '')
+    return (False, error or f'No "{CONFIG_FILE}" found below "{path}".')
 
 
 def _scan_plugins(path):
@@ -386,80 +460,6 @@ def get_themes(path):
         slug = os.path.basename(os.path.dirname(stylesheet))
         themes[slug] = get_header_value(stylesheet, 'Version') or UNKNOWN_VERSION
     return themes
-
-
-def get_site_url(path):
-    """
-    Read the site URL a local WordPress installation is served under.
-
-    WordPress keeps the site URL in its database, but an installation may pin it in
-    `wp-config.php` through the `WP_HOME` and `WP_SITEURL` constants. Where they are
-    set, a consumer can address the site without being told the URL. Where they are not,
-    the URL is simply not knowable from the filesystem and the caller has to ask for it.
-
-    Parameters
-    ----------
-    path : str | os.PathLike
-        Path to the installation root.
-
-    Returns
-    -------
-    tuple[bool, str]
-        - On success: `(True, url)`, where `url` is the empty string when the
-          configuration is readable but pins neither constant.
-        - On failure: `(False, error)` when no configuration file can be read.
-
-    Notes
-    -----
-    - `WP_HOME` wins over `WP_SITEURL`. The first is the address visitors use, the
-      second the one the core itself is reached under; they differ on installations
-      keeping the core in a subdirectory.
-    - Looked up in `<path>/wp-config.php` first, then one directory above, which is the
-      only other place WordPress itself accepts the file in.
-    - A value assembled at runtime, such as `'https://' . $_SERVER['HTTP_HOST']`, is not
-      a fixed URL and is skipped rather than returned half-read.
-    - `define()`, `@define()` and `const` are all read, and a definition PHP would skip
-      because it sits in a comment is skipped here too.
-    - `wp-config.php` holds the database credentials. Only the two constants above are
-      ever extracted; no other part of the file is returned to the caller. On a typical
-      installation the file is not world-readable, so an unprivileged consumer will
-      usually get the failure branch, which is a permission problem and not an error in
-      the installation.
-
-    Examples
-    --------
-    >>> get_site_url('/var/www/html/wordpress')
-    (True, 'https://www.example.com')
-    """
-    error = ''
-    for candidate in (
-        os.path.join(path, CONFIG_FILE),
-        os.path.join(path, os.pardir, CONFIG_FILE),
-    ):
-        success, config = disk.read_file(candidate, binary=True, max_bytes=CONFIG_BYTES)
-        if not success:
-            error = error or config
-            continue
-        config = BLOCK_COMMENT.sub('', txt.to_text(config, errors='strict_or_latin1'))
-        for constant in SITE_URL_CONSTANTS:
-            # Matches both PHP quoting styles and tolerates whitespace anywhere the
-            # language does. The closing quote must be followed by the end of the
-            # argument, so a concatenated expression does not match at all. `@define()`
-            # is the same call with its warnings suppressed, and `const` is the other
-            # spelling PHP makes visible to `defined()`, so WordPress honours all three.
-            match = re.search(
-                LINE_START + rf"""@?define\s*\(\s*(['"]){constant}\1\s*,\s*"""
-                r"""(['"])(?P<url>https?://[^'"]+)\2\s*[,)]""",
-                config,
-            ) or re.search(
-                LINE_START + rf"""const\s+{constant}\s*=\s*"""
-                r"""(['"])(?P<url>https?://[^'"]+)\1\s*;""",
-                config,
-            )
-            if match:
-                return (True, match.group('url').rstrip('/'))
-        return (True, '')
-    return (False, error or f'No "{CONFIG_FILE}" found below "{path}".')
 
 
 def get_version(path):

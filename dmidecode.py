@@ -294,26 +294,26 @@ def dmidecode_parse(output):
     # Fields to ignore by DMI type when constructing fingerprints (order-independent)
     IGNORE_BY_TYPE = {
         4: {  # Processor Information
-            'Socket Designation',
+            'Asset Tag',
+            'Core Count',
+            'Core Enabled',  # often bogus or per-core
             'ID',
             'L1 Cache Handle',
             'L2 Cache Handle',
             'L3 Cache Handle',
-            'Serial Number',
-            'Asset Tag',
             'Part Number',
-            'Core Count',
-            'Core Enabled',  # often bogus or per-core
+            'Serial Number',
+            'Socket Designation',
         },
         17: {  # Memory Device
-            'Locator',
             'Bank Locator',
-            'Device Locator',
-            'Memory Array Mapped Address Handle',
-            'Mem Array Error Info Handle',
-            'Total Width',
             'Data Width',  # width can vary by board reporting; not essential
+            'Device Locator',
+            'Locator',
+            'Mem Array Error Info Handle',
+            'Memory Array Mapped Address Handle',
             'Serial Number',  # sometimes blank; can differ even for identical sticks
+            'Total Width',
         },
     }
 

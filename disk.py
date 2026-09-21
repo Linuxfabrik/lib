@@ -201,87 +201,6 @@ def file_exists(path, allow_empty=False):
     return os.path.getsize(path) > 0
 
 
-def is_symlink(path):
-    """
-    Return whether `path` is a symbolic link.
-
-    An exception-safe wrapper around `os.path.islink()`, so a plugin that must refuse a
-    symlink (a root process about to open a caller-supplied path, for example) does not
-    have to import `os` itself. It sits with `dir_exists()` and `file_exists()` as the
-    filesystem-predicate a plugin reaches for. A path that cannot be examined counts as
-    not a symlink; the caller's own open or read then reports the real trouble.
-
-    Parameters
-    ----------
-    path : str | os.PathLike
-        The path to test.
-
-    Returns
-    -------
-    bool
-        True if `path` is a symbolic link, otherwise False.
-
-    Examples
-    --------
-    >>> is_symlink('/path/does/not/exist')
-    False
-    """
-    try:
-        return os.path.islink(path)
-    except OSError:
-        return False
-
-
-def is_within(path, roots):
-    """
-    Return whether `path` resolves inside one of the directories in `roots`.
-
-    Both `path` and each root are canonicalized with `os.path.realpath()` before
-    comparison, so symlinks and `..` segments are resolved and cannot be used to
-    step outside a root. A caller that must restrict which files it touches (for
-    example something running with elevated privileges that should stay inside an
-    operator-controlled directory) can use this to reject any path that escapes
-    the intended roots. Because symlinks are resolved, a symlink pointing out of
-    a root is rejected; to legitimately reach a location stored elsewhere,
-    bind-mount it into a root instead of symlinking it.
-
-    Parameters
-    ----------
-    path : str
-        The path to check. It need not exist; only its resolved location matters.
-    roots : iterable of str
-        The directories `path` is allowed to resolve into.
-
-    Returns
-    -------
-    bool
-        True if `path` resolves to one of the roots or a location below it,
-        otherwise False.
-
-    Examples
-    --------
-    >>> is_within('/var/log/app/today.log', ['/var/log'])
-    True
-    >>> is_within('/var/log/../etc/shadow', ['/var/log'])
-    False
-    """
-    # normcase() is a no-op on POSIX but lowercases and normalizes separators on
-    # Windows, where paths are case-insensitive; without it the containment check
-    # would wrongly reject `C:\Var\Log\...` against a `C:\var\log` root.
-    real = os.path.normcase(os.path.realpath(path))
-    for root in roots:
-        real_root = os.path.normcase(os.path.realpath(root))
-        if real == real_root or real.startswith(real_root + os.sep):
-            return True
-    return False
-
-
-# Block-device name prefixes that never carry meaningful I/O for monitoring
-# (loopback, RAM disks, compressed RAM, floppy and optical devices). They are
-# skipped by get_block_devices().
-_PSEUDO_DEVICE_PREFIXES = ('fd', 'loop', 'ram', 'sr', 'zram')
-
-
 def get_block_devices():
     """
     Return all local block devices that expose I/O counters, mounted or not.
@@ -566,67 +485,6 @@ def get_owner(file):
         return -1
 
 
-def stat(file):
-    """
-    Return the `os.stat()` result for a filesystem entry, or `None` on failure.
-
-    A single stat() syscall exposes every field (size, modification time, mode,
-    owner, ...), so a caller that needs more than one of them should use this
-    instead of calling `get_size()`, `get_owner()` etc. separately. The common
-    fields (`st_size`, `st_mtime`, `st_mode`, `st_uid`) are available on every
-    supported platform, including Windows.
-
-    Parameters
-    ----------
-    file : str | os.PathLike
-        Path to stat.
-
-    Returns
-    -------
-    os.stat_result | None
-        The stat result on success; `None` if the call fails (for example the path
-        does not exist or is not accessible).
-
-    Examples
-    --------
-    >>> stat('/path/does/not/exist') is None
-    True
-    """
-    try:
-        return os.stat(file)
-    except OSError:
-        return None
-
-
-def glob(pattern, recursive=True):
-    """
-    Return a sorted list of paths matching a shell glob pattern.
-
-    Wraps the standard-library glob with `recursive=True` by default, so a `**`
-    segment spans directories. Absolute and relative patterns both work. A
-    pattern that matches nothing yields an empty list; the call never raises for
-    a non-matching pattern.
-
-    Parameters
-    ----------
-    pattern : str
-        The glob pattern, e.g. `/var/log/**/*.log` or `*.txt`.
-    recursive : bool, optional
-        Whether `**` should match across directory boundaries. Defaults to True.
-
-    Returns
-    -------
-    list
-        The matching paths, sorted for a deterministic order.
-
-    Examples
-    --------
-    >>> glob('/path/does/not/exist/*')
-    []
-    """
-    return sorted(_glob.glob(pattern, recursive=recursive))
-
-
 def get_package(path):
     """
     Return the package a path belongs to, or the empty string when none does.
@@ -787,6 +645,35 @@ def get_tmpdir():
     return tmpdir or '/tmp'  # nosec B108 - fallback when tempfile.gettempdir() fails
 
 
+def glob(pattern, recursive=True):
+    """
+    Return a sorted list of paths matching a shell glob pattern.
+
+    Wraps the standard-library glob with `recursive=True` by default, so a `**`
+    segment spans directories. Absolute and relative patterns both work. A
+    pattern that matches nothing yields an empty list; the call never raises for
+    a non-matching pattern.
+
+    Parameters
+    ----------
+    pattern : str
+        The glob pattern, e.g. `/var/log/**/*.log` or `*.txt`.
+    recursive : bool, optional
+        Whether `**` should match across directory boundaries. Defaults to True.
+
+    Returns
+    -------
+    list
+        The matching paths, sorted for a deterministic order.
+
+    Examples
+    --------
+    >>> glob('/path/does/not/exist/*')
+    []
+    """
+    return sorted(_glob.glob(pattern, recursive=recursive))
+
+
 def grep_file(filename, pattern):
     """
     Search for a regex pattern in a file, similar to the `grep` command.
@@ -824,6 +711,87 @@ def grep_file(filename, pattern):
     if match:
         return True, match.group(1)
     return True, ''
+
+
+def is_symlink(path):
+    """
+    Return whether `path` is a symbolic link.
+
+    An exception-safe wrapper around `os.path.islink()`, so a plugin that must refuse a
+    symlink (a root process about to open a caller-supplied path, for example) does not
+    have to import `os` itself. It sits with `dir_exists()` and `file_exists()` as the
+    filesystem-predicate a plugin reaches for. A path that cannot be examined counts as
+    not a symlink; the caller's own open or read then reports the real trouble.
+
+    Parameters
+    ----------
+    path : str | os.PathLike
+        The path to test.
+
+    Returns
+    -------
+    bool
+        True if `path` is a symbolic link, otherwise False.
+
+    Examples
+    --------
+    >>> is_symlink('/path/does/not/exist')
+    False
+    """
+    try:
+        return os.path.islink(path)
+    except OSError:
+        return False
+
+
+def is_within(path, roots):
+    """
+    Return whether `path` resolves inside one of the directories in `roots`.
+
+    Both `path` and each root are canonicalized with `os.path.realpath()` before
+    comparison, so symlinks and `..` segments are resolved and cannot be used to
+    step outside a root. A caller that must restrict which files it touches (for
+    example something running with elevated privileges that should stay inside an
+    operator-controlled directory) can use this to reject any path that escapes
+    the intended roots. Because symlinks are resolved, a symlink pointing out of
+    a root is rejected; to legitimately reach a location stored elsewhere,
+    bind-mount it into a root instead of symlinking it.
+
+    Parameters
+    ----------
+    path : str
+        The path to check. It need not exist; only its resolved location matters.
+    roots : iterable of str
+        The directories `path` is allowed to resolve into.
+
+    Returns
+    -------
+    bool
+        True if `path` resolves to one of the roots or a location below it,
+        otherwise False.
+
+    Examples
+    --------
+    >>> is_within('/var/log/app/today.log', ['/var/log'])
+    True
+    >>> is_within('/var/log/../etc/shadow', ['/var/log'])
+    False
+    """
+    # normcase() is a no-op on POSIX but lowercases and normalizes separators on
+    # Windows, where paths are case-insensitive; without it the containment check
+    # would wrongly reject `C:\Var\Log\...` against a `C:\var\log` root.
+    real = os.path.normcase(os.path.realpath(path))
+    for root in roots:
+        real_root = os.path.normcase(os.path.realpath(root))
+        if real == real_root or real.startswith(real_root + os.sep):
+            return True
+    return False
+
+
+# Block-device name prefixes that never carry meaningful I/O for monitoring
+# (loopback, RAM disks, compressed RAM, floppy and optical devices). They are
+# skipped by get_block_devices().
+_PSEUDO_DEVICE_PREFIXES = ('fd', 'loop', 'ram', 'sr', 'zram')
 
 
 def make_temp_dir(prefix=''):
@@ -1294,54 +1262,36 @@ def shorten_path(path, max_len=None, truncate=True):
     return result
 
 
-def under_root(root, path):
+def stat(file):
     """
-    Return `path` relocated below `root`, whether it is absolute or relative.
+    Return the `os.stat()` result for a filesystem entry, or `None` on failure.
 
-    Meant for a consumer that reads a set of well-known paths and has to be able to
-    read them from somewhere else instead: a test fixture standing in for the host's
-    `/etc`, a mounted image, an extracted backup. The caller keeps writing the paths
-    it means, and one root decides where they are read from.
-
-    No result ever leaves `root`: an empty segment, `.` and `..` are dropped rather
-    than followed, so a path assembled from data cannot walk out of the root through
-    its own text. That is not a sandbox, though, because a symlink inside the root
-    still points wherever it points. Where the containment has to hold against the
-    filesystem too, check the result with `is_within()`.
+    A single stat() syscall exposes every field (size, modification time, mode,
+    owner, ...), so a caller that needs more than one of them should use this
+    instead of calling `get_size()`, `get_owner()` etc. separately. The common
+    fields (`st_size`, `st_mtime`, `st_mode`, `st_uid`) are available on every
+    supported platform, including Windows.
 
     Parameters
     ----------
-    root : str
-        The directory every path is read below.
-    path : str
-        The path to relocate. An absolute one loses its anchor, a
-        relative one is taken as it is.
+    file : str | os.PathLike
+        Path to stat.
 
     Returns
     -------
-    str
-        The relocated path, or `root` itself where `path` names no segment.
+    os.stat_result | None
+        The stat result on success; `None` if the call fails (for example the path
+        does not exist or is not accessible).
 
     Examples
     --------
-    >>> under_root('/fixtures/rhel', '/etc/os-release')
-    '/fixtures/rhel/etc/os-release'
-
-    >>> under_root('/fixtures/rhel', '/../etc/shadow')
-    '/fixtures/rhel/etc/shadow'
+    >>> stat('/path/does/not/exist') is None
+    True
     """
-    # splitdrive() takes a Windows drive letter off; on POSIX it is a no-op. The
-    # backslash is translated as well, because a path handed over on Windows uses it
-    # as its separator and would otherwise survive as part of a single segment.
-    _, tail = os.path.splitdrive(str(path))
-    parts = [
-        part
-        for part in tail.replace('\\', '/').split('/')
-        if part not in ('', '.', '..')
-    ]
-    if not parts:
-        return root
-    return os.path.join(root, *parts)
+    try:
+        return os.stat(file)
+    except OSError:
+        return None
 
 
 def udevadm(device, _property):
@@ -1392,6 +1342,56 @@ def udevadm(device, _property):
         if key == _property:
             return value
     return ''
+
+
+def under_root(root, path):
+    """
+    Return `path` relocated below `root`, whether it is absolute or relative.
+
+    Meant for a consumer that reads a set of well-known paths and has to be able to
+    read them from somewhere else instead: a test fixture standing in for the host's
+    `/etc`, a mounted image, an extracted backup. The caller keeps writing the paths
+    it means, and one root decides where they are read from.
+
+    No result ever leaves `root`: an empty segment, `.` and `..` are dropped rather
+    than followed, so a path assembled from data cannot walk out of the root through
+    its own text. That is not a sandbox, though, because a symlink inside the root
+    still points wherever it points. Where the containment has to hold against the
+    filesystem too, check the result with `is_within()`.
+
+    Parameters
+    ----------
+    root : str
+        The directory every path is read below.
+    path : str
+        The path to relocate. An absolute one loses its anchor, a
+        relative one is taken as it is.
+
+    Returns
+    -------
+    str
+        The relocated path, or `root` itself where `path` names no segment.
+
+    Examples
+    --------
+    >>> under_root('/fixtures/rhel', '/etc/os-release')
+    '/fixtures/rhel/etc/os-release'
+
+    >>> under_root('/fixtures/rhel', '/../etc/shadow')
+    '/fixtures/rhel/etc/shadow'
+    """
+    # splitdrive() takes a Windows drive letter off; on POSIX it is a no-op. The
+    # backslash is translated as well, because a path handed over on Windows uses it
+    # as its separator and would otherwise survive as part of a single segment.
+    _, tail = os.path.splitdrive(str(path))
+    parts = [
+        part
+        for part in tail.replace('\\', '/').split('/')
+        if part not in ('', '.', '..')
+    ]
+    if not parts:
+        return root
+    return os.path.join(root, *parts)
 
 
 def walk_directory(path, exclude_pattern=r'', include_pattern=r'', relative=True):

@@ -85,6 +85,41 @@ def quote_cli_value(value):
 _OEM_CODEC = 'oem'
 
 
+def safe_cli_value(value, name='value'):
+    """
+    Reject a value that a called program could misinterpret as an option.
+
+    Building a command as an argument list (argv) and running it with `shell_exec()` prevents
+    shell injection, but it does not stop a value that starts with `-` from being picked up as an
+    *option* by the program being run, for example an ssh destination `-oProxyCommand=...` (remote
+    code execution) or a `ping` target `-f` (flood). Use this for values that reach a command as a
+    positional argument or as a command target, where option-style values have no legitimate
+    meaning. Values that are bound to an explicit option (`--name=<value>` or `-H <value>`) do not
+    need this guard.
+
+    Parameters
+    ----------
+    value : any
+        The value to check. Non-string values pass through unchanged.
+    name : str, optional
+        Human-readable name used in the error message. Defaults to
+        `'value'`.
+
+    Returns
+    -------
+    tuple
+        `(True, value)` if the value is safe, else `(False, error_message)`. The shape
+        is suitable for `lib.base.coe()`.
+
+    Examples
+    --------
+    >>> host = lib.base.coe(lib.shell.safe_cli_value(args.HOSTNAME, '--hostname'))
+    """
+    if isinstance(value, str) and value.startswith('-'):
+        return False, f'Refusing {name} that starts with "-": {value}'
+    return True, value
+
+
 def _decode_windows_output(raw):
     """
     Decode what a program on Windows wrote into a pipe.
@@ -304,41 +339,6 @@ def shell_exec(
         txt.to_text(stderr, errors='strict_or_latin1'),
         p.returncode,
     )
-
-
-def safe_cli_value(value, name='value'):
-    """
-    Reject a value that a called program could misinterpret as an option.
-
-    Building a command as an argument list (argv) and running it with `shell_exec()` prevents
-    shell injection, but it does not stop a value that starts with `-` from being picked up as an
-    *option* by the program being run, for example an ssh destination `-oProxyCommand=...` (remote
-    code execution) or a `ping` target `-f` (flood). Use this for values that reach a command as a
-    positional argument or as a command target, where option-style values have no legitimate
-    meaning. Values that are bound to an explicit option (`--name=<value>` or `-H <value>`) do not
-    need this guard.
-
-    Parameters
-    ----------
-    value : any
-        The value to check. Non-string values pass through unchanged.
-    name : str, optional
-        Human-readable name used in the error message. Defaults to
-        `'value'`.
-
-    Returns
-    -------
-    tuple
-        `(True, value)` if the value is safe, else `(False, error_message)`. The shape
-        is suitable for `lib.base.coe()`.
-
-    Examples
-    --------
-    >>> host = lib.base.coe(lib.shell.safe_cli_value(args.HOSTNAME, '--hostname'))
-    """
-    if isinstance(value, str) and value.startswith('-'):
-        return False, f'Refusing {name} that starts with "-": {value}'
-    return True, value
 
 
 def which(name):

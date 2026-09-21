@@ -50,87 +50,36 @@ _REDACTED_FIELDS = frozenset(
 _recorded_responses = []
 
 
-def _redact(value):
+def as_code(value):
     """
-    Return a copy of an API response with every sensitive field's value replaced.
+    Normalise an API status code into an `int`, or `None` if it is unusable.
+
+    The appliance reports some of its codes as strings, and a field may be missing entirely, in
+    which case the caller hands in `None` (`node.get('oam_agent_status')`). A missing or
+    malformed code has to render as `'Unknown'`; aborting the calling process with a
+    `TypeError` or `ValueError` would turn a single unexpected field into a crashed check.
 
     Parameters
     ----------
     value : any
-        A decoded response, or any part of one.
+        The raw field value taken from the API response.
 
     Returns
     -------
-    any
-        The same structure, with the value of every field named in `_REDACTED_FIELDS`
-        replaced by `'******'`.
-    """
-    if isinstance(value, dict):
-        return {
-            key: ('******' if str(key).lower() in _REDACTED_FIELDS else _redact(inner))
-            for key, inner in value.items()
-        }
-    if isinstance(value, list):
-        return [_redact(item) for item in value]
-    return value
-
-
-def record_response(endpoint, result):
-    """
-    Remember what an endpoint answered, so a consumer can print it under `--verbose`.
-
-    Parameters
-    ----------
-    endpoint : str
-        The endpoint that was queried, as it was requested.
-    result : dict
-        The response, as `get_data()` built it.
-
-    Notes
-    -----
-    - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal run
-      does not keep a second copy of every response in memory.
-    - The login response is deliberately never recorded. It is the one response that
-      carries a session token, and a token in the output is a credential in whatever
-      stores, forwards and logs that output downstream.
-    """
-    _recorded_responses.append((endpoint, _redact(result)))
-
-
-def format_responses():
-    """
-    Render everything `record_response()` collected, for a `--verbose` output.
-
-    Returns
-    -------
-    str
-        One block per request, naming the endpoint and pretty-printing what came back.
-        Empty when nothing was recorded, which is the case on a normal run and in test mode.
-
-    Notes
-    -----
-    - Meant for working out what an appliance actually reports, so a consumer can be built
-      against it. The output is as long as the appliance's answers are, which on a list
-      endpoint of a large cluster is very long indeed. It is a command-line tool, not
-      something to switch on in a service definition.
+    int or None
+        The code as an integer, or `None` if it cannot be converted.
 
     Examples
     --------
-    >>> print(format_responses())
-    ### GET cluster/servers
-    {
-      "data": [
-        ...
-      ],
-      "result": {"code": 0}
-    }
+    >>> as_code('6')
+    6
+    >>> as_code(None) is None
+    True
     """
-    blocks = []
-    for endpoint, result in _recorded_responses:
-        blocks.append(
-            f'### GET {endpoint}\n{json.dumps(result, indent=2, sort_keys=True)}'
-        )
-    return '\n\n'.join(blocks)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _with_recorded_responses(message):
@@ -210,36 +159,40 @@ def assert_ok(result, what):
     )
 
 
-def as_code(value):
+def format_responses():
     """
-    Normalise an API status code into an `int`, or `None` if it is unusable.
-
-    The appliance reports some of its codes as strings, and a field may be missing entirely, in
-    which case the caller hands in `None` (`node.get('oam_agent_status')`). A missing or
-    malformed code has to render as `'Unknown'`; aborting the calling process with a
-    `TypeError` or `ValueError` would turn a single unexpected field into a crashed check.
-
-    Parameters
-    ----------
-    value : any
-        The raw field value taken from the API response.
+    Render everything `record_response()` collected, for a `--verbose` output.
 
     Returns
     -------
-    int or None
-        The code as an integer, or `None` if it cannot be converted.
+    str
+        One block per request, naming the endpoint and pretty-printing what came back.
+        Empty when nothing was recorded, which is the case on a normal run and in test mode.
+
+    Notes
+    -----
+    - Meant for working out what an appliance actually reports, so a consumer can be built
+      against it. The output is as long as the appliance's answers are, which on a list
+      endpoint of a large cluster is very long indeed. It is a command-line tool, not
+      something to switch on in a service definition.
 
     Examples
     --------
-    >>> as_code('6')
-    6
-    >>> as_code(None) is None
-    True
+    >>> print(format_responses())
+    ### GET cluster/servers
+    {
+      "data": [
+        ...
+      ],
+      "result": {"code": 0}
+    }
     """
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    blocks = []
+    for endpoint, result in _recorded_responses:
+        blocks.append(
+            f'### GET {endpoint}\n{json.dumps(result, indent=2, sort_keys=True)}'
+        )
+    return '\n\n'.join(blocks)
 
 
 def get_alarm_severity(sev):
@@ -524,6 +477,120 @@ def get_base_board(bb):
             'STL6SPCP': 'Arctic',
         },
     )
+
+
+def _assert_all_nodes_listed(listed, args):
+    """
+    Abort unless `cluster/servers` listed every node the cluster says it has.
+
+    Used by `get_management_ips()`. Split out to keep the node loop readable.
+
+    Parameters
+    ----------
+    listed : int
+        Number of nodes `cluster/servers` returned.
+    args : object
+        The argument object read by `get_data()`.
+
+    Notes
+    -----
+    - A failing count query is not fatal. It is a cross-check, not the data itself, and a
+      firmware that does not offer the endpoint must not take the hardware check down with it.
+    """
+    result = get_data('cluster/servers/count', args)
+    if get_result_code(result) not in (0, '0'):
+        return
+
+    data = result.get('data')
+    if not isinstance(data, dict):
+        return
+
+    total = as_code(data.get('count'))
+    if total is not None and total > listed:
+        base.cu(
+            f'The cluster reports {total} nodes, but only {listed} were listed. The hardware '
+            'of the remaining ones cannot be queried, so the run would silently cover part '
+            'of the cluster only.'
+        )
+
+
+def get_cluster_nodes(args):
+    """
+    Query the cluster and return the nodes that are part of it.
+
+    The hardware endpoints (for example `hwm/fan` and `hwm/power`) are node-scoped and require a
+    `server_list` of node management IP addresses in the request body. This helper enumerates the
+    cluster nodes through `cluster/servers`, so a caller can query hardware across the whole
+    cluster without hard-coding node addresses. The full node objects are returned rather than
+    the addresses alone, because a caller that reports per-node findings needs the node name too
+    and would otherwise have to query the same endpoint a second time to get it.
+
+    Parameters
+    ----------
+    args : object
+        The argument object read by `get_data()` / `get_creds()`.
+
+    Returns
+    -------
+    list of dict
+        One entry per node that is in the cluster and reports a `management_ip`.
+
+    Notes
+    -----
+    - `in_cluster` has three documented values, not two: `True` (added), `False` (not added)
+      and `null` (about to be added). Only a node that reports `True` is queried. A node still
+      being added holds no cluster hardware yet, and treating its missing management IP as a
+      fault would take the whole run to UNKNOWN while the cluster is perfectly healthy.
+      A node that does not report the field at all is kept, so a firmware that omits it does
+      not narrow the result.
+    - Aborts the caller (UNKNOWN) if the node query fails, if a node that is in the cluster
+      has no management IP address, or if no node has one at all. Returning the remaining nodes
+      instead would let a hardware query cover part of the cluster and still report OK, which
+      hides a failed component on the nodes that were dropped.
+    - The node list is compared against `cluster/servers/count` for the same reason. The
+      endpoint documents no paging parameters, but the API-wide default caps a list response
+      at 100 entries, and the documentation does not say which endpoints that applies to. On a
+      cluster above that size a silently truncated list would leave nodes unmonitored while
+      the caller still reports OK, so a mismatch aborts instead.
+
+    Examples
+    --------
+    >>> [node['name'] for node in get_cluster_nodes(args)]
+    ['node01', 'node02']
+    """
+    result = get_data('cluster/servers', args)
+    assert_ok(result, 'the cluster nodes for their management IP addresses')
+
+    listed = result.get('data') or []
+    _assert_all_nodes_listed(len(listed), args)
+
+    nodes = []
+    without_ip = []
+    for node in listed:
+        # `cluster/servers` documents an array of node objects, but the sibling endpoint for
+        # a single node answers with a bare object. A firmware that does the same here would
+        # otherwise put the field lookups below on a string and end the caller in a traceback
+        # instead of an UNKNOWN.
+        if not isinstance(node, dict):
+            continue
+        # Anything but True means the node is not (yet) part of the cluster. Absent means
+        # a firmware that does not report the field, which must not narrow the result.
+        if 'in_cluster' in node and node['in_cluster'] is not True:
+            continue
+        if node.get('management_ip'):
+            nodes.append(node)
+        else:
+            without_ip.append(str(node.get('name') or node.get('id') or '?'))
+
+    if without_ip:
+        base.cu(
+            'These cluster nodes report no management IP address, so their hardware cannot '
+            f'be queried: {", ".join(without_ip)}.'
+        )
+    if not nodes:
+        base.cu('The cluster reported no node with a management IP address.')
+
+    return nodes
 
 
 def get_component_status_state(st):
@@ -1091,120 +1158,6 @@ def get_disk_type(t):
     )
 
 
-def _assert_all_nodes_listed(listed, args):
-    """
-    Abort unless `cluster/servers` listed every node the cluster says it has.
-
-    Used by `get_management_ips()`. Split out to keep the node loop readable.
-
-    Parameters
-    ----------
-    listed : int
-        Number of nodes `cluster/servers` returned.
-    args : object
-        The argument object read by `get_data()`.
-
-    Notes
-    -----
-    - A failing count query is not fatal. It is a cross-check, not the data itself, and a
-      firmware that does not offer the endpoint must not take the hardware check down with it.
-    """
-    result = get_data('cluster/servers/count', args)
-    if get_result_code(result) not in (0, '0'):
-        return
-
-    data = result.get('data')
-    if not isinstance(data, dict):
-        return
-
-    total = as_code(data.get('count'))
-    if total is not None and total > listed:
-        base.cu(
-            f'The cluster reports {total} nodes, but only {listed} were listed. The hardware '
-            'of the remaining ones cannot be queried, so the run would silently cover part '
-            'of the cluster only.'
-        )
-
-
-def get_cluster_nodes(args):
-    """
-    Query the cluster and return the nodes that are part of it.
-
-    The hardware endpoints (for example `hwm/fan` and `hwm/power`) are node-scoped and require a
-    `server_list` of node management IP addresses in the request body. This helper enumerates the
-    cluster nodes through `cluster/servers`, so a caller can query hardware across the whole
-    cluster without hard-coding node addresses. The full node objects are returned rather than
-    the addresses alone, because a caller that reports per-node findings needs the node name too
-    and would otherwise have to query the same endpoint a second time to get it.
-
-    Parameters
-    ----------
-    args : object
-        The argument object read by `get_data()` / `get_creds()`.
-
-    Returns
-    -------
-    list of dict
-        One entry per node that is in the cluster and reports a `management_ip`.
-
-    Notes
-    -----
-    - `in_cluster` has three documented values, not two: `True` (added), `False` (not added)
-      and `null` (about to be added). Only a node that reports `True` is queried. A node still
-      being added holds no cluster hardware yet, and treating its missing management IP as a
-      fault would take the whole run to UNKNOWN while the cluster is perfectly healthy.
-      A node that does not report the field at all is kept, so a firmware that omits it does
-      not narrow the result.
-    - Aborts the caller (UNKNOWN) if the node query fails, if a node that is in the cluster
-      has no management IP address, or if no node has one at all. Returning the remaining nodes
-      instead would let a hardware query cover part of the cluster and still report OK, which
-      hides a failed component on the nodes that were dropped.
-    - The node list is compared against `cluster/servers/count` for the same reason. The
-      endpoint documents no paging parameters, but the API-wide default caps a list response
-      at 100 entries, and the documentation does not say which endpoints that applies to. On a
-      cluster above that size a silently truncated list would leave nodes unmonitored while
-      the caller still reports OK, so a mismatch aborts instead.
-
-    Examples
-    --------
-    >>> [node['name'] for node in get_cluster_nodes(args)]
-    ['node01', 'node02']
-    """
-    result = get_data('cluster/servers', args)
-    assert_ok(result, 'the cluster nodes for their management IP addresses')
-
-    listed = result.get('data') or []
-    _assert_all_nodes_listed(len(listed), args)
-
-    nodes = []
-    without_ip = []
-    for node in listed:
-        # `cluster/servers` documents an array of node objects, but the sibling endpoint for
-        # a single node answers with a bare object. A firmware that does the same here would
-        # otherwise put the field lookups below on a string and end the caller in a traceback
-        # instead of an UNKNOWN.
-        if not isinstance(node, dict):
-            continue
-        # Anything but True means the node is not (yet) part of the cluster. Absent means
-        # a firmware that does not report the field, which must not narrow the result.
-        if 'in_cluster' in node and node['in_cluster'] is not True:
-            continue
-        if node.get('management_ip'):
-            nodes.append(node)
-        else:
-            without_ip.append(str(node.get('name') or node.get('id') or '?'))
-
-    if without_ip:
-        base.cu(
-            'These cluster nodes report no management IP address, so their hardware cannot '
-            f'be queried: {", ".join(without_ip)}.'
-        )
-    if not nodes:
-        base.cu('The cluster reported no node with a management IP address.')
-
-    return nodes
-
-
 def get_management_ips(args):
     """
     Query the cluster nodes and return their internal management IP addresses.
@@ -1472,42 +1425,6 @@ def get_performance(object_type, indicators, args, ids=None, window=PERFORMANCE_
         samples.setdefault(object_id, {})[indicator] = str(values[-1])
 
     return samples
-
-
-def get_warranty_status(st):
-    """
-    Convert a Huawei OceanStor Pacific warranty status code into a human-readable
-    description.
-
-    The `cluster/servers` endpoint reports how much of a node's warranty is left, which
-    is a commercial fact rather than a fault: a node out of warranty runs exactly as well
-    as one in warranty, right up to the point where a part has to be replaced.
-
-    Parameters
-    ----------
-    st : int or str
-        The warranty status code.
-        A missing or malformed value renders as `'Unknown'`.
-
-    Returns
-    -------
-    str
-        A human-readable description including the original code in brackets.
-        Returns `'Unknown'` if the code is not recognized.
-
-    Examples
-    --------
-    >>> get_warranty_status(2)
-    'about to expire, less than six months (2)'
-    """
-    mapping = {
-        0: 'non-storage node (0)',
-        1: 'normal, more than six months (1)',
-        2: 'about to expire, less than six months (2)',
-        3: 'expired (3)',
-        4: 'lifecycle information missing (4)',
-    }
-    return mapping.get(as_code(st), 'Unknown')
 
 
 def get_pool_status(st):
@@ -1786,40 +1703,6 @@ def get_replication_running_status_state(rs):
     return STATE_WARN
 
 
-def get_status_envelope(result):
-    """
-    Return the object a Huawei OceanStor Pacific response reports its outcome in.
-
-    Split out of `get_result_code()` so that a consumer which wants the appliance's own
-    description or suggestion does not have to work out which of the envelopes it got.
-
-    Parameters
-    ----------
-    result : dict
-        A response as returned by `get_data()`.
-
-    Returns
-    -------
-    dict
-        The envelope object, or an empty dict where the response carries none or
-        reports its code as a bare value rather than in an object.
-
-    Examples
-    --------
-    >>> get_status_envelope({'result': {'code': 0, 'description': 'ok'}})
-    {'code': 0, 'description': 'ok'}
-    >>> get_status_envelope({'result': 0})
-    {}
-    """
-    if not isinstance(result, dict):
-        return {}
-    for key in ('result', 'error'):
-        envelope = result.get(key)
-        if isinstance(envelope, dict):
-            return envelope
-    return {}
-
-
 def get_result_code(result):
     """
     Read the status code out of a Huawei OceanStor Pacific response, whichever envelope it uses.
@@ -1867,3 +1750,120 @@ def get_result_code(result):
         return res
     error = result.get('error')
     return error.get('code') if isinstance(error, dict) else error
+
+
+def get_status_envelope(result):
+    """
+    Return the object a Huawei OceanStor Pacific response reports its outcome in.
+
+    Split out of `get_result_code()` so that a consumer which wants the appliance's own
+    description or suggestion does not have to work out which of the envelopes it got.
+
+    Parameters
+    ----------
+    result : dict
+        A response as returned by `get_data()`.
+
+    Returns
+    -------
+    dict
+        The envelope object, or an empty dict where the response carries none or
+        reports its code as a bare value rather than in an object.
+
+    Examples
+    --------
+    >>> get_status_envelope({'result': {'code': 0, 'description': 'ok'}})
+    {'code': 0, 'description': 'ok'}
+    >>> get_status_envelope({'result': 0})
+    {}
+    """
+    if not isinstance(result, dict):
+        return {}
+    for key in ('result', 'error'):
+        envelope = result.get(key)
+        if isinstance(envelope, dict):
+            return envelope
+    return {}
+
+
+def get_warranty_status(st):
+    """
+    Convert a Huawei OceanStor Pacific warranty status code into a human-readable
+    description.
+
+    The `cluster/servers` endpoint reports how much of a node's warranty is left, which
+    is a commercial fact rather than a fault: a node out of warranty runs exactly as well
+    as one in warranty, right up to the point where a part has to be replaced.
+
+    Parameters
+    ----------
+    st : int or str
+        The warranty status code.
+        A missing or malformed value renders as `'Unknown'`.
+
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
+
+    Examples
+    --------
+    >>> get_warranty_status(2)
+    'about to expire, less than six months (2)'
+    """
+    mapping = {
+        0: 'non-storage node (0)',
+        1: 'normal, more than six months (1)',
+        2: 'about to expire, less than six months (2)',
+        3: 'expired (3)',
+        4: 'lifecycle information missing (4)',
+    }
+    return mapping.get(as_code(st), 'Unknown')
+
+
+def _redact(value):
+    """
+    Return a copy of an API response with every sensitive field's value replaced.
+
+    Parameters
+    ----------
+    value : any
+        A decoded response, or any part of one.
+
+    Returns
+    -------
+    any
+        The same structure, with the value of every field named in `_REDACTED_FIELDS`
+        replaced by `'******'`.
+    """
+    if isinstance(value, dict):
+        return {
+            key: ('******' if str(key).lower() in _REDACTED_FIELDS else _redact(inner))
+            for key, inner in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    return value
+
+
+def record_response(endpoint, result):
+    """
+    Remember what an endpoint answered, so a consumer can print it under `--verbose`.
+
+    Parameters
+    ----------
+    endpoint : str
+        The endpoint that was queried, as it was requested.
+    result : dict
+        The response, as `get_data()` built it.
+
+    Notes
+    -----
+    - Called by `get_data()` and only when the caller set `VERBOSE`, so a normal run
+      does not keep a second copy of every response in memory.
+    - The login response is deliberately never recorded. It is the one response that
+      carries a session token, and a token in the output is a credential in whatever
+      stores, forwards and logs that output downstream.
+    """
+    _recorded_responses.append((endpoint, _redact(result)))

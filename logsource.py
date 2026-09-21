@@ -151,123 +151,6 @@ def count_within(lines, since, parse_line=None, key=None):
     }
 
 
-def syslog_identifier(line):
-    """
-    Return the identifier a log transport wrote in front of a line, or None.
-
-    That is the program name a syslog daemon or journald puts between the host and the
-    message, without the process id: `sshd` in `Aug 29 11:15:53 host sshd[1]: ...`. A consumer
-    reading the journal of a unit needs it to tell the application's own lines from the ones
-    systemd writes about the unit ("Starting ...", "Started ..."), which are about the service
-    rather than from it.
-
-    Parameters
-    ----------
-    line : str
-        One line of a log.
-
-    Returns
-    -------
-    str | None
-        The identifier, or None where the line carries no transport prefix.
-
-    Examples
-    --------
-    >>> syslog_identifier('Aug 29 11:15:53 host sshd[1]: Server listening on 0.0.0.0.')
-    'sshd'
-
-    >>> syslog_identifier('[28-Aug-2026 15:20:15] ERROR: failed') is None
-    True
-    """
-    match = _SYSLOG_PREFIX_REGEX.match(line)
-    if not match:
-        return None
-    return match.group('identifier')
-
-
-def sort_by_time(lines, parse_line=None):
-    """
-    Return the lines in the order they were written, whichever log each of them came from.
-
-    A consumer reading several logs as one window holds them one log after the other, so the
-    newest line of the first log sits in the middle: "the last line" is then not the newest
-    one, and reporting it as the latest event names something days old. Sorting once puts that
-    right for everything built on the order - the line a summary quotes as the last, and the
-    order a listing renders in.
-
-    A line whose time cannot be read keeps its place relative to the other unreadable ones and
-    sorts before everything dated, because the alternative - guessing a time for it - would
-    move it somewhere it does not belong.
-
-    Parameters
-    ----------
-    lines : iterable of str
-        The lines, in the order they were read.
-    parse_line : callable, optional
-        Handed to `timestamp()` for a format it cannot
-        read on its own.
-
-    Returns
-    -------
-    list of str
-        The lines, oldest first.
-
-    Examples
-    --------
-    >>> sort_by_time(['Aug 29 11:15:53 h x[1]: b', 'Aug 28 11:15:53 h x[1]: a'])[0][:6]
-    'Aug 28'
-    """
-    decorated = []
-    for index, line in enumerate(lines):
-        moment = timestamp(line, parse_line)
-        decorated.append((moment is not None, moment, index, line))
-    # Naive and aware values cannot be compared, so the sort runs over the naive
-    # form of each: an offset moves a line by hours at worst, a `TypeError`
-    # takes the whole check down.
-    if len({moment.tzinfo is None for _, moment, _, _ in decorated if moment}) > 1:
-        decorated = [
-            (dated, moment.replace(tzinfo=None) if moment else None, index, line)
-            for dated, moment, index, line in decorated
-        ]
-    decorated.sort(
-        key=lambda item: (item[0], item[1] or datetime.datetime.min, item[2])
-    )
-    return [line for _, _, _, line in decorated]
-
-
-def strip_syslog_prefix(line):
-    """
-    Return what an application wrote, without the prefix a log transport put in front of it.
-
-    The same event reaches a consumer twice where a file and the journal of the same unit are
-    both read, and in two different prefixes: `Aug 29 11:15:53 host sshd[1]: ...` from what
-    rsyslog wrote, `2026-08-29T11:15:53+0200 host sshd[1]: ...` from `journalctl`. What
-    follows the prefix is byte for byte the same, which is what makes it comparable.
-
-    Parameters
-    ----------
-    line : str
-        One line of a log.
-
-    Returns
-    -------
-    str
-        The message, or the line unchanged where it carries no such prefix - which is
-        what an application writing its own timestamps into a file of its own does.
-
-    Examples
-    --------
-    >>> strip_syslog_prefix(
-    ...     'Aug 29 11:15:53 host sshd[1]: Server listening on 0.0.0.0.'
-    ... )
-    'Server listening on 0.0.0.0.'
-
-    >>> strip_syslog_prefix('[28-Aug-2026 15:20:15] ERROR: failed to ptrace(ATTACH)')
-    '[28-Aug-2026 15:20:15] ERROR: failed to ptrace(ATTACH)'
-    """
-    return _SYSLOG_PREFIX_REGEX.sub('', line, count=1)
-
-
 def covered_window(line_groups, parse_line=None):
     """
     Return the earliest and the latest moment a set of logs was written in.
@@ -1130,6 +1013,123 @@ _SYSLOG_MONTHS = {
     'Oct': 10,
     'Sep': 9,
 }
+
+
+def sort_by_time(lines, parse_line=None):
+    """
+    Return the lines in the order they were written, whichever log each of them came from.
+
+    A consumer reading several logs as one window holds them one log after the other, so the
+    newest line of the first log sits in the middle: "the last line" is then not the newest
+    one, and reporting it as the latest event names something days old. Sorting once puts that
+    right for everything built on the order - the line a summary quotes as the last, and the
+    order a listing renders in.
+
+    A line whose time cannot be read keeps its place relative to the other unreadable ones and
+    sorts before everything dated, because the alternative - guessing a time for it - would
+    move it somewhere it does not belong.
+
+    Parameters
+    ----------
+    lines : iterable of str
+        The lines, in the order they were read.
+    parse_line : callable, optional
+        Handed to `timestamp()` for a format it cannot
+        read on its own.
+
+    Returns
+    -------
+    list of str
+        The lines, oldest first.
+
+    Examples
+    --------
+    >>> sort_by_time(['Aug 29 11:15:53 h x[1]: b', 'Aug 28 11:15:53 h x[1]: a'])[0][:6]
+    'Aug 28'
+    """
+    decorated = []
+    for index, line in enumerate(lines):
+        moment = timestamp(line, parse_line)
+        decorated.append((moment is not None, moment, index, line))
+    # Naive and aware values cannot be compared, so the sort runs over the naive
+    # form of each: an offset moves a line by hours at worst, a `TypeError`
+    # takes the whole check down.
+    if len({moment.tzinfo is None for _, moment, _, _ in decorated if moment}) > 1:
+        decorated = [
+            (dated, moment.replace(tzinfo=None) if moment else None, index, line)
+            for dated, moment, index, line in decorated
+        ]
+    decorated.sort(
+        key=lambda item: (item[0], item[1] or datetime.datetime.min, item[2])
+    )
+    return [line for _, _, _, line in decorated]
+
+
+def strip_syslog_prefix(line):
+    """
+    Return what an application wrote, without the prefix a log transport put in front of it.
+
+    The same event reaches a consumer twice where a file and the journal of the same unit are
+    both read, and in two different prefixes: `Aug 29 11:15:53 host sshd[1]: ...` from what
+    rsyslog wrote, `2026-08-29T11:15:53+0200 host sshd[1]: ...` from `journalctl`. What
+    follows the prefix is byte for byte the same, which is what makes it comparable.
+
+    Parameters
+    ----------
+    line : str
+        One line of a log.
+
+    Returns
+    -------
+    str
+        The message, or the line unchanged where it carries no such prefix - which is
+        what an application writing its own timestamps into a file of its own does.
+
+    Examples
+    --------
+    >>> strip_syslog_prefix(
+    ...     'Aug 29 11:15:53 host sshd[1]: Server listening on 0.0.0.0.'
+    ... )
+    'Server listening on 0.0.0.0.'
+
+    >>> strip_syslog_prefix('[28-Aug-2026 15:20:15] ERROR: failed to ptrace(ATTACH)')
+    '[28-Aug-2026 15:20:15] ERROR: failed to ptrace(ATTACH)'
+    """
+    return _SYSLOG_PREFIX_REGEX.sub('', line, count=1)
+
+
+def syslog_identifier(line):
+    """
+    Return the identifier a log transport wrote in front of a line, or None.
+
+    That is the program name a syslog daemon or journald puts between the host and the
+    message, without the process id: `sshd` in `Aug 29 11:15:53 host sshd[1]: ...`. A consumer
+    reading the journal of a unit needs it to tell the application's own lines from the ones
+    systemd writes about the unit ("Starting ...", "Started ..."), which are about the service
+    rather than from it.
+
+    Parameters
+    ----------
+    line : str
+        One line of a log.
+
+    Returns
+    -------
+    str | None
+        The identifier, or None where the line carries no transport prefix.
+
+    Examples
+    --------
+    >>> syslog_identifier('Aug 29 11:15:53 host sshd[1]: Server listening on 0.0.0.0.')
+    'sshd'
+
+    >>> syslog_identifier('[28-Aug-2026 15:20:15] ERROR: failed') is None
+    True
+    """
+    match = _SYSLOG_PREFIX_REGEX.match(line)
+    if not match:
+        return None
+    return match.group('identifier')
 
 
 def _syslog_datetime(match):

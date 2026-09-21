@@ -299,40 +299,6 @@ def get_domstats(
     return True, parse_domstats(stdout)
 
 
-def parse_pool_info(stdout):
-    """
-    Turn the output of `virsh pool-info` into a mapping.
-
-    Parameters
-    ----------
-    stdout : str
-        Raw `virsh pool-info` output.
-
-    Returns
-    -------
-    dict
-        `{lowercased_key: value}`. A value made up of digits only is
-        returned as `int`, every other value as `str`.
-
-    Notes
-    -----
-    - Public for the same reason `parse_domstats()` is: a consumer that replays
-      recorded output rather than talking to a hypervisor needs the same parser the
-      live path uses, and reimplementing it would let the two drift apart.
-    - A line without a colon is skipped, so a heading or a blank line in the output
-      costs nothing.
-    """
-    info = {}
-    for line in stdout.splitlines():
-        key, separator, value = line.partition(':')
-        if not separator:
-            continue
-        key = key.strip().lower()
-        value = value.strip()
-        info[key] = int(value) if INTEGER_REGEX.match(value) else value
-    return info
-
-
 def get_pool_info(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     """
     Return name, state, autostart and sizes of one storage pool.
@@ -420,6 +386,88 @@ def get_pool_xml(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
     return virsh(['pool-dumpxml', pool], uri=uri, timeout=timeout)
 
 
+def get_pools(uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
+    """
+    Return every storage pool known to the connection, running or not.
+
+    Parameters
+    ----------
+    uri : str, optional
+        libvirt connection URI. Defaults to `DEFAULT_URI`.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+
+    Returns
+    -------
+    tuple (bool, list or str)
+        - `success` (`bool`): True if the command succeeded, False otherwise.
+        - `result` (`list` or `str`): Pool names, or an error message.
+
+    Notes
+    -----
+    - Reports names only. Pair it with `get_pool_info()` for state and sizes.
+
+    Examples
+    --------
+    >>> success, pools = get_pools()
+    """
+    success, stdout = virsh(
+        ['pool-list', '--all', '--name'],
+        uri=uri,
+        timeout=timeout,
+    )
+    if not success:
+        return False, stdout
+    return True, [line.strip() for line in stdout.splitlines() if line.strip()]
+
+
+def get_volumes(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
+    """
+    Return the volumes of one storage pool, with their sizes.
+
+    Parameters
+    ----------
+    pool : str
+        Name of the storage pool.
+    uri : str, optional
+        libvirt connection URI. Defaults to `DEFAULT_URI`.
+    timeout : int, optional
+        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
+
+    Returns
+    -------
+    tuple (bool, list or str)
+        - `success` (`bool`): True if the command succeeded, False otherwise.
+        - `result` (`list` or `str`): One `dict` per volume, see `parse_volumes()`, or
+          an error message.
+
+    Notes
+    -----
+    - This is what a pool really holds, which `pool-info` does not answer: its sizes
+      describe the storage the pool sits on, everything else on that storage
+      included.
+    - A pool that is not running answers with an error, because libvirt cannot list
+      what it has not opened.
+    - The pool name reaches virsh as a positional argument, so a value that looks
+      like an option is refused rather than handed to virsh as one.
+
+    Examples
+    --------
+    >>> success, volumes = get_volumes('default')
+    """
+    success, pool = shell.safe_cli_value(pool, 'pool name')
+    if not success:
+        return False, pool
+    success, stdout = virsh(
+        ['vol-list', '--pool', pool, '--details'],
+        uri=uri,
+        timeout=timeout,
+    )
+    if not success:
+        return False, stdout
+    return True, parse_volumes(stdout)
+
+
 def group_by_store(measurements, drift=0.01):
     """
     Group the storage pools that are looking at one and the same store.
@@ -477,6 +525,80 @@ def group_by_store(measurements, drift=0.01):
         else:
             groups.append([item])
     return groups
+
+
+def parse_domstats(stdout):
+    """
+    Turn the output of `virsh domstats` into a mapping per domain.
+
+    Parameters
+    ----------
+    stdout : str
+        Raw `virsh domstats` output.
+
+    Returns
+    -------
+    dict
+        `{domain_name: {field_name: value}}`. A value made up of digits only
+        is returned as `int`, every other value as `str`.
+
+    Notes
+    -----
+    - The domain name is read from the quoted `Domain: '<name>'` header, so a name
+      containing a space survives.
+    - libvirt omits a field it cannot fill instead of reporting a placeholder, so a
+      consumer looks fields up defensively. A domain that is not running reports few
+      fields, and the ones it does report are not all meaningful; see `get_domstats`.
+    """
+    domains = {}
+    name = None
+    for line in stdout.splitlines():
+        match = DOMSTATS_DOMAIN_REGEX.match(line)
+        if match:
+            name = match.group(1)
+            domains[name] = {}
+            continue
+        if name is None:
+            continue
+        key, separator, value = line.strip().partition('=')
+        if not separator:
+            continue
+        domains[name][key] = int(value) if INTEGER_REGEX.match(value) else value
+    return domains
+
+
+def parse_pool_info(stdout):
+    """
+    Turn the output of `virsh pool-info` into a mapping.
+
+    Parameters
+    ----------
+    stdout : str
+        Raw `virsh pool-info` output.
+
+    Returns
+    -------
+    dict
+        `{lowercased_key: value}`. A value made up of digits only is
+        returned as `int`, every other value as `str`.
+
+    Notes
+    -----
+    - Public for the same reason `parse_domstats()` is: a consumer that replays
+      recorded output rather than talking to a hypervisor needs the same parser the
+      live path uses, and reimplementing it would let the two drift apart.
+    - A line without a colon is skipped, so a heading or a blank line in the output
+      costs nothing.
+    """
+    info = {}
+    for line in stdout.splitlines():
+        key, separator, value = line.partition(':')
+        if not separator:
+            continue
+        key = key.strip().lower()
+        value = value.strip()
+        info[key] = int(value) if INTEGER_REGEX.match(value) else value
+    return info
 
 
 def parse_volumes(stdout):
@@ -542,128 +664,6 @@ def parse_volumes(stdout):
             }
         )
     return volumes
-
-
-def get_volumes(pool, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
-    """
-    Return the volumes of one storage pool, with their sizes.
-
-    Parameters
-    ----------
-    pool : str
-        Name of the storage pool.
-    uri : str, optional
-        libvirt connection URI. Defaults to `DEFAULT_URI`.
-    timeout : int, optional
-        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
-
-    Returns
-    -------
-    tuple (bool, list or str)
-        - `success` (`bool`): True if the command succeeded, False otherwise.
-        - `result` (`list` or `str`): One `dict` per volume, see `parse_volumes()`, or
-          an error message.
-
-    Notes
-    -----
-    - This is what a pool really holds, which `pool-info` does not answer: its sizes
-      describe the storage the pool sits on, everything else on that storage
-      included.
-    - A pool that is not running answers with an error, because libvirt cannot list
-      what it has not opened.
-    - The pool name reaches virsh as a positional argument, so a value that looks
-      like an option is refused rather than handed to virsh as one.
-
-    Examples
-    --------
-    >>> success, volumes = get_volumes('default')
-    """
-    success, pool = shell.safe_cli_value(pool, 'pool name')
-    if not success:
-        return False, pool
-    success, stdout = virsh(
-        ['vol-list', '--pool', pool, '--details'],
-        uri=uri,
-        timeout=timeout,
-    )
-    if not success:
-        return False, stdout
-    return True, parse_volumes(stdout)
-
-
-def get_pools(uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
-    """
-    Return every storage pool known to the connection, running or not.
-
-    Parameters
-    ----------
-    uri : str, optional
-        libvirt connection URI. Defaults to `DEFAULT_URI`.
-    timeout : int, optional
-        Timeout in seconds. Defaults to `DEFAULT_TIMEOUT`.
-
-    Returns
-    -------
-    tuple (bool, list or str)
-        - `success` (`bool`): True if the command succeeded, False otherwise.
-        - `result` (`list` or `str`): Pool names, or an error message.
-
-    Notes
-    -----
-    - Reports names only. Pair it with `get_pool_info()` for state and sizes.
-
-    Examples
-    --------
-    >>> success, pools = get_pools()
-    """
-    success, stdout = virsh(
-        ['pool-list', '--all', '--name'],
-        uri=uri,
-        timeout=timeout,
-    )
-    if not success:
-        return False, stdout
-    return True, [line.strip() for line in stdout.splitlines() if line.strip()]
-
-
-def parse_domstats(stdout):
-    """
-    Turn the output of `virsh domstats` into a mapping per domain.
-
-    Parameters
-    ----------
-    stdout : str
-        Raw `virsh domstats` output.
-
-    Returns
-    -------
-    dict
-        `{domain_name: {field_name: value}}`. A value made up of digits only
-        is returned as `int`, every other value as `str`.
-
-    Notes
-    -----
-    - The domain name is read from the quoted `Domain: '<name>'` header, so a name
-      containing a space survives.
-    - libvirt omits a field it cannot fill instead of reporting a placeholder, so a
-      consumer looks fields up defensively. A domain that is not running reports few
-      fields, and the ones it does report are not all meaningful; see `get_domstats`.
-    """
-    domains = {}
-    name = None
-    for line in stdout.splitlines():
-        match = DOMSTATS_DOMAIN_REGEX.match(line)
-        if match:
-            name = match.group(1)
-            domains[name] = {}
-            continue
-        if name is None:
-            continue
-        key, separator, value = line.strip().partition('=')
-        if not separator:
-            continue
-        domains[name][key] = int(value) if INTEGER_REGEX.match(value) else value
-    return domains
 
 
 def _explain_virsh_error(stderr, uri):
