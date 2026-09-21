@@ -252,8 +252,17 @@ class TestFetch(unittest.TestCase):
 
 class TestFetchSocket(unittest.TestCase):
     def _fetch(self, sock, **kwargs):
-        with mock.patch('socket.socket', return_value=sock):
+        # AF_UNIX is created where the platform lacks it (CPython on Windows), so the
+        # logic is exercised everywhere; the socket itself is a fake anyway
+        family = mock.patch.object(socket, 'AF_UNIX', 1, create=True)
+        with family, mock.patch('socket.socket', return_value=sock):
             return net.fetch_socket('/run/haproxy.sock', **kwargs)
+
+    def test_a_platform_without_unix_sockets_says_so(self):
+        with mock.patch.object(net, 'socket', mock.Mock(spec=[])):
+            success, message = net.fetch_socket('/run/haproxy.sock')
+        self.assertFalse(success)
+        self.assertIn('not supported on this platform', message)
 
     def test_sends_the_command_and_reads_the_answer(self):
         sock = FakeSocket([b'stat one\n'])
@@ -423,12 +432,18 @@ class TestGetNetinfo(unittest.TestCase):
 
 
 class TestGetSubnetHosts(unittest.TestCase):
+    def _interfaces(self, interfaces):
+        # psutil is replaced as a whole, so the tests run where it is not installed and
+        # never see the interfaces of the host they run on
+        psutil = mock.Mock(net_if_addrs=mock.Mock(return_value=interfaces))
+        have = mock.patch.object(net, 'HAVE_PSUTIL', True)
+        module = mock.patch.object(net, 'psutil', psutil, create=True)
+        return have, module
+
     def test_lists_the_hosts_of_the_interface_subnet(self):
         addr = mock.Mock(family=net.AF_INET, address='192.0.2.1', netmask='255.255.255.0')
-        with mock.patch.object(net, 'HAVE_PSUTIL', True), \
-             mock.patch.object(
-                 net.psutil, 'net_if_addrs', return_value={'eth0': [addr]}
-             ):
+        have, module = self._interfaces({'eth0': [addr]})
+        with have, module:
             success, hosts = net.get_subnet_hosts('eth0')
         self.assertTrue(success, hosts)
         self.assertEqual(hosts[0], '192.0.2.1')
@@ -451,16 +466,16 @@ class TestGetSubnetHosts(unittest.TestCase):
 
     def test_max_hosts_is_honoured(self):
         addr = mock.Mock(family=net.AF_INET, address='192.0.2.1', netmask='255.255.255.0')
-        with mock.patch.object(net, 'HAVE_PSUTIL', True), \
-             mock.patch.object(
-                 net.psutil, 'net_if_addrs', return_value={'eth0': [addr]}
-             ):
+        have, module = self._interfaces({'eth0': [addr]})
+        with have, module:
             success, message = net.get_subnet_hosts('eth0', max_hosts=10)
         self.assertFalse(success)
         self.assertIn('10', message)
 
     def test_unknown_interface(self):
-        ok, result = net.get_subnet_hosts('does-not-exist0')
+        have, module = self._interfaces({'eth0': []})
+        with have, module:
+            ok, result = net.get_subnet_hosts('does-not-exist0')
         self.assertFalse(ok)
         self.assertIn('No such interface', result)
 

@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092102'
+__version__ = '2026092103'
 
 import ipaddress
 import random
@@ -451,6 +451,10 @@ def fetch_socket(sock_file, cmd=None, dialog=None, timeout=3):
     --------
     >>> success, response = fetch_socket('/var/run/haproxy.sock', b'show stat\\n')
     """
+
+    # CPython on Windows offers no AF_UNIX, although the system itself supports it
+    if not hasattr(socket, 'AF_UNIX'):
+        return False, f'Unix socket "{sock_file}" is not supported on this platform.'
 
     def open_unix_socket():
         return socket.socket(socket.AF_UNIX, SOCK_TCP)
