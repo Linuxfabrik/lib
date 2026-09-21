@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * base.py: `get_state()`, `match_range()`, and output on Windows, now UTF-8 without extra empty lines
-* db_sqlite.py: `per_second_deltas()`
+* db_sqlite.py: `per_second_deltas()`, `regexp()`
 * human.py: `humanrange2bytes()`, `humanrange2seconds()`, `number2human()`, `seconds2human()`
 * redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, and re-authenticates on a "401 Unauthorized" instead of falling back to HTTP Basic. A capacity a controller reports as text rather than as a number, and a traced argument the host cannot decode, no longer take the check down
 * shell.py: `shell_exec()` keeps to its `timeout` even when the killed command cannot die, such as one blocked on storage that has gone away, and decodes umlauts in the output of Windows programs ([monitoring-plugins#681](https://github.com/Linuxfabrik/monitoring-plugins/issues/681))
