@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Highlights:** Nine new modules, among them incremental log reading that keeps its findings across runs, plus coverage for libvirt hosts, LVM, OpenStack clouds and the kernel's pressure stall information. Every module that talks HTTP now takes an explicit proxy instead of leaving the choice to the environment. Redfish sessions survive as long as the controller keeps them, and a `shell_exec()` timeout holds even when the killed command is stuck in the kernel. Plugins on Windows report their result to the monitoring agent in UTF-8, so a non-Latin character no longer turns a check into a WARNING, and multi-line output no longer shows an empty line after every line.
 
+### Breaking Changes
+
+* net.py: `fetch_ssl()`, `is_valid_hostname()`, `is_valid_absolute_hostname()`, `is_valid_relative_hostname()` and `netmask_to_cidr()` are gone. Use `fetch(tls=True)` in place of `fetch_ssl()` and `ip_to_cidr()` in place of `netmask_to_cidr()`; the hostname validators had no replacement and no consumer
+
 ### Added
 
 * args.py: `duration()` reads an `8D` style duration for argparse, rejects a missing or unknown unit instead of silently reading it as zero, and returns a value that renders as the text it was written with, so a consumer can report the duration the operator set rather than a different spelling of the same number of seconds. Further shared help texts (`--grace-security`, `--grace-updates`, `--grace-wait`, `--icinga-*`, `--lookback`, `--per-source`, `--no-per-source`, `--proxy`), and those of the mail, Rocket.Chat and Zoom notifications (`--datetime`, `--host-*`, `--mail-*`, `--notification-*`, `--service-*`, ...)
@@ -52,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * base.py: `get_state()`, `match_range()`, and output on Windows, now UTF-8 without extra empty lines
 * db_sqlite.py: `per_second_deltas()`, `regexp()`
 * human.py: `humanrange2bytes()`, `humanrange2seconds()`, `number2human()`, `seconds2human()`
+* net.py: `get_public_ip()` asks the next service instead of reporting whatever a service answered. A rate-limiting or redirecting service made the check print an HTML page where the address belongs
 * redfish.py: `get_auth_header()` keeps a session token for as long as the controller keeps the session, and re-authenticates on a "401 Unauthorized" instead of falling back to HTTP Basic. A capacity a controller reports as text rather than as a number, and a traced argument the host cannot decode, no longer take the check down
 * shell.py: `shell_exec()` keeps to its `timeout` even when the killed command cannot die, such as one blocked on storage that has gone away, and decodes umlauts in the output of Windows programs ([monitoring-plugins#681](https://github.com/Linuxfabrik/monitoring-plugins/issues/681))
 * version.py: `check_eol()` reads all three shapes endoflife.date answers the end-of-life field in. A cycle marked end of life without a date took the check down with a Python error, and one with no announced end was reported as a gap in the data. A version endoflife.date has not catalogued yet is placed against the cycles it does list instead of going UNKNOWN, so staying current no longer raises an alert nobody can act on, and the available-upgrade note survives either way

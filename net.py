@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082901'
+__version__ = '2026092101'
 
 import ipaddress
 import random
@@ -153,6 +153,51 @@ SOCKETSTR = {
 }
 
 
+def cidr_to_hosts(cidr, max_hosts=65536):
+    """
+    Return the usable host IP addresses of a network in CIDR notation.
+
+    Enumerates the usable host addresses of an IPv4 or IPv6 network given as a
+    CIDR string (e.g. `192.0.2.0/24` or `2001:db8::/120`). The network and
+    broadcast address are excluded. Host bits set in the input are tolerated
+    (`strict=False`).
+
+    Parameters
+    ----------
+    cidr : str
+        Network in CIDR notation, e.g. `192.0.2.0/24`.
+    max_hosts : int, optional
+        Refuse to enumerate networks with more
+        addresses than this, which protects against accidentally expanding a large
+        range such as an IPv6 `/64` (2^64 addresses). Set to `None` to disable the
+        limit. Defaults to `65536` (an IPv4 `/16`).
+
+    Returns
+    -------
+    tuple (bool, list or str)
+        - `True` and the list of host IP address strings (IPv4 or IPv6) on success.
+        - `False` and an error message on failure.
+
+    Examples
+    --------
+    >>> cidr_to_hosts('192.0.2.0/30')
+    (True, ['192.0.2.1', '192.0.2.2'])
+    >>> cidr_to_hosts('2001:db8::/126')
+    (True, ['2001:db8::1', '2001:db8::2', '2001:db8::3'])
+    """
+    try:
+        network = ipaddress.ip_network(cidr, strict=False)
+    except ValueError as e:
+        return (False, f'Invalid network "{cidr}": {e}')
+    if max_hosts is not None and network.num_addresses > max_hosts:
+        return (
+            False,
+            f'Network "{cidr}" is too large to enumerate '
+            f'({network.num_addresses} addresses, limit {max_hosts}).',
+        )
+    return (True, [str(host) for host in network.hosts()])
+
+
 def _socket_fetch(
     open_socket_func,
     connect_args,
@@ -199,7 +244,8 @@ def _socket_fetch(
     Notes
     -----
     - Timeout and socket errors are handled gracefully.
-    - Responses are decoded into UTF-8 text with replacement for decode errors.
+    - Responses are decoded as UTF-8 and, on any invalid byte, as Latin-1, so a sensor
+      that answers in another encoding still yields text the consumer can print.
     - This is an internal function intended for use by `fetch()`, `fetch_socket()`, and similar
       functions.
 
@@ -250,7 +296,7 @@ def _socket_fetch(
                             return False, (
                                 f'{socket_name} closed before pattern {expect!r} matched.'
                             )
-                        buffer += chunk.decode('utf-8', errors='replace')
+                        buffer += txt.to_text(chunk, errors='strict_or_latin1')
                         if pattern.search(buffer):
                             results.append(buffer)
                             break
@@ -274,7 +320,7 @@ def _socket_fetch(
                     chunk = s.recv(1024)
                     if not chunk:
                         break
-                    fragments.append(chunk.decode('utf-8', errors='replace'))
+                    fragments.append(txt.to_text(chunk, errors='strict_or_latin1'))
                 except socket.timeout:
                     return False, f'{socket_name} timed out.'
                 except OSError as e:
@@ -431,75 +477,6 @@ def fetch_socket(sock_file, cmd=None, dialog=None, timeout=3):
         return False, f'Could not open Unix socket "{sock_file}": {e}'
 
 
-def fetch_ssl(host, port, msg=None, timeout=3):
-    """
-    Fetch data via an SSL/TLS encrypted TCP socket connection.
-
-    .. deprecated:: 2026050901
-        Use `fetch(host, port, msg=..., tls=True)` instead. `fetch()` covers banner mode,
-        dialog mode, IPv4/IPv6 and TLS in a single entry point. `fetch_ssl()` might be removed
-        in a future major release and is unmaintained.
-
-    This function opens a secure SSL/TLS socket connection to a given host and port, optionally
-    sends a message, and returns the received response. It uses the system's default trusted CA
-    certificates.
-
-    Parameters
-    ----------
-    host : str
-        Target hostname or IP address for the SSL connection.
-    port : int
-        Target TCP port number (usually 443 for HTTPS services).
-    msg : bytes, optional
-        A message to send after connecting. If `None`, no message is sent.
-    timeout : int, optional
-        Socket timeout in seconds. Defaults to `3`.
-
-    Returns
-    -------
-    tuple (bool, str)
-        - `True`, followed by the received response text if successful.
-        - `False`, followed by an error message if failed.
-
-    Notes
-    -----
-    - Deprecated wrapper kept for backward compatibility. Prefer `fetch(..., tls=True)` in new
-      code; both call paths share the same TLS context.
-    - Timeout, SSL, and socket errors are handled gracefully.
-    - Response is decoded into UTF-8 text.
-    - SSL certificate validation is performed automatically based on the system's trusted CAs.
-    - Uses `server_hostname` to support Server Name Indication (SNI).
-
-    Examples
-    --------
-    >>> success, response = fetch_ssl(
-    ...     'example.com', 443, b'GET / HTTP/1.0\\r\\nHost: example.com\\r\\n\\r\\n'
-    ... )
-    """
-
-    def open_ssl_socket():
-        # PROTOCOL_TLS_CLIENT automatically disables SSLv2/3 and
-        # TLSv1.0/1.1 on recent OpenSSL builds
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-
-        # context.check_hostname = True
-        # context.verify_mode = ssl.CERT_REQUIRED
-        context.minimum_version = (
-            ssl.TLSVersion.TLSv1_2
-        )  # enforce at least TLS 1.2 just to be sure
-
-        raw_sock = socket.socket(socket.AF_INET, SOCK_TCP)
-        return context.wrap_socket(raw_sock, server_hostname=host)
-
-    try:
-        return _socket_fetch(
-            open_ssl_socket, (host, int(port)), payload=msg, timeout=timeout
-        )
-
-    except Exception as e:
-        return False, f'Could not open SSL socket: {e}'
-
-
 def _default_route_ip(family=socket.AF_INET):
     """
     Return the local IP address the kernel would use for the default route, or `None`.
@@ -625,7 +602,7 @@ def get_netinfo():
     --------
     >>> netinfo = get_netinfo()
     >>> print(netinfo['address'])
-    '192.168.1.10'
+    '192.0.2.10'
     """
     if not HAVE_PSUTIL:
         return []
@@ -644,65 +621,6 @@ def get_netinfo():
         'gateway': _default_gateway(),
         'public_address': None,
     }
-
-
-def get_public_ip(services, insecure=False, no_proxy=False, proxy=None, timeout=2):
-    """
-    Retrieve the public IP address from a list of online services.
-
-    This function queries a list of external services (e.g., "what is my IP") to retrieve the public
-    IP address of the system. The list is shuffled before being used, and the first service that
-    returns a valid IP address is used.
-
-    Parameters
-    ----------
-    services : str
-        Comma-separated URLs of services to query for the public IP.
-    insecure : bool, optional
-        Disable SSL verification. Defaults to `False`.
-    no_proxy : bool, optional
-        Ignore proxy settings. Defaults to `False`.
-    proxy : str, optional
-        Proxy URL to reach the services through, overriding the one
-        the environment names. Defaults to `None`, which leaves the choice to the environment.
-    timeout : int, optional
-        Request timeout in seconds. Defaults to `2`.
-
-    Returns
-    -------
-    tuple (bool, str or None)
-        - `True` and the IP address (`str`) if successful.
-        - `False` and `None` if no IP could be retrieved.
-
-    Examples
-    --------
-    >>> get_public_ip(
-    ...     'https://ipv4.icanhazip.com,https://ipecho.net/plain,https://ipinfo.io/ip'
-    ... )
-    (True, '1.2.3.4')
-    """
-    if not services:
-        return False, None
-
-    service_list = [s.strip() for s in services.split(',') if s.strip()]
-    random.shuffle(service_list)
-
-    for uri in service_list:
-        success, result = url.fetch(
-            uri,
-            insecure=insecure,
-            no_proxy=no_proxy,
-            proxy=proxy,
-            timeout=timeout,
-        )
-        if success and result:
-            ip = result.strip()
-            try:
-                return True, txt.to_text(ip)
-            except Exception:
-                return True, ip
-
-    return False, None
 
 
 def _split_no_proxy_entry(entry):
@@ -894,49 +812,66 @@ def get_proxy(target_url, no_proxy=False):
     return (True, proxy)
 
 
-def cidr_to_hosts(cidr, max_hosts=65536):
+def get_public_ip(services, insecure=False, no_proxy=False, proxy=None, timeout=2):
     """
-    Return the usable host IP addresses of a network in CIDR notation.
+    Retrieve the public IP address from a list of online services.
 
-    Enumerates the usable host addresses of an IPv4 or IPv6 network given as a
-    CIDR string (e.g. `10.1.1.0/24` or `2001:db8::/120`). The network and
-    broadcast address are excluded. Host bits set in the input are tolerated
-    (`strict=False`).
+    This function queries a list of external services (e.g., "what is my IP") to retrieve the public
+    IP address of the system. The list is shuffled before being used, and the first service that
+    returns a valid IP address is used.
 
     Parameters
     ----------
-    cidr : str
-        Network in CIDR notation, e.g. `10.1.1.0/24`.
-    max_hosts : int, optional
-        Refuse to enumerate networks with more
-        addresses than this, which protects against accidentally expanding a large
-        range such as an IPv6 `/64` (2^64 addresses). Set to `None` to disable the
-        limit. Defaults to `65536` (an IPv4 `/16`).
+    services : str
+        Comma-separated URLs of services to query for the public IP.
+    insecure : bool, optional
+        Disable SSL verification. Defaults to `False`.
+    no_proxy : bool, optional
+        Ignore proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy URL to reach the services through, overriding the one
+        the environment names. Defaults to `None`, which leaves the choice to the environment.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to `2`.
 
     Returns
     -------
-    tuple (bool, list or str)
-        - `True` and the list of host IP address strings (IPv4 or IPv6) on success.
-        - `False` and an error message on failure.
+    tuple (bool, str or None)
+        - `True` and the IP address (`str`) if successful.
+        - `False` and `None` if no service answered with an address.
 
     Examples
     --------
-    >>> cidr_to_hosts('10.1.1.0/30')
-    (True, ['10.1.1.1', '10.1.1.2'])
-    >>> cidr_to_hosts('2001:db8::/126')
-    (True, ['2001:db8::1', '2001:db8::2', '2001:db8::3'])
+    >>> get_public_ip('https://ip.example.com,https://ip2.example.com')
+    (True, '192.0.2.1')
     """
-    try:
-        network = ipaddress.ip_network(cidr, strict=False)
-    except ValueError as e:
-        return (False, f'Invalid network "{cidr}": {e}')
-    if max_hosts is not None and network.num_addresses > max_hosts:
-        return (
-            False,
-            f'Network "{cidr}" is too large to enumerate '
-            f'({network.num_addresses} addresses, limit {max_hosts}).',
+    if not services:
+        return False, None
+
+    service_list = [s.strip() for s in services.split(',') if s.strip()]
+    random.shuffle(service_list)
+
+    for uri in service_list:
+        success, result = url.fetch(
+            uri,
+            insecure=insecure,
+            no_proxy=no_proxy,
+            proxy=proxy,
+            timeout=timeout,
         )
-    return (True, [str(host) for host in network.hosts()])
+        if not success or not result:
+            continue
+        candidate = txt.to_text(result).strip()
+        try:
+            ipaddress.ip_address(candidate)
+        except ValueError:
+            # a service that is rate-limiting, redirecting to a portal or simply
+            # down answers with a page, not with an address. Ask the next one
+            # instead of handing that page on as the host's public IP.
+            continue
+        return True, candidate
+
+    return False, None
 
 
 def _ipv6_prefixlen(netmask):
@@ -999,8 +934,9 @@ def get_subnet_hosts(interface=None, max_hosts=65536):
 
     Examples
     --------
-    >>> get_subnet_hosts('eth0')
-    (True, ['192.168.1.1', '192.168.1.2', ..., '192.168.1.254'])
+    >>> success, hosts = get_subnet_hosts('eth0')
+    >>> hosts[0], hosts[-1]
+    ('192.0.2.1', '192.0.2.254')
     """
     if not HAVE_PSUTIL:
         return (False, 'Python module "psutil" is not installed.')
@@ -1115,169 +1051,3 @@ def normalize_address(text):
         return None
     mapped = getattr(address, 'ipv4_mapped', None)
     return str(mapped) if mapped else str(address)
-
-
-def is_valid_hostname(hostname):
-    """
-    Validate a fully-qualified domain name (FQDN) according to RFC 1035 and RFC 3696.
-
-    This function checks if the given hostname is valid, whether relative or absolute. A
-    hostname ending with a dot is allowed (representing the null byte), but must be less than
-    254 bytes total.
-
-    Parameters
-    ----------
-    hostname : str
-        The hostname to validate.
-
-    Returns
-    -------
-    bool
-        `True` if the hostname is valid, `False` otherwise.
-
-    Notes
-    -----
-    - Complies fully with RFC 1035 and the preferred form of RFC 3696 Section 2.
-    - Absolute FQDNs (ending with a dot) must be ≤ 254 bytes.
-    - Relative FQDNs must be < 253 bytes.
-
-    References
-    ----------
-    - https://tools.ietf.org/html/rfc3696#section-2
-    - https://tools.ietf.org/html/rfc1035
-
-    Examples
-    --------
-    >>> is_valid_hostname('example.com')
-    True
-    """
-    if not isinstance(hostname, str):
-        return False
-
-    normalized = hostname.rstrip('.')
-    if len(normalized) > 253:
-        return False
-
-    return bool(FQDN_REGEX.fullmatch(hostname))
-
-
-def is_valid_absolute_hostname(hostname):
-    """
-    Validate a fully-qualified domain name (FQDN) that does not end with a dot.
-
-    This function checks if the hostname is a valid FQDN according to the RFC preferred-form
-    and ensures it does not end with a dot (`.`).
-
-    Parameters
-    ----------
-    hostname : str
-        The hostname to validate.
-
-    Returns
-    -------
-    bool
-        `True` if the hostname is a valid absolute FQDN (does not end with a dot), `False` otherwise.
-
-    Notes
-    -----
-    - Based on RFC 1035 and RFC 3696 specifications.
-    - Absolute FQDNs are typically used without appending search domains in DNS lookups.
-
-    References
-    ----------
-    - https://tools.ietf.org/html/rfc3696#section-2
-    - https://tools.ietf.org/html/rfc1035
-
-    Examples
-    --------
-    >>> is_valid_absolute_hostname('example.com')
-    True
-    >>> is_valid_absolute_hostname('example.com.')
-    False
-    """
-    if not isinstance(hostname, str):
-        return False
-
-    return not hostname.endswith('.') and is_valid_hostname(hostname)
-
-
-def is_valid_relative_hostname(hostname):
-    """
-    Validate a relative fully-qualified domain name (FQDN) that ends with a dot.
-
-    This function checks if the hostname is a valid FQDN in the preferred RFC form, and ensures
-    it ends with a dot (`.`).
-
-    Parameters
-    ----------
-    hostname : str
-        The hostname to validate.
-
-    Returns
-    -------
-    bool
-        `True` if the hostname is a valid relative FQDN (ends with a dot), `False` otherwise.
-
-    Notes
-    -----
-    - Based on the preferred form from RFC 1035 and RFC 3696.
-    - Relative FQDNs ending with a dot can cause DNS resolvers to append search domains.
-
-    References
-    ----------
-    - https://tools.ietf.org/html/rfc3696#section-2
-    - https://tools.ietf.org/html/rfc1035
-
-    Examples
-    --------
-    >>> is_valid_relative_hostname('example.com.')
-    True
-    >>> is_valid_relative_hostname('example.com')
-    False
-    """
-    if not isinstance(hostname, str):
-        return False
-
-    return hostname.endswith('.') and is_valid_hostname(hostname)
-
-
-def netmask_to_cidr(ip):
-    """
-    Convert a netmask IP address to CIDR notation.
-
-    This function converts a standard IPv4 netmask (e.g., `255.255.255.0`) into its
-    equivalent CIDR prefix length (e.g., `24`).
-
-    Parameters
-    ----------
-    ip : str
-        Netmask IP address in string format (e.g., '255.255.255.0').
-
-    Returns
-    -------
-    int
-        CIDR prefix length corresponding to the given netmask.
-        Returns 0 if input is `None`.
-
-    Notes
-    -----
-    - Based on Glances project logic.
-    - Each octet is converted to binary and counted for the number of '1' bits.
-
-    References
-    ----------
-    - https://github.com/nicolargo/glances/issues/1417#issuecomment-469894399
-
-    Examples
-    --------
-    >>> netmask_to_cidr('255.255.255.0')
-    24
-    >>> netmask_to_cidr('255.255.0.0')
-    16
-    """
-    if not ip:
-        return 0
-    try:
-        return sum(bin(int(octet)).count('1') for octet in ip.split('.'))
-    except (ValueError, AttributeError):
-        return 0
