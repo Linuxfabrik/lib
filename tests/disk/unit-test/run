@@ -8,11 +8,12 @@
 
 # https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
 
-"""Unit tests for lib.disk file helpers, driven by throwaway temp files.
+"""Unit tests for lib.disk, driven by throwaway temp files and mocks.
 
-Host-inspecting helpers (get_real_disks, bd2dmd, udevadm) need real block
-devices and belong to the container batch; get_block_devices is checked
-only for its return shape here.
+The host-inspecting helpers (get_real_disks, bd2dmd, udevadm) are driven
+through a mocked read_file()/shell_exec(), so the parsing they do is covered
+without real block devices. get_block_devices() reads sysfs directly and is
+checked only for its return shape here.
 """
 
 import os
@@ -395,6 +396,139 @@ class TestHostHelpers(unittest.TestCase):
         self.assertIsInstance(disk.get_block_devices(), list)
 
 
+class TestReadCsv(unittest.TestCase):
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-csv-')
+        self.addCleanup(shutil.rmtree, self.base, True)
+
+    def _write(self, content, name='x.csv'):
+        path = os.path.join(self.base, name)
+        with open(path, 'w', encoding='utf-8') as file_handle:
+            file_handle.write(content)
+        return path
+
+    def test_reads_rows_as_lists(self):
+        path = self._write('name,value\na,1\n\nb,2\n')
+        self.assertEqual(
+            disk.read_csv(path),
+            (True, [['name', 'value'], ['a', '1'], [], ['b', '2']]),
+        )
+
+    def test_as_dict_uses_the_header(self):
+        path = self._write('name,value\na,1\n\nb,2\n')
+        self.assertEqual(
+            disk.read_csv(path, as_dict=True),
+            (True, [{'name': 'a', 'value': '1'}, {'name': 'b', 'value': '2'}]),
+        )
+
+    def test_skip_empty_rows_drops_the_blank_line(self):
+        path = self._write('name,value\na,1\n\nb,2\n')
+        self.assertEqual(
+            disk.read_csv(path, skip_empty_rows=True),
+            (True, [['name', 'value'], ['a', '1'], ['b', '2']]),
+        )
+
+    def test_another_delimiter(self):
+        path = self._write('a;b\n1;2\n', name='semi.csv')
+        self.assertEqual(disk.read_csv(path, delimiter=';'), (True, [['a', 'b'], ['1', '2']]))
+
+    def test_a_quoted_field_keeps_its_delimiter(self):
+        path = self._write('a,b\n"x,y",2\n', name='quoted.csv')
+        self.assertEqual(disk.read_csv(path)[1][1], ['x,y', '2'])
+
+    def test_a_missing_file_is_reported(self):
+        success, message = disk.read_csv(os.path.join(self.base, 'missing.csv'))
+        self.assertFalse(success)
+        self.assertIn('missing.csv', message)
+
+    def test_an_empty_file_yields_no_rows(self):
+        self.assertEqual(disk.read_csv(self._write('', name='empty.csv')), (True, []))
+
+
+class TestUdevadm(unittest.TestCase):
+    PROPERTIES = 'DEVNAME=/dev/dm-0\nDM_NAME=rl-root\nID_FS_TYPE=xfs\n'
+
+    def _udevadm(self, device, prop, stdout=PROPERTIES, success=True):
+        with mock.patch.object(
+            disk.shell, 'shell_exec', return_value=(success, (stdout, '', 0))
+        ) as exec_mock:
+            result = disk.udevadm(device, prop)
+        return result, exec_mock
+
+    def test_reads_the_requested_property(self):
+        result, exec_mock = self._udevadm('/dev/mapper/rl-root', 'DEVNAME')
+        self.assertEqual(result, '/dev/dm-0')
+        # no --property=, so the option works on older systems too
+        argv = exec_mock.call_args[0][0]
+        self.assertEqual(argv[:3], ['udevadm', 'info', '--query=property'])
+
+    def test_an_unknown_property_is_empty(self):
+        self.assertEqual(self._udevadm('/dev/dm-0', 'NOSUCH')[0], '')
+
+    def test_a_path_outside_dev_is_refused(self):
+        # a crafted path must not reach udevadm
+        with mock.patch.object(disk.shell, 'shell_exec') as exec_mock:
+            self.assertEqual(disk.udevadm('/etc/passwd', 'DEVNAME'), '')
+        exec_mock.assert_not_called()
+
+    def test_a_failed_call_is_empty(self):
+        self.assertEqual(self._udevadm('/dev/dm-0', 'DEVNAME', success=False)[0], '')
+
+
+class TestBd2Dmd(unittest.TestCase):
+    def test_maps_a_device_mapper_device(self):
+        with mock.patch.object(
+            disk, 'read_file', return_value=(True, 'rl_rocky8-root\n')
+        ), mock.patch('os.path.islink', return_value=True):
+            self.assertEqual(disk.bd2dmd('dm-0'), '/dev/mapper/rl_rocky8-root')
+            # a full path works the same, only the basename is used
+            self.assertEqual(disk.bd2dmd('/dev/dm-0'), '/dev/mapper/rl_rocky8-root')
+
+    def test_a_plain_disk_has_no_mapped_name(self):
+        with mock.patch.object(disk, 'read_file', return_value=(False, 'no such file')):
+            self.assertEqual(disk.bd2dmd('sda'), '')
+
+    def test_a_name_without_a_mapper_link_is_empty(self):
+        with mock.patch.object(disk, 'read_file', return_value=(True, 'gone\n')), \
+             mock.patch('os.path.islink', return_value=False):
+            self.assertEqual(disk.bd2dmd('dm-9'), '')
+
+
+class TestGetRealDisks(unittest.TestCase):
+    MOUNTS = (
+        '/dev/mapper/rl-root / xfs rw 0 0\n'
+        '/dev/sda1 /boot xfs rw 0 0\n'
+        '/dev/loop0 /snap/core squashfs ro 0 0\n'
+        'proc /proc proc rw 0 0\n'
+        '/dev/mapper/rl-root /home xfs rw 0 0\n'
+    )
+
+    def _disks(self):
+        def fake_udevadm(_device, prop):
+            return {'DEVNAME': '/dev/dm-0', 'DM_NAME': ''}[prop]
+
+        with mock.patch.object(disk, 'read_file', return_value=(True, self.MOUNTS)), \
+             mock.patch.object(disk, 'udevadm', side_effect=fake_udevadm):
+            return disk.get_real_disks()
+
+    def test_resolves_the_mapper_name_to_its_block_device(self):
+        entry = next(d for d in self._disks() if d['bd'] == '/dev/dm-0')
+        self.assertEqual(entry['dmd'], '/dev/mapper/rl-root')
+
+    def test_several_mount_points_of_one_device_are_joined(self):
+        entry = next(d for d in self._disks() if d['bd'] == '/dev/dm-0')
+        self.assertEqual(entry['mp'], '/ /home')
+
+    def test_loop_devices_and_pseudo_filesystems_are_left_out(self):
+        devices = [d['bd'] for d in self._disks()]
+        self.assertNotIn('/dev/loop0', devices)
+        self.assertNotIn('proc', devices)
+
+    def test_a_plain_partition_carries_no_mapper_name(self):
+        entry = next(d for d in self._disks() if d['bd'] == '/dev/sda1')
+        self.assertEqual(entry['dmd'], '')
+
+
 class TestGetOwningPackage(unittest.TestCase):
     def test_rpm_answer_is_the_package_name(self):
         answer = (True, ('icinga-director-php-1.11.9-1.fc43.noarch\n', '', 0))
@@ -493,6 +627,21 @@ class TestShortenPath(unittest.TestCase):
 
     def test_relative_path(self):
         self.assertEqual(disk.shorten_path('relative/path/file'), 'r/p/file')
+
+    def test_max_len_truncates_the_middle(self):
+        self.assertEqual(
+            disk.shorten_path('/var/log/messages/very/long/path', max_len=12),
+            '/v/l.../path',
+        )
+
+    def test_without_truncate_the_path_only_abbreviates(self):
+        # the result may exceed max_len; the caller asked for no ellipsis
+        self.assertEqual(
+            disk.shorten_path(
+                '/var/log/messages/very/long/path', max_len=12, truncate=False
+            ),
+            '/v/l/m/v/l/path',
+        )
 
     def test_no_slash_passthrough(self):
         self.assertEqual(disk.shorten_path('index.php'), 'index.php')
