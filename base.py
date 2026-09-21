@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091801'
+__version__ = '2026092101'
 
 import math
 import numbers
@@ -433,6 +433,10 @@ def get_table(
     >>> data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]
     >>> cols = ['name', 'age']
     >>> print(get_table(data, cols))
+    Alice ! 30
+    Bob   ! 25
+
+    >>> print(get_table(data, cols, header=['name', 'age']))
     name  ! age
     ------+----
     Alice ! 30
@@ -554,14 +558,14 @@ def get_worst(*states):
 
     Examples
     --------
-    >>> get_worst(STATE_OK, STATE_WARNING)
-    STATE_WARNING
+    >>> get_worst(STATE_OK, STATE_WARN)
+    1
 
-    >>> get_worst(STATE_UNKNOWN, STATE_CRITICAL)
-    STATE_CRITICAL
+    >>> get_worst(STATE_UNKNOWN, STATE_CRIT)
+    2
 
-    >>> get_worst(STATE_OK, STATE_WARNING, STATE_CRITICAL)
-    STATE_CRITICAL
+    >>> get_worst(STATE_OK, STATE_WARN, STATE_CRIT)
+    2
     """
     states = [int(s) for s in states]
     if STATE_CRIT in states:
@@ -779,10 +783,7 @@ def _value2float(value):
     `_parse_range_atom()` reads a bound of `90%`.
     """
     if isinstance(value, (bytes, bytearray)):
-        try:
-            value = value.decode('utf-8')
-        except UnicodeDecodeError:
-            return None
+        value = txt.to_text(value, errors='strict_or_latin1')
     if isinstance(value, str):
         value = value.replace('%', '').strip()
     try:
@@ -995,7 +996,7 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
     Service is healthy|load=0.12;1.00;5.00
     (and exits with code 0)
 
-    >>> oao('password=secret123 found!', STATE_CRITICAL)
+    >>> oao('password=linuxfabrik found!', STATE_CRIT)
     password=****** found!
     (and exits with code 2)
 
@@ -1294,7 +1295,7 @@ def sort(array, reverse=True, sort_by_key=False):
     [('b', 1), ('a', 2)]
 
     >>> sort({'a': 2, 'B': 1}, sort_by_key=True)
-    [('a', 2), ('B', 1)]
+    [('B', 1), ('a', 2)]
     """
     if isinstance(array, dict):
         keyfunc = (lambda x: str(x[0]).lower()) if sort_by_key else (lambda x: x[1])
@@ -1331,8 +1332,8 @@ def state2str(state, empty_ok=True, prefix='', suffix=''):
 
     Examples
     --------
-    >>> lib.base.state2str(2)
-    '[CRIT]'
+    >>> state2str(2)
+    '[CRITICAL]'
 
     >>> state2str(0)
     ''

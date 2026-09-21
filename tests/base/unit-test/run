@@ -610,6 +610,29 @@ class TestMatchRange(unittest.TestCase):
         self.assertFalse(ok)
 
 
+class TestValueToFloat(unittest.TestCase):
+    """A reading reaches match_range() as whatever the source handed over."""
+
+    def test_reads_bytes(self):
+        self.assertEqual(base._value2float(b'12.5'), 12.5)
+
+    def test_reads_bytes_that_are_not_utf8(self):
+        # a sensor answering in Latin-1 must not make a readable number unreadable
+        self.assertEqual(base._value2float('90'.encode('latin-1')), 90.0)
+
+    def test_drops_a_percent_sign(self):
+        self.assertEqual(base._value2float(b'90%'), 90.0)
+        self.assertEqual(base._value2float('90%'), 90.0)
+
+    def test_text_that_is_no_number_is_none(self):
+        self.assertIsNone(base._value2float(b'\xff'))
+        self.assertIsNone(base._value2float('n/a'))
+        self.assertIsNone(base._value2float(None))
+
+    def test_nan_is_none(self):
+        self.assertIsNone(base._value2float(float('nan')))
+
+
 class TestMatchRangeUpstreamCorpus(unittest.TestCase):
     """The range assertions of `lib/tests/test_utils.c` in monitoring-plugins, the
     project that defines the range syntax. Its `parse_range_string()` and
