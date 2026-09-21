@@ -779,7 +779,7 @@ def _logout(args, session):
     Parameters
     ----------
     args : object
-        An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT`.
+        An object containing `URL`, `INSECURE`, `NO_PROXY`, `PROXY` and `TIMEOUT`.
     session : tuple (str, str, str)
         The `(iBaseToken, Cookie, deviceId)`
         triple to end.
@@ -842,6 +842,8 @@ def get_creds(args, force_relogin=False):
             unvalidated, so a firmware that knows further types works without a code change.
           - `INSECURE` (`bool`): Whether to disable SSL verification.
           - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `PROXY` (`str`, optional): Proxy to reach the target through, overriding the
+            proxy the environment names.
           - `TIMEOUT` (`int`): Request timeout in seconds.
           - `CACHE_EXPIRE` (`int`): Cache expiration time in minutes.
     force_relogin : bool, optional
@@ -1068,7 +1070,12 @@ def get_data(endpoint, args, max_attempts=3):
           - `DEVICE_ID` (`str`): Device ID. Optional; see `get_creds()`.
           - `INSECURE` (`bool`): Disable SSL verification.
           - `NO_PROXY` (`bool`): Ignore proxy settings.
+          - `PROXY` (`str`, optional): Proxy to reach the target through, overriding the
+            proxy the environment names.
           - `TIMEOUT` (`int`): Timeout for API requests.
+          - `CACHE_EXPIRE` (`int`): How long a session and a response stay cached, in
+            minutes. `0` switches caching off.
+          - `VERBOSE` (`int`, optional): Record every response for the consumer's output.
     max_attempts : int, optional
         How often to try before giving up. The default of `3` is what a monitoring run wants.
         Pass `1` to ask a question whose expected answer may well be an error, such as probing

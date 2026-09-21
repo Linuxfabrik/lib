@@ -37,6 +37,8 @@ def get_token(args):
           - `PASSWORD` (`str`): API Password.
           - `INSECURE` (`bool`): Whether to disable SSL verification.
           - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `PROXY` (`str`, optional): Proxy to reach the target through, overriding the
+            proxy the environment names.
           - `TIMEOUT` (`int`): Request timeout in seconds.
 
     Returns

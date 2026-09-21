@@ -59,6 +59,9 @@ def api_post(
         Disable SSL certificate verification. Defaults to `False`.
     no_proxy : bool, optional
         Bypass proxy. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Timeout for the request in seconds. Defaults to `3`.
 
@@ -252,6 +255,9 @@ def get_service(
         Disable SSL certificate verification. Defaults to `False`.
     no_proxy : bool, optional
         Ignore proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Defaults to `3`.
 
@@ -330,6 +336,9 @@ def remove_ack(
         Disable SSL certificate verification. Defaults to `False`.
     no_proxy : bool, optional
         Ignore proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Defaults to `3`.
 
@@ -389,6 +398,9 @@ def remove_downtime(
         Disable SSL certificate verification. Defaults to `False`.
     no_proxy : bool, optional
         Ignore proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Defaults to `3`.
 
@@ -563,6 +575,9 @@ def set_ack(
         Disable SSL certificate verification. Defaults to `False`.
     no_proxy : bool, optional
         Ignore proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Defaults to `3`.
 
@@ -645,6 +660,9 @@ def set_downtime(
         Disable SSL certificate verification. Defaults to `False`.
     no_proxy : bool, optional
         Ignore proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Defaults to `3`.
 

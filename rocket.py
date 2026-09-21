@@ -140,6 +140,9 @@ def get_groups_history(
         Allow insecure SSL connections. Defaults to `False`.
     no_proxy : bool, optional
         Bypass proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Defaults to `3`.
 
@@ -224,6 +227,9 @@ def get_rooms_get(
         Allow insecure SSL connections. Defaults to `False`.
     no_proxy : bool, optional
         Bypass proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Defaults to `3`.
 
@@ -314,6 +320,9 @@ def get_rooms_info(
         Allow insecure SSL connections. Defaults to `False`.
     no_proxy : bool, optional
         Bypass proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Defaults to `3`.
 
@@ -393,6 +402,9 @@ def get_stats(rc_url, auth_token, user_id, insecure=False, no_proxy=False, proxy
         Allow insecure SSL. Defaults to `False`.
     no_proxy : bool, optional
         Ignore proxy. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Timeout in seconds. Defaults to `3`.
 
@@ -456,6 +468,9 @@ def get_token(rc_url, user, password, insecure=False, no_proxy=False, proxy=None
         Allow insecure SSL. Defaults to `False`.
     no_proxy : bool, optional
         Ignore proxy. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Timeout in seconds. Defaults to `3`.
 
@@ -524,6 +539,9 @@ def send2webhook(rc_url, webhook, data, insecure=False, no_proxy=False, proxy=No
         Allow insecure SSL connections. Defaults to `False`.
     no_proxy : bool, optional
         Bypass any proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Defaults to `3`.
 
@@ -580,6 +598,9 @@ def send_message(
         Allow insecure SSL connections. Defaults to `False`.
     no_proxy : bool, optional
         Bypass any proxy settings. Defaults to `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Defaults to `3`.
 

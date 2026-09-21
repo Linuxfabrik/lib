@@ -605,7 +605,7 @@ def _logout(args, x_auth_token):
     Parameters
     ----------
     args : object
-        An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT`.
+        An object containing `URL`, `INSECURE`, `NO_PROXY`, `PROXY` and `TIMEOUT`.
     x_auth_token : str
         The session token to end.
 
@@ -657,6 +657,8 @@ def get_creds(args, force_relogin=False):
           - `SCOPE` (`str`): User type (`'0'` local user, `'1'` LDAP user).
           - `INSECURE` (`bool`): Whether to disable SSL verification.
           - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `PROXY` (`str`, optional): Proxy to reach the target through, overriding the
+            proxy the environment names.
           - `TIMEOUT` (`int`): Request timeout in seconds.
           - `CACHE_EXPIRE` (`int`): Cache expiration time in minutes.
     force_relogin : bool, optional
@@ -850,8 +852,10 @@ def get_data(
         ones most likely to be queried that way, but the second syntax is not limited to them,
         so check the endpoint's own description rather than assuming the general form.
     args : object
-        An object containing `URL`, `INSECURE`, `NO_PROXY` and `TIMEOUT` (plus the credentials read
-        by `get_creds()`).
+        An object containing `URL`, `INSECURE`, `NO_PROXY`, `PROXY`, `TIMEOUT`,
+        `CACHE_EXPIRE` (how long a session and a response stay cached, in minutes;
+        `0` switches caching off) and, optionally, `VERBOSE` (record every response
+        for the consumer's output), plus the credentials read by `get_creds()`.
     payload : dict, optional
         Request body. A truthy body turns the request into a `POST`; otherwise it is a `GET`.
     method : str, optional

@@ -600,9 +600,8 @@ def compare_github_refs(
         The ref to compare from, typically the installed tag.
     head : str
         The ref to compare to, typically a branch such as `main`.
-    insecure, no_proxy, timeout, header
-        See
-          `get_latest_version_from_github()`.
+    insecure, no_proxy, proxy, timeout, header
+        See `get_latest_version_from_github()`.
 
     Returns
     -------
@@ -1109,6 +1108,8 @@ def fetch_json(
 
     Parameters
     ----------
+    url, insecure, no_proxy, proxy, timeout, header, data, encoding, digest_auth_user, digest_auth_password, extended, http_version, tls_min, tls_max, method, response_on_error, cacert
+        See `fetch()`. `to_text` is not offered here, the JSON decoder needs a string.
     retries : int, optional
         Handed to `fetch()`, which repeats a request that
         failed. A body that arrived intact but holds no JSON is not a failed request and is
@@ -1178,7 +1179,10 @@ def get_latest_tag_from_github(
     release, where `get_latest_version_from_github()` answers with HTTP 404. GitHub
     returns the tags newest first, so the first entry is the newest one.
 
-    Takes the parameters of `get_latest_version_from_github()`.
+    Parameters
+    ----------
+    user, repo, insecure, no_proxy, proxy, timeout, header
+        See `get_latest_version_from_github()`.
 
     Returns
     -------
@@ -1247,6 +1251,9 @@ def get_latest_version_from_github(
     no_proxy : bool, optional
         Ignore the environment's proxy settings.
         Defaults to False.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Network timeout in seconds. Defaults to 8.
     header : dict, optional
@@ -1362,16 +1369,30 @@ def split_basic_auth(url):
 
     Pass the returned `url` and `headers` to `lib.url.fetch()` /
     `lib.url.fetch_json()` so a consumer can accept HTTP basic auth via
-    the URL (e.g. `https://user:secret@host/path`) instead of
+    the URL (e.g. `https://user:linuxfabrik@host/path`) instead of
     exposing separate `--username` / `--password` arguments.
 
+    Parameters
+    ----------
+    url : str
+        The URL, with or without a `user[:password]@` prefix in its netloc.
+
+    Returns
+    -------
+    tuple (str, dict)
+        The URL without the userinfo, and the `Authorization` header it stands
+        for, or an empty dict where the URL carried none.
+
+    Examples
+    --------
     >>> split_basic_auth('https://example.com/path')
     ('https://example.com/path', {})
-    >>> u, h = split_basic_auth('https://alice:secret@example.com/path')
+
+    >>> u, h = split_basic_auth('https://alice:linuxfabrik@example.com/path')
     >>> u
     'https://example.com/path'
     >>> h
-    {'Authorization': 'Basic YWxpY2U6c2VjcmV0'}
+    {'Authorization': 'Basic YWxpY2U6bGludXhmYWJyaWs='}
     """
     parsed = urllib.parse.urlparse(url)
     if not parsed.username:

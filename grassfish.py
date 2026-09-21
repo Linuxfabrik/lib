@@ -47,6 +47,9 @@ def fetch_json(
         If `True`, disables SSL verification. Default is `False`.
     no_proxy : bool, optional
         If `True`, bypass system proxy settings. Default is `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Request timeout in seconds. Default is `8`.
 

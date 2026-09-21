@@ -39,6 +39,8 @@ def get_data(args, uri=''):
           - `TOKEN` (`str`): API authentication token.
           - `INSECURE` (`bool`): Whether to disable SSL verification.
           - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `PROXY` (`str`, optional): Proxy to reach the target through, overriding the
+            proxy the environment names.
           - `TIMEOUT` (`int`): Request timeout in seconds.
           - `ALWAYS_OK` (`bool`): Whether to always exit cleanly even on errors.
     uri : str, optional

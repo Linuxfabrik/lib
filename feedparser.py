@@ -57,6 +57,9 @@ def fetch_soup(
         If `True`, disable SSL verification during download. Default is `False`.
     no_proxy : bool, optional
         If `True`, ignore any system proxy settings. Default is `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Timeout in seconds for the download request, per attempt. Default is `5`.
     encoding : str, optional
@@ -117,6 +120,9 @@ def parse(
         If `True`, disable SSL verification during download. Default is `False`.
     no_proxy : bool, optional
         If `True`, ignore any system proxy settings. Default is `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Timeout in seconds for the download request. Default is `5`.
     encoding : str, optional

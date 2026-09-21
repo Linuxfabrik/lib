@@ -33,6 +33,9 @@ def get_events(token, insecure=False, no_proxy=False, proxy=None, timeout=8):
         Disable SSL verification. Default is `False`.
     no_proxy : bool, optional
         Ignore proxy settings. Default is `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Timeout for the request in seconds. Default is 8.
 
@@ -92,6 +95,9 @@ def get_swiss_backup_products(
         Disable SSL verification. Default is `False`.
     no_proxy : bool, optional
         Ignore proxy settings. Default is `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Timeout for the request in seconds. Default is 8.
 
@@ -151,6 +157,9 @@ def get_swiss_backup_slots(
         Disable SSL verification. Default is `False`.
     no_proxy : bool, optional
         Ignore proxy settings. Default is `False`.
+    proxy : str, optional
+        Proxy to reach the target through, overriding the one the environment names.
+        Defaults to `None`, which leaves the choice to the environment.
     timeout : int, optional
         Timeout for the request in seconds. Default is 8.
 

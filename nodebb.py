@@ -27,7 +27,7 @@ def get_data(args, uri=''):
     ----------
     args : object
         An object containing the URL (`args.URL`), token (`args.TOKEN`), and
-        other options (e.g., `INSECURE`, `NO_PROXY`, `TIMEOUT`).
+        other options (e.g., `INSECURE`, `NO_PROXY`, `PROXY`, `TIMEOUT`).
     uri : str, optional
         The specific URI to append to the base URL. Defaults to an
         empty string.

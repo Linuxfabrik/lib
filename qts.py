@@ -44,6 +44,8 @@ def get_auth_sid(args):
           - `URL` (`str`): API base URL.
           - `INSECURE` (`bool`): Whether to allow insecure SSL connections.
           - `NO_PROXY` (`bool`): Whether to disable proxy usage.
+          - `PROXY` (`str`, optional): Proxy to reach the target through, overriding the
+            proxy the environment names.
           - `TIMEOUT` (`int`): Request timeout in seconds.
 
     Returns

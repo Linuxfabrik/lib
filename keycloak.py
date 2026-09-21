@@ -45,6 +45,8 @@ def discover_oidc_endpoints(args):
           - `REALM` (`str`): The Keycloak realm name.
           - `INSECURE` (`bool`): Whether to disable SSL verification.
           - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `PROXY` (`str`, optional): Proxy to reach the target through, overriding the
+            proxy the environment names.
           - `TIMEOUT` (`int`): Request timeout in seconds.
 
     Returns
@@ -88,6 +90,8 @@ def get_data(args, token_data, uri):
           - `URL` (`str`): Base URL of the Keycloak server.
           - `INSECURE` (`bool`): Whether to disable SSL verification.
           - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `PROXY` (`str`, optional): Proxy to reach the target through, overriding the
+            proxy the environment names.
           - `TIMEOUT` (`int`): Request timeout in seconds.
     token_data : dict
         A dictionary containing at least the `access_token`.
@@ -186,6 +190,8 @@ def obtain_admin_token(args, oidc_config):
           - `PASSWORD` (`str`): Admin password.
           - `INSECURE` (`bool`): Whether to disable SSL verification.
           - `NO_PROXY` (`bool`): Whether to ignore proxy settings.
+          - `PROXY` (`str`, optional): Proxy to reach the target through, overriding the
+            proxy the environment names.
           - `TIMEOUT` (`int`): Request timeout in seconds.
     oidc_config : dict
         OIDC discovery document containing endpoints (must have `token_endpoint`).

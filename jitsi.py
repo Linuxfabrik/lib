@@ -37,6 +37,8 @@ def get_data(args, _type='json'):
           - `TIMEOUT` (`int`): Request timeout in seconds.
           - `INSECURE` (`bool`): Disable SSL verification.
           - `NO_PROXY` (`bool`): Ignore proxy settings.
+          - `PROXY` (`str`, optional): Proxy to reach the target through, overriding the
+            proxy the environment names.
     _type : str, optional
         Either `'json'` for JSON parsing or anything else for raw fetch. Defaults to `'json'`.
 
