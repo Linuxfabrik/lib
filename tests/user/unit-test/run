@@ -196,6 +196,14 @@ class TestIdLookups(unittest.TestCase):
     def test_an_id_too_large_for_the_c_type_does_not_raise(self):
         # pwd.getpwuid() raises OverflowError rather than KeyError on these.
         self.assertEqual(user.get_uid_name(2**70), str(2**70))
+        self.assertEqual(user.get_gid_name(2**70), str(2**70))
+
+    def test_an_id_that_is_no_number_comes_back_unchanged(self):
+        # pwd.getpwuid() raises TypeError on these; a consumer that passed a name
+        # by mistake gets its own value back rather than an exception
+        self.assertEqual(user.get_uid_name('root'), 'root')
+        self.assertEqual(user.get_gid_name('x'), 'x')
+        self.assertEqual(user.get_uid_name(None), 'None')
 
     def test_a_host_without_an_account_database_falls_back_to_the_number(self):
         # Windows has neither pwd nor grp.

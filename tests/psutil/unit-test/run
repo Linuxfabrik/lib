@@ -81,6 +81,13 @@ class TestGetPartitions(unittest.TestCase):
         lib_psutil.get_partitions(include_all=True)
         self.mock_psutil._psplatform.disk_partitions.assert_called_once_with(True)
 
+    def test_ignore_and_include_all_together(self):
+        # a consumer watching every filesystem still wants its own exceptions gone
+        result = lib_psutil.get_partitions(['/boot'], include_all=True)
+        self.mock_psutil._psplatform.disk_partitions.assert_called_once_with(True)
+        self.assertNotIn('/boot', [p.mountpoint for p in result])
+        self.assertIn('/', [p.mountpoint for p in result])
+
     def test_the_blocking_lookups_are_skipped(self):
         # psutil.disk_partitions() looks up os.pathconf() per mount point, which never
         # returns on a network filesystem whose server is gone. The documented function

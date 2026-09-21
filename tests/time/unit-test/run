@@ -125,6 +125,13 @@ class TestTimezoneIndependent(unittest.TestCase):
 
     def test_get_timezone(self):
         self.assertEqual(str(t.get_timezone('UTC')), 'UTC')
+        self.assertEqual(str(t.get_timezone('Europe/Zurich')), 'Europe/Zurich')
+
+    def test_an_unknown_zone_falls_back_to_utc(self):
+        # a consumer passing a zone the host does not know must not take the check
+        # down over it
+        self.assertEqual(str(t.get_timezone('Not/AZone')), 'Etc/UTC')
+        self.assertEqual(str(t.get_timezone('')), 'Etc/UTC')
 
     def test_utc_offset_is_string(self):
         self.assertIsInstance(t.utc_offset(), str)
@@ -146,6 +153,26 @@ class TestMacro2Timestr(unittest.TestCase):
     def test_strftime_component_expands(self):
         expected = datetime.date.today().strftime('%Y') + '.log'
         self.assertEqual(t.macro2timestr('{%Y}.log', format='%Y%m%d'), expected)
+
+    def test_today_expands_to_the_current_date(self):
+        expected = datetime.date.today().strftime('%Y-%m-%d')
+        self.assertEqual(
+            t.macro2timestr('/var/log/app-{today}.log'),
+            f'/var/log/app-{expected}.log',
+        )
+
+    def test_yesterday_expands_to_the_day_before(self):
+        expected = (datetime.date.today() - datetime.timedelta(days=1)).strftime(
+            '%Y-%m-%d'
+        )
+        self.assertEqual(
+            t.macro2timestr('/var/log/app-{yesterday}.log'),
+            f'/var/log/app-{expected}.log',
+        )
+
+    def test_the_format_applies_to_the_macro_too(self):
+        expected = datetime.date.today().strftime('%Y%m%d')
+        self.assertEqual(t.macro2timestr('{today}', format='%Y%m%d'), expected)
 
 
 class TestBadInput(unittest.TestCase):

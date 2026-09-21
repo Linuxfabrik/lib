@@ -42,6 +42,20 @@ CPU_WITHOUT_FULL = 'some avg10=58.28 avg60=47.23 avg300=17.28 total=133653658\n'
 IRQ = 'full avg10=0.00 avg60=0.02 avg300=0.00 total=21113035\n'
 
 
+class TestIsEnabled(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix='lftest-psi-enabled-')
+        self.addCleanup(shutil.rmtree, self.root, True)
+
+    def test_a_kernel_that_accounts_for_nothing(self):
+        # without psi=1 the kernel creates no /proc/pressure at all
+        self.assertFalse(psi.is_enabled(root=self.root))
+
+    def test_a_kernel_that_keeps_the_statistics(self):
+        os.makedirs(os.path.join(self.root, 'proc/pressure'))
+        self.assertTrue(psi.is_enabled(root=self.root))
+
+
 class TestRead(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp(prefix='lftest-psi-')
@@ -175,6 +189,15 @@ class TestReport(unittest.TestCase):
     def test_a_window_the_reading_does_not_carry_is_left_out(self):
         states = psi.get_states(IRQ_READING, 'some', {'avg60': ('1', '2')})
         self.assertEqual(states, {})
+
+    def test_another_window_becomes_the_headline(self):
+        # a consumer watching a short burst passes window='avg10'
+        states = psi.get_states(BURST, 'full', {'avg10': ('40', '60')})
+        summary = psi.get_summary(
+            BURST, 'io', 'storage', ('some', 'full'), 'full', states, window='avg10'
+        )
+        self.assertIn('last ten seconds: some 95.0%, full 90.0%', summary)
+        self.assertNotIn('last minute', summary)
 
     def test_the_summary_names_the_window_it_judges(self):
         states = psi.get_states(BURST, 'full', {'avg60': ('40', '60')})
