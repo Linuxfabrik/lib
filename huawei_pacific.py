@@ -178,13 +178,18 @@ def format_responses():
 
     Examples
     --------
+    >>> record_response('cluster/servers', {'data': [{'id': 1}], 'result': {'code': 0}})
     >>> print(format_responses())
     ### GET cluster/servers
     {
       "data": [
-        ...
+        {
+          "id": 1
+        }
       ],
-      "result": {"code": 0}
+      "result": {
+        "code": 0
+      }
     }
     """
     blocks = []

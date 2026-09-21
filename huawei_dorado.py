@@ -307,13 +307,18 @@ def format_responses():
 
     Examples
     --------
+    >>> record_response('controller', {'data': [{'id': 1}], 'error': {'code': 0}})
     >>> print(format_responses())
     ### GET controller
     {
       "data": [
-        ...
+        {
+          "id": 1
+        }
       ],
-      "error": {"code": 0}
+      "error": {
+        "code": 0
+      }
     }
     """
     blocks = []
