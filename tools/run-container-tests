@@ -21,24 +21,88 @@ entry points (fast tests and container tests) are clearly separated.
 `tox` runs `tools/run-unit-tests --no-container` for multi-Python
 coverage; use this runner for a full integration sweep.
 
+Afterwards it removes what this run left behind. Each helper in
+`lib.lftest` stops the container it started, but a run that is killed or
+fails hard does not get that far, and the reaper that would normally catch
+it is off under rootless podman (see `lib.lftest.prepare_container_env()`).
+Without this, a container per aborted run stays on the host, holding its
+image, its volume and, for a database, a few hundred MB.
+
+Only this run's containers are removed. They are labelled with an id
+generated here and handed down through `LFTEST_RUN_ID`, so a second run on
+the same host, or a plugin suite from another repository, keeps its
+containers. Leftovers from an older run are not this run's business; list
+them with `podman ps --all --filter label=org.testcontainers=true`.
+
 Usage:
     tools/run-container-tests            # run all container tests
     tools/run-container-tests db_mysql   # run one module
+    tools/run-container-tests --keep     # leave the containers for inspection
 """
 
+import os
+import shutil
 import subprocess
 import sys
+import uuid
 
 import _common
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026092101'
+
+# Kept in step with `lib.lftest.RUN_ID_ENV` / `RUN_ID_LABEL`; the tools are
+# standalone scripts and do not import the library.
+RUN_ID_ENV = 'LFTEST_RUN_ID'
+RUN_ID_LABEL = 'ch.linuxfabrik.lftest.run'
+
+
+def remove_leftover_containers(run_id):
+    """Remove the containers this run started and did not get to stop.
+
+    Prints what it removed, so a container that had to be killed is visible
+    rather than silently disappearing.
+    """
+    engine = shutil.which('podman') or shutil.which('docker')
+    if not engine:
+        return
+    listing = subprocess.run(
+        [
+            engine,
+            'ps',
+            '--all',
+            '--filter',
+            f'label={RUN_ID_LABEL}={run_id}',
+            '--quiet',
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    leftovers = listing.stdout.split()
+    if not leftovers:
+        return
+    print(f'Removing {len(leftovers)} container(s) this run left behind.')
+    subprocess.run(
+        [engine, 'rm', '--force', '--volumes', *leftovers],
+        capture_output=True,
+        check=False,
+    )
 
 
 def main():
-    runner = _common.TOOLS_DIR / 'run-unit-tests'
-    argv = [sys.executable, str(runner), '--only-container', *sys.argv[1:]]
+    keep = '--keep' in sys.argv
+    argv = [
+        sys.executable,
+        str(_common.TOOLS_DIR / 'run-unit-tests'),
+        '--only-container',
+        *[arg for arg in sys.argv[1:] if arg != '--keep'],
+    ]
+    run_id = uuid.uuid4().hex
+    os.environ[RUN_ID_ENV] = run_id
     result = subprocess.run(argv, check=False)
+    if not keep:
+        remove_leftover_containers(run_id)
     return result.returncode
 
 

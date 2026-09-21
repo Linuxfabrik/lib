@@ -100,6 +100,13 @@ def attach_each(test_class, items, action, id_func=str):
 # `tools/run-unit-tests --no-container`.
 NO_CONTAINER_ENV = 'LFTEST_NO_CONTAINER'
 
+# Set by a runner that cleans up after itself, see `tools/run-container-tests`.
+# Every container started while it is set carries it as a label, so the runner
+# can remove what this run started without touching a container that another run
+# on the same host is using.
+RUN_ID_ENV = 'LFTEST_RUN_ID'
+RUN_ID_LABEL = 'ch.linuxfabrik.lftest.run'
+
 
 def prepare_container_env():
     """Point testcontainers at rootless podman, unless the caller said otherwise.
@@ -453,6 +460,9 @@ def run_container(
     from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
     c = DockerContainer(image)
+    run_id = os.environ.get(RUN_ID_ENV)
+    if run_id:
+        c.with_kwargs(labels={RUN_ID_LABEL: run_id})
     if env:
         for key, value in env.items():
             c.with_env(key, value)
