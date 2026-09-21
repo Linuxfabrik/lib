@@ -633,33 +633,3 @@ def number_unit_method(arg, unit='%', method='USED'):
         method = method_part
 
     return number, unit.upper(), method.upper()
-
-
-def str_or_none(arg):
-    """Converts an input argument into a string or returns None.
-
-    Parameters
-    ----------
-    arg : any
-        The input argument.
-
-    Returns
-    -------
-    str or None
-
-    Examples
-    --------
-    >>> str_or_none(123)
-    '123'
-
-    >>> str_or_none('none')
-    None
-    """
-    if arg is None:
-        return None
-    if isinstance(arg, str):
-        if arg.strip().lower() == 'none':
-            return None
-        return arg
-
-    return str(arg)

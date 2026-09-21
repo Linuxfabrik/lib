@@ -93,9 +93,6 @@ class TestOrNone(unittest.TestCase):
         self.assertEqual(args.int_or_none('5'), 5)
         self.assertIsNone(args.int_or_none('none'))
 
-    def test_str_or_none(self):
-        self.assertEqual(args.str_or_none('x'), 'x')
-        self.assertIsNone(args.str_or_none('none'))
 
 class TestLoadSecret(unittest.TestCase):
     def _write(self, content):
