@@ -21,7 +21,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082503'
+__version__ = '2026092101'
 
 
 def attach_each(test_class, items, action, id_func=str):
@@ -99,6 +99,32 @@ def attach_each(test_class, items, action, id_func=str):
 # Set by a runner that wants a fast pass without containers, see
 # `tools/run-unit-tests --no-container`.
 NO_CONTAINER_ENV = 'LFTEST_NO_CONTAINER'
+
+
+def prepare_container_env():
+    """Point testcontainers at rootless podman, unless the caller said otherwise.
+
+    testcontainers-python reads `DOCKER_HOST` and nothing else, so a host that
+    runs podman rather than docker has to be told where its socket is. It also
+    starts a reaper container (Ryuk) that waits for a published port, which never
+    becomes reachable under rootless podman: the test then fails minutes later
+    with `TimeoutError: container did not become running`, naming neither podman
+    nor the reaper. Every context manager in this module stops what it started,
+    so the reaper is not what keeps the host clean here.
+
+    Called on import, so it takes effect however a test was started: through
+    `tools/run-unit-tests` or by running `unit-test/run` directly. Values the
+    caller already set are kept, which is how a docker host or a running reaper
+    stays in charge.
+    """
+    if 'DOCKER_HOST' not in os.environ:
+        os.environ['DOCKER_HOST'] = os.environ.get(
+            'CONTAINER_HOST', f'unix:///run/user/{os.getuid()}/podman/podman.sock'
+        )
+    os.environ.setdefault('TESTCONTAINERS_RYUK_DISABLED', 'true')
+
+
+prepare_container_env()
 
 
 def attach_tests(test_class, tests, plugin_attr='check'):

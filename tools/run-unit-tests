@@ -85,22 +85,6 @@ def is_container_test(module_dir):
     return any(sig in content for sig in CONTAINER_TEST_SIGNATURES)
 
 
-def ensure_podman_env():
-    """Pre-flight environment setup for testcontainers under rootless podman.
-
-    Accepts `CONTAINER_HOST` or `DOCKER_HOST` and always populates
-    `DOCKER_HOST` (the only variable testcontainers-python reads). Defaults
-    to the rootless podman socket and disables the Ryuk reaper, which hangs
-    on rootless podman. Already-set values are preserved.
-    """
-    container_host = os.environ.get('CONTAINER_HOST') or os.environ.get('DOCKER_HOST')
-    if container_host is None:
-        container_host = f'unix:///run/user/{os.getuid()}/podman/podman.sock'
-    os.environ['DOCKER_HOST'] = container_host
-    if 'TESTCONTAINERS_RYUK_DISABLED' not in os.environ:
-        os.environ['TESTCONTAINERS_RYUK_DISABLED'] = 'true'
-
-
 def parse_args():
     """Parse command line arguments using argparse."""
     parser = argparse.ArgumentParser(
@@ -160,8 +144,9 @@ def main():
 
     if args.no_container:
         os.environ[NO_CONTAINER_ENV] = '1'
-    elif any(is_container_test(m) for m in modules):
-        ensure_podman_env()
+    # A container test needs testcontainers pointed at the host's podman socket,
+    # with the reaper off. `lib.lftest` does that on import, so it also holds for
+    # a test started by hand rather than through this tool.
 
     # Isolate temp state under a unique per-invocation directory so several
     # tools/run-* sessions can run in parallel without trampling each other's
