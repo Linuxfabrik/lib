@@ -17,18 +17,20 @@ This is one typical use case of this library (taken from `disk-io`):
 >>> lib.base.coe(lib.db_sqlite.create_index(conn, 'name'))  # optional
 
 >>> lib.base.coe(lib.db_sqlite.insert(conn, data))
->>> lib.base.coe(lib.db_sqlite.cut(conn, max=args.COUNT * len(disks)))
+>>> lib.base.coe(lib.db_sqlite.cut(conn, _max=args.COUNT * len(disks)))
 >>> lib.base.coe(lib.db_sqlite.commit(conn))
 
->>> result = lib.base.coe(lib.db_sqlite.select(conn,
-        'SELECT * FROM perfdata WHERE name = :name ORDER BY timestamp DESC LIMIT 2',
-        {'name': disk}
+>>> result = lib.base.coe(lib.db_sqlite.select(
+...     conn,
+...     'SELECT * FROM perfdata WHERE name = :name ORDER BY timestamp DESC LIMIT 2',
+...     {'name': disk},
+... ))
 
 >>> lib.db_sqlite.close(conn)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091601'
+__version__ = '2026092101'
 
 import csv
 import functools
@@ -138,7 +140,7 @@ def __filter_str(s, charclass='a-zA-Z0-9_'):
 
     Examples
     --------
-    >>> __filter_str('user@example.ch')
+    >>> __filter_str('user@example.com')
     'userexamplech'
 
     >>> __filter_str('project-123', charclass='a-zA-Z0-9')
@@ -787,9 +789,8 @@ def connect(path='', filename='', timeout=5.0, in_memory=False):
     --------
     >>> success, conn = connect()
     >>> if success:
-    >>> # Use conn
-    ...     pass
-    >>> else:
+    ...     pass  # use conn
+    ... else:
     ...     print(conn)
 
     >>> success, conn = connect(in_memory=True)
@@ -1192,7 +1193,7 @@ def delete(conn, sql, data=None, delete_db_on_operational_error=True):
         Use placeholders (`:key`) for parameterized queries.
     data : dict, optional
         Dictionary of parameters to bind to the SQL statement.
-        Defaults to an empty dict (no parameters).
+        Defaults to `None` (no parameters).
     delete_db_on_operational_error : bool, optional
         If `True`, deletes the database file when the on-disk database turns out
         to be unusable (e.g. a schema mismatch between releases).
@@ -2174,6 +2175,8 @@ def regexp(expr, item):
       lazy quantifiers, matches a newline with `.`, and recognizes `$` only at the very end of a
       pattern. A pattern written for one of the two does not necessarily mean the same in the
       other.
+    - A BLOB is decoded as UTF-8 and, on any invalid byte, as Latin-1, which maps every byte
+      to a character of its own, so a pattern still matches the bytes that are stored.
     - Arguments that are not TEXT (INTEGER, REAL, BLOB) are converted to text first, both the
       pattern and the value, the same way SQLite's own `regexp()` implementation applies
       `sqlite3_value_text()` to both of its arguments. Without that conversion, matching against
@@ -2211,11 +2214,11 @@ def regexp(expr, item):
         return None
     # Both arguments get the same treatment, so `__compile_regex()` is always keyed on a string.
     if isinstance(expr, bytes):
-        expr = expr.decode('utf-8', 'replace')
+        expr = txt.to_text(expr, errors='strict_or_latin1')
     elif not isinstance(expr, str):
         expr = str(expr)
     if isinstance(item, bytes):
-        item = item.decode('utf-8', 'replace')
+        item = txt.to_text(item, errors='strict_or_latin1')
     elif not isinstance(item, str):
         item = str(item)
     return __compile_regex(expr).search(item) is not None
@@ -2388,7 +2391,7 @@ def select(
         Use placeholders (`:key`) for parameterized queries.
     data : dict, optional
         Dictionary of parameters to bind to the SQL query.
-        Defaults to an empty dict (no parameters).
+        Defaults to `None` (no parameters).
     fetchone : bool, optional
         If `True`, fetch only the first row.
         If `False` (default), fetch all rows.

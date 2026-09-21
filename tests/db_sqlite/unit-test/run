@@ -274,6 +274,70 @@ class TestCrud(unittest.TestCase):
         _, rows = db.select(self.conn, 'SELECT n FROM perfdata ORDER BY n')
         self.assertEqual([r['n'] for r in rows], [7, 8, 9])
 
+    def test_cut_per_sensor_keeps_the_newest_rows_of_every_sensor(self):
+        # `cut()` trims the table as a whole, so the sensor written most often
+        # evicts the history of the others. This keeps `_max` rows of each.
+        db.create_table(
+            self.conn,
+            'name TEXT, n INTEGER NOT NULL, timestamp INTEGER NOT NULL',
+            table='t',
+        )
+        rows = [('busy', n, n) for n in range(6)] + [('quiet', 0, 100)]
+        for name, n, stamp in rows:
+            db.insert(self.conn, {'name': name, 'n': n, 'timestamp': stamp}, table='t')
+        db.commit(self.conn)
+        self.assertEqual(
+            db.cut_per_sensor(self.conn, 'name', _max=2, table='t'), (True, True)
+        )
+        db.commit(self.conn)
+        self.assertEqual(
+            self._sensor_rows(), [('busy', 4), ('busy', 5), ('quiet', 0)]
+        )
+
+    def test_cut_per_sensor_breaks_a_timestamp_tie_by_rowid(self):
+        db.create_table(
+            self.conn,
+            'name TEXT, n INTEGER NOT NULL, timestamp INTEGER NOT NULL',
+            table='t',
+        )
+        for n in range(3):
+            db.insert(self.conn, {'name': 'eth0', 'n': n, 'timestamp': 7}, table='t')
+        db.commit(self.conn)
+        db.cut_per_sensor(self.conn, 'name', _max=1, table='t')
+        db.commit(self.conn)
+        # the row inserted last wins the tie
+        self.assertEqual(self._sensor_rows(), [('eth0', 2)])
+
+    def test_cut_per_sensor_refuses_a_max_below_one(self):
+        db.create_table(
+            self.conn,
+            'name TEXT, n INTEGER NOT NULL, timestamp INTEGER NOT NULL',
+            table='t',
+        )
+        success, message = db.cut_per_sensor(self.conn, 'name', _max=0, table='t')
+        self.assertFalse(success)
+        self.assertIn('at least 1', message)
+
+    def test_cut_per_sensor_refuses_an_unknown_sensor_column(self):
+        db.create_table(
+            self.conn,
+            'name TEXT, n INTEGER NOT NULL, timestamp INTEGER NOT NULL',
+            table='t',
+        )
+        success, message = db.cut_per_sensor(self.conn, 'nosuch', _max=2, table='t')
+        self.assertFalse(success)
+        self.assertIn('No such column', message)
+
+    def test_cut_per_sensor_on_an_empty_table_succeeds(self):
+        db.create_table(
+            self.conn,
+            'name TEXT, n INTEGER NOT NULL, timestamp INTEGER NOT NULL',
+            table='t',
+        )
+        self.assertEqual(
+            db.cut_per_sensor(self.conn, 'name', _max=2, table='t'), (True, True)
+        )
+
     def _sensor_rows(self, table='t'):
         _, rows = db.select(
             self.conn, f'SELECT name, n FROM "{table}" ORDER BY name, n'
@@ -913,6 +977,15 @@ class TestPureHelpers(unittest.TestCase):
         self.assertTrue(db.regexp(9, 9000))
         self.assertTrue(db.regexp(b'^ab', 'abc'))
         self.assertFalse(db.regexp(7, 9000))
+
+    def test_regexp_decodes_a_blob_that_is_not_utf8(self):
+        # A BLOB holding Latin-1 text is not valid UTF-8. Decoding it with a
+        # replacement character would lose the byte and with it the match, so it
+        # falls back to Latin-1, which maps every byte to a character of its own.
+        blob = 'Gr\u00fc\u00dfe'.encode('latin-1')
+        self.assertTrue(db.regexp('Gr..e', blob))
+        self.assertTrue(db.regexp('\u00fc', blob))
+        self.assertTrue(db.regexp('Gr\u00fc\u00dfe', 'Gr\u00fc\u00dfe'.encode('utf-8')))
 
     def test_sha1sum_docstring_example(self):
         sha1sum = getattr(db, '__sha1sum')
