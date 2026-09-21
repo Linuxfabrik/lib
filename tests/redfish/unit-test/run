@@ -204,6 +204,7 @@ def _args(**over):
 
 
 TOKEN_KEY = 'redfish-https://203.0.113.10-linuxfabrik-token'
+SESSION_KEY = 'redfish-https://203.0.113.10-linuxfabrik-session'
 
 
 class TestGetAuthHeader(unittest.TestCase):
@@ -396,10 +397,112 @@ class TestSessionLifecycle(unittest.TestCase):
             {
                 'uri': 'https://203.0.113.10/redfish/v1/SessionService/Sessions/7',
                 'token': 'new-token',
+                'timeout': 300,
             },
         )
         # kept for as long as the controller keeps the session, not just as long as the token
         self.assertEqual(stored[0][0][2], 1000 + 300)
+
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_an_unknown_session_timeout_is_remembered_as_zero(
+        self, url_mock, cache_mock, time_mock
+    ):
+        # a controller that does not report its SessionTimeout leaves nothing to
+        # re-arm by
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.side_effect = [
+            (
+                True,
+                {
+                    'response_header': {
+                        'x-auth-token': 'new-token',
+                        'location': '/redfish/v1/SessionService/Sessions/7',
+                    }
+                },
+            ),
+            (True, {}),
+        ]
+        redfish.get_auth_header(_args(), cache_expire=300)
+        stored = [
+            c for c in cache_mock.set.call_args_list if c[0][0].endswith('-session')
+        ]
+        self.assertEqual(json.loads(stored[0][0][1])['timeout'], 0)
+
+    def _reuse(self, session_entry, timeout=8):
+        """Hand out the cached token 'cached-token' at time 2000, with `session_entry`
+        as the stored session, and return the header, the cache writes and the
+        requests."""
+
+        def _get(key, **kwargs):
+            return 'cached-token' if key == TOKEN_KEY else session_entry
+
+        cache_patch = mock.patch.object(redfish, 'cache')
+        url_patch = mock.patch.object(redfish, 'url')
+        time_patch = mock.patch.object(redfish, 'time')
+        with cache_patch as cache_mock, url_patch as url_mock, time_patch as time_mock:
+            cache_mock.get.side_effect = _get
+            time_mock.now.return_value = 2000
+            header = redfish.get_auth_header(_args(TIMEOUT=timeout), cache_expire=300)
+            writes = [c[0] for c in cache_mock.set.call_args_list]
+            return header, writes, url_mock.method_calls
+
+    @staticmethod
+    def _session(**over):
+        entry = {
+            'uri': 'https://203.0.113.10/redfish/v1/SessionService/Sessions/7',
+            'token': 'cached-token',
+            'timeout': 300,
+        }
+        entry.update(over)
+        return json.dumps(entry)
+
+    def test_a_reused_token_is_kept_alive(self):
+        # the controller restarts its inactivity timeout with every request the token
+        # carries, so both cache entries start over (#350)
+        session = self._session()
+        header, writes, requests = self._reuse(session)
+        self.assertEqual(header, {'X-Auth-Token': 'cached-token'})
+        self.assertEqual(
+            writes,
+            [
+                (TOKEN_KEY, 'cached-token', 2000 + 300 - 8),
+                (SESSION_KEY, session, 2000 + 300),
+            ],
+        )
+        self.assertEqual(requests, [])
+
+    def test_the_margin_never_drops_below_one_second(self):
+        _, writes, _ = self._reuse(self._session(timeout=5), timeout=8)
+        self.assertEqual(writes[0], (TOKEN_KEY, 'cached-token', 2000 + 1))
+
+    def test_a_timeout_stored_as_text_still_counts(self):
+        _, writes, _ = self._reuse(self._session(timeout='300'))
+        self.assertEqual(writes[0], (TOKEN_KEY, 'cached-token', 2000 + 292))
+
+    def test_nothing_is_re_armed_without_a_matching_session(self):
+        # another session's token, no known timeout, an entry written before the timeout
+        # was stored, no entry at all, and whatever else the cache might hold: the token
+        # keeps the lifetime it got at login
+        cases = {
+            'another token': self._session(token='other-token'),
+            'timeout zero': self._session(timeout=0),
+            'negative timeout': self._session(timeout=-5),
+            'timeout not a number': self._session(timeout='abc'),
+            'entry without timeout': json.dumps({'uri': 'u', 'token': 'cached-token'}),
+            'no entry': False,
+            'no JSON': 'x{',
+            'a JSON list': '[]',
+            'a JSON string': '"cached-token"',
+        }
+        for label, entry in cases.items():
+            with self.subTest(label):
+                header, writes, requests = self._reuse(entry)
+                self.assertEqual(header, {'X-Auth-Token': 'cached-token'})
+                self.assertEqual(writes, [])
+                self.assertEqual(requests, [])
 
     @mock.patch.object(redfish, 'cache')
     @mock.patch.object(redfish, 'url')

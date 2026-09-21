@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092102'
 
 import atexit
 import base64
@@ -1399,18 +1399,57 @@ def _drop_previous_session(args, cache_expire, cache_filename):
         _delete_session(previous.get('uri', ''), previous.get('token', ''), args)
 
 
-def _remember_session(args, session_url, token, ttl, cache_expire, cache_filename):
+def _extend_session(args, token_key, token, cache_filename):
+    """Re-arm the cache lifetime of a session token that is about to be used again.
+
+    A controller restarts a session's inactivity timeout with every request that
+    presents its token (DSP0266, "Session lifetime"), so a token handed out for use
+    stays valid for another `SessionTimeout` from now. Without re-arming, the cache
+    would drop a token whose session is still alive, and the next login would open a new
+    session for nothing.
+
+    Only a token whose session entry (see `_remember_session()`) names this very token
+    and a known `SessionTimeout` is re-armed. Anything else keeps the lifetime it got at
+    login. Should the session be gone after all, the request comes back "401
+    Unauthorized" and `_renew_auth()` logs in again.
+    """
+    session_key = f'redfish-{args.URL}-{args.USERNAME}-session'
+    stored = cache.get(session_key, filename=cache_filename)
+    if not stored:
+        return
+    try:
+        session = json.loads(stored)
+        session_timeout = int(session.get('timeout') or 0)
+    except (AttributeError, TypeError, ValueError):
+        return
+    if session.get('token') != token or session_timeout <= 0:
+        return
+    token_ttl = max(session_timeout - args.TIMEOUT, 1)
+    now = time.now()
+    cache.set(token_key, token, now + token_ttl, filename=cache_filename)
+    cache.set(session_key, stored, now + session_timeout, filename=cache_filename)
+    _trace(
+        'auth', f'the session token was used again, keeping it for another {token_ttl}s'
+    )
+
+
+def _remember_session(
+    args, session_url, token, session_timeout, ttl, cache_expire, cache_filename
+):
     """Remember a session so the next run can hand it back (see `_drop_previous_session()`).
 
     Stored under its own key rather than with the token, because the two have different lifetimes:
     the token entry expires when the token should stop being reused, while this one has to outlive
     it, up to the point where the controller would drop the session on its own.
+
+    The controller's `SessionTimeout` is stored along with it (`0` when unknown), so
+    `_extend_session()` can keep both entries alive while the session is in use.
     """
     if not (cache_expire and session_url and token):
         return
     cache.set(
         f'redfish-{args.URL}-{args.USERNAME}-session',
-        json.dumps({'uri': session_url, 'token': token}),
+        json.dumps({'uri': session_url, 'token': token, 'timeout': session_timeout}),
         time.now() + ttl,
         filename=cache_filename,
     )
@@ -1440,6 +1479,12 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
     and capping it there meant a new login (and a new session) every `cache_expire` seconds. When
     caching is off (`cache_expire` is `0`) the SessionService is not probed, since there is no
     lifetime to bound.
+
+    Every time a cached token is handed out, its lifetime starts over, because the
+    controller restarts the session's inactivity timeout with each request the token
+    carries. Consumers that run more often than the `SessionTimeout` therefore keep a
+    single session for good instead of logging in once per `SessionTimeout`. See
+    `_extend_session()`.
 
     Should the controller drop the session anyway (a reboot, an evicted session pool, an admin
     clearing sessions), the next request comes back "401 Unauthorized". That is handled where the
@@ -1490,6 +1535,7 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
         cached_token = cache.get(token_key, filename=cache_filename)
         if cached_token:
             _trace('auth', 'reusing the session token from the cache, no login needed')
+            _extend_session(args, token_key, cached_token, cache_filename)
             return {'X-Auth-Token': cached_token}
 
     # About to create a session, so hand back the one a previous run left open first. A
@@ -1582,6 +1628,7 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
                 args,
                 session_url,
                 token,
+                session_timeout,
                 session_timeout or token_ttl,
                 cache_expire,
                 cache_filename,

@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lftest.py: the container helpers skip a test instead of failing it when testcontainers is missing or `LFTEST_NO_CONTAINER` is set
 * mail.py: `send()` returns the answer of the server as text, and explains a certificate that does not verify or a port that does not speak TLS
 * psutil.py: `get_partitions()` also returns the mount options, takes `include_all` to list every mounted filesystem instead of the physical devices only, and no longer waits on the filesystems it lists
-* redfish.py: `get_expand_suffix()` asks for a single `$expand` level, which already inlines every member of a collection, instead of the deepest one a controller offers, which made its answers many times larger
+* redfish.py: `get_expand_suffix()` asks for a single `$expand` level, which already inlines every member of a collection, instead of the deepest one a controller offers, which made its answers many times larger. `get_auth_header()` restarts the lifetime of a cached session token each time it hands the token out, so a controller sees one login instead of one per `SessionTimeout` ([#350](https://github.com/Linuxfabrik/lib/issues/350))
 * url.py: `fetch()` says what is wrong with a certificate that does not verify, and points out a plaintext request sent to a port that speaks TLS. Installing the package pulls in httpx 0.26 or newer, which `fetch()` needs. A response body larger than 64 MiB is refused
 
 ### Fixed
