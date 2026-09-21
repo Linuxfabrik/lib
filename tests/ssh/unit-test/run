@@ -73,6 +73,12 @@ class TestBuildOptions(unittest.TestCase):
         )
 
 
+class TestBuildOptionsIpv6(unittest.TestCase):
+    def test_ipv6_asks_for_the_v6_family(self):
+        self.assertIn('-6', ssh.build_options(ipv6=True))
+        self.assertNotIn('-6', ssh.build_options())
+
+
 class TestTarget(unittest.TestCase):
     def test_without_username(self):
         self.assertEqual(ssh.target('myhost'), 'myhost')
@@ -153,6 +159,50 @@ class TestScp(unittest.TestCase):
         self.assertEqual(cmd[-2:], ['/local/dir', 'myhost:/remote/dir'])
 
 
+class TestScpKeywords(unittest.TestCase):
+    """The keyword paths scp() shares with run(), asserted on their own."""
+
+    def _capture(self):
+        captured = {}
+
+        def fake(cmd, env=None, timeout=None):
+            captured.update(cmd=cmd, env=env, timeout=timeout)
+            return (True, ('', '', 0))
+
+        return captured, fake
+
+    def test_port_uses_the_uppercase_flag(self):
+        # scp spells the port -P where ssh spells it -p
+        captured, fake = self._capture()
+        with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+            ssh.scp('myhost', '/l', '/r', port=2222)
+        self.assertIn('-P', captured['cmd'])
+        self.assertEqual(captured['cmd'][captured['cmd'].index('-P') + 1], '2222')
+        self.assertNotIn('-p', captured['cmd'])
+
+    def test_password_goes_into_the_environment(self):
+        captured, fake = self._capture()
+        with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+            ssh.scp('myhost', '/l', '/r', password='linuxfabrik', username='root')
+        self.assertEqual(captured['cmd'][:3], ['sshpass', '-e', 'scp'])
+        self.assertEqual(captured['env'], {'SSHPASS': 'linuxfabrik'})
+        self.assertNotIn('linuxfabrik', captured['cmd'])
+        self.assertEqual(captured['cmd'][-1], 'root@myhost:/r')
+
+    def test_timeout_is_handed_to_shell_exec(self):
+        captured, fake = self._capture()
+        with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+            ssh.scp('myhost', '/l', '/r', timeout=42)
+        self.assertEqual(captured['timeout'], 42)
+
+    def test_rejects_option_like_host(self):
+        with mock.patch('lib.ssh.shell.shell_exec') as m:
+            ok, msg = ssh.scp('-oProxyCommand=evil', '/l', '/r')
+        self.assertFalse(ok)
+        self.assertIn('-oProxyCommand=evil', msg)
+        m.assert_not_called()
+
+
 class TestRsync(unittest.TestCase):
     def test_archive_rsh_and_sudo(self):
         captured = {}
@@ -170,6 +220,32 @@ class TestRsync(unittest.TestCase):
         self.assertIn('--rsh', cmd)
         self.assertEqual(cmd[cmd.index('--rsh') + 1], 'ssh -q')
         self.assertEqual(cmd[-2:], ['/local/dir/', 'myhost:/remote/dir/'])
+
+    def test_port_and_password_reach_the_transport(self):
+        captured = {}
+        with mock.patch(
+            'lib.ssh.shell.shell_exec',
+            side_effect=lambda cmd, env=None, timeout=None: (
+                captured.update(cmd=cmd, env=env, timeout=timeout)
+                or (True, ('', '', 0))
+            ),
+        ):
+            ssh.rsync(
+                'myhost', '/l', '/r', password='linuxfabrik', port=2222, timeout=17
+            )
+        cmd = captured['cmd']
+        self.assertEqual(cmd[:3], ['sshpass', '-e', 'rsync'])
+        # the port travels inside --rsh, rsync has no port option of its own
+        self.assertEqual(cmd[cmd.index('--rsh') + 1], 'ssh -p 2222')
+        self.assertEqual(captured['env'], {'SSHPASS': 'linuxfabrik'})
+        self.assertNotIn('linuxfabrik', cmd)
+        self.assertEqual(captured['timeout'], 17)
+
+    def test_rejects_option_like_username(self):
+        with mock.patch('lib.ssh.shell.shell_exec') as m:
+            ok, _msg = ssh.rsync('myhost', '/l', '/r', username='-x')
+        self.assertFalse(ok)
+        m.assert_not_called()
 
     def test_no_sudo_omits_rsync_path(self):
         captured = {}

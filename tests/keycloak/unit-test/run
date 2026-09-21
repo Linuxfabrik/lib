@@ -710,6 +710,32 @@ class TestObtainAdminToken(unittest.TestCase):
 # -----------------------------------------------------------------------------
 
 
+class TestGetServerInfoSection(unittest.TestCase):
+    """Which section a Keycloak account gets to see, and what it is told when not."""
+
+    def test_returns_the_section(self):
+        self.assertEqual(
+            keycloak.get_server_info_section({'memoryInfo': {'total': 1}}, 'memoryInfo'),
+            (True, {'total': 1}),
+        )
+
+    def test_a_missing_section_names_the_role_to_grant(self):
+        success, message = keycloak.get_server_info_section({}, 'memoryInfo')
+        self.assertFalse(success)
+        self.assertIn('memoryInfo', message)
+        self.assertIn('manage-realm', message)
+        self.assertIn('master', message)
+
+    def test_an_empty_section_counts_as_missing(self):
+        # an account without the role gets the key with nothing in it
+        success, _ = keycloak.get_server_info_section({'memoryInfo': {}}, 'memoryInfo')
+        self.assertFalse(success)
+
+    def test_another_section_is_named_in_its_own_message(self):
+        _, message = keycloak.get_server_info_section({}, 'cpuInfo')
+        self.assertIn('cpuInfo', message)
+
+
 class TestTypicalUsageFlow(unittest.TestCase):
     def test_happy_path_chains_three_calls(self):
         oidc = load_fixture('openid-configuration.json')

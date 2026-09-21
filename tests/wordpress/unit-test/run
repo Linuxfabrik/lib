@@ -303,6 +303,25 @@ class TestWordPress(unittest.TestCase):
             },
         )
 
+    def test_get_plugin_slugs_reads_the_plugin_uri(self):
+        # hello.php lives on wordpress.org as hello-dolly, so the directory name
+        # and the slug the directory answers to come apart
+        slugs = wordpress.get_plugin_slugs(self.wp)
+        self.assertEqual(slugs['hello'], 'hello-dolly')
+
+    def test_get_plugin_slugs_falls_back_to_the_directory_name(self):
+        # akismet.com is not wordpress.org/plugins/, so the directory name stands
+        slugs = wordpress.get_plugin_slugs(self.wp)
+        self.assertEqual(slugs['akismet'], 'akismet')
+
+    def test_get_plugin_slugs_covers_the_same_plugins_as_get_plugins(self):
+        self.assertEqual(
+            set(wordpress.get_plugin_slugs(self.wp)), set(wordpress.get_plugins(self.wp))
+        )
+
+    def test_get_plugin_slugs_on_missing_installation(self):
+        self.assertEqual(wordpress.get_plugin_slugs(self.empty), {})
+
     def test_get_plugins_ignores_placeholder(self):
         self.assertNotIn('index', wordpress.get_plugins(self.wp))
 

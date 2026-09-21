@@ -950,6 +950,28 @@ class TestSyslogPrefix(unittest.TestCase):
             'systemd',
         )
 
+    def test_the_syslog_prefix_is_stripped(self):
+        # the substitution itself, not just the line it leaves alone
+        self.assertEqual(
+            lib.logsource.strip_syslog_prefix(
+                'Aug 28 19:34:14 host sshd[123]: Failed password'
+            ),
+            'Failed password',
+        )
+
+    def test_an_iso_prefix_is_stripped_too(self):
+        self.assertEqual(
+            lib.logsource.strip_syslog_prefix(
+                '2026-08-28T17:16:18+02:00 host app[9]: boom'
+            ),
+            'boom',
+        )
+
+    def test_a_line_without_a_prefix_is_returned_as_it_is(self):
+        self.assertEqual(
+            lib.logsource.strip_syslog_prefix('no prefix at all'), 'no prefix at all'
+        )
+
     def test_a_line_an_application_wrote_itself_has_none(self):
         # PHP-FPM and the database servers write their own timestamp into a file
         # of their own, and nothing stands in front of it.
