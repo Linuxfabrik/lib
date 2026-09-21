@@ -256,6 +256,17 @@ class TestRequestConstruction(unittest.TestCase):
         _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
         self.assertIs(m.call_args.kwargs['no_proxy'], True)
 
+    def test_passes_proxy(self):
+        args = make_args(PROXY='http://proxy.example.com:3128')
+        _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))
+        self.assertEqual(
+            m.call_args.kwargs['proxy'], 'http://proxy.example.com:3128'
+        )
+
+    def test_proxy_defaults_to_none(self):
+        _, _, m, _ = run_get_data(make_args(), fetch_return=(True, ok(1)))
+        self.assertIsNone(m.call_args.kwargs['proxy'])
+
     def test_passes_timeout(self):
         args = make_args(TIMEOUT=42)
         _, _, m, _ = run_get_data(args, fetch_return=(True, ok(1)))

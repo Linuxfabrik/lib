@@ -97,6 +97,7 @@ def make_args(
     timeout=8,
     insecure=False,
     no_proxy=False,
+    proxy=None,
 ):
     """Build an argparse.Namespace-like object as get_data() expects.
 
@@ -111,6 +112,7 @@ def make_args(
     ns.TIMEOUT = timeout
     ns.INSECURE = insecure
     ns.NO_PROXY = no_proxy
+    ns.PROXY = proxy
     return ns
 
 
@@ -218,6 +220,27 @@ class TestRequestConstruction(unittest.TestCase):
             self.assertEqual(kwargs['timeout'], 30)
             self.assertIs(kwargs['insecure'], True)
             self.assertIs(kwargs['no_proxy'], True)
+
+    def test_proxy_forwarded(self):
+        args = make_args(proxy='http://proxy.example.com:3128')
+        with mock.patch.object(
+            jitsi.url, 'fetch_json', return_value=(True, FETCH_JSON_EXTENDED_OK)
+        ) as fj:
+            jitsi.get_data(args)
+            self.assertEqual(
+                fj.call_args.kwargs['proxy'], 'http://proxy.example.com:3128'
+            )
+
+    def test_without_a_proxy_attribute_the_call_still_works(self):
+        # a consumer that predates the proxy option hands over an args object
+        # without one, which getattr() has to survive
+        args = make_args()
+        del args.PROXY
+        with mock.patch.object(
+            jitsi.url, 'fetch_json', return_value=(True, FETCH_JSON_EXTENDED_OK)
+        ) as fj:
+            jitsi.get_data(args)
+            self.assertIsNone(fj.call_args.kwargs['proxy'])
 
     def test_default_kwargs_forwarded(self):
         args = make_args()  # timeout=8, insecure=False, no_proxy=False

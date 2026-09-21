@@ -242,6 +242,18 @@ class TestGetEvents(InfomaniakTestCase):
         self.assertTrue(kwargs['no_proxy'])
         self.assertEqual(kwargs['timeout'], 42)
 
+    def test_proxy_forwarded(self):
+        m = self.patch_fetch(ok(EVENTS_SUCCESS))
+        infomaniak.get_events('TOK', proxy='http://proxy.example.com:3128')
+        self.assertEqual(
+            m.call_args.kwargs['proxy'], 'http://proxy.example.com:3128'
+        )
+
+    def test_proxy_defaults_to_none(self):
+        m = self.patch_fetch(ok(EVENTS_SUCCESS))
+        infomaniak.get_events('TOK')
+        self.assertIsNone(m.call_args.kwargs['proxy'])
+
     def test_transport_failure_propagated(self):
         self.patch_fetch(fail('HTTP 500 Internal Server Error'))
         success, result = infomaniak.get_events('TOK')

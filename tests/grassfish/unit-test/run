@@ -177,6 +177,14 @@ class TestFetchJsonRequestBuilding(unittest.TestCase):
         captured, _ = self._call(no_proxy=True)
         self.assertIs(captured['kw']['no_proxy'], True)
 
+    def test_proxy_forwarded(self):
+        captured, _ = self._call(proxy='http://proxy.example.com:3128')
+        self.assertEqual(captured['kw']['proxy'], 'http://proxy.example.com:3128')
+
+    def test_proxy_defaults_to_none(self):
+        captured, _ = self._call()
+        self.assertIsNone(captured['kw']['proxy'])
+
     def test_timeout_forwarded(self):
         captured, _ = self._call(timeout=30)
         self.assertEqual(captured['kw']['timeout'], 30)

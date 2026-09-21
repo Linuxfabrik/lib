@@ -81,12 +81,14 @@ class Args:
         token='linuxfabrik',
         insecure=False,
         no_proxy=False,
+        proxy=None,
         timeout=8,
     ):
         self.URL = url
         self.TOKEN = token
         self.INSECURE = insecure
         self.NO_PROXY = no_proxy
+        self.PROXY = proxy
         self.TIMEOUT = timeout
 
 
@@ -261,6 +263,18 @@ class TestGetDataRequestShape(NodebbTestCase):
         self.assertFalse(kwargs['insecure'])
         self.assertFalse(kwargs['no_proxy'])
         self.assertEqual(kwargs['timeout'], 8)
+
+    def test_proxy_forwarded(self):
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(Args(proxy='http://proxy.example.com:3128'), uri='/api')
+        self.assertEqual(
+            m.call_args.kwargs['proxy'], 'http://proxy.example.com:3128'
+        )
+
+    def test_proxy_defaults_to_none(self):
+        m = self.patch_fetch(ok(POSTS_SUCCESS))
+        nodebb.get_data(Args(), uri='/api')
+        self.assertIsNone(m.call_args.kwargs['proxy'])
 
     def test_custom_kwargs_forwarded(self):
         m = self.patch_fetch(ok(POSTS_SUCCESS))

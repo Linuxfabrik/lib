@@ -234,6 +234,24 @@ class TestGetGroupsHistory(unittest.TestCase):
         self.assertIs(captured['kw']['no_proxy'], False)
         self.assertEqual(captured['kw']['timeout'], 3)
 
+    def test_proxy_forwarded(self):
+        captured, ctx = patch_fetch((True, {'ok': 1}))
+        with ctx:
+            rocket.get_groups_history(
+                BASE_URL,
+                AUTH_TOKEN,
+                USER_ID,
+                room_id='ABC123',
+                proxy='http://proxy.example.com:3128',
+            )
+        self.assertEqual(captured['kw']['proxy'], 'http://proxy.example.com:3128')
+
+    def test_proxy_defaults_to_none(self):
+        captured, ctx = patch_fetch((True, {'ok': 1}))
+        with ctx:
+            rocket.get_groups_history(BASE_URL, AUTH_TOKEN, USER_ID, room_id='ABC123')
+        self.assertIsNone(captured['kw']['proxy'])
+
     def test_insecure_no_proxy_timeout_forwarded(self):
         captured, ctx = patch_fetch((True, {'ok': 1}))
         with ctx:
