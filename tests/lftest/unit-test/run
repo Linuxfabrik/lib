@@ -16,6 +16,8 @@ helpers (run_container, run_mysql_compatible*, network) need podman and are
 exercised by the modules that use them, not here, so this stays a fast test.
 """
 
+import contextlib
+import io
 import os
 import shutil
 import sys
@@ -104,9 +106,11 @@ class TestTestText(unittest.TestCase):
         self.assertEqual(lftest.test_text(['stdout/empty']), '')
 
     def test_missing_fixture_aborts(self):
-        with self.assertRaises(SystemExit) as ctx:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as ctx:
             lftest.test_text(['stdout/does-not-exist'])
         self.assertEqual(ctx.exception.code, 3)
+        self.assertIn('Test fixture not found: "stdout/does-not-exist"', out.getvalue())
 
 
 class TestTestJson(unittest.TestCase):
@@ -134,14 +138,18 @@ class TestTestJson(unittest.TestCase):
         )
 
     def test_a_fixture_that_is_no_json_aborts(self):
-        with self.assertRaises(SystemExit) as ctx:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as ctx:
             lftest.test_json(['stdout/broken-json'])
         self.assertEqual(ctx.exception.code, 3)
+        self.assertIn('does not hold valid JSON', out.getvalue())
 
     def test_missing_fixture_aborts(self):
-        with self.assertRaises(SystemExit) as ctx:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as ctx:
             lftest.test_json(['stdout/does-not-exist'])
         self.assertEqual(ctx.exception.code, 3)
+        self.assertIn('Test fixture not found: "stdout/does-not-exist"', out.getvalue())
 
 
 class TestContainerRuntimeGuard(unittest.TestCase):

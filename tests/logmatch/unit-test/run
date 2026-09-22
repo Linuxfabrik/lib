@@ -133,6 +133,7 @@ class TestConnect(LogmatchTestCase):
     def test_without_an_instance(self):
         success, conn = lib.logmatch.connect('probe', path=self.tmpdir)
         self.assertTrue(success, msg=conn)
+        self.connections.append(conn)
         self.assertTrue(
             os.path.isfile(self.db_path('linuxfabrik-monitoring-plugins-probe.db'))
         )

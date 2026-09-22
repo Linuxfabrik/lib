@@ -227,11 +227,12 @@ class TestContainer(unittest.TestCase):
 
 def _check_image(test, containerfile):
     path = os.path.join(CONTAINERFILES_DIR, containerfile)
-    print(f'\n=== Testing {containerfile} ===', flush=True)
     with lib.lftest.run_mysql_compatible_from_containerfile(path) as (
         _container,
         defaults_file,
     ):
+        # only once the container runs: without a container runtime the helper skips
+        print(f'\n=== Testing {containerfile} ===', flush=True)
         ok, conn = db_mysql.connect({'defaults_file': defaults_file})
         test.assertTrue(ok, conn)
         try:
@@ -280,7 +281,7 @@ def _check_image(test, containerfile):
             test.assertGreaterEqual(server_version, (10, 0, 0))
 
             # root (via the defaults file) has the SELECT smoke-test privilege.
-            ok, _ = db_mysql.check_select_privileges(conn)
+            ok, _ = db_mysql.check_privileges(conn)
             test.assertTrue(ok)
 
             test.assertEqual(db_mysql.commit(conn), (True, None))

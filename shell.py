@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092201'
 
 
 import os
@@ -304,23 +304,29 @@ def shell_exec(
             # must not become a second wait without an end. A command that blocks on
             # storage that has gone away - `lvs` while one PV does not answer, `df` on a
             # dead network mount - sits in an uninterruptible sleep, where it takes the
-            # signal and still cannot act on it. Its pipes stay open for as long as it
-            # lives, so an unbounded read here waits for the storage rather than for the
-            # timeout the caller asked for. Verified on Rocky 10 / kernel 6.12 against a
-            # suspended device-mapper device: without the bound below, a call with
+            # signal and still cannot act on it. Verified on Rocky 10 / kernel 6.12
+            # against a suspended device-mapper device: without a bound, a call with
             # `timeout=5` never returned. Give the kill a moment to land and hand the
             # timeout back either way; the orphan ends when its storage answers again.
-            p.communicate(timeout=_KILL_GRACE)
+            #
+            # Wait for the process, not for its pipes. A grandchild the command left
+            # behind keeps the pipes open after the command itself is gone, and
+            # reading them until the end left the killed command unreaped: a zombie
+            # for as long as the caller runs. `wait()` with a timeout polls the process
+            # alone (`waitpid(WNOHANG)`, CPython `Popen._wait()`), so it is bounded the
+            # same way.
+            p.wait(timeout=_KILL_GRACE)
         except subprocess.TimeoutExpired:
-            # Let go of the pipes rather than leaving them open for the lifetime of the
-            # caller. The orphan writing into them gets EPIPE the next time it runs,
-            # which is one more thing that ends it.
-            for pipe in (p.stdin, p.stdout, p.stderr):
-                try:
-                    if pipe is not None:
-                        pipe.close()
-                except OSError:
-                    pass
+            pass
+        # Let go of the pipes rather than leaving them open for the lifetime of the
+        # caller. An orphan writing into them gets EPIPE the next time it runs, which
+        # is one more thing that ends it.
+        for pipe in (p.stdin, p.stdout, p.stderr):
+            try:
+                if pipe is not None:
+                    pipe.close()
+            except OSError:
+                pass
         return False, f'Timeout after {timeout} seconds.'
 
     # Decode the captured bytes. On Windows a program picks the code page of its

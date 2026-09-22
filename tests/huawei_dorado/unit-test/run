@@ -504,9 +504,11 @@ class TestAssertOk(unittest.TestCase):
         self.assertIsNone(huawei.assert_ok({'error': {'code': '0'}}, 'the fans'))
 
     def test_error_aborts(self):
-        with self.assertRaises(SystemExit) as ctx:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as ctx:
             huawei.assert_ok({'error': {'code': -401}}, 'the fans')
         self.assertEqual(ctx.exception.code, STATE_UNKNOWN)
+        self.assertIn('Failed to query the fans (code -401)', out.getvalue())
 
     def test_error_text_names_the_query_and_the_appliance_reason(self):
         with (
@@ -532,8 +534,10 @@ class TestAssertOk(unittest.TestCase):
     def test_empty_response_aborts(self):
         # get_data() always answers with an envelope, so nothing at all means the check
         # never reached the appliance.
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei.assert_ok({}, 'the fans')
+        self.assertIn('Got no response from the appliance', out.getvalue())
 
     def test_recorded_responses_are_appended_to_the_abort(self):
         # Nothing is recorded unless the caller asked for verbose output, and an abort is
@@ -559,13 +563,17 @@ class TestAssertOk(unittest.TestCase):
     def test_scalar_error_aborts_without_a_type_error(self):
         # A firmware answering with a bare code rather than the documented object must end
         # in a clean UNKNOWN, not in an AttributeError inside the check.
-        with self.assertRaises(SystemExit) as ctx:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as ctx:
             huawei.assert_ok({'error': -401}, 'the fans')
         self.assertEqual(ctx.exception.code, STATE_UNKNOWN)
+        self.assertIn('Failed to query the fans (code -401)', out.getvalue())
 
     def test_missing_error_object_aborts(self):
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei.assert_ok({'data': []}, 'the fans')
+        self.assertIn('Failed to query the fans (code None)', out.getvalue())
 
 
 class TestAsCode(unittest.TestCase):
@@ -1008,9 +1016,11 @@ class TestGetCreds(HuaweiHttpTestBase):
         # Malformed / empty body: no token to work with. Aborting here beats
         # caching a None that only fails later, in an unrelated place.
         self.fetch_json.return_value = (True, {})
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei.get_creds(self.args)
         self.assertFalse(self.cache_set.called)
+        self.assertIn('returned NoneType instead of', out.getvalue())
 
     def test_rejected_login_aborts_without_caching(self):
         # A wrong password answers HTTP 200 with a non-zero error code.
@@ -1023,15 +1033,19 @@ class TestGetCreds(HuaweiHttpTestBase):
                 'response_header': {},
             },
         )
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei.get_creds(self.args)
         self.assertFalse(self.cache_set.called)
+        self.assertIn('Invalid password', out.getvalue())
 
     def test_login_failure_exits_via_coe(self):
         # url.fetch_json returns (False, error); base.coe must abort the run.
         self.fetch_json.return_value = (False, 'connection refused')
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei.get_creds(self.args)
+        self.assertIn('connection refused', out.getvalue())
 
 
 # ---------------------------------------------------------------------------

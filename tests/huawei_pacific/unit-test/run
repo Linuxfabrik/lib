@@ -476,13 +476,17 @@ class TestAssertOk(unittest.TestCase):
         )
 
     def test_error_aborts(self):
-        with self.assertRaises(SystemExit) as ctx:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as ctx:
             huawei_pacific.assert_ok({'result': {'code': -401}}, 'the fans')
         self.assertEqual(ctx.exception.code, STATE_UNKNOWN)
+        self.assertIn('Failed to query the fans (code -401)', out.getvalue())
 
     def test_bare_error_of_the_older_endpoints_aborts(self):
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei_pacific.assert_ok({'result': 1}, 'the disks')
+        self.assertIn('Failed to query the disks (code 1)', out.getvalue())
 
     def test_error_text_names_the_query_and_the_appliance_reason(self):
         with (
@@ -506,12 +510,16 @@ class TestAssertOk(unittest.TestCase):
         self.assertIn('log in again', printed)
 
     def test_empty_response_aborts(self):
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei_pacific.assert_ok({}, 'the fans')
+        self.assertIn('Got no response from the appliance', out.getvalue())
 
     def test_missing_result_aborts(self):
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei_pacific.assert_ok({'data': []}, 'the fans')
+        self.assertIn('Failed to query the fans (code None)', out.getvalue())
 
     def test_recorded_responses_are_appended_to_the_abort(self):
         # Nothing is recorded unless the caller asked for verbose output, and an abort is
@@ -756,14 +764,18 @@ class TestGetClusterNodes(unittest.TestCase):
 
     def test_a_node_in_the_cluster_without_an_address_aborts(self):
         # covering part of the cluster and reporting OK would be the worse answer
-        with self.assertRaises(SystemExit) as raised:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as raised:
             self._nodes([{'name': 'node01', 'in_cluster': True}])
         self.assertEqual(raised.exception.code, STATE_UNKNOWN)
+        self.assertIn('report no management IP address', out.getvalue())
 
     def test_no_node_at_all_aborts(self):
-        with self.assertRaises(SystemExit) as raised:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as raised:
             self._nodes([])
         self.assertEqual(raised.exception.code, STATE_UNKNOWN)
+        self.assertIn('reported no node with a management IP address', out.getvalue())
 
 
 class TestPureHelpers(unittest.TestCase):
@@ -924,8 +936,10 @@ class TestGetCreds(PacificHttpTestBase):
 
     def test_login_failure_exits_via_coe(self):
         self.fetch_json.return_value = (False, 'connection refused')
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei_pacific.get_creds(self.args)
+        self.assertIn('connection refused', out.getvalue())
 
     def test_rejected_login_aborts_without_caching(self):
         # A wrong password, an expired password or a locked account answer
@@ -940,28 +954,36 @@ class TestGetCreds(PacificHttpTestBase):
                 }
             },
         )
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei_pacific.get_creds(self.args)
         self.assertFalse(self.cache_set.called)
+        self.assertIn('The user name or password is incorrect', out.getvalue())
 
     def test_empty_login_response_aborts(self):
         self.fetch_json.return_value = (True, {})
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei_pacific.get_creds(self.args)
         self.assertFalse(self.cache_set.called)
+        self.assertIn('no session token returned', out.getvalue())
 
     def test_non_object_login_response_aborts(self):
         # A JSON array parses fine but has no .get(), so without a type check this
         # would raise an AttributeError and print a traceback instead of a status.
         self.fetch_json.return_value = (True, ['unexpected'])
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei_pacific.get_creds(self.args)
+        self.assertIn('returned list instead of', out.getvalue())
 
     def test_expired_password_aborts(self):
         self.fetch_json.return_value = self._login_with_password_status(3)
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             huawei_pacific.get_creds(self.args)
         self.assertFalse(self.cache_set.called)
+        self.assertIn('succeeded, but the account is', out.getvalue())
 
     def test_initial_and_must_change_password_still_log_in(self):
         # Neither REST Interface Reference says these states restrict a session, and

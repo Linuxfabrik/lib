@@ -11,6 +11,8 @@
 """Unit tests for lib.args (argparse type/validator helpers)."""
 
 import argparse
+import contextlib
+import io
 import os
 import sys
 import tempfile
@@ -127,16 +129,22 @@ class TestLoadSecret(unittest.TestCase):
     def test_empty_file_aborts(self):
         # An empty secret would be sent to the remote end as an empty password, which
         # drives the account towards its lockout threshold.
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             args.load_secret(self._write(''))
+        self.assertIn('The file given in --password-file is empty', out.getvalue())
 
     def test_file_holding_only_a_newline_aborts(self):
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             args.load_secret(self._write('\n'))
+        self.assertIn('The file given in --password-file is empty', out.getvalue())
 
     def test_unreadable_file_aborts(self):
-        with self.assertRaises(SystemExit):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
             args.load_secret('/nonexistent/linuxfabrik')
+        self.assertIn('Cannot read the file given in --password-file', out.getvalue())
 
 
 class TestNumberUnitMethod(unittest.TestCase):
