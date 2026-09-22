@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092201'
+__version__ = '2026092202'
 
 import base64
 import json
@@ -1236,6 +1236,7 @@ def fetch_json(
     cacert=None,
     max_bytes=DEFAULT_MAX_BYTES,
     retry_if=None,
+    allow_empty=False,
 ):
     """
     Fetch JSON from a URL with optional POST, authentication and SSL/TLS handling.
@@ -1250,6 +1251,11 @@ def fetch_json(
     ----------
     url, insecure, no_proxy, proxy, timeout, header, data, encoding, digest_auth_user, digest_auth_password, extended, http_version, tls_min, tls_max, method, response_on_error, cacert, max_bytes, retry_if
         See `fetch()`. `to_text` is not offered here, the JSON decoder needs a string.
+    allow_empty : bool, optional
+        If True, an empty body is no error but decodes to `None` (with `extended`, in
+        `response_json`), for an endpoint that answers "204 No Content" or leaves out a
+        document it is supposed to send. Defaults to False, which reports an empty body
+        as undecodable like any other body that holds no JSON.
     retries : int, optional
         Handed to `fetch()`, which repeats a request that
         failed. A body that arrived intact but holds no JSON is not a failed request and is
@@ -1297,12 +1303,14 @@ def fetch_json(
     if not success:
         return (False, jsonst)
     try:
-        if extended:
-            jsonst['response_json'] = json.loads(jsonst['response'])
-            return (True, jsonst)
-        return (True, json.loads(jsonst))
+        body = jsonst['response'] if extended else jsonst
+        document = None if allow_empty and not body.strip() else json.loads(body)
     except Exception as e:
         return (False, f'{e}. No JSON object could be decoded.')
+    if extended:
+        jsonst['response_json'] = document
+        return (True, jsonst)
+    return (True, document)
 
 
 def get_latest_tag_from_github(

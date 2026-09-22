@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092103'
+__version__ = '2026092201'
 
 import atexit
 import base64
@@ -1576,10 +1576,16 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
         f'no usable session token in the cache, logging in with up to {login_retries + 1} '
         f'attempt(s)',
     )
-    # no cached token: create a new session via the SessionService
+    # No cached token: create a new session via the SessionService. The token and the
+    # session's URL come from the X-Auth-Token and Location headers, which is all a
+    # client needs (DSP0266 1.21.0, 13.3.4.2 "Session login"). The body with the new
+    # Session resource is required there too, but not every service sends it: the DMTF
+    # Redfish Mockup Server answers "204 No Content". Treating that as a failed login
+    # would fall back to HTTP Basic although the headers carry a valid session.
     success, result = _fetch_json(
         'login',
         f'{args.URL}/redfish/v1/SessionService/Sessions',
+        allow_empty=True,
         data={'UserName': args.USERNAME, 'Password': args.PASSWORD},
         encoding='serialized-json',
         extended=True,

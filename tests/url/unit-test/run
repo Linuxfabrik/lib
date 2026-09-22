@@ -1803,6 +1803,50 @@ class TestRetryIf(unittest.TestCase):
 
 
 @skip_without_httpx
+class TestAllowEmpty(unittest.TestCase):
+    """`fetch_json(allow_empty=True)` reads an empty body as `None` instead of failing,
+    for an endpoint that answers "204 No Content"."""
+
+    def _fetch(self, status, body, **kwargs):
+        def handler(request):
+            return httpx.Response(
+                status,
+                headers={'X-Auth-Token': 'linuxfabrik'},
+                stream=httpx.ByteStream(body),
+            )
+
+        with patch_mock_transport(handler), no_timing_transport():
+            return url.fetch_json('https://h/', timeout=1, **kwargs)
+
+    def test_an_empty_body_fails_by_default(self):
+        success, message = self._fetch(204, b'')
+        self.assertFalse(success)
+        self.assertIn('No JSON object could be decoded', message)
+
+    def test_an_empty_body_is_none_when_allowed(self):
+        for body in (b'', b'  \n'):
+            with self.subTest(body=body):
+                self.assertEqual(self._fetch(204, body, allow_empty=True), (True, None))
+
+    def test_the_extended_answer_keeps_status_and_headers(self):
+        success, result = self._fetch(204, b'', allow_empty=True, extended=True)
+        self.assertTrue(success)
+        self.assertIsNone(result['response_json'])
+        self.assertEqual(result['status_code'], 204)
+        self.assertEqual(result['response_header']['x-auth-token'], 'linuxfabrik')
+
+    def test_a_body_that_is_not_json_still_fails(self):
+        success, message = self._fetch(200, b'nope', allow_empty=True)
+        self.assertFalse(success)
+        self.assertIn('No JSON object could be decoded', message)
+
+    def test_a_json_body_is_unaffected(self):
+        self.assertEqual(
+            self._fetch(200, b'{"a": 1}', allow_empty=True), (True, {'a': 1})
+        )
+
+
+@skip_without_httpx
 class TestResponseSizeLimit(unittest.TestCase):
     """`fetch()` refuses a response body larger than `max_bytes`, counted after
     decompression, so a hostile server cannot exhaust the caller's memory. Runs the

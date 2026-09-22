@@ -12,7 +12,7 @@ tbd
 
 ### Added
 
-* url.py: `fetch()` and `fetch_json()` take `retry_if`
+* url.py: `fetch()` and `fetch_json()` take `retry_if`, `fetch_json()` takes `allow_empty`
 
 ### Changed
 
@@ -21,6 +21,7 @@ tbd
 
 ### Fixed
 
+* redfish.py: `get_auth_header()` opens a session when the login answers without a body, as the DMTF Redfish Mockup Server does, instead of falling back to HTTP Basic
 * shell.py: `shell_exec()` no longer leaves a command it killed on timeout behind as a zombie
 
 

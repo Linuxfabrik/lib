@@ -573,6 +573,52 @@ class TestSessionLifecycle(unittest.TestCase):
                 self.assertEqual(writes, [])
                 self.assertEqual(requests, [])
 
+    @mock.patch.object(redfish, 'time')
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_a_login_answered_without_a_body_still_opens_a_session(
+        self, url_mock, cache_mock, time_mock
+    ):
+        # "204 No Content" with the token and the session in the headers, as the DMTF
+        # mockup answers: the headers are all a client needs (DSP0266, 13.3.4.2)
+        cache_mock.get.return_value = False
+        time_mock.now.return_value = 1000
+        url_mock.fetch_json.side_effect = [
+            (
+                True,
+                {
+                    'response': '',
+                    'response_json': None,
+                    'status_code': 204,
+                    'response_header': {
+                        'x-auth-token': 'new-token',
+                        'location': '/redfish/v1/SessionService/Sessions/7',
+                    },
+                },
+            ),
+            (True, {'SessionTimeout': 300}),
+        ]
+        header = redfish.get_auth_header(_args(TIMEOUT=8), cache_expire=3600)
+        self.assertEqual(header, {'X-Auth-Token': 'new-token'})
+        self.assertTrue(url_mock.fetch_json.call_args_list[0][1]['allow_empty'])
+        stored = [
+            c for c in cache_mock.set.call_args_list if c[0][0].endswith('-session')
+        ]
+        self.assertEqual(
+            json.loads(stored[0][0][1])['uri'],
+            'https://203.0.113.10/redfish/v1/SessionService/Sessions/7',
+        )
+
+    @mock.patch.object(redfish, 'cache')
+    @mock.patch.object(redfish, 'url')
+    def test_only_the_login_accepts_an_empty_body(self, url_mock, cache_mock):
+        cache_mock.get.return_value = False
+        url_mock.fetch_json.side_effect = [SESSION_CREATED, (True, {})]
+        redfish.get_auth_header(_args(), cache_expire=300)
+        login, probe = url_mock.fetch_json.call_args_list
+        self.assertTrue(login[1].get('allow_empty'))
+        self.assertNotIn('allow_empty', probe[1])
+
     @mock.patch.object(redfish, 'cache')
     @mock.patch.object(redfish, 'url')
     def test_previous_session_is_handed_back_before_a_new_login(
