@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+tbd
+
+
+## [v8.2.0] - 2026-09-22
+
 ### Added
 
 * huawei_dorado.py: `get_expboard_model()` and `get_hypermetro_domain_running_status()`
@@ -849,7 +854,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v8.1.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v8.2.0...HEAD
+[v8.2.0]: https://github.com/Linuxfabrik/lib/compare/v8.1.0...v8.2.0
 [v8.1.0]: https://github.com/Linuxfabrik/lib/compare/v8.0.0...v8.1.0
 [v8.0.0]: https://github.com/Linuxfabrik/lib/compare/v7.1.0...v8.0.0
 [v7.1.0]: https://github.com/Linuxfabrik/lib/compare/v7.0.0...v7.1.0
