@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 tbd
 
+
+## [v8.1.0] - 2026-09-22
+
 ### Added
 
 * url.py: `fetch()` and `fetch_json()` take `retry_if`, `fetch_json()` takes `allow_empty`
@@ -835,7 +838,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v8.0.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v8.1.0...HEAD
+[v8.1.0]: https://github.com/Linuxfabrik/lib/compare/v8.0.0...v8.1.0
 [v8.0.0]: https://github.com/Linuxfabrik/lib/compare/v7.1.0...v8.0.0
 [v7.1.0]: https://github.com/Linuxfabrik/lib/compare/v7.0.0...v7.1.0
 [v7.0.0]: https://github.com/Linuxfabrik/lib/compare/v6.1.0...v7.0.0
