@@ -14,6 +14,7 @@ import argparse
 import contextlib
 import io
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -86,8 +87,10 @@ class TestHelpFormatter(unittest.TestCase):
             description='word ' * 30,
             formatter_class=args.HelpFormatter,
         )
+        # Measured as it shows: from Python 3.14 on, argparse colours the help when it
+        # writes to a terminal, and the escape sequences take no room on screen.
         for line in self.format_help(parser, 40).splitlines():
-            self.assertLessEqual(len(line), 40)
+            self.assertLessEqual(len(re.sub(r'\x1b\[[0-9;]*m', '', line)), 40)
 
 
 class TestOrNone(unittest.TestCase):
