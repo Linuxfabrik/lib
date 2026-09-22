@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092201'
 
 import json
 from time import sleep as _sleep
@@ -1244,6 +1244,40 @@ def get_error_code(result):
     return error
 
 
+def get_expboard_model(em):
+    """
+    Convert a Huawei expansion board model code into a human-readable description.
+
+    Parameters
+    ----------
+    em : int or str
+        The expansion board model code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
+
+    Returns
+    -------
+    str
+        A human-readable description of the expansion board model.
+        Returns `'Unknown'` if the code is not recognized.
+
+    Examples
+    --------
+    >>> get_expboard_model(0)
+    'SAS'
+
+    >>> get_expboard_model('7')
+    'Smart NVMe'
+    """
+    mapping = {
+        0: 'SAS',
+        1: 'FC',
+        5: 'NVMe',
+        6: 'Smart SAS',
+        7: 'Smart NVMe',
+    }
+    return mapping.get(as_code(em), 'Unknown')
+
+
 def get_health_status(hs):
     """
     Convert a Huawei health status code into a human-readable description.
@@ -1396,6 +1430,45 @@ def get_host_access_state(has):
     return mapping.get(as_code(has), 'Unknown')
 
 
+def get_hypermetro_domain_running_status(rs):
+    """
+    Convert a HyperMetro domain's `RUNNINGSTATUS` code into a human-readable description.
+
+    Parameters
+    ----------
+    rs : int or str
+        The running status code to interpret.
+        A missing or malformed value renders as `'Unknown'`.
+
+    Returns
+    -------
+    str
+        A human-readable description including the original code in brackets.
+        Returns `'Unknown'` if the code is not recognized.
+
+    Notes
+    -----
+    - Covers the block `HyperMetroDomain` object (type `15362`). Both REST Interface
+      References list only these three codes for it. The file system HyperMetro domain
+      (`FsHyperMetroDomain`, type `162`) is a different object with an enumeration of its
+      own that runs from `0` up, so its codes must not be read through this function.
+
+    Examples
+    --------
+    >>> get_hypermetro_domain_running_status(1)
+    'Normal (1)'
+
+    >>> get_hypermetro_domain_running_status('35')
+    'Invalid (35)'
+    """
+    mapping = {
+        1: 'Normal (1)',
+        33: 'To be recovered (33)',
+        35: 'Invalid (35)',
+    }
+    return mapping.get(as_code(rs), 'Unknown')
+
+
 def get_hypermetro_domain_running_status_state(rs):
     """
     Convert a HyperMetro domain's `RUNNINGSTATUS` code into the state a consumer reports for it.
@@ -1408,31 +1481,29 @@ def get_hypermetro_domain_running_status_state(rs):
     Returns
     -------
     int
-        `STATE_OK` for a normal domain, `STATE_CRIT` for a faulty or invalid one, `STATE_WARN`
-        for every other code, including one the enumeration does not know and a missing value.
+        `STATE_OK` for a normal domain, `STATE_CRIT` for an invalid one, `STATE_WARN` for
+        every other code, including one the enumeration does not know and a missing value.
 
     Notes
     -----
-    - Scoped to the `HyperMetroDomain` object for the same reason as
-      `get_hypermetro_domain_running_status()`: the codes are renumbered from `0` up and every
-      one of them collides with the shared enumeration, so `get_running_status_state()` cannot
-      be used here.
-    - Split (`3`) warns rather than going critical. A split domain no longer mirrors, but each
-      side still serves its own I/O, and an administrator splits a domain deliberately during
-      maintenance.
+    - Scoped to the block `HyperMetroDomain` object for the same reason as
+      `get_hypermetro_domain_running_status()`.
+    - Verified against V700R001C10SPH128 on a Dorado 6000 V6: a healthy domain reports `1`.
+    - To be recovered (`33`) warns rather than going critical. The domain is still there and
+      the appliance is working its way back to a mirrored state on its own.
 
     Examples
     --------
-    >>> get_hypermetro_domain_running_status_state(0) == STATE_OK
+    >>> get_hypermetro_domain_running_status_state(1) == STATE_OK
     True
 
-    >>> get_hypermetro_domain_running_status_state('2') == STATE_CRIT
+    >>> get_hypermetro_domain_running_status_state('35') == STATE_CRIT
     True
     """
     code = as_code(rs)
-    if code == 0:
+    if code == 1:
         return STATE_OK
-    if code in (2, 5):
+    if code == 35:
         return STATE_CRIT
     return STATE_WARN
 
@@ -1871,20 +1942,23 @@ def get_performance(uuid, data_ids, args):
 # `(label, uom, factor)`. The label is the metric name a consumer emits, `uom` is the
 # Nagios unit of measurement, and `factor` converts the vendor's unit into it.
 #
-# Two conversions are worth naming. The response times are documented in microseconds and
-# go out in seconds, the unit Nagios knows. The bandwidths and I/O sizes are documented as
-# MB/s and KB, and are read as binary multiples: every capacity this API reports is binary
-# (sectors of 512 bytes), and so is what DeviceManager itself displays.
+# Three conversions are worth naming. The response times are documented in microseconds and
+# go out in seconds, the unit Nagios knows. The bandwidths are documented as MB/s and are
+# read as binary multiples: every capacity this API reports is binary (sectors of 512
+# bytes), and so is what DeviceManager itself displays. The average I/O sizes are
+# documented as KB but arrive in bytes: on a Dorado 6000 V6 running V700R001C10SPH128,
+# a storage pool reading 590 MB/s at 22413 IOPS reported an average read I/O size of
+# 27648, which is 27 KiB per I/O in bytes and would be 27 MiB per I/O in KB.
 PERFORMANCE_INDICATORS = {
     18: ('usage_percent', '%', 1),
     19: ('queue_length', None, 1),
     21: ('block_bandwidth', 'B', 1024 * 1024),
     22: ('total_iops', None, 1),
     23: ('read_bandwidth', 'B', 1024 * 1024),
-    24: ('avg_read_io_size', 'B', 1024),
+    24: ('avg_read_io_size', 'B', 1),
     25: ('read_iops', None, 1),
     26: ('write_bandwidth', 'B', 1024 * 1024),
-    27: ('avg_write_io_size', 'B', 1024),
+    27: ('avg_write_io_size', 'B', 1),
     28: ('write_iops', None, 1),
     68: ('cpu_usage_percent', '%', 1),
     69: ('cache_usage_percent', '%', 1),
@@ -2099,12 +2173,8 @@ def get_running_status(rs):
 
     Notes
     -----
-    - Not scoped to `HyperMetroDomain` and `dr_star`. Both renumber `RUNNINGSTATUS` instead
-      of sharing this enumeration, and both collide on the low codes this function is most
-      likely to be handed: `2` is faulty on a HyperMetro domain and disabled on a DR Star
-      trio, not running. Read through this function either would look healthy, so they have
-      their own mappings in `get_hypermetro_domain_running_status()` and
-      `get_dr_star_running_status()`.
+    - Not scoped to `HyperMetroDomain`. A HyperMetro domain has an enumeration of its own,
+      so it has its own mapping in `get_hypermetro_domain_running_status()`.
     - Code `94` is the one value whose meaning differs between the two documented firmware
       generations: 6.1.0 defines it as error, V700R001C10 as faulty. The response carries no
       firmware marker, so it renders as `'Error/Faulty'`, which holds under both revisions.

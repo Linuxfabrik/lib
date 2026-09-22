@@ -8,7 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+### Added
+
+* huawei_dorado.py: `get_expboard_model()` and `get_hypermetro_domain_running_status()`
+
+### Fixed
+
+* huawei_dorado.py: a healthy HyperMetro domain counts as normal instead of recovering, and the average I/O size is no longer 1024 times too large
 
 
 ## [v8.1.0] - 2026-09-22
