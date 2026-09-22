@@ -204,6 +204,45 @@ class TestPrepareContainerEnv(unittest.TestCase):
             lftest.prepare_container_env()
             self.assertEqual(os.environ['TESTCONTAINERS_RYUK_DISABLED'], 'false')
 
+    def test_a_plugin_process_keeps_its_environment(self):
+        # a monitoring plugin imports this module for its --test fixtures. The
+        # `docker` client reads DOCKER_HOST too, so handing it the podman socket
+        # breaks the check on a host where docker is running fine.
+        with mock.patch.dict(sys.modules), mock.patch.dict(os.environ, {}, clear=True):
+            del sys.modules['unittest']
+            lftest.prepare_container_env()
+            self.assertNotIn('DOCKER_HOST', os.environ)
+            self.assertNotIn('TESTCONTAINERS_RYUK_DISABLED', os.environ)
+
+    def test_force_prepares_outside_a_test_process(self):
+        with mock.patch.dict(sys.modules), mock.patch.dict(os.environ, {}, clear=True):
+            del sys.modules['unittest']
+            lftest.prepare_container_env(force=True)
+            self.assertEqual(
+                os.environ['DOCKER_HOST'],
+                f'unix:///run/user/{os.getuid()}/podman/podman.sock',
+            )
+
+
+class TestInTestProcess(unittest.TestCase):
+    """What tells a test process apart from a monitoring plugin."""
+
+    def test_a_plugin_process_is_not_one(self):
+        with mock.patch.dict(sys.modules), mock.patch.dict(os.environ, {}, clear=True):
+            del sys.modules['unittest']
+            self.assertFalse(lftest.in_test_process())
+
+    def test_unittest_says_it_is_one(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(lftest.in_test_process())
+
+    def test_a_runner_marker_says_it_is_one(self):
+        for marker in (lftest.NO_CONTAINER_ENV, lftest.RUN_ID_ENV):
+            with self.subTest(marker=marker), mock.patch.dict(sys.modules), \
+                 mock.patch.dict(os.environ, {marker: '1'}, clear=True):
+                del sys.modules['unittest']
+                self.assertTrue(lftest.in_test_process())
+
 
 class TestTestTextMissingOk(unittest.TestCase):
     """test_text(missing_ok=True): a fixture that is not there is data."""

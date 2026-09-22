@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * huawei_dorado.py: a healthy HyperMetro domain counts as normal instead of recovering, and the average I/O size is no longer 1024 times too large
+* lftest.py: a monitoring plugin no longer inherits the container-test environment, so the docker-\* checks reach the Docker daemon again instead of reporting that they need Docker
 
 
 ## [v8.1.0] - 2026-09-22

@@ -21,7 +21,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092201'
 
 
 def attach_each(test_class, items, action, id_func=str):
@@ -108,7 +108,23 @@ RUN_ID_ENV = 'LFTEST_RUN_ID'
 RUN_ID_LABEL = 'ch.linuxfabrik.lftest.run'
 
 
-def prepare_container_env():
+def in_test_process():
+    """Return whether this process is a unit test rather than a monitoring plugin.
+
+    A plugin imports this module for its `--test` fixtures and must not be given a
+    test environment, so anything that changes how a plugin talks to the outside
+    world asks here first. A test is recognised by `unittest`, which every
+    `unit-test/run` imports before it reaches this module, and by the markers the
+    runners put into the environment.
+    """
+    return (
+        'unittest' in sys.modules
+        or NO_CONTAINER_ENV in os.environ
+        or RUN_ID_ENV in os.environ
+    )
+
+
+def prepare_container_env(force=False):
     """Point testcontainers at rootless podman, unless the caller said otherwise.
 
     testcontainers-python reads `DOCKER_HOST` and nothing else, so a host that
@@ -122,8 +138,22 @@ def prepare_container_env():
     Called on import, so it takes effect however a test was started: through
     `tools/run-unit-tests` or by running `unit-test/run` directly. Values the
     caller already set are kept, which is how a docker host or a running reaper
-    stays in charge.
+    stays in charge. A helper that starts a container calls it again with `force`,
+    so it does not depend on what the import saw.
+
+    Outside a test process this does nothing, unless `force` says otherwise.
+    `DOCKER_HOST` is read by the `docker` client as well, so a plugin that ends up
+    with the podman socket in it reports `Cannot connect to the Docker daemon` on a
+    host where docker is running fine.
+
+    Parameters
+    ----------
+    force : bool, optional
+        Prepare the environment even outside a test
+        process, for a caller that starts a container itself.
     """
+    if not force and not in_test_process():
+        return
     if 'DOCKER_HOST' not in os.environ:
         os.environ['DOCKER_HOST'] = os.environ.get(
             'CONTAINER_HOST', f'unix:///run/user/{os.getuid()}/podman/podman.sock'
@@ -255,6 +285,8 @@ def network():
     ...     ):
     ...         pass
     """
+    # see run_container()
+    prepare_container_env(force=True)
     require_container_runtime()
     from testcontainers.core.network import Network
 
@@ -453,6 +485,9 @@ def run_container(
     ...     )
     ...     # point the executable at this url
     """
+    # A caller that starts a container needs the socket whatever this process
+    # looks like, so this does not lean on the import-time guess.
+    prepare_container_env(force=True)
     require_container_runtime()
     from datetime import timedelta
 
