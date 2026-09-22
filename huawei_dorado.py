@@ -23,7 +23,7 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092201'
+__version__ = '2026092202'
 
 import json
 from time import sleep as _sleep
@@ -1048,11 +1048,14 @@ def get_data(endpoint, args, max_attempts=3):
 
     Notes
     -----
-    - Makes at most three attempts, forcing a fresh login before the second one, and waits one
-      second between attempts. The retry count is kept low on purpose, so one call stays within
-      the caller's own timeout: the worst case is three requests plus one login,
-      plus two seconds of waiting. This budget is per call. A caller that chains several calls
-      has to size its own timeout for the sum.
+    - Makes at most three attempts and waits one second between attempts. The first attempt
+      the appliance rejects is followed by one fresh login. The retry count is kept low on
+      purpose, so one call stays within the caller's own timeout: the worst case is three
+      requests plus one login, plus two seconds of waiting. This budget is per call. A caller
+      that chains several calls has to size its own timeout for the sum.
+    - A request that got no answer at all (a timeout, a refused connection) does not force a
+      fresh login. It says nothing about the session, and on a slow appliance the extra login
+      only makes the next attempt slower while discarding a session that is still valid.
     - A rejected request is retried instead of aborting the caller: a transport failure, an HTTP
       error status and a response that is not the documented `{'error': {'code': ...}}` envelope
       all count as a failed attempt and are handed back in that envelope. The caller therefore
@@ -1076,13 +1079,18 @@ def get_data(endpoint, args, max_attempts=3):
     }
     """
     result = {}
+    relogged = False
 
     for attempt in range(1, max_attempts + 1):
-        # On the second attempt, drop the cached session and log in again; a
-        # rejected request is most likely an expired session that retrying
-        # with the same token cannot fix. The third attempt then reuses that
-        # fresh token to absorb a remaining transient error.
-        ibasetoken, cookie, device_id = get_creds(args, force_relogin=attempt == 2)
+        # After the appliance rejected a request, drop the cached session and log in again
+        # once; a rejected request is most likely an expired session that retrying with
+        # the same token cannot fix. A request that never got an answer (a timeout, a
+        # refused connection) says nothing about the session, so it is retried with the
+        # cached one: logging in again would cost a round trip on an appliance that is
+        # already slow, and throw a valid session away.
+        force_relogin = attempt > 1 and not relogged and get_error_code(result) != 'n/a'
+        relogged = relogged or force_relogin
+        ibasetoken, cookie, device_id = get_creds(args, force_relogin=force_relogin)
         # The device ID comes from the session, not from `args`: it may have been the
         # appliance's own answer rather than a caller-supplied value, and a re-login can
         # in principle hand back a different one.

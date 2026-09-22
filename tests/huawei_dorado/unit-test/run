@@ -1144,6 +1144,32 @@ class TestGetData(HuaweiHttpTestBase):
         ]
         self.assertEqual(len(forced), 1)
 
+    def test_transport_failure_keeps_the_cached_session(self):
+        # A request that got no answer says nothing about the session. Logging in
+        # again would only slow down the next attempt on an appliance that is already
+        # slow, and throw a valid session away.
+        self.fetch_json.return_value = (False, 'URL error "timed out"')
+        huawei.get_data('disk', self.args)
+        self.assertEqual(self.fetch_json.call_count, 3)
+        for call in self.get_creds.call_args_list:
+            self.assertFalse(call.kwargs.get('force_relogin'))
+
+    def test_rejection_after_a_transport_failure_forces_one_relogin(self):
+        self.fetch_json.side_effect = [
+            (False, 'URL error "timed out"'),
+            (True, {'error': {'code': -401}}),
+            (True, {'error': {'code': 0}, 'data': ['recovered']}),
+        ]
+        result = huawei.get_data('disk', self.args)
+        self.assertEqual(
+            [
+                call.kwargs.get('force_relogin')
+                for call in self.get_creds.call_args_list
+            ],
+            [False, False, True],
+        )
+        self.assertEqual(result['data'], ['recovered'])
+
     def test_retries_sleep_one_second(self):
         self.fetch_json.return_value = (True, {'error': {'code': -401}})
         huawei.get_data('disk', self.args)

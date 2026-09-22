@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * huawei_dorado.py: `get_expboard_model()` and `get_hypermetro_domain_running_status()`
 
+### Changed
+
+* huawei_dorado.py: `get_data()` no longer logs in again after a request that timed out, so a slow appliance keeps its session and the next attempt starts sooner
+
 ### Fixed
 
 * huawei_dorado.py: a healthy HyperMetro domain counts as normal instead of recovering, and the average I/O size is no longer 1024 times too large
