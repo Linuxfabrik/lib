@@ -37,13 +37,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      # The runtime dependencies from the hash-pinned lockfile of this Python, and
+      # pdoc from its own. The library itself is not installed: the checkout is
+      # named `lib`, so its parent directory on PYTHONPATH makes it importable.
       - name: 'Install dependencies'
-        run: |
-          pip install --editable .
-          pip install pdoc==16.0.0
+        run: 'pip install --require-hashes --requirement lockfiles/py312/requirements.txt --requirement .github/pdoc/requirements.txt'
 
       - name: 'Build documentation'
-        run: 'pdoc --docformat numpy --output-directory docs lib'
+        run: 'PYTHONPATH="$(dirname "$PWD")" pdoc --docformat numpy --output-directory docs lib'
 
       - name: 'Add .nojekyll'
         run: 'touch docs/.nojekyll'
