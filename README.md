@@ -151,7 +151,8 @@ A typical monitoring plugin using these libraries:
 import lib.args
 import lib.base
 import lib.url
-from lib.globals import (STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN)
+from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
+
 
 def main():
     # Parse arguments with custom threshold types
@@ -166,10 +167,13 @@ def main():
 
     # Evaluate thresholds
     state = lib.base.get_state(result['usage'], args.warning, args.critical)
-    perfdata = lib.base.get_perfdata('usage', result['usage'], '%', args.warning, args.critical, 0, 100)
+    perfdata = lib.base.get_perfdata(
+        'usage', result['usage'], '%', args.warning, args.critical, 0, 100
+    )
 
     # Output and exit
     lib.base.oao('Usage is {}%'.format(result['usage']), state, perfdata)
+
 
 if __name__ == '__main__':
     main()

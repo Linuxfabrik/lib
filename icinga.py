@@ -84,8 +84,12 @@ def api_post(
     ... }
     >>> result = lib.base.coe(
     ...     lib.icinga.api_post(
-    ...         uri, args.USERNAME, args.PASSWORD, data=data,
-    ...         method_override='GET', timeout=3
+    ...         uri,
+    ...         args.USERNAME,
+    ...         args.PASSWORD,
+    ...         data=data,
+    ...         method_override='GET',
+    ...         timeout=3,
     ...     )
     ... )
     """

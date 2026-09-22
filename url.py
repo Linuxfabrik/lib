@@ -677,7 +677,9 @@ def compare_github_refs(
         return success, result
 
     url = f'https://api.github.com/repos/{user}/{repo}/compare/{base}...{head}'
-    success, result = _fetch_github_json(url, insecure, no_proxy, proxy, timeout, header)
+    success, result = _fetch_github_json(
+        url, insecure, no_proxy, proxy, timeout, header
+    )
 
     if not success:
         return success, result
@@ -767,18 +769,24 @@ def _fetch_once(
         data = {}
 
     if httpx is None:
-        return False, (
-            'Python module "httpx" is not installed. '
-            "Install it with `pip install 'httpx[http2]'` or "
-            '`dnf install python3-httpx python3-h2`.'
-        ), False
+        return (
+            False,
+            (
+                'Python module "httpx" is not installed. '
+                "Install it with `pip install 'httpx[http2]'` or "
+                '`dnf install python3-httpx python3-h2`.'
+            ),
+            False,
+        )
 
     if max_bytes is not None and (
         isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 0
     ):
-        return False, (
-            f'`max_bytes` must be a non-negative integer or None, not {max_bytes!r}'
-        ), False
+        return (
+            False,
+            (f'`max_bytes` must be a non-negative integer or None, not {max_bytes!r}'),
+            False,
+        )
     if http_version == '3':
         return (
             False,
@@ -786,10 +794,14 @@ def _fetch_once(
             False,
         )
     if http_version not in ('1.0', '1.1', '2'):
-        return False, (
-            f'Unsupported http_version "{http_version}"; expected one of '
-            f'"1.0", "1.1", "2", "3"'
-        ), False
+        return (
+            False,
+            (
+                f'Unsupported http_version "{http_version}"; expected one of '
+                f'"1.0", "1.1", "2", "3"'
+            ),
+            False,
+        )
 
     url_safe = _redact_url(url)
 
@@ -952,9 +964,11 @@ def _fetch_once(
             )
         return False, message, _is_transient(e)
     except TypeError as e:
-        return False, (
-            f'Type error "{e}" while fetching {url_safe} ({_body_hint(data)})'
-        ), False
+        return (
+            False,
+            (f'Type error "{e}" while fetching {url_safe} ({_body_hint(data)})'),
+            False,
+        )
     except (_RefusedError, httpx.InvalidURL) as e:
         return False, f'{e} while fetching {url_safe}', False
     except Exception as e:
@@ -987,20 +1001,22 @@ def _fetch_once(
         timings = {'total': elapsed_seconds}
         if timing_backend is not None:
             timings.update(timing_backend.timings)
-        return success, {
-            'response': body_decoded,
-            'status_code': status_code,
-            'response_header': response_headers,
-            'timings': timings,
-            'tls_version': tls_version,
-            'alpn': alpn,
-            'peer_cert_der': peer_cert_der,
-        }, retryable
+        return (
+            success,
+            {
+                'response': body_decoded,
+                'status_code': status_code,
+                'response_header': response_headers,
+                'timings': timings,
+                'tls_version': tls_version,
+                'alpn': alpn,
+                'peer_cert_der': peer_cert_der,
+            },
+            retryable,
+        )
     except Exception as e:
         # the answer arrived and will arrive the same way again
         return False, f'{e} while fetching {url_safe}', False
-
-
 
 
 def fetch(
@@ -1357,7 +1373,9 @@ def get_latest_tag_from_github(
         return success, result
 
     url = f'https://api.github.com/repos/{user}/{repo}/tags'
-    success, result = _fetch_github_json(url, insecure, no_proxy, proxy, timeout, header)
+    success, result = _fetch_github_json(
+        url, insecure, no_proxy, proxy, timeout, header
+    )
 
     if not success:
         return success, result
@@ -1433,7 +1451,9 @@ def get_latest_version_from_github(
         return success, result
 
     url = f'https://api.github.com/repos/{user}/{repo}/releases/latest'
-    success, result = _fetch_github_json(url, insecure, no_proxy, proxy, timeout, header)
+    success, result = _fetch_github_json(
+        url, insecure, no_proxy, proxy, timeout, header
+    )
 
     if not success:
         return success, result

@@ -34,9 +34,16 @@ Typical use case:
     else:
         thresholds = {'avg60': ('5', '10')}
         states = lib.psi.get_states(pressure, 'full', thresholds)
-        print(lib.psi.get_summary(
-            pressure, 'memory', 'memory', ('some', 'full'), 'full', states,
-        ))
+        print(
+            lib.psi.get_summary(
+                pressure,
+                'memory',
+                'memory',
+                ('some', 'full'),
+                'full',
+                states,
+            )
+        )
 """
 
 import errno

@@ -20,11 +20,13 @@ This is one typical use case of this library (taken from `disk-io`):
 >>> lib.base.coe(lib.db_sqlite.cut(conn, _max=args.COUNT * len(disks)))
 >>> lib.base.coe(lib.db_sqlite.commit(conn))
 
->>> result = lib.base.coe(lib.db_sqlite.select(
-...     conn,
-...     'SELECT * FROM perfdata WHERE name = :name ORDER BY timestamp DESC LIMIT 2',
-...     {'name': disk},
-... ))
+>>> result = lib.base.coe(
+...     lib.db_sqlite.select(
+...         conn,
+...         'SELECT * FROM perfdata WHERE name = :name ORDER BY timestamp DESC LIMIT 2',
+...         {'name': disk},
+...     )
+... )
 
 >>> lib.db_sqlite.close(conn)
 """

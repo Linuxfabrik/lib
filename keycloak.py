@@ -19,7 +19,9 @@ Typical use case:
     # obtain an admin access token and call the Admin REST API (fetch the realm's details).
     oidc_config = lib.base.coe(lib.keycloak.discover_oidc_endpoints(args))
     admin_token = lib.base.coe(lib.keycloak.obtain_admin_token(args, oidc_config))
-    server_info = lib.base.coe(lib.keycloak.get_data(args, admin_token, '/admin/serverinfo'))
+    server_info = lib.base.coe(
+        lib.keycloak.get_data(args, admin_token, '/admin/serverinfo')
+    )
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'

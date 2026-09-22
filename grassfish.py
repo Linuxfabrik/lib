@@ -21,7 +21,16 @@ from . import url
 
 
 def fetch_json(
-    token, host, port, uri, version, func, insecure=False, no_proxy=False, proxy=None, timeout=8
+    token,
+    host,
+    port,
+    uri,
+    version,
+    func,
+    insecure=False,
+    no_proxy=False,
+    proxy=None,
+    timeout=8,
 ):
     """
     Fetch JSON data from a Grassfish API endpoint.
