@@ -14,7 +14,7 @@ Time zone handling is not implemented.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026092201'
 
 import sys
 
@@ -65,7 +65,8 @@ def fetch_soup(
     encoding : str, optional
         Encoding to use for the URL fetch operation. Default is `'urlencode'`.
     retries : int, optional
-        How many extra attempts to make if the request fails or the body is not a feed.
+        How many extra attempts to make if the request fails in a way that may clear up
+        (see `url.fetch()`) or the body is not a feed.
         `0` (default) means a single attempt. Useful against flaky endpoints (e.g. a status
         page behind a load balancer) that occasionally answer with something else.
 
@@ -80,21 +81,22 @@ def fetch_soup(
     --------
     >>> success, soup = fetch_soup('https://example.com/feed.xml', retries=3)
     """
-    attempt = 0
-    while True:
-        success, xml = url.fetch(
-            feed_url,
-            encoding=encoding,
-            insecure=insecure,
-            no_proxy=no_proxy,
-            proxy=proxy,
-            timeout=timeout,
-        )
-        result = parse_soup(xml, feed_url) if success else (False, xml)
-
-        if result[0] or attempt >= retries:
-            return result
-        attempt += 1
+    # `fetch()` owns the retries: it repeats a request that may succeed next time and,
+    # through `retry_if`, an answer that arrived but is not a feed. A 404 or a refused
+    # redirect comes back the same and is reported at once.
+    success, xml = url.fetch(
+        feed_url,
+        encoding=encoding,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        proxy=proxy,
+        retries=retries,
+        retry_if=lambda body: not parse_soup(body, feed_url)[0],
+        timeout=timeout,
+    )
+    if not success:
+        return (False, xml)
+    return parse_soup(xml, feed_url)
 
 
 def parse(
@@ -128,7 +130,8 @@ def parse(
     encoding : str, optional
         Encoding to use for the URL fetch operation. Default is `'urlencode'`.
     retries : int, optional
-        How many extra attempts to make if the request fails or the body is not a feed.
+        How many extra attempts to make if the request fails in a way that may clear up
+        (see `url.fetch()`) or the body is not a feed.
         `0` (default) means a single attempt. See `fetch_soup()`.
 
     Returns

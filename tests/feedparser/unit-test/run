@@ -12,7 +12,9 @@
 
 The module fetches a feed over the network via lib.url.fetch and then parses
 the XML with BeautifulSoup. The tests stay hermetic by patching the
-module-level url.fetch reference, so no socket is ever opened. parse_atom and
+module-level url.fetch reference, or, where the retries of lib.url.fetch are
+what is tested, by running the real httpx over an in-memory transport, so no
+socket is ever opened. parse_atom and
 parse_rss receive BeautifulSoup objects built from realistic in-line fixtures,
 covering Atom and RSS happy paths plus the documented fallbacks for missing
 fields, alternative timestamp sources and HTML-laden summaries.
@@ -21,7 +23,7 @@ fields, alternative timestamp sources and HTML-laden summaries.
 import datetime
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 sys.path.insert(0, '..')
 
@@ -30,6 +32,7 @@ sys.path.insert(0, '..')
 # it relies on) are absent from the venv we still define the full test body but
 # skip it at runtime.
 try:
+    import httpx
     import lib.feedparser as feedparser
     from bs4 import BeautifulSoup
 
@@ -151,39 +154,78 @@ class TestFetchSoup(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(len(soup.find_all('item')), 2)
 
+    def _serve(self, answers):
+        """Answer the requests `fetch_soup()` makes with `answers` in turn (the last one
+        repeats), through the real `url.fetch()`, and count them."""
+        requests = []
+        real_client = httpx.Client
+
+        def handler(request):
+            requests.append(request)
+            status, body = answers[min(len(requests), len(answers)) - 1]
+            return httpx.Response(status, stream=httpx.ByteStream(body.encode()))
+
+        def client_factory(**kwargs):
+            kwargs.pop('verify', None)
+            return real_client(transport=httpx.MockTransport(handler), **kwargs)
+
+        patcher = patch.object(
+            feedparser.url.httpx, 'Client', side_effect=client_factory
+        )
+        return patcher, requests
+
     def test_no_retry_by_default(self):
-        with patch.object(feedparser.url, 'fetch', return_value=(True, STUB_BODY)) as m:
+        patcher, requests = self._serve([(200, STUB_BODY)])
+        with patcher:
             ok, result = feedparser.fetch_soup('https://x/rss')
         self.assertFalse(ok)
         self.assertIn('does not seem to be an Atom or RSS feed', result)
-        self.assertEqual(m.call_count, 1)
+        self.assertEqual(len(requests), 1)
 
     def test_retries_until_the_feed_arrives(self):
         # Two stub bodies, then the real feed: the third attempt has to win.
-        responses = [(True, STUB_BODY), (True, STUB_BODY), (True, RSS_FEED)]
-        with patch.object(feedparser.url, 'fetch', side_effect=responses) as m:
+        patcher, requests = self._serve(
+            [(200, STUB_BODY), (200, STUB_BODY), (200, RSS_FEED)]
+        )
+        with patcher:
             ok, soup = feedparser.fetch_soup('https://x/rss', retries=3)
         self.assertTrue(ok)
         self.assertEqual(len(soup.find_all('item')), 2)
-        self.assertEqual(m.call_count, 3)
+        self.assertEqual(len(requests), 3)
 
     def test_gives_up_after_the_last_retry(self):
-        with patch.object(
-            feedparser.url, 'fetch', return_value=(True, HTML_ERROR_PAGE)
-        ) as m:
+        patcher, requests = self._serve([(200, HTML_ERROR_PAGE)])
+        with patcher:
             ok, result = feedparser.fetch_soup('https://x/rss', retries=2)
         self.assertFalse(ok)
         self.assertIn('does not seem to be an Atom or RSS feed', result)
-        self.assertEqual(m.call_count, 3)
+        self.assertEqual(len(requests), 3)
 
     def test_retries_a_failed_request(self):
-        # A retry covers the transport failing, not just a body that is not a feed.
-        responses = [(False, 'boom'), (True, ATOM_FEED)]
-        with patch.object(feedparser.url, 'fetch', side_effect=responses) as m:
+        # A retry covers the server failing, not just a body that is not a feed.
+        patcher, requests = self._serve([(503, ''), (200, ATOM_FEED)])
+        with patcher:
             ok, soup = feedparser.fetch_soup('https://x/atom', retries=1)
         self.assertTrue(ok)
         self.assertTrue(soup.feed)
-        self.assertEqual(m.call_count, 2)
+        self.assertEqual(len(requests), 2)
+
+    def test_a_404_is_not_repeated(self):
+        # the server's considered answer comes back the same, see url.fetch()
+        patcher, requests = self._serve([(404, 'gone')])
+        with patcher:
+            ok, result = feedparser.fetch_soup('https://x/rss', retries=3)
+        self.assertFalse(ok)
+        self.assertIn('404', result)
+        self.assertEqual(len(requests), 1)
+
+    def test_one_budget_covers_failures_and_non_feeds(self):
+        # a failing server and a stub body draw on the same `retries`
+        patcher, requests = self._serve([(503, ''), (200, STUB_BODY), (200, RSS_FEED)])
+        with patcher:
+            ok, _ = feedparser.fetch_soup('https://x/rss', retries=1)
+        self.assertFalse(ok)
+        self.assertEqual(len(requests), 2)
 
     def test_fetch_failure_propagates(self):
         with patch.object(feedparser.url, 'fetch', return_value=(False, 'boom')):
@@ -266,6 +308,8 @@ class TestParse(unittest.TestCase):
             insecure=True,
             no_proxy=True,
             proxy='http://proxy.example.com:3128',
+            retries=0,
+            retry_if=ANY,
             timeout=42,
         )
 
@@ -280,12 +324,15 @@ class TestParse(unittest.TestCase):
         self.assertEqual(kwargs['timeout'], 5)
 
     def test_forwards_retries(self):
-        responses = [(True, STUB_BODY), (True, RSS_FEED)]
-        with patch.object(feedparser.url, 'fetch', side_effect=responses) as m:
+        with patch.object(feedparser.url, 'fetch', return_value=(True, RSS_FEED)) as m:
             ok, result = feedparser.parse('https://x/rss', retries=1)
         self.assertTrue(ok)
         self.assertEqual(result['title'], 'My RSS Feed')
-        self.assertEqual(m.call_count, 2)
+        self.assertEqual(m.call_args[1]['retries'], 1)
+        # the callback tells a feed from something else
+        retry_if = m.call_args[1]['retry_if']
+        self.assertTrue(retry_if(STUB_BODY))
+        self.assertFalse(retry_if(RSS_FEED))
 
 
 # ----------------------------------------------------------------------------

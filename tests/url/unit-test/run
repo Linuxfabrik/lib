@@ -430,7 +430,7 @@ class TestFetchValidation(unittest.TestCase):
 
         def flaky(*args, **kwargs):
             attempts.append(1)
-            return (len(attempts) > 2, 'body' if len(attempts) > 2 else 'boom')
+            return (len(attempts) > 2, 'body' if len(attempts) > 2 else 'boom', True)
 
         with mock.patch.object(url, '_fetch_once', flaky):
             ok, result = url.fetch('https://example.com', retries=3)
@@ -443,7 +443,7 @@ class TestFetchValidation(unittest.TestCase):
 
         def failing(*args, **kwargs):
             attempts.append(1)
-            return (False, 'boom')
+            return (False, 'boom', True)
 
         with mock.patch.object(url, '_fetch_once', failing):
             ok, result = url.fetch('https://example.com')
@@ -456,7 +456,7 @@ class TestFetchValidation(unittest.TestCase):
 
         def failing(*args, **kwargs):
             attempts.append(1)
-            return (False, 'boom')
+            return (False, 'boom', True)
 
         with mock.patch.object(url, '_fetch_once', failing):
             url.fetch('https://example.com', retries=2)
@@ -469,7 +469,11 @@ class TestFetchValidation(unittest.TestCase):
 
         def flaky(*args, **kwargs):
             attempts.append(1)
-            return (len(attempts) > 2, '{"a": 1}' if len(attempts) > 2 else 'boom')
+            return (
+                len(attempts) > 2,
+                '{"a": 1}' if len(attempts) > 2 else 'boom',
+                True,
+            )
 
         with mock.patch.object(url, '_fetch_once', flaky):
             ok, result = url.fetch_json('https://example.com', retries=3)
@@ -483,7 +487,7 @@ class TestFetchValidation(unittest.TestCase):
 
         def not_json(*args, **kwargs):
             attempts.append(1)
-            return (True, 'no json here')
+            return (True, 'no json here', False)
 
         with mock.patch.object(url, '_fetch_once', not_json):
             ok, msg = url.fetch_json('https://example.com', retries=2)
@@ -1609,6 +1613,193 @@ class TestRedirectBodyRefusal(unittest.TestCase):
         )
         self.assertFalse(result[0])
         self.assertEqual(hops, [])
+
+
+@skip_without_httpx
+class TestRetryClassification(unittest.TestCase):
+    """`fetch()` repeats only a failure that may clear up. Runs the real httpx over a
+    `MockTransport` and counts the requests that reach the server, with `retries=2`."""
+
+    def _count(self, handler, target='https://h/', **kwargs):
+        requests = []
+
+        def counting(request):
+            requests.append(request)
+            return handler(request)
+
+        with patch_mock_transport(counting):
+            success, _ = url.fetch(target, timeout=1, retries=2, **kwargs)
+        return success, len(requests)
+
+    @staticmethod
+    def _answer(status, headers=None, body=b'x'):
+        return lambda request: httpx.Response(
+            status, headers=headers, stream=httpx.ByteStream(body)
+        )
+
+    def _status(self, code):
+        return self._answer(code)
+
+    @staticmethod
+    def _raise(make):
+        def handler(request):
+            raise make(request)
+
+        return handler
+
+    def test_a_status_that_may_clear_up_is_repeated(self):
+        for code in (408, 500, 502, 503, 504):
+            with self.subTest(code=code):
+                self.assertEqual(self._count(self._status(code)), (False, 3))
+
+    def test_the_server_s_considered_answer_is_not_repeated(self):
+        # 425 and 429 ask to come back later, which an immediate retry does not do
+        for code in (400, 401, 403, 404, 425, 429, 501, 505, 507):
+            with self.subTest(code=code):
+                self.assertEqual(self._count(self._status(code)), (False, 1))
+
+    def test_the_same_holds_with_response_on_error(self):
+        self.assertEqual(
+            self._count(self._status(503), response_on_error=True), (False, 3)
+        )
+        self.assertEqual(
+            self._count(self._status(404), response_on_error=True), (False, 1)
+        )
+
+    def test_a_transport_failure_is_repeated(self):
+        for make in (
+            lambda r: httpx.ConnectError('refused', request=r),
+            lambda r: httpx.ReadTimeout('slow', request=r),
+            lambda r: httpx.RemoteProtocolError('closed', request=r),
+            lambda r: httpx.ProxyError('proxy', request=r),
+        ):
+            with self.subTest(make=make):
+                self.assertEqual(self._count(self._raise(make)), (False, 3))
+
+    def test_a_failure_that_comes_back_the_same_is_not_repeated(self):
+        for make in (
+            lambda r: httpx.LocalProtocolError('malformed'),
+            lambda r: httpx.UnsupportedProtocol('ftp', request=r),
+        ):
+            with self.subTest(make=make):
+                self.assertEqual(self._count(self._raise(make)), (False, 1))
+
+    def test_a_certificate_that_does_not_verify_is_not_repeated(self):
+        def handler(request):
+            cause = ssl.SSLCertVerificationError(1, 'certificate verify failed')
+            cause.verify_code = 18
+            cause.verify_message = 'self-signed certificate'
+            error = httpx.ConnectError('verify failed', request=request)
+            error.__cause__ = cause
+            raise error
+
+        self.assertEqual(self._count(handler), (False, 1))
+
+    def test_a_redirect_loop_is_followed_once_and_not_repeated(self):
+        # httpx gives up after 20 redirects; repeating the attempt would triple that
+        loop = self._answer(302, headers={'Location': 'https://h/'})
+        self.assertEqual(self._count(loop), (False, 21))
+
+    def test_a_body_that_cannot_be_decoded_is_not_repeated(self):
+        broken_gzip = self._answer(
+            200, headers={'Content-Encoding': 'gzip'}, body=b'not gzip'
+        )
+        self.assertEqual(self._count(broken_gzip), (False, 1))
+
+    def test_a_refused_request_is_not_repeated(self):
+        too_large = self._answer(200, body=b'x' * 2000)
+        self.assertEqual(self._count(too_large, max_bytes=1000), (False, 1))
+        cross_origin = self._answer(307, headers={'Location': 'https://evil/'})
+        self.assertEqual(
+            self._count(cross_origin, data={'password': 'linuxfabrik'}), (False, 1)
+        )
+
+    def test_invalid_parameters_are_not_repeated(self):
+        for kwargs in (
+            {'http_version': '9'},
+            {'max_bytes': -1},
+            {'data': {'a': 'b'}, 'encoding': 'xml'},
+            {'cacert': '/nonexistent/ca.pem'},
+        ):
+            with self.subTest(kwargs=kwargs):
+                spy = mock.Mock(side_effect=url._fetch_once)
+                with mock.patch.object(url, '_fetch_once', spy):
+                    success, _ = url.fetch('https://h/', retries=2, **kwargs)
+                self.assertFalse(success)
+                self.assertEqual(spy.call_count, 1)
+
+
+@skip_without_httpx
+class TestRetryIf(unittest.TestCase):
+    """`retry_if` lets `fetch()` repeat an answer that arrived but is of no use to the
+    caller, within the same `retries` budget as a failed request."""
+
+    def _serve(self, answers, fetcher=None, **kwargs):
+        requests = []
+
+        def handler(request):
+            requests.append(request)
+            status, body = answers[min(len(requests), len(answers)) - 1]
+            return httpx.Response(status, stream=httpx.ByteStream(body))
+
+        with patch_mock_transport(handler):
+            result = (fetcher or url.fetch)('https://h/', timeout=1, **kwargs)
+        return result, len(requests)
+
+    @staticmethod
+    def _not_ok(body):
+        return body != 'ok'
+
+    def test_a_rejected_answer_is_repeated_until_one_is_accepted(self):
+        result, requests = self._serve(
+            [(200, b'stub'), (200, b'stub'), (200, b'ok')],
+            retries=3,
+            retry_if=self._not_ok,
+        )
+        self.assertEqual((result, requests), ((True, 'ok'), 3))
+
+    def test_when_the_budget_is_spent_the_last_answer_is_returned(self):
+        result, requests = self._serve(
+            [(200, b'stub')], retries=2, retry_if=self._not_ok
+        )
+        self.assertEqual((result, requests), ((True, 'stub'), 3))
+
+    def test_without_retries_the_callback_is_not_even_asked(self):
+        retry_if = mock.Mock(return_value=True)
+        result, requests = self._serve([(200, b'stub')], retry_if=retry_if)
+        self.assertEqual((result, requests), ((True, 'stub'), 1))
+        retry_if.assert_not_called()
+
+    def test_failures_and_rejected_answers_share_one_budget(self):
+        result, requests = self._serve(
+            [(503, b''), (200, b'stub'), (200, b'ok')],
+            retries=1,
+            retry_if=self._not_ok,
+        )
+        self.assertEqual((result, requests), ((True, 'stub'), 2))
+
+    def test_a_final_failure_ends_the_attempts(self):
+        (success, _), requests = self._serve(
+            [(404, b''), (200, b'ok')], retries=3, retry_if=self._not_ok
+        )
+        self.assertEqual((success, requests), (False, 1))
+
+    def test_fetch_json_hands_retry_if_on(self):
+        result, requests = self._serve(
+            [(200, b'stub'), (200, b'{"a": 1}')],
+            fetcher=url.fetch_json,
+            retries=1,
+            retry_if=lambda body: not body.startswith('{'),
+        )
+        self.assertEqual((result, requests), ((True, {'a': 1}), 2))
+
+    def test_a_retry_if_that_cannot_be_called_is_rejected(self):
+        (success, message), requests = self._serve(
+            [(200, b'ok')], retries=1, retry_if='not callable'
+        )
+        self.assertFalse(success)
+        self.assertIn('`retry_if` must be callable or None', message)
+        self.assertEqual(requests, 0)
 
 
 @skip_without_httpx

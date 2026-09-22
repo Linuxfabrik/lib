@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092201'
 
 import base64
 import json
@@ -185,6 +185,11 @@ def _leaks_credentials_on_redirect(src, dst):
     return not https_upgrade
 
 
+class _RefusedError(Exception):
+    """A request `fetch()` refuses to complete on purpose. It is never retried, since
+    the next attempt would be refused the same way."""
+
+
 def _install_safe_redirect_stripping(client):
     """Wrap an httpx client's redirect logic so nothing a caller sent to one
     origin reaches another one. Credential headers are dropped when a redirect
@@ -221,7 +226,7 @@ def _install_safe_redirect_stripping(client):
             and request.content
             and _leaks_credentials_on_redirect(request.url, redirect.url)
         ):
-            raise RuntimeError(
+            raise _RefusedError(
                 f'Refused to resend the request body to another host after an'
                 f' HTTP {response.status_code} redirect to'
                 f' {_redact_url(str(redirect.url))}'
@@ -686,24 +691,47 @@ def compare_github_refs(
 
 
 def _read_limited(response, max_bytes):
-    """Return the decoded body of a streamed httpx response, raising ValueError as soon
-    as it grows past `max_bytes` (`None` reads without a limit). Only gzip and deflate
-    are decoded, which inflate a received block by about a thousandfold at most, so a
-    single block overshoots the limit by a bounded amount before it is refused."""
+    """Return the decoded body of a streamed httpx response, raising `_RefusedError`
+    as soon as it grows past `max_bytes` (`None` reads without a limit). Only gzip and
+    deflate are decoded, which inflate a received block by about a thousandfold at
+    most, so a single block overshoots the limit by a bounded amount before it is
+    refused."""
     if max_bytes is None:
         return response.read()
     message = f'Refused to read a response larger than {human.bytes2human(max_bytes)}'
     declared = response.headers.get('content-length', '')
     if declared.isdigit() and int(declared) > max_bytes:
-        raise ValueError(message)
+        raise _RefusedError(message)
     chunks = []
     size = 0
     for chunk in response.iter_bytes():
         size += len(chunk)
         if size > max_bytes:
-            raise ValueError(message)
+            raise _RefusedError(message)
         chunks.append(chunk)
     return b''.join(chunks)
+
+
+# Status codes worth another attempt. Every other error status is the server's
+# considered answer and comes back the same, and `fetch()` does not wait between
+# attempts, so a 425 or 429 (come back later) would only be repeated too early.
+_RETRY_STATUS_CODES = frozenset({408, 500, 502, 503, 504})
+
+
+def _is_transient(exc):
+    """Say whether an httpx error may clear up on the next attempt.
+
+    Timeouts, broken connections, a server that closed the connection mid-answer and a
+    failing proxy may. A certificate that does not verify, a request httpx considers
+    malformed, an unsupported scheme, a redirect loop and a body that cannot be decoded
+    come back the same. Verified against the exception hierarchy of httpx 0.26.0 and
+    0.28.1, which is identical.
+    """
+    if _tls_verify_error(exc) is not None:
+        return False
+    return isinstance(exc, httpx.TransportError) and not isinstance(
+        exc, (httpx.LocalProtocolError, httpx.UnsupportedProtocol)
+    )
 
 
 def _fetch_once(
@@ -729,6 +757,9 @@ def _fetch_once(
 ):
     """Make one attempt of `fetch()`, which documents every parameter and wraps this
     in its retry loop.
+
+    Returns `(success, result, retryable)`, where `retryable` says whether a failed
+    attempt may succeed when it is repeated.
     """
     if header is None:
         header = {}
@@ -740,21 +771,25 @@ def _fetch_once(
             'Python module "httpx" is not installed. '
             "Install it with `pip install 'httpx[http2]'` or "
             '`dnf install python3-httpx python3-h2`.'
-        )
+        ), False
 
     if max_bytes is not None and (
         isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 0
     ):
         return False, (
             f'`max_bytes` must be a non-negative integer or None, not {max_bytes!r}'
-        )
+        ), False
     if http_version == '3':
-        return False, f'HTTP/3 not implemented yet, while fetching {_redact_url(url)}'
+        return (
+            False,
+            f'HTTP/3 not implemented yet, while fetching {_redact_url(url)}',
+            False,
+        )
     if http_version not in ('1.0', '1.1', '2'):
         return False, (
             f'Unsupported http_version "{http_version}"; expected one of '
             f'"1.0", "1.1", "2", "3"'
-        )
+        ), False
 
     url_safe = _redact_url(url)
 
@@ -765,12 +800,13 @@ def _fetch_once(
             elif encoding == 'serialized-json':
                 body = json.dumps(data)
             else:
-                return False, f'Unknown encoding "{encoding}"'
+                return False, f'Unknown encoding "{encoding}"', False
             body = txt.to_bytes(body)
         except TypeError as e:
             return (
                 False,
                 f'Type error "{e}" while encoding the request body ({_body_hint(data)})',
+                False,
             )
     else:
         body = None
@@ -792,7 +828,7 @@ def _fetch_once(
     try:
         ctx = _build_ssl_context(insecure, tls_min, tls_max, cacert=cacert)
     except ValueError as e:
-        return False, str(e)
+        return False, str(e), False
 
     auth = None
     if digest_auth_user and digest_auth_password:
@@ -817,7 +853,7 @@ def _fetch_once(
 
             success, resolved = net.get_proxy(url)
             if not success:
-                return False, f'{resolved}, while fetching {url_safe}'
+                return False, f'{resolved}, while fetching {url_safe}', False
             effective_proxy = resolved
 
     # Phase-by-phase timings are only collected when the caller asks for the extended
@@ -854,7 +890,7 @@ def _fetch_once(
             client_kwargs['http2'] = http_version == '2'
         client = _install_safe_redirect_stripping(httpx.Client(**client_kwargs))
     except Exception as e:
-        return False, f'{e} while fetching {url_safe}'
+        return False, f'{e} while fetching {url_safe}', False
 
     method = (method or ('POST' if body else 'GET')).upper()
     tls_version = None
@@ -891,16 +927,18 @@ def _fetch_once(
             response.raise_for_status()
     except httpx.HTTPStatusError as e:
         if not response_on_error:
-            return False, (
+            return (
+                False,
                 f'HTTP error "{e.response.status_code} {e.response.reason_phrase}"'
-                f' while fetching {url_safe}'
+                f' while fetching {url_safe}',
+                e.response.status_code in _RETRY_STATUS_CODES,
             )
         else:
             success = False
     except httpx.HTTPError as e:
         verify_message = _tls_verify_message(e, url_safe)
         if verify_message:
-            return False, verify_message
+            return False, verify_message, False
         message = f'URL error "{e}" for {url_safe}'
         # A port that speaks TLS answers a plaintext request with a TLS record or
         # closes the connection, which surfaces as a protocol error naming
@@ -912,13 +950,16 @@ def _fetch_once(
                 '. If this endpoint speaks TLS, request it with "https://" '
                 'instead of "http://"'
             )
-        return False, message
+        return False, message, _is_transient(e)
     except TypeError as e:
         return False, (
             f'Type error "{e}" while fetching {url_safe} ({_body_hint(data)})'
-        )
+        ), False
+    except (_RefusedError, httpx.InvalidURL) as e:
+        return False, f'{e} while fetching {url_safe}', False
     except Exception as e:
-        return False, f'{e} while fetching {url_safe}'
+        # unforeseen, so it keeps the benefit of the doubt it always had
+        return False, f'{e} while fetching {url_safe}', True
 
     try:
         charset = response_charset or 'UTF-8'
@@ -938,8 +979,10 @@ def _fetch_once(
         else:
             body_decoded = body_bytes
 
+        # only reached with `response_on_error` when the status was an error
+        retryable = not success and status_code in _RETRY_STATUS_CODES
         if not extended:
-            return success, body_decoded
+            return success, body_decoded, retryable
 
         timings = {'total': elapsed_seconds}
         if timing_backend is not None:
@@ -952,9 +995,10 @@ def _fetch_once(
             'tls_version': tls_version,
             'alpn': alpn,
             'peer_cert_der': peer_cert_der,
-        }
+        }, retryable
     except Exception as e:
-        return False, f'{e} while fetching {url_safe}'
+        # the answer arrived and will arrive the same way again
+        return False, f'{e} while fetching {url_safe}', False
 
 
 
@@ -980,6 +1024,7 @@ def fetch(
     cacert=None,
     retries=0,
     max_bytes=DEFAULT_MAX_BYTES,
+    retry_if=None,
 ):
     """
     Fetch any URL with optional POST, basic/digest authentication and SSL/TLS handling.
@@ -995,7 +1040,7 @@ def fetch(
 
         Start
          |
-         |--> Retry loop (`retries`), around everything below
+         |--> Retry loop (`retries`, `retry_if`), around everything below
          |
          |--> Encode body (urlencode | serialized-json)
          |
@@ -1084,10 +1129,20 @@ def fetch(
           If true, return the response for error conditions (useful when the response body of
           an API contains error details)
     retries : int, optional
-          How many extra attempts to make when the request fails. `0` (default) means a single
-          attempt. Useful against a flaky endpoint (a BMC, a storage controller) that drops the
-          odd request. There is no delay between the attempts, because a check has a limited
-          runtime and a timeout has usually passed already.
+          How many extra attempts to make when the request fails in a way that may clear
+          up: a timeout, a dropped connection, a failing proxy, or an answer of 408,
+          500, 502, 503 or 504. Anything else, such as a 401 or 404, a certificate that
+          does not verify or a request `fetch()` refuses, comes back the same and is
+          reported at once. `0` (default) means a single attempt. Useful against a flaky
+          endpoint (a BMC, a storage controller) that drops the odd request. There is no
+          delay between the attempts, because a caller usually runs on a limited budget
+          and a timeout has passed already.
+    retry_if : callable, optional
+          Also repeat an answer that did arrive, within the same `retries` budget, when
+          `retry_if(result)` returns True for it. `result` is what `fetch()` would
+          return on success. Useful against an endpoint that intermittently answers
+          "200 OK" with something other than the document asked for. When the budget
+          is spent, the last answer is returned as it is. Defaults to `None`.
 
     Returns
     -------
@@ -1127,9 +1182,11 @@ def fetch(
     ...     extended=True,
     ... )
     """
+    if retry_if is not None and not callable(retry_if):
+        return False, f'`retry_if` must be callable or None, not {retry_if!r}'
     attempt = 0
     while True:
-        result = _fetch_once(
+        success, result, retryable = _fetch_once(
             url,
             cacert=cacert,
             data=data,
@@ -1150,8 +1207,11 @@ def fetch(
             tls_min=tls_min,
             to_text=to_text,
         )
-        if result[0] or attempt >= retries:
-            return result
+        if success and attempt < retries and retry_if is not None and retry_if(result):
+            attempt += 1
+            continue
+        if success or not retryable or attempt >= retries:
+            return success, result
         attempt += 1
 
 
@@ -1175,6 +1235,7 @@ def fetch_json(
     response_on_error=False,
     cacert=None,
     max_bytes=DEFAULT_MAX_BYTES,
+    retry_if=None,
 ):
     """
     Fetch JSON from a URL with optional POST, authentication and SSL/TLS handling.
@@ -1187,7 +1248,7 @@ def fetch_json(
 
     Parameters
     ----------
-    url, insecure, no_proxy, proxy, timeout, header, data, encoding, digest_auth_user, digest_auth_password, extended, http_version, tls_min, tls_max, method, response_on_error, cacert, max_bytes
+    url, insecure, no_proxy, proxy, timeout, header, data, encoding, digest_auth_user, digest_auth_password, extended, http_version, tls_min, tls_max, method, response_on_error, cacert, max_bytes, retry_if
         See `fetch()`. `to_text` is not offered here, the JSON decoder needs a string.
     retries : int, optional
         Handed to `fetch()`, which repeats a request that
@@ -1228,6 +1289,7 @@ def fetch_json(
         proxy=proxy,
         response_on_error=response_on_error,
         retries=retries,
+        retry_if=retry_if,
         timeout=timeout,
         tls_max=tls_max,
         tls_min=tls_min,

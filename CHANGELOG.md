@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 tbd
 
+### Added
+
+* url.py: `fetch()` and `fetch_json()` take `retry_if`
+
+### Changed
+
+* feedparser.py: `fetch_soup()` no longer repeats a download that failed in a way that comes back the same, such as a 404
+* url.py: `fetch()` repeats only a failure that may clear up (a timeout, a dropped connection, a 408 or a 5xx), no longer a 401, a 404 or a request it refused
+
 
 ## [v8.0.0] - 2026-09-21
 
