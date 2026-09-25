@@ -47,8 +47,8 @@ updates:
   # One pip entry per Python-LTS lockfile under `lockfiles/`. No
   # entries for `/lockfiles/py39` or `/lockfiles/py310` on purpose:
   # upstream packages keep raising their minimum Python (urllib3 2.7,
-  # requests 2.33, anyio 4.13, hpack 4.2, pypsrp 0.9, oslo-* 10 then
-  # 10.5, pycparser 3, ...). Dependabot does not honour
+  # requests 2.33, anyio 4.13, hpack 4.2, pypsrp 0.9, pycparser 3,
+  # ...). Dependabot does not honour
   # `requires_python`, so it proposes bumps that break
   # `pip install --require-hashes`: on py39 bumps needing Python
   # >= 3.10 (RHEL 8 / Debian 11), on py310 bumps needing Python
