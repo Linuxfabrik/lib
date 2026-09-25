@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092401'
 
 import csv
 import glob as _glob
@@ -21,9 +21,16 @@ import hashlib
 import os
 import re
 import shutil
+import stat as _stat
 import tempfile
 
 from . import shell, txt
+
+try:
+    import pwd
+except ImportError:
+    # Not on Windows; resolve_trusted_path() refuses to decide there.
+    pwd = None
 
 
 def bd2dmd(device):
@@ -268,6 +275,25 @@ def get_block_devices():
     return disks
 
 
+def _fingerprint_handle(f, fingerprint, length):
+    """Hash the slice of an open binary file that `get_fingerprint()` asks for."""
+    if length == 0:
+        hashed = 0
+        # Read in chunks: the file is hashed as a whole, but never held as a whole
+        # in memory.
+        for chunk in iter(lambda: f.read(65536), b''):
+            fingerprint.update(chunk)
+            hashed += len(chunk)
+        return True, (fingerprint.hexdigest(), hashed)
+    if length < 0:
+        # Seek to the start of the tail. Clamped to 0, so a file shorter than the
+        # tail is read from its beginning instead of raising.
+        f.seek(max(0, os.fstat(f.fileno()).st_size + length))
+    data = f.read(abs(length))
+    fingerprint.update(data)
+    return True, (fingerprint.hexdigest(), len(data))
+
+
 def get_fingerprint(filename, length=256, algorithm='sha256'):
     """
     Hash a slice of a file, to recognize the file by its content instead of by its metadata.
@@ -296,8 +322,10 @@ def get_fingerprint(filename, length=256, algorithm='sha256'):
 
     Parameters
     ----------
-    filename : str
-        Path to the file to fingerprint.
+    filename : str or binary file object
+        Path to the file to fingerprint, or a file already opened in binary mode.
+        Pass the handle when the file has to be the very one that is read afterwards
+        (see `open_file()`); it is not closed, and its position is not restored.
     length : int, optional
         How many bytes to hash, and from which side:
 
@@ -355,26 +383,15 @@ def get_fingerprint(filename, length=256, algorithm='sha256'):
     except ValueError as e:
         return False, f'Unsupported hash algorithm "{algorithm}": {e}'
     try:
+        if hasattr(filename, 'read'):
+            filename.seek(0)
+            return _fingerprint_handle(filename, fingerprint, length)
         with open(filename, mode='rb') as f:
-            if length == 0:
-                hashed = 0
-                # Read in chunks: the file is hashed as a whole, but never held
-                # as a whole in memory.
-                for chunk in iter(lambda: f.read(65536), b''):
-                    fingerprint.update(chunk)
-                    hashed += len(chunk)
-                return True, (fingerprint.hexdigest(), hashed)
-            if length < 0:
-                # Seek to the start of the tail. Clamped to 0, so a file shorter
-                # than the tail is read from its beginning instead of raising.
-                f.seek(max(0, os.fstat(f.fileno()).st_size + length))
-            data = f.read(abs(length))
+            return _fingerprint_handle(f, fingerprint, length)
     except OSError as e:
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
-    fingerprint.update(data)
-    return True, (fingerprint.hexdigest(), len(data))
 
 
 def get_inode_usage(mount):
@@ -844,6 +861,117 @@ def mkdir(path, mode=0o755, exist_ok=True):
         return False, f'Unknown error creating {path}: {e}'
 
 
+def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
+    """
+    Open a file for reading, optionally confined to a set of directories.
+
+    A process that runs with more privileges than whoever chose the path (for example
+    root via sudo) must not be steerable into reading a file of the caller's choice.
+    With `allowed_roots` the file that is actually opened is checked, not just the
+    name: after the open, the handle is compared with what the path resolves to, so a
+    directory anywhere in the path that is swapped for a symlink between the check and
+    the open is caught as well. `O_NOFOLLOW` alone protects only the last component.
+
+    Parameters
+    ----------
+    filename : str
+        Path to open.
+    binary : bool, optional
+        Open in binary mode. Defaults to False (UTF-8 text).
+    allowed_roots : iterable of str, optional
+        When given, only a regular file whose real path lies inside one of these
+        roots is opened. A symlink pointing out of a root, a path that changed while
+        it was being opened, and anything that is not a regular file (a FIFO that
+        would block the reader, a device) are refused. Defaults to None (no
+        containment).
+    nofollow : bool, optional
+        Refuse a symlink as the last path component (`O_NOFOLLOW`). Defaults to
+        False.
+
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True on success, otherwise False.
+          - tuple[1] (**file object or str**): The open file object, or an error
+            message.
+
+    Notes
+    -----
+    - A hard link inside a root that points to a file elsewhere is indistinguishable
+      from a regular file. On Linux, `fs.protected_hardlinks=1` (the default on
+      current distributions) keeps an unprivileged user from creating one to a file
+      they do not own.
+
+    Examples
+    --------
+    >>> success, handle = open_file('/var/log/messages', allowed_roots=['/var/log'])
+    """
+    if allowed_roots and not is_within(filename, allowed_roots):
+        return False, (
+            f'Refusing to read "{filename}": resolved path is outside the allowed '
+            f'roots ({", ".join(allowed_roots)}); bind-mount it in if intended.'
+        )
+    if not allowed_roots and not nofollow:
+        try:
+            if binary:
+                return True, open(filename, mode='rb')
+            return True, open(filename, mode='r', encoding='utf-8')
+        except OSError as e:
+            return False, (
+                f'I/O error "{e.strerror}" while opening or reading {filename}'
+            )
+        except Exception as e:
+            return False, f'Unknown error opening or reading {filename}: {e}'
+    flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0)
+    if nofollow:
+        # POSIX-only. Where it is missing getattr() yields 0 and the flag is absent.
+        flags |= getattr(os, 'O_NOFOLLOW', 0)
+    if allowed_roots:
+        # Opening a FIFO for reading blocks until a writer shows up. Non-blocking,
+        # the open returns at once and the type check below refuses it.
+        flags |= getattr(os, 'O_NONBLOCK', 0)
+    try:
+        fd = os.open(filename, flags)
+    except OSError as e:
+        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
+    except Exception as e:
+        return False, f'Unknown error opening or reading {filename}: {e}'
+    try:
+        if allowed_roots:
+            opened = os.fstat(fd)
+            if not _stat.S_ISREG(opened.st_mode):
+                os.close(fd)
+                return False, f'Refusing to read "{filename}": not a regular file.'
+            # The file that was opened has to be the one the path names now, and
+            # the path still has to lie inside the roots. A path that was
+            # redirected between the check and the open fails one of the two.
+            try:
+                current = os.stat(os.path.realpath(filename))
+            except OSError:
+                current = None
+            if (
+                current is None
+                or (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino)
+                or not is_within(filename, allowed_roots)
+            ):
+                os.close(fd)
+                return False, (
+                    f'Refusing to read "{filename}": the path changed while it was '
+                    'being opened.'
+                )
+            if hasattr(os, 'set_blocking'):
+                os.set_blocking(fd, True)
+        if binary:
+            return True, os.fdopen(fd, 'rb')
+        return True, os.fdopen(fd, mode='r', encoding='utf-8')
+    except OSError as e:
+        os.close(fd)
+        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
+    except Exception as e:
+        os.close(fd)
+        return False, f'Unknown error opening or reading {filename}: {e}'
+
+
 def read_csv(
     filename,
     delimiter=',',
@@ -916,60 +1044,6 @@ def read_csv(
         return False, f'Unknown error opening or reading {filename}: {e}'
 
 
-def _open_for_read(filename, binary=False, allowed_roots=None, nofollow=False):
-    """
-    Open a file for reading, applying the containment guards the readers below share.
-
-    The guarantee lives here rather than in each caller, so a privileged consumer gets
-    the same protection everywhere (see the "Confining a path a privileged plugin was
-    pointed at" section in the monitoring-plugins CONTRIBUTING.md).
-
-    Parameters
-    ----------
-    filename : str
-        Path to open.
-    binary : bool, optional
-        Open in binary mode. Defaults to False (UTF-8
-        text).
-    allowed_roots : iterable of str, optional
-        When given, the file is
-        refused unless its real path resolves inside one of these roots. Symlinks and
-        `..` are resolved first (via `is_within()`), so a symlink pointing out of a root
-        is rejected. Defaults to None (no containment).
-    nofollow : bool, optional
-        Refuse to open a symlink at the final path
-        component (`O_NOFOLLOW`), which closes the check-then-open race that
-        `allowed_roots` alone leaves. Defaults to False.
-
-    Returns
-    -------
-    tuple
-          - tuple[0] (**bool**): True on success, otherwise False.
-          - tuple[1] (**file object or str**): The open file object, or an error message.
-    """
-    if allowed_roots and not is_within(os.path.realpath(filename), allowed_roots):
-        return False, (
-            f'Refusing to read "{filename}": resolved path is outside the allowed '
-            f'roots ({", ".join(allowed_roots)}); bind-mount it in if intended.'
-        )
-    try:
-        if nofollow:
-            # O_NOFOLLOW is POSIX-only. On a platform without it getattr() yields 0, so
-            # the flag is simply absent there and the open still succeeds; the caller
-            # keeps the allowed_roots containment either way.
-            fd = os.open(filename, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
-            if binary:
-                return True, os.fdopen(fd, 'rb')
-            return True, os.fdopen(fd, mode='r', encoding='utf-8')
-        if binary:
-            return True, open(filename, mode='rb')
-        return True, open(filename, mode='r', encoding='utf-8')
-    except OSError as e:
-        return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
-    except Exception as e:
-        return False, f'Unknown error opening or reading {filename}: {e}'
-
-
 def read_env(filename, delimiter='=', allowed_roots=None, nofollow=False):
     """
     Read a shell script that sets environment variables and return a dictionary with the
@@ -988,11 +1062,11 @@ def read_env(filename, delimiter='=', allowed_roots=None, nofollow=False):
         Defaults to '='.
     allowed_roots : iterable of str, optional
         Confine the read to these
-        roots; a file resolving outside them is refused. See `_open_for_read()`.
+        roots; a file resolving outside them is refused. See `open_file()`.
         Defaults to None.
     nofollow : bool, optional
         Refuse to follow a symlink at the final path
-        component. See `_open_for_read()`. Defaults to False.
+        component. See `open_file()`. Defaults to False.
 
     Returns
     -------
@@ -1017,7 +1091,7 @@ def read_env(filename, delimiter='=', allowed_roots=None, nofollow=False):
     >>> read_env('env.sh')
     {'OS_AUTH_URL': 'https://api/v3', 'OS_PROJECT_NAME': 'mypro', 'OS_PASSWORD': 'linuxfabrik'}
     """
-    success, handle = _open_for_read(
+    success, handle = open_file(
         filename, allowed_roots=allowed_roots, nofollow=nofollow
     )
     if not success:
@@ -1063,14 +1137,13 @@ def read_file(
         reads the file completely.
     allowed_roots : iterable of str, optional
         Confine the read to these
-        roots; a file whose real path resolves outside them is refused. A plugin that
-        runs as root and opens a caller-supplied path must pass this so a planted symlink
-        cannot redirect the read to `/etc/shadow` or a private key. See
-        `_open_for_read()`. Defaults to None.
+        roots; a file whose real path resolves outside them is refused. A process
+        that runs with more privileges than whoever chose the path must pass this, so
+        a planted symlink cannot redirect the read to `/etc/shadow` or a private key.
+        See `open_file()`. Defaults to None.
     nofollow : bool, optional
         Refuse to follow a symlink at the final path
-        component (`O_NOFOLLOW`), closing the check-then-open race `allowed_roots` alone
-        leaves. See `_open_for_read()`. Defaults to False.
+        component (`O_NOFOLLOW`). See `open_file()`. Defaults to False.
 
     Returns
     -------
@@ -1095,7 +1168,7 @@ def read_file(
     >>> success, header = read_file('plugin.php', binary=True, max_bytes=8192)
     >>> success, content = read_file(dmesg, allowed_roots=[dump_dir], nofollow=True)
     """
-    success, handle = _open_for_read(
+    success, handle = open_file(
         filename, binary=binary, allowed_roots=allowed_roots, nofollow=nofollow
     )
     if not success:
@@ -1107,6 +1180,102 @@ def read_file(
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
+
+
+def resolve_trusted_path(path, owners=None):
+    """
+    Resolve a path and confirm that nobody but root and the given owners can change
+    what it points to.
+
+    Use this before a process running with more privileges than whoever chose the path
+    executes a file, connects to a socket, or derives an identity from a file there.
+    Unlike a read, none of these can be checked after the fact on an open handle, so
+    the path itself has to be out of reach: every directory from `/` down and the
+    object itself must belong to root or one of `owners`, and none of them may be
+    writable by anybody else. Once that holds, nobody else can swap a component, so
+    the resolved path that is returned stays valid. Use the returned path, not the one
+    that was passed in; a symlink on the way is fine because it is already resolved.
+
+    Parameters
+    ----------
+    path : str
+        The path to check. It has to exist.
+    owners : iterable of int, optional
+        UIDs trusted besides root, for example the account a service runs as.
+        Group write access is accepted only for the primary groups of root and these
+        accounts. Defaults to None (root only).
+
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the path is trusted, otherwise False.
+          - tuple[1] (**str**): The resolved path, or an error message.
+
+    Notes
+    -----
+    - The mode of a socket decides who may connect to it, not who may replace it, so
+      it is not checked on a socket itself; replacing one takes write access to its
+      directory, which is checked.
+    - A directory writable by everyone (such as `/tmp`, sticky bit or not) is never
+      trusted.
+    - POSIX only. Where ownership cannot be determined (Windows), the path is refused.
+
+    Examples
+    --------
+    >>> resolve_trusted_path('/usr/sbin/httpd')
+    (True, '/usr/sbin/httpd')
+    >>> resolve_trusted_path('/tmp/httpd')
+    (False, 'Refusing "/tmp/httpd": "/tmp" is writable by everyone.')
+    """
+    if not isinstance(path, str) or not path:
+        return False, f'Refusing "{path}": not a path.'
+    if pwd is None:
+        return (
+            False,
+            f'Refusing "{path}": ownership cannot be checked on this platform.',
+        )
+    uids = {0}
+    for owner in owners or ():
+        if isinstance(owner, int) and not isinstance(owner, bool) and owner >= 0:
+            uids.add(owner)
+    gids = {0}
+    for uid in uids:
+        try:
+            gids.add(pwd.getpwuid(uid).pw_gid)
+        except KeyError:
+            pass
+    real = os.path.realpath(path)
+    # Walk from the top down: once a directory is trusted, nobody else can change
+    # its entries, so the check of the next level cannot be undermined from above.
+    current = os.sep
+    components = [part for part in real.split(os.sep) if part]
+    for index in range(len(components) + 1):
+        if index:
+            current = os.path.join(current, components[index - 1])
+        try:
+            st = os.lstat(current)
+        except OSError as e:
+            return (
+                False,
+                f'Refusing "{path}": cannot examine "{current}" ({e.strerror}).',
+            )
+        if _stat.S_ISLNK(st.st_mode):
+            return False, f'Refusing "{path}": "{current}" changed while being checked.'
+        if st.st_uid not in uids:
+            return False, (
+                f'Refusing "{path}": "{current}" belongs to uid {st.st_uid}, which '
+                'is not trusted for this.'
+            )
+        if _stat.S_ISSOCK(st.st_mode):
+            continue
+        if st.st_mode & _stat.S_IWOTH:
+            return False, f'Refusing "{path}": "{current}" is writable by everyone.'
+        if st.st_mode & _stat.S_IWGRP and st.st_gid not in gids:
+            return False, (
+                f'Refusing "{path}": "{current}" is writable by group {st.st_gid}, '
+                'which is not trusted for this.'
+            )
+    return True, real
 
 
 def rm_dir(path):

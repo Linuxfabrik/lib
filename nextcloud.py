@@ -11,14 +11,51 @@
 """This library collects some Nextcloud related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092401'
 
 import json
 import os
 import shlex
 import shutil
+import stat
 
 from . import disk, shell
+
+
+def _locate(path):
+    """Resolve an installation and the account `occ` has to run as.
+
+    The account is the owner of `config/config.php`, so whoever can place that file
+    decides who runs `occ`. The file therefore has to be a real file, not a symlink to
+    one that belongs to somebody else, and the installation must be out of reach of
+    anybody but root and that account: otherwise an account without access to the
+    installation could have `occ` code of its choosing run as root or as the owner.
+
+    Returns `(True, (root, occ, uid))` with resolved paths, or `(False, message)`.
+    """
+    try:
+        path = os.fspath(path)
+    except TypeError:
+        return False, f'Refusing `{path}`: not a path.'
+    config = os.path.join(path, 'config', 'config.php')
+    try:
+        config_stat = os.lstat(config)
+    except (OSError, TypeError, ValueError):
+        return False, (
+            f'Could not determine the owner of `{config}`. Make sure the path points to '
+            'a Nextcloud installation and that the file is readable.'
+        )
+    if not stat.S_ISREG(config_stat.st_mode):
+        return False, f'Refusing `{config}`: not a regular file.'
+    uid = config_stat.st_uid
+    resolved = []
+    for candidate in (path, config, os.path.join(path, 'occ')):
+        success, result = disk.resolve_trusted_path(candidate, owners=[uid])
+        if not success:
+            return False, result
+        resolved.append(result)
+    root, _config, occ = resolved
+    return True, (root, occ, uid)
 
 
 def run_occ(path, cmd, _format='json', timeout=None):
@@ -60,6 +97,11 @@ def run_occ(path, cmd, _format='json', timeout=None):
 
     Notes
     -----
+    - The installation is refused unless nobody but root and the owner of
+      `config/config.php` can change it, from `/` down to `occ` (see
+      `disk.resolve_trusted_path()`), and `config/config.php` has to be a real file. Who
+      owns that file decides who `occ` runs as, so a symlink or a copy placed by someone
+      else would otherwise choose the account for them.
     - `_format` only selects how the output is parsed. It does not add `--output=json` to the
       command; the caller has to do that. Not every `occ` command accepts that option, and the
       only valid values are `plain`, `json` and `json_pretty`. Some commands, `config:list`
@@ -98,16 +140,11 @@ def run_occ(path, cmd, _format='json', timeout=None):
             'reachable for the user running this process.'
         )
 
-    # get the owner of config.php
-    config = os.path.join(path, 'config/config.php')
-    user = disk.get_owner(config)
-    if user == -1:
-        return False, (
-            f'Could not determine the owner of `{config}`. Make sure the path points to a '
-            'Nextcloud installation and that the file is readable.'
-        )
+    success, result = _locate(path)
+    if not success:
+        return False, result
+    path, occ, user = result
 
-    occ = os.path.join(path, 'occ')
     # `--no-warnings` goes in front of the subcommand so it cannot be swallowed as the value
     # of a preceding optional-value option. Symfony parses global options anywhere.
     occ_cmd = [php, occ, '--no-warnings', *shlex.split(cmd)]

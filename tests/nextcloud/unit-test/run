@@ -16,7 +16,8 @@ external touch points, all of which are patched so the suite is fully
 hermetic (no PHP, no `occ`, no `sudo`, no filesystem stat, no subprocess):
 
 - `shutil.which('php')`  -> locate the PHP interpreter
-- `disk.get_owner(...)`  -> numeric UID owning config/config.php, -1 on failure
+- `_locate(...)`         -> resolved installation, `occ` and the UID owning
+                           config/config.php, or an error
 - `os.geteuid()`         -> decide whether the sudo prefix is needed at all
 - `shell.shell_exec(...)` -> run the assembled `sudo ... php occ <cmd>` line
 
@@ -36,7 +37,9 @@ live in fixtures and are fed through the JSON path end to end.
 import contextlib
 import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -83,6 +86,15 @@ def load_fixture(name):
     return json.loads(load_fixture_text(name))
 
 
+def located(owner):
+    """Return a stand-in for `_locate()` that finds an installation owned by `owner`."""
+
+    def _locate(path):
+        return True, (path, os.path.join(path, 'occ'), owner)
+
+    return _locate
+
+
 def patched(which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0)), euid=OTHER_UID):
     """
     Build the four patchers that isolate run_occ from the host.
@@ -95,7 +107,7 @@ def patched(which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0)), euid=OTHE
     the sudo prefix is on unless a test says otherwise.
     """
     which_p = mock.patch.object(nextcloud.shutil, 'which', return_value=which)
-    owner_p = mock.patch.object(nextcloud.disk, 'get_owner', return_value=owner)
+    owner_p = mock.patch.object(nextcloud, '_locate', side_effect=located(owner))
     euid_p = mock.patch.object(nextcloud.os, 'geteuid', return_value=euid)
     shell_mock = mock.Mock(return_value=shell_ret)
     shell_p = mock.patch.object(nextcloud.shell, 'shell_exec', shell_mock)
@@ -154,7 +166,7 @@ class TestMissingPhp(_Base):
         # No point statting config.php if there is no interpreter to run occ.
         with (
             mock.patch.object(nextcloud.shutil, 'which', return_value=None),
-            mock.patch.object(nextcloud.disk, 'get_owner') as go,
+            mock.patch.object(nextcloud, '_locate') as go,
             mock.patch.object(nextcloud.shell, 'shell_exec') as se,
         ):
             nextcloud.run_occ(NC_PATH, 'status')
@@ -182,14 +194,14 @@ class TestCommandConstruction(_Base):
     def test_owner_lookup_targets_config_php(self):
         with (
             mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN),
-            mock.patch.object(nextcloud.disk, 'get_owner', return_value=UID) as go,
+            mock.patch.object(nextcloud, '_locate', side_effect=located(UID)) as go,
             mock.patch.object(nextcloud.os, 'geteuid', return_value=OTHER_UID),
             mock.patch.object(
                 nextcloud.shell, 'shell_exec', return_value=(True, ('{}', '', 0))
             ),
         ):
             nextcloud.run_occ(NC_PATH, 'status')
-        go.assert_called_once_with(os.path.join(NC_PATH, 'config/config.php'))
+        go.assert_called_once_with(NC_PATH)
 
     def test_full_command_list(self):
         self.run_occ(NC_PATH, 'status')
@@ -247,7 +259,7 @@ class TestCommandConstruction(_Base):
         with (
             without_geteuid(),
             mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN),
-            mock.patch.object(nextcloud.disk, 'get_owner', return_value=UID),
+            mock.patch.object(nextcloud, '_locate', side_effect=located(UID)),
             mock.patch.object(nextcloud.shell, 'shell_exec', shell_mock),
         ):
             nextcloud.run_occ(NC_PATH, 'status')
@@ -289,20 +301,137 @@ class TestCommandConstruction(_Base):
 # -----------------------------------------------------------------------------
 
 
-class TestUnknownOwner(_Base):
-    """disk.get_owner() returns -1 when config.php is missing or unreadable."""
+class TestUnknownOwner(unittest.TestCase):
+    """config/config.php is missing, so there is no owner to run `occ` as."""
+
+    def run_occ(self, path):
+        with (
+            mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN),
+            mock.patch.object(nextcloud.shell, 'shell_exec') as shell_mock,
+        ):
+            result = nextcloud.run_occ(path, 'status')
+        self.shell_mock = shell_mock
+        return result
 
     def test_returns_false(self):
-        ok, _ = self.run_occ(NC_PATH, 'status', owner=-1)
+        ok, _ = self.run_occ('/nonexistent/nextcloud')
         self.assertFalse(ok)
 
     def test_message_names_the_file(self):
-        _ok, msg = self.run_occ(NC_PATH, 'status', owner=-1)
-        self.assertIn('/var/www/nextcloud/config/config.php', msg)
+        _ok, msg = self.run_occ('/nonexistent/nextcloud')
+        self.assertIn('/nonexistent/nextcloud/config/config.php', msg)
 
     def test_occ_is_not_executed(self):
         # Without a UID there is nothing sensible to pass to sudo --user.
-        self.run_occ(NC_PATH, 'status', owner=-1)
+        self.run_occ('/nonexistent/nextcloud')
+        self.shell_mock.assert_not_called()
+
+
+def _trusted_base():
+    """Return a fresh directory whose whole path nobody but root and the current
+    user can change, or None where the test host offers none.
+
+    The default temp directory does not qualify: /tmp is writable by everyone.
+    """
+    home = os.path.expanduser('~')
+    if (
+        not hasattr(os, 'getuid')
+        or not nextcloud.disk.resolve_trusted_path(home, owners=[os.getuid()])[0]
+    ):
+        return None
+    return tempfile.mkdtemp(prefix='.lftest-nextcloud-', dir=home)
+
+
+@unittest.skipUnless(os.name == 'posix', 'ownership is a POSIX concept here')
+class TestInstallationTrust(unittest.TestCase):
+    """`occ` runs only from an installation nobody else can change, as its owner.
+
+    One test per way somebody without access to the installation could choose the
+    account or the code: a symlinked config.php, an installation in a directory
+    anybody can write to, an `occ` that resolves into such a directory.
+    """
+
+    def setUp(self):
+        self.base = _trusted_base()
+        if self.base is None:
+            self.skipTest('no directory on this host is trusted for the test user')
+        self.nc = self.make_installation(self.base)
+
+    def tearDown(self):
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    @staticmethod
+    def make_installation(parent):
+        nc = os.path.join(parent, 'nextcloud')
+        os.makedirs(os.path.join(nc, 'config'))
+        with open(os.path.join(nc, 'config', 'config.php'), 'w') as f:
+            f.write('<?php\n')
+        with open(os.path.join(nc, 'occ'), 'w') as f:
+            f.write('<?php\n')
+        return nc
+
+    def run_occ(self, path):
+        with (
+            mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN),
+            mock.patch.object(
+                nextcloud.shell, 'shell_exec', return_value=(True, ('{}', '', 0))
+            ) as shell_mock,
+        ):
+            result = nextcloud.run_occ(path, 'status')
+        self.shell_mock = shell_mock
+        return result
+
+    def test_trusted_installation_runs_resolved_occ_as_its_owner(self):
+        self.assertEqual(self.run_occ(self.nc), (True, {}))
+        (cmd,), kwargs = self.shell_mock.call_args
+        occ = os.path.realpath(os.path.join(self.nc, 'occ'))
+        self.assertIn(occ, cmd)
+        self.assertEqual(kwargs['cwd'], os.path.realpath(self.nc))
+        if os.geteuid() != os.getuid():
+            self.assertEqual(cmd[:3], ['sudo', '--user', f'#{os.getuid()}'])
+
+    def test_symlinked_config_php_is_refused(self):
+        # The owner of the link target would decide the account, here root.
+        config = os.path.join(self.nc, 'config', 'config.php')
+        os.remove(config)
+        os.symlink('/etc/passwd', config)
+        ok, msg = self.run_occ(self.nc)
+        self.assertFalse(ok)
+        self.assertIn('not a regular file', msg)
+        self.shell_mock.assert_not_called()
+
+    def test_installation_in_a_directory_anybody_can_write_is_refused(self):
+        work = tempfile.mkdtemp(prefix='lftest-nextcloud-untrusted-')
+        try:
+            nc = self.make_installation(work)
+            ok, msg = self.run_occ(nc)
+            self.assertFalse(ok)
+            self.assertIn('writable by everyone', msg)
+            self.shell_mock.assert_not_called()
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def test_occ_resolving_into_a_directory_anybody_can_write_is_refused(self):
+        work = tempfile.mkdtemp(prefix='lftest-nextcloud-untrusted-')
+        try:
+            planted = os.path.join(work, 'occ')
+            with open(planted, 'w') as f:
+                f.write('<?php\n')
+            occ = os.path.join(self.nc, 'occ')
+            os.remove(occ)
+            os.symlink(planted, occ)
+            ok, msg = self.run_occ(self.nc)
+            self.assertFalse(ok)
+            self.assertIn('writable by everyone', msg)
+            self.shell_mock.assert_not_called()
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def test_installation_writable_by_everyone_is_refused(self):
+        os.chmod(self.nc, 0o777)
+        ok, msg = self.run_occ(self.nc)
+        self.assertFalse(ok)
+        self.assertIn('writable by everyone', msg)
         self.shell_mock.assert_not_called()
 
 

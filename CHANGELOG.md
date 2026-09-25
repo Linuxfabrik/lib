@@ -8,7 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-tbd
+**Highlights:** Files a privileged process reads on a caller's behalf are now checked on the handle that was actually opened, so swapping a directory in the path no longer redirects the read. `run_occ()` no longer lets an account without access to a Nextcloud installation choose the code or the account `occ` runs as.
+
+### Added
+
+* disk.py: `open_file()` opens a file, optionally confined to allowed roots, `resolve_trusted_path()` resolves a path only if nobody but root and the given owners can change it, and `get_fingerprint()` takes an open file
+
+### Security
+
+* disk.py: `read_file()` and `read_env()` with `allowed_roots` no longer read a file outside the roots when a directory in the path is swapped during the open, and refuse FIFOs and devices
+* logsource.py: `read()` takes everything it needs from one checked handle, so neither a log nor a rotated predecessor can be swapped for a file outside the allowed roots
+* nextcloud.py: `run_occ()` refuses an installation that anybody but root and the owner of `config/config.php` can change, and a symlinked `config.php`
 
 
 ## [v8.2.0] - 2026-09-22

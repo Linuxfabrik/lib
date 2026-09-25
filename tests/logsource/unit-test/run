@@ -30,6 +30,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, '..')
 
+import lib.disk
 import lib.logsource
 
 
@@ -850,6 +851,114 @@ class TestTimestamp(unittest.TestCase):
         self.assertIsNone(
             lib.logsource.timestamp('sshd[1]: the backup of Aug 28 19:34:14 failed')
         )
+
+
+class TestConfinedRace(unittest.TestCase):
+    """A log confined to allowed roots is read only if it still lies inside them
+    when it is opened.
+
+    One test per channel through which the file that is read can differ from the
+    file that was checked: the log itself, a rotated predecessor, a compressed log,
+    and a FIFO that would block the reader.
+    """
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='logsource-race-')
+        self.root = os.path.join(self.base, 'root')
+        self.outside = os.path.join(self.base, 'outside')
+        self.logdir = os.path.join(self.root, 'app')
+        os.makedirs(self.logdir)
+        os.makedirs(self.outside)
+        for directory, content in (
+            (self.logdir, 'inside'),
+            (self.outside, 'linuxfabrik'),
+        ):
+            for name in ('app.log', 'app.log.1'):
+                with open(os.path.join(directory, name), 'w') as handle:
+                    handle.write(f'{content}\n')
+            with gzip.open(
+                os.path.join(directory, 'app.log-20260828.gz'), 'wb'
+            ) as handle:
+                handle.write(f'{content}\n'.encode())
+
+    def tearDown(self):
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def swap_directory_after_the_check(self):
+        """Replace the log directory by a symlink to the outside directory as soon
+        as the first containment check has passed.
+        """
+        real_is_within = lib.disk.is_within
+        directory = self.logdir
+        outside = self.outside
+
+        def racing_is_within(path, roots):
+            result = real_is_within(path, roots)
+            if not os.path.islink(directory):
+                shutil.rmtree(directory)
+                os.symlink(outside, directory)
+            return result
+
+        return patch.object(lib.disk, 'is_within', side_effect=racing_is_within)
+
+    def assert_nothing_from_outside(self, success, result):
+        if success:
+            self.assertNotIn('linuxfabrik', result['lines'])
+        else:
+            self.assertNotIn('linuxfabrik', result)
+
+    def test_log_swapped_after_the_check_is_not_read(self):
+        with self.swap_directory_after_the_check():
+            success, result = lib.logsource.read(
+                os.path.join(self.logdir, 'app.log'), allowed_roots=[self.root]
+            )
+        self.assertFalse(success)
+        self.assert_nothing_from_outside(success, result)
+
+    def test_rotated_predecessor_swapped_after_the_check_is_not_read(self):
+        with self.swap_directory_after_the_check():
+            success, result = lib.logsource.read(
+                os.path.join(self.logdir, 'app.log'),
+                allowed_roots=[self.root],
+                rotated=2,
+            )
+        self.assert_nothing_from_outside(success, result)
+
+    def test_compressed_log_swapped_after_the_check_is_not_read(self):
+        with self.swap_directory_after_the_check():
+            success, result = lib.logsource.read(
+                os.path.join(self.logdir, 'app.log-20260828.gz'),
+                allowed_roots=[self.root],
+            )
+        self.assertFalse(success)
+        self.assert_nothing_from_outside(success, result)
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'no FIFOs on this platform')
+    def test_fifo_is_refused_without_blocking(self):
+        import signal
+
+        fifo = os.path.join(self.logdir, 'fifo.log')
+        os.mkfifo(fifo)
+
+        def give_up(signum, frame):
+            raise TimeoutError('read() blocked on a FIFO')
+
+        previous = signal.signal(signal.SIGALRM, give_up)
+        signal.alarm(5)
+        try:
+            success, result = lib.logsource.read(fifo, allowed_roots=[self.root])
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, previous)
+        self.assertFalse(success)
+        self.assertIn('not a regular file', result)
+
+    def test_untouched_log_is_read_with_its_predecessors(self):
+        success, result = lib.logsource.read(
+            os.path.join(self.logdir, 'app.log'), allowed_roots=[self.root], rotated=2
+        )
+        self.assertTrue(success, msg=result)
+        self.assertEqual(result['lines'], ['inside', 'inside', 'inside'])
 
 
 class TestCompressedSource(unittest.TestCase):

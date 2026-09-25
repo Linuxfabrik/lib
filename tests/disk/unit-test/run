@@ -757,5 +757,290 @@ class TestUnderRoot(unittest.TestCase):
                 )
 
 
+class TestConfinedOpen(unittest.TestCase):
+    """A confined read reads a regular file inside the roots, and nothing else.
+
+    Every channel through which the file that is read can differ from the file that
+    was checked gets its own test: a symlink as the last component, a directory
+    swapped for a symlink between the check and the open, a FIFO that would block the
+    reader, and a device.
+    """
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-disk-confined-')
+        self.root = os.path.join(self.base, 'root')
+        self.outside = os.path.join(self.base, 'outside')
+        os.makedirs(os.path.join(self.root, 'd'))
+        os.makedirs(self.outside)
+        self.inside_file = os.path.join(self.root, 'd', 'f')
+        disk.write_file(self.inside_file, 'inside')
+        disk.write_file(os.path.join(self.outside, 'f'), 'linuxfabrik')
+
+    def tearDown(self):
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def swap_directory_after_the_check(self):
+        """Replace `root/d` by a symlink to the outside directory as soon as the
+        first containment check has passed, the way a second process racing the
+        reader would.
+        """
+        real_is_within = disk.is_within
+        directory = os.path.join(self.root, 'd')
+
+        def racing_is_within(path, roots):
+            result = real_is_within(path, roots)
+            if not os.path.islink(directory):
+                shutil.rmtree(directory)
+                os.symlink(self.outside, directory)
+            return result
+
+        return mock.patch.object(disk, 'is_within', side_effect=racing_is_within)
+
+    def test_regular_file_inside_the_roots_is_read(self):
+        success, handle = disk.open_file(
+            self.inside_file, allowed_roots=[self.root], nofollow=True
+        )
+        self.assertTrue(success)
+        with handle:
+            self.assertEqual(handle.read(), 'inside')
+
+    def test_binary_handle(self):
+        success, handle = disk.open_file(
+            self.inside_file, binary=True, allowed_roots=[self.root]
+        )
+        self.assertTrue(success)
+        with handle:
+            self.assertEqual(handle.read(), b'inside')
+
+    def test_unconfined_open_still_works(self):
+        success, handle = disk.open_file(self.inside_file)
+        self.assertTrue(success)
+        with handle:
+            self.assertEqual(handle.read(), 'inside')
+
+    def test_directory_swapped_after_the_check_is_not_read(self):
+        # O_NOFOLLOW guards only the last component. A directory higher up that is
+        # swapped for a symlink between the check and the open is still followed,
+        # so the file that was opened has to be compared with the one that was
+        # checked.
+        with self.swap_directory_after_the_check():
+            success, result = disk.read_file(
+                self.inside_file, allowed_roots=[self.root], nofollow=True
+            )
+        self.assertFalse(success)
+        self.assertNotIn('linuxfabrik', result)
+
+    def test_directory_swapped_after_the_check_is_not_read_without_nofollow(self):
+        with self.swap_directory_after_the_check():
+            success, result = disk.read_file(
+                self.inside_file, allowed_roots=[self.root]
+            )
+        self.assertFalse(success)
+        self.assertNotIn('linuxfabrik', result)
+
+    def test_directory_swapped_after_the_check_is_not_read_by_read_env(self):
+        with self.swap_directory_after_the_check():
+            success, result = disk.read_env(
+                self.inside_file, allowed_roots=[self.root], nofollow=True
+            )
+        self.assertFalse(success)
+        self.assertIsInstance(result, str)
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'no FIFOs on this platform')
+    def test_fifo_is_refused_without_blocking(self):
+        # Opening a FIFO for reading blocks until a writer appears, so a planted
+        # FIFO would hang the reader. The open must neither block nor succeed.
+        fifo = os.path.join(self.root, 'fifo')
+        os.mkfifo(fifo)
+        import signal
+
+        def give_up(signum, frame):
+            raise TimeoutError('open_file() blocked on a FIFO')
+
+        previous = signal.signal(signal.SIGALRM, give_up)
+        signal.alarm(5)
+        try:
+            success, result = disk.read_file(fifo, allowed_roots=[self.root])
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, previous)
+        self.assertFalse(success)
+        self.assertIn('not a regular file', result)
+
+    @unittest.skipUnless(os.path.exists('/dev/null'), 'no /dev/null')
+    def test_device_is_refused(self):
+        success, result = disk.read_file('/dev/null', allowed_roots=['/dev'])
+        self.assertFalse(success)
+        self.assertIn('not a regular file', result)
+
+    def test_outside_the_roots_is_refused(self):
+        success, result = disk.open_file(
+            os.path.join(self.outside, 'f'), allowed_roots=[self.root]
+        )
+        self.assertFalse(success)
+        self.assertIn('outside the allowed roots', result)
+
+    def test_missing_file(self):
+        success, result = disk.open_file(
+            os.path.join(self.root, 'nope'), allowed_roots=[self.root]
+        )
+        self.assertFalse(success)
+        self.assertIn('while opening or reading', result)
+
+
+def _trusted_base():
+    """Return a fresh directory whose whole path nobody but root and the current
+    user can change, or None where the test host offers none.
+
+    The default temp directory does not qualify: /tmp is writable by everyone.
+    """
+    home = os.path.expanduser('~')
+    if (
+        not hasattr(os, 'getuid')
+        or not disk.resolve_trusted_path(home, owners=[os.getuid()])[0]
+    ):
+        return None
+    return tempfile.mkdtemp(prefix='.lftest-disk-trusted-', dir=home)
+
+
+@unittest.skipUnless(os.name == 'posix', 'ownership is a POSIX concept here')
+class TestResolveTrustedPath(unittest.TestCase):
+    """Nobody but the given owners can change what a trusted path resolves to.
+
+    One test per way the resolution can be changed: a symlink, a directory or file
+    somebody else owns, and a directory or file writable by others.
+    """
+
+    def setUp(self):
+        self.uid = os.getuid()
+        self.base = _trusted_base()
+        if self.base is None:
+            self.skipTest('no directory on this host is trusted for the test user')
+        self.file = os.path.join(self.base, 'bin')
+        disk.write_file(self.file, 'x')
+        os.chmod(self.file, 0o755)
+
+    def tearDown(self):
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def test_owned_path_resolves(self):
+        self.assertEqual(
+            disk.resolve_trusted_path(self.file, owners=[self.uid]),
+            (True, os.path.realpath(self.file)),
+        )
+
+    def test_root_is_always_a_trusted_owner(self):
+        success, result = disk.resolve_trusted_path('/')
+        self.assertEqual((success, result), (True, '/'))
+
+    def test_path_of_another_owner_is_refused(self):
+        if self.uid == 0:
+            self.skipTest('the test user is root')
+        success, result = disk.resolve_trusted_path(self.file)
+        self.assertFalse(success)
+        self.assertIn('belongs to uid', result)
+
+    def test_symlink_resolves_to_its_trusted_target(self):
+        # The caller gets the resolved path back and uses that, so a symlink that
+        # is swapped afterwards changes nothing. A symlink in a directory anybody
+        # can write to is therefore fine, as long as its target is trusted.
+        link_dir = tempfile.mkdtemp(prefix='lftest-disk-link-')
+        try:
+            link = os.path.join(link_dir, 'link')
+            os.symlink(self.file, link)
+            self.assertEqual(
+                disk.resolve_trusted_path(link, owners=[self.uid]),
+                (True, os.path.realpath(self.file)),
+            )
+        finally:
+            shutil.rmtree(link_dir, ignore_errors=True)
+
+    def test_directory_writable_by_everyone_is_refused(self):
+        # /tmp is the everyday case: sticky, but anybody can create the name.
+        work = tempfile.mkdtemp(prefix='lftest-disk-untrusted-')
+        try:
+            planted = os.path.join(work, 'bin')
+            disk.write_file(planted, 'x')
+            success, result = disk.resolve_trusted_path(planted, owners=[self.uid])
+            self.assertFalse(success)
+            self.assertIn('writable by everyone', result)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def test_file_writable_by_everyone_is_refused(self):
+        os.chmod(self.file, 0o757)
+        success, result = disk.resolve_trusted_path(self.file, owners=[self.uid])
+        self.assertFalse(success)
+        self.assertIn('writable by everyone', result)
+
+    def test_directory_writable_by_a_foreign_group_is_refused(self):
+        foreign = [gid for gid in os.getgroups() if gid not in (0, os.getgid())]
+        if not foreign:
+            self.skipTest('the test user has no supplementary group')
+        sub = os.path.join(self.base, 'sub')
+        os.mkdir(sub)
+        os.chown(sub, -1, foreign[0])
+        os.chmod(sub, 0o775)
+        target = os.path.join(sub, 'bin')
+        disk.write_file(target, 'x')
+        success, result = disk.resolve_trusted_path(target, owners=[self.uid])
+        self.assertFalse(success)
+        self.assertIn('writable by group', result)
+
+    def test_directory_writable_by_the_owners_group_is_accepted(self):
+        os.chmod(self.base, 0o775)
+        self.assertTrue(disk.resolve_trusted_path(self.file, owners=[self.uid])[0])
+
+    def test_socket_permissions_do_not_count_as_replaceable(self):
+        # The mode of a socket decides who may connect, not who may replace it;
+        # replacing it takes write access to its directory.
+        import socket
+
+        path = os.path.join(self.base, 's')
+        server = socket.socket(socket.AF_UNIX)
+        try:
+            server.bind(path)
+            os.chmod(path, 0o777)
+            self.assertEqual(
+                disk.resolve_trusted_path(path, owners=[self.uid]),
+                (True, os.path.realpath(path)),
+            )
+        finally:
+            server.close()
+
+    def test_missing_path_is_refused(self):
+        success, result = disk.resolve_trusted_path(
+            os.path.join(self.base, 'nope'), owners=[self.uid]
+        )
+        self.assertFalse(success)
+        self.assertIn('nope', result)
+
+    def test_wrong_types_are_refused(self):
+        for value in (None, '', 42, b'/usr/bin/env'):
+            with self.subTest(value=value):
+                self.assertFalse(disk.resolve_trusted_path(value)[0])
+
+
+class TestFingerprintFromHandle(unittest.TestCase):
+    """get_fingerprint() hashes an already opened file the same way as a path."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix='lftest-disk-fp-')
+        self.file = os.path.join(self.dir, 'x')
+        disk.write_file(self.file, PROBE)
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_handle_and_path_agree(self):
+        for length in (0, 4, -4, 256):
+            with self.subTest(length=length), open(self.file, 'rb') as handle:
+                handle.seek(3)
+                self.assertEqual(
+                    disk.get_fingerprint(handle, length=length),
+                    disk.get_fingerprint(self.file, length=length),
+                )
+
+
 if __name__ == '__main__':
     unittest.main()

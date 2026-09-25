@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082903'
+__version__ = '2026092401'
 
 import collections
 import datetime
@@ -307,8 +307,8 @@ def parse(source):
 _FINGERPRINT_LENGTH = 256
 
 
-def _is_rewritten(filename, fingerprint, length):
-    """Tell whether the head of a file still matches the fingerprint of the previous run.
+def _is_rewritten(raw, fingerprint, length):
+    """Tell whether the head of an open file still matches the fingerprint of the previous run.
 
     The head is the part that appending does not touch, so it identifies the file: it changes
     only once the file has become a different one. Hashes exactly as many bytes as were hashed
@@ -320,7 +320,7 @@ def _is_rewritten(filename, fingerprint, length):
         # against, and nothing to miss either: an offset of 0 stays valid no
         # matter what was written since.
         return True, False
-    success, result = disk.get_fingerprint(filename, length=length)
+    success, result = disk.get_fingerprint(raw, length=length)
     if not success:
         return False, result
     current, hashed = result
@@ -348,13 +348,23 @@ _COMPRESSION_MODULES = {
 }
 
 
-def _open_log_file(path):
+def _open_log_file(path, allowed_roots=None):
     """Open a log file for reading in binary, decompressing it where its name says so.
+
+    The file is opened once, through `disk.open_file()`, so with `allowed_roots` it is
+    the very file that was checked, and everything the caller needs from it (its
+    inode, its size, its fingerprint, its lines) comes from that one handle rather
+    than from a second look at the path.
+
+    Returns `(True, (handle, raw))`, where `handle` yields the uncompressed lines and
+    `raw` is the file underneath it; the caller closes both. For an uncompressed file
+    the two are the same object.
 
     The module that reads a compression is imported here rather than at the top, because a
     Python can be built without one, and that must not keep this module from being imported at
     all.
     """
+    module = None
     for suffix, module_name in _COMPRESSION_MODULES.items():
         if not path.endswith(suffix):
             continue
@@ -364,13 +374,18 @@ def _open_log_file(path):
             return False, (
                 f'Cannot read "{path}": this Python has no `{module_name}` module.'
             )
-        try:
-            return True, module.open(path, mode='rb')
-        except OSError as e:
-            return False, f'I/O error "{e.strerror}" while reading {path}'
+        break
+    success, raw = disk.open_file(
+        path, binary=True, allowed_roots=allowed_roots, nofollow=bool(allowed_roots)
+    )
+    if not success:
+        return False, raw
+    if module is None:
+        return True, (raw, raw)
     try:
-        return True, open(path, mode='rb')
+        return True, (module.open(raw, mode='rb'), raw)
     except OSError as e:
+        raw.close()
         return False, f'I/O error "{e.strerror}" while reading {path}'
 
 
@@ -420,29 +435,42 @@ def _rotated_files(path, count):
 
 def _read_file(path, position, allowed_roots, max_lines, rotated):
     """Read the lines a file grew by since `position`, detecting rotation and rewrites."""
-    if allowed_roots and not disk.is_within(path, allowed_roots):
-        return False, (
-            f'Refusing to read "{path}": resolved path is outside the allowed roots '
-            f'({", ".join(allowed_roots)}); bind-mount it into one of them if intended.'
-        )
-    try:
-        file_stat = os.stat(path)
-    except OSError as e:
-        failure = f'I/O error "{e.strerror}" while reading {path}'
-        if any(character in path for character in '*?['):
+    # Through the decompressor where the name says the file is compressed, the
+    # way a rotated predecessor is read: a caller that names a rotated file
+    # directly would otherwise be handed the compressed bytes as text and told
+    # that the application never wrote a line. `seek()` and `tell()` on such a
+    # handle count uncompressed bytes, so the position keeps its meaning.
+    success, result = _open_log_file(path, allowed_roots)
+    if not success:
+        if result.startswith('I/O error') and any(
+            character in path for character in '*?['
+        ):
             # A shell that found nothing to expand hands the pattern on
             # unchanged, and a caller who meant a set of files then sees a
             # missing file with an odd name. Saying that a source is one file
             # beats letting them hunt for a typo that is not there.
-            failure += (
+            result += (
                 ' - a wildcard is not expanded here, every file is its own source.'
             )
-        return False, failure
+        return False, result
+    handle, raw = result
+    with raw, handle:
+        return _read_open_file(
+            path, handle, raw, position, allowed_roots, max_lines, rotated
+        )
+
+
+def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotated):
+    """The part of `_read_file()` that works on the already opened file."""
+    try:
+        file_stat = os.fstat(raw.fileno())
+    except OSError as e:
+        return False, f'I/O error "{e.strerror}" while reading {path}'
     inode = str(file_stat.st_ino)
     # Fingerprint before reading rather than after: should the file be rewritten
     # in between, the stored fingerprint is the older one, so the next run
     # rescans the file instead of missing what was written in the meantime.
-    success, result = disk.get_fingerprint(path, length=_FINGERPRINT_LENGTH)
+    success, result = disk.get_fingerprint(raw, length=_FINGERPRINT_LENGTH)
     if not success:
         return False, result
     fingerprint, fingerprint_length = result
@@ -458,7 +486,7 @@ def _read_file(path, position, allowed_roots, max_lines, rotated):
             offset = 0
         elif position.get('fingerprint'):
             success, rewritten = _is_rewritten(
-                path,
+                raw,
                 position.get('fingerprint'),
                 position.get('length', 0),
             )
@@ -474,6 +502,12 @@ def _read_file(path, position, allowed_roots, max_lines, rotated):
         # Resetting a position that was 0 anyway loses nothing, so it is not a
         # restart the consumer has to hear about.
         restarted = offset == 0 and stored_offset != 0
+    # The fingerprint moved the file position. A decompressor reads on from wherever
+    # the file underneath stands, so put it back to where the stream starts.
+    try:
+        raw.seek(0)
+    except OSError as e:
+        return False, f'I/O error "{e.strerror}" while reading {path}'
 
     # A cap is applied to the lines that are kept, not to the lines that are
     # read: the offset still advances to the end, so a run that hits the cap
@@ -485,16 +519,14 @@ def _read_file(path, position, allowed_roots, max_lines, rotated):
     notices = []
     rotated_read = []
     for predecessor in _rotated_files(path, rotated) if rotated else []:
-        if allowed_roots and not disk.is_within(predecessor, allowed_roots):
-            notices.append(f'"{predecessor}" is outside the allowed roots')
-            continue
-        success, handle = _open_log_file(predecessor)
+        success, opened = _open_log_file(predecessor, allowed_roots)
         if not success:
-            notices.append(handle)
+            notices.append(opened)
             continue
+        predecessor_handle, predecessor_raw = opened
         try:
-            with handle:
-                for line in handle:
+            with predecessor_raw, predecessor_handle:
+                for line in predecessor_handle:
                     read += 1
                     lines.append(
                         txt.to_text(line, errors='strict_or_latin1').rstrip('\r\n')
@@ -503,23 +535,12 @@ def _read_file(path, position, allowed_roots, max_lines, rotated):
             notices.append(f'I/O error "{e.strerror}" while reading {predecessor}')
             continue
         rotated_read.append(predecessor)
-    # Through the decompressor where the name says the file is compressed, the
-    # way a rotated predecessor is read: a caller that names a rotated file
-    # directly would otherwise be handed the compressed bytes as text and told
-    # that the application never wrote a line. `seek()` and `tell()` on such a
-    # handle count uncompressed bytes, so the position keeps its meaning.
-    success, handle = _open_log_file(path)
-    if not success:
-        return False, handle
     try:
-        with handle:
-            handle.seek(offset)
-            for line in handle:
-                read += 1
-                lines.append(
-                    txt.to_text(line, errors='strict_or_latin1').rstrip('\r\n')
-                )
-            offset = handle.tell()
+        handle.seek(offset)
+        for line in handle:
+            read += 1
+            lines.append(txt.to_text(line, errors='strict_or_latin1').rstrip('\r\n'))
+        offset = handle.tell()
     except OSError as e:
         return False, f'I/O error "{e.strerror}" while reading {path}'
     return True, {
