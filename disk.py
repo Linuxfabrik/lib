@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092401'
+__version__ = '2026092501'
 
 import csv
 import glob as _glob
@@ -779,7 +779,10 @@ def is_within(path, roots):
     real = os.path.normcase(os.path.realpath(path))
     for root in roots:
         real_root = os.path.normcase(os.path.realpath(root))
-        if real == real_root or real.startswith(real_root + os.sep):
+        # The filesystem root already ends in a separator (`/`, `C:\\`), so do not
+        # add a second one, or nothing would lie inside it.
+        prefix = real_root if real_root.endswith(os.sep) else real_root + os.sep
+        if real == real_root or real.startswith(prefix):
             return True
     return False
 

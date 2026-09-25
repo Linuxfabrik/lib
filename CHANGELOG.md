@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * args.py, base.py, txt.py: import faster, and `sanitize_sensitive_data()` is faster on long output
 
+### Fixed
+
+* disk.py: `is_within()` with the filesystem root as a root
+
 ### Security
 
 * disk.py: `read_file()` and `read_env()` with `allowed_roots` no longer read a file outside the roots when a directory in the path is swapped during the open, and refuse FIFOs and devices

@@ -253,6 +253,10 @@ class TestFileHelpers(unittest.TestCase):
             disk.is_within('/var/lib/mysql/h.err', ['/var/log', '/var/lib/mysql'])
         )
 
+    def test_is_within_the_filesystem_root(self):
+        self.assertTrue(disk.is_within(self.file, [os.sep]))
+        self.assertTrue(disk.is_within(os.sep, [os.sep]))
+
     def test_is_within_resolves_symlink_out_of_root(self):
         # A symlink inside the root pointing outside is rejected: this is why an
         # operator must bind-mount (not symlink) an external location to include it.
@@ -427,7 +431,9 @@ class TestReadCsv(unittest.TestCase):
 
     def test_another_delimiter(self):
         path = self._write('a;b\n1;2\n', name='semi.csv')
-        self.assertEqual(disk.read_csv(path, delimiter=';'), (True, [['a', 'b'], ['1', '2']]))
+        self.assertEqual(
+            disk.read_csv(path, delimiter=';'), (True, [['a', 'b'], ['1', '2']])
+        )
 
     def test_a_quoted_field_keeps_its_delimiter(self):
         path = self._write('a,b\n"x,y",2\n', name='quoted.csv')
@@ -474,9 +480,12 @@ class TestUdevadm(unittest.TestCase):
 
 class TestBd2Dmd(unittest.TestCase):
     def test_maps_a_device_mapper_device(self):
-        with mock.patch.object(
-            disk, 'read_file', return_value=(True, 'rl_rocky8-root\n')
-        ), mock.patch('os.path.islink', return_value=True):
+        with (
+            mock.patch.object(
+                disk, 'read_file', return_value=(True, 'rl_rocky8-root\n')
+            ),
+            mock.patch('os.path.islink', return_value=True),
+        ):
             self.assertEqual(disk.bd2dmd('dm-0'), '/dev/mapper/rl_rocky8-root')
             # a full path works the same, only the basename is used
             self.assertEqual(disk.bd2dmd('/dev/dm-0'), '/dev/mapper/rl_rocky8-root')
@@ -486,8 +495,10 @@ class TestBd2Dmd(unittest.TestCase):
             self.assertEqual(disk.bd2dmd('sda'), '')
 
     def test_a_name_without_a_mapper_link_is_empty(self):
-        with mock.patch.object(disk, 'read_file', return_value=(True, 'gone\n')), \
-             mock.patch('os.path.islink', return_value=False):
+        with (
+            mock.patch.object(disk, 'read_file', return_value=(True, 'gone\n')),
+            mock.patch('os.path.islink', return_value=False),
+        ):
             self.assertEqual(disk.bd2dmd('dm-9'), '')
 
 
@@ -504,8 +515,10 @@ class TestGetRealDisks(unittest.TestCase):
         def fake_udevadm(_device, prop):
             return {'DEVNAME': '/dev/dm-0', 'DM_NAME': ''}[prop]
 
-        with mock.patch.object(disk, 'read_file', return_value=(True, self.MOUNTS)), \
-             mock.patch.object(disk, 'udevadm', side_effect=fake_udevadm):
+        with (
+            mock.patch.object(disk, 'read_file', return_value=(True, self.MOUNTS)),
+            mock.patch.object(disk, 'udevadm', side_effect=fake_udevadm),
+        ):
             return disk.get_real_disks()
 
     def test_resolves_the_mapper_name_to_its_block_device(self):
