@@ -433,33 +433,6 @@ def _rotated_files(path, count):
     return [candidate for _, candidate in reversed(candidates[:count])]
 
 
-def _read_file(path, position, allowed_roots, max_lines, rotated):
-    """Read the lines a file grew by since `position`, detecting rotation and rewrites."""
-    # Through the decompressor where the name says the file is compressed, the
-    # way a rotated predecessor is read: a caller that names a rotated file
-    # directly would otherwise be handed the compressed bytes as text and told
-    # that the application never wrote a line. `seek()` and `tell()` on such a
-    # handle count uncompressed bytes, so the position keeps its meaning.
-    success, result = _open_log_file(path, allowed_roots)
-    if not success:
-        if result.startswith('I/O error') and any(
-            character in path for character in '*?['
-        ):
-            # A shell that found nothing to expand hands the pattern on
-            # unchanged, and a caller who meant a set of files then sees a
-            # missing file with an odd name. Saying that a source is one file
-            # beats letting them hunt for a typo that is not there.
-            result += (
-                ' - a wildcard is not expanded here, every file is its own source.'
-            )
-        return False, result
-    handle, raw = result
-    with raw, handle:
-        return _read_open_file(
-            path, handle, raw, position, allowed_roots, max_lines, rotated
-        )
-
-
 def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotated):
     """The part of `_read_file()` that works on the already opened file."""
     try:
@@ -564,6 +537,33 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
         'rotated': rotated_read,
         'truncated': read > len(lines),
     }
+
+
+def _read_file(path, position, allowed_roots, max_lines, rotated):
+    """Read the lines a file grew by since `position`, detecting rotation and rewrites."""
+    # Through the decompressor where the name says the file is compressed, the
+    # way a rotated predecessor is read: a caller that names a rotated file
+    # directly would otherwise be handed the compressed bytes as text and told
+    # that the application never wrote a line. `seek()` and `tell()` on such a
+    # handle count uncompressed bytes, so the position keeps its meaning.
+    success, result = _open_log_file(path, allowed_roots)
+    if not success:
+        if result.startswith('I/O error') and any(
+            character in path for character in '*?['
+        ):
+            # A shell that found nothing to expand hands the pattern on
+            # unchanged, and a caller who meant a set of files then sees a
+            # missing file with an odd name. Saying that a source is one file
+            # beats letting them hunt for a typo that is not there.
+            result += (
+                ' - a wildcard is not expanded here, every file is its own source.'
+            )
+        return False, result
+    handle, raw = result
+    with raw, handle:
+        return _read_open_file(
+            path, handle, raw, position, allowed_roots, max_lines, rotated
+        )
 
 
 # journalctl prints the cursor of the last entry on a line of its own when asked
