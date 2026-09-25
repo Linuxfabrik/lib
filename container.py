@@ -36,11 +36,17 @@ Typical use case:
 import math
 import re
 
-from . import shell, time, txt
+from . import disk, shell, time, txt
 from .globals import STATE_CRIT, STATE_UNKNOWN, STATE_WARN
 
+try:
+    import pwd
+except ImportError:
+    # Not on Windows, where no client runs as another user.
+    pwd = None
+
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091701'
+__version__ = '2026092501'
 
 # What the client puts in front of the answer it got. The CLI wraps every answer of
 # the engine in "Error response from daemon:", and a swarm control plane adds a gRPC
@@ -140,6 +146,30 @@ def _is_finite_number(value):
 COMMAND_DISPLAY_LENGTH = 100
 
 
+# Where the subordinate UID ranges of the local accounts are kept. shadow-utils writes
+# one for every account `useradd` creates without `--system` (measured on Rocky 8 and
+# 9, Debian 12, Ubuntu 24.04 and SLES 15 SP7), and a rootless engine needs one.
+SUBUID_FILE = '/etc/subuid'
+
+
+def _has_subordinate_ids(user):
+    """Tell whether `user` owns a subordinate UID range, listed by name or by UID."""
+    success, content = disk.read_file(SUBUID_FILE)
+    if not success:
+        return False
+    names = {user}
+    if pwd is not None:
+        try:
+            names.add(str(pwd.getpwnam(user).pw_uid))
+        except (KeyError, TypeError):
+            pass
+    for line in content.splitlines():
+        owner = line.split(':', 1)[0].strip()
+        if owner and owner in names:
+            return True
+    return False
+
+
 def run(cmd, timeout, started=None, run_as=None):
     """
     Run a container engine client within what is left of a time budget.
@@ -164,7 +194,11 @@ def run(cmd, timeout, started=None, run_as=None):
         whole budget.
     run_as : str, optional
         Run the client as this user, for an engine that
-        keeps the containers of every user apart. Defaults to the current user.
+        keeps the containers of every user apart. Only an account that owns a
+        subordinate UID range in `/etc/subuid` is accepted, which is what a rootless
+        engine needs anyway: the client typically runs through `sudo`, and whoever
+        chooses the account must not reach the containers of an arbitrary one.
+        Defaults to the current user.
 
     Returns
     -------
@@ -197,6 +231,12 @@ def run(cmd, timeout, started=None, run_as=None):
     if not _is_finite_number(timeout) or timeout <= 0:
         return False, (
             f'The timeout must be a positive number, got {timeout!r}.',
+            STATE_UNKNOWN,
+        )
+    if run_as and not _has_subordinate_ids(run_as):
+        return False, (
+            f'Refusing to run the container engine as `{run_as}`: the account has no '
+            f'subordinate UID range in {SUBUID_FILE}, which rootless containers need.',
             STATE_UNKNOWN,
         )
     if started is None:

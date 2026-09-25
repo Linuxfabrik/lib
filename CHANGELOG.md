@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+* container.py: `run()` runs a client as another account only if that account owns a subordinate UID range
 * disk.py: `read_file()` and `read_env()` with `allowed_roots` no longer read a file outside the roots when a directory in the path is swapped during the open, and refuse FIFOs and devices
 * logsource.py: `read()` takes everything it needs from one checked handle, so neither a log nor a rotated predecessor can be swapped for a file outside the allowed roots
 * nextcloud.py: `run_occ()` refuses an installation that anybody but root and the owner of `config/config.php` can change, and a symlinked `config.php`

@@ -18,7 +18,10 @@ Docker, so they could not be taken again here.
 """
 
 import contextlib
+import os
+import pwd
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -259,10 +262,22 @@ class TestGetEngineError(unittest.TestCase):
 class TestRun(unittest.TestCase):
     """run(): one time budget for all engine commands of a run."""
 
-    def _run(self, answer, now=(100.0, 100.0), **kwargs):
+    def setUp(self):
+        # the users the testcases run the client as own a subordinate UID range
+        handle, self.subuid = tempfile.mkstemp(prefix='lftest-subuid-')
+        with os.fdopen(handle, 'w') as f:
+            f.write('rocketchat:100000:65536\nu:165536:65536\n')
+
+    def tearDown(self):
+        os.remove(self.subuid)
+
+    def _run(self, answer, now=(100.0, 100.0), subuid=None, **kwargs):
         clock = iter(now)
         # ExitStack rather than a parenthesized `with`, which Python 3.9 cannot parse
         with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(container, 'SUBUID_FILE', subuid or self.subuid)
+            )
             stack.enter_context(
                 mock.patch.object(
                     container.time, 'now', side_effect=lambda **_: next(clock)
@@ -404,6 +419,58 @@ class TestRun(unittest.TestCase):
             started=100.0,
         )
         self.assertIn(f'`{executable} ... (1 more)`', result[1][0])
+
+    def test_run_as_an_account_without_subordinate_ids_is_refused(self):
+        # A rootless engine needs a subordinate UID range. Running the client for an
+        # account without one would only let the caller of a privileged consumer
+        # look at an arbitrary account's containers.
+        result, m = self._run(
+            (True, ('', '', 0)),
+            cmd=['podman'],
+            timeout=8,
+            started=100.0,
+            run_as='nobody',
+        )
+        m.assert_not_called()
+        self.assertFalse(result[0])
+        self.assertIn('subordinate', result[1][0])
+        self.assertEqual(result[1][1], STATE_UNKNOWN)
+
+    def test_run_as_an_account_listed_by_uid_is_accepted(self):
+        account = pwd.getpwuid(os.getuid()).pw_name
+        with open(self.subuid, 'a') as f:
+            f.write(f'{os.getuid()}:231072:65536\n')
+        result, m = self._run(
+            (True, ('', '', 0)),
+            cmd=['podman'],
+            timeout=8,
+            started=100.0,
+            run_as=account,
+        )
+        self.assertTrue(result[0])
+        m.assert_called_once()
+
+    def test_run_as_without_a_subuid_file_is_refused(self):
+        result, m = self._run(
+            (True, ('', '', 0)),
+            cmd=['podman'],
+            timeout=8,
+            started=100.0,
+            run_as='u',
+            subuid='/nonexistent/subuid',
+        )
+        m.assert_not_called()
+        self.assertFalse(result[0])
+
+    def test_without_run_as_no_subordinate_ids_are_needed(self):
+        result, _ = self._run(
+            (True, ('', '', 0)),
+            cmd=['docker', 'ps'],
+            timeout=8,
+            started=100.0,
+            subuid='/nonexistent/subuid',
+        )
+        self.assertTrue(result[0])
 
     def test_run_as_is_passed_on(self):
         _, m = self._run(
