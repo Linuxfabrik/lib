@@ -2,7 +2,7 @@
   Linuxfabrik Python Libraries
 </h1>
 <p align="center">
-  Python 3.9+ modules for Linuxfabrik projects: DB access, SQLite KVS caching, WinRM, SMB, shell execution, 15+ API integrations (Icinga2, Veeam, Nextcloud, ...). Available on PyPI.
+  Python 3.9+ utility library: argument parsing, output formatting, HTTP, shell, disk, SQLite/MySQL, caching, version checks, plus API clients. Available on PyPI.
   <span>&#8226;</span>
   <b>made by <a href="https://linuxfabrik.ch/">Linuxfabrik</a></b>
 </p>
@@ -24,7 +24,7 @@
 
 # Linuxfabrik Python Libraries
 
-A mature, production-grade Python library collection providing 40 modules with 300+ functions for system administration, monitoring, and infrastructure automation. These libraries are used across several Linuxfabrik projects -- most prominently the [Linuxfabrik Monitoring Plugins](https://github.com/Linuxfabrik/monitoring-plugins) (Nagios/Icinga check plugins), but also in [ChecklistFabrik](https://github.com/Linuxfabrik/checklistfabrik) and other tools.
+A mature, production-grade Python library collection for system administration, monitoring, and infrastructure automation. It does not assume a particular consumer: any Python tool can use it, from check plugins to deployment scripts.
 
 > If these libraries help you developing your own monitoring plugins, system tools or infrastructure automation, please give it a star.
 
@@ -49,14 +49,14 @@ pip install --user linuxfabrik-lib
 
 These libraries are built with a clear set of priorities:
 
-* **Procedural by design.** The libraries deliberately use a procedural/functional style rather than object-oriented programming. Pure functions with explicit inputs and outputs are easier to read, test, and reason about. This is especially true for the most prominent use case -- monitoring plugins -- which are short-lived, linear processes with no complex state to manage over time, where unnecessary abstraction layers would add overhead without tangible benefit.
+* **Procedural by design.** The libraries deliberately use a procedural/functional style rather than object-oriented programming. Pure functions with explicit inputs and outputs are easier to read, test, and reason about. Most consumers are short-lived, linear processes with no complex state to manage over time, where unnecessary abstraction layers would add overhead without tangible benefit.
 * **Broad compatibility.** Python 3.9+ is the minimum, ensuring the libraries work on RHEL 8 and every major distribution without requiring newer runtimes.
 * **Cross-platform.** Core functions behave identically on Linux, Windows, and macOS. Platform-specific code (WinRM, PowerShell, SMB) is cleanly separated.
 * **Minimal dependencies.** We avoid pulling in large dependency trees. External packages are used only when the alternative would be unreliable or significantly more complex.
-* **Consistent error handling.** Most functions return `(success, result)` tuples. The caller decides whether to continue or exit -- the library never exits on its own. The `base.coe()` ("Continue or Exit") helper makes this pattern concise.
+* **Consistent error handling.** Most functions return `(success, result)` tuples. The caller decides whether to continue or exit, the library never exits on its own. The `base.coe()` ("Continue or Exit") helper makes this pattern concise.
 * **Automatic redaction.** Sensitive data (passwords, tokens, API keys) in error messages is automatically sanitized before output.
 * **Nagios/Icinga conventions.** State constants, threshold evaluation, performance data formatting, and range parsing follow the [Monitoring Plugins Development Guidelines](https://www.monitoring-plugins.org/doc/guidelines.html).
-* **Defensive defaults.** Functions use sensible timeouts, safe SSL settings, and locked-down defaults so that plugins work out of the box without extensive configuration.
+* **Defensive defaults.** Functions use sensible timeouts, safe SSL settings, and locked-down defaults so that consumers work out of the box without extensive configuration.
 
 
 ## Library Index
@@ -67,7 +67,7 @@ These libraries are built with a clear set of priorities:
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
 | **args.py** | Extends `argparse` with custom input types for monitoring thresholds, a registry of reusable `--help` texts, and reading a secret from a file instead of the command line. | `csv()`, `help()`, `int_or_none()`, `load_secret()`, `number_unit_method()` |
-| **base.py** | The central library for plugin development. Provides state evaluation, threshold comparison, performance data formatting, ASCII table output, and the `coe()` error-handling pattern. | `coe()`, `cu()`, `get_perfdata()`, `get_state()`, `get_table()`, `get_worst()`, `oao()`, `state2str()` |
+| **base.py** | The central module for check-style tools. Provides state evaluation, threshold comparison, performance data formatting, ASCII table output, and the `coe()` error-handling pattern. | `coe()`, `cu()`, `get_perfdata()`, `get_state()`, `get_table()`, `get_worst()`, `oao()`, `state2str()` |
 | **globals.py** | Defines the four Nagios/Icinga plugin states: `STATE_OK` (0), `STATE_WARN` (1), `STATE_CRIT` (2), `STATE_UNKNOWN` (3). | -- |
 | **human.py** | Converts raw numbers, byte sizes, bit rates, and durations to human-readable representations and back. Supports binary/SI prefixes and Nagios range syntax with units. | `bits2human()`, `bps2human()`, `bytes2human()`, `human2bytes()`, `human2seconds()`, `humanrange2bytes()`, `number2human()`, `seconds2human()` |
 | **lftest.py** | Test harness for data-driven plugin unit tests, spinning up throwaway containers (including MySQL/MariaDB) as fixtures. | `attach_each()`, `attach_tests()`, `run()`, `run_container()`, `run_mysql_compatible_from_containerfile()`, `test()`, `test_json()` |
@@ -82,21 +82,28 @@ These libraries are built with a clear set of priorities:
 
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
-| **cache.py** | A simple SQLite-based key-value store with optional key expiration. Used for persisting state between plugin runs. | `get()`, `set()` |
+| **cache.py** | A simple SQLite-based key-value store with optional key expiration. Used for persisting state between runs. | `get()`, `set()` |
 | **db_mysql.py** | MySQL/MariaDB client with connection management, query execution, privilege checking, and server flavor/status/variable/replication inspection. | `check_privileges()`, `connect()`, `get_all_variables()`, `get_engines()`, `get_replica_status()`, `lod2dict()`, `select()` |
 | **db_sqlite.py** | Full SQLite interface: table/index creation, CRUD operations, CSV import, regex support, and per-second counter deltas for time-series data. | `connect()`, `create_index()`, `create_table()`, `cut()`, `delete()`, `insert()`, `per_second_deltas()`, `select()` |
+| **logmatch.py** | Keeps log findings in an SQLite state database across runs until they age out or are acknowledged on the monitoring server, together with the read position of the log. | `acknowledge()`, `connect()`, `key()`, `pending()`, `record()`, `service_acknowledged()` |
 
 
 ### System & OS
 
 | Module | Description | Key Functions |
 |--------|-------------|---------------|
+| **container.py** | Runs a container engine command-line client (Docker, Podman) under a deadline and tells a missing permission apart from an engine that is down or does not answer. | `get_engine_error()`, `run()` |
 | **disk.py** | File I/O, directory walking, CSV/environment file parsing, block device and partition listing, and temp directory management. | `dir_exists()`, `file_exists()`, `get_real_disks()`, `get_tmpdir()`, `grep_file()`, `read_file()` |
 | **distro.py** | Linux distribution detection. Returns normalized facts including distribution name, version, and Ansible-compatible `os_family`. | `get_distribution_facts()` |
 | **dmidecode.py** | Parses `dmidecode` output into structured data. Extracts CPU, RAM, firmware, serial number, manufacturer, and model information. | `cpu_speed()`, `cpu_type()`, `firmware()`, `get_data()`, `manufacturer()`, `model()`, `ram()`, `serno()` |
 | **endoflifedate.py** | Bundled End-of-Life data from [endoflife.date](https://endoflife.date) for offline version checks when internet access is unavailable. | -- |
+| **kvm.py** | libvirt domains, storage pools and volumes via `virsh` on a read-only connection, which needs neither root nor sudo. | `get_domains()`, `get_domstats()`, `get_pool_info()`, `get_pools()`, `get_volumes()`, `virsh()` |
+| **logsource.py** | Reads a log incrementally from a file, a systemd unit in the journal, or a container, and hands back a position that survives rotation and truncation. | `parse()`, `read()`, `read_many()`, `timestamp()` |
+| **lvm.py** | LVM logical volumes and volume groups via `lvs` and `vgs`, including thin pools, snapshots, health status and the thin pool metadata limit. | `get_logical_volumes()`, `get_volume_groups()`, `health()`, `is_snapshot_invalid()`, `is_thin_pool()`, `metadata_limit()` |
+| **psi.py** | Linux pressure stall information (PSI) from `/proc/pressure` for CPU, I/O, IRQ and memory, with state evaluation and report output. | `get_perfdata()`, `get_states()`, `get_summary()`, `get_table()`, `is_enabled()`, `read()` |
 | **psutil.py** | Wrapper around `psutil` for retrieving mounted disk partitions with device, mount point, filesystem type and mount options. Lists them from the mount table alone, so a network filesystem whose server is gone cannot hold the listing up. | `get_partitions()` |
 | **shell.py** | Runs external commands from an argv list without a shell, guards option-style CLI values, and locates executables in `PATH`. | `safe_cli_value()`, `shell_exec()`, `which()` |
+| **user.py** | Local Unix accounts: UID/GID names, the system/regular account boundary, interactive shells and the state of the shadow password. | `get_gid_name()`, `get_interactive_shells()`, `get_shadow_password()`, `get_uid_min()`, `get_uid_name()`, `password_state()` |
 
 
 ### Networking & HTTP
@@ -134,6 +141,7 @@ These libraries are built with a clear set of priorities:
 | **librenms.py** | [LibreNMS](https://www.librenms.org/) monitoring API, mapping its alert states to Nagios states. | `get_data()`, `get_state()` |
 | **nextcloud.py** | [Nextcloud](https://nextcloud.com/) `occ` command execution as the `config.php` owner, parsing JSON or text output. | `run_occ()` |
 | **nodebb.py** | [NodeBB](https://nodebb.org/) forum API, using a Bearer user token. | `get_data()` |
+| **openstack.py** | [OpenStack](https://www.openstack.org/) Identity v3 authentication from an rc file, with the token reused across runs, and access to the service REST APIs. | `connect()`, `fetch()`, `fetch_json()` |
 | **qts.py** | QNAP [QTS](https://www.qnap.com/) NAS API with session authentication. | `get_auth_sid()` |
 | **redfish.py** | [Redfish](https://www.dmtf.org/standards/redfish) BMC API for chassis, systems, storage, managers, and sensors, deriving Nagios states and perfdata. | `get_auth_header()`, `get_perfdata()`, `get_state()`, `get_systems()` |
 | **rocket.py** | [Rocket.Chat](https://www.rocket.chat/) REST API for login, room/group history, statistics, and incoming webhooks. | `get_groups_history()`, `get_rooms_get()`, `get_stats()`, `get_token()`, `send2webhook()` |
@@ -145,21 +153,31 @@ These libraries are built with a clear set of priorities:
 
 ## Usage Example
 
-A typical monitoring plugin using these libraries:
+A typical check-style tool using these libraries:
 
 ```python
+import argparse
+
 import lib.args
 import lib.base
 import lib.url
-from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 
 def main():
-    # Parse arguments with custom threshold types
-    parser = lib.args.ArgumentParser()
-    parser.add_argument('--url', required=True)
-    parser.add_argument('--warning', type=lib.args.float_or_none, default=80)
-    parser.add_argument('--critical', type=lib.args.float_or_none, default=90)
+    parser = argparse.ArgumentParser(description='Checks the usage reported by an API.')
+    parser.add_argument('--url', required=True, help=lib.args.help('--url'))
+    parser.add_argument(
+        '--warning',
+        type=float,
+        default=80,
+        help=lib.args.help('--warning') + ' Default: %(default)s',
+    )
+    parser.add_argument(
+        '--critical',
+        type=float,
+        default=90,
+        help=lib.args.help('--critical') + ' Default: %(default)s',
+    )
     args = parser.parse_args()
 
     # Fetch data (coe = "Continue or Exit")
@@ -172,7 +190,7 @@ def main():
     )
 
     # Output and exit
-    lib.base.oao('Usage is {}%'.format(result['usage']), state, perfdata)
+    lib.base.oao(f'Usage is {result["usage"]}%', state, perfdata)
 
 
 if __name__ == '__main__':

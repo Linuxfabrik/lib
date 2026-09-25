@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "linuxfabrik-lib"
 version = "8.2.0"
-description = "Python libraries used in various Linuxfabrik projects, including the 'Linuxfabrik Monitoring Plugins' project."
+description = "Python 3.9+ utility library: argument parsing, output formatting, HTTP, shell, disk, SQLite/MySQL, caching, version checks, plus API clients."
 readme = "README.md"
 authors = [
     { name = "Linuxfabrik GmbH, Zurich, Switzerland", email = "info@linuxfabrik.ch" },
