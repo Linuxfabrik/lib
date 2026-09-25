@@ -15,7 +15,7 @@ import os
 import re
 import textwrap
 
-from . import base, disk, human
+from . import base, human
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
 __version__ = '2026092101'
@@ -568,6 +568,11 @@ def load_secret(path, param='--password-file'):
     >>> load_secret('/etc/icinga2/secrets/storage')
     'linuxfabrik'
     """
+    # Imported here, not at module level: this is the only consumer of lib.disk in this
+    # module, and loading it (with lib.shell and subprocess behind it) would slow down
+    # the startup of everything that only wants the argparse helpers.
+    from . import disk
+
     success, content = disk.read_file(path)
     if not success:
         base.cu(f'Cannot read the file given in {param}: {content}')

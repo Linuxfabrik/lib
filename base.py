@@ -19,7 +19,6 @@ import operator
 import os
 import re
 import sys
-from traceback import format_exc
 
 from . import human, txt
 from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
@@ -167,7 +166,14 @@ def cu(msg=None, traceback=True):
     >>> cu('strongSwan is not running here.', traceback=False)
     """
     has_traceback = traceback and sys.exc_info()[0] is not None
-    tb = format_exc() if has_traceback else None
+    tb = None
+    if has_traceback:
+        # Imported here, not at module level: only a failing run needs it, and on
+        # Python 3.14 `traceback` pulls in `_colorize`, `dataclasses` and `inspect`,
+        # which costs every consumer of lib.base about 10 ms of startup time.
+        from traceback import format_exc
+
+        tb = format_exc()
 
     if msg is not None:
         # Normalize line endings to LF (see oao); error output may also carry

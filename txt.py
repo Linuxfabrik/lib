@@ -23,7 +23,6 @@ __version__ = '2026092101'
 import html
 import operator
 import re
-import traceback
 
 _SURROGATE_ERRORS = frozenset(
     (
@@ -223,7 +222,10 @@ def exception2text(e):
     try:
         msg = str(e)
         if not msg:
-            # Some exceptions have empty __str__; use Python's formatter
+            # Some exceptions have empty __str__; use Python's formatter. Imported
+            # here, not at module level, for the startup time (see `base.cu()`).
+            import traceback
+
             msg = ''.join(traceback.format_exception_only(type(e), e)).strip()
         return f'{type(e).__name__}: {msg}'
     except Exception:
@@ -543,8 +545,14 @@ def sanitize_sensitive_data(msg, replacement='******'):
         return msg
     # The URL form runs first: its password is not preceded by a sensitive name, so a
     # later name-based pass would leave it untouched.
-    msg = SENSITIVE_URL_PATTERN.sub(rf'\1{replacement}\2', msg)
-    msg = SENSITIVE_FIELDS_PATTERN.sub(rf'\1{replacement}', msg)
+    # The two costly patterns are skipped when the text lacks what either of them needs
+    # to match. The checks are exact (every match contains one of these substrings), so
+    # nothing is ever left unredacted, but a table of several KB without an `=` is
+    # sanitized ten times faster.
+    if '://' in msg and '@' in msg:
+        msg = SENSITIVE_URL_PATTERN.sub(rf'\1{replacement}\2', msg)
+    if '=' in msg or '-p' in msg or '-P' in msg:
+        msg = SENSITIVE_FIELDS_PATTERN.sub(rf'\1{replacement}', msg)
     msg = SENSITIVE_JSON_PATTERN.sub(rf'\1{replacement}\2', msg)
     msg = SENSITIVE_MAPPING_PATTERN.sub(rf'\1{replacement}\2', msg)
     msg = SENSITIVE_AUTH_PATTERN.sub(rf'\1{replacement}', msg)

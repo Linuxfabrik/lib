@@ -163,6 +163,17 @@ class TestSanitizeSensitiveData(unittest.TestCase):
         out = txt.sanitize_sensitive_data('["sshpass", "-p", "secret123"]')
         self.assertNotIn('secret123', out)
 
+    # A message without any `=` still has to reach the key=value pattern for its
+    # sshpass alternative, whatever the case of the option.
+    def test_redacts_sshpass_command_line(self):
+        for cmd in ('sshpass -p linuxfabrik ssh host', 'SSHPASS -P linuxfabrik ssh'):
+            with self.subTest(cmd=cmd):
+                self.assertNotIn('linuxfabrik', txt.sanitize_sensitive_data(cmd))
+
+    def test_keeps_text_without_credentials(self):
+        text = 'Name ! Used\n-----+-----\n/    ! 12G <n/a>\n' * 100
+        self.assertEqual(txt.sanitize_sensitive_data(text), text)
+
     # "-p" is the port option of ssh and scp, so it is only redacted behind sshpass.
     # Blanking every "-p" value would hide a port number for no gain.
     def test_keeps_ssh_port_readable(self):
