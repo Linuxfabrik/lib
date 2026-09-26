@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * args.py, base.py, txt.py, url.py: import faster, and `sanitize_sensitive_data()` is faster on long output
 * smb.py: imports faster, a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
 
+### Removed
+
+* pyproject.toml: the unused `PySmbClient` dependency, whose `smbclient` module can shadow the one from smbprotocol
+
 ### Fixed
 
 * disk.py: `is_within()` with the filesystem root as a root

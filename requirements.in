@@ -52,7 +52,6 @@ lxml --only-binary=lxml
 psutil
 pymysql
 pypsrp
-PySmbClient
 pywinrm
 smbprotocol
 xmltodict

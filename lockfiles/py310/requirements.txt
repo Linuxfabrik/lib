@@ -597,9 +597,6 @@ pypsrp==0.9.1 \
     --hash=sha256:1217b03397589f8e77c98dc9d2a4af2abc34a89ccc15efd4b6758ec76eb1bb7d \
     --hash=sha256:3ad41285739d5f8107dd8277ae00e86ee44153aae5e82fb578ac8048307e0d12
     # via -r requirements.in
-pysmbclient==0.1.5 \
-    --hash=sha256:dc528959ffe3fae5cdd2053c0d68b6dfca706d8f4ea78b9b3e741daedc87aed4
-    # via -r requirements.in
 pyspnego==0.12.2 \
     --hash=sha256:04e7c9260ced15197b3f42b891ffa30fa98c37bb09372c5c2bf927bcdfe30b53 \
     --hash=sha256:448a491a9bf0e5fb957567fe46e6809fa836aa40dfcccebcc740bb64acb1be1c
