@@ -36,6 +36,10 @@ try:
     import lib.feedparser as feedparser
     from bs4 import BeautifulSoup
 
+    # lib.url loads httpx only on the first request. Load it now so the tests can
+    # patch `feedparser.url.httpx.Client` before any request has been made.
+    feedparser.url._import_httpx()
+
     HAVE_DEPS = True
     IMPORT_ERROR = ''
 except (ImportError, SystemExit) as exc:  # pragma: no cover - depends on venv

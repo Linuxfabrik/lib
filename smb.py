@@ -11,11 +11,30 @@
 """Provides functions to establish native SMB connections."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2025042001'
+__version__ = '2026092501'
 
 
-import smbclient
-import smbprotocol.exceptions
+# smbclient and smbprotocol take about 45 ms to import. `_import_smbclient()` loads them on
+# the first call, so a consumer that imports this module without touching a share neither
+# pays for them nor fails on a host where they are not installed. Verified with
+# `python3.9 -X importtime` on Fedora 44, smbprotocol 1.16.1.
+_NOT_IMPORTED = object()
+smbclient = _NOT_IMPORTED
+smbprotocol = _NOT_IMPORTED
+
+
+def _import_smbclient():
+    """Import smbclient and smbprotocol on first use and bind them to this module.
+    Returns `None`, or an error message naming the module that is not installed."""
+    global smbclient, smbprotocol
+    try:
+        if smbclient is _NOT_IMPORTED:
+            import smbclient
+        if smbprotocol is _NOT_IMPORTED:
+            import smbprotocol.exceptions
+    except ImportError as e:
+        return f'Python module "{e.name or "smbprotocol"}" is not installed.'
+    return None
 
 
 def glob(filename, username, password, timeout, pattern='*', encrypt=True):
@@ -53,6 +72,9 @@ def glob(filename, username, password, timeout, pattern='*', encrypt=True):
     --------
     >>> success, files = lib.smb.glob('smb://server/share', 'user', 'pass', timeout=5)
     """
+    error = _import_smbclient()
+    if error:
+        return False, error
     try:
         file_entry = smbclient._os.SMBDirEntry.from_path(
             filename,
@@ -130,6 +152,9 @@ def open_file(filename, username, password, timeout, encrypt=True):
     ... ) as fd:
     ...     result = lib.txt.to_text(fd.read())
     """
+    error = _import_smbclient()
+    if error:
+        return False, error
     try:
         file_obj = smbclient.open_file(
             filename,

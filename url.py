@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092202'
+__version__ = '2026092501'
 
 import base64
 import json
@@ -22,18 +22,16 @@ import ssl
 import time
 import urllib.parse
 
-# httpx is imported lazily inside fetch() so an unrelated consumer that pulls `lib.url` only
-# transitively (e.g. via `lib.net`) keep working on hosts where httpx is not installed yet
-try:
-    import httpx
-except ImportError:
-    httpx = None
-try:
-    import httpcore
-except ImportError:
-    httpcore = None
-
 from . import human, txt
+
+# httpx and httpcore take about 50 ms to import, most of a short-lived process's startup.
+# `_import_httpx()` loads them on the first request, so a consumer that imports this module
+# without fetching anything, or pulls it in only transitively (e.g. via `lib.net`), neither
+# pays for them nor fails on a host where httpx is not installed. Verified with
+# `python3.9 -X importtime` on Fedora 44, httpx 0.28.1.
+_NOT_IMPORTED = object()
+httpx = _NOT_IMPORTED
+httpcore = _NOT_IMPORTED
 
 # stdlib ssl version names; '1.0' first because it is the most permissive minimum.
 # `ssl.TLSVersion` was added in Python 3.7. Build the dict only when available so
@@ -736,6 +734,22 @@ def _is_transient(exc):
     )
 
 
+def _import_httpx():
+    """Import httpx and httpcore on first use and bind them to this module. A module
+    that is not installed is bound as `None`."""
+    global httpx, httpcore
+    if httpx is _NOT_IMPORTED:
+        try:
+            import httpx
+        except ImportError:
+            httpx = None
+    if httpcore is _NOT_IMPORTED:
+        try:
+            import httpcore
+        except ImportError:
+            httpcore = None
+
+
 def _fetch_once(
     url,
     insecure=False,
@@ -768,6 +782,7 @@ def _fetch_once(
     if data is None:
         data = {}
 
+    _import_httpx()
     if httpx is None:
         return (
             False,

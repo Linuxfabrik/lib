@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* args.py, base.py, txt.py: import faster, and `sanitize_sensitive_data()` is faster on long output
+* args.py, base.py, txt.py, url.py: import faster, and `sanitize_sensitive_data()` is faster on long output
+* smb.py: imports faster, a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
 
 ### Fixed
 

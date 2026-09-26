@@ -24,6 +24,7 @@ import base64
 import datetime
 import os
 import ssl
+import subprocess
 import sys
 import unittest
 from unittest import mock
@@ -46,6 +47,10 @@ except ImportError:
 
 HAS_HTTPX = httpx is not None
 skip_without_httpx = unittest.skipUnless(HAS_HTTPX, 'httpx not installed')
+
+# lib.url loads httpx only on the first request. Load it now so the tests can patch
+# `url.httpx.Client` before any request has been made.
+url._import_httpx()
 
 
 # -----------------------------------------------------------------------------
@@ -507,6 +512,18 @@ class TestFetchValidation(unittest.TestCase):
         ok, msg = url.fetch('https://example.com', tls_min='nope')
         self.assertFalse(ok)
         self.assertIn('Invalid tls_min', msg)
+
+    def test_import_does_not_load_httpx(self):
+        # A fresh interpreter, because this one has loaded httpx already.
+        code = 'import sys; import lib.url; print("httpx" in sys.modules)'
+        result = subprocess.run(
+            [sys.executable, '-c', code],
+            capture_output=True,
+            check=True,
+            cwd='..',
+            text=True,
+        )
+        self.assertEqual(result.stdout.strip(), 'False')
 
     def test_httpx_missing_returns_install_hint(self):
         with mock.patch.object(url, 'httpx', None):
@@ -2024,8 +2041,9 @@ class TestServerProduct(unittest.TestCase):
         self.assertEqual(url.server_product({'server': 'nginx'}), 'nginx')
 
     def test_the_token_arrives_lower_cased(self):
-        self.assertEqual(url.server_product({'server': 'Microsoft-IIS/10.0'}),
-                         'microsoft-iis')
+        self.assertEqual(
+            url.server_product({'server': 'Microsoft-IIS/10.0'}), 'microsoft-iis'
+        )
 
     def test_no_header_leaves_the_product_unknown(self):
         # Not "something else": a server that sends no banner is exactly the case
