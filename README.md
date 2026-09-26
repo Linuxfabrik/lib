@@ -102,6 +102,7 @@ These libraries are built with a clear set of priorities:
 | **lvm.py** | LVM logical volumes and volume groups via `lvs` and `vgs`, including thin pools, snapshots, health status and the thin pool metadata limit. | `get_logical_volumes()`, `get_volume_groups()`, `health()`, `is_snapshot_invalid()`, `is_thin_pool()`, `metadata_limit()` |
 | **psi.py** | Linux pressure stall information (PSI) from `/proc/pressure` for CPU, I/O, IRQ and memory, with state evaluation and report output. | `get_perfdata()`, `get_states()`, `get_summary()`, `get_table()`, `is_enabled()`, `read()` |
 | **psutil.py** | Wrapper around `psutil` for retrieving mounted disk partitions with device, mount point, filesystem type and mount options. Lists them from the mount table alone, so a network filesystem whose server is gone cannot hold the listing up. | `get_partitions()` |
+| **restic.py** | Builds the repository and password arguments for the `restic` backup client so a privileged caller cannot make it read an arbitrary file or run an external program. | `password_file_arg()`, `repo_args()` |
 | **shell.py** | Runs external commands from an argv list without a shell, guards option-style CLI values, and locates executables in `PATH`. | `safe_cli_value()`, `shell_exec()`, `which()` |
 | **user.py** | Local Unix accounts: UID/GID names, the system/regular account boundary, interactive shells and the state of the shadow password. | `get_gid_name()`, `get_interactive_shells()`, `get_shadow_password()`, `get_uid_min()`, `get_uid_name()`, `password_state()` |
 

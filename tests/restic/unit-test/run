@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.restic.
+
+The security-relevant paths (a repository that runs an external program, and the
+password and repository files a privileged process opens) are covered against a
+throwaway directory whose ownership the tests control.
+"""
+
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.restic as restic
+
+
+def _trusted_base():
+    """Return a directory nobody but root and the test user can change, or None.
+
+    /tmp is writable by everyone, so it never qualifies; the home directory
+    usually does.
+    """
+    home = os.path.expanduser('~')
+    if (
+        hasattr(os, 'geteuid')
+        and restic.disk.resolve_trusted_path(home, owners=[os.geteuid()])[0]
+    ):
+        return home
+    return None
+
+
+class TestRepoArgs(unittest.TestCase):
+    def test_exactly_one_source_is_required(self):
+        self.assertFalse(restic.repo_args()[0])
+        self.assertFalse(restic.repo_args(repo='/srv/b', repository_file='/etc/r')[0])
+
+    def test_a_plain_repo_is_passed_through(self):
+        self.assertEqual(
+            restic.repo_args(repo='/srv/backup'), (True, ['--repo=/srv/backup'])
+        )
+
+    def test_an_sftp_repo_is_allowed(self):
+        self.assertEqual(
+            restic.repo_args(repo='sftp:user@host:/srv'),
+            (True, ['--repo=sftp:user@host:/srv']),
+        )
+
+    def test_an_rclone_repo_is_refused(self):
+        for value in ('rclone:remote:path', 'RClone:remote:path', ' rclone:x'):
+            with self.subTest(value=value):
+                success, message = restic.repo_args(repo=value)
+                self.assertFalse(success)
+                self.assertIn('rclone', message)
+
+
+@unittest.skipUnless(os.name == 'posix', 'ownership is a POSIX concept here')
+class TestTrustedFiles(unittest.TestCase):
+    """A repository file and a password file are accepted only where nobody but
+    root and the running user can change them.
+    """
+
+    def setUp(self):
+        base = _trusted_base()
+        if base is None:
+            self.skipTest('no directory on this host is trusted for the test user')
+        self.base = tempfile.mkdtemp(prefix='.lftest-restic-', dir=base)
+        self.file = os.path.join(self.base, 'repo')
+        with open(self.file, 'w') as handle:
+            handle.write('sftp:user@host:/srv\n')
+
+    def tearDown(self):
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def test_repository_file_owned_by_the_user_is_used(self):
+        self.assertEqual(
+            restic.repo_args(repository_file=self.file),
+            (True, [f'--repository-file={os.path.realpath(self.file)}']),
+        )
+
+    def test_password_file_owned_by_the_user_is_used(self):
+        self.assertEqual(
+            restic.password_file_arg(self.file),
+            (True, [f'--password-file={os.path.realpath(self.file)}']),
+        )
+
+    def test_a_missing_password_file_is_refused(self):
+        self.assertFalse(restic.password_file_arg(None)[0])
+        self.assertFalse(restic.password_file_arg('')[0])
+
+    def test_a_file_anybody_can_change_is_refused(self):
+        work = tempfile.mkdtemp(prefix='lftest-restic-untrusted-')
+        try:
+            os.chmod(work, 0o777)
+            planted = os.path.join(work, 'repo')
+            with open(planted, 'w') as handle:
+                handle.write('sftp:x\n')
+            for call in (
+                restic.repo_args(repository_file=planted),
+                restic.password_file_arg(planted),
+            ):
+                self.assertFalse(call[0])
+                self.assertIn('writable by everyone', call[1])
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def test_a_root_owned_file_is_accepted(self):
+        # root is always a trusted owner, so a file only root can change is used
+        # whether the check runs as root or as an unprivileged user.
+        for call in (
+            restic.repo_args(repository_file='/etc/hostname'),
+            restic.password_file_arg('/etc/hostname'),
+        ):
+            self.assertTrue(call[0], call[1])
+
+
+if __name__ == '__main__':
+    unittest.main()

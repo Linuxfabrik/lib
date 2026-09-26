@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* disk.py: `open_file()` opens a file, optionally confined to allowed roots, `resolve_trusted_path()` resolves a path only if nobody but root and the given owners can change it, and `get_fingerprint()` takes an open file
+* disk.py: `open_file()` for confined reads, `resolve_trusted_path()`, and `get_fingerprint()` on an open file
+* restic.py: `repo_args()` and `password_file_arg()` for restic's repository and password arguments
 
 ### Changed
 
@@ -29,10 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-* container.py: `run()` runs a client as another account only if that account owns a subordinate UID range
-* disk.py: `read_file()` and `read_env()` with `allowed_roots` no longer read a file outside the roots when a directory in the path is swapped during the open, and refuse FIFOs and devices
-* logsource.py: `read()` takes everything it needs from one checked handle, so neither a log nor a rotated predecessor can be swapped for a file outside the allowed roots
-* nextcloud.py: `run_occ()` refuses an installation that anybody but root and the owner of `config/config.php` can change, and a symlinked `config.php`
+* container.py: `run()` runs as another account only if it owns a subordinate UID range
+* disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files
+* logsource.py: `read()` reads each source, rotated files included, from one checked handle
+* nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`
 
 
 ## [v8.2.0] - 2026-09-22
