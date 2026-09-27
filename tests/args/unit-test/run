@@ -300,6 +300,22 @@ class TestRepairAnsiArgument(unittest.TestCase):
                     f'{first + second!a} became {repaired!a}',
                 )
 
+    def test_never_introduces_ascii_on_a_double_byte_code_page(self):
+        # Every pair of cp932 characters from U+0080 up. cp932 encodes "―" as 81 5C,
+        # whose trail byte is a backslash.
+        high = [chr(code) for code in range(0x80, 0x3000)]
+        high = [char for char in high if char.encode('cp932', 'ignore')]
+        for first in high[:200]:
+            for second in high:
+                repaired = args._repair_ansi_argument(first + second, 'cp932')
+                self.assertFalse(
+                    any(ord(char) < 0x80 for char in repaired),
+                    f'{first + second!a} became {repaired!a}',
+                )
+        self.assertEqual(
+            args._repair_ansi_argument('\uff82\u2015', 'cp932'), '\uff82\u2015'
+        )
+
     def test_ascii_around_a_repair_stays_in_place(self):
         self.assertEqual(
             args._repair_ansi_argument('--path=C:\\Pr\xc3\xbcfung\\..\\x', 'cp1252'),

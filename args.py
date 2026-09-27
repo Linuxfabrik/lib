@@ -19,7 +19,7 @@ import textwrap
 from . import base, human, txt
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092702'
+__version__ = '2026092703'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -659,9 +659,10 @@ def _repair_ansi_argument(arg, codec):
     at all. What remains ambiguous is text that already looks like mojibake: a literal
     "Ã¼" is indistinguishable from a damaged "ü" and is read as the latter.
 
-    The repair never produces a character below U+0080 that was not there before: ASCII
-    bytes map to themselves, and a strict UTF-8 decoder turns bytes from `0x80` up into
-    characters from U+0080 up only, overlong encodings of ASCII included. So it cannot
+    The repair never produces a character below U+0080 that was not there before: only
+    characters that encode to a single byte are taken back, ASCII bytes map to
+    themselves, and a strict UTF-8 decoder turns bytes from `0x80` up into characters
+    from U+0080 up only, overlong encodings of ASCII included. So it cannot
     introduce a `-`, a `/`, a quote or a `..` into an argument.
 
     Parameters
@@ -687,11 +688,17 @@ def _repair_ansi_argument(arg, codec):
     raw = bytearray()
     for char in arg:
         try:
-            raw += txt.to_bytes(char, encoding=codec, errors='strict')
+            encoded = txt.to_bytes(char, encoding=codec, errors='strict')
         except UnicodeEncodeError:
             if ord(char) > 0xFF:
                 return arg
-            raw.append(ord(char))
+            encoded = bytes([ord(char)])
+        # The damage maps one byte to one character. A character that takes two
+        # bytes (the double-byte code pages 932, 936, 949 and 950) was not produced
+        # by it, and its trail byte can be ASCII: cp932 encodes "―" as `81 5C`.
+        if len(encoded) != 1:
+            return arg
+        raw += encoded
     try:
         return txt.to_text(bytes(raw), encoding='utf-8', errors='strict')
     except UnicodeDecodeError:
