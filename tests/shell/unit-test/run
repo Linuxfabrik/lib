@@ -281,8 +281,53 @@ class TestShellExec(unittest.TestCase):
                 ['redis-cli', '-a', 'linuxfabrik', 'info'], run_as='appuser'
             )
         self.assertFalse(success)
-        self.assertIn('"redis-cli"', result)
+        self.assertIn('Command "sudo" not found', result)
         self.assertNotIn('linuxfabrik', result)
+
+    def test_missing_program_is_named_with_a_hint(self):
+        def boom(*args, **kwargs):
+            raise FileNotFoundError(2, 'No such file or directory', 'docker')
+
+        with mock.patch.object(shell.subprocess, 'Popen', boom):
+            success, result = shell.shell_exec(['docker', 'info'])
+        self.assertFalse(success)
+        self.assertEqual(
+            result,
+            'Command "docker" not found (No such file or directory). Install it, or '
+            'make sure it is in the PATH of the account running this.',
+        )
+
+    def test_missing_program_behind_sudo_is_named(self):
+        def boom(*args, **kwargs):
+            raise FileNotFoundError(2, 'No such file or directory', 'redis-cli')
+
+        entry = mock.Mock(pw_uid=1234)
+        with (
+            mock.patch('pwd.getpwnam', return_value=entry),
+            mock.patch.object(shell.subprocess, 'Popen', boom),
+        ):
+            success, result = shell.shell_exec(
+                ['redis-cli', '-a', 'linuxfabrik', 'info'], run_as='appuser'
+            )
+        self.assertFalse(success)
+        self.assertIn('Command "redis-cli" not found', result)
+        self.assertNotIn('linuxfabrik', result)
+
+    def test_missing_working_directory_is_not_reported_as_missing_program(self):
+        def boom(*args, **kwargs):
+            raise FileNotFoundError(2, 'No such file or directory', '/nonexistent')
+
+        with mock.patch.object(shell.subprocess, 'Popen', boom):
+            success, result = shell.shell_exec(['ls'], cwd='/nonexistent')
+        self.assertFalse(success)
+        self.assertNotIn('not found', result)
+        self.assertIn('/nonexistent', result)
+
+    def test_missing_program_real_run(self):
+        success, result = shell.shell_exec(['linuxfabrik-no-such-program', '--secret'])
+        self.assertFalse(success)
+        self.assertIn('Command "linuxfabrik-no-such-program" not found', result)
+        self.assertNotIn('--secret', result)
 
     def test_empty_argument_list_reports_instead_of_raising(self):
         success, result = shell.shell_exec([])

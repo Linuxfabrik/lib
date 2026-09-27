@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026092702'
 
 
 import os
@@ -241,7 +241,8 @@ def shell_exec(
     - Exceptions such as `OSError`, `ValueError`, or other execution errors during process
       creation are caught and reported as `(False, <error message>)`. The message names
       the program, never its arguments, so a credential passed on the command line does
-      not end up in it.
+      not end up in it. A program that does not exist is reported as
+      `Command "<program>" not found (<strerror>). ...`.
     - If the process exceeds the specified `timeout`, it is killed, and the function returns
       `(False, "Timeout after <timeout> seconds.")`. The call returns even where the kill
       cannot take effect: a command blocked on storage that has gone away sits in an
@@ -287,6 +288,21 @@ def shell_exec(
             env=env,
             shell=False,
             cwd=cwd,
+        )
+    except FileNotFoundError as e:
+        # Popen raises the same error for a working directory that does not exist, and
+        # names that directory then.
+        if cwd is not None and e.filename == cwd:
+            return False, f'Error "{e}" while calling command "{program}"'
+        # A missing program is the most common reason a command cannot be started, so it
+        # is named in words that say what to do. `strerror` stays in the message for
+        # callers that recognize this case by it. The file that is missing can also be
+        # the `sudo` that `run_as` puts in front; any other name is not trusted to be
+        # free of arguments and falls back to the program.
+        missing = e.filename if e.filename in (cmd[0], program) else program
+        return False, (
+            f'Command "{missing}" not found ({e.strerror}). Install it, or make sure '
+            f'it is in the PATH of the account running this.'
         )
     except (OSError, ValueError, Exception) as e:
         # Name the program only, never its arguments. An argument list carries
