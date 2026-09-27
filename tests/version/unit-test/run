@@ -266,7 +266,8 @@ class TestCheckEolNamedCycle(unittest.TestCase):
     def test_named_cycle_past_eol_warns(self):
         state, msg = self.check('9-99h2-w')
         self.assertEqual(state, STATE_WARN)
-        self.assertIn('full support ended on 2000-01-01', msg)
+        # full support ended on the day of the end of life, so the date is named once
+        self.assertNotIn('full support ended', msg)
         self.assertIn('EOL 2000-01-01 -30d [WARNING]', msg)
 
     def test_first_listed_candidate_wins(self):

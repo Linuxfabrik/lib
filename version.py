@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026092702'
 
 import datetime
 import json
@@ -183,17 +183,19 @@ def check_eol(
             state = STATE_UNKNOWN
             msg.append(f'version {version_string} unknown')
     else:
-        support = cycles_eoldate.get('support')
-        if support and isinstance(support, str):
-            if now > time.timestr2datetime(support, pattern=pattern):
-                msg.append(f'full support ended on {support}; ')
-
         eol_key = (
             'extendedSupport'
             if extended_support and cycles_eoldate.get('extendedSupport')
             else 'eol'
         )
         eol_date = cycles_eoldate.get(eol_key)
+
+        # Where full support ends on the day of the end of life (Windows 10 22H2 without
+        # Extended Security Updates, for example), the EOL below says it all.
+        support = cycles_eoldate.get('support')
+        if support and isinstance(support, str) and support != eol_date:
+            if now > time.timestr2datetime(support, pattern=pattern):
+                msg.append(f'full support ended on {support}; ')
 
         # The API answers this field in three shapes and they are not interchangeable:
         # a date string, `true` (end of life reached, no date given) and `false` (no end
