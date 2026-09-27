@@ -18,7 +18,7 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092501'
 
 import html
 import operator

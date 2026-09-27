@@ -53,7 +53,7 @@ from . import shell, time
 from .globals import STATE_UNKNOWN, STATE_WARN
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082701'
+__version__ = '2026092701'
 
 # The fields read per logical volume, sorted, and every one of them a volume-level
 # field so the report stays at one row per volume.

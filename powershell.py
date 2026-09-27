@@ -66,12 +66,12 @@ def run_ps(cmd, timeout=None):
         'stderr': ''
     }
     """
-    # cmd is admin-provided from the Icinga check config; PATH-based powershell lookup
-    # is intentional so the hook works across Windows installs. shell_exec() and not
-    # subprocess.run(): on Windows, run() collects the output after killing a command
-    # that timed out, without a bound, so a child process of PowerShell that holds the
-    # pipes made `timeout=3` return after 29 seconds. Measured with Python 3.13 on
-    # Windows Server 2025.
+    # cmd is PowerShell script text and runs as it is, so a caller must never build it
+    # from untrusted input; PATH-based powershell lookup is intentional so the hook works
+    # across Windows installs. shell_exec() and not subprocess.run(): on Windows, run()
+    # collects the output after killing a command that timed out, without a bound, so a
+    # child process of PowerShell that holds the pipes made `timeout=3` return after 29
+    # seconds. Measured with Python 3.13 on Windows Server 2025.
     success, result = shell.shell_exec(['powershell', '-Command', cmd], timeout=timeout)
     if not success:
         return {
