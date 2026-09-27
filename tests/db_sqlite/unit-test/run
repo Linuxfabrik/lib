@@ -89,14 +89,14 @@ class TestGetDbDir(unittest.TestCase):
     @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
     def test_rejects_base_others_may_rename_entries_in(self):
         # without the sticky bit, whoever may write to the base can swap the directory
-        os.chmod(self.base, 0o777)
+        os.chmod(self.base, 0o777)  # nosec B103 - the base under test is open on purpose
         ok, msg = db.get_db_dir(self.base)
         self.assertFalse(ok)
         self.assertIn('lets other accounts replace its entries', msg)
 
     @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
     def test_accepts_a_sticky_base_like_tmp(self):
-        os.chmod(self.base, 0o1777)
+        os.chmod(self.base, 0o1777)  # nosec B103 - a sticky base, as /tmp is
         ok, db_dir = db.get_db_dir(self.base)
         self.assertTrue(ok, db_dir)
 
