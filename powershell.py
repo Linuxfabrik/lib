@@ -11,14 +11,14 @@
 """This library collects some Microsoft PowerShell related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026070301'
+__version__ = '2026092701'
 
 import subprocess  # nosec B404 - required to run PowerShell on Windows targets
 
 from . import txt
 
 
-def run_ps(cmd):
+def run_ps(cmd, timeout=None):
     """
     Run a PowerShell command and return its results.
 
@@ -32,6 +32,10 @@ def run_ps(cmd):
     cmd : str
         The PowerShell command to execute (passed as a single string
         to the `-Command` argument).
+    timeout : int or float, optional
+        Maximum time in seconds to allow the command to run. If exceeded,
+        PowerShell is killed and the result reports the timeout. Defaults to
+        None (no timeout).
 
     Returns
     -------
@@ -47,7 +51,10 @@ def run_ps(cmd):
     - Output decoding is performed via `txt.to_text(...)`.
     - Exceptions are caught and converted to a result with `retc=1`,
       empty `stdout`, and `stderr` containing the formatted exception text.
-    - No timeout is applied; the call will block until the command exits.
+    - Without `timeout`, the call blocks until the command exits. With it, a
+      command that runs longer yields `retc=1`, empty `stdout` and
+      `Timeout after <timeout> seconds.` in `stderr`, the message
+      `lib.shell.shell_exec()` uses for the same case.
     - `stderr` is not merged into `stdout`.
 
     Examples
@@ -63,7 +70,7 @@ def run_ps(cmd):
         # cmd is admin-provided from the Icinga check config; PATH-based powershell
         # lookup is intentional so the hook works across Windows installs
         result = subprocess.run(  # nosec B603 B607
-            ['powershell', '-Command', cmd], capture_output=True
+            ['powershell', '-Command', cmd], capture_output=True, timeout=timeout
         )
         return {
             #'args': result.args,
@@ -73,6 +80,12 @@ def run_ps(cmd):
             # stdout (Linuxfabrik/lib#256).
             'stdout': txt.to_text(result.stdout, errors='strict_or_latin1'),
             'stderr': txt.to_text(result.stderr, errors='strict_or_latin1'),
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            'retc': 1,
+            'stdout': '',
+            'stderr': f'Timeout after {timeout} seconds.',
         }
     except Exception as e:
         return {

@@ -14,8 +14,8 @@ The module exposes a single public function:
 
 - run_ps() wraps `subprocess.run(['powershell', '-Command', cmd], ...)` and
   returns a dict with retc/stdout/stderr, decoding the byte streams via
-  lib.txt.to_text and turning any exception into a retc=1 result via
-  lib.txt.exception2text.
+  lib.txt.to_text, turning a timeout into a retc=1 result that names it, and
+  any other exception into a retc=1 result via lib.txt.exception2text.
 
 Every test mocks powershell.subprocess.run so no real `powershell` binary is
 ever spawned. The tests are therefore hermetic and run on any OS in
@@ -239,6 +239,24 @@ class TestRunPsInvocation(unittest.TestCase):
             powershell.run_ps('x')
         self.assertTrue(m.call_args.kwargs.get('capture_output'))
 
+    def test_no_timeout_by_default(self):
+        with mock.patch.object(
+            powershell.subprocess,
+            'run',
+            return_value=FakeCompletedProcess(),
+        ) as m:
+            powershell.run_ps('x')
+        self.assertIsNone(m.call_args.kwargs.get('timeout'))
+
+    def test_timeout_is_passed_to_subprocess(self):
+        with mock.patch.object(
+            powershell.subprocess,
+            'run',
+            return_value=FakeCompletedProcess(),
+        ) as m:
+            powershell.run_ps('x', timeout=8)
+        self.assertEqual(m.call_args.kwargs.get('timeout'), 8)
+
     def test_called_exactly_once(self):
         with mock.patch.object(
             powershell.subprocess,
@@ -319,17 +337,15 @@ class TestRunPsExceptions(unittest.TestCase):
         self.assertEqual(result['stderr'], 'RuntimeError: weird')
 
     def test_timeout_expired_is_caught(self):
-        # No timeout is applied by run_ps, but if the layer below raises one
-        # (e.g. via a wrapping mock), it must still degrade to retc=1.
         with mock.patch.object(
             powershell.subprocess,
             'run',
             side_effect=subprocess.TimeoutExpired(cmd='powershell', timeout=5),
         ):
-            result = powershell.run_ps('Start-Sleep 999')
+            result = powershell.run_ps('Start-Sleep 999', timeout=5)
         self.assertEqual(result['retc'], 1)
         self.assertEqual(result['stdout'], '')
-        self.assertIn('TimeoutExpired', result['stderr'])
+        self.assertEqual(result['stderr'], 'Timeout after 5 seconds.')
 
     def test_exception_result_has_documented_keys(self):
         with mock.patch.object(
