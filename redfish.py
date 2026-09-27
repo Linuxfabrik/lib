@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092201'
+__version__ = '2026092701'
 
 import atexit
 import base64
@@ -3409,12 +3409,13 @@ def start_trace(path='', filename=TRACE_FILENAME):
             f'refusing to append. Move it away to start a new one.'
         )
     try:
-        # O_NOFOLLOW: refuse to open a symlink sitting at the trace path. O_APPEND: several
-        # Redfish checks on the same host trace into the same file, and append-mode writes of
-        # this size do not interleave. 0o600: the trace names hosts and URLs.
+        # O_NOFOLLOW: refuse to open a symlink sitting at the trace path (POSIX-only, Windows
+        # has no such flag). O_APPEND: several Redfish checks on the same host trace into the
+        # same file, and append-mode writes of this size do not interleave. 0o600: the trace
+        # names hosts and URLs.
         fd = os.open(
             trace_path,
-            os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, 'O_NOFOLLOW', 0),
             0o600,
         )
     except OSError as e:
