@@ -57,10 +57,13 @@ class TestRepoArgs(unittest.TestCase):
             (True, ['--repo=sftp:user@host:/srv']),
         )
 
+    @unittest.skipUnless(os.name == 'posix', 'ownership is a POSIX concept here')
     def test_an_empty_repo_does_not_drop_the_repository_file(self):
-        success, message = restic.repo_args(repo='', repository_file='/etc/r')
-        self.assertFalse(success)
-        self.assertNotEqual(message, ['--repo='])
+        # an empty --repo counts as not given, so the trusted file is used
+        self.assertEqual(
+            restic.repo_args(repo='', repository_file='/etc/hostname', owners=[]),
+            (True, ['--repository-file=/etc/hostname']),
+        )
 
     def test_an_sftp_repo_with_an_option_as_host_is_refused(self):
         for value in (
