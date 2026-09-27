@@ -268,6 +268,7 @@ class TestShellExec(unittest.TestCase):
         self.assertNotIn('linuxfabrik', result)
         self.assertNotIn('admin', result)
 
+    @unittest.skipIf(os.name == 'nt', 'sudo and pwd are POSIX-only')
     def test_popen_construction_error_names_the_program_behind_sudo(self):
         def boom(*args, **kwargs):
             raise FileNotFoundError(2, 'No such file or directory', 'sudo')
@@ -297,6 +298,7 @@ class TestShellExec(unittest.TestCase):
             'make sure it is in the PATH of the account running this.',
         )
 
+    @unittest.skipIf(os.name == 'nt', 'sudo and pwd are POSIX-only')
     def test_missing_program_behind_sudo_is_named(self):
         def boom(*args, **kwargs):
             raise FileNotFoundError(2, 'No such file or directory', 'redis-cli')
@@ -510,6 +512,9 @@ class TestShellExecRunAs(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+@unittest.skipIf(
+    os.name == 'nt', 'the quoting is for a POSIX shell, checked with /bin/sh'
+)
 class TestQuoteCliValue(unittest.TestCase):
     def test_plain_values_stay_readable(self):
         # a value that needs no quoting must not get any, or every printed command

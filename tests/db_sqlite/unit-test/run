@@ -110,7 +110,11 @@ class TestGetDbPath(unittest.TestCase):
         ok, path = db.get_db_path(path=self.base, filename='example.db')
         self.assertTrue(ok, path)
         self.assertTrue(path.endswith('example.db'))
-        self.assertEqual(os.path.dirname(os.path.dirname(path)), self.base.rstrip('/'))
+        # below a per-user subdirectory on POSIX; on Windows the path itself is used
+        parent = os.path.dirname(path)
+        if hasattr(os, 'geteuid'):
+            parent = os.path.dirname(parent)
+        self.assertEqual(parent, self.base.rstrip('/'))
 
     def test_default_filename(self):
         ok, path = db.get_db_path(path=self.base)

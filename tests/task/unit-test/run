@@ -81,6 +81,9 @@ class TestRunEachResults(unittest.TestCase):
         self.assertFalse(success)
         self.assertEqual(message, 'division by zero')
 
+    @unittest.skipUnless(
+        hasattr(os, 'fork'), 'without fork() the jobs run in the calling process'
+    )
     def test_a_job_that_raises_is_told_apart_from_one_that_times_out(self):
         # the whole point of the module: the first means the work was done and the
         # answer was no, the second means no answer was reached at all
@@ -90,6 +93,9 @@ class TestRunEachResults(unittest.TestCase):
         self.assertNotEqual(result['raises'][1], task.TIMEOUT)
         self.assertEqual(result['blocks'], (False, task.TIMEOUT))
 
+    @unittest.skipUnless(
+        hasattr(os, 'fork'), 'without fork() the jobs run in the calling process'
+    )
     def test_a_job_whose_answer_is_not_json(self):
         success, _ = task.run_each([('a', lambda: object())], timeout=5)['a']
         self.assertFalse(success)
@@ -108,6 +114,9 @@ class TestRunEachResults(unittest.TestCase):
         result = task.run_each([('a', lambda: payload)], timeout=10)
         self.assertEqual(result['a'], (True, payload))
 
+    @unittest.skipUnless(
+        hasattr(os, 'fork'), 'without fork() the jobs run in the calling process'
+    )
     def test_an_answer_beyond_the_cap_is_refused(self):
         cap = task.MAX_RESULT_BYTES
         task.MAX_RESULT_BYTES = 1024
@@ -121,6 +130,9 @@ class TestRunEachResults(unittest.TestCase):
         self.assertIn('larger than', message)
 
 
+@unittest.skipUnless(
+    hasattr(os, 'fork'), 'without fork() the jobs run in the calling process'
+)
 class TestRunEachDeadline(unittest.TestCase):
     def test_the_deadline_is_shared_by_the_whole_batch(self):
         # five jobs that never answer, one deadline: the batch takes about as long as
@@ -150,6 +162,9 @@ class TestRunEachDeadline(unittest.TestCase):
         self.assertEqual(result['a'], (False, task.TIMEOUT))
 
 
+@unittest.skipUnless(
+    hasattr(os, 'fork'), 'without fork() the jobs run in the calling process'
+)
 class TestRunEachLeavesNothingBehind(unittest.TestCase):
     def test_no_child_survives_a_deadline(self):
         before = child_count()
@@ -179,6 +194,9 @@ class TestRun(unittest.TestCase):
         self.assertFalse(success)
         self.assertEqual(message, 'division by zero')
 
+    @unittest.skipUnless(
+        hasattr(os, 'fork'), 'without fork() the jobs run in the calling process'
+    )
     def test_a_single_job_that_times_out(self):
         self.assertEqual(task.run(sleeper(30), timeout=1), (False, task.TIMEOUT))
 

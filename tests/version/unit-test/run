@@ -27,7 +27,9 @@ import unittest
 
 sys.path.insert(0, '..')
 
+import lib.base as base
 import lib.cache as cache
+import lib.db_sqlite as db_sqlite
 import lib.time as lib_time
 import lib.version as version
 from lib.globals import STATE_OK, STATE_UNKNOWN, STATE_WARN
@@ -134,8 +136,8 @@ class TestCheckEol(unittest.TestCase):
         self.assertTrue(
             os.path.isfile(
                 os.path.join(
-                    self.tmpdir,
-                    f'linuxfabrik-monitoring-plugins-uid{os.geteuid()}',
+                    # the per-user subdirectory on POSIX, `self.tmpdir` itself on Windows
+                    base.coe(db_sqlite.get_db_dir(self.tmpdir)),
                     'linuxfabrik-lib-version.db',
                 )
             )

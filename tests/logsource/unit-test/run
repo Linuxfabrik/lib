@@ -173,7 +173,8 @@ class TestReadFile(unittest.TestCase):
         self.path = os.path.join(self.tmpdir, 'app.log')
 
     def write(self, content, mode='a'):
-        with open(self.path, mode) as handle:
+        # newline='' keeps the LF on Windows too, the offsets count bytes
+        with open(self.path, mode, newline='') as handle:
             handle.write(content)
 
     def read(self, position=None, **kwargs):
@@ -358,7 +359,8 @@ class TestReadRotated(unittest.TestCase):
         a test that wrote its files within the same clock tick would not pin it down.
         """
         path = os.path.join(self.tmpdir, name)
-        with open(path, 'w') as handle:
+        # newline='' keeps the LF on Windows too, the offsets below count bytes
+        with open(path, 'w', newline='') as handle:
             handle.write(content)
         if mtime is not None:
             os.utime(path, (mtime, mtime))
@@ -724,6 +726,7 @@ class TestReadContainer(unittest.TestCase):
         self.assertIsNone(result['position']['timestamp'])
 
 
+@unittest.skipUnless(hasattr(time, 'tzset'), 'time.tzset() does not exist on Windows')
 class TestTimestamp(unittest.TestCase):
     """When a line was written, from the application's stamp or the transport's."""
 

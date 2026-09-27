@@ -25,6 +25,21 @@ sys.path.insert(0, '..')
 import lib.time as t
 
 
+def _has_tzdata():
+    # Windows has no time zone database of its own; zoneinfo needs the tzdata package
+    try:
+        import zoneinfo
+
+        zoneinfo.ZoneInfo('Europe/Zurich')
+    except Exception:
+        return False
+    return True
+
+
+HAS_TZDATA = _has_tzdata()
+
+
+@unittest.skipUnless(hasattr(_time, 'tzset'), 'time.tzset() does not exist on Windows')
 class TestTimezonePinned(unittest.TestCase):
     """Cases that depend on the local timezone; pinned to UTC."""
 
@@ -123,10 +138,16 @@ class TestTimezoneIndependent(unittest.TestCase):
         with self.assertRaises(ValueError):
             t.timestr2epoch('2021-01-01T00:00:00Z', pattern='iso')
 
+    @unittest.skipUnless(
+        HAS_TZDATA, 'no time zone database, as on Windows without tzdata'
+    )
     def test_get_timezone(self):
         self.assertEqual(str(t.get_timezone('UTC')), 'UTC')
         self.assertEqual(str(t.get_timezone('Europe/Zurich')), 'Europe/Zurich')
 
+    @unittest.skipUnless(
+        HAS_TZDATA, 'no time zone database, as on Windows without tzdata'
+    )
     def test_an_unknown_zone_falls_back_to_utc(self):
         # a consumer passing a zone the host does not know must not take the check
         # down over it

@@ -59,6 +59,12 @@ OTHER_UID = 1000  # the monitoring user, i.e. not the owner of config.php
 OCC_ARGV = [PHP_BIN, '/var/www/nextcloud/occ', '--no-warnings']
 
 
+def setUpModule():
+    # run_occ() builds a sudo and php command line for a Linux host
+    if os.name == 'nt':
+        raise unittest.SkipTest('lib.nextcloud.run_occ() is POSIX-only')
+
+
 @contextlib.contextmanager
 def without_geteuid():
     """
@@ -67,12 +73,14 @@ def without_geteuid():
     `run_occ` probes for the function instead of testing the platform, so this is the
     only way to reach the "cannot tell who we are, always sudo" branch on Linux.
     """
-    saved = os.geteuid
-    del os.geteuid
+    saved = getattr(os, 'geteuid', None)
+    if saved is not None:
+        del os.geteuid
     try:
         yield
     finally:
-        os.geteuid = saved
+        if saved is not None:
+            os.geteuid = saved
 
 
 def load_fixture_text(name):
@@ -108,7 +116,7 @@ def patched(which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0)), euid=OTHE
     """
     which_p = mock.patch.object(nextcloud.shutil, 'which', return_value=which)
     owner_p = mock.patch.object(nextcloud, '_locate', side_effect=located(owner))
-    euid_p = mock.patch.object(nextcloud.os, 'geteuid', return_value=euid)
+    euid_p = mock.patch.object(nextcloud.os, 'geteuid', create=True, return_value=euid)
     shell_mock = mock.Mock(return_value=shell_ret)
     shell_p = mock.patch.object(nextcloud.shell, 'shell_exec', shell_mock)
     return (which_p, owner_p, euid_p, shell_p), shell_mock
@@ -195,7 +203,9 @@ class TestCommandConstruction(_Base):
         with (
             mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN),
             mock.patch.object(nextcloud, '_locate', side_effect=located(UID)) as go,
-            mock.patch.object(nextcloud.os, 'geteuid', return_value=OTHER_UID),
+            mock.patch.object(
+                nextcloud.os, 'geteuid', create=True, return_value=OTHER_UID
+            ),
             mock.patch.object(
                 nextcloud.shell, 'shell_exec', return_value=(True, ('{}', '', 0))
             ),
@@ -319,7 +329,9 @@ class TestUnknownOwner(unittest.TestCase):
 
     def test_message_names_the_file(self):
         _ok, msg = self.run_occ('/nonexistent/nextcloud')
-        self.assertIn('/nonexistent/nextcloud/config/config.php', msg)
+        self.assertIn(
+            os.path.join('/nonexistent/nextcloud', 'config', 'config.php'), msg
+        )
 
     def test_occ_is_not_executed(self):
         # Without a UID there is nothing sensible to pass to sudo --user.
@@ -596,7 +608,8 @@ class TestFailurePath(_Base):
     def test_failure_message_contains_command(self):
         _ok, msg = self.run_occ(NC_PATH, 'status', shell_ret=(True, ('', 'boom', 1)))
         self.assertIn(
-            'sudo --user #33 /usr/bin/php /var/www/nextcloud/occ --no-warnings status', msg
+            'sudo --user #33 /usr/bin/php /var/www/nextcloud/occ --no-warnings status',
+            msg,
         )
 
     def test_failure_message_contains_rc(self):

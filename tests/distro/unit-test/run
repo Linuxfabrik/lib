@@ -564,6 +564,7 @@ class TestGetDistroId(unittest.TestCase):
         self.assertEqual(distro._get_distro_id({}, {}, {}), '')
 
 
+@unittest.skipIf(os.name == 'nt', 'reads the release files of a Linux distribution')
 class TestGetDistroReleaseInfo(unittest.TestCase):
     """_get_distro_release_info: ID, name, version and release name from /etc."""
 
@@ -783,6 +784,7 @@ class TestGetVersionCandidates(unittest.TestCase):
         self.assertEqual(distro._get_version_candidates({}, {}, {}), [])
 
 
+@unittest.skipIf(os.name == 'nt', 'reads the release files of a Linux distribution')
 class TestGuessDistribution(unittest.TestCase):
     """_guess_distribution: the baseline facts before any release file is parsed."""
 
@@ -1338,6 +1340,7 @@ class TestParsers(unittest.TestCase):
         self.assertFalse(ok)
 
 
+@unittest.skipIf(os.name == 'nt', 'reads the release files of a Linux distribution')
 class TestProcessDistFiles(unittest.TestCase):
     """_process_dist_files: end to end against simulated filesystems.
 

@@ -19,7 +19,6 @@ Docker, so they could not be taken again here.
 
 import contextlib
 import os
-import pwd
 import sys
 import tempfile
 import unittest
@@ -28,10 +27,23 @@ from unittest import mock
 sys.path.insert(0, '..')
 
 import lib.container as container
+
+try:
+    import pwd
+except ImportError:  # Windows
+    pwd = None
 from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 # What the Docker client writes for a caller that is not in the group owning the
 # socket. The words that matter are the kernel's, at the end of the line.
+
+
+def setUpModule():
+    # the module runs docker, podman and sudo as the local account, all POSIX
+    if os.name == 'nt':
+        raise unittest.SkipTest('lib.container is POSIX-only')
+
+
 PERMISSION_DENIED = (
     'permission denied while trying to connect to the Docker daemon socket at '
     'unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.51/'

@@ -177,9 +177,11 @@ class TestFileBackedLookups(unittest.TestCase):
 
 
 class TestIdLookups(unittest.TestCase):
+    @unittest.skipIf(os.name == 'nt', 'no pwd and grp on Windows')
     def test_uid_zero_is_root(self):
         self.assertEqual(user.get_uid_name(0), 'root')
 
+    @unittest.skipIf(os.name == 'nt', 'no pwd and grp on Windows')
     def test_gid_zero_is_root(self):
         self.assertEqual(user.get_gid_name(0), 'root')
 

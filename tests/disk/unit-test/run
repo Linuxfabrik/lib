@@ -91,6 +91,7 @@ class TestFileHelpers(unittest.TestCase):
         disk.write_file(inside, 'ok')
         self.assertEqual(disk.read_file(inside, allowed_roots=[root]), (True, 'ok'))
 
+    @unittest.skipUnless(hasattr(os, 'O_NOFOLLOW'), 'O_NOFOLLOW is POSIX-only')
     def test_read_file_nofollow_refuses_symlink(self):
         # nofollow refuses even a symlink whose target is inside the root, which
         # closes the check-then-open race that allowed_roots alone leaves.
@@ -448,6 +449,7 @@ class TestReadCsv(unittest.TestCase):
         self.assertEqual(disk.read_csv(self._write('', name='empty.csv')), (True, []))
 
 
+@unittest.skipIf(os.name == 'nt', 'udevadm is Linux-only')
 class TestUdevadm(unittest.TestCase):
     PROPERTIES = 'DEVNAME=/dev/dm-0\nDM_NAME=rl-root\nID_FS_TYPE=xfs\n'
 
@@ -596,6 +598,7 @@ class TestGetOwningPackage(unittest.TestCase):
         m.assert_not_called()
 
 
+@unittest.skipUnless(hasattr(os, 'statvfs'), 'os.statvfs() is POSIX-only')
 class TestInodeUsage(unittest.TestCase):
     def test_readable_mount_reports_usage_or_no_inodes(self):
         # os.statvfs() works on any existing path; the filesystem type decides

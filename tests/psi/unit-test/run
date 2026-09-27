@@ -120,6 +120,10 @@ class TestRead(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn('no pressure values', result)
 
+    @unittest.skipIf(
+        os.name == 'nt',
+        'PSI is Linux-only, and ENOTSUP differs from EOPNOTSUPP on Windows',
+    )
     def test_a_file_the_kernel_refuses_to_account_for(self):
         # The kernel creates pressure/irq whenever the accounting is compiled in and
         # then refuses the read with EOPNOTSUPP while it is switched off at runtime
@@ -129,7 +133,7 @@ class TestRead(unittest.TestCase):
         real_open = open
 
         def refuse(path, *args, **kwargs):
-            if str(path).endswith('/pressure/irq'):
+            if str(path).endswith(os.path.join('pressure', 'irq')):
                 raise OSError(errno.EOPNOTSUPP, 'Operation not supported')
             return real_open(path, *args, **kwargs)
 
@@ -143,7 +147,7 @@ class TestRead(unittest.TestCase):
         real_open = open
 
         def refuse(path, *args, **kwargs):
-            if str(path).endswith('/pressure/irq'):
+            if str(path).endswith(os.path.join('pressure', 'irq')):
                 raise OSError(errno.EACCES, 'Permission denied')
             return real_open(path, *args, **kwargs)
 
@@ -245,6 +249,7 @@ class TestReport(unittest.TestCase):
         rows = [line for line in table.splitlines() if line.startswith('avg10')]
         self.assertTrue(rows[0].rstrip().endswith('[CRITICAL]'))
         self.assertIn('Window', table)
+
 
 if __name__ == '__main__':
     unittest.main()
