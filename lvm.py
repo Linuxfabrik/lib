@@ -172,7 +172,8 @@ NO_PERMISSION = 'LVM refused to report as this user'
 # What to tell somebody whose host has no LVM tools.
 NOT_INSTALLED_HELP = (
     f'{NOT_INSTALLED}. Install them (`dnf install lvm2` on the Red Hat family, '
-    '`apt install lvm2` on the Debian family), or stop reading LVM on this host.'
+    '`apt install lvm2` on the Debian family, `zypper install lvm2` on SUSE), or stop '
+    'reading LVM on this host.'
 )
 
 # What to tell somebody whose LVM did not answer. A command that reads LVM touches
