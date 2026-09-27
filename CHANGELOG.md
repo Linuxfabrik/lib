@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * disk.py: `open_file()` for confined reads, `resolve_trusted_path()`, and `get_fingerprint()` on an open file
 * endoflifedate.py: offline data for Windows and Windows Server
+* lftest.py: `fixture_root()`, which accepts a test-only configuration root inside the unit tests only
 * powershell.py: `run_ps()` takes `timeout`
 * restic.py: `repo_args()` and `password_file_arg()` for restic's repository and password arguments
 * version.py: `check_eol()` takes `cycle`, for products whose release cycles are not version numbers

@@ -363,6 +363,52 @@ class TestFixtureConfinement(unittest.TestCase):
         self.assertEqual(lftest.test(['stdout/shadow']), ('stdout/shadow', '', 0))
 
 
+class TestFixtureRoot(unittest.TestCase):
+    """fixture_root(): a configuration root counts only inside unit-test/."""
+
+    def setUp(self):
+        self._argv0 = sys.argv[0]
+        self.tmp = tempfile.mkdtemp()
+        self.plugin_dir = os.path.join(self.tmp, 'plugins')
+        self.config = os.path.join(self.plugin_dir, 'unit-test', 'config', 'a')
+        os.makedirs(self.config)
+        sys.argv[0] = os.path.join(self.plugin_dir, 'plugin')
+
+    def tearDown(self):
+        sys.argv[0] = self._argv0
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_a_directory_below_unit_test_is_accepted(self):
+        self.assertEqual(
+            lftest.fixture_root(self.config), (True, os.path.realpath(self.config))
+        )
+
+    def test_a_directory_elsewhere_is_refused(self):
+        for path in (self.tmp, '/', '/etc', ''):
+            with self.subTest(path=path):
+                self.assertFalse(lftest.fixture_root(path)[0])
+
+    def test_a_missing_directory_below_unit_test_is_accepted(self):
+        missing = os.path.join(self.config, 'nope')
+        self.assertEqual(
+            lftest.fixture_root(missing), (True, os.path.realpath(missing))
+        )
+
+    def test_a_symlink_out_of_unit_test_is_refused(self):
+        link = os.path.join(self.plugin_dir, 'unit-test', 'config', 'escape')
+        os.symlink('/etc', link)
+        self.assertFalse(lftest.fixture_root(link)[0])
+
+    def test_a_dotdot_escape_is_refused(self):
+        self.assertFalse(
+            lftest.fixture_root(os.path.join(self.config, '..', '..', '..'))[0]
+        )
+
+    def test_without_unit_test_nothing_is_accepted(self):
+        sys.argv[0] = os.path.join(self.tmp, 'deployed', 'plugin')
+        self.assertFalse(lftest.fixture_root(self.config)[0])
+
+
 class TestIsMariadbImage(unittest.TestCase):
     def test_mariadb_images(self):
         self.assertTrue(lftest._is_mariadb_image('docker.io/library/mariadb:11'))

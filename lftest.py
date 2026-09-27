@@ -21,7 +21,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026092702'
 
 
 def attach_each(test_class, items, action, id_func=str):
@@ -263,6 +263,65 @@ def container_runtime_available():
     A single test asks with :func:`require_container_runtime` instead.
     """
     return _container_runtime_problem() is None
+
+
+def _fixtures_dir():
+    """Return the resolved `unit-test/` directory next to the calling script, or None.
+
+    The directory is anchored to the script's own location (`sys.argv[0]`), not the
+    current working directory, which an attacker controls. A symlinked anchor is
+    refused: on a host where the script's directory is (mis)configured writable by the
+    low-privilege user, a `unit-test` symlink to e.g. /etc would otherwise lead out of
+    the source tree. A real checkout always has unit-test/ as a plain directory. A
+    deployed host usually has none at all.
+    """
+    fixtures_dir = os.path.join(
+        os.path.dirname(os.path.realpath(sys.argv[0])), 'unit-test'
+    )
+    if os.path.islink(fixtures_dir) or not os.path.isdir(fixtures_dir):
+        return None
+    return os.path.realpath(fixtures_dir)
+
+
+def fixture_root(path):
+    """
+    Accept a directory as a stand-in for `/` only inside the calling script's own
+    `unit-test/` directory.
+
+    Some consumers take a hidden parameter that prefixes the system paths they read
+    (a `--config-root`), so the unit tests can point them at a fixture tree. Where the
+    consumer runs as root, a caller could otherwise hand it a tree of their own, full
+    of symlinks, and learn which files exist on the host or what they hold. On a
+    deployed host there is no `unit-test/` directory, so the parameter has no effect
+    there.
+
+    Parameters
+    ----------
+    path : str
+        The directory the caller named.
+
+    Returns
+    -------
+    tuple
+          - `(True, str)` with the resolved directory.
+          - `(False, message)` if it does not lie inside `unit-test/`.
+
+    Examples
+    --------
+    >>> success, root = fixture_root('/tmp/x')
+    >>> success
+    False
+    """
+    fixtures_dir = _fixtures_dir()
+    if fixtures_dir is not None and path:
+        candidate = os.path.realpath(path)
+        within = candidate == fixtures_dir or candidate.startswith(
+            fixtures_dir + os.sep
+        )
+        # a missing directory counts too: the tests use one for an empty host
+        if within:
+            return True, candidate
+    return False, 'A configuration root is accepted only inside the unit tests.'
 
 
 @contextlib.contextmanager
@@ -1059,18 +1118,11 @@ def _read_fixture(value):
     """
     if not value:
         return value
-    fixtures_dir = os.path.join(
-        os.path.dirname(os.path.realpath(sys.argv[0])), 'unit-test'
-    )
-    # Refuse a symlinked anchor: on a host where the script's directory is
-    # (mis)configured writable by the low-privilege user, a `unit-test` symlink
-    # to e.g. /etc would otherwise redirect the read out of the source tree. A
-    # real checkout always has unit-test/ as a plain directory. Symlinks *below*
-    # the anchor are already caught by the realpath containment check below,
-    # because they resolve to a path outside fixtures_dir.
-    if os.path.islink(fixtures_dir):
+    # Symlinks *below* the anchor are caught by the realpath containment check
+    # below, because they resolve to a path outside fixtures_dir.
+    fixtures_dir = _fixtures_dir()
+    if fixtures_dir is None:
         return value
-    fixtures_dir = os.path.realpath(fixtures_dir)
     candidate = os.path.realpath(os.path.join(fixtures_dir, value))
     if candidate == fixtures_dir or candidate.startswith(fixtures_dir + os.sep):
         if os.path.isfile(candidate):
