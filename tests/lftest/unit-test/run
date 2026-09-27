@@ -160,9 +160,11 @@ class TestContainerRuntimeGuard(unittest.TestCase):
             self.assertFalse(lftest.container_runtime_available())
 
     def test_require_skips_the_single_test(self):
-        with mock.patch.dict(os.environ, {lftest.NO_CONTAINER_ENV: '1'}), \
-             self.assertRaises(unittest.SkipTest), \
-             lftest.require_container_runtime():
+        with (
+            mock.patch.dict(os.environ, {lftest.NO_CONTAINER_ENV: '1'}),
+            self.assertRaises(unittest.SkipTest),
+            lftest.require_container_runtime(),
+        ):
             pass
 
     def test_the_reason_names_the_switch(self):
@@ -173,6 +175,7 @@ class TestContainerRuntimeGuard(unittest.TestCase):
 class TestPrepareContainerEnv(unittest.TestCase):
     """Where testcontainers is pointed, and what the caller keeps."""
 
+    @unittest.skipIf(os.name == 'nt', 'no rootless podman socket on Windows')
     def test_fills_in_the_rootless_podman_socket(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             lftest.prepare_container_env()
@@ -182,6 +185,12 @@ class TestPrepareContainerEnv(unittest.TestCase):
             )
             # the reaper never becomes reachable under rootless podman
             self.assertEqual(os.environ['TESTCONTAINERS_RYUK_DISABLED'], 'true')
+
+    @unittest.skipIf(os.name != 'nt', 'the Windows default')
+    def test_windows_leaves_the_named_pipe_to_the_client(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            lftest.prepare_container_env()
+            self.assertNotIn('DOCKER_HOST', os.environ)
 
     def test_a_docker_host_the_caller_set_stays(self):
         with mock.patch.dict(
@@ -214,6 +223,7 @@ class TestPrepareContainerEnv(unittest.TestCase):
             self.assertNotIn('DOCKER_HOST', os.environ)
             self.assertNotIn('TESTCONTAINERS_RYUK_DISABLED', os.environ)
 
+    @unittest.skipIf(os.name == 'nt', 'no rootless podman socket on Windows')
     def test_force_prepares_outside_a_test_process(self):
         with mock.patch.dict(sys.modules), mock.patch.dict(os.environ, {}, clear=True):
             del sys.modules['unittest']
@@ -238,8 +248,11 @@ class TestInTestProcess(unittest.TestCase):
 
     def test_a_runner_marker_says_it_is_one(self):
         for marker in (lftest.NO_CONTAINER_ENV, lftest.RUN_ID_ENV):
-            with self.subTest(marker=marker), mock.patch.dict(sys.modules), \
-                 mock.patch.dict(os.environ, {marker: '1'}, clear=True):
+            with (
+                self.subTest(marker=marker),
+                mock.patch.dict(sys.modules),
+                mock.patch.dict(os.environ, {marker: '1'}, clear=True),
+            ):
                 del sys.modules['unittest']
                 self.assertTrue(lftest.in_test_process())
 
@@ -258,9 +271,7 @@ class TestTestTextMissingOk(unittest.TestCase):
         os.chdir(self.cwd)
 
     def test_missing_fixture_returns_none(self):
-        self.assertIsNone(
-            lftest.test_text(['stdout/does-not-exist'], missing_ok=True)
-        )
+        self.assertIsNone(lftest.test_text(['stdout/does-not-exist'], missing_ok=True))
 
     def test_a_fixture_that_is_there_is_read_as_usual(self):
         self.assertEqual(

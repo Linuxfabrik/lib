@@ -21,7 +21,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092201'
+__version__ = '2026092701'
 
 
 def attach_each(test_class, items, action, id_func=str):
@@ -155,9 +155,15 @@ def prepare_container_env(force=False):
     if not force and not in_test_process():
         return
     if 'DOCKER_HOST' not in os.environ:
-        os.environ['DOCKER_HOST'] = os.environ.get(
-            'CONTAINER_HOST', f'unix:///run/user/{os.getuid()}/podman/podman.sock'
-        )
+        if 'CONTAINER_HOST' in os.environ:
+            os.environ['DOCKER_HOST'] = os.environ['CONTAINER_HOST']
+        elif os.name != 'nt':
+            # Windows has no rootless podman socket to point at (and no
+            # `os.getuid()`); the container clients there find their named pipe on
+            # their own.
+            os.environ['DOCKER_HOST'] = (
+                f'unix:///run/user/{os.getuid()}/podman/podman.sock'
+            )
     os.environ.setdefault('TESTCONTAINERS_RYUK_DISABLED', 'true')
 
 
@@ -381,7 +387,19 @@ def run(test_instance, plugin, testcase):
     # params come from the trusted testcase definition; tokenize them the way a
     # shell would so quoted multi-word values stay intact, then build the argv.
     params = testcase.get('params', '')
-    cmd = [plugin, *shlex.split(params), f'--test={testcase["test"]}']
+    # `shlex.split()`, except that on Windows a backslash separates path components
+    # instead of escaping the next character, so a path in the params stays intact.
+    lexer = shlex.shlex(params, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ''
+    if os.name == 'nt':
+        lexer.escape = ''
+    cmd = [plugin, *lexer, f'--test={testcase["test"]}']
+    # Windows does not start a script through its shebang (`CreateProcess` fails with
+    # WinError 193), so a script is handed to the interpreter running the test, while
+    # a compiled `.exe` is started as it is.
+    if os.name == 'nt' and not plugin.lower().endswith('.exe'):
+        cmd.insert(0, sys.executable)
     stdout, stderr, retc = base.coe(shell.shell_exec(cmd))
 
     # Optional like every other assertion here, so a testcase can cover what it does control
