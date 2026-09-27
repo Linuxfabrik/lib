@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092103'
+__version__ = '2026092701'
 
 import ipaddress
 import random
@@ -75,6 +75,13 @@ FAMILIYSTR = {
     30: 'tipc',
     31: 'bluetooth',
 }
+
+# The numbers above are Linux's. Other platforms number the families differently:
+# on Windows AF_INET6 is 23, which is AF_IRDA above, so an IPv6 address was
+# reported as "irda". Key the two families that matter by the running platform.
+FAMILIYSTR[socket.AF_INET] = '4'
+if hasattr(socket, 'AF_INET6'):
+    FAMILIYSTR[socket.AF_INET6] = '6'
 
 FQDN_REGEX = re.compile(
     r'^((?!-)[-A-Z\d]{1,63}(?<!-)\.)+(?!-)[-A-Z\d]{1,63}(?<!-)\.?$', re.IGNORECASE
