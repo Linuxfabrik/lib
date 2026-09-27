@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092201'
+__version__ = '2026092701'
 
 
 import os
@@ -20,6 +20,10 @@ import shutil
 import subprocess  # nosec B404 - this library is the subprocess helper
 
 from . import txt
+
+# This module tells Windows apart with `os.name == 'nt'` and deliberately not with
+# `base.WINDOWS`: importing `base` for one constant would load all of it, and its own
+# imports, into every consumer of the shell helper.
 
 # How long a killed command is given to actually die before `shell_exec()` reports the
 # timeout without it. Long enough for a process that can act on the signal, short enough
@@ -321,7 +325,16 @@ def shell_exec(
         # Let go of the pipes rather than leaving them open for the lifetime of the
         # caller. An orphan writing into them gets EPIPE the next time it runs, which
         # is one more thing that ends it.
-        for pipe in (p.stdin, p.stdout, p.stderr):
+        #
+        # Not stdout and stderr on Windows. There communicate() reads them in daemon
+        # threads that are still blocked in read() after a timeout, and closing a pipe
+        # waits for the lock that read holds (`ENTER_BUFFERED` in CPython's
+        # Modules/_io/bufferedio.c). A child that inherited the pipes, a program
+        # started from a PowerShell command for example, kept them open, and a call
+        # with `timeout=3` returned after 29 seconds. Measured with Python 3.13 on
+        # Windows Server 2025. The threads end with the caller.
+        pipes = (p.stdin,) if os.name == 'nt' else (p.stdin, p.stdout, p.stderr)
+        for pipe in pipes:
             try:
                 if pipe is not None:
                     pipe.close()

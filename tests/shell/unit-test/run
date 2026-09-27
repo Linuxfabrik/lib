@@ -300,7 +300,10 @@ class TestShellExec(unittest.TestCase):
 
     def test_timeout_expired_kills_and_reports(self):
         Fake = make_popen(timeout=True)
-        with mock.patch.object(shell.subprocess, 'Popen', Fake):
+        with (
+            mock.patch.object(shell.os, 'name', 'posix'),
+            mock.patch.object(shell.subprocess, 'Popen', Fake),
+        ):
             success, result = shell.shell_exec(['sleep', '100'], timeout=1)
         self.assertFalse(success)
         self.assertEqual(result, 'Timeout after 1 seconds.')
@@ -310,6 +313,26 @@ class TestShellExec(unittest.TestCase):
         self.assertEqual(process.waited_for, shell._KILL_GRACE)
         for pipe in (process.stdin, process.stdout, process.stderr):
             pipe.close.assert_called_once_with()
+
+    def test_timeout_on_windows_leaves_the_output_pipes_to_the_reader_threads(self):
+        # On Windows communicate() reads stdout and stderr in threads that are still
+        # blocked in read(); closing those pipes would wait for that read to return.
+        Fake = make_popen(timeout=True)
+        with (
+            mock.patch.object(shell.os, 'name', 'nt'),
+            mock.patch.object(shell.subprocess, 'Popen', Fake),
+        ):
+            success, result = shell.shell_exec(
+                ['ping', '-n', '30', '127.0.0.1'], timeout=1
+            )
+        self.assertFalse(success)
+        self.assertEqual(result, 'Timeout after 1 seconds.')
+        process = Fake.instances[0]
+        self.assertTrue(process.killed)
+        self.assertEqual(process.waited_for, shell._KILL_GRACE)
+        process.stdin.close.assert_called_once_with()
+        process.stdout.close.assert_not_called()
+        process.stderr.close.assert_not_called()
 
     def test_posix_decodes_utf8(self):
         # 'ü' as UTF-8 (0xc3 0xbc) decodes cleanly on POSIX.
