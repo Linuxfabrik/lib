@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092501'
+__version__ = '2026092701'
 
 import csv
 import glob as _glob
@@ -929,10 +929,12 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
     if nofollow:
         # POSIX-only. Where it is missing getattr() yields 0 and the flag is absent.
         flags |= getattr(os, 'O_NOFOLLOW', 0)
-    if allowed_roots:
+    # POSIX-only as well. Windows has neither the flag nor FIFOs in the filesystem.
+    nonblock = getattr(os, 'O_NONBLOCK', 0) if allowed_roots else 0
+    if nonblock:
         # Opening a FIFO for reading blocks until a writer shows up. Non-blocking,
         # the open returns at once and the type check below refuses it.
-        flags |= getattr(os, 'O_NONBLOCK', 0)
+        flags |= nonblock
     try:
         fd = os.open(filename, flags)
     except OSError as e:
@@ -962,8 +964,10 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
                     f'Refusing to read "{filename}": the path changed while it was '
                     'being opened.'
                 )
-            if hasattr(os, 'set_blocking'):
-                os.set_blocking(fd, True)
+        if nonblock:
+            # Only where the flag was set: on Windows `os.set_blocking()` works on
+            # pipes alone and fails on a file with WinError 87.
+            os.set_blocking(fd, True)
         if binary:
             return True, os.fdopen(fd, 'rb')
         return True, os.fdopen(fd, mode='r', encoding='utf-8')
