@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* disk.py: `get_private_dir()`, a directory only the current account can use, on Windows as well
 * disk.py: `open_file()` for confined reads, `resolve_trusted_path()`, and `get_fingerprint()` on an open file
 * endoflifedate.py: offline data for Windows and Windows Server
 * lftest.py: `fixture_root()`, which accepts a test-only configuration root inside the unit tests only
@@ -45,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 * container.py: `run()` runs as another account only if it owns a subordinate UID range
+* db_sqlite.py: on Windows, `get_db_dir()` no longer keeps databases where other users may create files, such as `C:\Windows\Temp` of SYSTEM
 * disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files
 * logsource.py: `read()` reads each source, rotated files included, from one checked handle
 * nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`

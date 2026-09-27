@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026092702'
 
 import csv
 import glob as _glob
@@ -542,6 +542,425 @@ def get_package(path):
 
     # rpm answers with the package name alone, dpkg with "package: /path".
     return stdout.splitlines()[0].split(':')[0].strip()
+
+
+# Who may own and access a private directory besides the account itself: SYSTEM,
+# Administrators, and the placeholders CREATOR OWNER and OWNER RIGHTS, which stand for the
+# owner and grant nobody else anything. Python 3.13 creates `os.mkdir(mode=0o700)` and
+# `tempfile.mkdtemp()` directories with exactly SYSTEM, Administrators and OWNER RIGHTS.
+_WINDOWS_TRUSTED_SIDS = frozenset(('S-1-3-0', 'S-1-3-4', 'S-1-5-18', 'S-1-5-32-544'))
+# TrustedInstaller owns system directories such as `C:\\`, which a temporary directory can
+# fall back to
+_WINDOWS_TRUSTED_OWNERS = frozenset(
+    ('S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464',)
+)
+
+_windows_api_cache = {}
+
+
+def _windows_api():
+    """Load and type the Win32 security functions `get_private_dir()` needs, once."""
+    if _windows_api_cache:
+        return _windows_api_cache
+    # Windows-only, and not worth its import time anywhere else
+    import ctypes
+    from ctypes import wintypes
+
+    class ACL_SIZE_INFORMATION(ctypes.Structure):
+        """ACL_SIZE_INFORMATION from winnt.h."""
+
+        _fields_ = (
+            ('AceCount', wintypes.DWORD),
+            ('AclBytesInUse', wintypes.DWORD),
+            ('AclBytesFree', wintypes.DWORD),
+        )
+
+    class ACE_HEADER(ctypes.Structure):
+        """ACE_HEADER from winnt.h."""
+
+        _fields_ = (
+            ('AceType', wintypes.BYTE),
+            ('AceFlags', wintypes.BYTE),
+            ('AceSize', wintypes.WORD),
+        )
+
+    class SECURITY_ATTRIBUTES(ctypes.Structure):
+        """SECURITY_ATTRIBUTES from minwinbase.h."""
+
+        _fields_ = (
+            ('nLength', wintypes.DWORD),
+            ('lpSecurityDescriptor', wintypes.LPVOID),
+            ('bInheritHandle', wintypes.BOOL),
+        )
+
+    advapi32 = ctypes.WinDLL('advapi32', use_last_error=True)
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    pointer = ctypes.POINTER
+    signatures = (
+        (kernel32.CloseHandle, (wintypes.HANDLE,), wintypes.BOOL),
+        (
+            kernel32.CreateDirectoryW,
+            (wintypes.LPCWSTR, pointer(SECURITY_ATTRIBUTES)),
+            wintypes.BOOL,
+        ),
+        (kernel32.GetCurrentProcess, (), wintypes.HANDLE),
+        (kernel32.LocalFree, (wintypes.LPVOID,), wintypes.LPVOID),
+        (
+            advapi32.ConvertSidToStringSidW,
+            (wintypes.LPVOID, pointer(wintypes.LPWSTR)),
+            wintypes.BOOL,
+        ),
+        (
+            advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW,
+            (
+                wintypes.LPCWSTR,
+                wintypes.DWORD,
+                pointer(wintypes.LPVOID),
+                pointer(wintypes.ULONG),
+            ),
+            wintypes.BOOL,
+        ),
+        (
+            advapi32.GetAce,
+            (wintypes.LPVOID, wintypes.DWORD, pointer(wintypes.LPVOID)),
+            wintypes.BOOL,
+        ),
+        (
+            advapi32.GetAclInformation,
+            (wintypes.LPVOID, wintypes.LPVOID, wintypes.DWORD, ctypes.c_int),
+            wintypes.BOOL,
+        ),
+        (
+            advapi32.GetNamedSecurityInfoW,
+            (
+                wintypes.LPCWSTR,
+                ctypes.c_int,
+                wintypes.DWORD,
+                pointer(wintypes.LPVOID),
+                pointer(wintypes.LPVOID),
+                pointer(wintypes.LPVOID),
+                pointer(wintypes.LPVOID),
+                pointer(wintypes.LPVOID),
+            ),
+            wintypes.DWORD,
+        ),
+        (
+            advapi32.GetTokenInformation,
+            (
+                wintypes.HANDLE,
+                ctypes.c_int,
+                wintypes.LPVOID,
+                wintypes.DWORD,
+                pointer(wintypes.DWORD),
+            ),
+            wintypes.BOOL,
+        ),
+        (
+            advapi32.OpenProcessToken,
+            (wintypes.HANDLE, wintypes.DWORD, pointer(wintypes.HANDLE)),
+            wintypes.BOOL,
+        ),
+    )
+    for function, argtypes, restype in signatures:
+        function.argtypes = argtypes
+        function.restype = restype
+    _windows_api_cache.update(
+        ACE_HEADER=ACE_HEADER,
+        ACL_SIZE_INFORMATION=ACL_SIZE_INFORMATION,
+        SECURITY_ATTRIBUTES=SECURITY_ATTRIBUTES,
+        advapi32=advapi32,
+        ctypes=ctypes,
+        kernel32=kernel32,
+        wintypes=wintypes,
+    )
+    return _windows_api_cache
+
+
+def _windows_sid_string(psid):
+    """Return the SID at `psid` in its string form, `S-1-5-18` for example."""
+    api = _windows_api()
+    ctypes = api['ctypes']
+    string_sid = api['wintypes'].LPWSTR()
+    if not api['advapi32'].ConvertSidToStringSidW(psid, ctypes.byref(string_sid)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return string_sid.value
+    finally:
+        api['kernel32'].LocalFree(ctypes.cast(string_sid, ctypes.c_void_p))
+
+
+def _windows_current_sid():
+    """Return the SID of the account the process runs as."""
+    api = _windows_api()
+    ctypes = api['ctypes']
+    wintypes = api['wintypes']
+    token = wintypes.HANDLE()
+    # 0x0008 is TOKEN_QUERY
+    if not api['advapi32'].OpenProcessToken(
+        api['kernel32'].GetCurrentProcess(), 0x0008, ctypes.byref(token)
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        size = wintypes.DWORD(0)
+        # 1 is TokenUser; the first call only asks for the size
+        api['advapi32'].GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
+        buffer = ctypes.create_string_buffer(size.value)
+        if not api['advapi32'].GetTokenInformation(
+            token, 1, buffer, size, ctypes.byref(size)
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        # TOKEN_USER starts with the pointer to the SID
+        return _windows_sid_string(
+            ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+        )
+    finally:
+        api['kernel32'].CloseHandle(token)
+
+
+def _windows_security(path):
+    """Return the owner SID and the DACL entries of `path`.
+
+    The entries are `(type, flags, mask, sid)` tuples, or None for a missing DACL, which
+    grants everybody everything. Raises OSError if the security descriptor cannot be read.
+    """
+    api = _windows_api()
+    ctypes = api['ctypes']
+    wintypes = api['wintypes']
+    owner = wintypes.LPVOID()
+    dacl = wintypes.LPVOID()
+    descriptor = wintypes.LPVOID()
+    # 1 is SE_FILE_OBJECT, 0x1 | 0x4 are OWNER_ and DACL_SECURITY_INFORMATION
+    error = api['advapi32'].GetNamedSecurityInfoW(
+        path,
+        1,
+        0x1 | 0x4,
+        ctypes.byref(owner),
+        None,
+        ctypes.byref(dacl),
+        None,
+        ctypes.byref(descriptor),
+    )
+    if error:
+        raise ctypes.WinError(error)
+    try:
+        owner_sid = _windows_sid_string(owner)
+        if not dacl.value:
+            return owner_sid, None
+        info = api['ACL_SIZE_INFORMATION']()
+        # 2 is AclSizeInformation
+        if not api['advapi32'].GetAclInformation(
+            dacl, ctypes.byref(info), ctypes.sizeof(info), 2
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        entries = []
+        for index in range(info.AceCount):
+            ace = wintypes.LPVOID()
+            if not api['advapi32'].GetAce(dacl, index, ctypes.byref(ace)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            header = api['ACE_HEADER'].from_address(ace.value)
+            # ACCESS_ALLOWED_ACE and ACCESS_DENIED_ACE: the 4-byte header, the 4-byte
+            # access mask, then the SID. Other types are reported without mask and SID.
+            if header.AceType in (0, 1):
+                mask = wintypes.DWORD.from_address(ace.value + 4).value
+                sid = _windows_sid_string(ace.value + 8)
+                entries.append((header.AceType, header.AceFlags, mask, sid))
+            else:
+                entries.append((header.AceType, header.AceFlags, 0, None))
+        return owner_sid, entries
+    finally:
+        api['kernel32'].LocalFree(descriptor)
+
+
+def _windows_reparse_problem(path):
+    """Return why `path` cannot be a directory to rely on, or None."""
+    try:
+        st = os.lstat(path)
+    except OSError as e:
+        return f'cannot be inspected ({e.strerror})'
+    # 0x400 is FILE_ATTRIBUTE_REPARSE_POINT: a symlink or a junction
+    if getattr(st, 'st_file_attributes', 0) & 0x400:
+        return 'is a symlink or junction'
+    if not _stat.S_ISDIR(st.st_mode):
+        return 'is not a directory'
+    return None
+
+
+def _windows_private_problem(path, sid):
+    """Return what keeps `path` from being private to `sid`, or None if it is private.
+
+    Private means: a directory and not a symlink or junction, owned by `sid` or one of
+    `_WINDOWS_TRUSTED_SIDS`, and a DACL that grants access to nobody else.
+    """
+    problem = _windows_reparse_problem(path)
+    if problem:
+        return problem
+    try:
+        owner_sid, entries = _windows_security(path)
+    except OSError as e:
+        return f'has a security descriptor that cannot be read ({e})'
+    trusted = _WINDOWS_TRUSTED_SIDS | {sid}
+    if owner_sid not in trusted:
+        return 'has the wrong owner'
+    if entries is None:
+        return 'is too permissive'
+    for ace_type, _flags, _mask, ace_sid in entries:
+        # 1 is ACCESS_DENIED_ACE_TYPE: taking rights away is never a problem
+        if ace_type == 1:
+            continue
+        # 0 is ACCESS_ALLOWED_ACE_TYPE, any other kind of grant is not expected here
+        if ace_type != 0 or ace_sid not in trusted:
+            return 'is too permissive'
+    return None
+
+
+def _windows_parent_problem(path, sid):
+    """Return why the private directory must not be created below `path`, or None.
+
+    Whoever may delete or rename the entries of `path`, or take it over, can swap the
+    private directory for one of their own after it was checked. `C:\\Windows\\Temp` lets
+    every user create entries, but not delete those of others, and passes.
+    """
+    problem = _windows_reparse_problem(path)
+    if problem:
+        return problem
+    try:
+        owner_sid, entries = _windows_security(path)
+    except OSError as e:
+        return f'has a security descriptor that cannot be read ({e})'
+    trusted = _WINDOWS_TRUSTED_SIDS | _WINDOWS_TRUSTED_OWNERS | {sid}
+    if owner_sid not in trusted:
+        return 'belongs to another account'
+    if entries is None:
+        return 'lets every account replace its entries'
+    for ace_type, flags, mask, ace_sid in entries:
+        # 0x08 is INHERIT_ONLY_ACE: it applies to what is created inside, not to `path`
+        if ace_type == 1 or flags & 0x08 or ace_sid in trusted:
+            continue
+        # FILE_DELETE_CHILD, WRITE_DAC, WRITE_OWNER and GENERIC_ALL
+        if ace_type != 0 or mask & (0x40 | 0x40000 | 0x80000 | 0x10000000):
+            return 'lets other accounts replace its entries'
+    return None
+
+
+def _windows_make_private_dir(path, sid):
+    """Create `path` with a DACL that admits `sid`, SYSTEM and Administrators only.
+
+    An existing `path` is left alone, the caller validates it either way.
+    """
+    api = _windows_api()
+    ctypes = api['ctypes']
+    wintypes = api['wintypes']
+    descriptor = wintypes.LPVOID()
+    # D:P protects the DACL from inheriting the entries of the parent
+    sddl = f'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;{sid})'
+    # 1 is SDDL_REVISION_1
+    if not api['advapi32'].ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        sddl, 1, ctypes.byref(descriptor), None
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        attributes = api['SECURITY_ATTRIBUTES'](
+            ctypes.sizeof(api['SECURITY_ATTRIBUTES']), descriptor, False
+        )
+        if not api['kernel32'].CreateDirectoryW(path, ctypes.byref(attributes)):
+            error = ctypes.get_last_error()
+            # 183 is ERROR_ALREADY_EXISTS
+            if error != 183:
+                raise ctypes.WinError(error)
+    finally:
+        api['kernel32'].LocalFree(descriptor)
+
+
+def get_private_dir(path, prefix='linuxfabrik-monitoring-plugins'):
+    """
+    Return a directory below `path` that only the current account can use, creating it if
+    necessary.
+
+    Files at predictable names in a shared temporary directory can be planted by another
+    local user: a symlink on POSIX that redirects a write to a file of the attacker's choice,
+    a file on Windows that a process running as SYSTEM then trusts (CWE-377,
+    GHSA-r35r-fpx2-jgr4). Such files belong in a directory nobody else can write to.
+
+    - POSIX: always the subdirectory `<prefix>-uid<euid>`, created with `0700`, and refused
+      if it is a symlink, belongs to someone else or grants group or other permissions.
+    - Windows: `path` itself if it is private already, which the temporary directory of an
+      ordinary account or of NetworkService is. Otherwise, as in `C:\\Windows\\Temp`, which
+      SYSTEM uses and where every user may create files, the subdirectory `<prefix>-<SID>`,
+      created with a DACL that admits the account, SYSTEM and Administrators only. Private
+      means: not a symlink or junction, owned by the account, SYSTEM or Administrators, and a
+      DACL that grants access to nobody else. An existing subdirectory that is not private is
+      refused, and so is a `path` that is a symlink or junction, belongs to another account,
+      or lets another account delete or rename its entries, since the subdirectory could be
+      swapped there. The SID is part of the name because several accounts can share one
+      temporary directory.
+
+    Parameters
+    ----------
+    path : str
+        The base directory, typically the system temporary directory.
+    prefix : str, optional
+        Start of the subdirectory's name. Defaults to `'linuxfabrik-monitoring-plugins'`.
+
+    Returns
+    -------
+    tuple (bool, str)
+        - First element (`bool`): `True` on success, `False` on failure.
+        - Second element (`str`): The directory on success, an error message otherwise.
+
+    Examples
+    --------
+    >>> get_private_dir('/tmp')
+    (True, '/tmp/linuxfabrik-monitoring-plugins-uid1000')
+
+    >>> get_private_dir('C:\\\\Windows\\\\Temp')
+    (True, 'C:\\\\Windows\\\\Temp\\\\linuxfabrik-monitoring-plugins-S-1-5-18')
+    """
+    if os.name == 'nt':
+        try:
+            sid = _windows_current_sid()
+            if _windows_private_problem(path, sid) is None:
+                return True, path
+            problem = _windows_parent_problem(path, sid)
+            if problem:
+                return False, f'Directory {path} {problem}, refusing to use it'
+            private_dir = os.path.join(path, f'{prefix}-{sid}')
+            _windows_make_private_dir(private_dir, sid)
+            problem = _windows_private_problem(private_dir, sid)
+        except OSError as e:
+            return (
+                False,
+                f'Creating the private directory below {path} failed, Error: {e}',
+            )
+        if problem:
+            return False, f'Directory {private_dir} {problem}, refusing to use it'
+        return True, private_dir
+
+    euid = os.geteuid()
+    private_dir = os.path.join(path, f'{prefix}-uid{euid}')
+    # Reject a pre-existing symlink outright: makedirs(exist_ok=True) would either follow it
+    # (when it resolves to a directory) or fail with a confusing "File exists" (when it dangles).
+    # Either way it must not be used. os.path.islink() does not follow the link.
+    if os.path.islink(private_dir):
+        return False, f'Directory {private_dir} is a symlink, refusing to use it'
+    try:
+        # 0o700: only the owner may access the directory. An existing directory is fine and gets
+        # validated below; any other error (e.g. an unwritable temp dir) aborts.
+        os.makedirs(private_dir, mode=0o700, exist_ok=True)
+    except OSError as e:
+        return False, f'Creating directory {private_dir} failed, Error: {e}'
+    # lstat() does not follow symlinks, so a symlink planted at private_dir is caught here
+    # instead of silently redirecting every file to the attacker's target.
+    try:
+        st = os.lstat(private_dir)
+    except OSError as e:
+        return False, f'Inspecting directory {private_dir} failed, Error: {e}'
+    if not _stat.S_ISDIR(st.st_mode):
+        return False, f'Directory {private_dir} is not a directory, refusing to use it'
+    if st.st_uid != euid:
+        return False, f'Directory {private_dir} has the wrong owner, refusing to use it'
+    if st.st_mode & 0o077:
+        return False, f'Directory {private_dir} is too permissive, refusing to use it'
+    return True, private_dir
 
 
 def get_real_disks():

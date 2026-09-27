@@ -18,6 +18,7 @@ checked only for its return shape here.
 
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -596,6 +597,117 @@ class TestGetOwningPackage(unittest.TestCase):
             self.assertEqual(disk.get_package('--version'), '')
             self.assertEqual(disk.get_package('-rf'), '')
         m.assert_not_called()
+
+
+@unittest.skipUnless(os.name == 'nt', 'the DACL checks are Windows-only')
+class TestGetPrivateDirWindows(unittest.TestCase):
+    """get_private_dir() on Windows: the temp dir itself if private, else a subdirectory."""
+
+    def setUp(self):
+        # Python 3.13 creates mkdtemp() directories private: SYSTEM, Administrators and
+        # OWNER RIGHTS only
+        self.base = tempfile.mkdtemp(prefix='lftest-private-')
+        self.sid = disk._windows_current_sid()
+
+    def tearDown(self):
+        subprocess.run(['cmd', '/c', 'rmdir', '/s', '/q', self.base], check=False)
+
+    def open_to_users(self, path):
+        # grant the local group Users (S-1-5-32-545) write access, as C:\Windows\Temp does
+        subprocess.run(
+            ['icacls', path, '/grant', '*S-1-5-32-545:(OI)(CI)M'],
+            check=True,
+            capture_output=True,
+        )
+
+    def test_a_private_base_is_used_as_it_is(self):
+        self.assertEqual(disk.get_private_dir(self.base), (True, self.base))
+
+    def test_a_shared_base_gets_a_private_subdirectory(self):
+        self.open_to_users(self.base)
+        ok, private_dir = disk.get_private_dir(self.base)
+        self.assertTrue(ok, private_dir)
+        self.assertEqual(
+            private_dir,
+            os.path.join(self.base, f'linuxfabrik-monitoring-plugins-{self.sid}'),
+        )
+        self.assertIsNone(disk._windows_private_problem(private_dir, self.sid))
+        # the second run finds and accepts it
+        self.assertEqual(disk.get_private_dir(self.base), (True, private_dir))
+
+    def test_a_planted_subdirectory_that_others_may_write_is_refused(self):
+        self.open_to_users(self.base)
+        planted = os.path.join(self.base, f'linuxfabrik-monitoring-plugins-{self.sid}')
+        os.mkdir(planted)
+        self.open_to_users(planted)
+        ok, msg = disk.get_private_dir(self.base)
+        self.assertFalse(ok)
+        self.assertIn('is too permissive', msg)
+
+    def set_owner_to_users(self, path):
+        # any account other than the current one, SYSTEM and Administrators will do
+        result = subprocess.run(
+            ['icacls', path, '/setowner', '*S-1-5-32-545'], capture_output=True
+        )
+        if result.returncode:
+            self.skipTest('changing the owner needs administrative rights')
+
+    def test_a_planted_private_subdirectory_of_another_owner_is_refused(self):
+        self.open_to_users(self.base)
+        planted = os.path.join(self.base, f'linuxfabrik-monitoring-plugins-{self.sid}')
+        os.mkdir(planted)
+        self.set_owner_to_users(planted)
+        ok, msg = disk.get_private_dir(self.base)
+        self.assertFalse(ok)
+        self.assertIn('has the wrong owner', msg)
+
+    def test_a_base_that_is_a_junction_is_refused(self):
+        # the subdirectory would end up in the junction's target, wherever that is
+        target = tempfile.mkdtemp(prefix='lftest-target-')
+        self.addCleanup(subprocess.run, ['cmd', '/c', 'rmdir', '/s', '/q', target])
+        self.open_to_users(target)
+        junction = os.path.join(self.base, 'junction')
+        subprocess.run(
+            ['cmd', '/c', 'mklink', '/J', junction, target],
+            check=True,
+            capture_output=True,
+        )
+        ok, msg = disk.get_private_dir(junction)
+        self.assertFalse(ok)
+        self.assertIn('is a symlink or junction', msg)
+        self.assertEqual(os.listdir(target), [])
+
+    def test_a_base_of_another_owner_is_refused(self):
+        # its owner could rename the private directory and put their own in its place
+        self.open_to_users(self.base)
+        self.set_owner_to_users(self.base)
+        ok, msg = disk.get_private_dir(self.base)
+        self.assertFalse(ok)
+        self.assertIn('belongs to another account', msg)
+
+    def test_a_base_that_lets_others_delete_entries_is_refused(self):
+        subprocess.run(
+            ['icacls', self.base, '/grant', '*S-1-5-32-545:(OI)(CI)(M,DC)'],
+            check=True,
+            capture_output=True,
+        )
+        ok, msg = disk.get_private_dir(self.base)
+        self.assertFalse(ok)
+        self.assertIn('lets other accounts replace its entries', msg)
+
+    def test_a_junction_at_the_subdirectory_is_refused(self):
+        self.open_to_users(self.base)
+        target = os.path.join(self.base, 'target')
+        os.mkdir(target)
+        junction = os.path.join(self.base, f'linuxfabrik-monitoring-plugins-{self.sid}')
+        subprocess.run(
+            ['cmd', '/c', 'mklink', '/J', junction, target],
+            check=True,
+            capture_output=True,
+        )
+        ok, msg = disk.get_private_dir(self.base)
+        self.assertFalse(ok)
+        self.assertIn('symlink or junction', msg)
 
 
 @unittest.skipUnless(hasattr(os, 'statvfs'), 'os.statvfs() is POSIX-only')

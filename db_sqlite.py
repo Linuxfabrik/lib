@@ -32,7 +32,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092701'
 
 import csv
 import functools
@@ -40,7 +40,6 @@ import hashlib
 import os
 import re
 import sqlite3
-import stat
 
 from . import disk, time, txt
 
@@ -1586,22 +1585,20 @@ def get_colnames(col_definition):
 
 def get_db_dir(path):
     """
-    Return a per-user subdirectory of `path` that is safe for storing SQLite databases,
-    creating it if necessary.
+    Return the private subdirectory of `path` that SQLite databases are kept in, creating it if
+    necessary.
 
     SQLite databases are stored at predictable paths under the system temporary directory so the
-    data is found again on the next run. On a shared POSIX `/tmp`, that predictable path lets a
-    local attacker pre-create a symlink there and redirect writes to an arbitrary file. For a
-    process running as root (e.g. via sudo) this turns into an arbitrary-write primitive (CWE-377,
-    GHSA-r35r-fpx2-jgr4). To prevent this, all databases are kept inside a directory owned by the
-    current user with `0700` permissions, and the directory is rejected if anything about it looks
-    tampered with.
+    data is found again on the next run. In a shared temporary directory, such a path can be
+    planted by another local user beforehand. `disk.get_private_dir()` returns a directory only
+    the current account can use: on POSIX always a `0700` subdirectory owned by the user, on
+    Windows the temporary directory itself where it is private already, otherwise a
+    subdirectory with a DACL for the account, SYSTEM and Administrators (GHSA-r35r-fpx2-jgr4).
 
     Parameters
     ----------
     path : str
-        The base directory (typically the system temporary directory) in which to create the
-        per-user subdirectory.
+        The base directory (typically the system temporary directory).
 
     Returns
     -------
@@ -1609,56 +1606,15 @@ def get_db_dir(path):
         - First element (`bool`): `True` on success, `False` on failure.
         - Second element (`str`):
 
-          - The absolute path to the secure subdirectory on success.
+          - The absolute path to the private directory on success.
           - An error message describing the failure otherwise.
-
-    Notes
-    -----
-    - `os.geteuid()` does not exist on Windows, where the temporary directory is already per-user
-      rather than a shared, world-writable location. There the base `path` is returned unchanged.
-    - The directory is validated with `os.lstat()` so a symlink planted at its path is detected
-      instead of being followed.
 
     Examples
     --------
     >>> get_db_dir('/tmp')
     (True, '/tmp/linuxfabrik-monitoring-plugins-uid1000')
     """
-    # On Windows the temp dir is already per-user; the shared-/tmp hardening below does not apply.
-    if not hasattr(os, 'geteuid'):
-        return True, path
-
-    euid = os.geteuid()
-    db_dir = os.path.join(path, f'linuxfabrik-monitoring-plugins-uid{euid}')
-
-    # Reject a pre-existing symlink outright: makedirs(exist_ok=True) would either follow it
-    # (when it resolves to a directory) or fail with a confusing "File exists" (when it dangles).
-    # Either way it must not be used. os.path.islink() does not follow the link.
-    if os.path.islink(db_dir):
-        return False, f'DB directory {db_dir} is a symlink, refusing to use it'
-
-    try:
-        # 0o700: only the owner may access the directory. An existing directory is fine and gets
-        # validated below; any other error (e.g. an unwritable temp dir) aborts the connection.
-        os.makedirs(db_dir, mode=0o700, exist_ok=True)
-    except OSError as e:
-        return False, f'Creating DB directory {db_dir} failed, Error: {e}'
-
-    # lstat() does not follow symlinks, so a symlink planted at db_dir is caught here instead of
-    # silently redirecting every database to the attacker's target.
-    try:
-        st = os.lstat(db_dir)
-    except OSError as e:
-        return False, f'Inspecting DB directory {db_dir} failed, Error: {e}'
-
-    if not stat.S_ISDIR(st.st_mode):
-        return False, f'DB directory {db_dir} is not a directory, refusing to use it'
-    if st.st_uid != euid:
-        return False, f'DB directory {db_dir} has the wrong owner, refusing to use it'
-    if st.st_mode & 0o077:
-        return False, f'DB directory {db_dir} is too permissive, refusing to use it'
-
-    return True, db_dir
+    return disk.get_private_dir(path)
 
 
 def get_db_path(path='', filename=''):

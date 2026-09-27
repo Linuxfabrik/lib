@@ -86,19 +86,6 @@ class TestGetDbDir(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('too permissive', msg)
 
-    def test_windows_returns_base_unchanged(self):
-        # Simulate Windows (no os.geteuid): the base path is returned as-is.
-        saved = getattr(os, 'geteuid', None)
-        if saved is not None:
-            del os.geteuid
-        try:
-            ok, result = db.get_db_dir(self.base)
-        finally:
-            if saved is not None:
-                os.geteuid = saved
-        self.assertTrue(ok)
-        self.assertEqual(result, self.base)
-
 
 class TestGetDbPath(unittest.TestCase):
     """get_db_path(): single source of truth for a database's location."""
@@ -294,9 +281,7 @@ class TestCrud(unittest.TestCase):
             db.cut_per_sensor(self.conn, 'name', _max=2, table='t'), (True, True)
         )
         db.commit(self.conn)
-        self.assertEqual(
-            self._sensor_rows(), [('busy', 4), ('busy', 5), ('quiet', 0)]
-        )
+        self.assertEqual(self._sensor_rows(), [('busy', 4), ('busy', 5), ('quiet', 0)])
 
     def test_cut_per_sensor_breaks_a_timestamp_tie_by_rowid(self):
         db.create_table(
@@ -1193,7 +1178,9 @@ class TestPerSecondDeltas(unittest.TestCase):
         finally:
             db.time.now = saved_now
         self.assertIsNone(first)
-        self.assertIsNotNone(rates, 'a counter named after an SQL keyword broke the table')
+        self.assertIsNotNone(
+            rates, 'a counter named after an SQL keyword broke the table'
+        )
         self.assertAlmostEqual(rates['drop'], 20.0)  # (300-100) / 10
         self.assertAlmostEqual(rates['early_drop'], 0.0)
 
