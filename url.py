@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092501'
+__version__ = '2026092701'
 
 import base64
 import json
@@ -266,6 +266,28 @@ def _body_hint(data):
     return f'body of type {type(data).__name__}'
 
 
+def _add_certifi_roots(ctx):
+    """Add the root certificates of the `certifi` bundle to `ctx`, where it is installed.
+
+    On Windows, `create_default_context()` loads the certificates the Windows store holds at
+    that moment. Windows fills its root store on demand: CryptoAPI downloads a missing root
+    the first time it builds a chain that needs it, OpenSSL never does. A host without a
+    browser or Windows Update therefore lacks common roots such as ISRG Root X1 (Let's
+    Encrypt), and every connection to a site it signed fails with "unable to get local
+    issuer certificate". Verified on Windows Server 2025 with Python 3.13, whose store held
+    18 roots. The bundle is the Mozilla set that `httpx` uses by default; the roots of the
+    Windows store, a private CA among them, stay trusted.
+    """
+    try:
+        import certifi
+    except ImportError:
+        return
+    try:
+        ctx.load_verify_locations(cafile=certifi.where())
+    except (OSError, ssl.SSLError):
+        pass
+
+
 def _build_ssl_context(insecure, tls_min, tls_max, cacert=None):
     """Build an SSL context with optional version pinning and ALPN advertised.
 
@@ -286,6 +308,8 @@ def _build_ssl_context(insecure, tls_min, tls_max, cacert=None):
     try:
         if not cacert:
             ctx = ssl.create_default_context()
+            if os.name == 'nt':
+                _add_certifi_roots(ctx)
         elif os.path.isdir(cacert):
             ctx = ssl.create_default_context(capath=cacert)
         else:
