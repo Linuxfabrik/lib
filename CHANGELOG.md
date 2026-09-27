@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* args.py: arguments with characters outside of ASCII arrive intact when the Icinga 2 agent for Windows starts the consumer
 * disk.py: `is_within()` with the filesystem root as a root
 
 ### Security

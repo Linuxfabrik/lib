@@ -18,6 +18,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, '..')
 
@@ -239,6 +240,75 @@ class TestDuration(unittest.TestCase):
         for value in ('8', '8x', '', 'd', 'abc', 'D8', '8dd', '-1d'):
             with self.assertRaises(argparse.ArgumentTypeError):
                 args.duration(value)
+
+
+# Arguments as the Icinga 2 v2.16.5 agent delivered them to a check on Windows Server
+# 2025 (ANSI code page 1252), next to what was passed. The same values passed through
+# the Unicode API arrived intact, which is the second half of each pair.
+ICINGA_DELIVERED = [
+    ('Pr\xc3\xbcfung', 'Prüfung'),
+    ('\xc3\x81', 'Á'),  # 0x81 is undefined in cp1252
+    ('\xc3\x8dslenska', 'Íslenska'),  # 0x8D
+    ('\xc3\x90\xc3\xb0', 'Ðð'),  # 0x90
+    ('\xc3\x9d', 'Ý'),  # 0x9D
+    ('\xe2\u201a\xacuro', '€uro'),
+    ('\xc5\u2018', 'ő'),
+    ('\xce\xa9\xce\xbc\xce\xad\xce\xb3\xce\xb1', 'Ωμέγα'),
+    ('\xe6\u2014\xa5\xe6\u0153\xac', '日本'),
+    ('na\xc3\xafve caf\xc3\xa9', 'naïve café'),
+    ('plain ascii', 'plain ascii'),
+]
+
+
+class TestRepairAnsiArgument(unittest.TestCase):
+    def test_repairs_what_icinga_delivered(self):
+        for delivered, passed in ICINGA_DELIVERED:
+            with self.subTest(passed=passed):
+                self.assertEqual(
+                    args._repair_ansi_argument(delivered, 'cp1252'), passed
+                )
+
+    def test_leaves_intact_arguments_alone(self):
+        for _, passed in ICINGA_DELIVERED:
+            with self.subTest(passed=passed):
+                self.assertEqual(args._repair_ansi_argument(passed, 'cp1252'), passed)
+
+    def test_literal_mojibake_is_read_as_damage(self):
+        # the documented ambiguity: a literal "Ã¼" cannot be told from a damaged "ü"
+        self.assertEqual(args._repair_ansi_argument('\xc3\xbc', 'cp1252'), 'ü')
+
+    def test_utf8_code_page_changes_nothing(self):
+        # with the "Beta: Use Unicode UTF-8" setting, the ANSI code page is 65001
+        for _, passed in ICINGA_DELIVERED:
+            with self.subTest(passed=passed):
+                self.assertEqual(args._repair_ansi_argument(passed, 'utf-8'), passed)
+
+    def test_empty_argument(self):
+        self.assertEqual(args._repair_ansi_argument('', 'cp1252'), '')
+
+
+class TestRepairWindowsArgv(unittest.TestCase):
+    def test_repairs_sys_argv_in_place(self):
+        fake_windll = type(
+            'W', (), {'kernel32': type('K', (), {'GetACP': staticmethod(lambda: 1252)})}
+        )
+        argv = ['check.exe', '--task=\\LF\\Pr\xc3\xbcfung', '--timeout=8']
+        with (
+            mock.patch.object(sys, 'argv', argv),
+            mock.patch('ctypes.windll', fake_windll, create=True),
+        ):
+            args._repair_windows_argv()
+            self.assertIs(sys.argv, argv)
+            self.assertEqual(argv, ['check.exe', '--task=\\LF\\Prüfung', '--timeout=8'])
+
+    def test_without_windows_api_nothing_changes(self):
+        argv = ['check', '--task=Pr\xc3\xbcfung']
+        with (
+            mock.patch.object(sys, 'argv', argv),
+            mock.patch('ctypes.windll', None, create=True),
+        ):
+            args._repair_windows_argv()
+            self.assertEqual(argv, ['check', '--task=Pr\xc3\xbcfung'])
 
 
 if __name__ == '__main__':

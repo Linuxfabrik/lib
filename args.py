@@ -13,12 +13,13 @@
 import argparse
 import os
 import re
+import sys
 import textwrap
 
 from . import base, human
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092701'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -638,3 +639,92 @@ def number_unit_method(arg, unit='%', method='USED'):
         method = method_part
 
     return number, unit.upper(), method.upper()
+
+
+def _repair_ansi_argument(arg, codec):
+    """
+    Undo the damage the ANSI process API does to a UTF-8 argument on Windows.
+
+    A program that starts another one through `CreateProcessA` hands it a byte string,
+    and Windows turns every byte of it into a character of the ANSI code page. When
+    those bytes were UTF-8, a "ü" (`C3 BC`) arrives as "Ã¼". Encoding the argument
+    back into the code page recovers the original bytes. Windows maps a byte the code
+    page leaves undefined (`0x81`, `0x8D`, `0x8F`, `0x90`, `0x9D` in cp1252) to the code
+    point of the same value, which Python's codec does not know, so those are taken
+    over one to one.
+
+    The repair only applies when the recovered bytes are valid UTF-8. An argument that
+    arrived intact does not qualify: "Prüfung" becomes `50 72 FC ...` in cp1252, which
+    is not UTF-8, and characters outside the code page ("ő", "日本") cannot be encoded
+    at all. What remains ambiguous is text that already looks like mojibake: a literal
+    "Ã¼" is indistinguishable from a damaged "ü" and is read as the latter.
+
+    Parameters
+    ----------
+    arg : str
+        One command-line argument.
+    codec : str
+        The Python codec of the ANSI code page, for example `'cp1252'`.
+
+    Returns
+    -------
+    str
+        The repaired argument, or `arg` unchanged.
+
+    Examples
+    --------
+    >>> _repair_ansi_argument('Pr\u00c3\u00bcfung', 'cp1252')
+    'Prüfung'
+
+    >>> _repair_ansi_argument('Prüfung', 'cp1252')
+    'Prüfung'
+    """
+    raw = bytearray()
+    for char in arg:
+        try:
+            raw += char.encode(codec)
+        except UnicodeEncodeError:
+            if ord(char) > 0xFF:
+                return arg
+            raw.append(ord(char))
+    try:
+        return raw.decode('utf-8')
+    except UnicodeDecodeError:
+        return arg
+
+
+def _repair_windows_argv():
+    """
+    Repair the command-line arguments the Icinga 2 agent for Windows hands over.
+
+    The agent keeps its strings in UTF-8 and starts a check through `CreateProcessA`
+    (`Process::Run()` in lib/base/process.cpp), so every argument with a character
+    outside of ASCII arrives in the ANSI code page: "Prüfung" as "PrÃ¼fung"
+    (Icinga/icinga2#8962). A caller that passes the arguments intact, such as a shell,
+    NSClient++ or any other program using the Unicode API, is left alone, see
+    `_repair_ansi_argument()`. Verified with Icinga 2 v2.16.5 on Windows Server 2025,
+    ANSI code page 1252.
+
+    Icinga for Windows repairs its plugins the same way, back to the ANSI bytes and on
+    to UTF-8 (`ConvertTo-IcingaUTF8Value` in icinga-powershell-framework), but skips only
+    values that contain a German umlaut. Measured on the same host, that turns an intact
+    "café" into "caf�", "ő" into "o" and "€" into "�". Requiring the result
+    to be valid UTF-8 repairs the same damaged values and leaves every intact one alone.
+    """
+    try:
+        import ctypes  # Windows-only API below
+
+        codec = f'cp{ctypes.windll.kernel32.GetACP()}'
+        ''.encode(codec)
+    except (AttributeError, LookupError, OSError):
+        return
+    sys.argv[:] = [_repair_ansi_argument(arg, codec) for arg in sys.argv]
+
+
+# Done on import, before any consumer parses its arguments, for the same reason
+# `base.py` reconfigures stdout on import: it covers every consumer without each of them
+# having to ask for it. It touches nothing but arguments that decode as the damage the
+# ANSI API does, so on Linux, with an intact caller or with plain ASCII it changes
+# nothing.
+if base.WINDOWS:
+    _repair_windows_argv()
