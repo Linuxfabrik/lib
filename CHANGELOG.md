@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * args.py: arguments with characters outside of ASCII arrive intact when the Icinga 2 agent for Windows starts the consumer
+* base.py: on Windows, what argparse writes to stderr no longer arrives with an empty line after every line
 * disk.py: `is_within()` with the filesystem root as a root
 * net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open

@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092701'
 
 import math
 import numbers
@@ -49,12 +49,18 @@ if WINDOWS:
     # Python 3.14 and Icinga 2 v2.16.5 on Windows Server 2025. Doing it here, on
     # import, covers every write to stdout, the consumer's own and argparse's
     # included.
-    try:
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace', newline='\n')
-    except AttributeError:
-        # stdout was replaced by an object without reconfigure(), such as an
-        # io.StringIO in a test, or is None under pythonw.exe
-        pass
+    #
+    # stderr gets the same treatment: the agent passes it on together with stdout,
+    # and argparse writes its usage and error messages there. Without it, every line
+    # of a "the following arguments are required" message arrived followed by an empty
+    # one. Verified with Python 3.13 and Icinga 2 v2.16.5 on Windows Server 2025.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding='utf-8', errors='replace', newline='\n')
+        except AttributeError:
+            # the stream was replaced by an object without reconfigure(), such as an
+            # io.StringIO in a test, or is None under pythonw.exe
+            pass
 
 _OPS = {
     'ge': operator.ge,
