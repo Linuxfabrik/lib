@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * args.py, base.py, txt.py, url.py: import faster, and `sanitize_sensitive_data()` is faster on long output
+* powershell.py: `run_ps()` reads Windows output like `shell_exec()`, as UTF-8 where valid and in the OEM code page otherwise
 * smb.py: imports faster, a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
 
 ### Removed
@@ -31,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * args.py: arguments with characters outside of ASCII arrive intact when the Icinga 2 agent for Windows starts the consumer
 * disk.py: `is_within()` with the filesystem root as a root
+* powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
 
 ### Security
 

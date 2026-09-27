@@ -11,20 +11,18 @@
 """This library collects some Microsoft PowerShell related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026092702'
 
-import subprocess  # nosec B404 - required to run PowerShell on Windows targets
-
-from . import txt
+from . import shell
 
 
 def run_ps(cmd, timeout=None):
     """
     Run a PowerShell command and return its results.
 
-    This function invokes `powershell -Command <cmd>` via `subprocess.run`
-    and returns the return code and decoded streams. It is synchronous
-    (blocking) and relies on PowerShell being available on PATH
+    This function invokes `powershell -Command <cmd>` through
+    `lib.shell.shell_exec()` and returns the return code and decoded streams. It is
+    synchronous (blocking) and relies on PowerShell being available on PATH
     (Windows PowerShell or PowerShell 7+). No external libraries are required.
 
     Parameters
@@ -48,13 +46,15 @@ def run_ps(cmd, timeout=None):
 
     Notes
     -----
-    - Output decoding is performed via `txt.to_text(...)`.
-    - Exceptions are caught and converted to a result with `retc=1`,
-      empty `stdout`, and `stderr` containing the formatted exception text.
+    - Running and decoding are those of `lib.shell.shell_exec()`: on Windows the
+      output is read as UTF-8 where it is valid and in the OEM code page otherwise,
+      elsewhere as UTF-8 with a Latin-1 fallback.
+    - A command that cannot be started yields `retc=1`, empty `stdout` and the
+      reason in `stderr`.
     - Without `timeout`, the call blocks until the command exits. With it, a
       command that runs longer yields `retc=1`, empty `stdout` and
-      `Timeout after <timeout> seconds.` in `stderr`, the message
-      `lib.shell.shell_exec()` uses for the same case.
+      `Timeout after <timeout> seconds.` in `stderr`, and the call returns on time
+      even when a program PowerShell started keeps the output pipes open.
     - `stderr` is not merged into `stdout`.
 
     Examples
@@ -66,30 +66,22 @@ def run_ps(cmd, timeout=None):
         'stderr': ''
     }
     """
-    try:
-        # cmd is admin-provided from the Icinga check config; PATH-based powershell
-        # lookup is intentional so the hook works across Windows installs
-        result = subprocess.run(  # nosec B603 B607
-            ['powershell', '-Command', cmd], capture_output=True, timeout=timeout
-        )
-        return {
-            #'args': result.args,
-            'retc': result.returncode,
-            # Decode as UTF-8 with a Latin-1 fallback rather than surrogateescape, so a
-            # non-UTF-8 byte does not crash later when the caller prints the result to
-            # stdout (Linuxfabrik/lib#256).
-            'stdout': txt.to_text(result.stdout, errors='strict_or_latin1'),
-            'stderr': txt.to_text(result.stderr, errors='strict_or_latin1'),
-        }
-    except subprocess.TimeoutExpired:
+    # cmd is admin-provided from the Icinga check config; PATH-based powershell lookup
+    # is intentional so the hook works across Windows installs. shell_exec() and not
+    # subprocess.run(): on Windows, run() collects the output after killing a command
+    # that timed out, without a bound, so a child process of PowerShell that holds the
+    # pipes made `timeout=3` return after 29 seconds. Measured with Python 3.13 on
+    # Windows Server 2025.
+    success, result = shell.shell_exec(['powershell', '-Command', cmd], timeout=timeout)
+    if not success:
         return {
             'retc': 1,
             'stdout': '',
-            'stderr': f'Timeout after {timeout} seconds.',
+            'stderr': result,
         }
-    except Exception as e:
-        return {
-            'retc': 1,
-            'stdout': '',
-            'stderr': txt.exception2text(e),
-        }
+    stdout, stderr, retc = result
+    return {
+        'retc': retc,
+        'stdout': stdout,
+        'stderr': stderr,
+    }
