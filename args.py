@@ -16,10 +16,10 @@ import re
 import sys
 import textwrap
 
-from . import base, human
+from . import base, human, txt
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026092702'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -659,6 +659,11 @@ def _repair_ansi_argument(arg, codec):
     at all. What remains ambiguous is text that already looks like mojibake: a literal
     "Ã¼" is indistinguishable from a damaged "ü" and is read as the latter.
 
+    The repair never produces a character below U+0080 that was not there before: ASCII
+    bytes map to themselves, and a strict UTF-8 decoder turns bytes from `0x80` up into
+    characters from U+0080 up only, overlong encodings of ASCII included. So it cannot
+    introduce a `-`, a `/`, a quote or a `..` into an argument.
+
     Parameters
     ----------
     arg : str
@@ -682,13 +687,13 @@ def _repair_ansi_argument(arg, codec):
     raw = bytearray()
     for char in arg:
         try:
-            raw += char.encode(codec)
+            raw += txt.to_bytes(char, encoding=codec, errors='strict')
         except UnicodeEncodeError:
             if ord(char) > 0xFF:
                 return arg
             raw.append(ord(char))
     try:
-        return raw.decode('utf-8')
+        return txt.to_text(bytes(raw), encoding='utf-8', errors='strict')
     except UnicodeDecodeError:
         return arg
 
@@ -715,7 +720,7 @@ def _repair_windows_argv():
         import ctypes  # Windows-only API below
 
         codec = f'cp{ctypes.windll.kernel32.GetACP()}'
-        ''.encode(codec)
+        txt.to_bytes('', encoding=codec, errors='strict')
     except (AttributeError, LookupError, OSError):
         return
     sys.argv[:] = [_repair_ansi_argument(arg, codec) for arg in sys.argv]

@@ -283,6 +283,29 @@ class TestRepairAnsiArgument(unittest.TestCase):
             with self.subTest(passed=passed):
                 self.assertEqual(args._repair_ansi_argument(passed, 'utf-8'), passed)
 
+    def test_never_introduces_ascii(self):
+        # Every pair of cp1252 characters from 0x80 up, which covers all two-byte
+        # UTF-8 sequences and the overlong encodings of ASCII (C0 AF would be "/").
+        high = []
+        for byte in range(0x80, 0x100):
+            try:
+                high.append(bytes([byte]).decode('cp1252'))
+            except UnicodeDecodeError:
+                high.append(chr(byte))  # undefined in cp1252, as Windows maps it
+        for first in high:
+            for second in high:
+                repaired = args._repair_ansi_argument(first + second, 'cp1252')
+                self.assertFalse(
+                    any(ord(char) < 0x80 for char in repaired),
+                    f'{first + second!a} became {repaired!a}',
+                )
+
+    def test_ascii_around_a_repair_stays_in_place(self):
+        self.assertEqual(
+            args._repair_ansi_argument('--path=C:\\Pr\xc3\xbcfung\\..\\x', 'cp1252'),
+            '--path=C:\\Prüfung\\..\\x',
+        )
+
     def test_empty_argument(self):
         self.assertEqual(args._repair_ansi_argument('', 'cp1252'), '')
 
