@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092702'
+__version__ = '2026092703'
 
 import csv
 import glob as _glob
@@ -883,6 +883,8 @@ def get_private_dir(path, prefix='linuxfabrik-monitoring-plugins'):
 
     - POSIX: always the subdirectory `<prefix>-uid<euid>`, created with `0700`, and refused
       if it is a symlink, belongs to someone else or grants group or other permissions.
+      `path` itself has to belong to root or the account, and if group or others may write
+      to it, it needs the sticky bit, as `/tmp` has.
     - Windows: `path` itself if it is private already, which the temporary directory of an
       ordinary account or of NetworkService is. Otherwise, as in `C:\\Windows\\Temp`, which
       SYSTEM uses and where every user may create files, the subdirectory `<prefix>-<SID>`,
@@ -936,6 +938,20 @@ def get_private_dir(path, prefix='linuxfabrik-monitoring-plugins'):
         return True, private_dir
 
     euid = os.geteuid()
+    # Whoever may rename the entries of `path` can swap the private directory for one of
+    # their own after it was checked. /tmp lets everybody create entries, but its sticky bit
+    # keeps them from renaming or deleting those of others. stat() follows a symlink, so the
+    # directory it leads to is the one judged.
+    try:
+        base = os.stat(path)
+    except OSError as e:
+        return False, f'Inspecting directory {path} failed, Error: {e}'
+    if base.st_uid not in (0, euid):
+        return False, f'Directory {path} belongs to another account, refusing to use it'
+    if base.st_mode & 0o022 and not base.st_mode & _stat.S_ISVTX:
+        return False, (
+            f'Directory {path} lets other accounts replace its entries, refusing to use it'
+        )
     private_dir = os.path.join(path, f'{prefix}-uid{euid}')
     # Reject a pre-existing symlink outright: makedirs(exist_ok=True) would either follow it
     # (when it resolves to a directory) or fail with a confusing "File exists" (when it dangles).

@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 * container.py: `run()` runs as another account only if it owns a subordinate UID range
-* db_sqlite.py: on Windows, `get_db_dir()` no longer keeps databases where other users may create files, such as `C:\Windows\Temp` of SYSTEM
+* db_sqlite.py: `get_db_dir()` no longer keeps databases where other accounts may plant or swap them, such as `C:\Windows\Temp` of SYSTEM on Windows
 * disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files
 * logsource.py: `read()` reads each source, rotated files included, from one checked handle
 * nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`

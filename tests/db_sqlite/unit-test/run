@@ -86,6 +86,29 @@ class TestGetDbDir(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn('too permissive', msg)
 
+    @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
+    def test_rejects_base_others_may_rename_entries_in(self):
+        # without the sticky bit, whoever may write to the base can swap the directory
+        os.chmod(self.base, 0o777)
+        ok, msg = db.get_db_dir(self.base)
+        self.assertFalse(ok)
+        self.assertIn('lets other accounts replace its entries', msg)
+
+    @unittest.skipUnless(HAS_GETEUID, 'POSIX-only hardening')
+    def test_accepts_a_sticky_base_like_tmp(self):
+        os.chmod(self.base, 0o1777)
+        ok, db_dir = db.get_db_dir(self.base)
+        self.assertTrue(ok, db_dir)
+
+    @unittest.skipUnless(
+        HAS_GETEUID and os.geteuid() == 0, 'handing a directory over needs root'
+    )
+    def test_rejects_base_of_another_account(self):
+        os.chown(self.base, 65534, 65534)
+        ok, msg = db.get_db_dir(self.base)
+        self.assertFalse(ok)
+        self.assertIn('belongs to another account', msg)
+
 
 class TestGetDbPath(unittest.TestCase):
     """get_db_path(): single source of truth for a database's location."""
