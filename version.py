@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026090301'
+__version__ = '2026092701'
 
 import datetime
 import json
@@ -34,6 +34,7 @@ def check_eol(
     proxy=None,
     timeout=8,
     unreachable_severity='ok',
+    cycle=None,
 ):
     """
     Check if a software version is End of Life (EOL) by comparing it to endoflife.date data.
@@ -73,6 +74,14 @@ def check_eol(
         State to report when endoflife.date is
         unreachable and the lookup falls back to the bundled offline data. One of `'ok'`, `'warn'`,
         `'crit'` or `'unknown'`. Default: `'ok'`.
+    cycle : str or list of str, optional
+        The endoflife.date cycle to evaluate, for products whose cycles are not named
+        after a version number (`'11-24h2-e'`, `'2012-r2'`). A list names candidates
+        from the most to the least specific, and the first one the data lists is used.
+        `version_string` then only appears in the message, and neither the newer
+        release check nor the placement of an unlisted version above or below the
+        listed cycles takes place. Default: `None`, which derives the cycle from
+        `version_string`.
 
     Returns
     -------
@@ -138,11 +147,20 @@ def check_eol(
     installed = version(version_string)
 
     cycles_eoldate = None
-    for i in range(1, len(installed) + 1):
-        lookup = '.'.join(map(str, installed[:i]))
-        _, cycles_eoldate = base.lookup_lod(eol, 'cycle', lookup)
-        if cycles_eoldate:
-            break
+    if cycle is not None:
+        # Some products name their cycles after an edition or a servicing channel
+        # ("11-24h2-e", "23h2-ac") rather than after a version, so no prefix of the
+        # version string finds them. The caller knows which cycle applies.
+        for candidate in [cycle] if isinstance(cycle, str) else cycle:
+            _, cycles_eoldate = base.lookup_lod(eol, 'cycle', candidate)
+            if cycles_eoldate:
+                break
+    else:
+        for i in range(1, len(installed) + 1):
+            lookup = '.'.join(map(str, installed[:i]))
+            _, cycles_eoldate = base.lookup_lod(eol, 'cycle', lookup)
+            if cycles_eoldate:
+                break
 
     msg = []
     state = STATE_OK
@@ -153,8 +171,8 @@ def check_eol(
         # everything listed is a host that upstream has not catalogued yet, which nobody
         # can act on; one below everything listed is older than the oldest cycle upstream
         # still records, and therefore out of support for certain. Only a gap between the
-        # two is genuinely unknown.
-        oldest, newest = cycle_bounds(eol)
+        # two is genuinely unknown. Cycles named by the caller have no such order.
+        oldest, newest = (None, None) if cycle is not None else cycle_bounds(eol)
         if newest is not None and installed > newest:
             msg.append('newer than anything endoflife.date lists')
         elif oldest is not None and installed < oldest:
@@ -194,6 +212,12 @@ def check_eol(
             msg.append(base.state2str(state, prefix=' '))
         else:
             msg.append('no EOL announced')
+
+    # The `latest` of a named cycle is not comparable to the version string: Windows
+    # reports the same build number there for every edition of a feature release.
+    if cycle is not None:
+        state = base.get_worst(state, unreachable_state)
+        return state, ''.join(msg) + unreachable_note
 
     try:
         latest_versions = [version(item['latest']) for item in eol]

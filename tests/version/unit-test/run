@@ -52,6 +52,22 @@ EOL_CYCLES = [
     {'cycle': '1', 'eol': False, 'support': True, 'latest': '1.0.0'},
 ]
 
+# A second made-up product whose cycles are named after an edition, the way Windows names
+# them, so no prefix of a version string finds them. Every cycle carries the same
+# `latest`, which is exactly why `check_eol()` must not compare it.
+EOL_NAMED_PRODUCT = 'https://endoflife.date/api/linuxfabrik-unit-test-named.json'
+EOL_NAMED_CYCLES = [
+    {'cycle': '9-99h2-e', 'eol': '2100-01-01', 'support': '2100-01-01', 'latest': '9.0.9'},
+    {'cycle': '9-99h2-w', 'eol': '2000-01-01', 'support': '2000-01-01', 'latest': '9.0.9'},
+    {
+        'cycle': '9-98h2',
+        'eol': '2000-01-01',
+        'extendedSupport': '2100-06-01',
+        'support': '2000-01-01',
+        'latest': '9.0.8',
+    },
+]
+
 
 class TestImportWeight(unittest.TestCase):
     """`version()` and `version2float()` are pure parsers that other lib
@@ -205,6 +221,99 @@ class TestCheckEol(unittest.TestCase):
         # the EOL verdict, so the admin lost both at once.
         _, msg = self.check('0.9.0')
         self.assertIn('available', msg)
+
+
+class TestCheckEolNamedCycle(unittest.TestCase):
+    """`check_eol(cycle=...)` for products whose cycles are not version numbers.
+
+    Seeded like `TestCheckEol`, with cycles named the way Windows names them.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix='lftest-eol-')
+        self.saved_tempdir = tempfile.tempdir
+        tempfile.tempdir = self.tmpdir
+        ok = cache.set(
+            EOL_NAMED_PRODUCT,
+            json.dumps(EOL_NAMED_CYCLES),
+            expire=lib_time.now() + 3600,
+            filename='linuxfabrik-lib-version.db',
+        )
+        self.assertTrue(ok, 'seeding the EOL cache failed')
+
+    def tearDown(self):
+        tempfile.tempdir = self.saved_tempdir
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def check(self, cycle, **kwargs):
+        return version.check_eol(
+            EOL_NAMED_PRODUCT, '9.0.1234', timeout=1, cycle=cycle, **kwargs
+        )
+
+    def test_the_version_string_alone_finds_no_named_cycle(self):
+        # The reason the parameter exists: without it the lookup goes by version
+        # prefix, "9" or "9.0" are no cycles here, and `cycle_bounds()` reads
+        # "9-99h2-e" as (9, 992, 0), so a current build is graded as ancient.
+        state, msg = version.check_eol(EOL_NAMED_PRODUCT, '9.0.1234', timeout=1)
+        self.assertEqual(state, STATE_WARN)
+        self.assertIn('older than anything endoflife.date lists', msg)
+
+    def test_named_cycle_far_from_eol_is_ok(self):
+        state, msg = self.check('9-99h2-e')
+        self.assertEqual(state, STATE_OK)
+        self.assertEqual(msg, 'EOL 2100-01-01 -30d')
+
+    def test_named_cycle_past_eol_warns(self):
+        state, msg = self.check('9-99h2-w')
+        self.assertEqual(state, STATE_WARN)
+        self.assertIn('full support ended on 2000-01-01', msg)
+        self.assertIn('EOL 2000-01-01 -30d [WARNING]', msg)
+
+    def test_first_listed_candidate_wins(self):
+        state, msg = self.check(['9-99h2-e-lts', '9-99h2-e', '9-99h2'])
+        self.assertEqual(state, STATE_OK)
+        self.assertIn('EOL 2100-01-01', msg)
+
+    def test_candidate_order_is_respected(self):
+        # Both candidates exist, the first one decides.
+        state, _ = self.check(['9-99h2-w', '9-99h2-e'])
+        self.assertEqual(state, STATE_WARN)
+
+    def test_tuple_of_candidates(self):
+        state, _ = self.check(('9-99h2-x', '9-99h2-e'))
+        self.assertEqual(state, STATE_OK)
+
+    def test_less_specific_fallback(self):
+        state, msg = self.check(['9-98h2-e', '9-98h2'])
+        self.assertEqual(state, STATE_WARN)
+        self.assertIn('EOL 2000-01-01', msg)
+
+    def test_extended_support_applies_to_named_cycles(self):
+        state, msg = self.check('9-98h2', extended_support=True)
+        self.assertEqual(state, STATE_OK)
+        self.assertIn('EOL 2100-06-01', msg)
+
+    def test_unlisted_named_cycle_is_unknown(self):
+        # A named cycle has no order, so it cannot be placed above or below the listed
+        # ones the way a version number can.
+        state, msg = self.check('9-100h2-e')
+        self.assertEqual(state, STATE_UNKNOWN)
+        self.assertEqual(msg, 'version 9.0.1234 unknown')
+
+    def test_empty_candidate_list_is_unknown(self):
+        state, _ = self.check([])
+        self.assertEqual(state, STATE_UNKNOWN)
+
+    def test_no_newer_release_is_reported(self):
+        # `latest` is the same build for every edition, so comparing it says nothing.
+        _, msg = self.check('9-98h2')
+        self.assertNotIn('available', msg)
+
+    def test_check_flags_are_ignored(self):
+        state, _ = self.check(
+            '9-99h2-e', check_major=True, check_minor=True, check_patch=True
+        )
+        self.assertEqual(state, STATE_OK)
 
 
 class TestCycleBounds(unittest.TestCase):
