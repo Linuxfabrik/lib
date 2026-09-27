@@ -57,6 +57,32 @@ class TestRepoArgs(unittest.TestCase):
             (True, ['--repo=sftp:user@host:/srv']),
         )
 
+    def test_an_empty_repo_does_not_drop_the_repository_file(self):
+        success, message = restic.repo_args(repo='', repository_file='/etc/r')
+        self.assertFalse(success)
+        self.assertNotEqual(message, ['--repo='])
+
+    def test_an_sftp_repo_with_an_option_as_host_is_refused(self):
+        for value in (
+            'sftp:-oProxyCommand=id:/srv',
+            'sftp:user@-oProxyCommand=id:/srv',
+            'sftp:a@b@-oProxyCommand=id:/srv',
+            'sftp://-oProxyCommand=id/srv',
+            'sftp://user@-oProxyCommand=id:22/srv',
+            'SFTP:-x:/srv',
+        ):
+            with self.subTest(value=value):
+                success, message = restic.repo_args(repo=value)
+                self.assertFalse(success)
+                self.assertIn('option', message)
+
+    def test_an_sftp_repo_with_a_dash_in_user_or_path_is_allowed(self):
+        for value in ('sftp:-user@host:/srv', 'sftp:host:-srv', 'sftp://host/-srv'):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    restic.repo_args(repo=value), (True, [f'--repo={value}'])
+                )
+
     def test_an_rclone_repo_is_refused(self):
         for value in ('rclone:remote:path', 'RClone:remote:path', ' rclone:x'):
             with self.subTest(value=value):
