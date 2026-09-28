@@ -378,6 +378,27 @@ class TestTreeOps(unittest.TestCase):
         self.assertEqual(disk.rm_dir(dst_dir), (True, None))
         self.assertFalse(os.path.isdir(dst_dir))
 
+    @unittest.skipIf(os.geteuid() == 0, 'root reads every file regardless of its mode')
+    def test_copy_dir_names_the_first_failed_file_and_counts_the_rest(self):
+        # copytree() collects one entry per failed file; SUSE ships lynis' include
+        # files readable by root only, which made that list run to 13,000 characters
+        src = os.path.join(self.base, 'unreadable')
+        os.makedirs(src)
+        for name in ('a', 'b', 'c'):
+            with open(os.path.join(src, name), 'w') as f:
+                f.write('x')
+        os.chmod(os.path.join(src, 'b'), 0o000)
+        os.chmod(os.path.join(src, 'c'), 0o000)
+        try:
+            ok, err = disk.copy_dir(src, os.path.join(self.base, 'copy'))
+        finally:
+            os.chmod(os.path.join(src, 'b'), 0o600)
+            os.chmod(os.path.join(src, 'c'), 0o600)
+        self.assertFalse(ok)
+        self.assertIn('Permission denied', err)
+        self.assertTrue(err.endswith('(and 1 more)'), err)
+        self.assertEqual(err.count('Permission denied'), 1)
+
     def test_copy_dir_existing_dst_is_error(self):
         ok, err = disk.copy_dir(self.base, self.base)
         self.assertFalse(ok)

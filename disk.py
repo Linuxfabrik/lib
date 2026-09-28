@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092703'
+__version__ = '2026092801'
 
 import csv
 import glob as _glob
@@ -97,7 +97,15 @@ def copy_dir(src, dst):
     try:
         shutil.copytree(src, dst)
         return True, None
-    except (OSError, shutil.Error) as e:
+    except shutil.Error as e:
+        # copytree() carries on after a failed file and raises one Error at the end,
+        # holding a (src, dst, reason) tuple for every file, which can run to pages
+        errors = e.args[0] if e.args and isinstance(e.args[0], list) else []
+        if not errors:
+            return False, f'Error copying directory {src} to {dst}: {e}'
+        more = f' (and {len(errors) - 1} more)' if len(errors) > 1 else ''
+        return False, f'Error copying directory {src} to {dst}: {errors[0][2]}{more}'
+    except OSError as e:
         return False, f'Error copying directory {src} to {dst}: {e}'
     except Exception as e:
         return False, f'Unknown error copying directory {src} to {dst}: {e}'
