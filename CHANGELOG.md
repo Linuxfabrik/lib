@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lynis.py: reads the report of a Lynis audit and lists its findings and suggestions
 * logsource.py: `systemd_booted()`, which tells whether systemd runs the host, like `sd_booted()`
 * powershell.py: `run_ps()` takes `timeout`
+* redfish.py: `get_chassis()` returns the `Thermal` and `Power` links of a chassis
 * restic.py: `repo_args()` and `password_file_arg()` for restic's repository and password arguments
 * version.py: `check_eol()` takes `cycle`, for products whose release cycles are not version numbers
 
@@ -30,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_mysql.py: `select()` names the error first
 * lvm.py: the hint on missing LVM tools names the SUSE package command too
 * powershell.py: `run_ps()` reads Windows output like `shell_exec()`, as UTF-8 where valid and in the OEM code page otherwise
+* redfish.py: `get_sensor_state()` returns CRIT only above a fatal threshold and WARN above a critical one, and treats a user-defined threshold of `0` as not set; `get_perfdata()` follows
 * shell.py: `shell_exec()` names a missing program and how to make it available, instead of the raw OS error
 * smb.py: imports faster, a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
 * version.py: `check_eol()` names the date only once when full support ends on the day of the end of life

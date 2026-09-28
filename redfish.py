@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026092801'
 
 import atexit
 import base64
@@ -125,10 +125,12 @@ CHASSIS_KEYS = (
 )
 
 CHASSIS_NESTED_KEYS = {
+    'Power_@odata.id': ('Power', '@odata.id'),
     'Sensors_@odata.id': ('Sensors', '@odata.id'),
     'Status_State': ('Status', 'State'),
     'Status_Health': ('Status', 'Health'),
     'Status_HealthRollup': ('Status', 'HealthRollup'),
+    'Thermal_@odata.id': ('Thermal', '@odata.id'),
 }
 
 CHASSIS_POWER_CONTROL_KEYS = (
@@ -177,10 +179,12 @@ CHASSIS_SENSOR_NESTED_KEYS = {
     'Thresholds_LowerCautionUser': ('Thresholds', 'LowerCautionUser', 'Reading'),
     'Thresholds_LowerCritical': ('Thresholds', 'LowerCritical', 'Reading'),
     'Thresholds_LowerCriticalUser': ('Thresholds', 'LowerCriticalUser', 'Reading'),
+    'Thresholds_LowerFatal': ('Thresholds', 'LowerFatal', 'Reading'),
     'Thresholds_UpperCaution': ('Thresholds', 'UpperCaution', 'Reading'),
     'Thresholds_UpperCautionUser': ('Thresholds', 'UpperCautionUser', 'Reading'),
     'Thresholds_UpperCritical': ('Thresholds', 'UpperCritical', 'Reading'),
     'Thresholds_UpperCriticalUser': ('Thresholds', 'UpperCriticalUser', 'Reading'),
+    'Thresholds_UpperFatal': ('Thresholds', 'UpperFatal', 'Reading'),
     'Status_State': ('Status', 'State'),
     'Status_Health': ('Status', 'Health'),
     'Status_HealthRollup': ('Status', 'HealthRollup'),
@@ -1719,10 +1723,16 @@ def get_chassis(redfish):
         - **PowerState** (`str`): The power state of the chassis (e.g., "On").
         - **SerialNumber** (`str`): The serial number of the chassis.
         - **SKU** (`str`): The SKU of the chassis.
+        - **Power_@odata.id** (`str`): The OData ID of the legacy Power resource.
         - **Sensors_@odata.id** (`str`): The sensors' OData ID.
         - **Status_State** (`str`): The state of the chassis (e.g., "Enabled").
         - **Status_Health** (`str`): The health status of the chassis (e.g., "OK").
         - **Status_HealthRollup** (`str`): The health rollup status of the chassis (e.g., "OK").
+        - **Thermal_@odata.id** (`str`): The OData ID of the legacy Thermal resource.
+
+        A link is an empty string when the chassis does not advertise it. Some
+        implementations answer a request for a resource the chassis does not advertise
+        with the data of another chassis, so only advertised links are safe to follow.
 
     Examples
     --------
@@ -1737,7 +1747,8 @@ def get_chassis(redfish):
     """
     data = {key: redfish.get(key, '') for key in CHASSIS_KEYS}
     for output_key, (parent_key, child_key) in CHASSIS_NESTED_KEYS.items():
-        data[output_key] = redfish.get(parent_key, {}).get(child_key, '')
+        parent = redfish.get(parent_key)
+        data[output_key] = parent.get(child_key, '') if isinstance(parent, dict) else ''
     return data
 
 
@@ -2375,11 +2386,16 @@ def get_perfdata(data, key='Reading'):
     ...     'ReadingUnits': '%',
     ...     'Thresholds_UpperCaution': 80,
     ...     'Thresholds_UpperCritical': 90,
+    ...     'Thresholds_UpperFatal': 95,
     ...     'ReadingRangeMin': 10,
     ...     'ReadingRangeMax': 100,
     ... }
     >>> get_perfdata(data)
-    "'Chassis_Temperature_Sensor_1'=75.0%;80;90;10;100 "
+    "'Chassis_Temperature_Sensor_1'=75.0%;80;95;10;100 "
+
+    The warning threshold is the upper caution threshold, or the upper critical one
+    where there is no caution threshold, and the critical threshold is the upper fatal
+    one, matching the states `get_sensor_state()` returns.
     """
     value = data.get(key)
     if not isinstance(value, (int, float)):
@@ -2388,8 +2404,12 @@ def get_perfdata(data, key='Reading'):
     name = data.get('Name', '')
     physical_context = data.get('PhysicalContext', '')
     uom = '%' if data.get('ReadingUnits') == '%' else None
-    warn = data.get('Thresholds_UpperCaution') or None
-    crit = data.get('Thresholds_UpperCritical') or None
+    warn = (
+        data.get('Thresholds_UpperCaution')
+        or data.get('Thresholds_UpperCritical')
+        or None
+    )
+    crit = data.get('Thresholds_UpperFatal') or None
     _min = data.get('ReadingRangeMin') or None
     _max = data.get('ReadingRangeMax') or None
 
@@ -2408,12 +2428,18 @@ def get_sensor_state(data, key='Reading'):
     2. **Status_HealthRollup / Status_Health**
        - Returns STATE_CRIT if either is `'Critical'`.
        - Returns STATE_WARN if either is `'Warning'`.
-    3. **Thresholds** (with user-defined overrides)
+    3. **Thresholds**
        Checks in this sequence for any defined thresholds:
-       - **User-defined critical** (`Thresholds_LowerCriticalUser`, `Thresholds_UpperCriticalUser`) → STATE_CRIT
-       - **Default critical**      (`Thresholds_LowerCritical`,     `Thresholds_UpperCritical`)     → STATE_CRIT
+       - **Fatal**                 (`Thresholds_LowerFatal`,        `Thresholds_UpperFatal`)        → STATE_CRIT
+       - **User-defined critical** (`Thresholds_LowerCriticalUser`, `Thresholds_UpperCriticalUser`) → STATE_WARN
+       - **Default critical**      (`Thresholds_LowerCritical`,     `Thresholds_UpperCritical`)     → STATE_WARN
        - **User-defined caution**  (`Thresholds_LowerCautionUser`,  `Thresholds_UpperCautionUser`)  → STATE_WARN
        - **Default caution**       (`Thresholds_LowerCaution`,      `Thresholds_UpperCaution`)      → STATE_WARN
+       Redfish defines a critical reading as "above normal range but not yet fatal", and
+       vendors act on it accordingly: HPE iLO labels `UpperCritical` "Caution" and
+       `UpperFatal` "Critical". Only a fatal reading therefore returns STATE_CRIT.
+       A user-defined threshold of `0` counts as not configured, since implementations
+       report `0` for a user threshold nobody has set.
        Otherwise, if any thresholds were present but none breached, returns STATE_OK.
     4. **ReadingRange** (last-resort sanity check)
        If both `ReadingRangeMin` and `ReadingRangeMax` are defined and differ, returns STATE_WARN
@@ -2432,7 +2458,8 @@ def get_sensor_state(data, key='Reading'):
 
           - `'Reading'` (float or numeric string)
           - `'Status_State'`, `'Status_HealthRollup'`, `'Status_Health'`
-          - Default thresholds: `'Thresholds_LowerCritical'`, `'Thresholds_UpperCritical'`,
+          - Default thresholds: `'Thresholds_LowerFatal'`, `'Thresholds_UpperFatal'`,
+            `'Thresholds_LowerCritical'`, `'Thresholds_UpperCritical'`,
             `'Thresholds_LowerCaution'`, `'Thresholds_UpperCaution'`
           - User thresholds: `'Thresholds_LowerCriticalUser'`, `'Thresholds_UpperCriticalUser'`,
             `'Thresholds_LowerCautionUser'`, `'Thresholds_UpperCautionUser'`
@@ -2463,9 +2490,11 @@ def get_sensor_state(data, key='Reading'):
     ...     'Thresholds_LowerCritical': 10,
     ...     'Thresholds_LowerCaution': 20,
     ... }
-    The reading is above the user-defined upper critical threshold:
+    The reading is above the upper critical threshold, but not fatal:
 
     >>> get_sensor_state(sample)
+    1
+    >>> get_sensor_state(dict(sample, Thresholds_UpperFatal=94))
     2
     """
 
@@ -2498,15 +2527,26 @@ def get_sensor_state(data, key='Reading'):
             if value == 'warning':
                 return STATE_WARN
 
+    # a user-defined threshold of 0 means "not configured": HPE iLO 6 reports
+    # `UpperCautionUser.Reading: 0` on a sensor whose user thresholds were never set
+    # (the same sensor under the legacy Thermal resource carries
+    # `Oem.Hpe.WarningTempUserThreshold: 0`). Verified against iLO 6 1.77 on a
+    # ProLiant DL365 Gen11, where 21 C would otherwise breach an upper caution of 0.
+    def _parse_user(val):
+        parsed = _parse(val)
+        return None if parsed == 0 else parsed
+
     # parse thresholds
     low_caut = _parse(data.get('Thresholds_LowerCaution'))
-    low_caut_usr = _parse(data.get('Thresholds_LowerCautionUser'))
+    low_caut_usr = _parse_user(data.get('Thresholds_LowerCautionUser'))
     low_crit = _parse(data.get('Thresholds_LowerCritical'))
-    low_crit_usr = _parse(data.get('Thresholds_LowerCriticalUser'))
+    low_crit_usr = _parse_user(data.get('Thresholds_LowerCriticalUser'))
+    low_fatal = _parse(data.get('Thresholds_LowerFatal'))
     up_caut = _parse(data.get('Thresholds_UpperCaution'))
-    up_caut_usr = _parse(data.get('Thresholds_UpperCautionUser'))
+    up_caut_usr = _parse_user(data.get('Thresholds_UpperCautionUser'))
     up_crit = _parse(data.get('Thresholds_UpperCritical'))
-    up_crit_usr = _parse(data.get('Thresholds_UpperCriticalUser'))
+    up_crit_usr = _parse_user(data.get('Thresholds_UpperCriticalUser'))
+    up_fatal = _parse(data.get('Thresholds_UpperFatal'))
 
     # if *any* thresholds are defined, use threshold logic
     if any(
@@ -2516,35 +2556,29 @@ def get_sensor_state(data, key='Reading'):
             low_caut_usr,
             low_crit,
             low_crit_usr,
+            low_fatal,
             up_caut,
             up_caut_usr,
             up_crit,
             up_crit_usr,
+            up_fatal,
         )
     ):
-        # critical bounds first
-        # (user-defined thresholds exist too and should normally override the default
-        # thresholds if present)
-        if (low_crit_usr is not None and reading < low_crit_usr) or (
-            up_crit_usr is not None and reading > up_crit_usr
+        # only a fatal reading is critical, see the docstring
+        if (low_fatal is not None and reading < low_fatal) or (
+            up_fatal is not None and reading > up_fatal
         ):
             return STATE_CRIT
 
-        if (low_crit is not None and reading < low_crit) or (
-            up_crit is not None and reading > up_crit
+        # critical and caution bounds, user-defined and default alike, warn
+        for low, up in (
+            (low_crit_usr, up_crit_usr),
+            (low_crit, up_crit),
+            (low_caut_usr, up_caut_usr),
+            (low_caut, up_caut),
         ):
-            return STATE_CRIT
-
-        # then caution bounds
-        if (low_caut_usr is not None and reading < low_caut_usr) or (
-            up_caut_usr is not None and reading > up_caut_usr
-        ):
-            return STATE_WARN
-
-        if (low_caut is not None and reading < low_caut) or (
-            up_caut is not None and reading > up_caut
-        ):
-            return STATE_WARN
+            if (low is not None and reading < low) or (up is not None and reading > up):
+                return STATE_WARN
 
         # otherwise we're inside all defined thresholds
         return STATE_OK

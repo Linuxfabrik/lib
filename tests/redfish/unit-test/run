@@ -107,9 +107,11 @@ CHASSIS_BODY = """
     "PartNumber": "0ABCDE",
     "PowerState": "On",
     "SerialNumber": "SN1234567",
+    "Power": {"@odata.id": "/redfish/v1/Chassis/1/Power"},
     "SKU": "SKU-9000",
     "Sensors": {"@odata.id": "/redfish/v1/Chassis/1/Sensors"},
-    "Status": {"State": "Enabled", "Health": "OK", "HealthRollup": "OK"}
+    "Status": {"State": "Enabled", "Health": "OK", "HealthRollup": "OK"},
+    "Thermal": {"@odata.id": "/redfish/v1/Chassis/1/Thermal"}
 }
 """
 
@@ -787,10 +789,12 @@ class TestGetChassis(unittest.TestCase):
                 'PowerState': 'On',
                 'SerialNumber': 'SN1234567',
                 'SKU': 'SKU-9000',
+                'Power_@odata.id': '/redfish/v1/Chassis/1/Power',
                 'Sensors_@odata.id': '/redfish/v1/Chassis/1/Sensors',
                 'Status_State': 'Enabled',
                 'Status_Health': 'OK',
                 'Status_HealthRollup': 'OK',
+                'Thermal_@odata.id': '/redfish/v1/Chassis/1/Thermal',
             },
         )
 
@@ -810,6 +814,21 @@ class TestGetChassis(unittest.TestCase):
         self.assertEqual(out['Status_Health'], '')
         self.assertEqual(out['Status_HealthRollup'], '')
         self.assertEqual(out['Sensors_@odata.id'], '')
+
+    def test_unadvertised_links_are_blank(self):
+        # An HPE storage backplane advertises neither Thermal nor Power, but iLO 6
+        # answers both paths with the data of the server chassis.
+        out = redfish.get_chassis({'ChassisType': 'StorageEnclosure', 'Id': 'DE00B000'})
+        self.assertEqual(out['Power_@odata.id'], '')
+        self.assertEqual(out['Thermal_@odata.id'], '')
+
+    def test_non_dict_link_is_blank(self):
+        # A hostile or broken response must not crash the projection.
+        out = redfish.get_chassis(
+            {'Thermal': '/redfish/v1/Chassis/1/Thermal', 'Power': None}
+        )
+        self.assertEqual(out['Thermal_@odata.id'], '')
+        self.assertEqual(out['Power_@odata.id'], '')
 
     def test_partial_nested_status(self):
         out = redfish.get_chassis({'Status': {'Health': 'Warning'}})
@@ -1287,13 +1306,14 @@ class TestGetPerfdata(unittest.TestCase):
             'ReadingUnits': '%',
             'Thresholds_UpperCaution': 80,
             'Thresholds_UpperCritical': 90,
+            'Thresholds_UpperFatal': 95,
             'ReadingRangeMin': 1,
             'ReadingRangeMax': 100,
         }
         # label is built as PhysicalContext_Name with spaces -> underscores
         self.assertEqual(
             redfish.get_perfdata(data),
-            "'Chassis_Temperature_Sensor_1'=75.0%;80;90;1;100 ",
+            "'Chassis_Temperature_Sensor_1'=75.0%;80;95;1;100 ",
         )
 
     def test_non_numeric_reading_returns_empty(self):
@@ -1351,9 +1371,35 @@ class TestGetPerfdata(unittest.TestCase):
                 'PhysicalContext': 'p',
                 'Thresholds_UpperCaution': 70,
                 'Thresholds_UpperCritical': 90,
+                'Thresholds_UpperFatal': 95,
             }
         )
-        self.assertEqual(out, "'p_n'=50;70;90 ")
+        self.assertEqual(out, "'p_n'=50;70;95 ")
+
+    def test_critical_is_warn_without_caution(self):
+        # HPE iLO 6 inlet sensor: no caution, critical 42 (iLO: "Caution"), fatal 46
+        # (iLO: "Critical"). The perfdata thresholds follow get_sensor_state().
+        out = redfish.get_perfdata(
+            {
+                'Reading': 21.0,
+                'Name': '01-Inlet Ambient',
+                'PhysicalContext': 'Intake',
+                'Thresholds_UpperCritical': 42,
+                'Thresholds_UpperFatal': 46,
+            }
+        )
+        self.assertEqual(out, "'Intake_01-Inlet_Ambient'=21.0;42;46 ")
+
+    def test_no_crit_without_fatal(self):
+        out = redfish.get_perfdata(
+            {
+                'Reading': 49.0,
+                'Name': 'n',
+                'PhysicalContext': 'p',
+                'Thresholds_UpperCritical': 105,
+            }
+        )
+        self.assertEqual(out, "'p_n'=49.0;105 ")
 
     def test_matches_base_get_perfdata_contract(self):
         # The module is a thin wrapper around base.get_perfdata; assert they agree.
@@ -1364,10 +1410,11 @@ class TestGetPerfdata(unittest.TestCase):
             'ReadingUnits': '%',
             'Thresholds_UpperCaution': 80,
             'Thresholds_UpperCritical': 90,
+            'Thresholds_UpperFatal': 95,
             'ReadingRangeMin': 1,
             'ReadingRangeMax': 100,
         }
-        expected = base.get_perfdata('Ctx_S_1', 12.5, '%', 80, 90, 1, 100)
+        expected = base.get_perfdata('Ctx_S_1', 12.5, '%', 80, 95, 1, 100)
         self.assertEqual(redfish.get_perfdata(data), expected)
 
 
@@ -1394,9 +1441,9 @@ class TestGetSensorState(unittest.TestCase):
         self.assertEqual(self._state(Reading=None), STATE_OK)
 
     def test_numeric_string_reading_is_parsed(self):
-        # '95' parses; with upper critical 90 -> CRIT
+        # '95' parses; with upper fatal 90 -> CRIT
         self.assertEqual(
-            self._state(Reading='95', Thresholds_UpperCritical=90), STATE_CRIT
+            self._state(Reading='95', Thresholds_UpperFatal=90), STATE_CRIT
         )
 
     # 1. Status_State gate
@@ -1459,28 +1506,104 @@ class TestGetSensorState(unittest.TestCase):
                 Thresholds_UpperCritical=90,
                 Thresholds_UpperCaution=80,
             ),
-            STATE_CRIT,
+            STATE_WARN,
         )
 
     def test_default_upper_critical_breach(self):
+        # Redfish critical is "not yet fatal": HPE iLO calls it "Caution"
         self.assertEqual(
-            self._state(Reading=92, Thresholds_UpperCritical=90), STATE_CRIT
+            self._state(Reading=92, Thresholds_UpperCritical=90), STATE_WARN
         )
 
     def test_lower_critical_breach(self):
         self.assertEqual(
-            self._state(Reading=5, Thresholds_LowerCritical=10), STATE_CRIT
+            self._state(Reading=5, Thresholds_LowerCritical=10), STATE_WARN
         )
 
     def test_user_lower_critical_breach(self):
         self.assertEqual(
-            self._state(Reading=5, Thresholds_LowerCriticalUser=10), STATE_CRIT
+            self._state(Reading=5, Thresholds_LowerCriticalUser=10), STATE_WARN
         )
+
+    def test_upper_fatal_breach(self):
+        self.assertEqual(
+            self._state(
+                Reading=47.0, Thresholds_UpperCritical=42, Thresholds_UpperFatal=46
+            ),
+            STATE_CRIT,
+        )
+
+    def test_lower_fatal_breach(self):
+        self.assertEqual(
+            self._state(
+                Reading=2, Thresholds_LowerCritical=10, Thresholds_LowerFatal=5
+            ),
+            STATE_CRIT,
+        )
+
+    def test_between_critical_and_fatal_is_warn(self):
+        # iLO 6 inlet at 44 C: above "Caution" 42, below "Critical" 46
+        self.assertEqual(
+            self._state(
+                Reading=44.0, Thresholds_UpperCritical=42, Thresholds_UpperFatal=46
+            ),
+            STATE_WARN,
+        )
+
+    def test_at_fatal_is_warn(self):
+        # thresholds are exclusive: exactly at fatal is not yet fatal
+        self.assertEqual(
+            self._state(
+                Reading=46.0, Thresholds_UpperCritical=42, Thresholds_UpperFatal=46
+            ),
+            STATE_WARN,
+        )
+
+    def test_fatal_only_below_is_ok(self):
+        self.assertEqual(self._state(Reading=20, Thresholds_UpperFatal=46), STATE_OK)
 
     def test_user_upper_caution_breach(self):
         self.assertEqual(
             self._state(Reading=82, Thresholds_UpperCautionUser=81), STATE_WARN
         )
+
+    def test_user_threshold_zero_is_not_configured(self):
+        # HPE iLO 6 1.77 on a ProLiant DL365 Gen11 reports an unset user threshold as
+        # `UpperCautionUser.Reading: 0`; an inlet at 21 C must not raise a warning.
+        self.assertEqual(
+            self._state(
+                Reading=21.0,
+                Thresholds_UpperCautionUser=0,
+                Thresholds_UpperCritical=42,
+            ),
+            STATE_OK,
+        )
+
+    def test_all_user_thresholds_zero_are_not_configured(self):
+        self.assertEqual(
+            self._state(
+                Reading=21.0,
+                Thresholds_LowerCautionUser=0,
+                Thresholds_LowerCriticalUser=0,
+                Thresholds_UpperCautionUser=0,
+                Thresholds_UpperCriticalUser=0,
+            ),
+            STATE_OK,
+        )
+
+    def test_user_threshold_zero_keeps_default_thresholds(self):
+        self.assertEqual(
+            self._state(
+                Reading=45.0,
+                Thresholds_UpperCautionUser=0,
+                Thresholds_UpperCritical=42,
+            ),
+            STATE_WARN,
+        )
+
+    def test_default_threshold_zero_still_counts(self):
+        # Only user thresholds treat 0 as unset; a default threshold of 0 is real.
+        self.assertEqual(self._state(Reading=1, Thresholds_UpperCaution=0), STATE_WARN)
 
     def test_default_upper_caution_breach(self):
         self.assertEqual(
@@ -1493,18 +1616,21 @@ class TestGetSensorState(unittest.TestCase):
     def test_within_thresholds_is_ok(self):
         self.assertEqual(self._state(Reading=50, Thresholds_UpperCaution=80), STATE_OK)
 
-    def test_critical_checked_before_caution(self):
-        # Reading breaches both caution and critical; critical wins.
+    def test_fatal_checked_before_caution(self):
+        # Reading breaches caution, critical and fatal; fatal wins.
         self.assertEqual(
             self._state(
-                Reading=95, Thresholds_UpperCaution=80, Thresholds_UpperCritical=90
+                Reading=97,
+                Thresholds_UpperCaution=80,
+                Thresholds_UpperCritical=90,
+                Thresholds_UpperFatal=95,
             ),
             STATE_CRIT,
         )
 
     def test_threshold_string_values_parsed(self):
         self.assertEqual(
-            self._state(Reading=92, Thresholds_UpperCritical='90'), STATE_CRIT
+            self._state(Reading=92, Thresholds_UpperFatal='90'), STATE_CRIT
         )
 
     def test_unparseable_threshold_ignored(self):
@@ -1562,7 +1688,7 @@ class TestGetSensorState(unittest.TestCase):
                 {
                     'ReadingCelsius': 92,
                     'Status_State': 'Enabled',
-                    'Thresholds_UpperCritical': 90,
+                    'Thresholds_UpperFatal': 90,
                 },
                 key='ReadingCelsius',
             ),
