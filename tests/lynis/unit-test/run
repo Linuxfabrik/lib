@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.lynis.
+
+The fixtures are real reports of `lynis audit system --cronjob`, anonymised
+(hostname, host IDs, addresses, domain):
+    report-rocky10        Lynis 3.1.6 on Rocky 10, no finding
+    report-debian12       Lynis 3.0.8 on Debian 12, one finding
+    report-audit-running  Lynis 3.1.7 on Rocky 8, copied while the audit was still
+                          running, so it lacks hardening_index and report_datetime_end
+"""
+
+import os
+import sys
+import unittest
+
+sys.path.insert(0, '..')
+
+import lib.lynis as lynis
+
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures')
+
+
+def fixture(name):
+    with open(os.path.join(FIXTURES, name), encoding='utf-8') as f:
+        return f.read()
+
+
+class TestParseReport(unittest.TestCase):
+    def test_complete_report_without_finding(self):
+        report = lynis.parse_report(fixture('report-rocky10'))
+        self.assertEqual(report['hardening_index'], 65)
+        self.assertEqual(report['hostname'], 'myhost')
+        self.assertEqual(report['lynis_version'], '3.1.6')
+        self.assertEqual(report['os_name'], 'Rocky Linux')
+        self.assertEqual(report['report_datetime_end'], '2026-09-28 10:31:06')
+        self.assertEqual(report['warnings'], [])
+        self.assertEqual(len(report['suggestions']), 37)
+        self.assertEqual(report['ipv4_addresses'], ['127.0.0.1', '192.0.2.10'])
+        self.assertEqual(report['ipv6_addresses'], ['::1', 'fe80::200:5eff:fe00:5300'])
+
+    def test_complete_report_with_finding(self):
+        report = lynis.parse_report(fixture('report-debian12'))
+        self.assertEqual(report['hardening_index'], 60)
+        self.assertEqual(report['lynis_version'], '3.0.8')
+        self.assertEqual(report['report_datetime_end'], '2026-09-28 10:30:59')
+        self.assertEqual(
+            report['warnings'],
+            ['PKGS-7392|Found one or more vulnerable packages.|-|-|'],
+        )
+        self.assertEqual(len(report['suggestions']), 49)
+
+    def test_report_of_a_running_audit(self):
+        # lynis writes hardening_index and report_datetime_end last
+        report = lynis.parse_report(fixture('report-audit-running'))
+        self.assertIsNone(report['hardening_index'])
+        self.assertEqual(report['report_datetime_end'], '')
+        self.assertEqual(report['lynis_version'], '3.1.7')
+        self.assertEqual(len(report['warnings']), 1)
+
+    def test_empty_report(self):
+        self.assertEqual(
+            lynis.parse_report(''),
+            {
+                'hardening_index': None,
+                'hostname': '',
+                'ipv4_addresses': [],
+                'ipv6_addresses': [],
+                'lynis_version': '',
+                'os_name': '',
+                'report_datetime_end': '',
+                'suggestions': [],
+                'warnings': [],
+            },
+        )
+
+    def test_malformed_lines(self):
+        report = lynis.parse_report(
+            'hardening_index=abc\nno separator\n=\nhostname=a=b\n'
+        )
+        # a non-numeric index counts as missing, only the first `=` separates
+        self.assertIsNone(report['hardening_index'])
+        self.assertEqual(report['hostname'], 'a=b')
+
+
+class TestParseFindings(unittest.TestCase):
+    def test_fields(self):
+        self.assertEqual(
+            lynis.parse_findings(['KRNL-5820|Disable core dumps|-|-|']),
+            [{'test': 'KRNL-5820', 'finding': 'Disable core dumps', 'details': ''}],
+        )
+        self.assertEqual(
+            lynis.parse_findings(['NETW-3015|Promiscuous interface|eth0|-|']),
+            [
+                {
+                    'test': 'NETW-3015',
+                    'finding': 'Promiscuous interface',
+                    'details': 'eth0',
+                }
+            ],
+        )
+
+    def test_short_entries(self):
+        self.assertEqual(
+            lynis.parse_findings(['A-1', 'A-2|text']),
+            [
+                {'test': 'A-1', 'finding': '', 'details': ''},
+                {'test': 'A-2', 'finding': 'text', 'details': ''},
+            ],
+        )
+
+    def test_empty(self):
+        self.assertEqual(lynis.parse_findings([]), [])
+
+
+class TestGetFindingsMsg(unittest.TestCase):
+    def test_nothing_to_list(self):
+        self.assertEqual(lynis.get_findings_msg([], []), '')
+
+    def test_findings_and_suggestions(self):
+        report = lynis.parse_report(fixture('report-debian12'))
+        msg = lynis.get_findings_msg(
+            lynis.parse_findings(report['warnings']),
+            lynis.parse_findings(report['suggestions'])[:2],
+        )
+        self.assertEqual(
+            msg,
+            '\n\nFindings:\n'
+            '* PKGS-7392: Found one or more vulnerable packages. [WARNING]\n\n'
+            'Suggestions:\n'
+            '* DEB-0280: Install libpam-tmpdir to set $TMP and $TMPDIR for PAM '
+            'sessions.\n'
+            '* LYNIS: This release is more than 4 months old. Check the website or '
+            'GitHub to see if there is an update available.\n\n'
+            'To look up an item, run `lynis show details PKGS-7392` on the host. '
+            'To accept it, add `skip-test=PKGS-7392` to `/etc/lynis/custom.prf`.',
+        )
+
+    def test_suggestions_only_carry_no_state(self):
+        msg = lynis.get_findings_msg(
+            [], [{'test': 'KRNL-5820', 'finding': 'Disable core dumps', 'details': ''}]
+        )
+        self.assertNotIn('[WARNING]', msg)
+        self.assertIn('`lynis show details KRNL-5820`', msg)
+
+    def test_details_and_trailing_dots(self):
+        msg = lynis.get_findings_msg(
+            [{'test': 'NETW-3015', 'finding': 'Promiscuous.', 'details': 'eth0.'}], []
+        )
+        self.assertIn('* NETW-3015: Promiscuous. eth0. [WARNING]', msg)
+
+    def test_sorted_by_test_then_host(self):
+        msg = lynis.get_findings_msg(
+            [
+                {'test': 'SSH-7408', 'finding': 'x', 'details': '', 'host': 'h1'},
+                {'test': 'B-2', 'finding': 'x', 'details': '', 'host': 'h2'},
+                {'test': 'B-2', 'finding': 'x', 'details': '', 'host': 'h1'},
+            ],
+            [],
+        )
+        self.assertIn(
+            'Findings:\n* h1: B-2: x. [WARNING]\n* h2: B-2: x. [WARNING]\n'
+            '* h1: SSH-7408: x. [WARNING]',
+            msg,
+        )
+        # the example in the closing line is the lowest test ID
+        self.assertIn('`lynis show details B-2`', msg)
+
+
+if __name__ == '__main__':
+    unittest.main()
