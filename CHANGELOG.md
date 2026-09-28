@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
 * redfish.py: `start_trace()` works on Windows
 * url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example
+* version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable
 
 ### Security
 
