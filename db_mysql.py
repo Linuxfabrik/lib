@@ -20,7 +20,7 @@ from .globals import STATE_UNKNOWN
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026092801'
 
 try:
     import pymysql.cursors
@@ -827,8 +827,8 @@ def select(conn, sql, data=None, fetchone=False):
     -----
     - On success, results are returned as dictionaries (one per row) if the connection uses
       `DictCursor`.
-    - On failure, an error message is returned with the failed SQL, the exception, and any
-      input data.
+    - On failure, an error message is returned with the exception first, so that it lands
+      on the first line of a consumer's output, followed by the failed SQL and any input data.
 
     Examples
     --------
@@ -848,4 +848,4 @@ def select(conn, sql, data=None, fetchone=False):
             cursor.execute(sql, tuple(data)) if data else cursor.execute(sql)
             return (True, cursor.fetchone()) if fetchone else (True, cursor.fetchall())
     except Exception as e:
-        return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
+        return False, f'Query failed: {e}, Query: {sql}, Data: {data}'
