@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092702'
+__version__ = '2026092801'
 
 import datetime
 import json
@@ -114,12 +114,18 @@ def check_eol(
         eol = None
 
     used_fallback = False
+    missing_httpx = False
     if not eol:
         success, eol = url.fetch_json(
             product, insecure=insecure, no_proxy=no_proxy, proxy=proxy, timeout=timeout
         )
         if not success or not eol:
-            # endoflife.date is unreachable. Fall back to the bundled offline snapshot.
+            # endoflife.date is unreachable, or could not be asked at all because the
+            # Python running the consumer lacks httpx (a plugin started with the system
+            # Python instead of the one of its venv). Fall back to the bundled offline
+            # snapshot, and tell the two apart in the message: they are fixed in
+            # different places.
+            missing_httpx = url.httpx is None
             try:
                 from . import endoflifedate
 
@@ -140,9 +146,13 @@ def check_eol(
     unreachable_state = (
         base.str2state(unreachable_severity) if used_fallback else STATE_OK
     )
-    unreachable_note = (
-        ', endoflife.date unreachable, using bundled data' if used_fallback else ''
-    )
+    unreachable_note = ''
+    if used_fallback:
+        unreachable_note = (
+            ', Python module "httpx" is not installed, using bundled data'
+            if missing_httpx
+            else ', endoflife.date unreachable, using bundled data'
+        )
 
     installed = version(version_string)
 

@@ -225,6 +225,42 @@ class TestCheckEol(unittest.TestCase):
         self.assertIn('available', msg)
 
 
+class TestCheckEolFallback(unittest.TestCase):
+    """What `check_eol()` says when it falls back to the bundled data: an unreachable
+    endoflife.date, and a Python without httpx that cannot ask it at all, are fixed in
+    different places and must not read the same."""
+
+    PRODUCT = 'https://endoflife.date/api/composer.json'
+
+    def setUp(self):
+        # an empty cache, so check_eol() has to ask, and a fetch that fails
+        self.tmpdir = tempfile.mkdtemp(prefix='lftest-eol-')
+        self.saved_tempdir = tempfile.tempdir
+        tempfile.tempdir = self.tmpdir
+        import lib.url as url
+
+        self.url = url
+        self.saved = (url.fetch_json, url.httpx)
+        url.fetch_json = lambda *args, **kwargs: (False, 'failed')
+
+    def tearDown(self):
+        self.url.fetch_json, self.url.httpx = self.saved
+        tempfile.tempdir = self.saved_tempdir
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_unreachable(self):
+        self.url.httpx = object()
+        _, msg = version.check_eol(self.PRODUCT, '2.8.0', timeout=1)
+        self.assertIn('endoflife.date unreachable, using bundled data', msg)
+
+    def test_missing_httpx_is_named(self):
+        # a plugin started with the system Python instead of its venv's
+        self.url.httpx = None
+        _, msg = version.check_eol(self.PRODUCT, '2.8.0', timeout=1)
+        self.assertIn('Python module "httpx" is not installed, using bundled data', msg)
+        self.assertNotIn('unreachable', msg)
+
+
 class TestCheckEolNamedCycle(unittest.TestCase):
     """`check_eol(cycle=...)` for products whose cycles are not version numbers.
 
