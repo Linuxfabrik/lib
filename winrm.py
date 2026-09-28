@@ -420,6 +420,13 @@ def run_ps(args, cmd, params=None):
                             ps.add_argument(param)
                 else:
                     ps.add_script(cmd)
+                if not configuration_name:
+                    # Over PSRP the output arrives as objects, and `str()` of an object is
+                    # its type name ("System.ServiceProcess.ServiceController"), not what
+                    # PowerShell shows for it. Render it as text on the remote side, the
+                    # way pywinrm and a local run deliver it. A JEA endpoint may not
+                    # expose Out-String, so there the objects stay as they are.
+                    ps.add_cmdlet('Out-String').add_parameter('Stream', True)
                 output = ps.invoke()
 
             stdout = '\n'.join(str(o) for o in output)
