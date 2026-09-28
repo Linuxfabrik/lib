@@ -31,7 +31,7 @@ import re
 import sys
 import types
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 sys.path.insert(0, '..')
 
@@ -613,13 +613,17 @@ class TestRunPsJea(unittest.TestCase):
         )
         self.assertEqual(result, {'retc': 0, 'stdout': 'line1\nline2', 'stderr': ''})
         ps.add_script.assert_called_once_with('Get-Process | Select -First 1')
-        ps.add_cmdlet.assert_not_called()
+        # rendered as text on the remote side, as pywinrm delivers it
+        ps.add_cmdlet.assert_called_once_with('Out-String')
+        ps.add_cmdlet.return_value.add_parameter.assert_called_once_with('Stream', True)
 
     def test_positional_params_use_add_cmdlet_and_add_argument(self):
         ps = make_powershell(outputs=['running'])
         result, _, _, _, _ = self._run(make_args(), 'Get-Service', ['WinRM'], ps)
         self.assertEqual(result['retc'], 0)
-        ps.add_cmdlet.assert_called_once_with('Get-Service')
+        self.assertEqual(
+            ps.add_cmdlet.call_args_list, [call('Get-Service'), call('Out-String')]
+        )
         ps.add_argument.assert_called_once_with('WinRM')
         ps.add_parameter.assert_not_called()
 
@@ -632,7 +636,9 @@ class TestRunPsJea(unittest.TestCase):
             ps,
         )
         self.assertEqual(result['retc'], 0)
-        ps.add_cmdlet.assert_called_once_with('Get-WmiObject')
+        self.assertEqual(
+            ps.add_cmdlet.call_args_list, [call('Get-WmiObject'), call('Out-String')]
+        )
         ps.add_parameter.assert_called_once_with('Class', 'Win32_OperatingSystem')
         ps.add_argument.assert_not_called()
 
@@ -642,8 +648,22 @@ class TestRunPsJea(unittest.TestCase):
         ps = make_powershell(outputs=[])
         result, _, _, _, _ = self._run(make_args(), 'Get-Date', [], ps)
         self.assertEqual(result['retc'], 0)
-        ps.add_cmdlet.assert_called_once_with('Get-Date')
+        self.assertEqual(
+            ps.add_cmdlet.call_args_list, [call('Get-Date'), call('Out-String')]
+        )
         ps.add_argument.assert_not_called()
+
+    def test_jea_endpoint_gets_no_out_string(self):
+        # a JEA endpoint may not expose Out-String, so the pipeline stays as it is
+        ps = make_powershell(outputs=['W32Time'])
+        result, _, _, _, _ = self._run(
+            make_args(WINRM_CONFIGURATION_NAME='LfJea'),
+            'Get-Service',
+            {'Name': 'W32Time'},
+            ps,
+        )
+        self.assertEqual(result['stdout'], 'W32Time')
+        ps.add_cmdlet.assert_called_once_with('Get-Service')
 
     def test_had_errors_sets_retc_1_and_collects_stderr(self):
         err = make_error_record(to_string='Get-Foo: not recognized')
