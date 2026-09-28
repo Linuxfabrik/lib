@@ -11,10 +11,11 @@
 """This library collects some Microsoft WinRM related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091801'
+__version__ = '2026092801'
 
 import base64
 import re
+import warnings
 
 try:
     import winrm
@@ -476,7 +477,14 @@ def run_ps(args, cmd, params=None):
             else:
                 ps_cmd = cmd
 
-            result = session.run_ps(ps_cmd)
+            # pywinrm turns the CLIXML progress stream of PowerShell into text and says
+            # so with a Python warning on stderr when that stream is not well-formed,
+            # which the German progress messages of Windows Server 2025 are not. That
+            # warning would end up in the plugin output; the stream itself is dropped
+            # below on success anyway.
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                result = session.run_ps(ps_cmd)
 
             result = {
                 'retc': result.status_code,
