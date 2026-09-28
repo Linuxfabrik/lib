@@ -22,10 +22,17 @@ repos:
         args: ['--fix']
       - id: 'ruff-format'
 
-  - repo: 'https://github.com/pylint-dev/pylint'
-    rev: 'v4.0.9'
-    hooks:
-      - id: 'pylint'
+  # pylint is deliberately not run as a hook. Without a configuration it failed on
+  # every module: the metric checks (C0302 module lines, R0911 returns, R0913
+  # arguments, R0914 locals) fire on the larger modules by design, C0415 flags the
+  # imports that are deferred on purpose to keep consumers starting fast, and C0301
+  # measures against pylint's own 100-character default while the house limit is the
+  # 88 characters ruff enforces. Its error checks add false positives on top: E1129
+  # and W0632 cannot follow the `(success, result)` return convention, and E0401 only
+  # reflects the hook's isolated environment, which lacks httpx, pypsrp and
+  # testcontainers. Suppressing that much would leave pylint without a job here, so
+  # it stays a manual, per-module audit tool, the same reasoning that keeps it out of
+  # `tools/run-linter-checks` and out of the hook set of the monitoring-plugins repo.
 
   - repo: 'https://github.com/PyCQA/bandit'
     rev: '1.9.4'
