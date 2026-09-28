@@ -159,6 +159,45 @@ def _native_call(cmd, params):
     return f'powershell.exe -NoProfile -NonInteractive -EncodedCommand {encoded}'
 
 
+def _psrp_objects_to_text(output):
+    """
+    Render the output objects of a PSRP pipeline as text, like `Format-List`.
+
+    Behind a JEA endpoint the pipeline cannot end in `Out-String`, which the endpoint
+    may not expose, so the objects arrive deserialized, and `str()` of one is only
+    what its `ToString()` returns: the name of a service, the type name of most
+    others. Each property of a complex object becomes a line `Name : Value`, objects
+    are separated by an empty line; a plain value (a string, a number) stays as it is.
+
+    Parameters
+    ----------
+    output : list
+        What `PowerShell.invoke()` returned.
+
+    Returns
+    -------
+    str
+        The text.
+    """
+    blocks = []
+    for obj in output:
+        properties = {}
+        properties.update(getattr(obj, 'adapted_properties', None) or {})
+        properties.update(getattr(obj, 'extended_properties', None) or {})
+        if not properties:
+            blocks.append(str(obj))
+            continue
+        width = max(len(str(name)) for name in properties)
+        blocks.append(
+            '\n'.join(
+                f'{str(name).ljust(width)} : {"" if value is None else value}'
+                for name, value in properties.items()
+            )
+        )
+    separator = '\n\n' if any('\n' in block for block in blocks) else '\n'
+    return separator.join(blocks)
+
+
 def run_cmd(args, cmd, params=None):
     """
     Run a native command on a remote Windows host via WinRM/PSRP and return a
@@ -429,7 +468,12 @@ def run_ps(args, cmd, params=None):
                     ps.add_cmdlet('Out-String').add_parameter('Stream', True)
                 output = ps.invoke()
 
-            stdout = '\n'.join(str(o) for o in output)
+            if configuration_name:
+                # Without Out-String the objects arrive deserialized; show their
+                # properties the way Format-List does, so the text says what they hold.
+                stdout = _psrp_objects_to_text(output)
+            else:
+                stdout = '\n'.join(str(o) for o in output)
 
             stderr_lines = []
             for err in ps.streams.error:

@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * redfish.py: `start_trace()` works on Windows
 * url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example
 * version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable
-* winrm.py: `run_ps()` returns the output as PowerShell shows it again instead of the type names of the objects, and no longer writes a Python warning about the progress stream
+* winrm.py: `run_ps()` returns the output as PowerShell shows it again instead of the type names of the objects, behind a JEA endpoint as a list of their properties, and no longer writes a Python warning about the progress stream
 
 ### Security
 

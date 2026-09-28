@@ -653,6 +653,21 @@ class TestRunPsJea(unittest.TestCase):
         )
         ps.add_argument.assert_not_called()
 
+    def test_jea_endpoint_renders_object_properties(self):
+        # behind JEA there is no Out-String; a deserialized object is shown with its
+        # properties, like Format-List, instead of its ToString()
+        svc = MagicMock(name='ServiceController')
+        svc.adapted_properties = {'Name': 'W32Time', 'Status': 'Running'}
+        svc.extended_properties = {'StartType': 'Automatic'}
+        ps = make_powershell(outputs=[svc, 'plain'])
+        result, _, _, _, _ = self._run(
+            make_args(WINRM_CONFIGURATION_NAME='LfJea'), 'Get-Service', ['W32Time'], ps
+        )
+        self.assertEqual(
+            result['stdout'],
+            'Name      : W32Time\nStatus    : Running\nStartType : Automatic\n\nplain',
+        )
+
     def test_jea_endpoint_gets_no_out_string(self):
         # a JEA endpoint may not expose Out-String, so the pipeline stays as it is
         ps = make_powershell(outputs=['W32Time'])
