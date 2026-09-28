@@ -167,6 +167,29 @@ class TestParse(unittest.TestCase):
         self.assertFalse(success)
 
 
+class TestSystemdBooted(unittest.TestCase):
+    """systemd runs the host exactly when its runtime unit directory exists."""
+
+    def test_a_host_with_the_runtime_unit_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, 'run', 'systemd', 'system'))
+            self.assertTrue(lib.logsource.systemd_booted(tmp))
+
+    def test_a_host_that_only_carries_unit_files(self):
+        # Devuan with OpenRC: the packages ship `.service` files, /run/systemd is absent
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, 'lib', 'systemd', 'system'))
+            self.assertFalse(lib.logsource.systemd_booted(tmp))
+
+    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    def test_a_dangling_symlink_counts_like_sd_booted(self):
+        # access_nofollow() does not follow the last component
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, 'run', 'systemd'))
+            os.symlink('/nonexistent', os.path.join(tmp, 'run', 'systemd', 'system'))
+            self.assertTrue(lib.logsource.systemd_booted(tmp))
+
+
 class TestReadFile(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
