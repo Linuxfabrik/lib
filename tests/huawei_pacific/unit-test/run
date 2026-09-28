@@ -731,9 +731,12 @@ class TestGetClusterNodes(unittest.TestCase):
         return {'data': nodes, 'result': {'code': 0}}
 
     def _nodes(self, nodes):
-        with mock.patch.object(
-            huawei_pacific, 'get_data', return_value=self._envelope(nodes)
-        ), mock.patch.object(huawei_pacific, '_assert_all_nodes_listed'):
+        with (
+            mock.patch.object(
+                huawei_pacific, 'get_data', return_value=self._envelope(nodes)
+            ),
+            mock.patch.object(huawei_pacific, '_assert_all_nodes_listed'),
+        ):
             return huawei_pacific.get_cluster_nodes(Args())
 
     def test_keeps_a_node_in_the_cluster_and_one_that_says_nothing(self):
@@ -805,9 +808,7 @@ class TestPureHelpers(unittest.TestCase):
         self.assertEqual(huawei_pacific.get_password_status(99), 'Unknown')
 
     def test_warranty_status(self):
-        self.assertEqual(
-            huawei_pacific.get_warranty_status(0), 'non-storage node (0)'
-        )
+        self.assertEqual(huawei_pacific.get_warranty_status(0), 'non-storage node (0)')
         self.assertEqual(
             huawei_pacific.get_warranty_status(1), 'normal, more than six months (1)'
         )

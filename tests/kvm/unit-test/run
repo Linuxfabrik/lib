@@ -74,7 +74,7 @@ class TestParseDomstats(unittest.TestCase):
         self.assertIn('db 01', kvm.parse_domstats(DOMSTATS))
 
     def test_digits_become_int_everything_else_stays_text(self):
-        stats = kvm.parse_domstats(DOMSTATS + "  block.0.name=vda\n")
+        stats = kvm.parse_domstats(DOMSTATS + '  block.0.name=vda\n')
         self.assertEqual(stats['db 01']['balloon.current'], 1048576)
         self.assertEqual(stats['db 01']['block.0.name'], 'vda')
 
@@ -148,8 +148,10 @@ class TestGroupByStore(unittest.TestCase):
 
 class TestVirsh(unittest.TestCase):
     def test_connects_read_only_to_the_uri(self):
-        with mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'), \
-             _virsh(stdout='ok') as exec_mock:
+        with (
+            mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'),
+            _virsh(stdout='ok') as exec_mock,
+        ):
             success, stdout = kvm.virsh(['list', '--all'], uri='qemu:///system')
         self.assertTrue(success)
         self.assertEqual(stdout, 'ok')
@@ -164,17 +166,21 @@ class TestVirsh(unittest.TestCase):
         self.assertIn('libvirt-client', message)
 
     def test_a_non_zero_return_code_is_explained(self):
-        with mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'), \
-             _virsh(stderr='error: failed to connect to the hypervisor', retc=1):
+        with (
+            mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'),
+            _virsh(stderr='error: failed to connect to the hypervisor', retc=1),
+        ):
             success, message = kvm.virsh(['list'])
         self.assertFalse(success)
         self.assertNotEqual(message, '')
 
     def test_a_failed_call_is_passed_on(self):
-        with mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'), \
-             mock.patch.object(
-                 kvm.shell, 'shell_exec', return_value=(False, 'timed out')
-             ):
+        with (
+            mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'),
+            mock.patch.object(
+                kvm.shell, 'shell_exec', return_value=(False, 'timed out')
+            ),
+        ):
             self.assertEqual(kvm.virsh(['list']), (False, 'timed out'))
 
 

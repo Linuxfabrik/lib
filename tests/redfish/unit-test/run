@@ -397,6 +397,7 @@ class TestGetAuthHeader(unittest.TestCase):
 # get_chassis
 # ---------------------------------------------------------------------------
 
+
 class TestSessionLifecycle(unittest.TestCase):
     """The session a login creates must not outlive its usefulness on the controller."""
 
@@ -725,7 +726,9 @@ class TestAuthRenewal(unittest.TestCase):
 
     @mock.patch.object(redfish, 'cache')
     @mock.patch.object(redfish, 'url')
-    def test_renewal_replaces_the_token_in_the_caller_s_header(self, url_mock, cache_mock):
+    def test_renewal_replaces_the_token_in_the_caller_s_header(
+        self, url_mock, cache_mock
+    ):
         # The header dict is the one the caller passes to every fetch, so updating it in
         # place is what makes the requests after the retry carry the new token too.
         cache_mock.get.return_value = False
@@ -2314,7 +2317,8 @@ class TestRecordAndReplay(unittest.TestCase):
     def test_the_service_root_is_found_with_and_without_a_trailing_slash(self):
         redfish.replay('### GET /redfish/v1\n{"Vendor": "Contoso"}')
         self.assertEqual(
-            redfish.fetch_resource('https://bmc/redfish/v1/'), (True, {'Vendor': 'Contoso'})
+            redfish.fetch_resource('https://bmc/redfish/v1/'),
+            (True, {'Vendor': 'Contoso'}),
         )
 
     def test_the_expand_suffix_is_derived_from_a_replayed_root(self):
@@ -2375,7 +2379,11 @@ class TestRecordAndReplay(unittest.TestCase):
     def test_sensitive_fields_are_redacted(self, url_mock):
         url_mock.fetch_json.return_value = (
             True,
-            {'Id': '1', 'Password': 'linuxfabrik', 'Oem': {'Contoso': {'Token': 'x1y2'}}},
+            {
+                'Id': '1',
+                'Password': 'linuxfabrik',
+                'Oem': {'Contoso': {'Token': 'x1y2'}},
+            },
         )
         redfish.fetch_resource('https://bmc/redfish/v1/AccountService/Accounts/1')
         text = redfish.format_responses()
@@ -2609,9 +2617,7 @@ class TestGetUpdateserviceFirmwareInventory(unittest.TestCase):
 
     def test_output_key_set_is_exact(self):
         expected = set(redfish.FIRMWARE_KEYS) | set(redfish.FIRMWARE_NESTED_KEYS)
-        self.assertEqual(
-            set(redfish.get_updateservice_firmwareinventory({})), expected
-        )
+        self.assertEqual(set(redfish.get_updateservice_firmwareinventory({})), expected)
 
 
 # ---------------------------------------------------------------------------

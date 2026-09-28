@@ -213,9 +213,7 @@ class TestGetDataRequest(LibrenmsTestBase):
             PROXY = 'http://proxy.example.com:3128'
 
         librenms.get_data(A(), uri='/x')
-        self.assertEqual(
-            self.sent_kwargs()['proxy'], 'http://proxy.example.com:3128'
-        )
+        self.assertEqual(self.sent_kwargs()['proxy'], 'http://proxy.example.com:3128')
 
     def test_proxy_defaults_to_none(self):
         librenms.get_data(Args(), uri='/x')
