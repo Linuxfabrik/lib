@@ -1,0 +1,59 @@
+name: 'Linuxfabrik: Update endoflifedate.py'
+
+# `endoflifedate.py` bundles the endoflife.date API for hosts that cannot reach
+# the Internet, so it is only as current as its last refresh. The refresh opens a
+# pull request instead of pushing to `main`, because the ruleset only lets
+# checked changes in; `auto-merge.yml` merges it once the required checks pass.
+
+on:
+  schedule:
+    - cron: '47 8 * * 2'
+  workflow_dispatch: {}
+
+permissions: read-all
+
+jobs:
+  update:
+    runs-on: 'ubuntu-latest'
+    steps:
+      # A pull request opened with `GITHUB_TOKEN` never triggers workflows, so
+      # the required checks would never report and it would stay blocked.
+      - name: 'Generate app token'
+        id: 'app-token'
+        uses: 'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1' # v3.2.0
+        with:
+          client-id: '${{ vars.LF_AUTOMATION_CLIENT_ID }}'
+          private-key: '${{ secrets.LF_AUTOMATION_APP_PRIVATE_KEY }}'
+
+      - name: 'Checkout repository'
+        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # v7.0.1
+        with:
+          token: '${{ steps.app-token.outputs.token }}'
+
+      # The floor of the supported range: the refresh runs the library itself,
+      # so it doubles as a check that the modules it needs still load on 3.9.
+      - name: 'Set up Python'
+        uses: 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97' # v7.0.0
+        with:
+          python-version: '3.9'
+
+      - name: 'Install the library dependencies'
+        run: 'pip install --require-hashes --requirement lockfiles/py39/requirements.txt'
+
+      # The tool imports the library as `lib` from two levels above its working
+      # directory, which is where `actions/checkout` puts the `lib` repository.
+      # It aborts before writing if any product fails to download, so a partial
+      # file never reaches a pull request.
+      - name: 'Refresh endoflifedate.py'
+        working-directory: 'tools'
+        run: './update-endoflifedate --file=../endoflifedate.py'
+
+      - name: 'Create Pull Request'
+        uses: 'peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1' # v8.1.1
+        with:
+          token: '${{ steps.app-token.outputs.token }}'
+          add-paths: 'endoflifedate.py'
+          commit-message: 'chore(endoflifedate.py): bump version numbers'
+          title: 'chore(endoflifedate.py): bump version numbers'
+          body: 'Automatic refresh of the bundled endoflife.date data.'
+          branch: 'chore/update-endoflifedate'
