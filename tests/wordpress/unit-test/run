@@ -316,7 +316,8 @@ class TestWordPress(unittest.TestCase):
 
     def test_get_plugin_slugs_covers_the_same_plugins_as_get_plugins(self):
         self.assertEqual(
-            set(wordpress.get_plugin_slugs(self.wp)), set(wordpress.get_plugins(self.wp))
+            set(wordpress.get_plugin_slugs(self.wp)),
+            set(wordpress.get_plugins(self.wp)),
         )
 
     def test_get_plugin_slugs_on_missing_installation(self):

@@ -457,9 +457,7 @@ class TestEveryWrapperTargetsItsEndpoint(BexioTestBase):
                 self.fetch_json.return_value = (True, [])
                 func(API_TOKEN)
                 self.assertTrue(
-                    self.sent_url().startswith(
-                        f'{bexio.BEXIO_API_BASE_URL}{path}?'
-                    ),
+                    self.sent_url().startswith(f'{bexio.BEXIO_API_BASE_URL}{path}?'),
                     self.sent_url(),
                 )
 
@@ -479,9 +477,7 @@ class TestEveryWrapperTargetsItsEndpoint(BexioTestBase):
             with self.subTest(func=func.__name__):
                 self.fetch_json.reset_mock()
                 self.fetch_json.return_value = (False, 'HTTP 401: invalid token')
-                self.assertEqual(
-                    func(API_TOKEN), (False, 'HTTP 401: invalid token')
-                )
+                self.assertEqual(func(API_TOKEN), (False, 'HTTP 401: invalid token'))
 
     def test_every_creator_posts_its_payload(self):
         for func, path in self.CREATORS:
@@ -490,9 +486,7 @@ class TestEveryWrapperTargetsItsEndpoint(BexioTestBase):
                 self.fetch_json.return_value = (True, {'id': 42})
                 payload = {'name': 'linuxfabrik'}
                 func(API_TOKEN, data=payload)
-                self.assertEqual(
-                    self.sent_url(), f'{bexio.BEXIO_API_BASE_URL}{path}'
-                )
+                self.assertEqual(self.sent_url(), f'{bexio.BEXIO_API_BASE_URL}{path}')
                 self.assertEqual(self.sent_kwargs()['data'], payload)
                 self.assertIsNone(self.sent_kwargs()['method'])
 
@@ -502,13 +496,13 @@ class TestEveryWrapperTargetsItsEndpoint(BexioTestBase):
                 self.fetch_json.reset_mock()
                 self.fetch_json.return_value = (True, {'id': 7})
                 func(API_TOKEN, 7, {'name': 'linuxfabrik'})
-                self.assertEqual(
-                    self.sent_url(), f'{bexio.BEXIO_API_BASE_URL}{path}/7'
-                )
+                self.assertEqual(self.sent_url(), f'{bexio.BEXIO_API_BASE_URL}{path}/7')
 
     def test_every_wrapper_is_in_the_table(self):
         # a wrapper added later has to be added here too, or this fails
-        covered = {func.__name__ for func, _ in self.READERS + self.CREATORS + self.EDITORS}
+        covered = {
+            func.__name__ for func, _ in self.READERS + self.CREATORS + self.EDITORS
+        }
         covered |= {'call_api', 'get_all', 'delete_contact_relation'}
         public = {
             name

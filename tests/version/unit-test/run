@@ -59,8 +59,18 @@ EOL_CYCLES = [
 # `latest`, which is exactly why `check_eol()` must not compare it.
 EOL_NAMED_PRODUCT = 'https://endoflife.date/api/linuxfabrik-unit-test-named.json'
 EOL_NAMED_CYCLES = [
-    {'cycle': '9-99h2-e', 'eol': '2100-01-01', 'support': '2100-01-01', 'latest': '9.0.9'},
-    {'cycle': '9-99h2-w', 'eol': '2000-01-01', 'support': '2000-01-01', 'latest': '9.0.9'},
+    {
+        'cycle': '9-99h2-e',
+        'eol': '2100-01-01',
+        'support': '2100-01-01',
+        'latest': '9.0.9',
+    },
+    {
+        'cycle': '9-99h2-w',
+        'eol': '2000-01-01',
+        'support': '2000-01-01',
+        'latest': '9.0.9',
+    },
     {
         'cycle': '9-98h2',
         'eol': '2000-01-01',
@@ -362,12 +372,16 @@ class TestCycleBounds(unittest.TestCase):
 
     def test_lowest_and_highest(self):
         self.assertEqual(
-            version.cycle_bounds([{'cycle': '8.4'}, {'cycle': '5.7'}, {'cycle': '9.7'}]),
+            version.cycle_bounds(
+                [{'cycle': '8.4'}, {'cycle': '5.7'}, {'cycle': '9.7'}]
+            ),
             ((5, 7, 0), (9, 7, 0)),
         )
 
     def test_single_cycle_is_both_bounds(self):
-        self.assertEqual(version.cycle_bounds([{'cycle': '8.0'}]), ((8, 0, 0), (8, 0, 0)))
+        self.assertEqual(
+            version.cycle_bounds([{'cycle': '8.0'}]), ((8, 0, 0), (8, 0, 0))
+        )
 
     def test_empty_list(self):
         self.assertEqual(version.cycle_bounds([]), (None, None))
@@ -378,7 +392,9 @@ class TestCycleBounds(unittest.TestCase):
         # which would drag the lower bound to zero and disable the "older than
         # anything listed" verdict for the whole product.
         self.assertEqual(
-            version.cycle_bounds([{'cycle': '9.7'}, {'cycle': 'current'}, {'cycle': '8.0'}]),
+            version.cycle_bounds(
+                [{'cycle': '9.7'}, {'cycle': 'current'}, {'cycle': '8.0'}]
+            ),
             ((8, 0, 0), (9, 7, 0)),
         )
 
@@ -389,22 +405,27 @@ class TestCycleBounds(unittest.TestCase):
 
     def test_cycle_none_is_skipped(self):
         self.assertEqual(
-            version.cycle_bounds([{'cycle': None}, {'cycle': '8.0'}]), ((8, 0, 0), (8, 0, 0))
+            version.cycle_bounds([{'cycle': None}, {'cycle': '8.0'}]),
+            ((8, 0, 0), (8, 0, 0)),
         )
 
     def test_entry_without_a_cycle_key_is_skipped(self):
         self.assertEqual(
-            version.cycle_bounds([{'eol': False}, {'cycle': '8.0'}]), ((8, 0, 0), (8, 0, 0))
+            version.cycle_bounds([{'eol': False}, {'cycle': '8.0'}]),
+            ((8, 0, 0), (8, 0, 0)),
         )
 
     def test_non_dict_entry_is_skipped(self):
         self.assertEqual(
-            version.cycle_bounds(['8.0', None, 42, {'cycle': '8.0'}]), ((8, 0, 0), (8, 0, 0))
+            version.cycle_bounds(['8.0', None, 42, {'cycle': '8.0'}]),
+            ((8, 0, 0), (8, 0, 0)),
         )
 
     def test_numeric_cycle_is_accepted(self):
         # The API answers `cycle` as a string, but a hand-built list may hold a number.
-        self.assertEqual(version.cycle_bounds([{'cycle': 8}, {'cycle': 9}]), ((8, 0, 0), (9, 0, 0)))
+        self.assertEqual(
+            version.cycle_bounds([{'cycle': 8}, {'cycle': 9}]), ((8, 0, 0), (9, 0, 0))
+        )
 
     def test_four_part_cycle_truncates_like_version(self):
         self.assertEqual(

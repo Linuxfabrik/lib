@@ -244,8 +244,9 @@ class TestFetch(unittest.TestCase):
         self.assertEqual(sock.sent, [b'EHLO x\r\n'])
 
     def test_dialog_reports_a_connection_closed_before_the_pattern(self):
-        success, message = self._fetch(FakeSocket([b'220 ready\n']),
-                                       dialog=[(None, '250')])
+        success, message = self._fetch(
+            FakeSocket([b'220 ready\n']), dialog=[(None, '250')]
+        )
         self.assertFalse(success)
         self.assertIn('closed before pattern', message)
 
@@ -411,12 +412,14 @@ class TestGetNetinfo(unittest.TestCase):
             self.assertEqual(net.get_netinfo(), [])
 
     def test_reports_the_address_of_the_default_route(self):
-        with mock.patch.object(net, 'HAVE_PSUTIL', True), \
-             mock.patch.object(net, '_default_route_ip', return_value='192.0.2.10'), \
-             mock.patch.object(
-                 net, '_iface_for_ip', return_value=('eth0', '255.255.255.0')
-             ), \
-             mock.patch.object(net, '_default_gateway', return_value='192.0.2.1'):
+        with (
+            mock.patch.object(net, 'HAVE_PSUTIL', True),
+            mock.patch.object(net, '_default_route_ip', return_value='192.0.2.10'),
+            mock.patch.object(
+                net, '_iface_for_ip', return_value=('eth0', '255.255.255.0')
+            ),
+            mock.patch.object(net, '_default_gateway', return_value='192.0.2.1'),
+        ):
             netinfo = net.get_netinfo()
         self.assertEqual(netinfo['address'], '192.0.2.10')
         self.assertEqual(netinfo['mask'], '255.255.255.0')
@@ -426,8 +429,10 @@ class TestGetNetinfo(unittest.TestCase):
         self.assertIsNone(netinfo['public_address'])
 
     def test_without_a_default_route_it_returns_an_empty_list(self):
-        with mock.patch.object(net, 'HAVE_PSUTIL', True), \
-             mock.patch.object(net, '_default_route_ip', return_value=None):
+        with (
+            mock.patch.object(net, 'HAVE_PSUTIL', True),
+            mock.patch.object(net, '_default_route_ip', return_value=None),
+        ):
             self.assertEqual(net.get_netinfo(), [])
 
 
@@ -441,7 +446,9 @@ class TestGetSubnetHosts(unittest.TestCase):
         return have, module
 
     def test_lists_the_hosts_of_the_interface_subnet(self):
-        addr = mock.Mock(family=net.AF_INET, address='192.0.2.1', netmask='255.255.255.0')
+        addr = mock.Mock(
+            family=net.AF_INET, address='192.0.2.1', netmask='255.255.255.0'
+        )
         have, module = self._interfaces({'eth0': [addr]})
         with have, module:
             success, hosts = net.get_subnet_hosts('eth0')
@@ -451,21 +458,27 @@ class TestGetSubnetHosts(unittest.TestCase):
 
     def test_without_an_interface_it_asks_get_netinfo(self):
         netinfo = {'address': '192.0.2.1', 'mask_cidr': 24}
-        with mock.patch.object(net, 'HAVE_PSUTIL', True), \
-             mock.patch.object(net, 'get_netinfo', return_value=netinfo):
+        with (
+            mock.patch.object(net, 'HAVE_PSUTIL', True),
+            mock.patch.object(net, 'get_netinfo', return_value=netinfo),
+        ):
             success, hosts = net.get_subnet_hosts()
         self.assertTrue(success, hosts)
         self.assertEqual(len(hosts), 254)
 
     def test_without_a_default_route_it_says_so(self):
-        with mock.patch.object(net, 'HAVE_PSUTIL', True), \
-             mock.patch.object(net, 'get_netinfo', return_value=[]):
+        with (
+            mock.patch.object(net, 'HAVE_PSUTIL', True),
+            mock.patch.object(net, 'get_netinfo', return_value=[]),
+        ):
             success, message = net.get_subnet_hosts()
         self.assertFalse(success)
         self.assertIn('default interface', message)
 
     def test_max_hosts_is_honoured(self):
-        addr = mock.Mock(family=net.AF_INET, address='192.0.2.1', netmask='255.255.255.0')
+        addr = mock.Mock(
+            family=net.AF_INET, address='192.0.2.1', netmask='255.255.255.0'
+        )
         have, module = self._interfaces({'eth0': [addr]})
         with have, module:
             success, message = net.get_subnet_hosts('eth0', max_hosts=10)
@@ -484,6 +497,7 @@ class TestGetSubnetHosts(unittest.TestCase):
             success, message = net.get_subnet_hosts('eth0')
         self.assertFalse(success)
         self.assertIn('psutil', message)
+
 
 if __name__ == '__main__':
     unittest.main()

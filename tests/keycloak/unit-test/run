@@ -715,7 +715,9 @@ class TestGetServerInfoSection(unittest.TestCase):
 
     def test_returns_the_section(self):
         self.assertEqual(
-            keycloak.get_server_info_section({'memoryInfo': {'total': 1}}, 'memoryInfo'),
+            keycloak.get_server_info_section(
+                {'memoryInfo': {'total': 1}}, 'memoryInfo'
+            ),
             (True, {'total': 1}),
         )
 

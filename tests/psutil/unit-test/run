@@ -216,14 +216,16 @@ class TestGetProcessAccounts(unittest.TestCase):
         links = links or {}
         with (
             mock.patch.object(
-                lib_psutil.psutil, 'process_iter',
+                lib_psutil.psutil,
+                'process_iter',
                 return_value=self._procs() if procs is None else list(procs),
             ),
             mock.patch.object(
                 lib_psutil.user, 'own_mount_namespace', return_value=namespace
             ),
             mock.patch.object(
-                lib_psutil.os, 'readlink',
+                lib_psutil.os,
+                'readlink',
                 side_effect=lambda path: links.get(path, namespace),
             ),
         ):
@@ -248,8 +250,7 @@ class TestGetProcessAccounts(unittest.TestCase):
 
     def test_a_generator_is_accepted(self):
         # The names are consumed more than once, so an iterator has to survive.
-        self.assertEqual(self._run(n for n in ('httpd',)),
-                         ['root', 'apache', 'apache'])
+        self.assertEqual(self._run(n for n in ('httpd',)), ['root', 'apache', 'apache'])
 
     def test_a_foreign_mount_namespace_is_left_out(self):
         # The same program in a container shows up in the host's process list
@@ -262,8 +263,9 @@ class TestGetProcessAccounts(unittest.TestCase):
 
     def test_without_a_namespace_nothing_is_filtered(self):
         # Not Linux: the kernel publishes none, so every process counts.
-        self.assertEqual(self._run(('httpd',), namespace=None),
-                         ['root', 'apache', 'apache'])
+        self.assertEqual(
+            self._run(('httpd',), namespace=None), ['root', 'apache', 'apache']
+        )
 
     def test_a_process_that_vanished_is_skipped(self):
         procs = [_Proc('httpd', 10, 'root'), _Vanished('httpd', 11, 'apache')]

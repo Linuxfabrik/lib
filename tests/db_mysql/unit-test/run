@@ -136,7 +136,9 @@ class TestLod2Dict(unittest.TestCase):
 class TestCheckPrivileges(unittest.TestCase):
     """The grant parsing, driven through a mocked select(), no server needed."""
 
-    GRANTS: typing.ClassVar = [{'Grants for u@h': "GRANT SELECT, PROCESS ON *.* TO `u`@`h`"}]
+    GRANTS: typing.ClassVar = [
+        {'Grants for u@h': 'GRANT SELECT, PROCESS ON *.* TO `u`@`h`'}
+    ]
 
     def _with_grants(self, grants):
         return mock.patch.object(db_mysql, 'select', return_value=(True, grants))
@@ -208,6 +210,7 @@ class TestCheckPrivileges(unittest.TestCase):
             success, message = db_mysql.check_privileges(None, 'SELECT')
         self.assertFalse(success)
         self.assertEqual(message, 'gone away')
+
 
 class TestGetFlavor(unittest.TestCase):
     def test_reports_the_flavor_of_the_server_info(self):
