@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * args.py, base.py, txt.py, url.py: import faster, and `sanitize_sensitive_data()` is faster on long output
+* container.py: `get_engine_error()` reports Podman's missing rootless statistics on cgroups v1 as UNKNOWN
 * db_mysql.py: `select()` names the error first
 * lvm.py: the hint on missing LVM tools names the SUSE package command too
 * powershell.py: `run_ps()` reads Windows output like `shell_exec()`, as UTF-8 where valid and in the OEM code page otherwise

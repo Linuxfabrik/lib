@@ -223,6 +223,15 @@ class TestGetEngineError(unittest.TestCase):
         self.assertEqual(state, STATE_CRIT)
         self.assertIn('unable to connect to Podman socket', message)
 
+    def test_rootless_statistics_on_cgroups_v1_are_unknown(self):
+        # podman 4.9.4 as a regular user on Rocky 8 (cgroups v1), same with 4.9.5 on Leap 15.5
+        message, state = container.get_engine_error(
+            'Error: stats is not supported in rootless mode without cgroups v2\n'
+        )
+        self.assertEqual(state, STATE_UNKNOWN)
+        self.assertIn('cgroups v1', message)
+        self.assertIn('stats is not supported in rootless mode', message)
+
     def test_the_fallback_state_is_the_callers_choice(self):
         for fallback in (STATE_OK, STATE_WARN, STATE_CRIT, STATE_UNKNOWN):
             with self.subTest(fallback=fallback):

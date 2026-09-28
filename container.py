@@ -46,7 +46,7 @@ except ImportError:
     pwd = None
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092501'
+__version__ = '2026092801'
 
 # What the client puts in front of the answer it got. The CLI wraps every answer of
 # the engine in "Error response from daemon:", and a swarm control plane adds a gRPC
@@ -118,6 +118,17 @@ def get_engine_error(stderr, stdout='', fallback_state=STATE_CRIT):
     ('No permission to talk to the container engine, ...', 3)
     """
     text = f'{_as_text(stderr)}\n{_as_text(stdout)}'.strip()
+    # Podman before 6.0 refuses statistics for rootless containers on a cgroups v1 host
+    # (pkg/domain/infra/abi/containers.go, removed with cgroups v1 in 30d07aa0c8). The
+    # engine is fine, only this account cannot be measured: nothing to alert on.
+    if 'rootless mode without cgroups v2' in text:
+        return (
+            'Podman reports no statistics for rootless containers on a host with'
+            ' cgroups v1, so nothing can be said about them. Switch the host to'
+            ' cgroups v2 (`systemd.unified_cgroup_hierarchy=1` on the kernel command'
+            f' line).\n{text}',
+            STATE_UNKNOWN,
+        )
     if 'permission denied' in text.lower():
         return (
             'No permission to talk to the container engine, so nothing can be said'
