@@ -480,8 +480,8 @@ class TestLibrenmsContainer(unittest.TestCase):
             # to the librenms user. Retry user-create + token-seed until the API
             # authenticates (handles migration / propagation timing). Poll with a
             # raw request because get_data() sys.exits on a non-ok status. The
-            # deadline is a time, not a number of tries: on a GitHub runner, 40
-            # tries (about two minutes there) were not enough.
+            # deadline is a time, not a number of tries, so a slow host gets as
+            # long as a fast one.
             authed = None
             last = {}
             deadline = time.monotonic() + 300
@@ -504,10 +504,16 @@ class TestLibrenmsContainer(unittest.TestCase):
                         '-prootpw',
                         'librenms',
                         '-e',
-                        'DELETE FROM api_tokens; '
-                        'INSERT INTO api_tokens (user_id, token_hash, description, disabled) '
-                        f"SELECT user_id, '{API_TOKEN}', 'test', 0 FROM users "
-                        "WHERE username = 'admin';",
+                        # Since LibreNMS 26.9 the API tokens live in Laravel
+                        # Sanctum's table, which stores the SHA-256 of the token
+                        # (verified against librenms/librenms 26.9.1.1).
+                        'DELETE FROM personal_access_tokens; '
+                        'INSERT INTO personal_access_tokens (tokenable_type, '
+                        'tokenable_id, name, token, abilities, created_at, '
+                        'updated_at) '
+                        "SELECT 'App\\\\Models\\\\User', user_id, 'test', "
+                        f"SHA2('{API_TOKEN}', 256), '[\"*\"]', NOW(), NOW() "
+                        "FROM users WHERE username = 'admin';",
                     ]
                 )
                 ok, res = librenms.url.fetch_json(
