@@ -2742,8 +2742,8 @@ ENDOFLIFE_DATE = {
         {
             'cycle': '0.63',
             'eol': '2026-11-01',
-            'latest': '0.63.18.2',
-            'latestReleaseDate': '2026-09-24',
+            'latest': '0.63.18.4',
+            'latestReleaseDate': '2026-09-28',
             'lts': False,
             'releaseDate': '2026-07-07',
         },
