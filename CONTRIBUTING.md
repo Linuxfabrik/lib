@@ -249,6 +249,16 @@ tools/run-all-tests
 tools/run-tox-tests
 ```
 
+#### Continuous integration
+
+The `Linuxfabrik: Unit Tests` workflow runs the tests every night on `main`, not on every push or pull request. Start it by hand with `gh workflow run lf-unit-tests.yml`, adding `--field container-tests=true` for the container tests. It runs:
+
+* the fast tests for every supported Python version, through `tox`
+* an import of every module with the Python 3.6 of Rocky Linux 8, the default `python3` of RHEL 8. A module that cannot be imported there fails the run: it would take down every plugin that imports it.
+* the container tests, once a week
+
+The monitoring-plugins repository runs the same workflow for its plugins, against `main` of this library.
+
 
 ### Commit Scopes
 

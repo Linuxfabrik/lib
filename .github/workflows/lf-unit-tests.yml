@@ -1,0 +1,163 @@
+name: 'Linuxfabrik: Unit Tests'
+
+# Runs the unit tests of every module. The monitoring-plugins repository runs
+# the same workflow for its plugins, against `main` of this repository; keep the
+# two alike.
+#
+# Nightly rather than on every push: the container suite alone takes long, and
+# one schedule for both repositories keeps them comparable. A red night reaches
+# whoever last edited the schedule below, by mail from GitHub.
+
+on:
+  schedule:
+    # the fast tests, every night
+    - cron: '23 2 * * *'
+    # the container tests, once a week
+    - cron: '23 4 * * 6'
+  workflow_dispatch:
+    inputs:
+      container-tests:
+        description: 'Also run the container tests (takes long)'
+        type: 'boolean'
+        default: false
+
+permissions:
+  contents: 'read'
+
+jobs:
+  fast:
+    name: 'Fast tests (Python ${{ matrix.python-version }})'
+    if: "github.event.schedule != '23 4 * * 6'"
+    runs-on: 'ubuntu-latest'
+    strategy:
+      # One version failing is a fact about that version, so let the others
+      # finish and report rather than cancelling them.
+      fail-fast: false
+      matrix:
+        # The supported range from `pyproject.toml`, floor first: RHEL 8 ships
+        # Python 3.9, and a module that quietly grows newer syntax breaks there.
+        python-version:
+          - '3.9'
+          - '3.10'
+          - '3.11'
+          - '3.12'
+          - '3.13'
+          - '3.14'
+    steps:
+      - name: 'Harden the runner (Audit all outbound calls)'
+        uses: 'step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1' # v2.21.1
+        with:
+          egress-policy: 'audit'
+
+      # Into `lib`, the directory layout the monitoring-plugins workflow uses too.
+      - name: 'Checkout repository'
+        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # v7.0.1
+        with:
+          path: 'lib'
+
+      # The Python under test, plus 3.12 to run tox itself, which is the default
+      # because it is listed last. Current tox needs Python 3.10 or newer, and its
+      # hash-pinned requirements are kept by Dependabot for that one Python only.
+      - name: 'Set up Python ${{ matrix.python-version }}'
+        uses: 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97' # v7.0.0
+        with:
+          python-version: |
+            ${{ matrix.python-version }}
+            3.12
+
+      - name: 'Install tox'
+        run: 'python -m pip install --require-hashes --requirement lib/.github/unit-tests/requirements.txt'
+
+      # Through tox rather than calling the runner directly: `tox.ini` installs the
+      # hash-pinned lockfile of the Python under test, so the tests run against the
+      # dependencies the library ships with. A missing interpreter must fail the
+      # job; `tox.ini` skips it for local runs, which here would report green
+      # without having tested anything.
+      - name: 'Run the fast tests'
+        env:
+          PYTHON_VERSION: '${{ matrix.python-version }}'
+        run: 'tox --skip-missing-interpreters false -e "py${PYTHON_VERSION//./}"'
+        working-directory: 'lib'
+
+  el8-python36:
+    name: 'Python 3.6 import (RHEL 8)'
+    if: "github.event.schedule != '23 4 * * 6'"
+    runs-on: 'ubuntu-latest'
+    steps:
+      - name: 'Harden the runner (Audit all outbound calls)'
+        uses: 'step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1' # v2.21.1
+        with:
+          egress-policy: 'audit'
+
+      - name: 'Checkout repository'
+        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # v7.0.1
+        with:
+          path: 'lib'
+
+      # The lib requires Python 3.9, but plugins also run under the default
+      # python3 of RHEL 8, which is 3.6, and a module that cannot even be imported
+      # there takes down every plugin importing it. So every module has to import
+      # on 3.6; what it does once called may require 3.9. The dependencies come
+      # from the distribution, beautifulsoup4 from EPEL, as on such a host.
+      - name: 'Import every module with the Python 3.6 of Rocky Linux 8'
+        run: |
+          docker run --rm --volume "${PWD}:/src:ro" --workdir /src \
+            docker.io/rockylinux/rockylinux:8 \
+            bash -c '
+              set -o errexit
+              dnf --assumeyes --quiet install epel-release
+              dnf --assumeyes --quiet install python3 python3-beautifulsoup4 python3-psutil python3-PyMySQL
+              python3 --version
+              export PYTHONDONTWRITEBYTECODE=1
+              checked=0
+              failed=0
+              for file in lib/*.py; do
+                module=$(basename "${file}" .py)
+                [ "${module}" = "__init__" ] && continue
+                checked=$((checked + 1))
+                if ! output=$(python3 -c "import lib.${module}" 2>&1); then
+                  failed=$((failed + 1))
+                  echo "::error file=${module}.py::Python 3.6 cannot import lib.${module}: $(echo "${output}" | tail -n 1)"
+                fi
+              done
+              echo "${checked} modules checked, ${failed} not importable with Python 3.6"
+              [ "${failed}" -eq 0 ]
+            '
+
+  container:
+    name: 'Container tests'
+    if: >-
+      github.event.schedule == '23 4 * * 6'
+      || (github.event_name == 'workflow_dispatch' && inputs.container-tests)
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 330
+    steps:
+      - name: 'Harden the runner (Audit all outbound calls)'
+        uses: 'step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1' # v2.21.1
+        with:
+          egress-policy: 'audit'
+
+      - name: 'Checkout repository'
+        uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' # v7.0.1
+        with:
+          path: 'lib'
+
+      - name: 'Set up Python 3.12'
+        uses: 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97' # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: 'Install the dependencies and testcontainers'
+        run: 'python -m pip install --require-hashes --requirement lib/.github/container-tests/requirements.txt'
+
+      # The tests drive podman, as on a developer's machine: some call the podman
+      # CLI directly, the others go through testcontainers, which needs the podman
+      # API socket.
+      - name: 'Start the podman API service'
+        run: |
+          podman system service --time=0 "unix://${RUNNER_TEMP}/podman.sock" &
+          echo "DOCKER_HOST=unix://${RUNNER_TEMP}/podman.sock" >> "${GITHUB_ENV}"
+
+      - name: 'Run the container tests'
+        run: 'python tools/run-container-tests'
+        working-directory: 'lib'
