@@ -483,9 +483,10 @@ class TestLibrenmsContainer(unittest.TestCase):
             # deadline is a time, not a number of tries: on a GitHub runner, 40
             # tries (about two minutes there) were not enough.
             authed = None
+            last = {}
             deadline = time.monotonic() + 300
             while time.monotonic() < deadline:
-                app.exec(
+                last['user:add'] = app.exec(
                     [
                         'su',
                         '-s',
@@ -496,7 +497,7 @@ class TestLibrenmsContainer(unittest.TestCase):
                         '-e admin@example.com --no-interaction || true',
                     ]
                 )
-                db.exec(
+                last['token seed'] = db.exec(
                     [
                         'mariadb',
                         '-uroot',
@@ -515,11 +516,18 @@ class TestLibrenmsContainer(unittest.TestCase):
                     no_proxy=True,
                     timeout=10,
                 )
+                last['API'] = (ok, res)
                 if ok and isinstance(res, dict) and res.get('status') == 'ok':
                     authed = res
                     break
                 time.sleep(2)
-            self.assertIsNotNone(authed, 'LibreNMS API never authenticated')
+            # what the last try saw, so a failure on a remote runner can be read
+            # from its log
+            self.assertIsNotNone(
+                authed,
+                'LibreNMS API never authenticated; last try: '
+                + ', '.join(f'{key}: {value!r:.500}' for key, value in last.items()),
+            )
 
             args = Args()
             args.URL = base
