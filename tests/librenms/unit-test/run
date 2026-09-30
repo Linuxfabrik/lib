@@ -45,10 +45,10 @@ from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 MARIADB_IMAGE = 'docker.io/library/mariadb:11'
 LIBRENMS_IMAGE = 'docker.io/librenms/librenms:latest'
 ADMIN_PW = 'Zt7qLf93xPv2wKm8nQ'  # random, passes the has-been-pwned check
-API_TOKEN = 'lf-librenms-test-token'
+API_TOKEN = 'lf-librenms-test-token'  # nosec B105 - test token of a throwaway container
 
 URL = 'https://librenms.example.com'
-TOKEN = 'linuxfabrik'
+TOKEN = 'linuxfabrik'  # nosec B105 - placeholder for the mocked tests
 
 
 class Args:
@@ -181,7 +181,7 @@ class TestGetDataRequest(LibrenmsTestBase):
 
     def test_auth_token_value_taken_from_args(self):
         class A(Args):
-            TOKEN = 'deadbeefdeadbeef'
+            TOKEN = 'deadbeefdeadbeef'  # nosec B105 - placeholder for a mocked test
 
         librenms.get_data(A(), uri='/x')
         self.assertEqual(self.sent_header()['X-Auth-Token'], 'deadbeefdeadbeef')
@@ -453,8 +453,8 @@ class TestLibrenmsContainer(unittest.TestCase):
                 env={
                     'MARIADB_DATABASE': 'librenms',
                     'MARIADB_USER': 'librenms',
-                    'MARIADB_PASSWORD': 'librenmspw',
-                    'MARIADB_ROOT_PASSWORD': 'rootpw',
+                    'MARIADB_PASSWORD': 'librenmspw',  # nosec B105 - throwaway container
+                    'MARIADB_ROOT_PASSWORD': 'rootpw',  # nosec B105 - throwaway container
                 },
                 network=net,
                 network_alias='db',
@@ -467,7 +467,7 @@ class TestLibrenmsContainer(unittest.TestCase):
                     'DB_HOST': 'db',
                     'DB_NAME': 'librenms',
                     'DB_USER': 'librenms',
-                    'DB_PASSWORD': 'librenmspw',
+                    'DB_PASSWORD': 'librenmspw',  # nosec B105 - throwaway container
                 },
                 ports=[8000],
                 network=net,
@@ -507,7 +507,7 @@ class TestLibrenmsContainer(unittest.TestCase):
                         # Since LibreNMS 26.9 the API tokens live in Laravel
                         # Sanctum's table, which stores the SHA-256 of the token
                         # (verified against librenms/librenms 26.9.1.1).
-                        'DELETE FROM personal_access_tokens; '
+                        'DELETE FROM personal_access_tokens; '  # nosec B608 - constant test SQL
                         'INSERT INTO personal_access_tokens (tokenable_type, '
                         'tokenable_id, name, token, abilities, created_at, '
                         'updated_at) '
