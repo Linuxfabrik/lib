@@ -630,6 +630,23 @@ class TestReadJournald(unittest.TestCase):
         self.assertIn('systemd-journal', result)
         self.assertIn(hint, result)
 
+    def test_no_readable_journal_file_names_the_rights(self):
+        # Captured from journalctl as icinga on Rocky 9 (systemd 252), exit 1.
+        stderr = (
+            'Hint: You are currently not seeing messages from other users and the '
+            "system.\n      Users in groups 'adm', 'systemd-journal', 'wheel' can see "
+            'all messages.\n      Pass -q to turn off this notice.\n'
+            'No journal files were opened due to insufficient permissions.\n'
+        )
+        with self.shell('', stderr, 1):
+            success, result = lib.logsource.read('systemd:mariadb.service')
+        self.assertFalse(success)
+        self.assertEqual(
+            result,
+            'Not allowed to read `systemd:mariadb.service`. Run with elevated '
+            'privileges, or add the account to the `adm` or `systemd-journal` group.',
+        )
+
     def test_stderr_next_to_entries_becomes_a_notice(self):
         stdout = (
             f'2026-08-28T15:26:18+02:00 host sshd[1]: real\n-- cursor: {self.CURSOR}\n'

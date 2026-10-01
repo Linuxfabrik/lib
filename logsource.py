@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092801'
+__version__ = '2026100101'
 
 import collections
 import datetime
@@ -630,6 +630,15 @@ def _read_journald(unit, position, max_lines, since, timeout):
     if not success:
         return False, result
     stdout, stderr, retc = result
+    if 'insufficient permissions' in stderr:
+        # journalctl ends with this, and with an exit code of 1, when the caller may
+        # not open a single journal file (src/shared/journal-util.c). Passing the raw
+        # text on would bury the one thing to do under three lines of hint.
+        # Verified against systemd 252 on Rocky 9.
+        return False, (
+            f'Not allowed to read `systemd:{unit}`. Run with elevated privileges, '
+            f'or add the account to the `adm` or `systemd-journal` group.'
+        )
     if retc != 0 and stderr.strip():
         return False, (
             f'`{" ".join(cmd)}` exited with error ({retc}, {stderr.strip()}).'
