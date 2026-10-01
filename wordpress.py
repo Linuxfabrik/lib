@@ -83,6 +83,47 @@ BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.DOTALL)
 LINE_START = r'(?m)^[^\S\n]*(?!//|#|\*)'
 
 
+# Where an installation is looked for when the consumer names none, in this order: the
+# conventional layout, the places SUSE and the Debian/Ubuntu package and the EPEL RPM
+# install the core into, then the directories one and two levels below `/var/www`, which
+# covers a document root of its own (`/var/www/www.example.com`) as well as an
+# installation per site below the web root (`/var/www/html/www.example.com`).
+SEARCH_PATHS = (
+    '/var/www/html/wordpress',
+    '/srv/www/htdocs/wordpress',
+    '/usr/share/wordpress',
+)
+SEARCH_GLOBS = ('/var/www/*', '/var/www/*/*')
+
+
+def find_installation():
+    """
+    Find the first WordPress installation in the usual places.
+
+    The paths in `SEARCH_PATHS` are tried in their order, then what `SEARCH_GLOBS`
+    matches, one level below `/var/www` before two, each in sorted order, so the answer
+    stays the same from one call to the next. Nothing beyond `is_installation()` is
+    read.
+
+    Returns
+    -------
+    str or None
+        The installation root, or None if none of the places holds an installation.
+
+    Examples
+    --------
+    >>> find_installation()
+    '/var/www/html/www.example.com'
+    """
+    candidates = list(SEARCH_PATHS)
+    for pattern in SEARCH_GLOBS:
+        candidates += disk.glob(pattern, recursive=False)
+    for path in candidates:
+        if is_installation(path):
+            return path
+    return None
+
+
 def _read_header(filename):
     """Return the leading `HEADER_BYTES` of a file as text, or the empty string when it
     cannot be read. Decoded with `strict_or_latin1` because a plugin author is free to

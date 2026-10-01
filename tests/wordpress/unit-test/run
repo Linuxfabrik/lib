@@ -554,5 +554,55 @@ class TestHeaderValue(unittest.TestCase):
         self.assertEqual(wordpress.get_header_value(self.late, 'Version'), '1.0')
 
 
+class TestFindInstallation(unittest.TestCase):
+    """The search order: the named places first, then one level below the web
+    directory before two."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.saved = (wordpress.SEARCH_PATHS, wordpress.SEARCH_GLOBS)
+        self.classic = os.path.join(self.root, 'classic')
+        wordpress.SEARCH_PATHS = (self.classic,)
+        wordpress.SEARCH_GLOBS = (
+            os.path.join(self.root, '*'),
+            os.path.join(self.root, '*', '*'),
+        )
+
+    def tearDown(self):
+        wordpress.SEARCH_PATHS, wordpress.SEARCH_GLOBS = self.saved
+        shutil.rmtree(self.root)
+
+    def install(self, path):
+        write(os.path.join(path, 'wp-includes', 'version.php'), VERSION_PHP)
+
+    def test_nothing_installed(self):
+        self.assertIsNone(wordpress.find_installation())
+
+    # One installation per site below the web root, as a deployment per FQDN lays it out:
+    # the first one in sorted order, whatever order the filesystem lists them in.
+    def test_first_site_below_the_web_root(self):
+        self.install(os.path.join(self.root, 'html', 'www.example.org'))
+        self.install(os.path.join(self.root, 'html', 'blog.example.com'))
+        os.makedirs(os.path.join(self.root, 'html', 'aaa-not-wordpress'))
+        self.assertEqual(
+            wordpress.find_installation(),
+            os.path.join(self.root, 'html', 'blog.example.com'),
+        )
+
+    # A document root of its own one level down is found before a site two levels down.
+    def test_one_level_before_two(self):
+        self.install(os.path.join(self.root, 'html', 'aaa.example.com'))
+        self.install(os.path.join(self.root, 'zzz.example.com'))
+        self.assertEqual(
+            wordpress.find_installation(), os.path.join(self.root, 'zzz.example.com')
+        )
+
+    # A named place wins over the directories below the web root.
+    def test_named_place_first(self):
+        self.install(os.path.join(self.root, 'html', 'blog.example.com'))
+        self.install(self.classic)
+        self.assertEqual(wordpress.find_installation(), self.classic)
+
+
 if __name__ == '__main__':
     unittest.main()

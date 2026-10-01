@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * restic.py: `repo_args()` and `password_file_arg()` for restic's repository and password arguments
 * rhelappstreams.py: the life cycle of the RHEL Application Streams, refreshed weekly from Red Hat's data
 * version.py: `check_eol()` takes `cycle`, for products whose release cycles are not version numbers, and `package_path`, which applies the life cycle RHEL, Debian and Ubuntu give the software they ship
+* wordpress.py: `find_installation()`, the first WordPress installation in the usual places, `/var/www` included
 
 ### Changed
 
