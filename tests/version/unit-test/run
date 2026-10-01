@@ -402,7 +402,9 @@ class TestRhelLifeCycle(unittest.TestCase):
             stack.enter_context(
                 patch('lib.rhelappstreams.RHEL_APP_STREAMS', APP_STREAMS)
             )
-            return version._rhel_life_cycle('/usr/bin/python3.9')
+            return version._vendor_life_cycle(
+                '/usr/bin/python3.9', 1, lambda product: None
+            )
 
     def test_application_stream_with_its_own_end(self):
         self.assertEqual(
@@ -472,11 +474,146 @@ class TestRhelLifeCycle(unittest.TestCase):
         )
 
 
+OS_RELEASE_UBUNTU = 'NAME="Ubuntu"\nVERSION_ID="22.04"\nVERSION_CODENAME=jammy\nID=ubuntu\nID_LIKE=debian\n'
+OS_RELEASE_DEBIAN = 'VERSION_ID="12"\nVERSION_CODENAME=bookworm\nID=debian\n'
+DISTRO_CYCLES = {
+    'https://endoflife.date/api/debian.json': [
+        {'cycle': '12', 'eol': '2100-06-30', 'support': '2026-07-11'},
+    ],
+    'https://endoflife.date/api/ubuntu.json': [
+        {'cycle': '22.04', 'eol': '2100-06-01', 'extendedSupport': '2032-04-09'},
+    ],
+}
+
+# Captured from `apt-cache policy postfix` in the ubuntu:22.04 container.
+APT_POLICY_UBUNTU = """postfix:
+  Installed: 3.6.4-1ubuntu1.4
+  Candidate: 3.6.4-1ubuntu1.4
+  Version table:
+ *** 3.6.4-1ubuntu1.4 500
+        500 http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 Packages
+        500 http://security.ubuntu.com/ubuntu jammy-security/main amd64 Packages
+        100 /var/lib/dpkg/status
+     3.6.4-1ubuntu1 500
+        500 http://archive.ubuntu.com/ubuntu jammy/main amd64 Packages
+"""
+# Captured from `apt-cache policy postfix` in the debian:12 container.
+APT_POLICY_DEBIAN = """postfix:
+  Installed: 3.7.11-0+deb12u1
+  Candidate: 3.7.11-0+deb12u1
+  Version table:
+ *** 3.7.11-0+deb12u1 500
+        500 http://deb.debian.org/debian bookworm/main amd64 Packages
+        100 /var/lib/dpkg/status
+"""
+
+
+def shell(stdout, retc=0):
+    return True, (stdout, '', retc)
+
+
+class TestDebianLifeCycle(unittest.TestCase):
+    """`_vendor_life_cycle()` on Debian and Ubuntu, against recorded answers."""
+
+    def life_cycle(self, *answers, os_release=OS_RELEASE_UBUNTU):
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                patch('lib.disk.read_file', return_value=(True, os_release))
+            )
+            stack.enter_context(
+                patch('lib.shell.shell_exec', side_effect=list(answers))
+            )
+            return version._vendor_life_cycle(
+                '/usr/sbin/postconf', 1, DISTRO_CYCLES.get
+            )
+
+    def test_ubuntu_main(self):
+        self.assertEqual(
+            self.life_cycle(
+                shell('postfix: /usr/sbin/postconf\n'), shell(APT_POLICY_UBUNTU)
+            ),
+            ('Ubuntu 22.04 package postfix', '2100-06-01'),
+        )
+
+    def test_debian_main(self):
+        self.assertEqual(
+            self.life_cycle(
+                shell('postfix: /usr/sbin/postconf\n'),
+                shell(APT_POLICY_DEBIAN),
+                os_release=OS_RELEASE_DEBIAN,
+            ),
+            ('Debian 12 package postfix', '2100-06-30'),
+        )
+
+    def test_ubuntu_universe_keeps_upstream(self):
+        policy = APT_POLICY_UBUNTU.replace('/main', '/universe')
+        self.assertIsNone(
+            self.life_cycle(shell('postfix: /usr/sbin/postconf\n'), shell(policy))
+        )
+
+    def test_third_party_repository_keeps_upstream(self):
+        policy = (
+            'icinga2-bin:\n  Installed: 2.16.5-1+ubuntu22.04\n  Version table:\n'
+            ' *** 2.16.5-1+ubuntu22.04 500\n'
+            '        500 https://packages.icinga.com/ubuntu icinga-jammy/main amd64'
+            ' Packages\n        100 /var/lib/dpkg/status\n'
+        )
+        self.assertIsNone(
+            self.life_cycle(shell('icinga2-bin: /usr/sbin/postconf\n'), shell(policy))
+        )
+
+    def test_backports_keep_upstream(self):
+        policy = APT_POLICY_DEBIAN.replace('bookworm/main', 'bookworm-backports/main')
+        self.assertIsNone(
+            self.life_cycle(
+                shell('postfix: /usr/sbin/postconf\n'),
+                shell(policy),
+                os_release=OS_RELEASE_DEBIAN,
+            )
+        )
+
+    def test_only_the_installed_version_counts(self):
+        # The installed version came from elsewhere, an older one is in the archive.
+        policy = (
+            'postfix:\n  Version table:\n *** 9.9.9-1 100\n'
+            '        100 /var/lib/dpkg/status\n     3.6.4-1ubuntu1 500\n'
+            '        500 http://archive.ubuntu.com/ubuntu jammy/main amd64 Packages\n'
+        )
+        self.assertIsNone(
+            self.life_cycle(shell('postfix: /usr/sbin/postconf\n'), shell(policy))
+        )
+
+    def test_package_with_architecture_and_shared_path(self):
+        self.assertEqual(
+            self.life_cycle(
+                shell('postfix:amd64, other: /usr/sbin/postconf\n'),
+                shell(APT_POLICY_UBUNTU),
+            ),
+            ('Ubuntu 22.04 package postfix', '2100-06-01'),
+        )
+
+    def test_file_no_package_owns(self):
+        self.assertIsNone(
+            self.life_cycle(shell('dpkg-query: no path found matching pattern\n', 1))
+        )
+
+    def test_release_endoflife_does_not_list(self):
+        self.assertIsNone(
+            self.life_cycle(
+                shell('postfix: /usr/sbin/postconf\n'),
+                shell(APT_POLICY_UBUNTU.replace('jammy', 'noble')),
+                os_release=OS_RELEASE_UBUNTU.replace('22.04', '24.04').replace(
+                    'jammy', 'noble'
+                ),
+            )
+        )
+
+
 class TestCheckEolVendorLifeCycle(TestCheckEol):
     """`check_eol(package_path=...)`: the vendor's date replaces the upstream one."""
 
     def check_vendor(self, version_string, life_cycle):
-        with patch('lib.version._rhel_life_cycle', return_value=life_cycle):
+        with patch('lib.version._vendor_life_cycle', return_value=life_cycle):
             return self.check(version_string, package_path='/usr/bin/x')
 
     def test_vendor_date_overrides_an_upstream_end_of_life(self):

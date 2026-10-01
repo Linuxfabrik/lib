@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * disk.py: `get_private_dir()`, a directory only the current account can use, on Windows as well
 * disk.py: `open_file()` for confined reads, `resolve_trusted_path()`, and `get_fingerprint()` on an open file
-* endoflifedate.py: offline data for Windows and Windows Server
+* endoflifedate.py: offline data for Debian, Ubuntu, Windows and Windows Server
 * lftest.py: `fixture_root()`, which accepts a test-only configuration root inside the unit tests only
 * lynis.py: reads the report of a Lynis audit and lists its findings and suggestions
 * logsource.py: `systemd_booted()`, which tells whether systemd runs the host, like `sd_booted()`
@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * redfish.py: `get_chassis()` returns the `Thermal` and `Power` links of a chassis
 * restic.py: `repo_args()` and `password_file_arg()` for restic's repository and password arguments
 * rhelappstreams.py: the life cycle of the RHEL Application Streams, refreshed weekly from Red Hat's data
-* version.py: `check_eol()` takes `cycle`, for products whose release cycles are not version numbers, and `package_path`, which applies the life cycle Red Hat gives the software RHEL ships
+* version.py: `check_eol()` takes `cycle`, for products whose release cycles are not version numbers, and `package_path`, which applies the life cycle RHEL, Debian and Ubuntu give the software they ship
 
 ### Changed
 

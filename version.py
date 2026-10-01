@@ -19,6 +19,164 @@ import re
 
 from .globals import STATE_OK, STATE_UNKNOWN, STATE_WARN
 
+# The archive suites and components a distribution maintains itself. Backports, Ubuntu's
+# universe (maintained by the community, not by Canonical) and third-party repositories
+# are left out: their packages do not get the security support of the release.
+_DEB_COMPONENTS = {'debian': ('main',), 'ubuntu': ('main', 'restricted')}
+_DEB_SUITES = ('{}', '{}-security', '{}-updates')
+
+
+def _debian_life_cycle(package_path, os_release, timeout, load_eol):
+    """
+    Return the life cycle Debian or Ubuntu gives the package that installed the file.
+
+    A package from the archive of the release is maintained for as long as the release
+    gets security support: on Debian until the end of its LTS, on Ubuntu until the end of
+    the standard support of `main` and `restricted`.
+
+    Parameters
+    ----------
+    package_path : str
+        The resolved path of the file the version was read from.
+    os_release : dict
+        `/etc/os-release` as returned by `_os_release()`.
+    timeout : int
+        Seconds to wait for `dpkg-query` and `apt-cache`.
+    load_eol : callable
+        Returns the endoflife.date entries for a product URL, or `None`.
+
+    Returns
+    -------
+    tuple (str, str) or None
+        A description of the life cycle and its end date (`YYYY-MM-DD`), or `None` where
+        it does not apply: a file no package owns, a package that does not come from the
+        archive of the release, or a release endoflife.date does not list.
+    """
+    from . import shell
+
+    distro = os_release.get('ID', '')
+    codename = os_release.get('VERSION_CODENAME', '')
+    version_id = os_release.get('VERSION_ID', '')
+    if distro not in _DEB_COMPONENTS or not codename or not version_id:
+        return None
+
+    # "python3.10-minimal: /usr/bin/python3.10", or "pkg1, pkg2: path" where several
+    # packages ship the same directory. A diversion line names no package.
+    success, result = shell.shell_exec(
+        ['dpkg-query', '--search', package_path], timeout=timeout
+    )
+    if not success or result[2] != 0:
+        return None
+    name = None
+    for line in result[0].splitlines():
+        owner, sep, path = line.partition(': ')
+        if sep and path == package_path and not owner.startswith('diversion '):
+            name = owner.split(',')[0].strip().split(':')[0]
+            break
+    if not name:
+        return None
+
+    # The sources of the installed version follow the line `*** <version> <pin>`, one
+    # per line, `<pin> <uri> <suite>/<component> <arch> Packages`, until the next version.
+    # Verified against apt 2.4 on Ubuntu 22.04 and apt 2.6 on Debian 12.
+    success, result = shell.shell_exec(['apt-cache', 'policy', name], timeout=timeout)
+    if not success or result[2] != 0:
+        return None
+    suites = [suite.format(codename) for suite in _DEB_SUITES]
+    from_archive = False
+    installed = False
+    for line in result[0].splitlines():
+        if line.startswith(' *** '):
+            installed = True
+            continue
+        if not installed:
+            continue
+        fields = line.split()
+        if len(fields) != 5 or fields[-1] != 'Packages':
+            break
+        suite, _, component = fields[2].partition('/')
+        if suite in suites and component in _DEB_COMPONENTS[distro]:
+            from_archive = True
+    if not from_archive:
+        return None
+
+    cycles = load_eol(f'https://endoflife.date/api/{distro}.json') or []
+    for item in cycles:
+        if isinstance(item, dict) and str(item.get('cycle')) == version_id:
+            eol = item.get('eol')
+            if isinstance(eol, str) and eol:
+                label = 'Debian' if distro == 'debian' else 'Ubuntu'
+                return f'{label} {version_id} package {name}', eol
+    return None
+
+
+def _load_eol(product, insecure, no_proxy, proxy, timeout):
+    """
+    Return the endoflife.date entries of a product: cached, online or bundled.
+
+    Returns
+    -------
+    tuple (list or None, bool, bool)
+        The entries, whether they come from the bundled offline snapshot, and whether
+        that is because the Python running the consumer lacks httpx. `None` if the
+        product is unknown everywhere.
+
+    Notes
+    -----
+    - A successful online lookup is cached locally for 24 hours. The bundled snapshot is
+      not cached, so the next call retries the online source instead of masking a
+      persistent outage.
+    """
+    from . import cache, time, url
+
+    try:
+        eol_data = cache.get(product, filename='linuxfabrik-lib-version.db')
+        eol = json.loads(eol_data) if eol_data else None
+    except (json.JSONDecodeError, TypeError):
+        eol = None
+    if eol:
+        return eol, False, False
+
+    success, eol = url.fetch_json(
+        product, insecure=insecure, no_proxy=no_proxy, proxy=proxy, timeout=timeout
+    )
+    if success and eol:
+        cache.set(
+            product,
+            json.dumps(eol),
+            expire=time.now() + 86400,
+            filename='linuxfabrik-lib-version.db',
+        )
+        return eol, False, False
+
+    # endoflife.date is unreachable, or could not be asked at all because the Python
+    # running the consumer lacks httpx (a plugin started with the system Python instead
+    # of the one of its venv). The caller tells the two apart in its message: they are
+    # fixed in different places.
+    try:
+        from . import endoflifedate
+
+        return endoflifedate.ENDOFLIFE_DATE[product], True, url.httpx is None
+    except (ImportError, KeyError):
+        return None, False, False
+
+
+def _os_release():
+    """Return `ID`, `ID_LIKE` (a list), `VERSION_CODENAME` and `VERSION_ID`."""
+    from . import disk
+
+    success, content = disk.read_file('/etc/os-release')
+    if not success:
+        return {}
+    result = {}
+    for line in content.splitlines():
+        key, _, value = line.partition('=')
+        if key in ('ID', 'ID_LIKE', 'VERSION_CODENAME', 'VERSION_ID'):
+            result[key] = value.strip().strip('"\'')
+    result['ID_LIKE'] = result.get('ID_LIKE', '').split()
+    return result
+
+
 # The vendor of a rebuild is whatever its packages say ("Red Hat, Inc.", "Rocky",
 # "AlmaLinux"), so it is never compared against a list. A package counts as the
 # distribution's own if it carries the vendor of the package that installed
@@ -26,31 +184,27 @@ from .globals import STATE_OK, STATE_UNKNOWN, STATE_WARN
 _RPM_QUERY_FORMAT = '%{NAME}\\t%{VENDOR}\\t%{VERSION}\\t%{MODULARITYLABEL}\\n'
 
 
-def _rhel_life_cycle(package_path, timeout=8):
+def _rhel_life_cycle(package_path, timeout):
     """
-    Return the life cycle Red Hat gives the package that installed `package_path`.
+    Return the life cycle Red Hat gives the package that installed the file.
 
     Red Hat maintains the software it ships for a fixed time that has nothing to do with
     the end of life upstream announces: Python 3.9 is supported on RHEL 9 until 2032,
-    years after python.org dropped it. Where that applies, the vendor's date is the one
-    that counts.
+    years after python.org dropped it.
 
     Parameters
     ----------
     package_path : str
-        The file the version was read from, a binary for example. A bare command name is
-        looked up in `PATH`, and symlinks are resolved, so `/usr/bin/python3` finds the
-        package of the interpreter it points to.
-    timeout : int, optional
-        Seconds to wait for `rpm`. Default: `8`.
+        The resolved path of the file the version was read from.
+    timeout : int
+        Seconds to wait for `rpm`.
 
     Returns
     -------
     tuple (str, str) or None
         A description of the life cycle and its end date (`YYYY-MM-DD`), or `None` where
-        no such life cycle applies: not a RHEL rebuild (Fedora and CentOS Stream follow
-        their own), no `rpm`, a file no package owns, a package from another vendor,
-        or a module stream Red Hat's data does not list.
+        it does not apply: no `rpm`, a file no package owns, a package from another
+        vendor, or a module stream Red Hat's data does not list.
 
     Notes
     -----
@@ -60,33 +214,7 @@ def _rhel_life_cycle(package_path, timeout=8):
       own, or does not list at all, is maintained for the life of the major release.
       That is the case for everything in BaseOS, Postfix for example.
     """
-    import os
-    import shutil
-
-    from . import disk, shell
-
-    if not isinstance(package_path, str) or not package_path:
-        return None
-    if os.sep not in package_path:
-        package_path = shutil.which(package_path)
-        if not package_path:
-            return None
-    package_path = os.path.realpath(package_path)
-
-    # CentOS Stream calls itself "centos" and carries ID_LIKE="rhel fedora", but runs
-    # ahead of RHEL with a shorter life, so only the rebuilds of RHEL itself count.
-    success, os_release = disk.read_file('/etc/os-release')
-    if not success:
-        return None
-    os_ids = {}
-    for line in os_release.splitlines():
-        key, _, value = line.partition('=')
-        if key in ('ID', 'ID_LIKE'):
-            os_ids[key] = value.strip().strip('"\'').split()
-    if 'centos' in os_ids.get('ID', []) or not (
-        'rhel' in os_ids.get('ID', []) or 'rhel' in os_ids.get('ID_LIKE', [])
-    ):
-        return None
+    from . import shell
 
     packages = []
     for path in ('/etc/os-release', package_path):
@@ -124,6 +252,53 @@ def _rhel_life_cycle(package_path, timeout=8):
     if stream is None or stream[1] is None:
         return f'RHEL {major} package {name}', release['eol']
     return f'RHEL {major} Application Stream {stream[0]}', stream[1]
+
+
+def _vendor_life_cycle(package_path, timeout, load_eol):
+    """
+    Return the life cycle the distribution gives the package that installed a file.
+
+    Distributions maintain the software they ship for as long as they support the
+    release or the stream, which has nothing to do with the end of life upstream
+    announces. Supported are the rebuilds of Red Hat Enterprise Linux, Debian and Ubuntu.
+
+    Parameters
+    ----------
+    package_path : str
+        The file the version was read from, a binary for example. A bare command name is
+        looked up in `PATH`, and symlinks are resolved, so `/usr/bin/python3` finds the
+        package of the interpreter it points to.
+    timeout : int
+        Seconds to wait for each package manager query.
+    load_eol : callable
+        Returns the endoflife.date entries for a product URL, or `None`.
+
+    Returns
+    -------
+    tuple (str, str) or None
+        A description of the life cycle and its end date (`YYYY-MM-DD`), or `None` where
+        the upstream end of life applies.
+    """
+    import os
+    import shutil
+
+    if not isinstance(package_path, str) or not package_path:
+        return None
+    if os.sep not in package_path:
+        package_path = shutil.which(package_path)
+        if not package_path:
+            return None
+    package_path = os.path.realpath(package_path)
+
+    os_release = _os_release()
+    distro = os_release.get('ID', '')
+    if distro in _DEB_COMPONENTS:
+        return _debian_life_cycle(package_path, os_release, timeout, load_eol)
+    # CentOS Stream calls itself "centos" and carries ID_LIKE="rhel fedora", but runs
+    # ahead of RHEL with a shorter life, so only the rebuilds of RHEL itself count.
+    if distro != 'centos' and 'rhel' in [distro, *os_release.get('ID_LIKE', [])]:
+        return _rhel_life_cycle(package_path, timeout)
+    return None
 
 
 def check_eol(
@@ -190,12 +365,14 @@ def check_eol(
         listed cycles takes place. Default: `None`, which derives the cycle from
         `version_string`.
     package_path : str, optional
-        The file the version was read from, a binary for example. On a rebuild of Red
-        Hat Enterprise Linux, where that file comes from a package of the distribution
-        itself, the end of life is the one Red Hat gives the package or its Application
-        Stream rather than the one upstream announces, and the message names it. The
-        newer release check still compares against upstream. Default: `None`, which
-        always uses the upstream end of life.
+        The file the version was read from, a binary for example. Where that file comes
+        from a package the distribution maintains itself, the end of life is the one
+        the distribution gives it rather than the one upstream announces, and the
+        message names it: Red Hat's for a package or Application Stream on a rebuild of
+        Red Hat Enterprise Linux, the end of security support (LTS included) of the
+        release on Debian, and of the standard support of `main` and `restricted` on
+        Ubuntu. The newer release check still compares against upstream. Default:
+        `None`, which always uses the upstream end of life.
 
     Returns
     -------
@@ -217,45 +394,15 @@ def check_eol(
     # these, and importing them eagerly would pull cache, db_sqlite and url into
     # every module that only wants the pure `version()` / `version2float()`
     # parsers below.
-    from . import base, cache, time, url
+    from . import base, time
 
     now = time.now(as_type='datetime')
 
-    try:
-        eol_data = cache.get(product, filename='linuxfabrik-lib-version.db')
-        eol = json.loads(eol_data) if eol_data else None
-    except (json.JSONDecodeError, TypeError):
-        eol = None
-
-    used_fallback = False
-    missing_httpx = False
-    if not eol:
-        success, eol = url.fetch_json(
-            product, insecure=insecure, no_proxy=no_proxy, proxy=proxy, timeout=timeout
-        )
-        if not success or not eol:
-            # endoflife.date is unreachable, or could not be asked at all because the
-            # Python running the consumer lacks httpx (a plugin started with the system
-            # Python instead of the one of its venv). Fall back to the bundled offline
-            # snapshot, and tell the two apart in the message: they are fixed in
-            # different places.
-            missing_httpx = url.httpx is None
-            try:
-                from . import endoflifedate
-
-                eol = endoflifedate.ENDOFLIFE_DATE[product]
-                used_fallback = True
-            except (ImportError, KeyError):
-                return STATE_UNKNOWN, f'product {product} unknown'
-        else:
-            # Only cache genuine online responses. The bundled snapshot is static, so caching it
-            # would just suppress the retry against the online source for 24 hours.
-            cache.set(
-                product,
-                json.dumps(eol),
-                expire=time.now() + 86400,
-                filename='linuxfabrik-lib-version.db',
-            )
+    eol, used_fallback, missing_httpx = _load_eol(
+        product, insecure, no_proxy, proxy, timeout
+    )
+    if eol is None:
+        return STATE_UNKNOWN, f'product {product} unknown'
 
     unreachable_state = (
         base.str2state(unreachable_severity) if used_fallback else STATE_OK
@@ -289,9 +436,15 @@ def check_eol(
     msg = []
     state = STATE_OK
 
-    vendor_life_cycle = (
-        _rhel_life_cycle(package_path, timeout) if package_path else None
-    )
+    vendor_life_cycle = None
+    if package_path:
+        vendor_life_cycle = _vendor_life_cycle(
+            package_path,
+            timeout,
+            lambda distro_product: _load_eol(
+                distro_product, insecure, no_proxy, proxy, timeout
+            )[0],
+        )
     if vendor_life_cycle:
         # The distribution maintains this build itself, so its date is the one that
         # counts, whether or not upstream still lists the cycle.
