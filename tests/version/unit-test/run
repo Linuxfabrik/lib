@@ -17,6 +17,7 @@ seed the lookup with synthetic cycles instead, so they neither reach the network
 nor age (see `TestCheckEol`).
 """
 
+import contextlib
 import json
 import os
 import shutil
@@ -24,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, '..')
 
@@ -363,6 +365,146 @@ class TestCheckEolNamedCycle(unittest.TestCase):
             '9-99h2-e', check_major=True, check_minor=True, check_patch=True
         )
         self.assertEqual(state, STATE_OK)
+
+
+# Synthetic, so the tests neither depend on the generated data nor age with it.
+APP_STREAMS = {
+    9: {
+        'eol': '2100-05-31',
+        'modules': {'nginx:1.22': ('NGINX 1.22', '2000-11-30')},
+        'packages': {
+            'make': ('GNU Make (Latest Version)', None),
+            'python3': ('Python 3.9', '2100-05-31'),
+            'python3.11': ('Python 3.11', '2000-05-31'),
+        },
+    },
+}
+OS_RELEASE_ROCKY = 'NAME="Rocky Linux"\nID="rocky"\nID_LIKE="rhel centos fedora"\n'
+
+
+def rpm(name, vendor='Rocky', ver='9.4', modularity='(none)'):
+    """What `rpm --query --file` answers with `_RPM_QUERY_FORMAT`."""
+    return True, (f'{name}\t{vendor}\t{ver}\t{modularity}\n', '', 0)
+
+
+class TestRhelLifeCycle(unittest.TestCase):
+    """`_rhel_life_cycle()` against recorded `rpm` answers and synthetic stream data."""
+
+    def life_cycle(self, *answers, os_release=OS_RELEASE_ROCKY):
+        # An ExitStack rather than one parenthesized `with`, which needs Python 3.10.
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                patch('lib.disk.read_file', return_value=(True, os_release))
+            )
+            stack.enter_context(
+                patch('lib.shell.shell_exec', side_effect=list(answers))
+            )
+            stack.enter_context(
+                patch('lib.rhelappstreams.RHEL_APP_STREAMS', APP_STREAMS)
+            )
+            return version._rhel_life_cycle('/usr/bin/python3.9')
+
+    def test_application_stream_with_its_own_end(self):
+        self.assertEqual(
+            self.life_cycle(rpm('rocky-release'), rpm('python3.11')),
+            ('RHEL 9 Application Stream Python 3.11', '2000-05-31'),
+        )
+
+    def test_full_life_application_stream(self):
+        self.assertEqual(
+            self.life_cycle(rpm('rocky-release'), rpm('python3')),
+            ('RHEL 9 Application Stream Python 3.9', '2100-05-31'),
+        )
+
+    def test_module_stream_wins_over_the_package_name(self):
+        # Captured on Rocky 8: the package of a module stream names it in MODULARITYLABEL.
+        self.assertEqual(
+            self.life_cycle(
+                rpm('rocky-release'),
+                rpm('nginx', modularity='nginx:1.22:9010020221111:ffd4a1b1'),
+            ),
+            ('RHEL 9 Application Stream NGINX 1.22', '2000-11-30'),
+        )
+
+    def test_unlisted_module_stream_falls_back_to_upstream(self):
+        self.assertIsNone(
+            self.life_cycle(
+                rpm('rocky-release'),
+                rpm('nginx', modularity='nginx:9.99:9010020221111:ffd4a1b1'),
+            )
+        )
+
+    def test_rolling_stream_follows_the_release(self):
+        self.assertEqual(
+            self.life_cycle(rpm('rocky-release'), rpm('make')),
+            ('RHEL 9 package make', '2100-05-31'),
+        )
+
+    def test_baseos_package_follows_the_release(self):
+        self.assertEqual(
+            self.life_cycle(rpm('rocky-release'), rpm('postfix')),
+            ('RHEL 9 package postfix', '2100-05-31'),
+        )
+
+    def test_epel_package_is_not_the_vendors(self):
+        self.assertIsNone(
+            self.life_cycle(rpm('rocky-release'), rpm('openvpn', 'Fedora Project'))
+        )
+
+    def test_file_no_package_owns(self):
+        not_owned = (True, ('file /opt/x is not owned by any package\n', '', 1))
+        self.assertIsNone(self.life_cycle(rpm('rocky-release'), not_owned))
+
+    def test_unknown_major_release(self):
+        self.assertIsNone(
+            self.life_cycle(rpm('rocky-release', ver='42'), rpm('python3'))
+        )
+
+    def test_no_rpm(self):
+        self.assertIsNone(self.life_cycle((False, 'Command "rpm" not found')))
+
+    def test_fedora_is_not_a_rebuild(self):
+        self.assertIsNone(self.life_cycle(os_release='ID=fedora\nVERSION_ID=44\n'))
+
+    def test_centos_stream_has_its_own_life(self):
+        self.assertIsNone(
+            self.life_cycle(os_release='ID="centos"\nID_LIKE="rhel fedora"\n')
+        )
+
+
+class TestCheckEolVendorLifeCycle(TestCheckEol):
+    """`check_eol(package_path=...)`: the vendor's date replaces the upstream one."""
+
+    def check_vendor(self, version_string, life_cycle):
+        with patch('lib.version._rhel_life_cycle', return_value=life_cycle):
+            return self.check(version_string, package_path='/usr/bin/x')
+
+    def test_vendor_date_overrides_an_upstream_end_of_life(self):
+        state, msg = self.check_vendor('2.0.0', ('RHEL 9 package x', '2100-05-31'))
+        self.assertEqual(state, STATE_OK)
+        self.assertIn('RHEL 9 package x, EOL 2100-05-31 -30d', msg)
+        self.assertNotIn('2000-01-01', msg)
+        self.assertNotIn('full support ended', msg)
+
+    def test_vendor_end_of_life_warns(self):
+        state, msg = self.check_vendor(
+            '999.0.0', ('RHEL 9 Application Stream X 9', '2000-05-31')
+        )
+        self.assertEqual(state, STATE_WARN)
+        self.assertIn('EOL 2000-05-31 -30d [WARNING]', msg)
+
+    def test_newer_upstream_release_is_still_named(self):
+        _, msg = self.check_vendor('2.0.0', ('RHEL 9 package x', '2100-05-31'))
+        self.assertIn('major 999.0.0 available', msg)
+
+    def test_unlisted_upstream_cycle_is_no_longer_unknown(self):
+        state, _ = self.check_vendor('5.0.0', ('RHEL 9 package x', '2100-05-31'))
+        self.assertEqual(state, STATE_OK)
+
+    def test_without_vendor_life_cycle_upstream_applies(self):
+        state, msg = self.check_vendor('2.0.0', None)
+        self.assertEqual(state, STATE_WARN)
+        self.assertIn('EOL 2000-01-01 -30d', msg)
 
 
 class TestCycleBounds(unittest.TestCase):

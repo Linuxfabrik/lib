@@ -1,7 +1,8 @@
 name: 'Linuxfabrik: Update endoflifedate.py'
 
 # `endoflifedate.py` bundles the endoflife.date API for hosts that cannot reach
-# the Internet, so it is only as current as its last refresh. The refresh opens a
+# the Internet, and `rhelappstreams.py` the life cycle Red Hat gives the
+# Application Streams of RHEL, so both are only as current as their last refresh. The refresh opens a
 # pull request instead of pushing to `main`, because the ruleset only lets
 # checked changes in; `auto-merge.yml` merges it once the required checks pass.
 
@@ -48,12 +49,21 @@ jobs:
         working-directory: 'tools'
         run: './update-endoflifedate --file=../endoflifedate.py'
 
+      # Aborts before writing if a source file fails to download or no longer
+      # yields the entries it used to, so a changed upstream layout turns this
+      # run red instead of emptying the data.
+      - name: 'Refresh rhelappstreams.py'
+        working-directory: 'tools'
+        run: './update-rhel-appstreams --file=../rhelappstreams.py'
+
       - name: 'Create Pull Request'
         uses: 'peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1' # v8.1.1
         with:
           token: '${{ steps.app-token.outputs.token }}'
-          add-paths: 'endoflifedate.py'
-          commit-message: 'chore(endoflifedate.py): bump version numbers'
-          title: 'chore(endoflifedate.py): bump version numbers'
-          body: 'Automatic refresh of the bundled endoflife.date data.'
+          add-paths: |
+            endoflifedate.py
+            rhelappstreams.py
+          commit-message: 'chore: refresh the bundled end-of-life data'
+          title: 'chore: refresh the bundled end-of-life data'
+          body: 'Automatic refresh of the bundled endoflife.date and RHEL Application Streams data.'
           branch: 'chore/update-endoflifedate'

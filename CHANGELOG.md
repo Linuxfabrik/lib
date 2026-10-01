@@ -21,7 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * powershell.py: `run_ps()` takes `timeout`
 * redfish.py: `get_chassis()` returns the `Thermal` and `Power` links of a chassis
 * restic.py: `repo_args()` and `password_file_arg()` for restic's repository and password arguments
-* version.py: `check_eol()` takes `cycle`, for products whose release cycles are not version numbers
+* rhelappstreams.py: the life cycle of the RHEL Application Streams, refreshed weekly from Red Hat's data
+* version.py: `check_eol()` takes `cycle`, for products whose release cycles are not version numbers, and `package_path`, which applies the life cycle Red Hat gives the software RHEL ships
 
 ### Changed
 

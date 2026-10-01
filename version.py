@@ -11,13 +11,119 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092801'
+__version__ = '2026100101'
 
 import datetime
 import json
 import re
 
 from .globals import STATE_OK, STATE_UNKNOWN, STATE_WARN
+
+# The vendor of a rebuild is whatever its packages say ("Red Hat, Inc.", "Rocky",
+# "AlmaLinux"), so it is never compared against a list. A package counts as the
+# distribution's own if it carries the vendor of the package that installed
+# /etc/os-release. EPEL ("Fedora Project") and third-party repositories do not.
+_RPM_QUERY_FORMAT = '%{NAME}\\t%{VENDOR}\\t%{VERSION}\\t%{MODULARITYLABEL}\\n'
+
+
+def _rhel_life_cycle(package_path, timeout=8):
+    """
+    Return the life cycle Red Hat gives the package that installed `package_path`.
+
+    Red Hat maintains the software it ships for a fixed time that has nothing to do with
+    the end of life upstream announces: Python 3.9 is supported on RHEL 9 until 2032,
+    years after python.org dropped it. Where that applies, the vendor's date is the one
+    that counts.
+
+    Parameters
+    ----------
+    package_path : str
+        The file the version was read from, a binary for example. A bare command name is
+        looked up in `PATH`, and symlinks are resolved, so `/usr/bin/python3` finds the
+        package of the interpreter it points to.
+    timeout : int, optional
+        Seconds to wait for `rpm`. Default: `8`.
+
+    Returns
+    -------
+    tuple (str, str) or None
+        A description of the life cycle and its end date (`YYYY-MM-DD`), or `None` where
+        no such life cycle applies: not a RHEL rebuild (Fedora and CentOS Stream follow
+        their own), no `rpm`, a file no package owns, a package from another vendor,
+        or a module stream Red Hat's data does not list.
+
+    Notes
+    -----
+    - The data comes from `rhelappstreams.py`, generated from what Red Hat publishes
+      for its Application Streams life cycle API.
+    - A package of the distribution vendor that Red Hat lists with no end date of its
+      own, or does not list at all, is maintained for the life of the major release.
+      That is the case for everything in BaseOS, Postfix for example.
+    """
+    import os
+    import shutil
+
+    from . import disk, shell
+
+    if not isinstance(package_path, str) or not package_path:
+        return None
+    if os.sep not in package_path:
+        package_path = shutil.which(package_path)
+        if not package_path:
+            return None
+    package_path = os.path.realpath(package_path)
+
+    # CentOS Stream calls itself "centos" and carries ID_LIKE="rhel fedora", but runs
+    # ahead of RHEL with a shorter life, so only the rebuilds of RHEL itself count.
+    success, os_release = disk.read_file('/etc/os-release')
+    if not success:
+        return None
+    os_ids = {}
+    for line in os_release.splitlines():
+        key, _, value = line.partition('=')
+        if key in ('ID', 'ID_LIKE'):
+            os_ids[key] = value.strip().strip('"\'').split()
+    if 'centos' in os_ids.get('ID', []) or not (
+        'rhel' in os_ids.get('ID', []) or 'rhel' in os_ids.get('ID_LIKE', [])
+    ):
+        return None
+
+    packages = []
+    for path in ('/etc/os-release', package_path):
+        success, result = shell.shell_exec(
+            ['rpm', '--query', f'--queryformat={_RPM_QUERY_FORMAT}', '--file', path],
+            timeout=timeout,
+        )
+        if not success:
+            return None
+        stdout, _, retc = result
+        fields = stdout.splitlines()[0].split('\t') if stdout else []
+        if retc != 0 or len(fields) != 4:
+            return None
+        packages.append(fields)
+    (_, os_vendor, os_version, _), (name, vendor, _, modularity) = packages
+    if vendor != os_vendor:
+        return None
+
+    try:
+        from . import rhelappstreams
+
+        major = int(os_version.split('.')[0])
+        release = rhelappstreams.RHEL_APP_STREAMS[major]
+    except (ImportError, KeyError, ValueError):
+        return None
+
+    if modularity and modularity != '(none)':
+        # "python39:3.9:8100020251218081213:e3a3f2fc" is module, stream, version and
+        # context, the life cycle belongs to module and stream.
+        stream = release['modules'].get(':'.join(modularity.split(':')[:2]))
+        if stream is None:
+            return None
+    else:
+        stream = release['packages'].get(name)
+    if stream is None or stream[1] is None:
+        return f'RHEL {major} package {name}', release['eol']
+    return f'RHEL {major} Application Stream {stream[0]}', stream[1]
 
 
 def check_eol(
@@ -35,6 +141,7 @@ def check_eol(
     timeout=8,
     unreachable_severity='ok',
     cycle=None,
+    package_path=None,
 ):
     """
     Check if a software version is End of Life (EOL) by comparing it to endoflife.date data.
@@ -82,6 +189,13 @@ def check_eol(
         release check nor the placement of an unlisted version above or below the
         listed cycles takes place. Default: `None`, which derives the cycle from
         `version_string`.
+    package_path : str, optional
+        The file the version was read from, a binary for example. On a rebuild of Red
+        Hat Enterprise Linux, where that file comes from a package of the distribution
+        itself, the end of life is the one Red Hat gives the package or its Application
+        Stream rather than the one upstream announces, and the message names it. The
+        newer release check still compares against upstream. Default: `None`, which
+        always uses the upstream end of life.
 
     Returns
     -------
@@ -175,7 +289,21 @@ def check_eol(
     msg = []
     state = STATE_OK
 
-    if not cycles_eoldate:
+    vendor_life_cycle = (
+        _rhel_life_cycle(package_path, timeout) if package_path else None
+    )
+    if vendor_life_cycle:
+        # The distribution maintains this build itself, so its date is the one that
+        # counts, whether or not upstream still lists the cycle.
+        label, eol_date = vendor_life_cycle
+        eol_dt = time.timestr2datetime(eol_date, pattern='%Y-%m-%d')
+        msg.append(
+            f'{label}, EOL {eol_date} {"+" if offset_eol > 0 else ""}{offset_eol}d'
+        )
+        if now > eol_dt + datetime.timedelta(days=offset_eol):
+            state = STATE_WARN
+            msg.append(base.state2str(state, prefix=' '))
+    elif not cycles_eoldate:
         # endoflife.date lists the product but not this cycle, and where the installed
         # version falls relative to what is listed says what that means. A version above
         # everything listed is a host that upstream has not catalogued yet, which nobody

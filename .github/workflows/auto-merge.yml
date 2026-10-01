@@ -85,9 +85,9 @@ jobs:
           GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
           PR_URL: '${{ github.event.pull_request.html_url }}'
 
-  # The weekly refresh of endoflifedate.py carries nothing but data from the
-  # endoflife.date API, and a stale file only makes version checks on offline
-  # hosts less accurate. It goes in as soon as the required checks pass, with
+  # The weekly refresh of endoflifedate.py and rhelappstreams.py carries nothing
+  # but data from endoflife.date and Red Hat, and a stale file only makes version
+  # checks less accurate. It goes in as soon as the required checks pass, with
   # the same fallback and the same server-side guarantee as above.
   update-endoflifedate:
     runs-on: 'ubuntu-latest'
