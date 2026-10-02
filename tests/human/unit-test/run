@@ -182,6 +182,16 @@ class TestHuman2Bytes(unittest.TestCase):
 
 
 class TestHuman2Seconds(unittest.TestCase):
+    def test_nonfinite_durations_return_zero(self):
+        for value in ('nans', 'NaNs', '+infs', '-infs', '1e309s', '1e308Y'):
+            with self.subTest(value=value):
+                self.assertEqual(human.human2seconds(value), 0)
+
+    def test_finite_durations_keep_truncation(self):
+        self.assertEqual(human.human2seconds('-2.5h'), -9000)
+        self.assertEqual(human.human2seconds('0.5s'), 0)
+        self.assertEqual(human.human2seconds('1e300s'), int(1e300))
+
     def test_units(self):
         self.assertEqual(human.human2seconds('1h'), 3600)
         self.assertEqual(human.human2seconds('1d'), 86400)
