@@ -488,7 +488,8 @@ def human2seconds(string):
     except (ValueError, TypeError):
         return 0
 
-    return int(value * _UNIT_TO_SECONDS[unit])
+    seconds = value * _UNIT_TO_SECONDS[unit]
+    return int(seconds) if math.isfinite(seconds) else 0
 
 
 def humanduration2seconds(text):
