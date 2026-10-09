@@ -324,6 +324,9 @@ def extract_hrnumbers(s, boundaries=None):
     >>> extract_hrnumbers(string)
     ['31Y', '20M', '7s', '4s']
 
+    >>> extract_hrnumbers('1.5h 30m')
+    ['1.5h', '30m']
+
     >>> string = '17G 3M 4B'
     >>> extract_hrnumbers(string, boundaries=['G', 'M', 'B'])
     ['17G', '3M', '4B']
@@ -333,19 +336,13 @@ def extract_hrnumbers(s, boundaries=None):
         # markers; see the note on `_UNIT_TO_SECONDS` above.
         boundaries = ['s', 'm', 'h', 'd', 'D', 'w', 'W', 'M', 'Y']
 
-    extracted = []
-    start_idx = None
-
-    for idx, char in enumerate(s):
-        if char.isdigit() and start_idx is None:
-            start_idx = idx
-        elif char in boundaries and start_idx is not None:
-            extracted.append(s[start_idx : idx + 1])
-            start_idx = None
-        elif not char.isdigit():
-            start_idx = None
-
-    return extracted
+    # A number may carry a fraction, so '2.5h' stays '2.5h' instead of losing its
+    # integer part. The lookbehind keeps a number from starting in the middle of
+    # another one: '.5h' or '1.2.3h' yield nothing rather than '5h' or '2.3h'.
+    units = ''.join(re.escape(boundary) for boundary in boundaries)
+    if not units:
+        return []
+    return re.findall(r'(?<![\d.])\d+(?:\.\d+)?[' + units + ']', s)
 
 
 def human2bytes(string, binary=True):

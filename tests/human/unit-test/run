@@ -215,10 +215,40 @@ class TestHuman2Seconds(unittest.TestCase):
         self.assertEqual(human.human2seconds('x'), 0)
 
 
+class TestExtractHrnumbers(unittest.TestCase):
+    def test_examples(self):
+        self.assertEqual(
+            human.extract_hrnumbers('31Y 20M7s  88  abc12xyz   4s 5'),
+            ['31Y', '20M', '7s', '4s'],
+        )
+        self.assertEqual(
+            human.extract_hrnumbers('17G 3M 4B', boundaries=['G', 'M', 'B']),
+            ['17G', '3M', '4B'],
+        )
+
+    def test_a_fraction_keeps_its_integer_part(self):
+        # A '.' used to restart the number, so '2.5h' came back as '5h'.
+        self.assertEqual(human.extract_hrnumbers('2.5h'), ['2.5h'])
+        self.assertEqual(human.extract_hrnumbers('0.5D 1.5h'), ['0.5D', '1.5h'])
+
+    def test_no_number_starts_inside_another_one(self):
+        for text in ['.5h', '1.2.3h', '5.h']:
+            with self.subTest(text=text):
+                self.assertEqual(human.extract_hrnumbers(text), [])
+
+    def test_empty_input_and_empty_boundaries(self):
+        self.assertEqual(human.extract_hrnumbers(''), [])
+        self.assertEqual(human.extract_hrnumbers('5h', boundaries=[]), [])
+
+
 class TestHumanDuration2Seconds(unittest.TestCase):
     def test_compound(self):
         self.assertEqual(human.humanduration2seconds('1h 30m'), 5400)
         self.assertEqual(human.humanduration2seconds('2h'), 7200)
+
+    def test_fraction(self):
+        self.assertEqual(human.humanduration2seconds('1.5h'), 5400)
+        self.assertEqual(human.humanduration2seconds('1.5h 30m'), 7200)
 
 
 class TestHumanRange(unittest.TestCase):
@@ -227,6 +257,11 @@ class TestHumanRange(unittest.TestCase):
 
     def test_humanrange2seconds(self):
         self.assertEqual(human.humanrange2seconds('1m:2m'), '60:120')
+
+    def test_humanrange2seconds_fraction(self):
+        # '@0.5D:2.5D' used to become '@432000:432000', five days on both sides.
+        self.assertEqual(human.humanrange2seconds('@0.5D:2.5D'), '@43200:216000')
+        self.assertEqual(human.humanrange2seconds('0.5D'), '43200')
 
     def test_open_bounds_survive(self):
         # An omitted bound is not a value to convert.
