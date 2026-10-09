@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100101'
+__version__ = '2026100901'
 
 import collections
 import datetime
@@ -422,8 +422,10 @@ def _open_log_file(path, allowed_roots=None):
         return False, f'I/O error "{e.strerror}" while reading {path}'
 
 
-def _rotated_files(path, count):
+def _rotated_files(path, count=None):
     """Return the files a rotator moved aside from `path`, the oldest of them first.
+
+    `count` limits them to the most recent ones; None returns all of them.
 
     Ordering is by modification time rather than by name, because the two naming schemes a
     rotator uses disagree about which name is the newest: a counted generation is renamed
@@ -466,6 +468,85 @@ def _rotated_files(path, count):
     return [candidate for _, candidate in reversed(candidates[:count])]
 
 
+def _resume_rotated(path, position, allowed_roots, lines):
+    """Read what the file held after `position` before a rotator moved it aside.
+
+    The stored inode names the file the previous run stopped in. If a predecessor still
+    carries it, the rest of that file is read from the stored offset, followed by every
+    predecessor that was rotated after it, so the lines written between the last run and the
+    rotation are not lost. A rotator that compressed the file wrote a new one with a new
+    inode, and one that deleted it left nothing to find; then nothing is read and the caller
+    restarts at the beginning of the live file.
+
+    The candidate is checked on the handle that reads it, not on the path: it has to be the
+    same inode, at least as long as the stored offset, and start with the bytes the stored
+    fingerprint was taken from.
+
+    Returns `(resumed, files, read, notices)`: whether the file was found, the files that
+    were read in order, how many lines they had, and why a newer predecessor was skipped.
+    The lines are appended to `lines`.
+    """
+    stored_inode = str(position.get('inode'))
+    offset = position.get('offset', 0)
+    predecessors = _rotated_files(path)
+    index = None
+    for number, candidate in enumerate(predecessors):
+        try:
+            candidate_inode = str(os.lstat(candidate).st_ino)
+        except OSError:
+            continue
+        if candidate_inode == stored_inode:
+            index = number
+            break
+    if index is None:
+        return False, [], 0, []
+    files = []
+    read = 0
+    notices = []
+    for number, predecessor in enumerate(predecessors[index:]):
+        success, opened = _open_log_file(predecessor, allowed_roots)
+        if not success:
+            if number == 0:
+                return False, [], 0, []
+            notices.append(opened)
+            continue
+        predecessor_handle, predecessor_raw = opened
+        try:
+            with predecessor_raw, predecessor_handle:
+                start = 0
+                if number == 0:
+                    candidate_stat = os.fstat(predecessor_raw.fileno())
+                    if (
+                        str(candidate_stat.st_ino) != stored_inode
+                        or candidate_stat.st_size < offset
+                    ):
+                        return False, [], 0, []
+                    if position.get('fingerprint'):
+                        success, rewritten = _is_rewritten(
+                            predecessor_raw,
+                            position.get('fingerprint'),
+                            position.get('length', 0),
+                        )
+                        if not success or rewritten:
+                            return False, [], 0, []
+                    start = offset
+                predecessor_handle.seek(start)
+                # A rotated file is complete, so a last line without a line end is
+                # read as it is rather than held back for a run that never comes.
+                for line in predecessor_handle:
+                    read += 1
+                    lines.append(
+                        txt.to_text(line, errors='strict_or_latin1').rstrip('\r\n')
+                    )
+        except OSError as e:
+            if number == 0:
+                return False, [], 0, []
+            notices.append(f'I/O error "{e.strerror}" while reading {predecessor}')
+            continue
+        files.append(predecessor)
+    return True, files, read, notices
+
+
 def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotated):
     """The part of `_read_file()` that works on the already opened file."""
     try:
@@ -484,11 +565,17 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
     stored_offset = position.get('offset', 0) if position else 0
     offset = stored_offset
     restarted = False
+    moved_aside = False
     if position:
         # A state written before the position carried a kind may hold the inode
         # with INTEGER affinity and read back as int, so compare as strings.
-        if str(position.get('inode')) != inode or file_stat.st_size < offset:
-            # rotated, replaced, or truncated below where we stopped
+        if str(position.get('inode')) != inode:
+            # rotated or replaced; what the old file held after the stored offset is
+            # looked for among the predecessors below
+            moved_aside = True
+            offset = 0
+        elif file_stat.st_size < offset:
+            # truncated below where we stopped
             offset = 0
         elif position.get('fingerprint'):
             success, rewritten = _is_rewritten(
@@ -541,12 +628,27 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
             notices.append(f'I/O error "{e.strerror}" while reading {predecessor}')
             continue
         rotated_read.append(predecessor)
+    if moved_aside:
+        resumed, files, resumed_read, resumed_notices = _resume_rotated(
+            path, position, allowed_roots, lines
+        )
+        if resumed:
+            # nothing between the stored offset and the live file is missing
+            restarted = False
+        read += resumed_read
+        rotated_read += files
+        notices += resumed_notices
     try:
         handle.seek(offset)
         for line in handle:
+            if not line.endswith(b'\n'):
+                # The writer is in the middle of this line. Reporting it now would
+                # hand out half a line and the rest of it on the next run, so it
+                # is left for the next run to read whole.
+                break
             read += 1
             lines.append(txt.to_text(line, errors='strict_or_latin1').rstrip('\r\n'))
-        offset = handle.tell()
+            offset += len(line)
     except OSError as e:
         return False, f'I/O error "{e.strerror}" while reading {path}'
     return True, {
@@ -607,6 +709,9 @@ _JOURNALD_CURSOR_PREFIX = '-- cursor: '
 def _read_journald(unit, position, max_lines, since, timeout):
     """Read the entries a unit logged since `position`, resuming at a journal cursor."""
     cursor = position.get('cursor') if position else None
+    # `cursor` moves on to the one journalctl prints below; whether the caller
+    # passed one in decides how --lines= behaves and how a cut is detected
+    resumed = bool(cursor)
     cmd = [
         'journalctl',
         '--no-pager',
@@ -616,7 +721,7 @@ def _read_journald(unit, position, max_lines, since, timeout):
         # with `-` cannot be picked up as an option of journalctl itself.
         f'--unit={unit}',
     ]
-    if cursor:
+    if resumed:
         cmd.append(f'--after-cursor={cursor}')
     elif since:
         cmd.append(f'--since={since}')
@@ -624,7 +729,13 @@ def _read_journald(unit, position, max_lines, since, timeout):
         # Without a stored position and without a window the caller named, the
         # current boot is the one bounded answer that needs no clock arithmetic.
         cmd.append('--boot')
-    if max_lines:
+    if max_lines and not resumed:
+        # Without a cursor journalctl jumps back from the end, so --lines= keeps the
+        # most recent entries. After a cursor it reads forward from there and stops
+        # after N, which are the oldest ones, and the cursor it prints then follows
+        # them: a busy unit would fall further behind on every run. The cap is applied
+        # below instead. Verified against systemd 259, src/journal/journalctl-show.c,
+        # seek_journal().
         cmd.append(f'--lines={max_lines}')
     success, result = shell.shell_exec(cmd, timeout=timeout)
     if not success:
@@ -649,7 +760,8 @@ def _read_journald(unit, position, max_lines, since, timeout):
     # print, and journalctl says so on standard output only ("-- No entries --").
     # Failing here would put a permanent WARNING on every host with a quiet unit.
     # Measured against systemd 239 on Rocky 8.
-    lines = []
+    lines = collections.deque(maxlen=max_lines) if max_lines else []
+    read = 0
     for line in stdout.splitlines():
         if line.startswith(_JOURNALD_CURSOR_PREFIX):
             # Keep the previous cursor when journalctl prints none, which is what
@@ -662,6 +774,7 @@ def _read_journald(unit, position, max_lines, since, timeout):
             # every real entry starts with its timestamp, so a line starting
             # with `-- ` is never one of them.
             continue
+        read += 1
         lines.append(line)
     notice = stderr.strip()
     if notice and not lines:
@@ -680,7 +793,7 @@ def _read_journald(unit, position, max_lines, since, timeout):
         'fidelity': FIDELITY_EXACT,
         'kind': KIND_JOURNALD,
         'label': f'systemd:{unit}',
-        'lines': lines,
+        'lines': list(lines),
         # What journalctl said next to the entries it did return, so a consumer
         # can pass on a partial read instead of presenting it as a whole one.
         'notice': notice,
@@ -691,7 +804,11 @@ def _read_journald(unit, position, max_lines, since, timeout):
         'restarted': False,
         # Neither storage has a rotation of its own a caller could ask for.
         'rotated': [],
-        'truncated': bool(max_lines) and len(lines) >= max_lines,
+        # After a cursor every entry was read and the cap dropped the oldest; without
+        # one journalctl applied the cap itself, and a full result may have been cut.
+        'truncated': read > len(lines)
+        if resumed
+        else bool(max_lines) and len(lines) >= max_lines,
     }
 
 
@@ -701,6 +818,38 @@ def _read_journald(unit, position, max_lines, since, timeout):
 _CONTAINER_TIMESTAMP_REGEX = re.compile(
     r'^(\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-][\d:]+)) ?'
 )
+
+
+# What an unstamped entry, or a stored timestamp that cannot be read, sorts as.
+_CONTAINER_TIME_UNKNOWN = (
+    datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+    0,
+)
+
+# The fractional seconds of a container timestamp, taken apart from the rest
+# because a datetime holds microseconds only.
+_CONTAINER_FRACTION_REGEX = re.compile(r'\.(\d+)')
+
+
+def _container_time(stamp):
+    """The moment a container timestamp names, comparable across UTC offsets.
+
+    Podman writes local time with its offset, so the same wall clock hour comes twice when
+    daylight saving time ends (`02:59+02:00`, then `02:10+01:00`) and the strings no longer
+    sort in the order they were written. It also writes nine fractional digits (libpod
+    `LogTimeFormat`), more than a datetime holds, and a burst can put two entries into the
+    same microsecond. Returns the second as an aware datetime together with the
+    nanoseconds, so both the offset and the full precision count.
+    """
+    if not stamp:
+        return _CONTAINER_TIME_UNKNOWN
+    match = _CONTAINER_FRACTION_REGEX.search(stamp)
+    nanoseconds = int(match.group(1)[:9].ljust(9, '0')) if match else 0
+    whole = _CONTAINER_FRACTION_REGEX.sub('', stamp, count=1)
+    try:
+        return lftime.timestr2datetime(whole, pattern='iso8601'), nanoseconds
+    except ValueError:
+        return _CONTAINER_TIME_UNKNOWN
 
 
 def _read_container(engine, target, position, max_lines, since, timeout):
@@ -742,15 +891,16 @@ def _read_container(engine, target, position, max_lines, since, timeout):
         # so it stays next to the entry it belongs to instead of sorting away.
         entries.append((stamp, line))
     # The two streams are read one after the other, so put them back into the
-    # order they were written in. Every timestamp of one run carries the same
-    # UTC offset, which makes a lexical sort chronological.
-    entries.sort(key=lambda entry: entry[0])
+    # order they were written in, by the moment and not by the string, which
+    # changes its offset when daylight saving time ends.
+    entries.sort(key=lambda entry: _container_time(entry[0]))
     if last:
         # `--since` is inclusive, verified against podman 5: asking for the
         # timestamp of the last line read returns that very line again. Dropping
         # it here is what keeps the repeat away, rather than moving the stored
         # timestamp on, which would skip an entry written in the same instant.
-        entries = [entry for entry in entries if entry[0] > last]
+        last_time = _container_time(last)
+        entries = [entry for entry in entries if _container_time(entry[0]) > last_time]
     return True, {
         'fidelity': FIDELITY_APPROXIMATE,
         'kind': KIND_CONTAINER,
@@ -786,9 +936,16 @@ def read(
     again on the next run, and only what was written in between comes back. Pass none, and the
     log is read from a starting point that `since` and `max_lines` bound.
 
-    Rotation, truncation and a rewrite in place are recognized for a file, and the file is then
-    read from its beginning with `restarted` set, because everything after the stored offset is
-    gone. The other storages have no equivalent, which is why `restarted` is never set for them.
+    Rotation, truncation and a rewrite in place are recognized for a file. After a rotation the
+    file the previous run stopped in is looked for among the predecessors and read on from the
+    stored offset, followed by the predecessors rotated after it and the live file, so nothing
+    written in between is lost. Where that file is gone, was compressed into a new one, or was
+    rewritten, and after a truncation or a rewrite in place, the file is read from its
+    beginning with `restarted` set, because everything after the stored offset is gone. The
+    other storages have no equivalent, which is why `restarted` is never set for them.
+
+    A last line without a line end is held back until it is complete, because its writer is in
+    the middle of it. A rotated file never grows again, so there it is read as it is.
 
     Parameters
     ----------
@@ -806,7 +963,9 @@ def read(
         At most this many lines are returned, the most recent ones. The position still advances
         past everything that was there, so the lines a cap dropped do not come back on the next
         run. Defaults to None, which is no cap. Where rotated files are read as well, the cap
-        applies to all of them together rather than to each one.
+        applies to all of them together rather than to each one. A unit resumed at a cursor
+        hands over everything logged since, and the cap is applied to that, so a unit that
+        logged a lot while the caller was not running costs a correspondingly long read.
     rotated : int, optional
         How many rotated predecessors of a file source to read ahead of it, most recent first.
         Defaults to 0, which reads the file alone. Only a read that has no `position` honours
@@ -842,7 +1001,8 @@ def read(
             - `restarted` (`bool`): True if the stored position had become meaningless and the
               source was read from its beginning, so the lines are not only the new ones.
             - `rotated` (`list` of `str`): the rotated files that were read ahead of the source,
-              in the order their lines appear. Empty unless `rotated` asked for them.
+              in the order their lines appear. Empty unless `rotated` asked for them, or a
+              rotation since the stored position was resumed in.
             - `truncated` (`bool`): True if `max_lines` dropped lines from the result.
 
     Notes

@@ -222,9 +222,27 @@ class TestReadFile(unittest.TestCase):
         self.assertEqual(result['lines'], [])
         self.assertEqual(result['position']['offset'], 0)
 
-    def test_line_without_trailing_newline(self):
+    def test_line_without_trailing_newline_waits_for_its_end(self):
+        # the writer is in the middle of the line, so it is not handed out yet
         self.write('no newline at eof', 'w')
-        self.assertEqual(self.read()['lines'], ['no newline at eof'])
+        first = self.read()
+        self.assertEqual(first['lines'], [])
+        self.assertEqual(first['position']['offset'], 0)
+        self.write('\n')
+        self.assertEqual(
+            self.read(position=first['position'])['lines'], ['no newline at eof']
+        )
+
+    def test_half_line_comes_back_whole(self):
+        self.write('x\n', 'w')
+        first = self.read()
+        self.write('part')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], [])
+        self.write('ial-end\n')
+        third = self.read(position=second['position'])
+        self.assertEqual(third['lines'], ['partial-end'])
+        self.assertFalse(third['restarted'])
 
     def test_nothing_new(self):
         self.write('one\n', 'w')
@@ -259,10 +277,109 @@ class TestReadFile(unittest.TestCase):
         self.assertEqual(second['lines'], ['x'])
         self.assertTrue(second['restarted'])
 
-    def test_rotation_restarts(self):
+    def test_rotation_resumes_in_the_rotated_file(self):
+        # what was written between the last run and the rotation is still read
+        self.write('a\nb\n', 'w')
+        first = self.read()
+        self.write('c\n')
+        os.rename(self.path, self.path + '.1')
+        self.write('d\n', 'w')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], ['c', 'd'])
+        self.assertEqual(second['rotated'], [self.path + '.1'])
+        self.assertFalse(second['restarted'])
+
+    def test_rotation_with_nothing_left_in_the_rotated_file(self):
         self.write('one\n', 'w')
         first = self.read()
         os.rename(self.path, self.path + '.1')
+        self.write('fresh\n', 'w')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], ['fresh'])
+        self.assertFalse(second['restarted'])
+
+    def test_two_rotations_between_runs(self):
+        # the file we stopped in is .2 by now, and .1 was written entirely since
+        self.write('a\n', 'w')
+        first = self.read()
+        self.write('b\n')
+        os.rename(self.path, self.path + '.2')
+        os.utime(self.path + '.2', (1000, 1000))
+        self.write('c\n', 'w')
+        os.rename(self.path, self.path + '.1')
+        os.utime(self.path + '.1', (2000, 2000))
+        self.write('d\n', 'w')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], ['b', 'c', 'd'])
+        self.assertEqual(second['rotated'], [self.path + '.2', self.path + '.1'])
+        self.assertFalse(second['restarted'])
+
+    def test_half_line_finished_by_the_rotation(self):
+        # a rotated file never grows again, so its last line is read as it is
+        self.write('a\n', 'w')
+        first = self.read()
+        self.write('cut short')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], [])
+        os.rename(self.path, self.path + '.1')
+        self.write('d\n', 'w')
+        third = self.read(position=second['position'])
+        self.assertEqual(third['lines'], ['cut short', 'd'])
+
+    def test_rotation_keeps_the_cap_across_files(self):
+        self.write('a\n', 'w')
+        first = self.read()
+        self.write('b\nc\n')
+        os.rename(self.path, self.path + '.1')
+        self.write('d\n', 'w')
+        second = self.read(position=first['position'], max_lines=2)
+        self.assertEqual(second['lines'], ['c', 'd'])
+        self.assertTrue(second['truncated'])
+
+    def test_rotation_within_allowed_roots(self):
+        self.write('a\n', 'w')
+        first = self.read(allowed_roots=[self.tmpdir])
+        self.write('b\n')
+        os.rename(self.path, self.path + '.1')
+        self.write('c\n', 'w')
+        second = self.read(position=first['position'], allowed_roots=[self.tmpdir])
+        self.assertEqual(second['lines'], ['b', 'c'])
+
+    def test_rotation_into_a_compressed_file_restarts(self):
+        # compressing writes a new file with a new inode, so there is nothing to
+        # resume in and the restart is reported
+        import gzip
+
+        self.write('a\n', 'w')
+        first = self.read()
+        self.write('b\n')
+        with (
+            open(self.path, 'rb') as source,
+            gzip.open(self.path + '.1.gz', 'wb') as gz,
+        ):
+            gz.write(source.read())
+        os.remove(self.path)
+        self.write('c\n', 'w')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], ['c'])
+        self.assertTrue(second['restarted'])
+
+    def test_rotated_file_rewritten_since_restarts(self):
+        # the inode is the one we stopped in, but its head is no longer what we read
+        self.write('one\n', 'w')
+        first = self.read()
+        os.rename(self.path, self.path + '.1')
+        with open(self.path + '.1', 'r+', newline='') as handle:
+            handle.write('XXX\n')
+        self.write('fresh\n', 'w')
+        second = self.read(position=first['position'])
+        self.assertEqual(second['lines'], ['fresh'])
+        self.assertTrue(second['restarted'])
+
+    def test_rotation_with_the_rotated_file_gone_restarts(self):
+        self.write('one\n', 'w')
+        first = self.read()
+        os.remove(self.path)
         self.write('fresh\n', 'w')
         second = self.read(position=first['position'])
         self.assertEqual(second['lines'], ['fresh'])
@@ -544,6 +661,60 @@ class TestReadJournald(unittest.TestCase):
         self.assertEqual(result['label'], 'systemd:sshd')
         self.assertFalse(result['restarted'])
 
+    def test_cap_after_a_cursor_keeps_the_most_recent(self):
+        # after a cursor journalctl reads forward and --lines= would keep the oldest,
+        # so the cap is applied to what came back
+        stdout = (
+            ''.join(
+                f'2026-08-28T15:26:1{i}+02:00 host sshd[1]: line {i}\n'
+                for i in range(5)
+            )
+            + f'-- cursor: {self.CURSOR}\n'
+        )
+        with self.shell(stdout) as mock:
+            _, result = lib.logsource.read(
+                'systemd:sshd',
+                position={'kind': 'journald', 'cursor': 'older'},
+                max_lines=2,
+            )
+        cmd = mock.call_args[0][0]
+        self.assertFalse([arg for arg in cmd if arg.startswith('--lines')])
+        self.assertEqual([line[-6:] for line in result['lines']], ['line 3', 'line 4'])
+        self.assertTrue(result['truncated'])
+        self.assertEqual(result['position']['cursor'], self.CURSOR)
+
+    def test_cap_after_a_cursor_not_reached(self):
+        stdout = (
+            f'2026-08-28T15:26:10+02:00 host sshd[1]: only\n-- cursor: {self.CURSOR}\n'
+        )
+        with self.shell(stdout):
+            _, result = lib.logsource.read(
+                'systemd:sshd',
+                position={'kind': 'journald', 'cursor': 'older'},
+                max_lines=2,
+            )
+        self.assertEqual(len(result['lines']), 1)
+        self.assertFalse(result['truncated'])
+
+    def test_cap_without_a_cursor_reports_truncation(self):
+        # journalctl applied the cap itself and printed a cursor of its own, which
+        # must not be taken for one the caller passed in
+        stdout = (
+            '2026-08-28T15:26:10+02:00 host sshd[1]: one\n'
+            '2026-08-28T15:26:11+02:00 host sshd[1]: two\n'
+            f'-- cursor: {self.CURSOR}\n'
+        )
+        with self.shell(stdout):
+            _, result = lib.logsource.read('systemd:sshd', max_lines=2)
+        self.assertTrue(result['truncated'])
+
+    def test_cap_without_a_cursor_is_left_to_journalctl(self):
+        # without a cursor journalctl jumps back from the end, which keeps the most
+        # recent entries
+        with self.shell('') as mock:
+            lib.logsource.read('systemd:sshd', max_lines=2)
+        self.assertIn('--lines=2', mock.call_args[0][0])
+
     def test_resume_uses_the_cursor(self):
         with self.shell(f'-- cursor: {self.CURSOR}\n') as mock:
             lib.logsource.read(
@@ -700,6 +871,49 @@ class TestReadContainer(unittest.TestCase):
         with self.shell(f'{self.STAMP3} out\n', f'{self.STAMP1} err\n'):
             _, result = lib.logsource.read('podman:db')
         self.assertEqual(result['lines'], ['err', 'out'])
+
+    def test_end_of_daylight_saving_time(self):
+        # Podman writes local time: the hour after 02:59+02:00 starts again at
+        # 02:00+01:00, which sorts below it as a string
+        before = '2026-10-25T02:59:00.000000000+02:00'
+        out = (
+            '2026-10-25T02:10:00.000000000+01:00 after the switch\n'
+            '2026-10-25T03:05:00.000000000+01:00 an hour later\n'
+        )
+        with self.shell(out):
+            _, result = lib.logsource.read(
+                'podman:db', position={'kind': 'container', 'timestamp': before}
+            )
+        self.assertEqual(result['lines'], ['after the switch', 'an hour later'])
+        self.assertEqual(
+            result['position']['timestamp'], '2026-10-25T03:05:00.000000000+01:00'
+        )
+
+    def test_streams_merged_across_the_switch(self):
+        with self.shell(
+            '2026-10-25T02:10:00.000000000+01:00 out after\n',
+            '2026-10-25T02:50:00.000000000+02:00 err before\n',
+        ):
+            _, result = lib.logsource.read('podman:db')
+        self.assertEqual(result['lines'], ['err before', 'out after'])
+
+    def test_same_microsecond_is_told_apart_by_the_nanoseconds(self):
+        # Podman writes nine fractional digits; a burst can put two entries into the
+        # same microsecond
+        last = '2026-08-28T15:30:26.100000100+02:00'
+        out = f'{last} read last time\n2026-08-28T15:30:26.100000900+02:00 new\n'
+        with self.shell(out):
+            _, result = lib.logsource.read(
+                'podman:db', position={'kind': 'container', 'timestamp': last}
+            )
+        self.assertEqual(result['lines'], ['new'])
+
+    def test_unreadable_stored_timestamp_drops_nothing(self):
+        with self.shell(f'{self.STAMP1} one\n'):
+            _, result = lib.logsource.read(
+                'podman:db', position={'kind': 'container', 'timestamp': 'garbage'}
+            )
+        self.assertEqual(result['lines'], ['one'])
 
     def test_resume_drops_the_inclusive_repeat(self):
         # `--since` is inclusive, so the entry at the stored timestamp comes back

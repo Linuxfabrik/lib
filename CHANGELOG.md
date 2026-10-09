@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * disk.py: `is_within()` with the filesystem root as a root
 * dmidecode.py: `ram()` counts every module of a set of identical ones and reads the sizes of dmidecode 3.7 and terabyte modules, instead of reporting too little or nothing
 * human.py: `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), and `humanduration2seconds()` and `humanrange2seconds()` read a fraction such as `0.5D` instead of only its decimal places
-* logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint
+* logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint, and no longer loses lines at a rotation or when daylight saving time ends, hands out half-written lines, or falls behind on a busy unit
 * net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, and `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
 * redfish.py: `start_trace()` works on Windows
