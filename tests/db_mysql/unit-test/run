@@ -199,11 +199,213 @@ class TestCheckPrivileges(unittest.TestCase):
             success, _ = db_mysql.check_privileges(None, 'REPLICATION CLIENT')
         self.assertTrue(success)
 
-    def test_super_short_circuits(self):
+    def test_super_is_no_short_circuit(self):
+        # SUPER includes neither PROCESS nor SELECT; a caller may list it as any-of
         grants = [{'g': 'GRANT SUPER ON *.* TO `u`@`h`'}]
         with self._with_grants(grants):
-            success, _ = db_mysql.check_privileges(None, 'PROCESS')
+            success, message = db_mysql.check_privileges(None, 'PROCESS')
+        self.assertFalse(success)
+        self.assertIn('PROCESS', message)
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(
+                None, ['REPLICATION CLIENT', 'SUPER']
+            )
         self.assertTrue(success)
+
+    def test_all_privileges_on_a_database_is_not_global(self):
+        grants = [
+            {'g': 'GRANT USAGE ON *.* TO `u`@`h`'},
+            {'g': 'GRANT ALL PRIVILEGES ON `app`.* TO `u`@`h`'},
+        ]
+        with self._with_grants(grants):
+            success, message = db_mysql.check_privileges(None, 'PROCESS')
+        self.assertFalse(success)
+        self.assertIn('PROCESS', message)
+
+    def test_an_account_name_is_no_privilege(self):
+        grants = [
+            {
+                'g': 'GRANT USAGE ON *.* TO `process`@`localhost` '
+                "IDENTIFIED BY PASSWORD '*5F8D002543B545C34C6F80AAA5421F511394AF9C'"
+            }
+        ]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'PROCESS')
+        self.assertFalse(success)
+
+    def test_a_database_name_is_no_privilege(self):
+        grants = [
+            {'g': 'GRANT USAGE ON *.* TO `u`@`h`'},
+            {'g': 'GRANT SELECT ON `super`.* TO `u`@`h`'},
+            {'g': 'GRANT SELECT ON `process`.`replication client` TO `u`@`h`'},
+        ]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(
+                None, ['REPLICATION CLIENT', 'SLAVE MONITOR', 'REPLICA MONITOR']
+            )
+        self.assertFalse(success)
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'PROCESS')
+        self.assertFalse(success)
+
+    def test_a_table_privilege_is_not_global(self):
+        grants = [
+            {'g': 'GRANT USAGE ON *.* TO `u`@`h`'},
+            {'g': 'GRANT SELECT ON `x`.`t` TO `u`@`h`'},
+            {'g': 'GRANT SELECT (`a`), INSERT (`b`) ON `x`.`t` TO `u`@`h`'},
+            {'g': 'GRANT EXECUTE ON PROCEDURE `x`.`p` TO `u`@`h`'},
+        ]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'SELECT')
+        self.assertFalse(success)
+
+    def test_a_role_name_is_no_privilege(self):
+        # a granted role has no ON; a role named like a grant stays quoted
+        grants = [
+            {'g': 'GRANT USAGE ON *.* TO `u`@`h`'},
+            {'g': 'GRANT `PROCESS` TO `u`@`h`'},
+            {'g': 'GRANT `PROCESS ON *.* TO x` TO `u`@`h`'},
+        ]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'PROCESS')
+        self.assertFalse(success)
+
+    def test_the_privileges_of_the_active_role_count(self):
+        # MariaDB lists the active role's grants under the role's name
+        grants = [
+            {'g': 'GRANT `monitoring` TO `u`@`h`'},
+            {'g': 'GRANT USAGE ON *.* TO `u`@`h`'},
+            {'g': 'SET DEFAULT ROLE `monitoring` FOR `u`@`h`'},
+            {'g': 'GRANT SELECT, PROCESS ON *.* TO `monitoring`'},
+        ]
+        with self._with_grants(grants) as select_mock:
+            success, _ = db_mysql.check_privileges(None, 'SELECT', 'PROCESS')
+        self.assertTrue(success)
+        # FOR CURRENT_USER() would leave the active role out on MariaDB
+        self.assertEqual(select_mock.call_args[0][1], 'SHOW GRANTS;')
+
+    def test_mysql_dynamic_privileges_are_split_on_a_bare_comma(self):
+        grants = [
+            {'g': 'GRANT USAGE ON *.* TO `u`@`%`'},
+            {
+                'g': 'GRANT REPLICATION_SLAVE_ADMIN,SYSTEM_VARIABLES_ADMIN ON *.* TO `u`@`%`'
+            },
+        ]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'SYSTEM_VARIABLES_ADMIN')
+        self.assertTrue(success)
+
+    def test_a_partial_revoke_keeps_the_global_privilege(self):
+        grants = [
+            {'g': 'GRANT SELECT ON *.* TO `u`@`%`'},
+            {'g': 'REVOKE SELECT ON `mysql`.* FROM `u`@`%`'},
+        ]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'SELECT')
+        self.assertTrue(success)
+
+    def test_a_global_deny_wins(self):
+        grants = [
+            {'g': 'GRANT SELECT, PROCESS ON *.* TO `u`@`h`'},
+            {'g': 'DENY PROCESS ON *.* TO `u`@`h`'},
+            {'g': 'DENY SELECT ON `secret`.* TO `u`@`h`'},
+        ]
+        with self._with_grants(grants):
+            success, message = db_mysql.check_privileges(None, 'SELECT', 'PROCESS')
+        self.assertFalse(success)
+        self.assertIn('PROCESS', message)
+        self.assertNotIn('SELECT', message)
+
+    def test_names_are_compared_case_and_space_insensitive(self):
+        grants = [{'g': 'grant select,  replication   client on *.* to `u`@`h`'}]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'SELECT', 'replication client')
+        self.assertTrue(success)
+
+    def test_a_database_scope_accepts_that_database(self):
+        # mysql-tls and mysql-user-security document `GRANT SELECT ON mysql.*`
+        grants = [
+            {'g': 'GRANT USAGE ON *.* TO `u`@`h`'},
+            {'g': 'GRANT SELECT ON `mysql`.* TO `u`@`h`'},
+        ]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'SELECT', database='mysql')
+        self.assertTrue(success)
+        with self._with_grants(grants):
+            success, message = db_mysql.check_privileges(None, 'SELECT')
+        self.assertFalse(success)
+        self.assertIn('on *.*:', message)
+
+    def test_a_database_scope_accepts_a_global_grant(self):
+        with self._with_grants(self.GRANTS):
+            success, _ = db_mysql.check_privileges(None, 'SELECT', database='mysql')
+        self.assertTrue(success)
+
+    def test_a_database_scope_accepts_all_privileges_on_it(self):
+        grants = [{'g': 'GRANT ALL PRIVILEGES ON `mysql`.* TO `u`@`h`'}]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'SELECT', database='mysql')
+        self.assertTrue(success)
+
+    def test_a_database_scope_rejects_other_scopes(self):
+        grants = [
+            {'g': 'GRANT USAGE ON *.* TO `u`@`h`'},
+            {'g': 'GRANT SELECT ON `app`.* TO `u`@`h`'},
+            {'g': 'GRANT SELECT ON `mysql`.`user` TO `u`@`h`'},
+            {'g': 'GRANT SELECT ON `mysql%`.* TO `u`@`h`'},
+            {'g': 'GRANT SELECT ON `mysql_old`.* TO `u`@`h`'},
+        ]
+        with self._with_grants(grants):
+            success, message = db_mysql.check_privileges(
+                None, 'SELECT', database='mysql'
+            )
+        self.assertFalse(success)
+        self.assertIn('on *.* or on `mysql`.*: SELECT.', message)
+
+    def test_a_database_scope_reads_quoted_names(self):
+        for line in (
+            'GRANT SELECT ON "mysql".* TO "u"@"h"',  # MySQL with ANSI_QUOTES
+            'GRANT SELECT ON mysql.* TO u@h',  # MariaDB, sql_quote_show_create=0
+        ):
+            with self._with_grants([{'g': line}]):
+                success, _ = db_mysql.check_privileges(None, 'SELECT', database='mysql')
+            self.assertTrue(success, line)
+        grants = [{'g': 'GRANT SELECT ON `my``db`.* TO `u`@`h`'}]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'SELECT', database='my`db')
+        self.assertTrue(success)
+
+    def test_a_deny_on_the_database_wins(self):
+        grants = [
+            {'g': 'GRANT SELECT ON *.* TO `u`@`h`'},
+            {'g': 'DENY SELECT ON `mysql`.* TO `u`@`h`'},
+        ]
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'SELECT', database='mysql')
+        self.assertFalse(success)
+
+    def test_a_partial_revoke_on_the_database_wins(self):
+        # MySQL with partial_revokes=ON
+        grants = [
+            {'g': 'GRANT SELECT, PROCESS ON *.* TO `u`@`%`'},
+            {'g': 'REVOKE INSERT, SELECT ON `mysql`.* FROM `u`@`%`'},
+        ]
+        with self._with_grants(grants):
+            success, message = db_mysql.check_privileges(
+                None, 'SELECT', 'PROCESS', database='mysql'
+            )
+        self.assertFalse(success)
+        self.assertIn(': SELECT.', message)
+        # without a database, the global privilege still counts
+        with self._with_grants(grants):
+            success, _ = db_mysql.check_privileges(None, 'SELECT')
+        self.assertTrue(success)
+
+    def test_no_grant_rows_mean_nothing_is_granted(self):
+        for rows in ([], None):
+            with self._with_grants(rows):
+                success, _ = db_mysql.check_privileges(None, 'SELECT')
+            self.assertFalse(success)
 
     def test_a_failed_grant_query_is_passed_on(self):
         with mock.patch.object(db_mysql, 'select', return_value=(False, 'gone away')):
@@ -283,9 +485,15 @@ def _check_image(test, containerfile):
             test.assertTrue(all(isinstance(part, int) for part in server_version))
             test.assertGreaterEqual(server_version, (10, 0, 0))
 
-            # root (via the defaults file) has the SELECT smoke-test privilege.
+            # the defaults file's account has the SELECT smoke-test privilege.
             ok, _ = db_mysql.check_privileges(conn)
             test.assertTrue(ok)
+
+            # ...but only privileges on its own database, which do not count
+            # globally, even though the account is named `test`.
+            ok, message = db_mysql.check_privileges(conn, 'SELECT', 'PROCESS')
+            test.assertFalse(ok)
+            test.assertIn('SELECT, PROCESS', message)
 
             test.assertEqual(db_mysql.commit(conn), (True, None))
         finally:

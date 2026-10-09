@@ -20,7 +20,7 @@ from .globals import STATE_UNKNOWN
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092801'
+__version__ = '2026100901'
 
 try:
     import pymysql.cursors
@@ -29,7 +29,53 @@ except ImportError:
     sys.exit(STATE_UNKNOWN)
 
 
-def check_privileges(conn, *required):
+# One statement of `SHOW GRANTS`: GRANT, DENY or REVOKE, the privilege list, and a scope
+# of `*.*` or `<database>.*`. The list admits only bare privilege names, so a quoted role,
+# account or database name never passes for one, and a granted role (`GRANT `r` TO ...`,
+# no ON) does not match at all, nor does a table, column or routine scope. Both servers
+# print the global scope as the literal `*.*` and quote a database name with backticks
+# (double quotes under MySQL's ANSI_QUOTES), doubling a quote inside it. Read in the
+# source of MariaDB 13.2 (sql_acl.cc, show_global_privileges(),
+# show_database_privileges()) and MySQL 26.10 (sql_authorization.cc,
+# make_global_privilege_statement(), make_database_privilege_statement(), which also
+# writes the partial revokes as `REVOKE <list> ON <database>.* FROM`), verified
+# against MariaDB 10.11, 11.8 and MySQL 8.4.
+_GRANT_STATEMENT = re.compile(
+    r'^(GRANT|DENY|REVOKE)\s+([A-Z0-9_ ,]+?)\s+ON\s+'
+    r'(\*\.\*|(?:`(?:[^`]|``)*`|"(?:[^"]|"")*"|[A-Za-z0-9_$]+)\.\*)\s+(?:TO|FROM)\s',
+    re.IGNORECASE,
+)
+
+
+def _scope_privileges(rows):
+    """
+    Collect the privileges `SHOW GRANTS` lists per scope, separately for GRANT and for
+    what is taken away: MariaDB's DENY, and MySQL's partial revokes (`REVOKE ... ON db.*`,
+    with `partial_revokes` on), which withdraw a global privilege from one database only.
+    The scope is `'*.*'` or the unquoted database name. Privileges on a table, column or
+    routine are skipped, as are granted roles and proxy grants.
+    """
+    granted, denied = {}, {}
+    for row in rows or []:
+        for value in row.values():
+            match = _GRANT_STATEMENT.match(str(value))
+            if not match:
+                continue
+            scope = match.group(3)
+            if scope != '*.*':
+                scope = scope[:-2]
+                if scope[0] in '`"':
+                    scope = scope[1:-1].replace(scope[0] * 2, scope[0])
+            target = granted if match.group(1).upper() == 'GRANT' else denied
+            for privilege in match.group(2).split(','):
+                # MySQL separates dynamic privileges with a bare comma
+                privilege = ' '.join(privilege.split()).upper()
+                if privilege:
+                    target.setdefault(scope, set()).add(privilege)
+    return granted, denied
+
+
+def check_privileges(conn, *required, database=None):
     """
     Verify the connected MySQL/MariaDB user has the required privileges.
 
@@ -37,9 +83,12 @@ def check_privileges(conn, *required):
     `GRANT USAGE` alone. This is sufficient for a consumer that only calls `SHOW GLOBAL VARIABLES`
     or `SHOW GLOBAL STATUS`, which do not need `SELECT` on any table.
 
-    With arguments, parses `SHOW GRANTS FOR CURRENT_USER()` and verifies that every requested
-    privilege is granted (case-insensitive, word-boundary match). Each positional argument is
-    either:
+    With arguments, parses `SHOW GRANTS` and verifies that every requested privilege is granted
+    globally, on `*.*`, or with `database`, on `*.*` or on that database (case-insensitive). A
+    privilege granted only on another database, a table or a column does not count, and neither
+    does a word that only appears in an account, role or database name. `SHOW GRANTS` includes
+    the privileges of the session's active roles, and on MariaDB those of `PUBLIC`. Each
+    positional argument is either:
 
     - a `str` like `'SELECT'`, `'REPLICATION CLIENT'`, `'PROCESS'`: that exact privilege must
       be present.
@@ -48,8 +97,11 @@ def check_privileges(conn, *required):
       `REPLICATION CLIENT` into `BINLOG MONITOR` / `SLAVE MONITOR`, and MariaDB 11+ aliased
       `SLAVE MONITOR` to `REPLICA MONITOR`).
 
-    The pseudo-grants `ALL PRIVILEGES` and `SUPER` short-circuit to success regardless of the
-    requested set.
+    `ALL PRIVILEGES` satisfies every requested privilege in its scope. `SUPER` does not: it
+    includes neither `PROCESS` nor `SELECT`, and MariaDB 11.8 no longer accepts it for
+    `SHOW SLAVE STATUS`, while MariaDB 10.11 and MySQL 8.4 still do. A caller for which `SUPER`
+    is enough lists it in an any-of group. A privilege MariaDB denies on `*.*`, or on
+    `database`, counts as missing, and so does one MySQL partially revokes on `database`.
 
     Parameters
     ----------
@@ -58,6 +110,10 @@ def check_privileges(conn, *required):
     *required : str or list[str] or tuple[str, ...]
         Zero or more privilege requirements. Strings are AND-ed together; a list/tuple denotes
         an any-of group within that AND chain.
+    database : str, optional
+        A database on which the privileges suffice, for example `'mysql'` for a consumer that
+        only reads the grant tables. A database name pattern (`GRANT ... ON `mysql%`.*`) does
+        not count. Defaults to `None`, which requires the privileges on `*.*`.
 
     Returns
     -------
@@ -77,6 +133,9 @@ def check_privileges(conn, *required):
 
     Multiple privileges (AND):
     >>> success, _ = check_privileges(conn, 'SELECT', 'PROCESS')
+
+    On one database (`GRANT SELECT ON mysql.*` or `GRANT SELECT ON *.*`):
+    >>> success, _ = check_privileges(conn, 'SELECT', database='mysql')
 
     Cross-version aliases (any-of):
     >>> success, _ = check_privileges(
@@ -101,18 +160,22 @@ def check_privileges(conn, *required):
             '(USAGE) or to run SELECT statements.',
         )
 
-    success, rows = select(conn, 'SHOW GRANTS FOR CURRENT_USER();')
+    # Not `SHOW GRANTS FOR CURRENT_USER()`: on MariaDB that leaves out the privileges of
+    # the active role and of PUBLIC (sql_yacc.yy, current_user_and_current_role).
+    success, rows = select(conn, 'SHOW GRANTS;')
     if not success:
         return False, rows
-    grants_text = ' '.join(' '.join(str(v) for v in row.values()) for row in rows or [])
-    if re.search(r'\bALL PRIVILEGES\b', grants_text, re.IGNORECASE) or re.search(
-        r'\bSUPER\b', grants_text, re.IGNORECASE
-    ):
-        return True, rows
+    granted, denied = _scope_privileges(rows)
+    scopes = ['*.*'] if database is None else ['*.*', database]
 
     def _has(privilege):
-        return bool(
-            re.search(r'\b' + re.escape(privilege) + r'\b', grants_text, re.IGNORECASE)
+        privilege = ' '.join(privilege.split()).upper()
+        for scope in scopes:
+            if denied.get(scope, set()) & {privilege, 'ALL PRIVILEGES'}:
+                return False
+        return any(
+            granted.get(scope, set()) & {privilege, 'ALL PRIVILEGES'}
+            for scope in scopes
         )
 
     missing = []
@@ -123,9 +186,10 @@ def check_privileges(conn, *required):
         elif not _has(req):
             missing.append(req)
     if missing:
+        where = '*.*' if database is None else f'*.* or on `{database}`.*'
         return (
             False,
-            'The connected user is missing the following privileges: '
+            f'The connected user is missing the following privileges on {where}: '
             + ', '.join(missing)
             + '.',
         )

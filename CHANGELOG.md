@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* db_mysql.py: `check_privileges()` takes `database`, for privileges that suffice on one database
 * disk.py: `get_private_dir()`, a directory only the current account can use, on Windows as well
 * disk.py: `open_file()` for confined reads, `resolve_trusted_path()`, and `get_fingerprint()` on an open file
 * endoflifedate.py: offline data for Debian, Ubuntu, Windows and Windows Server
@@ -30,8 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * args.py, base.py, txt.py, url.py: import faster, and `sanitize_sensitive_data()` is faster on long output
 * container.py: `get_engine_error()` reports Podman's missing rootless statistics on cgroups v1 as UNKNOWN
+* db_mysql.py: `check_privileges()` counts only privileges granted on `*.*` or the given database, including those of active roles, and no longer takes `SUPER` for any other privilege; `select()` names the error first
 * disk.py: `copy_dir()` names the first file that could not be copied and how many more, instead of all of them
-* db_mysql.py: `select()` names the error first
 * lvm.py: the hint on missing LVM tools names the SUSE package command too
 * powershell.py: `run_ps()` reads Windows output like `shell_exec()`, as UTF-8 where valid and in the OEM code page otherwise
 * redfish.py: `get_sensor_state()` returns CRIT only above a fatal threshold and WARN above a critical one, and treats a user-defined threshold of `0` as not set; `get_perfdata()` follows
