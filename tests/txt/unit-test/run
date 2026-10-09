@@ -11,6 +11,7 @@
 """Unit tests for lib.txt. Pure functions, no fixtures or containers."""
 
 import sys
+import time
 import unittest
 
 sys.path.insert(0, '..')
@@ -250,6 +251,122 @@ class TestSanitizeSensitiveData(unittest.TestCase):
         ):
             with self.subTest(url=url):
                 self.assertEqual(txt.sanitize_sensitive_data(url), url)
+
+    # `\b` treats `_` as part of a word, so a prefixed name kept its value.
+    def test_redacts_prefixed_and_upper_case_names(self):
+        for field in (
+            'db_password',
+            'MYSQL_PASSWORD',
+            'client_secret',
+            'private_key',
+            'passwd',
+            '--db-pass',
+        ):
+            with self.subTest(field=field):
+                out = txt.sanitize_sensitive_data(f'{field}=linuxfabrik')
+                self.assertEqual(out, f'{field}=******')
+
+    def test_keeps_names_that_only_contain_a_sensitive_word(self):
+        text = 'bypass=1 monkey=2 ssh_key_file=/etc/ssh/key'
+        self.assertEqual(txt.sanitize_sensitive_data(text), text)
+
+    def test_redacts_a_quoted_value_as_a_whole(self):
+        for text, expected in (
+            ('password="linux fabrik" next', 'password="******" next'),
+            ("password='linux fabrik' next", "password='******' next"),
+            ('password="linux\\"fabrik" next', 'password="******" next'),
+            ('password="never closed', 'password="******"'),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(txt.sanitize_sensitive_data(text), expected)
+
+    def test_redacts_prefixed_names_in_json_and_mappings(self):
+        for text in (
+            '{"db_password": "linuxfabrik", "user": "admin"}',
+            "{'db_password': 'linuxfabrik', 'user': 'admin'}",
+        ):
+            with self.subTest(text=text):
+                out = txt.sanitize_sensitive_data(text)
+                self.assertNotIn('linuxfabrik', out)
+                self.assertIn('admin', out)
+
+    def test_redacts_json_value_with_an_escaped_quote(self):
+        out = txt.sanitize_sensitive_data(
+            '{"password": "linux\\"fabrik", "user": "admin"}'
+        )
+        self.assertEqual(out, '{"password": "******", "user": "admin"}')
+
+    # An unencoded '@' or '/' in the password, as admins type it.
+    def test_redacts_url_password_with_at_sign_or_slash(self):
+        for url, expected in (
+            (
+                'https://user:linux@fabrik@host.example.com/x',
+                'https://user:******@host.example.com/x',
+            ),
+            (
+                'https://user:linux/fabrik@host.example.com/x',
+                'https://user:******@host.example.com/x',
+            ),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(txt.sanitize_sensitive_data(url), expected)
+
+    # An unencoded '#' or '?' cut the password short of its '@' and left it in clear.
+    def test_redacts_url_password_with_hash_or_question_mark(self):
+        for url, expected in (
+            ('https://u:pa#ss@host', 'https://u:******@host'),
+            ('https://u:pa?ss@host/x', 'https://u:******@host/x'),
+            ('redis://:p#w@localhost:6379', 'redis://:******@localhost:6379'),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(txt.sanitize_sensitive_data(url), expected)
+
+    # A password that starts with digits looks like a port; it is masked all the same.
+    def test_redacts_url_password_that_starts_with_digits(self):
+        for url in (
+            'https://u:2024#Winter@host',
+            'https://u:99?x@host',
+            'https://u:12/ab@host',
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(
+                    txt.sanitize_sensitive_data(url), 'https://u:******@host'
+                )
+
+    def test_redacts_client_environment_variables(self):
+        for name in ('PGPASSWORD', 'SSHPASS', 'MYSQL_PWD'):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    txt.sanitize_sensitive_data(f'{name}=linuxfabrik'), f'{name}=******'
+                )
+
+    def test_keeps_the_working_directory(self):
+        self.assertEqual(txt.sanitize_sensitive_data('PWD=/root'), 'PWD=/root')
+
+    # Many scheme starts behind an '@' sent an unbounded password match quadratic.
+    def test_many_url_starts_stay_fast(self):
+        text = '@ ' + 'a://b:x' * 8000
+        started = time.monotonic()
+        txt.sanitize_sensitive_data(text)
+        self.assertLess(time.monotonic() - started, 1)
+
+    # An '@' in the path after the host is taken for the end of the password: too much
+    # is hidden, never too little.
+    # A port in front of an '@' in the path is masked like a password: the two look
+    # alike, and hiding too much is the lesser evil.
+    def test_port_before_an_at_sign_in_the_path_is_masked(self):
+        self.assertNotIn(
+            '443',
+            txt.sanitize_sensitive_data('https://registry.example.com:443/@scope/pkg'),
+        )
+
+    def test_url_with_an_at_sign_in_the_path_hides_more_not_less(self):
+        for url in (
+            'https://u:linuxfabrik@registry.example.com/@scope/pkg',
+            'https://u:linuxfabrik@host.example.com/x?mail=a@example.com',
+        ):
+            with self.subTest(url=url):
+                self.assertNotIn('linuxfabrik', txt.sanitize_sensitive_data(url))
 
 
 class TestToBytes(unittest.TestCase):

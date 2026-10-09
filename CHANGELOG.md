@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * logsource.py: `read()` reads each source, rotated files included, from one checked handle
 * nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`
 * openstack.py: `connect()` reuses a cached token only for the same domain, user, password and interface, so checks for different customers on one host no longer run with each other's token
+* txt.py: `sanitize_sensitive_data()` also redacts credentials under prefixed names such as `db_password` or `client_secret`, `passwd`, quoted values with spaces or escaped quotes, and URL passwords containing `@` or `/`
 
 
 ## [v8.2.0] - 2026-09-22

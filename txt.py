@@ -18,7 +18,7 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092501'
+__version__ = '2026100901'
 
 import html
 import operator
@@ -56,58 +56,74 @@ ANSI_ESCAPE_PATTERN = re.compile(
 # logical color is spelled differently by different emitters (ESC[32m vs ESC[0;32m), and
 # a progress indicator mixes in sequences that are not colors at all.
 
+# The names a credential travels under. A name counts wherever it is not glued to a
+# letter or digit, so `db_password`, `MYSQL_PASSWORD` and `client_secret` match while
+# `bypass` and `monkey` do not. `\b` cannot do that: it treats `_` as part of a word.
+# The environment variables of common clients that glue a prefix to the word without a
+# separator are listed on their own; a bare `pwd` is not, since `PWD` is the working
+# directory in every environment dump.
+SENSITIVE_NAMES = (
+    r'password|passwd|pass|token|key|secret|api[_-]?key|access[_-]?token|http[_-]?auth'
+    r'|mysql_pwd|pgpassword|sshpass'
+)
+
 SENSITIVE_FIELDS_PATTERN = re.compile(
-    r'(?i)(\b(?:password|pass|token|key|secret|api[_-]?key|access[_-]?token'
-    r'|http[_-]?auth)\b\s*=\s*|sshpass\s+-p\s*)[^\s&]+'
+    rf'(?i)((?<![a-z0-9])(?:{SENSITIVE_NAMES})\s*=\s*|sshpass\s+-p\s*)'
+    r'("(?:[^"\\]|\\.)*"?|\'(?:[^\'\\]|\\.)*\'?|[^\s&]+)'
 )
 # Explanation:
 # (?i)                      # Case-insensitive mode
 # (                         # ┌ Capture group 1: the prefix (key=)
-#   \b                      # │ Word boundary
-#   (?:password|pass|token|key|secret|api[_-]?key|access[_-]?token|http[_-]?auth)
-#                           # │   One of the sensitive names:
-#                           # │   – password
-#                           # │   – pass
-#                           # │   – token
-#                           # │   – key
-#                           # │   – secret
-#                           # │   – api_key or api-key
-#                           # │   – access_token or access-token
-#                           # │   – http_auth or http-auth, the `login:password`
-#                           # │     pair that tools such as curl and wpscan take
-#                           # │     on their command line
-#   \b\s*=\s*               # │ Word boundary, optional ws, '=', optional ws
+#   (?<![a-z0-9])           # │ Not glued to a letter or digit
+#   (?:SENSITIVE_NAMES)     # │ One of the sensitive names
+#   \s*=\s*                 # │ Optional ws, '=', optional ws
 #  |                        # ├ OR
 #   sshpass\s+-p\s*         # │ Literal "sshpass -p" (1+ space before -p)
 # )                         # └ End of capture group 1
-# [^\s&]+                   # The secret value (not captured, will be replaced)
+# (                         # ┌ Capture group 2: the secret value, replaced
+#   "(?:[^"\\]|\\.)*"?      # │ a double-quoted string as a whole, spaces and
+#   |'(?:[^'\\]|\\.)*'?     # │ escaped quotes included; an unterminated one
+#                           # │ runs to the end
+#   |[^\s&]+                # │ or an unquoted value up to whitespace or '&'
+# )
 #
 # A name that only starts with a sensitive word does not match, because the '='
 # has to follow it directly: '--http-auth-file=/etc/x' keeps its path, which is
 # not a secret and is what an admin needs to see.
 
-SENSITIVE_URL_PATTERN = re.compile(r'(?i)([a-z][a-z0-9+.-]*://[^\s:/@]*:)[^\s@/]+(@)')
+SENSITIVE_URL_PATTERN = re.compile(
+    r'(?i)([a-z][a-z0-9+.-]*://[^\s:/@]*:)\S{1,256}(@)(?=[^\s@/?#]*(?:[/?#\s]|$))'
+)
 # Matches the password half of a URL's userinfo, the form a credential takes when it
 # travels inside a URL rather than next to a name:
 #   http://user:secret123@proxy.example.com:3128
 #   redis://:secret123@localhost
+#   https://user:pa@ss/w#rd@host.example.com   (unencoded, as admins type it)
 # Captures the prefix up to and including the colon (group 1) and the '@' (group 2).
+# The password is any run of non-blank characters up to the last '@' that a host
+# follows, so an unencoded '@', '/', '?' or '#' in it is covered. That '@' may also
+# sit in a path or query, as in 'https://u:p@host/x?mail=a@example.com', or follow a
+# port, as in 'https://registry.example.com:443/@scope/pkg'; the host or port is then
+# masked as if it were a password. A port cannot be told from a password such as
+# '2024#Winter' by its shape, and hiding too much is the lesser evil here.
 # A URL without an '@' cannot carry userinfo, so a plain 'https://example.com:8443/x'
 # is left alone, and so is a bare 'https://user@host' that names no password.
+# The password is bounded at 256 characters: unbounded, a text with an '@' and many
+# 'x://y:' in front of it took quadratic time, 2.5 s for 56 KB.
 
 SENSITIVE_JSON_PATTERN = re.compile(
-    r'(?i)("(?:password|pass|token|key|secret|api[_-]?key|access[_-]?token'
-    r'|http[_-]?auth)"\s*:\s*")[^"]*(")'
+    rf'(?i)("(?:[^"\\]*[^a-z0-9"\\])?(?:{SENSITIVE_NAMES})"\s*:\s*")'
+    r'(?:[^"\\]|\\.)*(")'
 )
 # Matches JSON-style sensitive fields like:
 #   "password": "secret123"
-#   "api_key" : "abc"
-# Captures the prefix (group 1) and the closing quote (group 2),
-# replacing only the secret value between them.
+#   "db_password" : "abc\"def"
+# Captures the prefix (group 1) and the closing quote (group 2), replacing only the
+# secret value between them, escaped quotes included.
 
 SENSITIVE_MAPPING_PATTERN = re.compile(
-    r"(?i)('(?:password|pass|token|key|secret|api[_-]?key|access[_-]?token"
-    r"|http[_-]?auth)'\s*:\s*')[^']*(')"
+    rf"(?i)('(?:[^'\\]*[^a-z0-9'\\])?(?:{SENSITIVE_NAMES})'\s*:\s*')"
+    r"(?:[^'\\]|\\.)*(')"
 )
 # Same as SENSITIVE_JSON_PATTERN, but for the single-quoted form a Python mapping produces when
 # it is interpolated into a message:
@@ -125,7 +141,7 @@ SENSITIVE_AUTH_PATTERN = re.compile(
 
 SENSITIVE_ARGV_PATTERN = re.compile(
     r'(?i)((?:[\'"]sshpass[\'"]\s*,\s*[\'"]-p[\'"]'
-    r'|[\'"]--(?:password|pass|token|secret|api[_-]?key|access[_-]?token'
+    r'|[\'"]--(?:password|passwd|pass|token|secret|api[_-]?key|access[_-]?token'
     r'|http[_-]?auth)[\'"])'
     r'\s*,\s*[\'"])[^\'"]*([\'"])'
 )
@@ -486,6 +502,13 @@ def pluralize(noun, value, suffix='s'):
     return noun if int(value) == 1 else f'{noun}{suffix}'
 
 
+def _redact_field(match, replacement):
+    """Replace the value of a `name=value` match, keeping the quotes of a quoted one."""
+    value = match.group(2)
+    quote = value[0] if value[0] in '"\'' else ''
+    return f'{match.group(1)}{quote}{replacement}{quote}'
+
+
 def sanitize_sensitive_data(msg, replacement='******'):
     """
     Redact sensitive information such as passwords, tokens, and keys from a message string.
@@ -513,7 +536,7 @@ def sanitize_sensitive_data(msg, replacement='******'):
     -----
     - Matching is case-insensitive and tolerant of whitespace around '='.
     - Only parameters in the format key=value are sanitized.
-    - Fields sanitized: 'password', 'pass', 'token', 'key', 'secret', 'api-key',
+    - Fields sanitized: 'password', 'passwd', 'pass', 'token', 'key', 'secret', 'api-key',
       'access_token', 'http-auth', and similar variants.
     - A credential that sits in its own element of a stringified argument list is
       redacted too, which is the shape an argv takes in an error message.
@@ -552,7 +575,9 @@ def sanitize_sensitive_data(msg, replacement='******'):
     if '://' in msg and '@' in msg:
         msg = SENSITIVE_URL_PATTERN.sub(rf'\1{replacement}\2', msg)
     if '=' in msg or '-p' in msg or '-P' in msg:
-        msg = SENSITIVE_FIELDS_PATTERN.sub(rf'\1{replacement}', msg)
+        msg = SENSITIVE_FIELDS_PATTERN.sub(
+            lambda match: _redact_field(match, replacement), msg
+        )
     msg = SENSITIVE_JSON_PATTERN.sub(rf'\1{replacement}\2', msg)
     msg = SENSITIVE_MAPPING_PATTERN.sub(rf'\1{replacement}\2', msg)
     msg = SENSITIVE_AUTH_PATTERN.sub(rf'\1{replacement}', msg)
