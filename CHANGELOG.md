@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * disk.py: `is_within()` with the filesystem root as a root
 * human.py: `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), and `humanduration2seconds()` and `humanrange2seconds()` read a fraction such as `0.5D` instead of only its decimal places
 * logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint
-* net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows
+* net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, and `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
 * redfish.py: `start_trace()` works on Windows
 * url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example

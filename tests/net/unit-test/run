@@ -19,6 +19,7 @@ get_netinfo() against a mocked psutil.
 import os
 import re
 import socket
+import ssl
 import sys
 import unittest
 from unittest import mock
@@ -41,6 +42,7 @@ class FakeSocket:
         self.raises = raises
         self.sent = []
         self.connected_to = None
+        self.shut_down = []
         self.timeout = None
 
     def __enter__(self):
@@ -58,8 +60,8 @@ class FakeSocket:
     def sendall(self, payload):
         self.sent.append(payload)
 
-    def shutdown(self, _how):
-        pass
+    def shutdown(self, how):
+        self.shut_down.append(how)
 
     def close(self):
         pass
@@ -68,6 +70,10 @@ class FakeSocket:
         if self.raises is not None:
             raise self.raises
         return self.chunks.pop(0) if self.chunks else b''
+
+
+class FakeTlsSocket(FakeSocket):
+    """A FakeSocket that stands in for `ssl.SSLSocket` while a TLS test runs."""
 
 
 class TestIpToCidr(unittest.TestCase):
@@ -242,6 +248,74 @@ class TestFetch(unittest.TestCase):
         self.assertTrue(success, results)
         self.assertEqual(results, ['220 ready\n', '250 ok\n'])
         self.assertEqual(sock.sent, [b'EHLO x\r\n'])
+
+    def _fetch_tls(self, os_name='posix'):
+        """Run fetch(tls=True) on a FakeSocket and return the TLS contexts it built.
+
+        The real context is kept, only its `wrap_socket()` is replaced, so the test
+        sees the settings a handshake would run with.
+        """
+        contexts = []
+        create_default_context = ssl.create_default_context
+        tls_sock = FakeTlsSocket([b'PONG\n'])
+
+        def capture():
+            ctx = create_default_context()
+
+            def wrap_socket(sock, server_hostname=None):
+                ctx.wrapped_for = server_hostname
+                return tls_sock
+
+            ctx.wrap_socket = wrap_socket
+            contexts.append(ctx)
+            return ctx
+
+        with (
+            mock.patch('ssl.create_default_context', side_effect=capture),
+            mock.patch('os.name', os_name),
+            mock.patch('ssl.SSLSocket', FakeTlsSocket),
+            mock.patch('lib.url._add_certifi_roots') as add_certifi_roots,
+        ):
+            result = self._fetch(FakeSocket(), tls=True)
+        self.tls_sock = tls_sock
+        return result, contexts, add_certifi_roots
+
+    def test_tls_verifies_against_the_trust_store(self):
+        # A bare SSLContext(PROTOCOL_TLS_CLIENT) loads no CA certificates, so not even
+        # a publicly signed server verified. The trust store comes with
+        # create_default_context() only.
+        result, contexts, _ = self._fetch_tls()
+        self.assertEqual(result, (True, 'PONG\n'))
+        self.assertEqual(len(contexts), 1)
+        ctx = contexts[0]
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(ctx.check_hostname)
+        self.assertEqual(ctx.wrapped_for, 'host.example.com')
+
+    @unittest.skipUnless(
+        hasattr(ssl, 'TLSVersion'), 'TLS version pinning needs Python 3.7+'
+    )
+    def test_tls_requires_at_least_tls_1_2(self):
+        _, contexts, _ = self._fetch_tls()
+        self.assertEqual(contexts[0].minimum_version, ssl.TLSVersion.TLSv1_2)
+
+    def test_banner_mode_half_closes_a_plain_socket(self):
+        sock = FakeSocket([b'PONG\n'])
+        self._fetch(sock, msg=b'PING\n')
+        self.assertEqual(sock.shut_down, [socket.SHUT_WR])
+
+    def test_banner_mode_does_not_half_close_a_tls_socket(self):
+        # SSLSocket.shutdown() drops the TLS layer, after which recv() hands back
+        # the encrypted records as if they were the answer.
+        result, _, _ = self._fetch_tls()
+        self.assertEqual(result, (True, 'PONG\n'))
+        self.assertEqual(self.tls_sock.shut_down, [])
+
+    def test_tls_adds_the_certifi_roots_on_windows_only(self):
+        _, contexts, add_certifi_roots = self._fetch_tls(os_name='nt')
+        add_certifi_roots.assert_called_once_with(contexts[0])
+        _, _, add_certifi_roots = self._fetch_tls(os_name='posix')
+        add_certifi_roots.assert_not_called()
 
     def test_dialog_reports_a_connection_closed_before_the_pattern(self):
         success, message = self._fetch(

@@ -12,9 +12,10 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026100901'
 
 import ipaddress
+import os
 import random
 import re
 import socket
@@ -316,10 +317,15 @@ def _socket_fetch(
                 except Exception as e:
                     return False, f'Could not send payload on {socket_name}: {e}'
 
-            try:
-                s.shutdown(socket.SHUT_WR)
-            except Exception:
-                pass  # Not fatal
+            # TLS has no half-close: `SSLSocket.shutdown()` drops the TLS layer
+            # (`_sslobj = None`), and every following `recv()` returns the encrypted
+            # records instead of the plaintext (CPython `Lib/ssl.py`). Verified against
+            # Python 3.14 on Fedora 44. A TLS server has to end the answer itself.
+            if not isinstance(s, ssl.SSLSocket):
+                try:
+                    s.shutdown(socket.SHUT_WR)
+                except Exception:
+                    pass  # Not fatal
 
             fragments = []
             while True:
@@ -355,7 +361,9 @@ def fetch(host, port, msg=None, dialog=None, timeout=3, ipv6=False, tls=False):
         Target TCP port number.
     msg : bytes, optional
         Banner mode. A message sent once after connecting. The function then half-closes the
-        write side and reads until EOF. Mutually exclusive with `dialog`.
+        write side and reads until EOF. TLS knows no half-close, so with `tls=True` the
+        server has to close the connection itself; use `dialog` for a server that waits for
+        more. Mutually exclusive with `dialog`.
     dialog : list of (bytes_or_None, str_or_None) tuples, optional
         Dialog mode. A list of `(send, expect)` steps walked in order. `expect` is a regex
         matched against the per-step recv buffer; `None` skips reading. No half-close is
@@ -366,9 +374,8 @@ def fetch(host, port, msg=None, dialog=None, timeout=3, ipv6=False, tls=False):
     ipv6 : bool, optional
         Use an IPv6 connection instead of IPv4. Defaults to `False`.
     tls : bool, optional
-        Wrap the socket in a TLS 1.2+ context with SNI. Defaults to `False`. The legacy
-        `fetch_ssl()` helper is equivalent to `fetch(..., tls=True)` and remains available for
-        backward compatibility.
+        Wrap the socket in a TLS 1.2+ context with SNI. The server certificate is verified
+        against the trust store of the host, including its name. Defaults to `False`.
 
     Returns
     -------
@@ -402,9 +409,15 @@ def fetch(host, port, msg=None, dialog=None, timeout=3, ipv6=False, tls=False):
         raw_sock = socket.socket(family, SOCK_TCP)
         if not tls:
             return raw_sock
-        # PROTOCOL_TLS_CLIENT automatically disables SSLv2/3 and TLSv1.0/1.1 on recent
-        # OpenSSL builds; minimum_version then enforces TLS 1.2+ across all builds.
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        # A bare `ssl.SSLContext(PROTOCOL_TLS_CLIENT)` requires a valid certificate but
+        # loads no CA certificates, so no server would ever verify; only
+        # `create_default_context()` calls `load_default_certs()` (CPython `Lib/ssl.py`).
+        # Verified against Python 3.14 on Fedora 44. Windows lacks roots it has not
+        # downloaded yet, see `url._add_certifi_roots()`. minimum_version enforces
+        # TLS 1.2+ across all OpenSSL builds.
+        context = ssl.create_default_context()
+        if os.name == 'nt':
+            url._add_certifi_roots(context)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
         return context.wrap_socket(raw_sock, server_hostname=host)
 
