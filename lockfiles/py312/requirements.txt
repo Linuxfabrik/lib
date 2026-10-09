@@ -606,9 +606,9 @@ pypsrp==0.9.1 \
     --hash=sha256:1217b03397589f8e77c98dc9d2a4af2abc34a89ccc15efd4b6758ec76eb1bb7d \
     --hash=sha256:3ad41285739d5f8107dd8277ae00e86ee44153aae5e82fb578ac8048307e0d12
     # via -r requirements.in
-pyspnego==0.12.2 \
-    --hash=sha256:04e7c9260ced15197b3f42b891ffa30fa98c37bb09372c5c2bf927bcdfe30b53 \
-    --hash=sha256:448a491a9bf0e5fb957567fe46e6809fa836aa40dfcccebcc740bb64acb1be1c
+pyspnego==0.12.4 \
+    --hash=sha256:a29a34de1abe9e9b30d9aa1d363f8e49fc159eb7355b1f2ee86ccb3a2ce3bba9 \
+    --hash=sha256:acb314d6ca5c9ce87994b1eebbe2d8b687e0d564f9d650b306afb4c8f9c2ffd5
     # via
     #   pypsrp
     #   requests-ntlm
