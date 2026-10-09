@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026100902'
 
 import datetime
 import json
@@ -587,10 +587,11 @@ def cycle_bounds(eol):
         # silently disable the "older than anything listed" verdict for that product.
         if not any(char.isdigit() for char in cycle):
             continue
-        try:
-            cycles.append(version(cycle))
-        except (TypeError, ValueError):
+        # A cycle named after an edition or a servicing channel ("11-24h2-e",
+        # "23h2-ac", "2012-r2") has no order among the version numbers either.
+        if not re.fullmatch(r'\d+(?:\.\d+)*', cycle):
             continue
+        cycles.append(version(cycle))
     if not cycles:
         return None, None
     return min(cycles), max(cycles)
@@ -600,8 +601,12 @@ def version(ver, maxlen=3):
     """
     Parse a version string and return a comparable tuple.
 
-    This function converts a (semantic) version string into a tuple of integers. Non-numeric
-    characters (except for `.` and `-`) are ignored. Useful for comparing version numbers.
+    This function converts a (semantic) version string into a tuple of integers. Only the
+    first run of numbers joined by `.` (or `_`, as in Java's `1.8.0_504`) counts, so a
+    prefix (`v`, `OpenSSL `) is skipped and a pre-release or build suffix (`rc2`,
+    `+build5`, `-4-pve`) is dropped instead of being read as further version parts. A
+    release candidate therefore compares equal to its final release, never above it.
+    Useful for comparing version numbers.
 
     Parameters
     ----------
@@ -624,15 +629,27 @@ def version(ver, maxlen=3):
     >>> version('v5.13.19-4-pve')
     (5, 13, 19)
     >>> version('v5.13.19-4-pve', maxlen=4)
-    (5, 13, 19, 4)
+    (5, 13, 19, 0)
+    >>> version('3.11.0rc2') == version('3.11.0')
+    True
+    >>> version('1.8.0_504', maxlen=4)
+    (1, 8, 0, 504)
     >>> version('3.0.7') < version('3.0.11')
     True
     >>> version(psutil.__version__) >= version('5.3.0')
     True
     """
-    # Clean the version string: keep digits, dots, and dashes
-    ver_cleaned = re.sub(r'[^0-9\.-]', '', ver).replace('-', '.')
-    parts = [int(p) for p in ver_cleaned.split('.') if p]
+    # Deleting every non-digit first would glue neighbouring numbers together:
+    # '3.11.0rc2' became (3, 11, 2), above the final 3.11.0 and even 3.11.1, and
+    # 'OpenSSL 3.0.2 15 Mar 2022' became (3, 0, 2152022).
+    # No library does this job: distutils.version.LooseVersion (gone since Python 3.12)
+    # ranks 3.11.0rc2 above 3.11.0 and raises TypeError on 'v17.3.2' against '17.3.10';
+    # packaging.version (PEP 440, packaging 26.3) rejects kernel, Java 8 and OpenSSL
+    # strings; rpmvercmp reads anything but ranks rc2 above the release as well. None of
+    # them yields the (major, minor, patch) tuple the endoflife.date cycles are looked
+    # up by.
+    match = re.search(r'\d+(?:[._]\d+)*', ver)
+    parts = [int(p) for p in re.split(r'[._]', match.group())] if match else []
 
     # Pad with zeros or truncate to match maxlen
     if len(parts) < maxlen:
@@ -645,10 +662,12 @@ def version(ver, maxlen=3):
 
 def version2float(ver):
     """
-    Convert a version string into a single float value.
+    Convert a version string into a single float value, for perfdata.
 
-    This function parses a version string, removes non-numeric characters except dots, and
-    constructs a float for simple comparison purposes. Raises ValueError if no numbers are found.
+    The version is read like `version()` does, with up to four parts, and each part after
+    the first gets three decimal places of its own, so the float sorts like the version:
+    `1.10.0` (1.01) lies above `1.9.0` (1.009). A part above 999 is counted as 999, since
+    it would otherwise spill into the part before it.
 
     Parameters
     ----------
@@ -668,18 +687,20 @@ def version2float(ver):
     Examples
     --------
     >>> version2float('Version v17.3.2.0')
-    17.32
+    17.003002
     >>> version2float('Fedora Linux 41 (Workstation Edition)')
     41.0
-    >>> version2float('21.60-53-93285')
-    21.605393285
+    >>> version2float('1.10.0') > version2float('1.9.0')
+    True
+    >>> version2float('1.8.0_504')
+    1.008000504
     """
-    cleaned = re.sub(r'[^0-9.]', '', ver)
-    if not re.search(r'\d', cleaned):
+    if not re.search(r'\d', ver):
         raise ValueError(f'No digits found in version string: {ver}')
-
-    parts = cleaned.split('.')
-    major = parts[0]
-    minor = ''.join(parts[1:]) if len(parts) > 1 else '0'
-
-    return float(f'{major}.{minor}')
+    parts = version(ver, maxlen=4)
+    value = parts[0] + sum(
+        min(part, 999) / 1000**position for position, part in enumerate(parts[1:], 1)
+    )
+    # rounded to the nine decimal places the three parts take, which drops the float
+    # noise of the division (1.003 instead of 1.0030000000000001)
+    return round(value, 9)

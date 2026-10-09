@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * redfish.py: `get_sensor_state()` returns CRIT only above a fatal threshold and WARN above a critical one, and treats a user-defined threshold of `0` as not set; `get_perfdata()` follows
 * shell.py: `shell_exec()` names a missing program and how to make it available, instead of the raw OS error
 * smb.py: imports faster, a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
-* version.py: `check_eol()` names the date only once when full support ends on the day of the end of life
+* version.py: `check_eol()` names the date only once when full support ends on the day of the end of life, and `version2float()` gives each version part three decimal places of its own, so the value sorts like the version (1.10.0 above 1.9.0)
 
 ### Removed
 
@@ -56,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * task.py: `run()` and `run_each()` no longer repeat the consumer's output when a job prints or ends the program, and report such a job as a failure
 * uptimerobot.py: `new_monitor()` and `edit_monitor()` send the port monitor presets UptimeRobot expects, so `https`, `ftp`, `smtp`, `pop3` and `imap` no longer fail, `post_content_type` accepts `application/json`, and the `get_*()` functions return every record, alert contacts past the first 50 and with a `limit` included, starting at a given `offset`
 * url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example
-* version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable, and answers UNKNOWN to a version without a number instead of calling it older than anything listed
+* version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable, and answers UNKNOWN to a version without a number instead of calling it older than anything listed; `version()` no longer reads a pre-release, a build suffix or a date as part of the version
 * winrm.py: `run_ps()` returns the output as PowerShell shows it again instead of the type names of the objects, behind a JEA endpoint as a list of their properties, and no longer writes a Python warning about the progress stream
 
 ### Security

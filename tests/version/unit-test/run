@@ -317,11 +317,11 @@ class TestCheckEolNamedCycle(unittest.TestCase):
 
     def test_the_version_string_alone_finds_no_named_cycle(self):
         # The reason the parameter exists: without it the lookup goes by version
-        # prefix, "9" or "9.0" are no cycles here, and `cycle_bounds()` reads
-        # "9-99h2-e" as (9, 992, 0), so a current build is graded as ancient.
+        # prefix, "9" or "9.0" are no cycles here, and cycles named after a servicing
+        # channel give no order to place the version in, so it stays unknown.
         state, msg = version.check_eol(EOL_NAMED_PRODUCT, '9.0.1234', timeout=1)
-        self.assertEqual(state, STATE_WARN)
-        self.assertIn('older than anything endoflife.date lists', msg)
+        self.assertEqual(state, STATE_UNKNOWN)
+        self.assertIn('version 9.0.1234 unknown', msg)
 
     def test_named_cycle_far_from_eol_is_ok(self):
         state, msg = self.check('9-99h2-e')
@@ -750,15 +750,91 @@ class TestVersion(unittest.TestCase):
     def test_empty_is_zeros(self):
         self.assertEqual(version.version(''), (0, 0, 0))
 
+    def test_prefix_is_skipped(self):
+        self.assertEqual(version.version('v5.13.19'), (5, 13, 19))
+        self.assertEqual(version.version('Version v17.3.2'), (17, 3, 2))
+
+    def test_suffix_digits_are_not_glued_on(self):
+        # deleting the letters first used to glue the numbers around them together
+        for ver, expected in (
+            ('3.11.0rc2', (3, 11, 0)),
+            ('4.5rc1', (4, 5, 0)),
+            ('2.0 RC1', (2, 0, 0)),
+            ('1.2.3+build5', (1, 2, 3)),
+            ('12.4.3+security-02', (12, 4, 3)),
+            ('OpenSSL 3.0.2 15 Mar 2022', (3, 0, 2)),
+            ('4.18.0-553.el8_10.x86_64', (4, 18, 0)),
+            ('8.0.36-0ubuntu0.22.04.1', (8, 0, 36)),
+        ):
+            with self.subTest(ver=ver):
+                self.assertEqual(version.version(ver), expected)
+
+    def test_release_candidate_is_not_above_the_release(self):
+        self.assertEqual(version.version('3.11.0rc2'), version.version('3.11.0'))
+        self.assertLess(version.version('3.11.0rc2'), version.version('3.11.1'))
+
+    def test_dash_ends_the_version(self):
+        self.assertEqual(version.version('v5.13.19-4-pve', maxlen=4), (5, 13, 19, 0))
+
+    def test_underscore_separates_like_a_dot(self):
+        # Java 8 writes its update number as 1.8.0_504
+        self.assertEqual(version.version('1.8.0_504', maxlen=4), (1, 8, 0, 504))
+        self.assertLess(
+            version.version('1.8.0_472', maxlen=4),
+            version.version('1.8.0_504', maxlen=4),
+        )
+
+    def test_four_parts(self):
+        # QNAP ships new numbers under the same version (qts-version)
+        self.assertLess(
+            version.version('5.2.10.3568', maxlen=4),
+            version.version('5.2.10.3577', maxlen=4),
+        )
+
+    def test_no_digit_is_zeros(self):
+        self.assertEqual(version.version('unknown'), (0, 0, 0))
+
     def test_none_raises(self):
         with self.assertRaises(TypeError):
             version.version(None)
 
 
 class TestVersion2Float(unittest.TestCase):
-    def test_first_dot_kept(self):
-        self.assertEqual(version.version2float('1.2.3'), 1.23)
-        self.assertEqual(version.version2float('10.0.1'), 10.01)
+    def test_three_places_per_part(self):
+        self.assertEqual(version.version2float('1.2.3'), 1.002003)
+        self.assertEqual(version.version2float('10.0.1'), 10.000001)
+        self.assertEqual(version.version2float('41'), 41.0)
+        self.assertEqual(version.version2float('Version v17.3.2.0'), 17.003002)
+
+    def test_sorts_like_the_version(self):
+        # gluing every part after the first into the decimals made 1.10.0 equal to
+        # 1.1 and put it below 1.9.0
+        ordered = ['1.2.10', '1.9.0', '1.10.0', '1.35.14', '1.100.0', '2.0', '2.0.1']
+        floats = [version.version2float(ver) for ver in ordered]
+        self.assertEqual(floats, sorted(floats))
+        self.assertEqual(len(set(floats)), len(floats))
+
+    def test_fourth_part_counts(self):
+        # Java 8 update numbers stay apart in the perfdata
+        self.assertEqual(version.version2float('1.8.0_504'), 1.008000504)
+        self.assertLess(
+            version.version2float('1.8.0_472'), version.version2float('1.8.0_504')
+        )
+
+    def test_suffix_is_ignored(self):
+        self.assertEqual(version.version2float('4.5rc1'), 4.005)
+        self.assertEqual(version.version2float('12.4.3+security-02'), 12.004003)
+
+    def test_part_above_999_is_capped(self):
+        # it would otherwise spill into the part before it
+        self.assertEqual(version.version2float('1.2.3.123456'), 1.002003999)
+        self.assertLess(
+            version.version2float('1.2.3.123456'), version.version2float('1.2.4')
+        )
+
+    def test_none_raises(self):
+        with self.assertRaises(TypeError):
+            version.version2float(None)
 
     def test_non_numeric_raises(self):
         with self.assertRaises(ValueError):
