@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026100902'
 
 import math
 import numbers
@@ -106,6 +106,8 @@ def coe(result, state=STATE_UNKNOWN):
     Notes
     -----
     - Sensitive information in error messages is automatically redacted before printing.
+    - The message is escaped like in `oao()`: `|` becomes `!`, and a `<` that would open an
+      HTML tag becomes `&lt;`.
     - This function is intended to be used **only** inside the `main()` function of the
       calling script, not inside library functions.
     - If the function fails (`result[0]` is `False`), the script immediately exits after printing
@@ -125,8 +127,12 @@ def coe(result, state=STATE_UNKNOWN):
     if result[0]:
         # success
         return result[1]
-    # getting something like `(False, 'Error message')`; hide passwords in error message
-    print(txt.sanitize_sensitive_data(result[1]))
+    # getting something like `(False, 'Error message')`; hide passwords in error message,
+    # and escape it like `oao()` does: on a line where an `=` follows it, a `|` cuts the
+    # message short and hands the rest to Icinga as performance data
+    # (`PluginUtility::ParseCheckOutput()`, verified against Icinga 2 v2.16.0).
+    msg = txt.sanitize_sensitive_data(str(result[1]))
+    print(_escape_tag_start(msg).replace('|', '!'))
     sys.exit(state)
 
 
@@ -137,8 +143,8 @@ def cu(msg=None, traceback=True):
     Print an optional error message and stack trace, then exit with STATE_UNKNOWN.
 
     This function prints an optional sanitized message, attaches a stack trace if an error occurred,
-    and exits the script with `STATE_UNKNOWN`. It ensures output is safe for display in web GUIs
-    by replacing `<` and `>` characters.
+    and exits the script with `STATE_UNKNOWN`. Message and stack trace are escaped like in
+    `oao()`: `|` becomes `!`, and a `<` that would open an HTML tag becomes `&lt;`.
 
     Parameters
     ----------
@@ -159,7 +165,7 @@ def cu(msg=None, traceback=True):
 
     Notes
     -----
-    - If a traceback exists, it is included for debugging, with `<` and `>` replaced by `'`.
+    - If a traceback exists, it is included for debugging, escaped like the message.
     - Sensitive information in the message is automatically redacted before printing.
     - If no traceback is present, only the optional message (if any) is printed.
 
@@ -185,8 +191,8 @@ def cu(msg=None, traceback=True):
         # Normalize line endings to LF (see oao); error output may also carry
         # CRLF, for example when a Windows command prints its error to stdout.
         msg = msg.replace('\r\n', '\n').replace('\r', '\n')
-        msg = (
-            txt.sanitize_sensitive_data(msg).strip().replace('<', "'").replace('>', "'")
+        msg = _escape_tag_start(txt.sanitize_sensitive_data(msg).strip()).replace(
+            '|', '!'
         )
         print(msg, end='')
         print(
@@ -194,7 +200,7 @@ def cu(msg=None, traceback=True):
         )
 
     if has_traceback:
-        print(tb.replace('<', "'").replace('>', "'"))
+        print(_escape_tag_start(tb).replace('|', '!'))
 
     sys.exit(STATE_UNKNOWN)
 
@@ -1530,9 +1536,11 @@ def verbose(enabled, msg):
     captures STDOUT. The message therefore becomes part of the result and is meant
     for interactive debugging, not for a scheduled run.
 
-    The message is redacted the same way `coe()`, `cu()` and `oao()` redact theirs.
-    Progress messages routinely carry the command that was run or the error a helper
-    returned, and either can contain a credential the caller never meant to print.
+    The message is redacted and escaped the same way `coe()`, `cu()` and `oao()` treat
+    theirs. Progress messages routinely carry the command that was run or the error a
+    helper returned, and either can contain a credential the caller never meant to print,
+    a `|` that would hand the rest of the line to the monitoring server as performance
+    data, or a tag a web interface would render.
 
     Parameters
     ----------
@@ -1551,4 +1559,5 @@ def verbose(enabled, msg):
     >>> verbose(args.VERBOSE, f'Scanning {url}...')
     """
     if enabled:
-        print(txt.sanitize_sensitive_data(msg))
+        msg = txt.sanitize_sensitive_data(str(msg))
+        print(_escape_tag_start(msg).replace('|', '!'))

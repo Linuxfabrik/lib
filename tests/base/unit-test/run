@@ -77,6 +77,19 @@ class TestCoe(unittest.TestCase):
         self.assertIn('password=******', h['out'])
         self.assertNotIn('hunter2', h['out'])
 
+    def test_failure_is_escaped_like_oao(self):
+        # A `|` cut the message short and the rest arrived as performance data; a
+        # tag could be rendered by a web interface.
+        with capture_exit() as h:
+            base.coe((False, 'error | a=1;2 <b>bold</b> x<y'))
+        # Only a `<` that opens a tag is escaped, as in oao(); see TAG_START.
+        self.assertEqual(h['out'], 'error ! a=1;2 &lt;b>bold</b> x<y\n')
+
+    def test_failure_with_a_message_that_is_not_text(self):
+        with capture_exit() as h:
+            base.coe((False, 42))
+        self.assertEqual(h['out'], '42\n')
+
 
 class TestCu(unittest.TestCase):
     def test_no_msg_no_traceback_exits_unknown(self):
@@ -92,13 +105,21 @@ class TestCu(unittest.TestCase):
         self.assertIn('plain message', h['out'])
         self.assertNotIn('Traceback for debugging', h['out'])
 
-    def test_msg_sanitized_and_angle_brackets_replaced(self):
+    def test_msg_sanitized_and_escaped_like_oao(self):
         with capture_exit() as h:
-            base.cu('token=abc <tag> here')
+            base.cu('token=abc <tag> here | a=1 x<y', traceback=False)
         self.assertIn('token=******', h['out'])
         self.assertNotIn('abc', h['out'])
-        self.assertNotIn('<', h['out'])
-        self.assertNotIn('>', h['out'])
+        self.assertEqual(h['out'].strip(), 'token=****** &lt;tag> here ! a=1 x<y')
+
+    def test_traceback_is_escaped_like_oao(self):
+        with capture_exit() as h:
+            try:
+                raise ValueError('a | b <tag>')
+            except ValueError:
+                base.cu('failed')
+        self.assertIn('ValueError: a ! b &lt;tag>', h['out'])
+        self.assertNotIn('|', h['out'])
 
     def test_with_active_traceback_attaches_it(self):
         with capture_exit() as h:
@@ -1255,6 +1276,13 @@ class TestVerbose(unittest.TestCase):
         )
         self.assertNotIn('s3cr3t', out)
         self.assertIn('password=******', out)
+
+    # A `|` handed the rest of the line to the monitoring server as performance data,
+    # and a tag could be rendered by a web interface. Escaped like oao().
+    def test_escaped_like_oao(self):
+        self.assertEqual(
+            self._capture(True, 'run | a=1 <b>x</b>'), 'run ! a=1 &lt;b>x</b>\n'
+        )
 
     # Verbose output must never go to STDERR: the monitoring protocol only captures
     # STDOUT, so a message written there would be lost.
