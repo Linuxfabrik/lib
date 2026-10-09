@@ -29,12 +29,13 @@ nothing to protect against and would only cost a process per job.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082601'
+__version__ = '2026100901'
 
 import json
 import os
 import select
 import signal
+import sys
 import time
 
 from . import txt
@@ -83,6 +84,25 @@ def run(func, timeout=8):
     (True, 3244913)
     """
     return run_each([(None, func)], timeout)[None]
+
+
+def _flush_std_streams():
+    """
+    Write out what the caller has printed so far, so that no child starts with a copy of
+    it.
+
+    `os.fork()` does not do this itself, and stdout on a pipe is fully buffered, stderr
+    line-buffered. A job that flushes, or prints enough to fill the buffer, would
+    otherwise write the caller's pending output a second time. Same as what
+    `multiprocessing` does before it forks (`multiprocessing.util._flush_std_streams()`,
+    verified against CPython 3.15). A stream that is missing (`None`), closed or broken
+    is left alone, because it must not keep the jobs from running.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except (AttributeError, OSError, ValueError):
+            pass
 
 
 def run_each(jobs, timeout=8):
@@ -143,6 +163,7 @@ def run_each(jobs, timeout=8):
     # away, so that no child keeps another job's pipe alive.
     inherited = []
 
+    _flush_std_streams()
     for key, func in jobs:
         try:
             read_fd, write_fd = os.pipe()
@@ -234,22 +255,35 @@ def _work(func, read_fd, write_fd, inherited):
     apart from one that never came back. It leaves through `os._exit()`, which skips
     cleanup handlers and buffered output, so it can neither emit anything of its own nor
     run any of the caller's remaining code.
+
+    `os._exit()` sits in a `finally`, because anything that propagated out of here would
+    unwind into the caller's code inside the child: its `finally` blocks and exit
+    handlers would run a second time, and whatever the job left in the output buffers,
+    such as the message of `base.coe()`, would end up in the caller's output. That
+    includes `SystemExit`, which `sys.exit()`, `base.coe()` and `base.cu()` raise, and
+    `KeyboardInterrupt`, none of which is an `Exception`.
     """
-    for fd in inherited:
+    try:
+        for fd in inherited:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
         try:
-            os.close(fd)
+            os.close(read_fd)
         except OSError:
             pass
-    try:
-        os.close(read_fd)
-    except OSError:
-        pass
-    try:
-        answer = {'ok': True, 'value': func()}
-    except Exception as e:
-        answer = {'ok': False, 'error': str(e)}
-    try:
+        try:
+            answer = {'ok': True, 'value': func()}
+        except SystemExit as e:
+            # what base.coe() or base.cu() printed before is discarded with the rest of
+            # the child's buffered output, so the answer has to say what happened
+            answer = {
+                'ok': False,
+                'error': f'the job called sys.exit({e.code!r}) instead of returning',
+            }
+        except BaseException as e:
+            answer = {'ok': False, 'error': str(e) or type(e).__name__}
         os.write(write_fd, txt.to_bytes(json.dumps(answer)))
-    except Exception:
-        pass
-    os._exit(0)
+    finally:
+        os._exit(0)
