@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, and `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
 * redfish.py: `start_trace()` works on Windows
+* ssh.py: `rsync()` and `scp()` reach an IPv6 address, and `rsync()` keeps an ssh option or key path containing spaces together
 * task.py: `run()` and `run_each()` no longer repeat the consumer's output when a job prints or ends the program, and report such a job as a failure
 * uptimerobot.py: `new_monitor()` and `edit_monitor()` send the port monitor presets UptimeRobot expects, so `https`, `ftp`, `smtp`, `pop3` and `imap` no longer fail, `post_content_type` accepts `application/json`, and the `get_*()` functions return every record, alert contacts past the first 50 and with a `limit` included, starting at a given `offset`
 * url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example, `fetch(extended=True)` authenticates to a proxy, and `split_basic_auth()` keeps the brackets of an IPv6 address
@@ -69,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * net.py: `get_proxy()` no longer puts the password or token of a URL, or the password of a proxy, into its error message
 * nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`
 * openstack.py: `connect()` reuses a cached token only for the same domain, user, password and interface, so checks for different customers on one host no longer run with each other's token
+* ssh.py: `rsync()`, `run()` and `scp()` refuse a port that is not a number from 1 to 65535, which `rsync()` handed to ssh as further options such as `ProxyCommand`
 * txt.py: `sanitize_sensitive_data()` also redacts credentials under prefixed names such as `db_password` or `client_secret`, `passwd`, quoted values with spaces or escaped quotes, and URL passwords containing `@` or `/`
 * url.py: the error messages of `fetch()` and `fetch_json()` no longer show part of a password containing `/`, or the values of `api_key`, `secret` and similar query parameters
 

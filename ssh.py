@@ -19,7 +19,9 @@ subject to local shell interpretation. All functions return the same
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091801'
+__version__ = '2026100901'
+
+import ipaddress
 
 from . import shell
 
@@ -33,6 +35,38 @@ def _check_target(host, username):
         if not ok:
             return False, msg
     return True, None
+
+
+def _check_port(port):
+    """Reject a port that is not a number from 1 to 65535. `None` and an empty value
+    mean the default and pass. Returns `(True, None)` or `(False, error_message)`.
+
+    rsync takes the port inside its `--rsh` string, so a value such as
+    `22 -oProxyCommand=...` would reach ssh as an option of its own.
+    """
+    if port is None or port == '':
+        return True, None
+    text = str(port)
+    if isinstance(port, bool) or not text.isdigit() or not 1 <= int(text) <= 65535:
+        return False, f'Refusing ssh port that is not a number from 1 to 65535: {port}'
+    return True, None
+
+
+def _copy_target(host, username, path):
+    """Build the `[user@]host:path` operand of scp and rsync.
+
+    Both split it at the first `:`, so an IPv6 address has to be put in brackets,
+    which both understand (OpenSSH `colon()` in misc.c, rsync `parse_hostspec()` in
+    options.c). ssh itself takes no brackets, which is why `target()` leaves the host
+    as it is.
+    """
+    try:
+        if ipaddress.ip_address(host).version == 6:
+            host = f'[{host}]'
+    except ValueError:
+        # a name or an alias from ~/.ssh/config
+        pass
+    return f'{target(host, username)}:{path}'
 
 
 def _with_password(cmd, password):
@@ -183,15 +217,19 @@ def rsync(
         `(True, (stdout, stderr, retc))` on success, else
         `(False, error_message)`.
     """
-    ok, msg = _check_target(host, username)
-    if not ok:
-        return False, msg
-    # rsync's --rsh takes the remote-shell command as a single string.
-    rsh = ' '.join(['ssh', *(options or [])]) + (f' -p {port}' if port else '')
+    for ok, msg in (_check_target(host, username), _check_port(port)):
+        if not ok:
+            return False, msg
+    # rsync's --rsh takes the remote-shell command as a single string and splits it
+    # at spaces, honouring single and double quotes (rsync `do_cmd()` in main.c,
+    # verified against rsync 3.5.1). Each token is quoted, so an option value with a
+    # space (`ProxyCommand=ssh -W %h:%p bastion`, a key path) stays one argument.
+    rsh_tokens = ['ssh', *(options or []), *(['-p', str(port)] if port else [])]
+    rsh = ' '.join(shell.quote_cli_value(token) for token in rsh_tokens)
     cmd = ['rsync', '--archive']
     if sudo:
         cmd += ['--rsync-path', 'sudo rsync']
-    cmd += ['--rsh', rsh, f'{local}/', f'{target(host, username)}:{remote}/']
+    cmd += ['--rsh', rsh, f'{local}/', _copy_target(host, username, f'{remote}/')]
     cmd, env = _with_password(cmd, password)
     return shell.shell_exec(cmd, env=env, timeout=timeout)
 
@@ -241,9 +279,9 @@ def run(
         `(True, (stdout, stderr, retc))` on success, else
         `(False, error_message)`. Same contract as `lib.shell.shell_exec()`.
     """
-    ok, msg = _check_target(host, username)
-    if not ok:
-        return False, msg
+    for ok, msg in (_check_target(host, username), _check_port(port)):
+        if not ok:
+            return False, msg
     cmd = ['ssh', *(options or [])]
     if port:
         cmd += ['-p', str(port)]
@@ -301,16 +339,16 @@ def scp(
         `(True, (stdout, stderr, retc))` on success, else
         `(False, error_message)`.
     """
-    ok, msg = _check_target(host, username)
-    if not ok:
-        return False, msg
+    for ok, msg in (_check_target(host, username), _check_port(port)):
+        if not ok:
+            return False, msg
     cmd = ['scp']
     if recursive:
         cmd += ['-r', '-p']
     cmd += options or []
     if port:
         cmd += ['-P', str(port)]
-    cmd += [local, f'{target(host, username)}:{remote}']
+    cmd += [local, _copy_target(host, username, remote)]
     cmd, env = _with_password(cmd, password)
     return shell.shell_exec(cmd, env=env, timeout=timeout)
 

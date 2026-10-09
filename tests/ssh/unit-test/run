@@ -15,7 +15,10 @@ rsync() are exercised by mocking lib.shell.shell_exec, so the assembled argument
 list is asserted without spawning ssh/scp/rsync.
 """
 
+import os
+import shutil
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -257,6 +260,139 @@ class TestRsync(unittest.TestCase):
         ):
             ssh.rsync('myhost', '/local/dir', '/remote/dir')
         self.assertNotIn('--rsync-path', captured['cmd'])
+
+
+def capture():
+    """Return a dict and a fake shell_exec() that records the command into it."""
+    captured = {}
+
+    def fake(cmd, env=None, timeout=None):
+        captured['cmd'] = cmd
+        return (True, ('', '', 0))
+
+    return captured, fake
+
+
+class TestIpv6Target(unittest.TestCase):
+    """scp and rsync split `host:path` at the first colon, so an IPv6 address goes in
+    brackets there. ssh itself takes no brackets."""
+
+    def test_scp_brackets_ipv6(self):
+        captured, fake = capture()
+        with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+            ssh.scp('2001:db8::1', '/l', '/r', username='root')
+        self.assertEqual(captured['cmd'][-1], 'root@[2001:db8::1]:/r')
+
+    def test_rsync_brackets_ipv6(self):
+        captured, fake = capture()
+        with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+            ssh.rsync('2001:db8::1', '/l', '/r')
+        self.assertEqual(captured['cmd'][-1], '[2001:db8::1]:/r/')
+
+    def test_names_and_ipv4_stay_as_they_are(self):
+        for host in ('myhost', 'alias-from-ssh-config', '192.0.2.10'):
+            with self.subTest(host=host):
+                captured, fake = capture()
+                with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+                    ssh.scp(host, '/l', '/r')
+                self.assertEqual(captured['cmd'][-1], f'{host}:/r')
+
+    def test_run_passes_ipv6_without_brackets(self):
+        captured, fake = capture()
+        with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+            ssh.run('2001:db8::1', 'true', username='root')
+        self.assertEqual(captured['cmd'][-2], 'root@2001:db8::1')
+
+
+class TestPort(unittest.TestCase):
+    def test_refuses_what_is_no_port(self):
+        for port in ('22 -oProxyCommand=touch_pwned', 'abc', 0, 65536, '-1', True):
+            for func in (ssh.run, ssh.scp, ssh.rsync):
+                with self.subTest(port=port, func=func.__name__):
+                    args = (
+                        ('myhost', 'true')
+                        if func is ssh.run
+                        else ('myhost', '/l', '/r')
+                    )
+                    with mock.patch('lib.ssh.shell.shell_exec') as m:
+                        ok, msg = func(*args, port=port)
+                    self.assertFalse(ok)
+                    self.assertIn('port', msg)
+                    m.assert_not_called()
+
+    def test_accepts_numbers_and_numeric_strings(self):
+        for port in (22, '2222', 65535, None, ''):
+            with self.subTest(port=port):
+                _captured, fake = capture()
+                with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+                    ok, _ = ssh.rsync('myhost', '/l', '/r', port=port)
+                self.assertTrue(ok)
+
+
+class TestRsyncRsh(unittest.TestCase):
+    def test_tokens_with_spaces_are_quoted(self):
+        captured, fake = capture()
+        options = ssh.build_options(
+            identity=['/keys/my key'], ssh_option=['ProxyCommand=ssh -W %h:%p bastion']
+        )
+        with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+            ssh.rsync('myhost', '/l', '/r', options=options, port=2222)
+        cmd = captured['cmd']
+        self.assertEqual(
+            cmd[cmd.index('--rsh') + 1],
+            "ssh -i '/keys/my key' -o 'ProxyCommand=ssh -W %h:%p bastion' -p 2222",
+        )
+
+    @unittest.skipUnless(
+        shutil.which('rsync') and os.name == 'posix',
+        'needs rsync and a POSIX shell for the stand-in ssh',
+    )
+    def test_real_rsync_splits_the_rsh_as_intended(self):
+        # rsync parses --rsh itself, so check what it really hands to ssh: a stand-in
+        # ssh found first in PATH records its arguments and fails the transfer
+        tmpdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmpdir)
+        record = os.path.join(tmpdir, 'argv')
+        fake_ssh = os.path.join(tmpdir, 'ssh')
+        with open(fake_ssh, 'w') as handle:
+            handle.write(
+                '#!/bin/sh\n'
+                f'for a in "$@"; do printf "%s\\n" "$a"; done > {record}\n'
+                'exit 255\n'
+            )
+        os.chmod(fake_ssh, 0o755)
+        source = os.path.join(tmpdir, 'src')
+        os.mkdir(source)
+        options = ssh.build_options(
+            identity=["/keys/my key's"],
+            ssh_option=['ProxyCommand=ssh -W %h:%p bastion'],
+        )
+        path = tmpdir + os.pathsep + os.environ.get('PATH', '')
+        with mock.patch.dict(os.environ, {'PATH': path}):
+            ssh.rsync(
+                '2001:db8::1',
+                source,
+                '/r',
+                username='root',
+                options=options,
+                port=2222,
+                timeout=10,
+            )
+        with open(record) as handle:
+            argv = handle.read().splitlines()
+        self.assertEqual(
+            argv[:7],
+            [
+                '-i',
+                "/keys/my key's",
+                '-o',
+                'ProxyCommand=ssh -W %h:%p bastion',
+                '-p',
+                '2222',
+                '-l',
+            ],
+        )
+        self.assertIn('2001:db8::1', argv)
 
 
 if __name__ == '__main__':

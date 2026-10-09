@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092702'
+__version__ = '2026100901'
 
 
 import os
@@ -55,6 +55,8 @@ def quote_cli_value(value):
 
     Values that reach a command as an argument list instead are quoted by nothing and
     need nothing: `shell_exec()` passes them verbatim. Use `safe_cli_value()` there.
+    The exception is a command that takes another command as one string and splits
+    it itself, such as rsync's `--rsh`, which honours the same quotes.
 
     Parameters
     ----------
