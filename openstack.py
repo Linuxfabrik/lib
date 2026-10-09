@@ -19,7 +19,7 @@ speaks, so reaching a service needs no client library of that service.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026100901'
 
 import datetime
 import hashlib
@@ -133,19 +133,26 @@ def _get_auth_url(env):
 
 
 def _get_cache_key(env, name):
-    """Return a cache key that is unique per cloud, project and user.
+    """Return a cache key that is unique per token request and endpoint lookup.
 
     Several consumers on the same host share one cache database, so the key has to tell their
-    tokens apart. The password is not part of it.
+    tokens apart. It is built from the very request that obtains the token, user and project
+    with their domains and the password included, and from what the endpoints are looked up
+    by. Two rc files that differ only in a domain, a user id, the password or the interface
+    therefore never share a token or its endpoints.
+
+    keystoneauth keys its own token cache on the same identity (`get_cache_id_elements()` of
+    the v3 password plugin, verified against keystoneauth 5.18.0). It leaves out interface and
+    region because it caches only the token; the endpoints cached here depend on both.
     """
-    identity = '|'.join(
-        [
-            env.get('OS_AUTH_URL', ''),
-            env.get('OS_USERNAME', ''),
-            env.get('OS_PROJECT_NAME', ''),
-            env.get('OS_PROJECT_ID', ''),
-            env.get('OS_REGION_NAME', ''),
-        ]
+    identity = json.dumps(
+        {
+            'auth': _get_auth_body(env),
+            'auth_url': _get_auth_url(env),
+            'interface': _get_interface(env),
+            'region': env.get('OS_REGION_NAME') or None,
+        },
+        sort_keys=True,
     )
     digest = hashlib.sha256(txt.to_bytes(identity)).hexdigest()[:32]
     return f'{name}-{digest}'

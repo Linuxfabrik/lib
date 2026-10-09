@@ -362,11 +362,54 @@ class TestCacheKey(unittest.TestCase):
             openstack._get_cache_key(dict(ENV, OS_PROJECT_ID='other'), 'a'),
         )
 
-    def test_the_password_is_not_part_of_the_key(self):
-        self.assertEqual(
-            openstack._get_cache_key(ENV, 'a'),
-            openstack._get_cache_key(dict(ENV, OS_PASSWORD='another'), 'a'),
+    def test_whatever_changes_the_token_changes_the_key(self):
+        # Two rc files for the same cloud, user and project name used to share a token
+        # even across domains, so one customer's check ran with another's token.
+        named = {
+            'OS_AUTH_URL': 'https://cloud.example.com/identity/v3',
+            'OS_PASSWORD': 'linuxfabrik',
+            'OS_PROJECT_NAME': 'prod',
+            'OS_REGION_NAME': 'region-a',
+            'OS_USERNAME': 'monitoring',
+        }
+        variants = {
+            'project domain': dict(named, OS_PROJECT_DOMAIN_NAME='customer-b'),
+            'project domain id': dict(named, OS_PROJECT_DOMAIN_ID='d2'),
+            'user domain': dict(named, OS_USER_DOMAIN_NAME='customer-b'),
+            'user domain id': dict(named, OS_USER_DOMAIN_ID='d2'),
+            'user id': dict(named, OS_USER_ID='u2'),
+            'password': dict(named, OS_PASSWORD='another'),
+            'interface': dict(named, OS_INTERFACE='internal'),
+            'region': dict(named, OS_REGION_NAME='region-b'),
+            'auth url': dict(named, OS_AUTH_URL='https://other.example.com/v3'),
+        }
+        key = openstack._get_cache_key(named, 'a')
+        for label, env in variants.items():
+            with self.subTest(changed=label):
+                self.assertNotEqual(openstack._get_cache_key(env, 'a'), key)
+
+    def test_two_user_ids_do_not_share_an_entry(self):
+        by_id = {'OS_AUTH_URL': ENV['OS_AUTH_URL'], 'OS_PROJECT_ID': PROJECT_ID}
+        self.assertNotEqual(
+            openstack._get_cache_key(dict(by_id, OS_USER_ID='u1'), 'a'),
+            openstack._get_cache_key(dict(by_id, OS_USER_ID='u2'), 'a'),
         )
+
+    def test_spellings_of_the_same_request_share_an_entry(self):
+        # What does not change the token request does not need a token of its own.
+        self.assertEqual(
+            openstack._get_cache_key(dict(ENV, OS_INTERFACE='internal'), 'a'),
+            openstack._get_cache_key(dict(ENV, OS_ENDPOINT_TYPE='internalURL'), 'a'),
+        )
+        self.assertEqual(
+            openstack._get_cache_key(
+                dict(ENV, OS_AUTH_URL='https://c.example/v3'), 'a'
+            ),
+            openstack._get_cache_key(dict(ENV, OS_AUTH_URL='https://c.example/'), 'a'),
+        )
+
+    def test_the_key_does_not_reveal_the_password(self):
+        self.assertNotIn('linuxfabrik', openstack._get_cache_key(ENV, 'a'))
 
     def test_an_empty_environment_still_yields_a_key(self):
         self.assertTrue(openstack._get_cache_key({}, 'a').startswith('a-'))

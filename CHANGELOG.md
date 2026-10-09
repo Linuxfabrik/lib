@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files
 * logsource.py: `read()` reads each source, rotated files included, from one checked handle
 * nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`
+* openstack.py: `connect()` reuses a cached token only for the same domain, user, password and interface, so checks for different customers on one host no longer run with each other's token
 
 
 ## [v8.2.0] - 2026-09-22
