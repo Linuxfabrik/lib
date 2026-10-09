@@ -376,8 +376,77 @@ class TestRam(unittest.TestCase):
         self.dmi = dmidecode.dmidecode_parse(REALISTIC_OUTPUT)
 
     def test_total_ram_gb(self):
-        # Two identical 16 GB DIMMs dedupe to one record, so ram() sees 16 GB.
-        self.assertEqual(dmidecode.ram(self.dmi), 16 * 1024**3)
+        # Two identical 16 GB DIMMs dedupe to one record, which still counts twice.
+        self.assertEqual(dmidecode.ram(self.dmi), 32 * 1024**3)
+
+    def test_identical_modules_count_once_each(self):
+        # dmidecode_parse() merges identical modules into one record; eight 16 GB
+        # DIMMs used to come out as 16 GiB, and about-me recommended a reboot.
+        record = (
+            'Handle 0x11{0:02d}, DMI type 17, 92 bytes\n'
+            'Memory Device\n'
+            '\tSize: 16 GB\n'
+            '\tLocator: DIMM{0}\n'
+            '\tManufacturer: Samsung\n'
+            '\tPart Number: M393A2K40DB3-CWE\n'
+        )
+        dmi = dmidecode.dmidecode_parse('\n'.join(record.format(i) for i in range(8)))
+        self.assertEqual(dmidecode.ram(dmi), 8 * 16 * 1024**3)
+
+    def test_binary_prefixes_of_dmidecode_3_7(self):
+        # dmidecode 3.7 prints `16 GiB` where earlier releases print `16 GB`, and
+        # ram() returned 0 for every module.
+        for size, expected in [
+            ('512 MiB', 512 * 1024**2),
+            ('16 GiB', 16 * 1024**3),
+            ('1 TiB', 1024**4),
+        ]:
+            with self.subTest(size=size):
+                dmi = {('h', '17', '1'): {'dmitype': 17, 'Size': size}}
+                self.assertEqual(dmidecode.ram(dmi), expected)
+
+    def test_every_unit_is_a_power_of_1024(self):
+        for exponent, units in enumerate(
+            [
+                ('bytes',),
+                ('kB', 'KiB'),
+                ('MB', 'MiB'),
+                ('GB', 'GiB'),
+                ('TB', 'TiB'),
+                ('PB', 'PiB'),
+                ('EB', 'EiB'),
+                ('ZB', 'ZiB'),
+            ]
+        ):
+            for unit in units:
+                with self.subTest(unit=unit):
+                    dmi = {('h', '17', '1'): {'dmitype': 17, 'Size': f'2 {unit}'}}
+                    self.assertEqual(dmidecode.ram(dmi), 2 * 1024**exponent)
+
+    def test_terabyte_module(self):
+        dmi = {('h', '17', '1'): {'dmitype': 17, 'Size': '1 TB'}}
+        self.assertEqual(dmidecode.ram(dmi), 1024**4)
+
+    def test_dedup_count_multiplies_the_size(self):
+        dmi = {
+            ('a', '17', '1'): {'dmitype': 17, 'Size': '32 GiB', 'dedup_count': 4},
+            ('b', '17', '1'): {'dmitype': 17, 'Size': '16 GiB', 'dedup_count': 2},
+        }
+        self.assertEqual(dmidecode.ram(dmi), (4 * 32 + 2 * 16) * 1024**3)
+
+    def test_unreadable_sizes_are_skipped(self):
+        for size in [
+            'Unknown',
+            'No Module Installed',
+            '',
+            'GB',
+            '16',
+            '16 XB',
+            '1.5 GB',
+        ]:
+            with self.subTest(size=size):
+                dmi = {('h', '17', '1'): {'dmitype': 17, 'Size': size}}
+                self.assertEqual(dmidecode.ram(dmi), 0)
 
     def test_ram_mb_slot(self):
         dmi = {

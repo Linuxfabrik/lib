@@ -14,7 +14,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026100901'
 
 import re
 
@@ -532,12 +532,39 @@ def model(dmi):
     return 'n/a'
 
 
+# The units dmidecode prints for a memory size, all of them powers of 1024
+# (`dmi_print_memory_size()` and `dmi_memory_device_extended_size()` in dmidecode.c).
+# dmidecode 3.7 switched to binary prefixes (`16 GiB`), earlier releases print the same
+# value as `16 GB`. Verified against the dmidecode source, tags dmidecode-3-5 to
+# dmidecode-3-7, and dmidecode 3.7 on Fedora 44.
+_SIZE_UNITS = {
+    'bytes': 0,
+    'kB': 1,
+    'KiB': 1,
+    'MB': 2,
+    'MiB': 2,
+    'GB': 3,
+    'GiB': 3,
+    'TB': 4,
+    'TiB': 4,
+    'PB': 5,
+    'PiB': 5,
+    'EB': 6,
+    'EiB': 6,
+    'ZB': 7,
+    'ZiB': 7,
+}
+_SIZE_RE = re.compile(r'^\s*(\d+)\s+(\w+)\s*$')
+
+
 def ram(dmi):
     """
     Calculate the total amount of RAM installed in bytes.
 
     This function sums the memory size of all populated memory slots found in the given
-    DMI data. Slot sizes given in megabytes (MB) or gigabytes (GB) are normalized to bytes.
+    DMI data. Sizes are read in the units of every dmidecode release, from `kB` to `ZB`
+    and from `KiB` to `ZiB`, all of them powers of 1024. A record that
+    `dmidecode_parse()` merged from several identical modules counts once per module.
 
     Parameters
     ----------
@@ -551,8 +578,7 @@ def ram(dmi):
 
     Notes
     -----
-    - Only slots reporting a size in MB or GB are considered.
-    - Entries reporting "No module installed" are skipped.
+    - Entries without a size, such as "No Module Installed" or "Unknown", are skipped.
 
     Examples
     --------
@@ -561,13 +587,11 @@ def ram(dmi):
     """
     total = 0
     for slot in dmiget(dmi, 'Memory Device'):
-        size_field = slot.get('Size', '').upper()
-        if 'GB' in size_field:
-            size = int(size_field.replace(' GB', '').strip()) * 1024**3
-            total += size
-        elif 'MB' in size_field:
-            size = int(size_field.replace(' MB', '').strip()) * 1024**2
-            total += size
+        match = _SIZE_RE.match(str(slot.get('Size', '')))
+        if not match or match.group(2) not in _SIZE_UNITS:
+            continue
+        size = int(match.group(1)) * 1024 ** _SIZE_UNITS[match.group(2)]
+        total += size * int(slot.get('dedup_count', 1))
     return total
 
 
