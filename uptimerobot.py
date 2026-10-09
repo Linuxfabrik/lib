@@ -11,9 +11,9 @@
 """Interacts with the UptimeRobot API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026060201'
+__version__ = '2026100901'
 
-from . import txt, url
+from . import url
 
 
 def delete_alert_contact(params):
@@ -184,6 +184,29 @@ def delete_psp(params):
     )
 
 
+# UptimeRobot answers a value it does not know with an error or, worse, reads it
+# as something else: a port monitor created with `sub_type=1s` or `sub_type=443` and
+# no `port` fails with "port must not be greater than 65535". A value is therefore
+# translated only as a whole, never by substring, which used to turn `https` into
+# `1s` because `http` was replaced first. Verified against the UptimeRobot v2 API
+# on 2026-10-09.
+def _to_api(params, replace_map, list_keys=()):
+    """Translate human-readable values in `params` to the codes the API expects.
+
+    A value without a translation is passed on unchanged, so a caller may also send
+    the numeric code itself. The keys in `list_keys` hold several values joined
+    by `-`, as in `statuses=up-down`, and are translated element by element.
+    """
+    params = dict(params)
+    for key, replacements in replace_map.items():
+        value = params.get(key)
+        if not isinstance(value, str):
+            continue
+        items = value.split('-') if key in list_keys else [value]
+        params[key] = '-'.join(str(replacements.get(item, item)) for item in items)
+    return params
+
+
 def edit_monitor(params):
     """
     Call the UptimeRobot API to edit an existing monitor.
@@ -192,6 +215,9 @@ def edit_monitor(params):
     - Filters the input parameters to include only allowed keys.
     - Converts human-readable values (e.g., protocol types, methods, status) to UptimeRobot's
       API-compatible values.
+
+    UptimeRobot ignores `sub_type` on an existing port monitor; to change what it
+    monitors, send `port`. Verified against the UptimeRobot v2 API on 2026-10-09.
 
     Parameters
     ----------
@@ -253,13 +279,15 @@ def edit_monitor(params):
 
     # convert human parameters to uptimerobot
     replace_map = {
+        # The preset of a port monitor, not its port number: without `port`, the
+        # API monitors 80, 443, 21, 25, 110 or 143 for these. `custom` takes `port`.
         'sub_type': {
             'http': '1',
-            'https': '443',
-            'ftp': '21',
-            'smtp': '25',
-            'pop3': '110',
-            'imap': '143',
+            'https': '2',
+            'ftp': '3',
+            'smtp': '4',
+            'pop3': '5',
+            'imap': '6',
             'custom': '99',
         },
         'keyword_type': {
@@ -297,6 +325,7 @@ def edit_monitor(params):
         },
         'post_content_type': {
             'text/html': '0',
+            'application/json': '1',
             'content/json': '1',
         },
         'disable_domain_expire_notifications': {
@@ -304,9 +333,7 @@ def edit_monitor(params):
             'disable': '1',
         },
     }
-    for key, replacements in replace_map.items():
-        if key in params and isinstance(params[key], str):
-            params[key] = txt.multi_replace(params[key], replacements)
+    params = _to_api(params, replace_map)
 
     return get_data(
         'https://api.uptimerobot.com/v2/editMonitor',
@@ -392,9 +419,7 @@ def edit_mwindow(params):
             'sun': 7,
         },
     }
-    for key, replacements in replace_map.items():
-        if key in params and isinstance(params[key], str):
-            params[key] = txt.multi_replace(params[key], replacements)
+    params = _to_api(params, replace_map, list_keys=('value',))
 
     return get_data(
         'https://api.uptimerobot.com/v2/editMWindow',
@@ -468,9 +493,7 @@ def edit_psp(params):
             'active': 1,
         },
     }
-    for key, replacements in replace_map.items():
-        if key in params and isinstance(params[key], str):
-            params[key] = txt.multi_replace(params[key], replacements)
+    params = _to_api(params, replace_map)
 
     return get_data(
         'https://api.uptimerobot.com/v2/editPSP',
@@ -768,9 +791,7 @@ def get_monitors(params):
             'beat': '5',
         },
     }
-    for key, replacements in replace_map.items():
-        if key in params and isinstance(params[key], str):
-            params[key] = txt.multi_replace(params[key], replacements)
+    params = _to_api(params, replace_map, list_keys=('statuses', 'types'))
 
     success, result = get_data(
         'https://api.uptimerobot.com/v2/getMonitors',
@@ -1154,13 +1175,15 @@ def new_monitor(params):
             'port': '4',
             'beat': '5',
         },
+        # The preset of a port monitor, not its port number: without `port`, the
+        # API monitors 80, 443, 21, 25, 110 or 143 for these. `custom` takes `port`.
         'sub_type': {
             'http': '1',
-            'https': '443',
-            'ftp': '21',
-            'smtp': '25',
-            'pop3': '110',
-            'imap': '143',
+            'https': '2',
+            'ftp': '3',
+            'smtp': '4',
+            'pop3': '5',
+            'imap': '6',
             'custom': '99',
         },
         'keyword_type': {
@@ -1194,6 +1217,7 @@ def new_monitor(params):
         },
         'post_content_type': {
             'text/html': '0',
+            'application/json': '1',
             'content/json': '1',
         },
         'disable_domain_expire_notifications': {
@@ -1201,9 +1225,7 @@ def new_monitor(params):
             'disable': '1',
         },
     }
-    for key, replacements in replace_map.items():
-        if key in params and isinstance(params[key], str):
-            params[key] = txt.multi_replace(params[key], replacements)
+    params = _to_api(params, replace_map)
 
     return get_data(
         'https://api.uptimerobot.com/v2/newMonitor',
@@ -1280,9 +1302,7 @@ def new_mwindow(params):
             'sun': 7,
         },
     }
-    for key, replacements in replace_map.items():
-        if key in params and isinstance(params[key], str):
-            params[key] = txt.multi_replace(params[key], replacements)
+    params = _to_api(params, replace_map, list_keys=('value',))
 
     return get_data(
         'https://api.uptimerobot.com/v2/newMWindow',
@@ -1354,9 +1374,7 @@ def new_psp(params):
             'active': 1,
         },
     }
-    for key, replacements in replace_map.items():
-        if key in params and isinstance(params[key], str):
-            params[key] = txt.multi_replace(params[key], replacements)
+    params = _to_api(params, replace_map)
 
     return get_data(
         'https://api.uptimerobot.com/v2/newPSP',

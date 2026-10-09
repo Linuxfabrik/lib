@@ -46,7 +46,6 @@ Every function is exercised against captured-style UptimeRobot payloads for:
 - the API-error path (stat != 'ok' -> '<type>: <message>'),
 - the offset-based pagination loop in get_data,
 - defensive edge cases observed by probing the real code (e.g. the
-  `multi_replace` substring quirk where sub_type 'https' becomes '1s', the
   isinstance(str) guard that leaves non-string values untranslated, the
   list-wrapping of single dict results, unknown-value fallbacks).
 
@@ -91,6 +90,20 @@ ERROR_ENVELOPE = {
         'message': 'api_key is invalid',
     },
 }
+
+
+# The presets of a port monitor and their codes, from the v2 API documentation and
+# confirmed against the API on 2026-10-09: without `port`, 1 to 6 monitor port 80,
+# 443, 21, 25, 110 and 143.
+SUB_TYPES = (
+    ('custom', '99'),
+    ('ftp', '3'),
+    ('http', '1'),
+    ('https', '2'),
+    ('imap', '6'),
+    ('pop3', '5'),
+    ('smtp', '4'),
+)
 
 
 class UptimeRobotTestCase(unittest.TestCase):
@@ -455,17 +468,35 @@ class TestEditMonitor(UptimeRobotTestCase):
         self.assertEqual(store['data']['post_content_type'], '1')
         self.assertEqual(store['data']['disable_domain_expire_notifications'], '1')
 
-    def test_sub_type_https_substring_quirk(self):
-        # multi_replace runs replacements in dict order; 'http' -> '1' fires
-        # before 'https' -> '443', so 'https' becomes '1s'. Pin this behaviour.
-        _, store = self.capture_request(ok_envelope('monitor', {'id': 1}))
-        uptimerobot.edit_monitor({'api_key': 'k', 'id': 1, 'sub_type': 'https'})
-        self.assertEqual(store['data']['sub_type'], '1s')
+    def test_sub_type_is_the_preset_code(self):
+        # 'http' used to be replaced inside 'https', which became '1s', and the other
+        # presets were sent as port numbers. Without `port`, the API rejects both
+        # with "port must not be greater than 65535" (UptimeRobot v2, 2026-10-09).
+        for human, expected in SUB_TYPES:
+            with self.subTest(sub_type=human):
+                _, store = self.capture_request(ok_envelope('monitor', {'id': 1}))
+                uptimerobot.edit_monitor({'api_key': 'k', 'id': 1, 'sub_type': human})
+                self.assertEqual(store['data']['sub_type'], expected)
 
-    def test_sub_type_http_translates_cleanly(self):
+    def test_numeric_code_passes_through(self):
         _, store = self.capture_request(ok_envelope('monitor', {'id': 1}))
-        uptimerobot.edit_monitor({'api_key': 'k', 'id': 1, 'sub_type': 'ftp'})
-        self.assertEqual(store['data']['sub_type'], '21')
+        uptimerobot.edit_monitor({'api_key': 'k', 'id': 1, 'sub_type': '2'})
+        self.assertEqual(store['data']['sub_type'], '2')
+
+    def test_post_content_type_application_json(self):
+        for human in ('application/json', 'content/json'):
+            with self.subTest(post_content_type=human):
+                _, store = self.capture_request(ok_envelope('monitor', {'id': 1}))
+                uptimerobot.edit_monitor(
+                    {'api_key': 'k', 'id': 1, 'post_content_type': human}
+                )
+                self.assertEqual(store['data']['post_content_type'], '1')
+
+    def test_does_not_change_the_callers_dict(self):
+        self.capture_request(ok_envelope('monitor', {'id': 1}))
+        params = {'api_key': 'k', 'id': 1, 'sub_type': 'https'}
+        uptimerobot.edit_monitor(params)
+        self.assertEqual(params['sub_type'], 'https')
 
     def test_non_string_value_not_translated(self):
         # The isinstance(str) guard means an int status is forwarded untouched.
@@ -525,6 +556,16 @@ class TestNewMonitor(UptimeRobotTestCase):
                     {'api_key': 'k', 'url': 'http://e', 'type': human}
                 )
                 self.assertEqual(store['data']['type'], expected)
+
+    def test_sub_type_is_the_preset_code(self):
+        for human, expected in SUB_TYPES:
+            with self.subTest(sub_type=human):
+                _, store = self.capture_request(ok_envelope('monitor', {'id': 1}))
+                uptimerobot.new_monitor(
+                    {'api_key': 'k', 'type': 'port', 'sub_type': human}
+                )
+                self.assertEqual(store['data']['type'], '4')
+                self.assertEqual(store['data']['sub_type'], expected)
 
     def test_drops_id_key(self):
         # new_monitor has no 'id' in allowed_keys.
@@ -596,6 +637,18 @@ class TestMWindowWrite(UptimeRobotTestCase):
         _, store = self.capture_request(ok_envelope('mwindow', {'id': 1}))
         uptimerobot.new_mwindow({'api_key': 'k', 'type': 'monthly'})
         self.assertEqual(store['data']['type'], '4')
+
+    def test_value_list_of_weekdays(self):
+        _, store = self.capture_request(ok_envelope('mwindow', {'id': 1}))
+        uptimerobot.new_mwindow(
+            {'api_key': 'k', 'type': 'weekly', 'value': 'mon-wed-sun'}
+        )
+        self.assertEqual(store['data']['value'], '1-3-7')
+
+    def test_value_list_of_days_of_month_passes_through(self):
+        _, store = self.capture_request(ok_envelope('mwindow', {'id': 1}))
+        uptimerobot.edit_mwindow({'api_key': 'k', 'id': 1, 'value': '1-15-28'})
+        self.assertEqual(store['data']['value'], '1-15-28')
 
     def test_value_all_weekdays(self):
         for human, expected in (
@@ -701,6 +754,18 @@ class TestGetMonitors(UptimeRobotTestCase):
         uptimerobot.get_monitors({'api_key': 'k', 'statuses': 'up', 'types': 'http'})
         self.assertEqual(store['data']['statuses'], '2')
         self.assertEqual(store['data']['types'], '1')
+
+    def test_request_translates_lists_element_by_element(self):
+        _, store = self.capture_request(ok_envelope('monitors', []))
+        uptimerobot.get_monitors(
+            {
+                'api_key': 'k',
+                'statuses': 'down-seems_down-paused',
+                'types': 'http-keyw-port',
+            }
+        )
+        self.assertEqual(store['data']['statuses'], '9-8-0')
+        self.assertEqual(store['data']['types'], '1-2-4')
 
     def test_request_drops_disallowed_keys(self):
         _, store = self.capture_request(ok_envelope('monitors', []))
