@@ -14,8 +14,9 @@ Time zone handling is not implemented.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092201'
+__version__ = '2026100901'
 
+import datetime
 import sys
 
 from .globals import STATE_UNKNOWN
@@ -27,6 +28,30 @@ except ImportError:
     sys.exit(STATE_UNKNOWN)
 
 from . import time, url
+
+# What an entry without a readable date is dated to: far enough back that it never
+# counts as the newest one.
+_NO_DATE = datetime.datetime(1970, 1, 1)
+
+
+def _parse_atom_date(value):
+    """Parse an Atom date (RFC 3339), or return `_NO_DATE` where it cannot be read."""
+    if not value or not value.strip():
+        return _NO_DATE
+    try:
+        return time.datetime2local(time.timestr2datetime(value, pattern='iso8601'))
+    except ValueError:
+        return _NO_DATE
+
+
+def _parse_rss_date(value):
+    """Parse an RSS date (RFC 822), or return `_NO_DATE` where it cannot be read."""
+    if not value or not value.strip():
+        return _NO_DATE
+    try:
+        return time.datetime2local(time.timestr2datetime(value, pattern='rfc2822'))
+    except ValueError:
+        return _NO_DATE
 
 
 def fetch_soup(
@@ -220,10 +245,7 @@ def parse_atom(soup):
         'title': soup.title.string if soup.title else 'n/a',
         'updated': soup.updated.string if soup.updated else '1970-01-01T00:00:00',
     }
-    result['updated_parsed'] = time.timestr2datetime(
-        result['updated'][:19],
-        pattern='%Y-%m-%dT%H:%M:%S',
-    )
+    result['updated_parsed'] = _parse_atom_date(result['updated'])
 
     result['entries'] = []
     for entry in soup.find_all('entry'):
@@ -232,10 +254,7 @@ def parse_atom(soup):
             'id': entry.id.string if entry.id else 'n/a',
             'updated': entry.updated.string if entry.updated else '1970-01-01T00:00:00',
         }
-        tmp['updated_parsed'] = time.timestr2datetime(
-            tmp['updated'][:19],
-            pattern='%Y-%m-%dT%H:%M:%S',
-        )
+        tmp['updated_parsed'] = _parse_atom_date(tmp['updated'])
         # summary
         try:
             parsed_summary = BeautifulSoup(entry.summary.string, 'lxml')
@@ -301,10 +320,7 @@ def parse_rss(soup):
 
     if updated:
         result['updated'] = updated
-        result['updated_parsed'] = time.timestr2datetime(
-            updated[:25],
-            pattern='%a, %d %b %Y %H:%M:%S',
-        )
+        result['updated_parsed'] = _parse_rss_date(updated)
 
     result['entries'] = []
     for entry in soup.find_all('item'):
@@ -315,10 +331,7 @@ def parse_rss(soup):
             if entry.pubDate
             else 'Wed, 01 Jan 1970 00:00:00',
         }
-        tmp['updated_parsed'] = time.timestr2datetime(
-            tmp['updated'][:25],
-            pattern='%a, %d %b %Y %H:%M:%S',
-        )
+        tmp['updated_parsed'] = _parse_rss_date(tmp['updated'])
         try:
             description_soup = BeautifulSoup(entry.description.string, 'lxml')
             tmp['summary'] = description_soup.get_text()

@@ -345,6 +345,92 @@ class TestParse(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_DEPS, 'BeautifulSoup4 not installed: ' + IMPORT_ERROR)
+def local(*args):
+    """The local time without an offset that a UTC moment is reported as, so the tests
+    hold on a host in any time zone."""
+    moment = datetime.datetime(*args, tzinfo=datetime.timezone.utc)
+    return moment.astimezone().replace(tzinfo=None)
+
+
+def rss_item(date_xml):
+    return BeautifulSoup(
+        '<rss><channel><title>t</title>'
+        f'<item><title>i</title><guid>g</guid>{date_xml}</item>'
+        '</channel></rss>',
+        'xml',
+    )
+
+
+def atom_entry(date_xml):
+    return BeautifulSoup(
+        f'<feed><title>t</title><entry><title>i</title><id>x</id>{date_xml}</entry></feed>',
+        'xml',
+    )
+
+
+class TestFeedDates(unittest.TestCase):
+    """Dates as feeds write them: RFC 822 in RSS, RFC 3339 in Atom, with any offset."""
+
+    def test_rss_dates_rfc_822_allows(self):
+        # a fixed strptime() layout over the first 25 characters rejected all of these
+        for value in (
+            'Wed, 1 Apr 2026 10:00:00 +0000',
+            'Wed, 01 Apr 2026 10:00 +0000',
+            '01 Apr 2026 10:00:00 +0000',
+            'Wed, 01 Apr 2026 10:00:00 GMT',
+        ):
+            with self.subTest(value=value):
+                entry = feedparser.parse_rss(rss_item(f'<pubDate>{value}</pubDate>'))
+                self.assertEqual(
+                    entry['entries'][0]['updated_parsed'], local(2026, 4, 1, 10, 0, 0)
+                )
+
+    def test_rss_offset_is_applied(self):
+        # the offset used to be dropped, which put the age of an entry off by it
+        entry = feedparser.parse_rss(
+            rss_item('<pubDate>Wed, 01 Apr 2026 12:00:00 +0200</pubDate>')
+        )
+        self.assertEqual(
+            entry['entries'][0]['updated_parsed'], local(2026, 4, 1, 10, 0, 0)
+        )
+
+    def test_atom_offset_and_date_only(self):
+        for value, expected in (
+            ('2026-04-01T12:00:00+02:00', local(2026, 4, 1, 10, 0, 0)),
+            ('2026-04-01T10:00:00.123456789Z', local(2026, 4, 1, 10, 0, 0, 123456)),
+            ('2026-04-01', datetime.datetime(2026, 4, 1)),
+        ):
+            with self.subTest(value=value):
+                result = feedparser.parse_atom(
+                    atom_entry(f'<updated>{value}</updated>')
+                )
+                self.assertEqual(result['entries'][0]['updated_parsed'], expected)
+
+    def test_unreadable_dates_are_dated_to_1970(self):
+        # never an exception, and never counted as the newest entry
+        no_date = datetime.datetime(1970, 1, 1)
+        # moments local time cannot hold, in any zone
+        for value in ('0001-01-01T00:00:00+01:00', '9999-12-31T23:59:59-05:00'):
+            with self.subTest(atom=value):
+                result = feedparser.parse_atom(
+                    atom_entry(f'<updated>{value}</updated>')
+                )
+                self.assertEqual(result['entries'][0]['updated_parsed'], no_date)
+        with self.subTest(rss='year 9999 west of UTC'):
+            result = feedparser.parse_rss(
+                rss_item('<pubDate>Fri, 31 Dec 9999 23:59:59 -0500</pubDate>')
+            )
+            self.assertEqual(result['entries'][0]['updated_parsed'], no_date)
+        for xml in ('<pubDate></pubDate>', '<pubDate>yesterday</pubDate>'):
+            with self.subTest(rss=xml):
+                result = feedparser.parse_rss(rss_item(xml))
+                self.assertEqual(result['entries'][0]['updated_parsed'], no_date)
+        for xml in ('<updated/>', '<updated>soon</updated>'):
+            with self.subTest(atom=xml):
+                result = feedparser.parse_atom(atom_entry(xml))
+                self.assertEqual(result['entries'][0]['updated_parsed'], no_date)
+
+
 class TestParseAtom(unittest.TestCase):
     """parse_atom() metadata, entries, timestamps and summary fallbacks."""
 
@@ -354,7 +440,7 @@ class TestParseAtom(unittest.TestCase):
         self.assertEqual(result['updated'], '2025-04-17T11:29:00.000Z')
         self.assertEqual(
             result['updated_parsed'],
-            datetime.datetime(2025, 4, 17, 11, 29, 0),
+            local(2025, 4, 17, 11, 29, 0),
         )
 
     def test_entry_count_and_basic_fields(self):
@@ -366,7 +452,7 @@ class TestParseAtom(unittest.TestCase):
         self.assertEqual(first['updated'], '2017-04-17T11:29:00.000Z')
         self.assertEqual(
             first['updated_parsed'],
-            datetime.datetime(2017, 4, 17, 11, 29, 0),
+            local(2017, 4, 17, 11, 29, 0),
         )
 
     def test_summary_from_summary_tag_strips_html(self):
@@ -455,7 +541,7 @@ class TestParseRss(unittest.TestCase):
         self.assertEqual(result['updated'], 'Wed, 10 Apr 2024 06:12:00 Z')
         self.assertEqual(
             result['updated_parsed'],
-            datetime.datetime(2024, 4, 10, 6, 12, 0),
+            local(2024, 4, 10, 6, 12, 0),
         )
 
     def test_item_count_and_basic_fields(self):
@@ -467,7 +553,7 @@ class TestParseRss(unittest.TestCase):
         self.assertEqual(first['updated'], 'Mon, 08 Apr 2024 05:11:00 Z')
         self.assertEqual(
             first['updated_parsed'],
-            datetime.datetime(2024, 4, 8, 5, 11, 0),
+            local(2024, 4, 8, 5, 11, 0),
         )
 
     def test_summary_strips_html(self):
@@ -486,7 +572,7 @@ class TestParseRss(unittest.TestCase):
         self.assertEqual(result['updated'], 'Wed, 10 Apr 2024 06:12:00 Z')
         self.assertEqual(
             result['updated_parsed'],
-            datetime.datetime(2024, 4, 10, 6, 12, 0),
+            local(2024, 4, 10, 6, 12, 0),
         )
 
     def test_no_channel_date_omits_updated_keys(self):

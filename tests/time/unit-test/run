@@ -73,6 +73,90 @@ class TestTimezonePinned(unittest.TestCase):
         self.assertEqual(t.timestr2epoch('1970-01-01 00:00:00'), 0.0)
 
 
+@unittest.skipUnless(hasattr(_time, 'tzset'), 'time.tzset() does not exist on Windows')
+class TestDatetime2Local(unittest.TestCase):
+    """Pinned to a zone with daylight saving time, so the offset is applied, not dropped."""
+
+    def setUp(self):
+        self.saved_tz = os.environ.get('TZ')
+        os.environ['TZ'] = 'CET-1CEST,M3.5.0,M10.5.0/3'
+        _time.tzset()
+
+    def tearDown(self):
+        if self.saved_tz is None:
+            os.environ.pop('TZ', None)
+        else:
+            os.environ['TZ'] = self.saved_tz
+        _time.tzset()
+
+    def test_utc_becomes_local(self):
+        utc = datetime.datetime(2026, 4, 1, 10, 0, tzinfo=datetime.timezone.utc)
+        self.assertEqual(t.datetime2local(utc), datetime.datetime(2026, 4, 1, 12, 0))
+
+    def test_any_offset_becomes_local(self):
+        moment = t.timestr2datetime(
+            'Wed, 01 Jan 2026 10:00:00 -0500', pattern='rfc2822'
+        )
+        self.assertEqual(t.datetime2local(moment), datetime.datetime(2026, 1, 1, 16, 0))
+
+    def test_out_of_range_raises_value_error(self):
+        # Go's zero time is representable in UTC but not in a zone west of it
+        os.environ['TZ'] = 'EST5EDT'
+        _time.tzset()
+        zero = t.timestr2datetime('0001-01-01T00:00:00Z', pattern='iso8601')
+        with self.assertRaises(ValueError):
+            t.datetime2local(zero)
+        for value in ('0001-01-01T00:00:00+01:00', '9999-12-31T23:59:59-05:00'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                t.datetime2local(t.timestr2datetime(value, pattern='iso8601'))
+
+    def test_naive_is_left_alone(self):
+        naive = datetime.datetime(2026, 4, 1, 10, 0)
+        self.assertEqual(t.datetime2local(naive), naive)
+
+
+class TestRfc2822(unittest.TestCase):
+    """The date of e-mail headers, RSS and HTTP, in the forms RFC 2822 allows."""
+
+    UTC_10 = datetime.datetime(2026, 4, 1, 10, 0, tzinfo=datetime.timezone.utc)
+
+    def test_the_forms_rfc_2822_allows(self):
+        for value in (
+            'Wed, 01 Apr 2026 10:00:00 +0000',
+            'Wed, 1 Apr 2026 10:00:00 +0000',
+            'Wed, 01 Apr 2026 10:00 +0000',
+            '01 Apr 2026 10:00:00 +0000',
+            'Wed, 01 Apr 2026 10:00:00 GMT',
+            'Wed, 01 Apr 2026 12:00:00 +0200',
+            '  Wed, 01 Apr 2026 10:00:00 Z  ',
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    t.timestr2datetime(value, pattern='rfc2822'), self.UTC_10
+                )
+
+    def test_unknown_zone_takes_tzinfo(self):
+        # -0000 is RFC 2822 for "no zone information"
+        value = 'Wed, 01 Apr 2026 10:00:00 -0000'
+        self.assertIsNone(t.timestr2datetime(value, pattern='rfc2822').tzinfo)
+        self.assertEqual(
+            t.timestr2datetime(value, pattern='rfc2822', tzinfo=datetime.timezone.utc),
+            self.UTC_10,
+        )
+
+    def test_epoch(self):
+        self.assertEqual(
+            t.timestr2epoch('Wed, 01 Apr 2026 10:00:00 +0000', pattern='rfc2822'),
+            self.UTC_10.timestamp(),
+        )
+
+    def test_unreadable_raises_value_error(self):
+        # the same exception as every other pattern, on every Python version
+        for value in ('', 'yesterday', '2026-04-01T10:00:00Z'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                t.timestr2datetime(value, pattern='rfc2822')
+
+
 class TestTimezoneIndependent(unittest.TestCase):
     def test_timestr2datetime(self):
         self.assertEqual(

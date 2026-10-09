@@ -11,9 +11,10 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082901'
+__version__ = '2026100901'
 
 import datetime
+import email.utils
 import re
 import time
 
@@ -25,6 +26,45 @@ except ImportError:
     # missing; degrade to UTC in get_timezone() instead of failing at import,
     # so consumers that do not need named time zones keep working.
     zoneinfo = None
+
+
+def datetime2local(dt):
+    """
+    Convert a datetime that carries an offset into the local time of the host, without one.
+
+    Consumers compare times with `now(as_type='datetime')`, which is local and naive. A time
+    read with its offset (`Z`, `+02:00`, `GMT`) has to be moved into that zone before the
+    offset is dropped, otherwise the comparison is off by the difference between the two.
+
+    Parameters
+    ----------
+    dt : datetime.datetime
+        The time, with or without an offset.
+
+    Returns
+    -------
+    datetime.datetime
+        The same moment in local time, naive. A value without an offset is returned unchanged,
+        because there is nothing to tell which zone it is in.
+
+    Raises
+    ------
+    ValueError
+        If the moment lies outside what a datetime can hold in local time, as the zero
+        value of Go's `time.Time` (`0001-01-01T00:00:00Z`) does on a host west of UTC.
+
+    Examples
+    --------
+    >>> datetime2local(timestr2datetime('2026-04-01T10:00:00Z', pattern='iso8601'))
+    datetime.datetime(2026, 4, 1, 12, 0)  # on a host in Central European Summer Time
+    """
+    if dt.tzinfo is None:
+        return dt
+    try:
+        return dt.astimezone().replace(tzinfo=None)
+    except OverflowError as e:
+        # the same exception the parsers raise, so one `except ValueError` covers both
+        raise ValueError(f'{dt.isoformat()} cannot be expressed in local time') from e
 
 
 def epoch2iso(timestamp):
@@ -324,6 +364,19 @@ def _parse(timestr, pattern, tzinfo=None):
     Shared by `timestr2datetime()` and `timestr2epoch()` so both accept the same values; see
     `timestr2epoch()` for what `pattern='iso8601'` covers.
     """
+    if pattern == 'rfc2822':
+        # The date of e-mail headers, RSS and HTTP (`Wed, 1 Apr 2026 10:00:00 +0000`).
+        # RFC 2822 allows a one-digit day and leaves the weekday and the seconds out,
+        # which no single strptime() layout covers.
+        try:
+            dt = email.utils.parsedate_to_datetime(timestr.strip())
+        except (IndexError, TypeError) as e:
+            # Python 3.9 raises TypeError on a value it cannot read, later versions the
+            # ValueError every other pattern raises
+            raise ValueError(f'Not an RFC 2822 date: {timestr}') from e
+        if dt.tzinfo is None and tzinfo is not None:
+            dt = dt.replace(tzinfo=tzinfo)
+        return dt
     if pattern == 'iso8601':
         # fromisoformat() accepts a trailing 'Z' only from Python 3.11, so
         # normalize it first. Same for fractional seconds that are not exactly
@@ -361,7 +414,8 @@ def timestr2datetime(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
         Defaults to '%Y-%m-%d %H:%M:%S'. For more details on format codes, see:
         https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes
         Pass the special value `'iso8601'` to parse without knowing the exact layout in advance;
-        `timestr2epoch()` describes what that covers.
+        `timestr2epoch()` describes what that covers. Pass `'rfc2822'` for the date of e-mail
+        headers, RSS feeds and HTTP (`Wed, 1 Apr 2026 10:00:00 +0000`).
     tzinfo : datetime.tzinfo, optional
         Timezone to tag a value that carries none.
         A value that brings its own offset keeps it. Defaults to None, which leaves the result
@@ -405,6 +459,10 @@ def timestr2epoch(timestr, pattern='%Y-%m-%d %H:%M:%S', tzinfo=None):
         (local time if `tzinfo` is None). An offset written without the colon (`+0200`, which
         `journalctl --output=short-iso` produces) is accepted on every supported Python, even
         though `fromisoformat()` itself only takes it from 3.11 on.
+        Pass `'rfc2822'` for the date of e-mail headers, RSS feeds and HTTP, read with
+        `email.utils.parsedate_to_datetime()`: the weekday, the seconds and a leading zero of the
+        day are optional, and the offset may be numeric (`+0200`) or a zone name (`GMT`). A
+        value with `-0000`, which RFC 2822 uses for an unknown zone, is treated per `tzinfo`.
     tzinfo : datetime.tzinfo, optional
         Timezone information.
         If provided, the parsed datetime is set to this timezone.

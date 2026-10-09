@@ -1443,11 +1443,13 @@ def timestamp(line, parse_line=None):
         return _syslog_datetime(match) if match else None
     try:
         # A space-padded hour is put back to what the parsers expect.
-        logged_at = lftime.timestr2datetime(
-            match.group(1).replace('  ', ' 0').replace('T ', 'T0'), pattern='iso8601'
+        return lftime.datetime2local(
+            lftime.timestr2datetime(
+                match.group(1).replace('  ', ' 0').replace('T ', 'T0'),
+                pattern='iso8601',
+            )
         )
     except ValueError:
+        # also a moment that cannot be expressed in local time, such as Go's zero
+        # time `0001-01-01T00:00:00Z` west of UTC
         return None
-    if logged_at.tzinfo is not None:
-        logged_at = logged_at.astimezone().replace(tzinfo=None)
-    return logged_at

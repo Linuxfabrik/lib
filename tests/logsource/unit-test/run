@@ -996,6 +996,15 @@ class TestTimestamp(unittest.TestCase):
             os.environ['TZ'] = self.saved_tz
         time.tzset()
 
+    def test_moment_local_time_cannot_hold_is_no_timestamp(self):
+        # a log line must not end the run, whatever date it carries
+        for line in (
+            '0001-01-01T00:00:00+01:00 host app[1]: hello',
+            '9999-12-31T23:59:59-05:00 host app[1]: hello',
+        ):
+            with self.subTest(line=line):
+                self.assertIsNone(lib.logsource.timestamp(line))
+
     def test_the_journald_prefix(self):
         # `--output=short-iso`, which is what _read_journald() asks for.
         self.assertEqual(

@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * redfish.py: `get_chassis()` returns the `Thermal` and `Power` links of a chassis
 * restic.py: `repo_args()` and `password_file_arg()` for restic's repository and password arguments
 * rhelappstreams.py: the life cycle of the RHEL Application Streams, refreshed weekly from Red Hat's data
+* time.py: `datetime2local()` turns a time with an offset into local time; `timestr2datetime()` and `timestr2epoch()` take `pattern='rfc2822'` for the dates of e-mail, RSS and HTTP
 * version.py: `check_eol()` takes `cycle`, for products whose release cycles are not version numbers, and `package_path`, which applies the life cycle RHEL, Debian and Ubuntu give the software they ship
 * wordpress.py: `find_installation()`, the first WordPress installation in the usual places, `/var/www` included
 
@@ -48,9 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * base.py: on Windows, what argparse writes to stderr no longer arrives with an empty line after every line, `get_state()` answers UNKNOWN to a threshold that is not a number instead of raising, and the messages of `coe()`, `cu()` and `verbose()` are no longer cut short at a `|`
 * disk.py: `is_within()` with the filesystem root as a root
 * dmidecode.py: `ram()` counts every module of a set of identical ones and reads the sizes of dmidecode 3.7 and terabyte modules, instead of reporting too little or nothing
+* feedparser.py: `parse_atom()` and `parse_rss()` read every date the formats allow, apply its offset, and date an empty or unreadable one to 1970 instead of failing
 * human.py: `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), and `humanduration2seconds()` and `humanrange2seconds()` read a fraction such as `0.5D` instead of only its decimal places
 * icinga.py: `api_post()` reaches a server whose name starts with `v1` or `v2`
-* logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint, and no longer loses lines at a rotation or when daylight saving time ends, hands out half-written lines, or falls behind on a busy unit
+* logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint, and no longer loses lines at a rotation or when daylight saving time ends, hands out half-written lines, or falls behind on a busy unit, and `timestamp()` no longer fails on a date local time cannot hold
 * net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, and `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
 * redfish.py: `start_trace()` works on Windows
