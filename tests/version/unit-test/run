@@ -230,6 +230,21 @@ class TestCheckEol(unittest.TestCase):
         self.assertEqual(state, STATE_WARN)
         self.assertIn('older than anything endoflife.date lists', msg)
 
+    def test_a_version_string_without_a_number_is_unknown(self):
+        # version() reads these as 0.0.0, below every listed cycle, which used to be
+        # reported as out of support
+        for version_string in ('', 'unknown', 'n/a', None):
+            with self.subTest(version_string=version_string):
+                state, msg = self.check(version_string)
+                self.assertEqual(state, STATE_UNKNOWN)
+                self.assertEqual(msg, f'no version number in "{version_string}"')
+
+    def test_version_zero_is_still_a_version(self):
+        # a real 0.x release, older than every listed cycle here
+        state, msg = self.check('0')
+        self.assertEqual(state, STATE_WARN)
+        self.assertIn('older than anything endoflife.date lists', msg)
+
     def test_an_unlisted_version_still_reports_the_upgrade(self):
         # The early return used to drop the "newer release available" part along with
         # the EOL verdict, so the admin lost both at once.
@@ -319,6 +334,16 @@ class TestCheckEolNamedCycle(unittest.TestCase):
         # full support ended on the day of the end of life, so the date is named once
         self.assertNotIn('full support ended', msg)
         self.assertIn('EOL 2000-01-01 -30d [WARNING]', msg)
+
+    def test_a_named_cycle_needs_no_version_number(self):
+        # the version string only appears in the message here
+        for version_string in ('', None):
+            with self.subTest(version_string=version_string):
+                state, msg = version.check_eol(
+                    EOL_NAMED_PRODUCT, version_string, timeout=1, cycle='9-99h2-e'
+                )
+                self.assertEqual(state, STATE_OK)
+                self.assertEqual(msg, 'EOL 2100-01-01 -30d')
 
     def test_first_listed_candidate_wins(self):
         state, msg = self.check(['9-99h2-e-lts', '9-99h2-e', '9-99h2'])

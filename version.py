@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100101'
+__version__ = '2026100901'
 
 import datetime
 import json
@@ -329,7 +329,9 @@ def check_eol(
     product : str
         Product name or endoflife.date JSON URL.
     version_string : str
-        The version string of the installed software.
+        The version string of the installed software. Without `cycle`, a string that
+        contains no digit, or `None`, is answered with UNKNOWN, since there is no
+        version to place.
     offset_eol : int, optional
         Days before EOL to trigger a warning. Default: `-30`.
     check_major : bool, optional
@@ -396,6 +398,14 @@ def check_eol(
     # parsers below.
     from . import base, time
 
+    # `version()` reads a string without a digit ("", "unknown", "n/a") as 0.0.0, which
+    # sorts below every listed cycle and would be reported as out of support. With a
+    # named cycle the version string only appears in the message.
+    if cycle is None and not (
+        isinstance(version_string, str) and re.search(r'\d', version_string)
+    ):
+        return STATE_UNKNOWN, f'no version number in "{version_string}"'
+
     now = time.now(as_type='datetime')
 
     eol, used_fallback, missing_httpx = _load_eol(
@@ -415,7 +425,8 @@ def check_eol(
             else ', endoflife.date unreachable, using bundled data'
         )
 
-    installed = version(version_string)
+    # only read where no cycle is named, see above
+    installed = version(version_string) if cycle is None else None
 
     cycles_eoldate = None
     if cycle is not None:

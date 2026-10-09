@@ -56,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * task.py: `run()` and `run_each()` no longer repeat the consumer's output when a job prints or ends the program, and report such a job as a failure
 * uptimerobot.py: `new_monitor()` and `edit_monitor()` send the port monitor presets UptimeRobot expects, so `https`, `ftp`, `smtp`, `pop3` and `imap` no longer fail, `post_content_type` accepts `application/json`, and the `get_*()` functions return every record, alert contacts past the first 50 and with a `limit` included, starting at a given `offset`
 * url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example
-* version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable
+* version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable, and answers UNKNOWN to a version without a number instead of calling it older than anything listed
 * winrm.py: `run_ps()` returns the output as PowerShell shows it again instead of the type names of the objects, behind a JEA endpoint as a list of their properties, and no longer writes a Python warning about the progress stream
 
 ### Security
