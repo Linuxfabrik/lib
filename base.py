@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026100901'
 
 import math
 import numbers
@@ -321,9 +321,18 @@ def get_state(value, warn, crit, _operator='ge'):
     if op is None:
         return STATE_UNKNOWN
 
-    if crit is not None and op(value, float(crit)):
+    # `None` means "no threshold". A threshold that is given but does not read as a
+    # number (`abc`, an empty string) is answered with UNKNOWN instead of raising, and
+    # must not fall back to "no threshold", which would report OK.
+    crit_bound = None if crit is None else _value2float(crit)
+    warn_bound = None if warn is None else _value2float(warn)
+    if (crit is not None and crit_bound is None) or (
+        warn is not None and warn_bound is None
+    ):
+        return STATE_UNKNOWN
+    if crit_bound is not None and op(value, crit_bound):
         return STATE_CRIT
-    if warn is not None and op(value, float(warn)):
+    if warn_bound is not None and op(value, warn_bound):
         return STATE_WARN
     return STATE_OK
 

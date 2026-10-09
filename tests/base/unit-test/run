@@ -215,6 +215,27 @@ class TestGetState(unittest.TestCase):
     def test_unknown_operator(self):
         self.assertEqual(base.get_state(15, 10, 20, 'bogus'), STATE_UNKNOWN)
 
+    def test_threshold_that_is_not_a_number_is_unknown(self):
+        # A bare float() raised here, and the consumer died with a traceback.
+        for warn, crit in (('abc', None), (None, ''), (None, 'abc'), ('nan', None)):
+            for operator in ('eq', 'ge', 'gt', 'le', 'lt', 'ne'):
+                with self.subTest(warn=warn, crit=crit, operator=operator):
+                    self.assertEqual(
+                        base.get_state(5, warn, crit, operator), STATE_UNKNOWN
+                    )
+
+    def test_invalid_warn_is_unknown_even_when_crit_matches(self):
+        self.assertEqual(base.get_state(100, 'abc', 50, 'ge'), STATE_UNKNOWN)
+
+    def test_threshold_with_a_percent_sign(self):
+        # Read like a bound of the range syntax, which accepts `90%`.
+        self.assertEqual(base.get_state(95, '80%', '90%', 'ge'), STATE_CRIT)
+        self.assertEqual(base.get_state(85, '80%', '90%', 'ge'), STATE_WARN)
+        self.assertEqual(base.get_state(5, '80%', '90%', 'ge'), STATE_OK)
+
+    def test_numeric_string_and_bytes_thresholds(self):
+        self.assertEqual(base.get_state(15, '10', b'20', 'ge'), STATE_WARN)
+
     def test_crit_takes_precedence_over_warn(self):
         # both warn and crit triggered -> crit wins.
         self.assertEqual(base.get_state(100, 10, 20, 'ge'), STATE_CRIT)

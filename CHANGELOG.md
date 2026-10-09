@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * args.py: arguments with characters outside of ASCII arrive intact when the Icinga 2 agent for Windows starts the consumer
-* base.py: on Windows, what argparse writes to stderr no longer arrives with an empty line after every line
+* base.py: on Windows, what argparse writes to stderr no longer arrives with an empty line after every line, and `get_state()` answers UNKNOWN to a threshold that is not a number instead of raising
 * disk.py: `is_within()` with the filesystem root as a root
 * dmidecode.py: `ram()` counts every module of a set of identical ones and reads the sizes of dmidecode 3.7 and terabyte modules, instead of reporting too little or nothing
 * human.py: `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), and `humanduration2seconds()` and `humanrange2seconds()` read a fraction such as `0.5D` instead of only its decimal places
