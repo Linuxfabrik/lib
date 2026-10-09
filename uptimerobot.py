@@ -11,7 +11,7 @@
 """Interacts with the UptimeRobot API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026100902'
 
 from . import url
 
@@ -647,7 +647,8 @@ def get_data(uri, data, result_key):
     Call a REST API and retrieve paginated results.
 
     Automatically handles offset-based pagination by requesting subsequent pages until all data is
-    fetched.
+    fetched. Each page advances by the number of records it held, so a `limit` in `data` only sets
+    the page size, and an `offset` in `data` sets where to start.
 
     Parameters
     ----------
@@ -670,7 +671,10 @@ def get_data(uri, data, result_key):
     >>> get_data('https://example.com/api', {'key': 'value'}, 'items')
     (True, [{'id': 1, 'name': 'A'}, {'id': 2, 'name': 'B'}, ...])
     """
-    offset = 0
+    try:
+        offset = int(data.get('offset') or 0)
+    except (TypeError, ValueError):
+        return (False, f'offset must be a number, not {data.get("offset")!r}')
     result = []
     data['format'] = 'json'
     while True:
@@ -691,17 +695,24 @@ def get_data(uri, data, result_key):
         if item.get(result_key) is None:
             # status was ok, but response doesn't deliver the result key
             return (True, item['message'])
-        if isinstance(item[result_key], list):
-            result += item[result_key]
-        else:
-            result = [item[result_key]]
-        if 'pagination' not in item:
-            # we got just one page
+        page = item[result_key]
+        if not isinstance(page, list):
+            return (True, [page])
+        result += page
+        # getMonitors, getMWindows and getPSPs nest `total` in `pagination`,
+        # getAlertContacts puts it at the top level (the documentation shows the
+        # latter for getPSPs too, the API does not). Verified against the
+        # UptimeRobot v2 API on 2026-10-09.
+        pagination = item.get('pagination') or (item if 'total' in item else None)
+        if not pagination or not page:
+            # a single page, or nothing left
             break
-        if offset > item['pagination']['total']:
-            # we fetched all pages
+        # Step by what the page held, not by a fixed 50: the page size is the `limit`
+        # the caller sent, and a fixed step skipped every record in between. Verified
+        # against the UptimeRobot v2 API on 2026-10-09, 152 monitors with limit=10.
+        offset += len(page)
+        if offset >= int(pagination.get('total', 0)):
             break
-        offset += 50
     return (True, result)
 
 

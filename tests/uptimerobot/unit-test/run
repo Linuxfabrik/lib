@@ -255,48 +255,117 @@ class TestGetData(UptimeRobotTestCase):
         self.assertFalse(success)
         self.assertEqual(result, 'HTTP 500 Internal Server Error')
 
-    def test_pagination_walks_offsets_and_concatenates(self):
-        # With total=120 the loop fetches offsets 0, 50, 100, 150 and stops once
-        # offset (150) exceeds total (120). Pages are concatenated in order.
-        # get_data reuses (and mutates) the same data dict, so MagicMock's stored
-        # call_args all point at the final state. Snapshot the offset at call time.
-        seen_offsets = []
+    def fake_api(self, total, max_limit=50):
+        """Answer like getMonitors: a slice of `total` records from `offset`, at most
+        `limit` (default and maximum 50) of them. Records the requests it saw.
+        """
+        requests = []
 
         def side(uri, **kwargs):
-            off = kwargs['data']['offset']
-            seen_offsets.append(off)
+            offset = kwargs['data']['offset']
+            limit = min(int(kwargs['data'].get('limit', max_limit)), max_limit)
+            requests.append((offset, limit))
+            page = [{'id': i} for i in range(offset, min(offset + limit, total))]
             return ok(
                 {
                     'stat': 'ok',
-                    'monitors': [{'id': off}],
-                    'pagination': {'total': 120},
+                    'monitors': page,
+                    'pagination': {'offset': offset, 'limit': limit, 'total': total},
                 }
             )
 
         self.patch_fetch(side_effect=side)
+        return requests
+
+    def test_pagination_returns_every_record(self):
+        # 152 monitors, as on the account this was verified against.
+        requests = self.fake_api(152)
         success, result = uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitors')
         self.assertTrue(success)
-        self.assertEqual(result, [{'id': 0}, {'id': 50}, {'id': 100}, {'id': 150}])
-        self.assertEqual(seen_offsets, [0, 50, 100, 150])
+        self.assertEqual(result, [{'id': i} for i in range(152)])
+        # no empty request after the last page
+        self.assertEqual(requests, [(0, 50), (50, 50), (100, 50), (150, 50)])
 
-    def test_pagination_single_full_page_stops_after_threshold(self):
-        # total=0: offset 0 fetched, then 0 > 0 is False so a second page is
-        # fetched at offset 50, after which 50 > 0 breaks. Two requests.
+    def test_pagination_with_a_small_limit_returns_every_record(self):
+        # A fixed step of 50 returned 32 of 152 records with limit=10.
+        requests = self.fake_api(152)
+        success, result = uptimerobot.get_data(
+            'http://x', {'api_key': 'k', 'limit': 10}, 'monitors'
+        )
+        self.assertTrue(success)
+        self.assertEqual(result, [{'id': i} for i in range(152)])
+        self.assertEqual(len(requests), 16)
+
+    def test_pagination_total_on_a_page_boundary(self):
+        # Stopping only at offset > total cost two empty requests here.
+        requests = self.fake_api(100)
+        success, result = uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitors')
+        self.assertTrue(success)
+        self.assertEqual(len(result), 100)
+        self.assertEqual(requests, [(0, 50), (50, 50)])
+
+    def test_pagination_empty_account(self):
+        requests = self.fake_api(0)
+        success, result = uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitors')
+        self.assertEqual((success, result), (True, []))
+        self.assertEqual(requests, [(0, 50)])
+
+    def test_pagination_starts_at_the_callers_offset(self):
+        requests = self.fake_api(152)
+        success, result = uptimerobot.get_data(
+            'http://x', {'api_key': 'k', 'offset': 140}, 'monitors'
+        )
+        self.assertTrue(success)
+        self.assertEqual(result, [{'id': i} for i in range(140, 152)])
+        self.assertEqual(requests, [(140, 50)])
+
+    def test_pagination_with_total_at_the_top_level(self):
+        # getAlertContacts answers with offset, limit and total next to the result
+        # instead of in `pagination` (UptimeRobot v2 API, 2026-10-09). Only the first
+        # page came back.
+        requests = []
+
         def side(uri, **kwargs):
-            off = kwargs['data']['offset']
+            offset = kwargs['data']['offset']
+            limit = int(kwargs['data'].get('limit', 50))
+            requests.append(offset)
+            page = [{'id': i} for i in range(offset, min(offset + limit, 120))]
             return ok(
                 {
                     'stat': 'ok',
-                    'monitors': [{'id': off}],
-                    'pagination': {'total': 0},
+                    'offset': offset,
+                    'limit': limit,
+                    'total': 120,
+                    'alert_contacts': page,
                 }
             )
 
+        self.patch_fetch(side_effect=side)
+        success, result = uptimerobot.get_data(
+            'http://x', {'api_key': 'k', 'limit': 10}, 'alert_contacts'
+        )
+        self.assertTrue(success)
+        self.assertEqual(result, [{'id': i} for i in range(120)])
+        self.assertEqual(requests, list(range(0, 120, 10)))
+
+    def test_pagination_stops_on_an_empty_page(self):
+        # A total that promises more than the API delivers must not loop forever.
+        def side(uri, **kwargs):
+            return ok({'stat': 'ok', 'monitors': [], 'pagination': {'total': 500}})
+
         m = self.patch_fetch(side_effect=side)
         success, result = uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitors')
-        self.assertTrue(success)
-        self.assertEqual(m.call_count, 2)
-        self.assertEqual(result, [{'id': 0}, {'id': 50}])
+        self.assertEqual((success, result), (True, []))
+        self.assertEqual(m.call_count, 1)
+
+    def test_offset_that_is_not_a_number_is_refused(self):
+        m = self.patch_fetch(ok(ok_envelope('monitors', [])))
+        success, result = uptimerobot.get_data(
+            'http://x', {'api_key': 'k', 'offset': 'x'}, 'monitors'
+        )
+        self.assertFalse(success)
+        self.assertIn('offset', result)
+        m.assert_not_called()
 
     def test_pagination_failure_mid_walk_propagates(self):
         # Second page errors out; the partial result is discarded.
