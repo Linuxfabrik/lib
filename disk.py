@@ -13,15 +13,17 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092801'
+__version__ = '2026100901'
 
 import csv
+import errno
 import glob as _glob
 import hashlib
 import os
 import re
 import shutil
 import stat as _stat
+import struct
 import tempfile
 
 from . import shell, txt
@@ -1632,6 +1634,90 @@ def read_file(
         return False, f'Unknown error opening or reading {filename}: {e}'
 
 
+# ACL formats that can grant write access beyond the mode bits but are not evaluated
+# here, so an object carrying one is refused: NFSv4 (fs/nfs/nfs4proc.c) and SMB
+# (fs/smb/client/xattr.c). The POSIX ACL entry tags and the write bit are from
+# include/uapi/linux/posix_acl.h, the xattr layout (a version header, then 8-byte
+# entries) from include/uapi/linux/posix_acl_xattr.h. Read in the source of Linux 7.3.
+_FOREIGN_ACL_XATTRS = (
+    'system.cifs_acl',
+    'system.nfs4_acl',
+    'system.nfs4_dacl',
+    'system.smb3_acl',
+)
+_POSIX_ACL_GROUP = 0x08
+_POSIX_ACL_GROUP_OBJ = 0x04
+_POSIX_ACL_MASK = 0x10
+_POSIX_ACL_USER = 0x02
+_POSIX_ACL_WRITE = 0x02
+_POSIX_ACL_XATTR_VERSION = 0x0002
+
+
+def _get_xattr(path, name):
+    """Return the value of an extended attribute, None if there is none, or raise."""
+    try:
+        return os.getxattr(path, name, follow_symlinks=False)
+    except OSError as e:
+        if e.errno in (errno.ENODATA, errno.EOPNOTSUPP):
+            return None
+        raise
+
+
+def _check_acl(path, st, uids, gids):
+    """
+    Look for an ACL entry that lets an account other than root, the trusted owners and
+    their primary groups write to `path`. The kernel grants a named user or group, and
+    the owning group, only what the mask allows, so the mask is applied first.
+
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if `path` has a POSIX ACL with a mask, in which
+            case the group bits of its mode are that mask and the owning group was
+            checked here.
+          - tuple[1] (**None or str**): None if no other account can write, otherwise
+            the reason.
+    """
+    if not hasattr(os, 'getxattr'):
+        return False, 'cannot be checked for ACLs on this platform'
+    try:
+        for name in _FOREIGN_ACL_XATTRS:
+            if _get_xattr(path, name) is not None:
+                return False, f'has an ACL ({name}) that cannot be checked'
+        raw = _get_xattr(path, 'system.posix_acl_access')
+    except OSError as e:
+        return False, f'has an ACL that cannot be read ({e.strerror})'
+    if raw is None:
+        return False, None
+    if (
+        len(raw) < 4
+        or (len(raw) - 4) % 8
+        or struct.unpack_from('<I', raw)[0] != _POSIX_ACL_XATTR_VERSION
+    ):
+        return False, 'has an ACL that cannot be read'
+    entries = list(struct.iter_unpack('<HHI', raw[4:]))
+    masks = [perm for tag, perm, _ in entries if tag == _POSIX_ACL_MASK]
+    mask = masks[0] if masks else 0x07
+    for tag, perm, acl_id in entries:
+        if not perm & mask & _POSIX_ACL_WRITE:
+            continue
+        if tag == _POSIX_ACL_USER and acl_id not in uids:
+            return bool(masks), (
+                f'is writable by uid {acl_id} through its ACL, which is not trusted '
+                'for this'
+            )
+        if tag == _POSIX_ACL_GROUP and acl_id not in gids:
+            return bool(masks), (
+                f'is writable by group {acl_id} through its ACL, which is not '
+                'trusted for this'
+            )
+        if tag == _POSIX_ACL_GROUP_OBJ and st.st_gid not in gids:
+            return bool(masks), (
+                f'is writable by group {st.st_gid}, which is not trusted for this'
+            )
+    return bool(masks), None
+
+
 def resolve_trusted_path(path, owners=None):
     """
     Resolve a path and confirm that nobody but root and the given owners can change
@@ -1668,7 +1754,11 @@ def resolve_trusted_path(path, owners=None):
       directory, which is checked.
     - A directory writable by everyone (such as `/tmp`, sticky bit or not) is never
       trusted.
-    - POSIX only. Where ownership cannot be determined (Windows), the path is refused.
+    - A POSIX ACL counts like the mode: an entry that lets another user or group write
+      is refused. An object with an NFSv4 or SMB ACL is refused, since those cannot be
+      evaluated here.
+    - Linux only. Where ownership or ACLs cannot be checked (Windows, macOS), the path is
+      refused.
 
     Examples
     --------
@@ -1720,7 +1810,10 @@ def resolve_trusted_path(path, owners=None):
             continue
         if st.st_mode & _stat.S_IWOTH:
             return False, f'Refusing "{path}": "{current}" is writable by everyone.'
-        if st.st_mode & _stat.S_IWGRP and st.st_gid not in gids:
+        has_mask, reason = _check_acl(current, st, uids, gids)
+        if reason:
+            return False, f'Refusing "{path}": "{current}" {reason}.'
+        if not has_mask and st.st_mode & _stat.S_IWGRP and st.st_gid not in gids:
             return False, (
                 f'Refusing "{path}": "{current}" is writable by group {st.st_gid}, '
                 'which is not trusted for this.'

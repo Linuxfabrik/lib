@@ -16,8 +16,10 @@ without real block devices. get_block_devices() reads sysfs directly and is
 checked only for its return shape here.
 """
 
+import errno
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -1168,6 +1170,149 @@ class TestResolveTrustedPath(unittest.TestCase):
         for value in (None, '', 42, b'/usr/bin/env'):
             with self.subTest(value=value):
                 self.assertFalse(disk.resolve_trusted_path(value)[0])
+
+
+def _posix_acl(*entries):
+    """Build a `system.posix_acl_access` value from (tag, perm, id) entries, in the
+    order the kernel requires (include/uapi/linux/posix_acl_xattr.h)."""
+    undefined = 0xFFFFFFFF
+    return struct.pack('<I', 2) + b''.join(
+        struct.pack('<HHI', tag, perm, undefined if acl_id is None else acl_id)
+        for tag, perm, acl_id in entries
+    )
+
+
+ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_GROUP, ACL_MASK, ACL_OTHER = (
+    0x01,
+    0x02,
+    0x04,
+    0x08,
+    0x10,
+    0x20,
+)
+NOBODY = 65534
+
+
+@unittest.skipUnless(hasattr(os, 'setxattr'), 'POSIX ACLs are a Linux feature here')
+class TestResolveTrustedPathAcl(unittest.TestCase):
+    """An ACL entry that lets another account write counts like a mode bit.
+
+    The group bits of a file with an ACL show the mask, not the owning group, so a
+    foreign user's write access looks like group write access of a trusted group.
+    """
+
+    def setUp(self):
+        self.uid = os.getuid()
+        self.gid = os.getgid()
+        self.base = _trusted_base()
+        if self.base is None:
+            self.skipTest('no directory on this host is trusted for the test user')
+        self.file = os.path.join(self.base, 'bin')
+        disk.write_file(self.file, 'x')
+        os.chmod(self.file, 0o755)
+
+    def tearDown(self):
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def _set_acl(self, path, *named, group_obj=0o5, mask=0o7):
+        try:
+            os.setxattr(
+                path,
+                'system.posix_acl_access',
+                _posix_acl(
+                    (ACL_USER_OBJ, 0o7, None),
+                    *[e for e in named if e[0] == ACL_USER],
+                    (ACL_GROUP_OBJ, group_obj, None),
+                    *[e for e in named if e[0] == ACL_GROUP],
+                    (ACL_MASK, mask, None),
+                    (ACL_OTHER, 0o5, None),
+                ),
+            )
+        except OSError as e:
+            self.skipTest(f'the filesystem takes no POSIX ACL ({e.strerror})')
+
+    def test_a_foreign_user_on_the_file_is_refused(self):
+        self._set_acl(self.file, (ACL_USER, 0o7, NOBODY))
+        success, result = disk.resolve_trusted_path(self.file, owners=[self.uid])
+        self.assertFalse(success)
+        self.assertIn(f'writable by uid {NOBODY} through its ACL', result)
+
+    def test_a_foreign_user_on_a_directory_is_refused(self):
+        self._set_acl(self.base, (ACL_USER, 0o7, NOBODY))
+        success, result = disk.resolve_trusted_path(self.file, owners=[self.uid])
+        self.assertFalse(success)
+        self.assertIn(f'"{os.path.realpath(self.base)}" is writable by uid', result)
+
+    def test_a_foreign_group_on_the_file_is_refused(self):
+        self._set_acl(self.file, (ACL_GROUP, 0o7, NOBODY))
+        success, result = disk.resolve_trusted_path(self.file, owners=[self.uid])
+        self.assertFalse(success)
+        self.assertIn(f'writable by group {NOBODY} through its ACL', result)
+
+    def test_the_mask_limits_a_named_entry(self):
+        # u:nobody:rwx with mask r-x grants nobody no write access
+        self._set_acl(self.file, (ACL_USER, 0o7, NOBODY), mask=0o5)
+        self.assertTrue(disk.resolve_trusted_path(self.file, owners=[self.uid])[0])
+
+    def test_a_trusted_named_user_is_accepted(self):
+        self._set_acl(self.file, (ACL_USER, 0o7, self.uid))
+        self.assertTrue(disk.resolve_trusted_path(self.file, owners=[self.uid])[0])
+
+    def test_a_mask_with_write_alone_does_not_refuse_a_foreign_owning_group(self):
+        # The group bits show the mask (w, for the trusted named user), while the
+        # foreign owning group itself may only read.
+        foreign = [gid for gid in os.getgroups() if gid not in (0, self.gid)]
+        if not foreign:
+            self.skipTest('the test user has no supplementary group')
+        os.chown(self.file, -1, foreign[0])
+        self._set_acl(self.file, (ACL_USER, 0o7, self.uid), group_obj=0o5)
+        self.assertTrue(disk.resolve_trusted_path(self.file, owners=[self.uid])[0])
+        self._set_acl(self.file, (ACL_USER, 0o7, self.uid), group_obj=0o7)
+        success, result = disk.resolve_trusted_path(self.file, owners=[self.uid])
+        self.assertFalse(success)
+        self.assertIn(f'writable by group {foreign[0]}', result)
+
+    def test_an_nfs4_or_smb_acl_is_refused(self):
+        for name in ('system.nfs4_acl', 'system.smb3_acl'):
+            with self.subTest(name=name):
+
+                def fake(path, attr, name=name):
+                    return b'\x00' if attr == name else None
+
+                with mock.patch.object(disk, '_get_xattr', side_effect=fake):
+                    success, result = disk.resolve_trusted_path(
+                        self.file, owners=[self.uid]
+                    )
+                self.assertFalse(success)
+                self.assertIn(f'has an ACL ({name}) that cannot be checked', result)
+
+    def test_an_unreadable_acl_is_refused(self):
+        for value in (b'', b'\x02\x00\x00\x00\x01', struct.pack('<I', 1)):
+            with self.subTest(value=value):
+
+                def fake(path, attr, value=value):
+                    return value if attr == 'system.posix_acl_access' else None
+
+                with mock.patch.object(disk, '_get_xattr', side_effect=fake):
+                    success, result = disk.resolve_trusted_path(
+                        self.file, owners=[self.uid]
+                    )
+                self.assertFalse(success)
+                self.assertIn('has an ACL that cannot be read', result)
+
+    def test_an_acl_that_cannot_be_queried_is_refused(self):
+        error = OSError(errno.EACCES, 'Permission denied')
+        with mock.patch.object(disk, '_get_xattr', side_effect=error):
+            success, result = disk.resolve_trusted_path(self.file, owners=[self.uid])
+        self.assertFalse(success)
+        self.assertIn('cannot be read (Permission denied)', result)
+
+    def test_without_xattr_support_the_path_is_refused(self):
+        with mock.patch.object(disk.os, 'getxattr'):
+            del disk.os.getxattr
+            success, result = disk.resolve_trusted_path(self.file, owners=[self.uid])
+        self.assertFalse(success)
+        self.assertIn('cannot be checked for ACLs on this platform', result)
 
 
 class TestFingerprintFromHandle(unittest.TestCase):
