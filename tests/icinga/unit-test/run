@@ -105,6 +105,23 @@ class TestApiPost(IcingaTestBase):
         token = self.sent_kwargs()['header']['Authorization'].split(' ', 1)[1]
         self.assertEqual(base64.b64decode(token).decode(), 'alice:s3cret')
 
+    def test_repeated_slashes_in_the_path_are_collapsed(self):
+        icinga.api_post(
+            'https://icinga.example.com:5665//v1/objects/services', 'u', 'p'
+        )
+        self.assertEqual(
+            self.sent_uri(), 'https://icinga.example.com:5665/v1/objects/services'
+        )
+
+    def test_host_starting_with_v1_is_left_alone(self):
+        # replacing `//v1` in the whole URI turned this into `https:/v1.icinga...`
+        for host in ('v1.icinga.example.com', 'v2.icinga.example.com'):
+            with self.subTest(host=host):
+                icinga.api_post(f'https://{host}:5665/v1/objects/services', 'u', 'p')
+                self.assertEqual(
+                    self.sent_uri(), f'https://{host}:5665/v1/objects/services'
+                )
+
     def test_accept_header_is_json(self):
         icinga.api_post(f'{URI}/v1/x', USER, PASSWORD)
         self.assertEqual(self.sent_kwargs()['header']['Accept'], 'application/json')

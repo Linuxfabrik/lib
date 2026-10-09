@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026100901'
 
 import base64
 import json
@@ -227,7 +227,7 @@ def _install_safe_redirect_stripping(client):
             raise _RefusedError(
                 f'Refused to resend the request body to another host after an'
                 f' HTTP {response.status_code} redirect to'
-                f' {_redact_url(str(redirect.url))}'
+                f' {txt.sanitize_sensitive_data(str(redirect.url))}'
             )
         return redirect
 
@@ -236,15 +236,6 @@ def _install_safe_redirect_stripping(client):
     if original_headers is not None:
         client._redirect_headers = _redirect_headers
     return client
-
-
-def _redact_url(url):
-    """Mask the password of a `user:password@` prefix and the values of `token=...`
-    and `password=...` query parameters, so a URL can be put into a message."""
-    # The userinfo ends at the last `@` before the path, since a password may carry
-    # an unescaped `@` of its own.
-    url = re.sub(r'(://[^/?#@:]*):[^/?#]*@', r'\1:********@', url)
-    return re.sub(r'(token|password)=([^&]+)', r'\1=********', url)
 
 
 def _body_hint(data):
@@ -531,8 +522,20 @@ def _build_timing_transport(ssl_context, http1, http2, proxy):
         trust_env=False,
     )
     if proxy:
+        # httpcore sends Proxy-Authorization only for `proxy_auth` and ignores a
+        # `user:password@` in the proxy URL, so the proxy answered 407. Split it off
+        # the way httpx's own transport does (httpx 0.28.1, _transports/default.py;
+        # the same attributes exist since 0.26).
+        proxy_config = httpx.Proxy(url=proxy)
         transport._pool = httpcore.HTTPProxy(
-            proxy_url=proxy,
+            proxy_url=httpcore.URL(
+                scheme=proxy_config.url.raw_scheme,
+                host=proxy_config.url.raw_host,
+                port=proxy_config.url.port,
+                target=proxy_config.url.raw_path,
+            ),
+            proxy_auth=proxy_config.raw_auth,
+            proxy_headers=proxy_config.headers.raw,
             ssl_context=ssl_context,
             http1=http1,
             http2=http2,
@@ -829,7 +832,7 @@ def _fetch_once(
     if http_version == '3':
         return (
             False,
-            f'HTTP/3 not implemented yet, while fetching {_redact_url(url)}',
+            f'HTTP/3 not implemented yet, while fetching {txt.sanitize_sensitive_data(url)}',
             False,
         )
     if http_version not in ('1.0', '1.1', '2'):
@@ -842,7 +845,7 @@ def _fetch_once(
             False,
         )
 
-    url_safe = _redact_url(url)
+    url_safe = txt.sanitize_sensitive_data(url)
 
     if data:
         try:
@@ -1611,9 +1614,10 @@ def split_basic_auth(url):
     password = urllib.parse.unquote(parsed.password or '')
     token = txt.to_text(base64.b64encode(txt.to_bytes(f'{user}:{password}')))
 
-    netloc = parsed.hostname or ''
-    if parsed.port is not None:
-        netloc = f'{netloc}:{parsed.port}'
+    # Everything after the last `@` is host and port exactly as given: rebuilding them
+    # from `hostname` and `port` dropped the brackets of an IPv6 address
+    # (`[2001:db8::1]:8443` became `2001:db8::1:8443`).
+    netloc = parsed.netloc.rpartition('@')[2]
     stripped = urllib.parse.urlunparse(parsed._replace(netloc=netloc))
 
     return stripped, {'Authorization': f'Basic {token}'}

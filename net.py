@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026100902'
 
 import ipaddress
 import os
@@ -813,9 +813,17 @@ def get_proxy(target_url, no_proxy=False):
         host = (parsed.hostname or '').lower()
         port = parsed.port
     except ValueError as e:
-        return (False, f'Cannot read host and port from "{target_url}": {e}')
+        # The URL can carry credentials, and this message ends up in the plugin
+        # output and the history of the monitoring server.
+        return (
+            False,
+            f'Cannot read host and port from "{txt.sanitize_sensitive_data(target_url)}": {e}',
+        )
     if not host:
-        return (False, f'Cannot read a hostname from "{target_url}"')
+        return (
+            False,
+            f'Cannot read a hostname from "{txt.sanitize_sensitive_data(target_url)}"',
+        )
     if port is None:
         port = 443 if scheme == 'https' else 80
 
@@ -840,7 +848,11 @@ def get_proxy(target_url, no_proxy=False):
         # a bare `proxy.example.com:3128` means a plain HTTP proxy
         proxy = f'http://{proxy}'
     if not urllib.parse.urlsplit(proxy).hostname:
-        return (False, f'Cannot read a hostname from the configured proxy "{proxy}"')
+        return (
+            False,
+            f'Cannot read a hostname from the configured proxy '
+            f'"{txt.sanitize_sensitive_data(proxy)}"',
+        )
     return (True, proxy)
 
 

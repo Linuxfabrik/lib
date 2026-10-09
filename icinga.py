@@ -11,10 +11,11 @@
 """This module tries to make accessing the Icinga2 API easier."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026100901'
 
 import base64
 import html
+import re
 import time
 import urllib.parse
 from string import Template
@@ -72,7 +73,8 @@ def api_post(
 
     Notes
     -----
-    - Replaces double slashes `//v1` or `//v2` in the URI to ensure correct URL formatting.
+    - Collapses repeated slashes in the path of the URI (`//v1`, from a base URL with a
+      trailing slash). The host is left alone, `v1.icinga.example.com` included.
     - Pauses execution for a short duration after sending the request (`DEFAULT_SLEEP`).
 
     Examples
@@ -93,7 +95,12 @@ def api_post(
     ...     )
     ... )
     """
-    uri = uri.replace('//v1', '/v1').replace('//v2', '/v2')
+    # Only the path: replacing `//v1` in the whole URI also hit the `//` after the
+    # scheme of a host such as `v1.icinga.example.com`.
+    parts = urllib.parse.urlsplit(uri)
+    uri = urllib.parse.urlunsplit(
+        parts._replace(path=re.sub(r'/{2,}', '/', parts.path))
+    )
     headers = {
         'Accept': 'application/json',
         'Authorization': f'Basic {txt.to_text(base64.b64encode(txt.to_bytes(f"{username}:{password}")))}',

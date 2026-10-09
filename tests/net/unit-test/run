@@ -361,6 +361,23 @@ class TestGetProxy(unittest.TestCase):
         with mock.patch.dict(os.environ, env, clear=True):
             return net.get_proxy(target, **kwargs)
 
+    def test_unreadable_target_is_named_without_its_credentials(self):
+        success, message = self._proxy(
+            'https://admin:linuxfabrik@example.com:99999/x?token=linuxfabrik', {}
+        )
+        self.assertFalse(success)
+        self.assertIn('example.com:99999', message)
+        self.assertNotIn('linuxfabrik', message)
+
+    def test_unusable_proxy_is_named_without_its_credentials(self):
+        success, message = self._proxy(
+            'https://host.example.com/x',
+            {'https_proxy': 'http://alice:linuxfabrik@:3128'},
+        )
+        self.assertFalse(success)
+        self.assertIn('configured proxy', message)
+        self.assertNotIn('linuxfabrik', message)
+
     def test_returns_the_proxy_of_the_scheme(self):
         self.assertEqual(
             self._proxy(

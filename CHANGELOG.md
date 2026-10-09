@@ -49,13 +49,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * disk.py: `is_within()` with the filesystem root as a root
 * dmidecode.py: `ram()` counts every module of a set of identical ones and reads the sizes of dmidecode 3.7 and terabyte modules, instead of reporting too little or nothing
 * human.py: `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), and `humanduration2seconds()` and `humanrange2seconds()` read a fraction such as `0.5D` instead of only its decimal places
+* icinga.py: `api_post()` reaches a server whose name starts with `v1` or `v2`
 * logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint, and no longer loses lines at a rotation or when daylight saving time ends, hands out half-written lines, or falls behind on a busy unit
 * net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, and `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
 * redfish.py: `start_trace()` works on Windows
 * task.py: `run()` and `run_each()` no longer repeat the consumer's output when a job prints or ends the program, and report such a job as a failure
 * uptimerobot.py: `new_monitor()` and `edit_monitor()` send the port monitor presets UptimeRobot expects, so `https`, `ftp`, `smtp`, `pop3` and `imap` no longer fail, `post_content_type` accepts `application/json`, and the `get_*()` functions return every record, alert contacts past the first 50 and with a `limit` included, starting at a given `offset`
-* url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example
+* url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example, `fetch(extended=True)` authenticates to a proxy, and `split_basic_auth()` keeps the brackets of an IPv6 address
 * version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable, and answers UNKNOWN to a version without a number instead of calling it older than anything listed; `version()` no longer reads a pre-release, a build suffix or a date as part of the version
 * winrm.py: `run_ps()` returns the output as PowerShell shows it again instead of the type names of the objects, behind a JEA endpoint as a list of their properties, and no longer writes a Python warning about the progress stream
 
@@ -65,9 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_sqlite.py: `get_db_dir()` no longer keeps databases where other accounts may plant or swap them, such as `C:\Windows\Temp` of SYSTEM on Windows
 * disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files
 * logsource.py: `read()` reads each source, rotated files included, from one checked handle
+* net.py: `get_proxy()` no longer puts the password or token of a URL, or the password of a proxy, into its error message
 * nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`
 * openstack.py: `connect()` reuses a cached token only for the same domain, user, password and interface, so checks for different customers on one host no longer run with each other's token
 * txt.py: `sanitize_sensitive_data()` also redacts credentials under prefixed names such as `db_password` or `client_secret`, `passwd`, quoted values with spaces or escaped quotes, and URL passwords containing `@` or `/`
+* url.py: the error messages of `fetch()` and `fetch_json()` no longer show part of a password containing `/`, or the values of `api_key`, `secret` and similar query parameters
 
 
 ## [v8.2.0] - 2026-09-22

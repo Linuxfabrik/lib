@@ -315,6 +315,22 @@ class TestSanitizeSensitiveData(unittest.TestCase):
     def test_redacts_url_password_with_hash_or_question_mark(self):
         for url, expected in (
             ('https://u:pa#ss@host', 'https://u:******@host'),
+            # formerly url._redact_url(), which put these into fetch() messages
+            ('http://admin:linuxfabrik@h:8080/p', 'http://admin:******@h:8080/p'),
+            ('https://admin@h/p', 'https://admin@h/p'),
+            ('https://example.com/path?a=1&b=2', 'https://example.com/path?a=1&b=2'),
+            (
+                'https://h/users/a:b@c?mail=a:b@example.com',
+                'https://h/users/a:b@c?mail=a:b@example.com',
+            ),
+            (
+                'https://h/p?token=abc&x=1&password=secret',
+                'https://h/p?token=******&x=1&password=******',
+            ),
+            (
+                'https://h/?password=p%40ss&keep=yes',
+                'https://h/?password=******&keep=yes',
+            ),
             ('https://u:pa?ss@host/x', 'https://u:******@host/x'),
             ('redis://:p#w@localhost:6379', 'redis://:******@localhost:6379'),
         ):

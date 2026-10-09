@@ -12,7 +12,7 @@
 
 All network I/O is mocked: `httpx.Client` is replaced by an in-memory fake so
 the suite is hermetic and fast. No socket, no DNS, no TLS handshake ever
-happens. The pure helpers (`_redact_url`, `_build_ssl_context`,
+happens. The pure helpers (`_build_ssl_context`,
 `_capture_tls_info`, `split_basic_auth`, `strip_tags`) are exercised directly.
 
 httpx is a hard dependency of lib.url's network functions but is imported
@@ -167,41 +167,7 @@ def patch_mock_transport(handler):
 # -----------------------------------------------------------------------------
 
 
-class TestRedactUrl(unittest.TestCase):
-    def test_redacts_token_and_password(self):
-        self.assertEqual(
-            url._redact_url('https://h/p?token=abc&x=1&password=secret'),
-            'https://h/p?token=********&x=1&password=********',
-        )
-
-    def test_leaves_clean_url_untouched(self):
-        clean = 'https://example.com/path?a=1&b=2'
-        self.assertEqual(url._redact_url(clean), clean)
-
-    def test_redacts_only_matching_param_value(self):
-        # The value is masked, the surrounding query string survives.
-        out = url._redact_url('https://h/?password=p%40ss&keep=yes')
-        self.assertIn('password=********', out)
-        self.assertIn('keep=yes', out)
-        self.assertNotIn('p%40ss', out)
-
-    def test_redacts_the_password_in_the_userinfo(self):
-        self.assertEqual(
-            url._redact_url('http://admin:linuxfabrik@h:8080/p'),
-            'http://admin:********@h:8080/p',
-        )
-        # an unescaped `@` inside the password is masked along with it
-        self.assertEqual(
-            url._redact_url('https://admin:linux@fabrik@h/p?q=1'),
-            'https://admin:********@h/p?q=1',
-        )
-        # a user without a password is no secret
-        self.assertEqual(url._redact_url('https://admin@h/p'), 'https://admin@h/p')
-
-    def test_leaves_an_at_sign_in_path_and_query_alone(self):
-        clean = 'https://h/users/a:b@c?mail=a:b@example.com'
-        self.assertEqual(url._redact_url(clean), clean)
-
+class TestRedactionInMessages(unittest.TestCase):
     @skip_without_httpx
     def test_fetch_error_masks_the_userinfo_password(self):
         def handler(request):
@@ -213,7 +179,22 @@ class TestRedactUrl(unittest.TestCase):
             )
         self.assertFalse(success)
         self.assertNotIn('linuxfabrik', message)
-        self.assertIn('admin:********@127.0.0.1', message)
+        self.assertIn('admin:******@127.0.0.1', message)
+
+    @skip_without_httpx
+    def test_fetch_error_masks_a_password_with_slash_and_at_sign(self):
+        # the former URL-only redaction let `ss/w` through and kept `api_key` values
+        def handler(request):
+            raise httpx.ConnectError('Connection refused', request=request)
+
+        with patch_mock_transport(handler):
+            success, message = url.fetch(
+                'http://admin:linux@fab/rik@127.0.0.1/?api_key=linuxfabrik', timeout=1
+            )
+        self.assertFalse(success)
+        self.assertNotIn('fab', message)
+        self.assertNotIn('rik', message)
+        self.assertNotIn('linuxfabrik', message)
 
 
 class TestStripTags(unittest.TestCase):
@@ -275,6 +256,29 @@ class TestSplitBasicAuth(unittest.TestCase):
         u, _ = url.split_basic_auth('https://alice:secret@example.com/path')
         self.assertNotIn('alice', u)
         self.assertNotIn('secret', u)
+
+
+class TestSplitBasicAuthHost(unittest.TestCase):
+    def test_ipv6_keeps_its_brackets(self):
+        # rebuilding the host from `hostname` dropped them, and fetch() then read
+        # the last group of the address as the port
+        u, h = url.split_basic_auth('https://alice:linuxfabrik@[2001:db8::1]:8443/x')
+        self.assertEqual(u, 'https://[2001:db8::1]:8443/x')
+        self.assertIn('Authorization', h)
+
+    def test_ipv6_without_port(self):
+        u, _ = url.split_basic_auth('https://alice:linuxfabrik@[2001:db8::1]/x')
+        self.assertEqual(u, 'https://[2001:db8::1]/x')
+
+    def test_host_keeps_its_spelling(self):
+        u, _ = url.split_basic_auth('https://alice:linuxfabrik@Example.COM:8443/x')
+        self.assertEqual(u, 'https://Example.COM:8443/x')
+
+    def test_password_with_an_at_sign(self):
+        u, h = url.split_basic_auth('https://alice:p@ss@example.com/x')
+        self.assertEqual(u, 'https://example.com/x')
+        token = h['Authorization'].split(' ', 1)[1]
+        self.assertEqual(base64.b64decode(token).decode(), 'alice:p@ss')
 
 
 class TestBuildSslContext(unittest.TestCase):
@@ -417,7 +421,7 @@ class TestFetchValidation(unittest.TestCase):
     def test_http3_error_redacts_url(self):
         ok, msg = url.fetch('https://h/?token=abc', http_version='3')
         self.assertFalse(ok)
-        self.assertIn('token=********', msg)
+        self.assertIn('token=******', msg)
         self.assertNotIn('token=abc', msg)
 
     def test_unsupported_http_version(self):
@@ -882,7 +886,7 @@ class TestFetchErrors(unittest.TestCase):
         with patch_client(fake):
             ok, msg = url.fetch('https://h/?password=secret')
         self.assertFalse(ok)
-        self.assertIn('password=********', msg)
+        self.assertIn('password=******', msg)
         self.assertNotIn('secret', msg)
 
     def test_generic_http_error_message(self):
@@ -907,7 +911,7 @@ class TestFetchErrors(unittest.TestCase):
             ok, msg = url.fetch('https://h/?token=abc')
         self.assertFalse(ok)
         self.assertIn('weird', msg)
-        self.assertIn('token=********', msg)
+        self.assertIn('token=******', msg)
 
     def test_client_construction_failure(self):
         fake, _ = make_fake_client(init_exc=RuntimeError('bad client'))
@@ -915,7 +919,7 @@ class TestFetchErrors(unittest.TestCase):
             ok, msg = url.fetch('https://h/?token=abc')
         self.assertFalse(ok)
         self.assertIn('bad client', msg)
-        self.assertIn('token=********', msg)
+        self.assertIn('token=******', msg)
 
     def test_decode_error_returns_failure(self):
         # Invalid bytes for the declared charset -> decode() raises -> (False, msg).
@@ -1460,6 +1464,59 @@ class TestTimingClasses(unittest.TestCase):
             transport, backend = url._build_timing_transport(None, True, False, True)
         self.assertIsNone(transport)
         self.assertIsNone(backend)
+
+
+@unittest.skipIf(url.httpx is None, 'httpx is not installed')
+class TestExtendedThroughAnAuthenticatingProxy(unittest.TestCase):
+    """`fetch(extended=True)` builds its own connection pool for the phase timings, so
+    it has to hand the credentials of the proxy to httpcore itself. Run against the real
+    httpx and httpcore, because the transport replaces one of their internals."""
+
+    def setUp(self):
+        import http.server
+        import threading
+
+        received = self.received = []
+
+        class Proxy(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                received.append(self.headers.get('Proxy-Authorization'))
+                if self.headers.get('Proxy-Authorization'):
+                    self.send_response(200)
+                    self.send_header('Content-Length', '2')
+                    self.end_headers()
+                    self.wfile.write(b'ok')
+                else:
+                    self.send_response(407)
+                    self.send_header('Content-Length', '0')
+                    self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Proxy)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        port = self.server.server_address[1]
+        self.proxy = f'http://alice:linuxfabrik@127.0.0.1:{port}'
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+
+    def test_credentials_reach_the_proxy(self):
+        for extended in (False, True):
+            with self.subTest(extended=extended):
+                success, result = url.fetch(
+                    'http://example.com/',
+                    proxy=self.proxy,
+                    extended=extended,
+                    timeout=5,
+                )
+                self.assertTrue(success, msg=result)
+        expected = 'Basic ' + base64.b64encode(b'alice:linuxfabrik').decode()
+        self.assertEqual(self.received, [expected, expected])
 
 
 class TestRedirectOriginCheck(unittest.TestCase):
