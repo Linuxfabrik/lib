@@ -10,10 +10,9 @@
 
 """Unit tests for lib.disk, driven by throwaway temp files and mocks.
 
-The host-inspecting helpers (get_real_disks, bd2dmd, udevadm) are driven
-through a mocked read_file()/shell_exec(), so the parsing they do is covered
-without real block devices. get_block_devices() reads sysfs directly and is
-checked only for its return shape here.
+The host-inspecting helpers (get_block_devices, get_real_disks, bd2dmd, udevadm)
+are driven through a mocked read_file()/shell_exec() and a mocked sysfs lookup,
+so the parsing they do is covered without real block devices.
 """
 
 import errno
@@ -528,41 +527,163 @@ class TestBd2Dmd(unittest.TestCase):
             self.assertEqual(disk.bd2dmd('dm-9'), '')
 
 
+# How a host with LVM and udev maps the mount sources to kernel devices.
+KERNEL_DEVICES = {
+    '/dev/mapper/rl-home': '/dev/dm-1',
+    '/dev/mapper/rl-root': '/dev/dm-0',
+    '/dev/mapper/rl-var': '/dev/dm-2',
+}
+MAPPER_NAMES = {
+    '/dev/dm-0': '/dev/mapper/rl-root',
+    '/dev/dm-1': '/dev/mapper/rl-home',
+    '/dev/dm-2': '/dev/mapper/rl-var',
+}
+
+
 class TestGetRealDisks(unittest.TestCase):
     MOUNTS = (
         '/dev/mapper/rl-root / xfs rw 0 0\n'
         '/dev/sda1 /boot xfs rw 0 0\n'
         '/dev/loop0 /snap/core squashfs ro 0 0\n'
         'proc /proc proc rw 0 0\n'
-        '/dev/mapper/rl-root /home xfs rw 0 0\n'
+        '/dev/mapper/rl-root /root/snapshot xfs rw 0 0\n'
+        '/dev/mapper/rl-home /home xfs rw 0 0\n'
+        '/dev/mapper/rl-var /var xfs rw 0 0\n'
+        '/dev/sdb1 /mnt/my\\040disk\\011with\\134odd\\043chars xfs rw 0 0\n'
     )
 
-    def _disks(self):
-        def fake_udevadm(_device, prop):
-            return {'DEVNAME': '/dev/dm-0', 'DM_NAME': ''}[prop]
+    def _disks(self, sysfs=True):
+        def kernel_device(device):
+            return KERNEL_DEVICES.get(device, device) if sysfs else device
+
+        def mapper_name(device):
+            return MAPPER_NAMES.get(device, '') if sysfs else ''
 
         with (
             mock.patch.object(disk, 'read_file', return_value=(True, self.MOUNTS)),
-            mock.patch.object(disk, 'udevadm', side_effect=fake_udevadm),
+            mock.patch.object(disk, '_get_kernel_device', side_effect=kernel_device),
+            mock.patch.object(disk, 'bd2dmd', side_effect=mapper_name),
         ):
-            return disk.get_real_disks()
+            return {d['dmd'] or d['bd']: d for d in disk.get_real_disks()}
 
     def test_resolves_the_mapper_name_to_its_block_device(self):
-        entry = next(d for d in self._disks() if d['bd'] == '/dev/dm-0')
-        self.assertEqual(entry['dmd'], '/dev/mapper/rl-root')
+        entry = self._disks()['/dev/mapper/rl-root']
+        self.assertEqual(entry['bd'], '/dev/dm-0')
 
-    def test_several_mount_points_of_one_device_are_joined(self):
-        entry = next(d for d in self._disks() if d['bd'] == '/dev/dm-0')
-        self.assertEqual(entry['mp'], '/ /home')
+    def test_several_mount_points_of_one_device_are_listed(self):
+        entry = self._disks()['/dev/mapper/rl-root']
+        self.assertEqual(entry['mount_points'], ['/', '/root/snapshot'])
+        # `mp` keeps its released format
+        self.assertEqual(entry['mp'], '/ /root/snapshot')
+
+    def test_logical_volumes_stay_apart_without_udev_or_sysfs(self):
+        # in a container or on a minimal host, every LV used to land under bd ''
+        disks = self._disks(sysfs=False)
+        for name, mount_point in (
+            ('/dev/mapper/rl-home', '/home'),
+            ('/dev/mapper/rl-root', '/'),
+            ('/dev/mapper/rl-var', '/var'),
+        ):
+            self.assertEqual(disks[name]['bd'], name)
+            self.assertEqual(disks[name]['mount_points'][0], mount_point)
+        self.assertNotIn('', [d['bd'] for d in disks.values()])
+
+    def test_escaped_characters_in_a_mount_point_are_decoded(self):
+        entry = self._disks()['/dev/sdb1']
+        self.assertEqual(entry['mount_points'], ['/mnt/my disk\twith\\odd#chars'])
+        self.assertEqual(entry['mp'], '/mnt/my\\040disk\\011with\\134odd\\043chars')
 
     def test_loop_devices_and_pseudo_filesystems_are_left_out(self):
-        devices = [d['bd'] for d in self._disks()]
+        devices = [d['bd'] for d in self._disks().values()]
         self.assertNotIn('/dev/loop0', devices)
         self.assertNotIn('proc', devices)
 
     def test_a_plain_partition_carries_no_mapper_name(self):
-        entry = next(d for d in self._disks() if d['bd'] == '/dev/sda1')
-        self.assertEqual(entry['dmd'], '')
+        self.assertEqual(self._disks()['/dev/sda1']['dmd'], '')
+
+
+class TestGetBlockDevices(unittest.TestCase):
+    DISKSTATS = (
+        '   8       0 sda 1 0 0 0 0 0 0 0 0 0 0\n'
+        '   8       1 sda1 1 0 0 0 0 0 0 0 0 0 0\n'
+        ' 253       0 dm-0 1 0 0 0 0 0 0 0 0 0 0\n'
+        ' 253       1 dm-1 1 0 0 0 0 0 0 0 0 0 0\n'
+        '   7       0 loop0 1 0 0 0 0 0 0 0 0 0 0\n'
+    )
+    MOUNTS = (
+        '/dev/mapper/rl-root / xfs rw 0 0\n'
+        '/dev/mapper/rl-root /root/snapshot xfs rw 0 0\n'
+        '/dev/sda1 /mnt/my\\040disk xfs rw 0 0\n'
+    )
+
+    def _devices(self, sysfs=True):
+        def read_file(path, *args, **kwargs):
+            return (True, self.DISKSTATS if 'diskstats' in path else self.MOUNTS)
+
+        def kernel_device(device):
+            return KERNEL_DEVICES.get(device, device) if sysfs else device
+
+        with (
+            mock.patch.object(disk, 'read_file', side_effect=read_file),
+            mock.patch.object(disk, '_get_kernel_device', side_effect=kernel_device),
+            mock.patch.object(
+                disk,
+                'bd2dmd',
+                side_effect=lambda name: MAPPER_NAMES.get(
+                    f'/dev/{os.path.basename(name)}', ''
+                ),
+            ),
+        ):
+            return {d['bd']: d for d in disk.get_block_devices()}
+
+    def test_mount_points_are_listed_and_decoded(self):
+        devices = self._devices()
+        self.assertEqual(devices['/dev/dm-0']['mount_points'], ['/', '/root/snapshot'])
+        self.assertEqual(devices['/dev/dm-0']['mp'], '/ /root/snapshot')
+        self.assertEqual(devices['/dev/sda1']['mount_points'], ['/mnt/my disk'])
+        self.assertEqual(devices['/dev/sda1']['mp'], '/mnt/my\\040disk')
+
+    def test_an_unmounted_device_has_no_mount_point(self):
+        devices = self._devices()
+        for name in ('/dev/sda', '/dev/dm-1'):
+            self.assertEqual(devices[name]['mount_points'], [])
+            self.assertEqual(devices[name]['mp'], '')
+
+    def test_a_mount_is_found_by_its_mapper_path_without_sysfs(self):
+        self.assertEqual(
+            self._devices(sysfs=False)['/dev/dm-0']['mount_points'],
+            ['/', '/root/snapshot'],
+        )
+
+    def test_pseudo_devices_are_left_out(self):
+        self.assertNotIn('/dev/loop0', self._devices())
+
+
+@unittest.skipUnless(os.path.isdir('/sys/dev/block'), 'needs sysfs')
+class TestGetKernelDevice(unittest.TestCase):
+    def test_a_block_device_maps_to_its_own_name(self):
+        for entry in sorted(os.listdir('/sys/dev/block')):
+            name = os.path.basename(os.path.realpath(f'/sys/dev/block/{entry}'))
+            if os.path.exists(f'/dev/{name}'):
+                break
+        else:
+            self.skipTest('no block device node on this host')
+        self.assertEqual(disk._get_kernel_device(f'/dev/{name}'), f'/dev/{name}')
+
+    def test_a_mapper_link_maps_to_its_dm_device(self):
+        links = [
+            os.path.join('/dev/mapper', n)
+            for n in (os.listdir('/dev/mapper') if os.path.isdir('/dev/mapper') else [])
+            if os.path.islink(os.path.join('/dev/mapper', n))
+        ]
+        if not links:
+            self.skipTest('no device-mapper device on this host')
+        self.assertEqual(disk._get_kernel_device(links[0]), os.path.realpath(links[0]))
+
+    def test_anything_else_stays_as_it_is(self):
+        for path in ('/dev/null', '/dev/linuxfabrik-does-not-exist', '/etc/passwd'):
+            with self.subTest(path=path):
+                self.assertEqual(disk._get_kernel_device(path), path)
 
 
 class TestGetOwningPackage(unittest.TestCase):

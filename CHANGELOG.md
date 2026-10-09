@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 * db_mysql.py: `check_privileges()` takes `database`, for privileges that suffice on one database
+* disk.py: `get_block_devices()` and `get_real_disks()` list the mount points in `mount_points`, with spaces and other escaped characters decoded
 * disk.py: `get_private_dir()`, a directory only the current account can use, on Windows as well
 * disk.py: `open_file()` for confined reads, `resolve_trusted_path()`, and `get_fingerprint()` on an open file
 * endoflifedate.py: offline data for Debian, Ubuntu, Windows and Windows Server
@@ -48,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * args.py: arguments with characters outside of ASCII arrive intact when the Icinga 2 agent for Windows starts the consumer
 * base.py: on Windows, what argparse writes to stderr no longer arrives with an empty line after every line, `get_state()` answers UNKNOWN to a threshold that is not a number instead of raising, and the messages of `coe()`, `cu()` and `verbose()` are no longer cut short at a `|`
-* disk.py: `is_within()` with the filesystem root as a root
+* disk.py: `get_real_disks()` keeps logical volumes apart on hosts without udev, and `is_within()` works with the filesystem root as a root
 * dmidecode.py: `ram()` counts every module of a set of identical ones and reads the sizes of dmidecode 3.7 and terabyte modules, instead of reporting too little or nothing
 * feedparser.py: `parse_atom()` and `parse_rss()` read every date the formats allow, apply its offset, and date an empty or unreadable one to 1970 instead of failing
 * human.py: `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), and `humanduration2seconds()` and `humanrange2seconds()` read a fraction such as `0.5D` instead of only its decimal places

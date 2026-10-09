@@ -218,6 +218,53 @@ def file_exists(path, allow_empty=False):
     return os.path.getsize(path) > 0
 
 
+# /proc/mounts escapes a space, tab, newline, backslash and `#` in the device and the
+# mount point as a backslash and three octal digits (fs/proc_namespace.c, mangle(), and
+# show_vfsmnt(); Linux 7.3).
+_MOUNT_ESCAPE = re.compile(r'\\([0-7]{3})')
+
+
+def _get_block_mounts():
+    """
+    Return the mounts of `/proc/mounts` whose source is below `/dev/`, as a list of
+    `(device, mount point, mount point as listed)`, the first two with the escapes
+    decoded, or an empty list where there is no `/proc/mounts`.
+    """
+    success, content = read_file('/proc/mounts')
+    if not success:
+        return []
+    mounts = []
+    for line in content.splitlines():
+        parts = line.split()
+        if len(parts) < 2 or not parts[0].startswith('/dev/'):
+            continue
+        device, mount_point = (
+            _MOUNT_ESCAPE.sub(lambda m: chr(int(m.group(1), 8)), part)
+            for part in parts[:2]
+        )
+        mounts.append((device, mount_point, parts[1]))
+    return mounts
+
+
+def _get_kernel_device(device):
+    """
+    Return the kernel's name for a block device node, such as `/dev/dm-0` for
+    `/dev/mapper/rl-root` or a `/dev/disk/by-uuid/` link, from its device number in
+    `/sys/dev/block/`. Needs no udev. Returns `device` unchanged where the node or sysfs
+    is missing, for example in a container.
+    """
+    try:
+        st = os.stat(device)
+    except (OSError, ValueError):
+        return device
+    if not _stat.S_ISBLK(st.st_mode):
+        return device
+    link = f'/sys/dev/block/{os.major(st.st_rdev)}:{os.minor(st.st_rdev)}'
+    if not os.path.exists(link):
+        return device
+    return f'/dev/{os.path.basename(os.path.realpath(link))}'
+
+
 def get_block_devices():
     """
     Return all local block devices that expose I/O counters, mounted or not.
@@ -232,8 +279,11 @@ def get_block_devices():
     - 'bd' : Block device path (e.g. '/dev/sda' or '/dev/dm-7').
     - 'dmd': Device-mapper path if the device is a device-mapper target (e.g.
       '/dev/mapper/data'), otherwise an empty string.
-    - 'mp' : Mount point(s), space-separated if mounted in several places, or an empty string if
-      the device is not mounted.
+    - 'mount_points': List of the mount points, with escaped characters such as spaces
+      decoded, empty if the device is not mounted.
+    - 'mp' : Mount point(s) as `/proc/mounts` lists them, escapes included, space-separated
+      if mounted in several places, or an empty string if the device is not mounted. Kept
+      for compatibility, use 'mount_points' instead.
 
     Pseudo devices that never carry meaningful I/O are skipped by name prefix: loopback (`loop`),
     RAM disks (`ram`), compressed RAM (`zram`), floppy (`fd`) and optical (`sr`) devices.
@@ -247,26 +297,19 @@ def get_block_devices():
     Examples
     --------
     >>> get_block_devices()
-    [{'bd': '/dev/dm-7', 'dmd': '/dev/mapper/data', 'mp': ''},
-     {'bd': '/dev/sda1', 'dmd': '', 'mp': '/boot'}]
+    [{'bd': '/dev/dm-7', 'dmd': '/dev/mapper/data', 'mount_points': [], 'mp': ''},
+     {'bd': '/dev/sda1', 'dmd': '', 'mount_points': ['/boot'], 'mp': '/boot'}]
     """
     success, diskstats = read_file('/proc/diskstats')
     if not success:
         return []
 
-    # map every mounted block-device path to its mount point(s)
+    # map every mounted block device to its mount points
     mountpoints = {}
-    mounts_ok, mounts_content = read_file('/proc/mounts')
-    if mounts_ok:
-        for line in mounts_content.splitlines():
-            if not line.startswith('/dev/'):
-                continue
-            parts = line.split()
-            device_path, mount_point = parts[0], parts[1]
-            if device_path in mountpoints:
-                mountpoints[device_path] += f' {mount_point}'
-            else:
-                mountpoints[device_path] = mount_point
+    for device, mount_point, listed in _get_block_mounts():
+        mountpoints.setdefault(_get_kernel_device(device), []).append(
+            (mount_point, listed)
+        )
 
     disks = []
     for line in diskstats.splitlines():
@@ -278,9 +321,16 @@ def get_block_devices():
             continue
         bd = f'/dev/{name}'
         dmd = bd2dmd(name)
-        # a device can be mounted under its block-device path or its device-mapper path
-        mp = mountpoints.get(bd, '') or (mountpoints.get(dmd, '') if dmd else '')
-        disks.append({'bd': bd, 'dmd': dmd, 'mp': mp})
+        # where sysfs could not resolve a mount, it stays under its device-mapper path
+        mounts = mountpoints.get(bd) or (mountpoints.get(dmd, []) if dmd else [])
+        disks.append(
+            {
+                'bd': bd,
+                'dmd': dmd,
+                'mount_points': [mount_point for mount_point, _ in mounts],
+                'mp': ' '.join(listed for _, listed in mounts),
+            }
+        )
 
     return disks
 
@@ -995,11 +1045,17 @@ def get_real_disks():
 
     Each device is represented as a dictionary with:
     - 'bd': Block device name (e.g., '/dev/sda1' or '/dev/dm-0').
-    - 'dmd': Device-mapper name if available (e.g., '/dev/mapper/rl-root'), otherwise None.
-    - 'mp' : Mount point(s), space-separated if mounted in multiple places.
+    - 'dmd': Device-mapper name if available (e.g., '/dev/mapper/rl-root'), otherwise an
+      empty string.
+    - 'mount_points': List of the mount points, with escaped characters such as spaces
+      decoded.
+    - 'mp' : Mount point(s) as `/proc/mounts` lists them, escapes included, space-separated
+      if mounted in multiple places. Kept for compatibility, use 'mount_points' instead.
 
-    Devices are discovered by parsing /proc/mounts and resolving device-mapper relationships
-    via udevadm. Devices under /dev/loop* (loopback devices) are ignored.
+    Devices are discovered by parsing /proc/mounts, and mapped to the kernel's device name
+    and the device-mapper name through sysfs, so neither udev nor udevadm is needed. A
+    device whose node or sysfs entry is missing (as in a container) keeps the path it is
+    mounted from. Devices under /dev/loop* (loopback devices) are ignored.
 
     Returns
     -------
@@ -1009,35 +1065,22 @@ def get_real_disks():
     Examples
     --------
     >>> get_real_disks()
-    [{'bd': '/dev/dm-0', 'dmd': '/dev/mapper/rl-root', 'mp': '/ /home'}]
+    [{'bd': '/dev/dm-0', 'dmd': '/dev/mapper/rl-root', 'mount_points': ['/', '/home'],
+      'mp': '/ /home'}]
     """
-    success, mounts_content = read_file('/proc/mounts')
-    if not success:
-        return []
-
     disks = {}
-
-    for line in mounts_content.splitlines():
-        if not line.startswith('/dev/') or line.startswith('/dev/loop'):
+    for device, mount_point, listed in _get_block_mounts():
+        bd = _get_kernel_device(device)
+        if device.startswith('/dev/loop') or bd.startswith('/dev/loop'):
             continue
-
-        parts = line.split()
-        device_path, mount_point = parts[0], parts[1]
-
-        if device_path.startswith('/dev/mapper/'):
-            dmdname = device_path
-            bdname = udevadm(dmdname, 'DEVNAME')
+        if bd not in disks:
+            dmd = bd2dmd(bd)
+            if not dmd and device.startswith('/dev/mapper/'):
+                dmd = device
+            disks[bd] = {'bd': bd, 'dmd': dmd, 'mount_points': [], 'mp': listed}
         else:
-            bdname = device_path
-            dmdname = udevadm(bdname, 'DM_NAME')
-            if dmdname:
-                dmdname = f'/dev/mapper/{dmdname}'
-
-        if bdname not in disks:
-            disks[bdname] = {'bd': bdname, 'dmd': dmdname, 'mp': mount_point}
-        else:
-            disks[bdname]['mp'] += f' {mount_point}'
-
+            disks[bd]['mp'] += f' {listed}'
+        disks[bd]['mount_points'].append(mount_point)
     return list(disks.values())
 
 
