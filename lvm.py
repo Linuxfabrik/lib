@@ -53,7 +53,7 @@ from . import shell, time
 from .globals import STATE_UNKNOWN, STATE_WARN
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026101201'
 
 # The fields read per logical volume, sorted, and every one of them a volume-level
 # field so the report stays at one row per volume.
@@ -502,9 +502,19 @@ def parse_report(stdout, section):
         data = json.loads(stdout)
     except (AttributeError, TypeError, ValueError):
         return (False, 'Unable to read the LVM report.')
+    # Valid JSON is not yet a report: `null`, a list or a report whose sections are
+    # not lists raised AttributeError or TypeError out of a function that returns a
+    # tuple. Anything but the documented shape is unreadable.
+    if not isinstance(data, dict) or not isinstance(data.get('report') or [], list):
+        return (False, 'Unable to read the LVM report.')
     rows = []
     for report in data.get('report') or []:
-        rows.extend(report.get(section) or [])
+        section_rows = report.get(section) if isinstance(report, dict) else None
+        if section_rows is None:
+            continue
+        if not isinstance(section_rows, list):
+            return (False, 'Unable to read the LVM report.')
+        rows.extend(row for row in section_rows if isinstance(row, dict))
     return (True, rows)
 
 

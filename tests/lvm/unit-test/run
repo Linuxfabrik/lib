@@ -115,6 +115,47 @@ class TestParseReport(unittest.TestCase):
         self.assertFalse(success)
 
 
+class TestParseReportShape(unittest.TestCase):
+    """Valid JSON is not yet a report: anything but the documented shape is unreadable,
+    never an exception out of a function that returns a tuple."""
+
+    def _unreadable(self, text):
+        success, result = lvm.parse_report(text, 'lv')
+        self.assertFalse(success, text)
+        self.assertIn('Unable to read', result)
+
+    def test_null(self):
+        self._unreadable('null')
+
+    def test_a_list(self):
+        self._unreadable('[]')
+
+    def test_a_number_or_a_string(self):
+        self._unreadable('5')
+        self._unreadable('"report"')
+
+    def test_report_that_is_not_a_list(self):
+        self._unreadable('{"report": {"lv": []}}')
+        self._unreadable('{"report": "x"}')
+
+    def test_section_that_is_not_a_list(self):
+        self._unreadable('{"report": [{"lv": {"lv_name": "root"}}]}')
+        self._unreadable('{"report": [{"lv": "root"}]}')
+
+    def test_a_report_entry_that_is_not_an_object_has_no_rows(self):
+        self.assertEqual(
+            lvm.parse_report('{"report": [null, 5, []]}', 'lv'), (True, [])
+        )
+
+    def test_rows_that_are_not_objects_are_left_out(self):
+        text = '{"report": [{"lv": [{"lv_name": "root"}, null, "x", 5]}]}'
+        self.assertEqual(lvm.parse_report(text, 'lv'), (True, [{'lv_name': 'root'}]))
+
+    def test_a_missing_or_null_report_is_an_empty_one(self):
+        self.assertEqual(lvm.parse_report('{}', 'lv'), (True, []))
+        self.assertEqual(lvm.parse_report('{"report": null}', 'lv'), (True, []))
+
+
 class TestClassification(unittest.TestCase):
     def test_thick_snapshot(self):
         snap = by_name(ROWS, 'goodsnap')
