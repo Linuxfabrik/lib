@@ -691,7 +691,7 @@ def _run_mysql_compatible_resolved(image_ref, command, seed):
                 '-c',
                 'if command -v mariadb >/dev/null 2>&1; then CLIENT=mariadb; '
                 'else CLIENT=mysql; fi; '
-                'SQL="GRANT SELECT ON *.* TO \'test\'@\'%\'"; '
+                "SQL=\"GRANT SELECT ON *.* TO 'test'@'%'\"; "
                 # sclorg images (CONTAINER_SCRIPTS_PATH is set) let root in on the
                 # socket without a password and reject one, the others require it.
                 # A rejected login counts as an aborted connection, so pick one.
