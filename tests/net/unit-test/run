@@ -415,6 +415,9 @@ class TestSocketBounds(unittest.TestCase):
             self._fetch(FakeSocket([b'x' * 100000]), max_bytes=None)[0], True
         )
 
+    @unittest.skipUnless(
+        hasattr(socket, 'AF_UNIX') and os.name != 'nt', 'no UNIX sockets here'
+    )
     def test_the_limit_of_a_unix_socket(self):
         with mock.patch('socket.socket', return_value=FakeSocket([b'x' * 20])):
             success, message = net.fetch_socket('/run/x.sock', max_bytes=10)
@@ -620,6 +623,9 @@ class TestSocketDeadline(unittest.TestCase):
                 self.assertFalse(success)
                 self.assertIn('`deadline`', message)
 
+    @unittest.skipUnless(
+        hasattr(socket, 'AF_UNIX') and os.name != 'nt', 'no UNIX sockets here'
+    )
     def test_fetch_socket_validates_it_too(self):
         success, message = net.fetch_socket('/run/x.sock', deadline=0)
         self.assertFalse(success)
