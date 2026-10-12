@@ -913,6 +913,93 @@ class TestShellExecMaxBytesArguments(unittest.TestCase):
         )
 
 
+class TestBoundedReadClosesItsPipes(unittest.TestCase):
+    """A bounded read closes the pipes it read, as `communicate()` does: none is left to the
+    garbage collector, which would print a ResourceWarning. On POSIX the defect of the
+    Windows reader cannot show, so the reader is also run directly: a regression guard."""
+
+    def _warnings(self, run, *args, **kwargs):
+        import gc
+        import warnings
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always', ResourceWarning)
+            run(*args, **kwargs)
+            gc.collect()
+        return [str(w.message) for w in caught if w.category is ResourceWarning]
+
+    def test_shell_exec_with_a_cap_prints_no_resource_warning(self):
+        for name, kwargs in (
+            ('finished', {'max_bytes': MIB}),
+            ('pair', {'max_bytes': (MIB, MIB)}),
+            ('exceeded', {'max_bytes': 100}),
+            ('timeout', {'max_bytes': MIB, 'timeout': 0.5}),
+        ):
+            code = (
+                'import time; time.sleep(30)'
+                if name == 'timeout'
+                else "import sys; sys.stdout.write('x' * 5000)"
+            )
+            with self.subTest(case=name):
+                self.assertEqual(
+                    self._warnings(shell.shell_exec, _python(code), **kwargs),
+                    [],
+                )
+
+    def test_the_windows_reader_and_its_cleanup(self):
+        def run(code, limits):
+            p = subprocess.Popen(
+                _python(code),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            state = {}
+            try:
+                shell._communicate_bounded_threads(
+                    p, None, time.monotonic() + 5, 5, limits, 'cmd', state
+                )
+            except shell._OutputTooLarge:
+                pass
+            finally:
+                p.kill()
+                p.wait()
+                shell._close_finished_pipes(state)
+                # a pipe whose thread is still reading is left to the caller
+                for _, thread in state['pumps']:
+                    thread.join(2)
+                shell._close_finished_pipes(state)
+
+        for code, limits in (
+            ("print('ok')", (MIB, MIB)),
+            ("import sys; sys.stdout.write('x' * 5000)", (100, MIB)),
+        ):
+            with self.subTest(code=code):
+                self.assertEqual(self._warnings(run, code, limits), [])
+
+    def test_a_pipe_with_a_thread_still_reading_is_not_closed(self):
+        class Thread:
+            def __init__(self, alive):
+                self.alive = alive
+
+            def is_alive(self):
+                return self.alive
+
+        class Pipe:
+            closed = False
+
+            def close(self):
+                self.closed = True
+
+        reading, done = Pipe(), Pipe()
+        shell._close_finished_pipes(
+            {'pumps': ((reading, Thread(True)), (done, Thread(False)))}
+        )
+        self.assertFalse(reading.closed)
+        self.assertTrue(done.closed)
+        shell._close_finished_pipes({})  # POSIX: nothing to do
+
+
 class TestCommunicateBoundedThreads(unittest.TestCase):
     """The reader that Windows uses, run here on the pipes of a POSIX command: it needs
     nothing but `read1()` and file objects. A reviewer can check it against these cases."""

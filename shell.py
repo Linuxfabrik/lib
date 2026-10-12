@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026101202'
 
 
 import os
@@ -268,7 +268,9 @@ def _communicate_bounded_threads(p, stdin, deadline, timeout, limits, cmd, state
     """`_communicate_bounded()` for Windows, where a pipe cannot be waited on with
     `select()`: a thread per pipe, polled from here. The threads are daemons and end with
     the caller, as the ones of `communicate()` do. The thread that feeds standard input is
-    handed back in `state['feeder']`, so the caller can tell whether it is still writing."""
+    handed back in `state['feeder']`, so the caller can tell whether it is still writing,
+    and the pipes with the thread that reads each of them in `state['pumps']`, for
+    `_close_finished_pipes()`."""
     import threading  # only here: nothing else of this module needs it
 
     chunks = {'out': bytearray(), 'err': bytearray()}
@@ -299,6 +301,7 @@ def _communicate_bounded_threads(p, stdin, deadline, timeout, limits, cmd, state
         threading.Thread(target=pump, args=(p.stdout, 'out', limits[0]), daemon=True),
         threading.Thread(target=pump, args=(p.stderr, 'err', limits[1]), daemon=True),
     ]
+    state['pumps'] = ((p.stdout, threads[0]), (p.stderr, threads[1]))
     if stdin:
         state['feeder'] = threading.Thread(target=feed, daemon=True)
         threads.append(state['feeder'])
@@ -317,6 +320,20 @@ def _communicate_bounded_threads(p, stdin, deadline, timeout, limits, cmd, state
     remaining = None if deadline is None else max(deadline - time.monotonic(), 0)
     p.wait(timeout=remaining)
     return bytes(chunks['out']), bytes(chunks['err'])
+
+
+def _close_finished_pipes(state):
+    """Close the pipes of a command that the Windows reader took the output from, as
+    `communicate()` does, so none is left to the garbage collector. Only a pipe whose reading
+    thread has ended is closed: closing one under a blocked `read1()` waits for the lock
+    that read holds (see `_kill()`), and the thread ends with the caller. Nothing to do on
+    POSIX, where `_communicate_bounded()` closes them itself and `state` is empty."""
+    for pipe, thread in state.get('pumps', ()):
+        if not thread.is_alive():
+            try:
+                pipe.close()
+            except OSError:
+                pass
 
 
 def _feeding(state):
@@ -571,13 +588,18 @@ def shell_exec(
                 # whatever else goes wrong, the command it was reading from does not
                 # outlive the call
                 _kill(p, keep_stdin=_feeding(state))
+                _close_finished_pipes(state)
                 raise
     except subprocess.TimeoutExpired:
         _kill(p, keep_stdin=_feeding(state))
+        _close_finished_pipes(state)
         return False, f'Timeout after {timeout} seconds.'
     except _OutputTooLarge as e:
         _kill(p, keep_stdin=_feeding(state))
+        _close_finished_pipes(state)
         return False, f'The output of {program} exceeded {_size(e.cap)}.'
+
+    _close_finished_pipes(state)
 
     # Decode the captured bytes. On Windows a program picks the code page of its
     # piped output itself, see _decode_windows_output().
