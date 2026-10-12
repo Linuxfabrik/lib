@@ -19,7 +19,7 @@ import textwrap
 from . import base, human, txt
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092703'
+__version__ = '2026101201'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -329,11 +329,6 @@ HELP_TEXTS = {
 }
 
 
-# Predefined sets for checking units and methods
-_UNITS = {'%', 'K', 'M', 'G', 'T', 'P'}
-_METHODS = {'USED', 'FREE'}
-
-
 class HelpFormatter(argparse.HelpFormatter):
     """Formats the help output like argparse does, but never splits long words.
 
@@ -584,13 +579,24 @@ def load_secret(path, param='--password-file'):
     return secret
 
 
+# `<number>[unit][method]`, blanks allowed between the parts. A unit may carry a
+# trailing `B` or `iB` (`10GiB`, `10MB`): the unit is binary either way, and these
+# were always accepted.
+_NUMBER_UNIT_METHOD = re.compile(
+    r'(?P<number>\d+(?:\.\d+)?|\.\d+)\s*'
+    r'(?:(?P<unit>[%KMGTP])(?:I?B)?)?\s*'
+    r'(?P<method>USED|FREE)?',
+    re.IGNORECASE,
+)
+
+
 def number_unit_method(arg, unit='%', method='USED'):
     """Parses a string in the format `<number>[unit][method]` for threshold arguments.
 
     Parameters
     ----------
     arg : str
-        The input string.
+        The input string. Blanks between number, unit and method are allowed.
     unit : str, optional
         Default unit. Defaults to `%`.
     method : str, optional
@@ -599,9 +605,10 @@ def number_unit_method(arg, unit='%', method='USED'):
     Returns
     -------
     tuple (str, str, str)
-        The number as it was written, the unit and the method, both upper case.
-        An argument carrying no digits yields `('0.0', unit, method)`, and a unit
-        or method the parser does not know falls back to the default.
+        The number as it was written, the unit and the method, both upper case. An
+        argument that does not have this form, a negative number or `5.5.5G` among
+        them, yields an empty number, so that the caller's `float()` rejects it
+        instead of working with a threshold nobody gave.
 
     Examples
     --------
@@ -610,35 +617,22 @@ def number_unit_method(arg, unit='%', method='USED'):
 
     >>> number_unit_method('9.5GFREE')
     ('9.5', 'G', 'FREE')
+
+    >>> number_unit_method('10 G')
+    ('10', 'G', 'USED')
+
+    >>> number_unit_method('-5')
+    ('', '%', 'USED')
     """
     arg = arg.strip()
-    number_part = []
-    unit_part = ''
-    method_part = ''
-
-    i = 0
-    while i < len(arg) and (arg[i].isdigit() or arg[i] == '.'):
-        number_part.append(arg[i])
-        i += 1
-
-    if i < len(arg) and arg[i].upper() in _UNITS:
-        unit_part = arg[i]
-        i += 1
-
-    if i < len(arg):
-        method_part = arg[i:].upper()
-
-    number = ''.join(number_part)
-    if not number:
-        return '0.0', unit.upper(), method.upper()
-
-    if unit_part:
-        unit = unit_part
-
-    if method_part in _METHODS:
-        method = method_part
-
-    return number, unit.upper(), method.upper()
+    match = _NUMBER_UNIT_METHOD.fullmatch(arg)
+    if not match:
+        return '', unit.upper(), method.upper()
+    return (
+        match.group('number'),
+        (match.group('unit') or unit).upper(),
+        (match.group('method') or method).upper(),
+    )
 
 
 def _repair_ansi_argument(arg, codec):

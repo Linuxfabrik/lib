@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100902'
+__version__ = '2026101201'
 
 import datetime
 import json
@@ -527,7 +527,8 @@ def check_eol(
         latest_versions = [version(item['latest']) for item in eol]
     except (TypeError, KeyError):
         state = base.get_worst(state, unreachable_state)
-        return state, ' '.join(msg) + unreachable_note
+        # the parts carry their own separators, as in every other return here
+        return state, ''.join(msg) + unreachable_note
 
     major, minor, patch = installed
 

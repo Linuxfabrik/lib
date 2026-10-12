@@ -908,6 +908,24 @@ class TestReadContainer(unittest.TestCase):
             )
         self.assertEqual(result['lines'], ['new'])
 
+    # kubectl prints Go's RFC3339Nano, which drops trailing zeros: `26Z` stands for
+    # 26.000 and sorts after `26.2Z` as a string, since `Z` is above `.`. Compared as
+    # strings, the resume would drop `26.2Z` and the merge would misorder the streams.
+    def test_kubectl_timestamps_without_trailing_zeros(self):
+        last = '2026-08-28T15:30:26Z'
+        out = (
+            f'{last} read last time\n'
+            '2026-08-28T15:30:26.2Z new\n'
+            '2026-08-28T15:30:26.24Z newer\n'
+        )
+        with self.shell(out, '2026-08-28T15:30:26.241Z newest on stderr\n') as mock:
+            _, result = lib.logsource.read(
+                'kubectl:web', position={'kind': 'container', 'timestamp': last}
+            )
+        self.assertIn(f'--since-time={last}', mock.call_args[0][0])
+        self.assertEqual(result['lines'], ['new', 'newer', 'newest on stderr'])
+        self.assertEqual(result['position']['timestamp'], '2026-08-28T15:30:26.241Z')
+
     def test_unreadable_stored_timestamp_drops_nothing(self):
         with self.shell(f'{self.STAMP1} one\n'):
             _, result = lib.logsource.read(
@@ -1245,6 +1263,41 @@ class TestCompressedSource(unittest.TestCase):
         success, result = lib.logsource.read(self.path)
         self.assertTrue(success)
         self.assertEqual(result['lines'], ['one', 'two'])
+
+    # The offset counts uncompressed bytes, the file is smaller than that. Held
+    # against each other, the file looked truncated and was read again every run, so
+    # every finding in it was reported again.
+    def write_a_real_log(self):
+        """Repetitive lines, as in a real log, compress well below their own size."""
+        with gzip.open(self.path, 'wb') as handle:
+            handle.write(b'sshd[1]: Accepted publickey for root\n' * 100)
+        self.assertLess(os.path.getsize(self.path), 3700)
+
+    def test_a_compressed_file_is_not_read_again(self):
+        self.write_a_real_log()
+        success, first = lib.logsource.read(self.path)
+        self.assertTrue(success)
+        _, second = lib.logsource.read(self.path, position=first['position'])
+        self.assertTrue(success)
+        self.assertEqual(second['lines'], [])
+        self.assertFalse(second['restarted'])
+
+    def test_a_position_from_before_the_size_was_stored(self):
+        self.write_a_real_log()
+        _, first = lib.logsource.read(self.path)
+        position = dict(first['position'])
+        del position['size']
+        _, second = lib.logsource.read(self.path, position=position)
+        self.assertEqual(second['lines'], [])
+
+    def test_a_compressed_file_written_anew_is_read_from_the_start(self):
+        self.write_a_real_log()
+        _, first = lib.logsource.read(self.path)
+        with gzip.open(self.path, 'wb') as handle:
+            handle.write(b'x\n')
+        _, second = lib.logsource.read(self.path, position=first['position'])
+        self.assertEqual(second['lines'], ['x'])
+        self.assertTrue(second['restarted'])
 
 
 class TestCoveredWindow(unittest.TestCase):

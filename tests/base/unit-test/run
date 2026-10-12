@@ -506,6 +506,16 @@ class TestGetWorst(unittest.TestCase):
 
 
 class TestGuessType(unittest.TestCase):
+    # int() truncates a float and raises on infinity; a float stays a float.
+    def test_float_is_not_truncated(self):
+        self.assertEqual(base.guess_type(1.9), 1.9)
+        self.assertEqual(base.guess_type(1.9, 'sqlite'), 'real')
+
+    def test_non_finite_floats_do_not_raise(self):
+        self.assertEqual(base.guess_type(float('inf')), float('inf'))
+        self.assertEqual(base.guess_type(float('-inf'), 'sqlite'), 'real')
+        self.assertEqual(base.guess_type('1e400', 'sqlite'), 'real')
+
     def test_python_int(self):
         self.assertEqual(base.guess_type('1'), 1)
         self.assertIsInstance(base.guess_type('1'), int)

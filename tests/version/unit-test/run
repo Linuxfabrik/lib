@@ -155,6 +155,23 @@ class TestCheckEol(unittest.TestCase):
             )
         )
 
+    # A cycle without `latest` ends the comparison early; the message must read like
+    # every other one, without doubled blanks.
+    def test_cycle_without_latest_reads_like_the_others(self):
+        cycles = [dict(cycle) for cycle in EOL_CYCLES]
+        for cycle in cycles:
+            cycle.pop('latest', None)
+        cache.set(
+            EOL_PRODUCT,
+            json.dumps(cycles),
+            expire=lib_time.now() + 3600,
+            filename='linuxfabrik-lib-version.db',
+        )
+        state, msg = self.check('2.0.0')
+        self.assertEqual(state, STATE_WARN)
+        self.assertNotIn('  ', msg)
+        self.assertIn('-30d [WARNING]', msg)
+
     def test_eol_far_in_the_future_is_ok(self):
         state, msg = self.check('999.0.0')
         self.assertEqual(state, STATE_OK)

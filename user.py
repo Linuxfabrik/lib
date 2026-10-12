@@ -35,7 +35,7 @@ import os
 from . import disk, txt
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082901'
+__version__ = '2026101201'
 
 try:
     import grp
@@ -172,6 +172,22 @@ def get_shadow_password(user, path=SHADOW):
     return ('missing', None)
 
 
+def _strtoul(text):
+    """Return `text` read like shadow reads a number (`strtou_noneg()` with base 0,
+    which is `strtoul()`): decimal, hexadecimal after `0x` and octal after a leading
+    `0`, an optional `+` and leading blanks, nothing behind the number and no minus
+    sign. None for anything else."""
+    text = text.lstrip(' \t').removeprefix('+')
+    base, digits = 10, text
+    if text[:2].lower() == '0x':
+        base, digits = 16, text[2:]
+    elif len(text) > 1 and text.startswith('0'):
+        base, digits = 8, text[1:]
+    if not digits or not all(c in '0123456789abcdef'[:base] for c in digits.lower()):
+        return None
+    return int(digits, base)
+
+
 def get_uid_min(path=LOGIN_DEFS):
     """
     Return `UID_MIN`, the boundary between system and regular accounts.
@@ -187,6 +203,19 @@ def get_uid_min(path=LOGIN_DEFS):
         The configured boundary, or `DEFAULT_UID_MIN` where the host does not
         state one or states something that is not a number.
 
+    Notes
+    -----
+    - Read the way `useradd` reads it: blanks before the name are allowed, the name
+      has to match exactly, and the value is a whole number in decimal, hexadecimal
+      (`0x`) or octal (leading `0`), like `strtoul()`. A value that is not one falls
+      back to the default, as `getdef_ulong()` of shadow does.
+    - Builds of shadow differ where a setting is defined twice or carries a comment
+      behind its value. Built with libeconf (RHEL 10, Fedora), the first definition
+      counts and a `#` ends the value; without it (RHEL 8, Debian), the last one
+      counts and a comment makes the value invalid. This follows libeconf, measured
+      with useradd from shadow-utils 4.15 on Rocky 10 and 4.19 on Fedora 44, against
+      4.6 on Rocky 8; source: shadow-maint/shadow 44211cf, `lib/getdef.c`.
+
     Examples
     --------
     >>> get_uid_min()
@@ -196,17 +225,16 @@ def get_uid_min(path=LOGIN_DEFS):
     if lines is None:
         return DEFAULT_UID_MIN
     for line in lines:
-        if not line.startswith('UID_MIN'):
+        # a `#` ends the value, as libeconf reads it
+        line = line.split('#', 1)[0].lstrip(' \t').rstrip('\n')
+        name, separator, value = line.replace('\t', ' ').partition(' ')
+        # A name standing alone is skipped, a name followed by blanks is a definition
+        # with an empty value. Measured with useradd on Fedora 44.
+        if name != 'UID_MIN' or not separator:
             continue
-        fields = line.split()
-        if len(fields) < 2:
-            continue
-        try:
-            return int(fields[1])
-        except ValueError:
-            # A line that names the setting but not a number says nothing, and the
-            # file may well hold a second one that does.
-            continue
+        uid_min = _strtoul(value.strip(' \t'))
+        # the first definition counts, a wrong one included
+        return DEFAULT_UID_MIN if uid_min is None else uid_min
     return DEFAULT_UID_MIN
 
 

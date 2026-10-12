@@ -281,6 +281,17 @@ class TestMacro2Timestr(unittest.TestCase):
 
 
 class TestBadInput(unittest.TestCase):
+    # beyond the platform's time_t localtime() raises OverflowError
+    def test_epoch2iso_out_of_range_is_empty(self):
+        for value in (float('inf'), float('-inf'), float('nan'), 1e20):
+            with self.subTest(value=value):
+                self.assertEqual(t.epoch2iso(value), '')
+
+    def test_get_weekday_out_of_range_or_non_numeric_is_empty(self):
+        for value in (float('inf'), 1e20, float('nan'), 'abc', None):
+            with self.subTest(value=value):
+                self.assertEqual(t.get_weekday(value), '')
+
     def test_epoch2iso_non_numeric_is_empty(self):
         # Documented graceful behaviour: unparseable input yields ''.
         self.assertEqual(t.epoch2iso('abc'), '')

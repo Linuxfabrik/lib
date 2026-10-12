@@ -91,11 +91,43 @@ class TestFileBackedLookups(unittest.TestCase):
             user.DEFAULT_UID_MIN,
         )
 
-    def test_uid_min_skips_a_line_that_states_no_number(self):
-        # A line naming the setting without a value says nothing, and the file may
-        # hold a second one that does.
-        path = self.write('login.defs', 'UID_MIN\nUID_MIN not-a-number\nUID_MIN 500\n')
-        self.assertEqual(user.get_uid_min(path), 500)
+    # useradd reads UID_MIN through libeconf on RHEL 10 and Fedora: the first
+    # definition counts, a wrong one included, and falls back to the default. Measured
+    # with shadow-utils 4.15 on Rocky 10 and 4.19 on Fedora 44.
+    def test_uid_min_the_first_definition_counts(self):
+        path = self.write('login.defs', 'UID_MIN 1500\nUID_MIN 1700\n')
+        self.assertEqual(user.get_uid_min(path), 1500)
+        path = self.write('login.defs', 'UID_MIN abc\nUID_MIN 1700\n')
+        self.assertEqual(user.get_uid_min(path), user.DEFAULT_UID_MIN)
+
+    def test_uid_min_a_name_alone_is_skipped_a_blank_value_is_not(self):
+        path = self.write('login.defs', 'UID_MIN\nUID_MIN 1700\n')
+        self.assertEqual(user.get_uid_min(path), 1700)
+        path = self.write('login.defs', 'UID_MIN   \nUID_MIN 1700\n')
+        self.assertEqual(user.get_uid_min(path), user.DEFAULT_UID_MIN)
+
+    def test_uid_min_may_be_indented(self):
+        path = self.write('login.defs', '   UID_MIN\t\t1500\n')
+        self.assertEqual(user.get_uid_min(path), 1500)
+
+    def test_uid_min_name_has_to_match_exactly(self):
+        path = self.write('login.defs', 'UID_MINIMUM 1800\n#UID_MIN 1900\n')
+        self.assertEqual(user.get_uid_min(path), user.DEFAULT_UID_MIN)
+
+    def test_uid_min_is_read_like_strtoul(self):
+        for text, expected in (
+            ('0x7d0', 2000),
+            ('03720', 2000),
+            ('+1900', 1900),
+            ('1600 # a comment', 1600),
+            ('-5', user.DEFAULT_UID_MIN),
+            ('12abc', user.DEFAULT_UID_MIN),
+            ('0x', user.DEFAULT_UID_MIN),
+            ('09', user.DEFAULT_UID_MIN),
+        ):
+            with self.subTest(value=text):
+                path = self.write('login.defs', f'UID_MIN {text}\n')
+                self.assertEqual(user.get_uid_min(path), expected)
 
     def test_uid_min_reads_a_value_that_is_not_the_usual_one(self):
         self.assertEqual(

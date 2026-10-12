@@ -59,6 +59,27 @@ class TestBytes2Human(unittest.TestCase):
             human.bytes2human(None)
 
 
+class TestBytes2HumanEdges(unittest.TestCase):
+    # A value that rounds up to the next unit is shown in it: 1048575 bytes would
+    # otherwise read 1024.0KiB.
+    def test_rounding_up_moves_to_the_next_unit(self):
+        self.assertEqual(human.bytes2human(1048575), '1.0MiB')
+        self.assertEqual(human.bytes2human(-1048575), '-1.0MiB')
+        self.assertEqual(human.bytes2human(1023.96), '1.0KiB')
+        self.assertEqual(human.bps2human(999999), '1.0Mbps')
+        self.assertEqual(human.bits2human(8388607), '1.0MiB')
+
+    def test_a_value_that_does_not_round_up_stays(self):
+        self.assertEqual(human.bytes2human(1023.94), '1023.9B')
+        self.assertEqual(human.bytes2human(1048524), '1023.9KiB')
+
+    def test_non_finite_values_do_not_raise(self):
+        self.assertEqual(human.bytes2human(float('inf')), 'infB')
+        self.assertEqual(human.bytes2human(float('-inf')), '-infB')
+        self.assertEqual(human.bytes2human(float('nan')), 'nanB')
+        self.assertEqual(human.bps2human(float('inf'), space=True), 'inf bps')
+
+
 class TestBitsAndBps(unittest.TestCase):
     def test_bits2human(self):
         self.assertEqual(human.bits2human(1000), '125.0B')
@@ -99,6 +120,22 @@ class TestNumber2Human(unittest.TestCase):
     def test_what_is_not_a_number_comes_back_unchanged(self):
         self.assertEqual(human.number2human('x'), 'x')
         self.assertIsNone(human.number2human(None))
+
+
+class TestNumber2HumanEdges(unittest.TestCase):
+    def test_rounding_up_moves_to_the_next_prefix(self):
+        self.assertEqual(human.number2human(999999), '1M')
+        self.assertEqual(human.number2human(-999999), '-1M')
+        self.assertEqual(human.number2human(999950), '1M')
+        self.assertEqual(human.number2human(999949), '999.9K')
+
+    def test_the_largest_prefix_does_not_move(self):
+        self.assertEqual(human.number2human(1e30), '1000000Y')
+
+    def test_non_finite_values_do_not_raise(self):
+        self.assertEqual(human.number2human(float('inf')), 'inf')
+        self.assertEqual(human.number2human(float('-inf')), '-inf')
+        self.assertEqual(human.number2human(float('nan')), 'nan')
 
 
 class TestSeconds2Human(unittest.TestCase):
@@ -152,6 +189,22 @@ class TestSeconds2Human(unittest.TestCase):
         # finer rounds its own value, which composes with every other parameter.
         self.assertEqual(human.seconds2human(0.0021473), '2ms 147us')
         self.assertEqual(human.seconds2human(round(0.0021473, 3)), '2ms')
+
+
+class TestSeconds2HumanEdges(unittest.TestCase):
+    # Below half a picosecond nothing is left to show; that is zero, not nothing.
+    def test_shorter_than_the_smallest_unit_is_zero(self):
+        self.assertEqual(human.seconds2human(1e-13), '0s')
+        self.assertEqual(human.seconds2human(-1e-13), '0s')
+        self.assertEqual(human.seconds2human(1e-13, full_name=True), '0seconds')
+
+    def test_non_finite_values_do_not_raise(self):
+        self.assertEqual(human.seconds2human(float('inf')), 'infs')
+        self.assertEqual(human.seconds2human(float('-inf')), '-infs')
+        self.assertEqual(human.seconds2human(float('nan')), 'nans')
+        self.assertEqual(
+            human.seconds2human(float('inf'), full_name=True), 'infseconds'
+        )
 
 
 class TestHuman2Bytes(unittest.TestCase):

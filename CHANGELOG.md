@@ -49,23 +49,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-* args.py: arguments with characters outside of ASCII arrive intact when the Icinga 2 agent for Windows starts the consumer
-* base.py: on Windows, what argparse writes to stderr no longer arrives with an empty line after every line, `get_state()` answers UNKNOWN to a threshold that is not a number instead of raising, and the messages of `coe()`, `cu()` and `verbose()` are no longer cut short at a `|`
+* args.py: arguments with characters outside of ASCII arrive intact when the Icinga 2 agent for Windows starts the consumer, and `number_unit_method()` reads `10 G` and no longer turns `-5`, `10X` or `5.5.5G` into a threshold
+* base.py: on Windows, what argparse writes to stderr no longer arrives with an empty line after every line, `get_state()` answers UNKNOWN to a threshold that is not a number instead of raising, and the messages of `coe()`, `cu()` and `verbose()` are no longer cut short at a `|`, and `guess_type()` no longer truncates a float
 * disk.py: `get_real_disks()` keeps logical volumes apart on hosts without udev, and `is_within()` works with the filesystem root as a root
 * dmidecode.py: `ram()` counts every module of a set of identical ones and reads the sizes of dmidecode 3.7 and terabyte modules, instead of reporting too little or nothing
 * feedparser.py: `parse_atom()` and `parse_rss()` read every date the formats allow, apply its offset, and date an empty or unreadable one to 1970 instead of failing
-* human.py: `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), and `humanduration2seconds()` and `humanrange2seconds()` read a fraction such as `0.5D` instead of only its decimal places
+* human.py: `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), and `humanduration2seconds()` and `humanrange2seconds()` read a fraction such as `0.5D` instead of only its decimal places; `bytes2human()`, `number2human()` and `seconds2human()` no longer fail on infinity, move a value that rounds up into the next unit, and show a duration below a picosecond as `0s`
 * icinga.py: `api_post()` reaches a server whose name starts with `v1` or `v2`
 * infomaniak.py: `get_swiss_backup_slots()` applies the proxy, TLS and timeout settings to the products request too
-* logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint, and no longer loses lines at a rotation or when daylight saving time ends, hands out half-written lines, or falls behind on a busy unit, and `timestamp()` no longer fails on a date local time cannot hold
+* logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint, and no longer loses lines at a rotation or when daylight saving time ends, hands out half-written lines, falls behind on a busy unit, or reads a compressed file named directly again on every run; `timestamp()` no longer fails on a date local time cannot hold
 * net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, and `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
 * redfish.py: `get_systems_memory()` no longer rates spare and unused HPE modules CRIT and reads Fujitsu iRMC modules, the `get_*()` projections and `get_manager_logservices_sel_entries()` no longer fail on a `null` value, and `start_trace()` works on Windows
 * ssh.py: `rsync()` and `scp()` reach an IPv6 address, and `rsync()` keeps an ssh option or key path containing spaces together
 * task.py: `run()` and `run_each()` no longer repeat the consumer's output when a job prints or ends the program, report such a job as a failure, and return on time when a job cannot be killed
+* time.py: `epoch2iso()` and `get_weekday()` answer an empty string to a timestamp beyond what the platform can represent instead of failing
 * uptimerobot.py: `new_monitor()` and `edit_monitor()` send the port monitor presets UptimeRobot expects, so `https`, `ftp`, `smtp`, `pop3` and `imap` no longer fail, `post_content_type` accepts `application/json`, and the `get_*()` functions return every record, alert contacts past the first 50 and with a `limit` included, starting at a given `offset`
 * url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example, `fetch(extended=True)` authenticates to a proxy, and `split_basic_auth()` keeps the brackets of an IPv6 address
-* version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable, and answers UNKNOWN to a version without a number instead of calling it older than anything listed; `version()` no longer reads a pre-release, a build suffix or a date as part of the version
+* user.py: `get_uid_min()` reads an indented `UID_MIN`, and a repeated or commented one the way useradd on RHEL 10 and Fedora does
+* version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable, answers UNKNOWN to a version without a number instead of calling it older than anything listed, and no longer doubles a blank in its message; `version()` no longer reads a pre-release, a build suffix or a date as part of the version
 * winrm.py: `run_ps()` returns the output as PowerShell shows it again instead of the type names of the objects, behind a JEA endpoint as a list of their properties, and no longer writes a Python warning about the progress stream
 * wordpress.py: `get_header_value()`, `get_plugins()`, `get_themes()`, and `get_site_url()`, which no longer reports the enclosing site when its own `wp-config.php` cannot be read
 

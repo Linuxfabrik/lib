@@ -11,7 +11,7 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 import datetime
 import email.utils
@@ -82,17 +82,22 @@ def epoch2iso(timestamp):
     Returns
     -------
     str
-        Local date and time in ISO 8601 format.
+        Local date and time in ISO 8601 format, or the empty string for a value that is
+        not a timestamp or lies outside what the platform can represent.
 
     Examples
     --------
     >>> epoch2iso(1620459129)
     '2021-05-08 09:32:09'
+    >>> epoch2iso(float('inf'))
+    ''
     """
     try:
         ts = float(timestamp)
         return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts))
-    except (TypeError, ValueError):
+    except (OSError, OverflowError, TypeError, ValueError):
+        # OverflowError beyond the platform's time_t, OSError where localtime()
+        # itself refuses the value (on Windows a negative timestamp, for example)
         return ''
 
 
@@ -148,7 +153,9 @@ def get_weekday(epoch):
     Returns
     -------
     str
-        Lowercase three-letter abbreviation of the weekday corresponding to the local date.
+        Lowercase three-letter abbreviation of the weekday corresponding to the local
+        date, or the empty string for a value that is not a timestamp or lies outside
+        what the platform can represent, like `epoch2iso()`.
 
     Examples
     --------
@@ -156,7 +163,10 @@ def get_weekday(epoch):
     'sat'
     """
     _WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-    return _WEEKDAYS[time.localtime(epoch).tm_wday]
+    try:
+        return _WEEKDAYS[time.localtime(float(epoch)).tm_wday]
+    except (OSError, OverflowError, TypeError, ValueError):
+        return ''
 
 
 _MACRO_COMPONENT = re.compile(r'\{%([YymdHMS])\}')

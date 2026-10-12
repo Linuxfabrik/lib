@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 import collections
 import datetime
@@ -468,6 +468,21 @@ def _rotated_files(path, count=None):
     return [candidate for _, candidate in reversed(candidates[:count])]
 
 
+def _is_truncated(size, position, compressed):
+    """Return whether a file of `size` bytes is shorter than where `position` stopped.
+
+    The offset counts the bytes of the lines read, which for a compressed file are the
+    uncompressed ones; its compressed size is nearly always smaller, so holding the two
+    against each other took every compressed file for truncated and read it again from
+    the start, run after run. A compressed file is therefore compared with its own size
+    at the time the position was taken. A position from before that size was stored
+    leaves the decision to the fingerprint.
+    """
+    if compressed:
+        return size < position.get('size', 0)
+    return size < position.get('offset', 0)
+
+
 def _resume_rotated(path, position, allowed_roots, lines):
     """Read what the file held after `position` before a rotator moved it aside.
 
@@ -516,9 +531,10 @@ def _resume_rotated(path, position, allowed_roots, lines):
                 start = 0
                 if number == 0:
                     candidate_stat = os.fstat(predecessor_raw.fileno())
-                    if (
-                        str(candidate_stat.st_ino) != stored_inode
-                        or candidate_stat.st_size < offset
+                    if str(candidate_stat.st_ino) != stored_inode or _is_truncated(
+                        candidate_stat.st_size,
+                        position,
+                        compressed=predecessor_handle is not predecessor_raw,
                     ):
                         return False, [], 0, []
                     if position.get('fingerprint'):
@@ -574,7 +590,7 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
             # looked for among the predecessors below
             moved_aside = True
             offset = 0
-        elif file_stat.st_size < offset:
+        elif _is_truncated(file_stat.st_size, position, compressed=handle is not raw):
             # truncated below where we stopped
             offset = 0
         elif position.get('fingerprint'):
@@ -667,6 +683,9 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
             'kind': KIND_FILE,
             'length': fingerprint_length,
             'offset': offset,
+            # the size of the file itself, for a compressed one, whose offset counts
+            # the uncompressed bytes and cannot be held against it
+            **({'size': file_stat.st_size} if handle is not raw else {}),
         },
         'restarted': restarted,
         'rotated': rotated_read,

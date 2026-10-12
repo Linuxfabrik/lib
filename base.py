@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100902'
+__version__ = '2026101201'
 
 import math
 import numbers
@@ -646,6 +646,12 @@ def guess_type(v, consumer='python'):
     >>> guess_type('abc', 'sqlite')
     'text'
 
+    >>> guess_type(1.9)
+    1.9
+
+    >>> guess_type(float('inf'), 'sqlite')
+    'real'
+
     >>> value_type = lib.base.guess_type(value)
     >>> if isinstance(value_type, int) or isinstance(value_type, float):
     ...     ...
@@ -653,15 +659,19 @@ def guess_type(v, consumer='python'):
     if v is None:
         return None if consumer == 'python' else 'text'
 
-    try:
-        result = int(v)
-        return result if consumer == 'python' else 'integer'
-    except (ValueError, TypeError):
+    # int() is only asked about whole numbers and text: on a float it truncates, so
+    # 1.9 became 1 and an 'integer', and on infinity it raises OverflowError.
+    if isinstance(v, (int, str, bytes)):
         try:
-            result = float(v)
-            return result if consumer == 'python' else 'real'
-        except (ValueError, TypeError):
-            return str(v) if consumer == 'python' else 'text'
+            result = int(v)
+            return result if consumer == 'python' else 'integer'
+        except (ValueError, TypeError, OverflowError):
+            pass
+    try:
+        result = float(v)
+        return result if consumer == 'python' else 'real'
+    except (ValueError, TypeError, OverflowError):
+        return str(v) if consumer == 'python' else 'text'
 
 
 def is_numeric(value):

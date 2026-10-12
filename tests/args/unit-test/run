@@ -152,15 +152,37 @@ class TestLoadSecret(unittest.TestCase):
 
 
 class TestNumberUnitMethod(unittest.TestCase):
-    def test_no_digits_yields_zero(self):
-        self.assertEqual(args.number_unit_method(''), ('0.0', '%', 'USED'))
-        self.assertEqual(args.number_unit_method('abc'), ('0.0', '%', 'USED'))
+    # What does not have the form `<number>[unit][method]` yields an empty number, so
+    # the caller's float() rejects it. Read as 0 or with a default unit, a typo became
+    # a threshold nobody gave: `-5` was 0%, `50X` 50%.
+    def test_what_is_not_a_threshold_yields_no_number(self):
+        for text in (
+            '',
+            'abc',
+            '-5',
+            '+5',
+            '5.',
+            '5.5.5G',
+            '5,5G',
+            '50XUSED',
+            '50%BOGUS',
+        ):
+            with self.subTest(text=text):
+                number, unit, method = args.number_unit_method(text)
+                self.assertEqual((number, unit, method), ('', '%', 'USED'))
+                with self.assertRaises(ValueError):
+                    float(number)
 
-    def test_unknown_unit_falls_back_to_the_default(self):
-        self.assertEqual(args.number_unit_method('50XUSED'), ('50', '%', 'USED'))
+    def test_blanks_between_the_parts(self):
+        self.assertEqual(args.number_unit_method('10 G'), ('10', 'G', 'USED'))
+        self.assertEqual(args.number_unit_method(' 10 % free '), ('10', '%', 'FREE'))
 
-    def test_unknown_method_falls_back_to_the_default(self):
-        self.assertEqual(args.number_unit_method('50%BOGUS'), ('50', '%', 'USED'))
+    def test_a_unit_may_carry_its_byte_suffix(self):
+        self.assertEqual(args.number_unit_method('10GiB'), ('10', 'G', 'USED'))
+        self.assertEqual(args.number_unit_method('10MBFREE'), ('10', 'M', 'FREE'))
+
+    def test_a_fraction_without_leading_digit(self):
+        self.assertEqual(args.number_unit_method('.5T'), ('.5', 'T', 'USED'))
 
     def test_defaults(self):
         self.assertEqual(args.number_unit_method('50'), ('50', '%', 'USED'))

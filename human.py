@@ -13,7 +13,7 @@ back).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 import math
 import re
@@ -176,11 +176,22 @@ def _to_human(n, thresholds, fallback_unit, decimals=1, space=False):
     # memory reclaimed, bandwidth swings) still get scaled to a unit that
     # matches their magnitude. e.g. -1048576 bytes reads as '-1.0MiB'.
     sep = ' ' if space else ''
+    if not math.isfinite(n):
+        # no unit scales infinity, and nan has no magnitude to pick one by
+        return f'{float(n)}{sep}{fallback_unit}'
     abs_n = abs(n)
-    for symbol, threshold in thresholds:
-        if abs_n >= threshold:
-            return f'{float(n) / threshold:.{decimals}f}{sep}{symbol}'
-    return f'{n:.{decimals}f}{sep}{fallback_unit}'
+    units = (*thresholds, (fallback_unit, 1))
+    # the largest unit the value reaches, the fallback unit (size 1) for anything less
+    index = next(
+        (i for i, (_, threshold) in enumerate(units) if abs_n >= threshold),
+        len(units) - 1,
+    )
+    symbol, threshold = units[index]
+    # A value that rounds up to the size of the next larger unit moves into it:
+    # 1048575 bytes is 1023.999KiB and would read 1024.0KiB, which is 1.0MiB.
+    if index and round(abs_n / threshold, decimals) * threshold >= units[index - 1][1]:
+        symbol, threshold = units[index - 1]
+    return f'{float(n) / threshold:.{decimals}f}{sep}{symbol}'
 
 
 def bits2human(n, decimals=1, space=False):
@@ -671,16 +682,29 @@ def number2human(number):
 
     >>> number2human(9223372036854775808)
     '9.2E'
+
+    >>> number2human(999999)
+    '1M'
+
+    >>> number2human(float('inf'))
+    'inf'
     """
     try:
         number = float(number)
     except Exception:
         return number
+    if not math.isfinite(number):
+        # no prefix scales infinity, and nan has no magnitude to pick one by
+        return str(number)
 
     millidx = 0 if number == 0 else math.floor(math.log10(abs(number)) / 3)
 
     millidx = max(0, min(_SI_PREFIXES_MAX_IDX, millidx))
     scaled = number / 10 ** (3 * millidx)
+    if abs(round(scaled, 1)) >= 1000 and millidx < _SI_PREFIXES_MAX_IDX:
+        # 999999 is 999.999K and prints as 1000.0K, which is 1M
+        millidx += 1
+        scaled = number / 10 ** (3 * millidx)
     text = f'{scaled:.1f}'
     if text.endswith('.0'):
         text = text[:-2]
@@ -745,13 +769,23 @@ def seconds2human(seconds, keep_short=True, full_name=False):
 
     >>> seconds2human(-5)
     '-5s'
+
+    >>> seconds2human(1e-13)
+    '0s'
+
+    >>> seconds2human(float('inf'))
+    'infs'
     """
     seconds = float(seconds)
+    zero = '0seconds' if full_name else '0s'
 
     # No unit of zero is non-zero, so the loop below would return an empty string and
     # drop the duration out of the sentence it was formatted for.
     if seconds == 0:
-        return '0seconds' if full_name else '0s'
+        return zero
+    if not math.isfinite(seconds):
+        # no unit divides infinity, and nan has no magnitude to split
+        return f'{seconds}seconds' if full_name else f'{seconds}s'
 
     # A negative duration is formatted like its positive counterpart and signed. The
     # division below rounds towards minus infinity, which turned -5 into '-1Y 12M'.
@@ -783,6 +817,9 @@ def seconds2human(seconds, keep_short=True, full_name=False):
                 name = name.rstrip('s')
             result.append(f'{value}{name}')
 
+    if not result:
+        # shorter than half the smallest unit, a picosecond: rounds to zero
+        return zero
     if keep_short and len(result) > 2:
         return sign + ' '.join(result[:2])
     return sign + ' '.join(result)
