@@ -11,9 +11,10 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101203'
+__version__ = '2026101204'
 
 import base64
+import collections.abc
 import json
 import os
 import re
@@ -1395,6 +1396,38 @@ def fetch(
     ...     extended=True,
     ... )
     """
+    # The arguments are checked once, here, so a wrong type comes back as an error
+    # instead of a traceback from somewhere inside the retry loop or httpx.
+    if not isinstance(url, str):
+        return False, f'`url` must be a string, not {type(url).__name__}'
+    if header is not None and (
+        not isinstance(header, collections.abc.Mapping)
+        or not all(
+            isinstance(item, (str, bytes)) for pair in header.items() for item in pair
+        )
+    ):
+        return False, '`header` must be a dict of strings, or None'
+    if timeout is not None and (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not 0 <= timeout <= MAX_TIMEOUT
+    ):
+        return False, (
+            f'`timeout` must be a number of seconds between 0 and {MAX_TIMEOUT}, '
+            f'or None, not {timeout!r}'
+        )
+    if not isinstance(retries, int) or retries < 0:
+        return False, f'`retries` must be a non-negative integer, not {retries!r}'
+    if method is not None and not isinstance(method, str):
+        return False, f'`method` must be a string or None, not {type(method).__name__}'
+    if cacert is not None:
+        if not isinstance(cacert, (str, os.PathLike)) or not isinstance(
+            os.fspath(cacert), str
+        ):
+            return False, (
+                f'`cacert` must be a path or None, not {type(cacert).__name__}'
+            )
+        cacert = os.fspath(cacert)
     if deadline is not None and (
         isinstance(deadline, bool)
         or not isinstance(deadline, (int, float))

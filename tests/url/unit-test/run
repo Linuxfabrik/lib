@@ -1567,6 +1567,100 @@ class TestFetchLeavesNothingInTheMessage(unittest.TestCase):
         self._assert_clean('http://usr:SECRET7@[::1/x?sid=SECRET8')
 
 
+class TestFetchArgumentTypes(unittest.TestCase):
+    """A wrong type comes back as `(False, message)`, never as a traceback."""
+
+    @skip_without_httpx
+    def test_wrong_types_are_refused(self):
+        for name, value in (
+            ('header', ['X: y']),
+            ('header', 'X: y'),
+            ('retries', 'x'),
+            ('retries', -1),
+            ('retries', 1.5),
+            ('retries', None),
+            ('header', {1: 'b'}),
+            ('header', {'a': 1}),
+            ('timeout', 10**400),
+            ('timeout', float('nan')),
+            ('timeout', float('inf')),
+            ('timeout', -1),
+            ('timeout', url.MAX_TIMEOUT + 1),
+            ('method', 5),
+            ('cacert', 5),
+            ('timeout', 'x'),
+            ('timeout', True),
+        ):
+            with self.subTest(name=name, value=value):
+                success, message = url.fetch('http://127.0.0.1:9/', **{name: value})
+                self.assertFalse(success)
+                self.assertIn(f'`{name}`', message)
+
+    @skip_without_httpx
+    def test_url_must_be_a_string(self):
+        for value in (None, 5, b'http://127.0.0.1/'):
+            success, message = url.fetch(value)
+            self.assertFalse(success)
+            self.assertIn('`url`', message)
+
+    @skip_without_httpx
+    def test_fetch_json_passes_the_refusal_on(self):
+        success, message = url.fetch_json('http://127.0.0.1:9/', header=['X: y'])
+        self.assertFalse(success)
+        self.assertIn('`header`', message)
+
+    @skip_without_httpx
+    def test_cacert_may_be_a_path_object(self):
+        import pathlib
+
+        for cacert in (CA_FILE, pathlib.Path(CA_FILE)):
+            with (
+                self.subTest(cacert=type(cacert).__name__),
+                patch_mock_transport(
+                    lambda request: httpx.Response(200, stream=httpx.ByteStream(b'ok'))
+                ),
+            ):
+                self.assertEqual(
+                    url.fetch('https://example.com/', cacert=cacert), (True, 'ok')
+                )
+
+    @skip_without_httpx
+    def test_cacert_that_is_not_a_path_is_refused(self):
+        for cacert in (5, b'/etc/ca.pem', ['/etc/ca.pem']):
+            with self.subTest(cacert=cacert):
+                success, message = url.fetch('https://example.com/', cacert=cacert)
+                self.assertFalse(success)
+                self.assertIn('`cacert`', message)
+
+    @skip_without_httpx
+    def test_a_bool_as_retries_is_accepted_as_before(self):
+        # False was 0 and True was 1 on every release, and stays so
+        for retries in (False, True):
+            with (
+                self.subTest(retries=retries),
+                patch_mock_transport(
+                    lambda request: httpx.Response(200, stream=httpx.ByteStream(b'ok'))
+                ),
+            ):
+                self.assertEqual(
+                    url.fetch('https://example.com/', retries=retries), (True, 'ok')
+                )
+
+    @skip_without_httpx
+    def test_a_timeout_of_none_and_a_mapping_header_are_accepted(self):
+        with patch_mock_transport(
+            lambda request: httpx.Response(200, stream=httpx.ByteStream(b'ok'))
+        ):
+            self.assertEqual(
+                url.fetch(
+                    'https://example.com/',
+                    timeout=None,
+                    header=httpx.Headers({'a': 'b'}),
+                ),
+                (True, 'ok'),
+            )
+
+
 @skip_without_httpx
 class TestOverallDeadline(unittest.TestCase):
     """`timeout` keeps its meaning for every connect, read and write on its own, so a
