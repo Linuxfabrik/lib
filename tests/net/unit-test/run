@@ -13,14 +13,18 @@
 Everything that would reach the network is driven through mocks, so the suite
 stays hermetic: fetch() and fetch_socket() against a mocked socket, get_proxy()
 against a mocked environment, get_public_ip() against a mocked url.fetch(), and
-get_netinfo() against a mocked psutil.
+get_netinfo() against a mocked psutil. The bounds of a read (`TestSocketDeadline`)
+are the exception: they need a server that drips, on the loopback.
 """
 
 import os
 import re
+import shutil
 import socket
 import ssl
 import sys
+import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -371,6 +375,255 @@ class TestFetchSocket(unittest.TestCase):
         success, message = self._fetch(FakeSocket(raises=OSError('gone')))
         self.assertFalse(success)
         self.assertIn('/run/haproxy.sock', message)
+
+
+class TestSocketBounds(unittest.TestCase):
+    """Nothing is read without a bound: `timeout` ends the whole exchange, and the
+    answer is refused beyond `max_bytes`."""
+
+    def _fetch(self, sock, **kwargs):
+        with mock.patch('socket.socket', return_value=sock):
+            return net.fetch('host.example.com', 4242, **kwargs)
+
+    def test_the_default_limit_is_the_one_of_url(self):
+        self.assertEqual(net.url.DEFAULT_MAX_BYTES, 64 * 1024 * 1024)
+
+    def test_an_answer_at_the_limit_is_read(self):
+        self.assertEqual(
+            self._fetch(FakeSocket([b'1234567890']), max_bytes=10)[0], True
+        )
+
+    def test_an_answer_beyond_the_limit_is_refused(self):
+        success, message = self._fetch(
+            FakeSocket([b'12345', b'67890', b'1']), max_bytes=10
+        )
+        self.assertFalse(success)
+        self.assertIn('refused to read more than', message)
+
+    def test_the_limit_counts_all_steps_of_a_dialog(self):
+        sock = FakeSocket([b'OK 1\n', b'OK 2\n', b'OK 3\n'])
+        success, message = self._fetch(
+            sock,
+            dialog=[(None, r'OK 1'), (b'a\n', r'OK 2'), (b'b\n', r'OK 3')],
+            max_bytes=12,
+        )
+        self.assertFalse(success)
+        self.assertIn('refused to read more than', message)
+
+    def test_no_limit_with_none(self):
+        self.assertEqual(
+            self._fetch(FakeSocket([b'x' * 100000]), max_bytes=None)[0], True
+        )
+
+    def test_the_limit_of_a_unix_socket(self):
+        with mock.patch('socket.socket', return_value=FakeSocket([b'x' * 20])):
+            success, message = net.fetch_socket('/run/x.sock', max_bytes=10)
+        self.assertFalse(success)
+        self.assertIn('refused to read more than', message)
+
+
+class TestSocketDeadline(unittest.TestCase):
+    """`timeout` keeps its meaning for every connect, read and write on its own, so an
+    exchange that goes on steadily is not cut off by it. A server that sends a byte
+    inside every read timeout, or never closes the connection, ends after `deadline`,
+    which is `DEADLINE_FACTOR` times the timeout unless given (measured: 20 s for
+    `timeout=2` against a server dripping for 20 s). A real socket, bounded in the
+    test itself."""
+
+    DRIP_INTERVAL = 0.2
+
+    def setUp(self):
+        import socketserver
+        import threading
+
+        interval = self.DRIP_INTERVAL
+
+        class Handler(socketserver.BaseRequestHandler):
+            def handle(self):
+                mode = self.server.mode
+                try:
+                    if mode == 'lines':
+                        # five lines, 0.5 s apart, then the connection closes
+                        for number in range(5):
+                            self.request.sendall(f'line {number}\n'.encode())
+                            time.sleep(0.5)
+                    elif mode == 'dialog':
+                        # one answer per step, each 0.6 s after the question
+                        for _ in range(3):
+                            self.request.recv(1024)
+                            time.sleep(0.6)
+                            self.request.sendall(b'OK\n')
+                        time.sleep(0.2)
+                    elif mode == 'silent':
+                        time.sleep(30)
+                    else:
+                        # never stops, never closes
+                        while True:
+                            self.request.sendall(b'x')
+                            time.sleep(interval)
+                except OSError:
+                    pass  # the client gave up, which is what the test wants
+
+        class Server(socketserver.ThreadingTCPServer):
+            allow_reuse_address = True
+            daemon_threads = True
+            mode = 'drip'
+
+        self.server = Server(('127.0.0.1', 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.port = self.server.server_address[1]
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+
+    def _timed(self, mode, function, *args, **kwargs):
+        self.server.mode = mode
+        started = time.monotonic()
+        result = function(*args, **kwargs)
+        return result, time.monotonic() - started
+
+    # an exchange that goes on steadily is left alone
+
+    def test_a_steady_banner_longer_than_the_timeout_succeeds(self):
+        (success, text), elapsed = self._timed(
+            'lines', net.fetch, '127.0.0.1', self.port, msg=b'hi', timeout=1
+        )
+        self.assertTrue(success, text)
+        self.assertEqual(text.count('line'), 5)
+        self.assertGreater(elapsed, 1.0)
+
+    def test_a_dialog_longer_than_the_timeout_succeeds(self):
+        (success, answers), elapsed = self._timed(
+            'dialog',
+            net.fetch,
+            '127.0.0.1',
+            self.port,
+            dialog=[(b'a\n', r'OK'), (b'b\n', r'OK'), (b'c\n', r'OK')],
+            timeout=1,
+        )
+        self.assertTrue(success, answers)
+        self.assertEqual(len(answers), 3)
+        self.assertGreater(elapsed, 1.0)
+
+    def test_a_steady_exchange_ends_at_an_explicit_deadline(self):
+        (success, message), elapsed = self._timed(
+            'lines', net.fetch, '127.0.0.1', self.port, msg=b'hi', timeout=1, deadline=1
+        )
+        self.assertFalse(success)
+        self.assertIn('did not finish within 1s', message)
+        self.assertLess(elapsed, 2.5)
+
+    # an exchange that never ends is ended
+
+    def test_a_dripping_banner_ends_at_the_deadline(self):
+        (success, message), elapsed = self._timed(
+            'drip',
+            net.fetch,
+            '127.0.0.1',
+            self.port,
+            msg=b'hi',
+            timeout=1,
+            deadline=1.5,
+        )
+        self.assertFalse(success)
+        self.assertIn('did not finish within 1.5s', message)
+        self.assertLess(elapsed, 3)
+
+    def test_a_dripping_dialog_ends_at_the_deadline(self):
+        (success, message), elapsed = self._timed(
+            'drip',
+            net.fetch,
+            '127.0.0.1',
+            self.port,
+            dialog=[(None, r'never matches')],
+            timeout=1,
+            deadline=1.5,
+        )
+        self.assertFalse(success)
+        self.assertIn('did not finish within 1.5s', message)
+        self.assertLess(elapsed, 3)
+
+    def test_a_silent_server_still_times_out_per_read(self):
+        (success, message), elapsed = self._timed(
+            'silent', net.fetch, '127.0.0.1', self.port, msg=b'hi', timeout=1
+        )
+        self.assertFalse(success)
+        self.assertIn('timed out', message)
+        self.assertNotIn('did not finish', message)
+        self.assertLess(elapsed, 3)
+
+    @unittest.skipUnless(hasattr(socket, 'AF_UNIX'), 'a UNIX socket needs POSIX')
+    def test_a_dripping_unix_socket_ends_at_the_deadline(self):
+        import socketserver
+        import threading
+
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        path = os.path.join(directory, 'drip.sock')
+        interval = self.DRIP_INTERVAL
+
+        class Dripper(socketserver.BaseRequestHandler):
+            def handle(self):
+                try:
+                    while True:
+                        self.request.sendall(b'x')
+                        time.sleep(interval)
+                except OSError:
+                    pass
+
+        server = socketserver.ThreadingUnixStreamServer(path, Dripper)
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            started = time.monotonic()
+            success, message = net.fetch_socket(
+                path, cmd=b'hi', timeout=1, deadline=1.5
+            )
+            elapsed = time.monotonic() - started
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+        self.assertFalse(success)
+        self.assertIn('did not finish within 1.5s', message)
+        self.assertLess(elapsed, 3)
+
+    # the arguments
+
+    def test_the_default_is_ten_times_the_timeout(self):
+        self.assertEqual(net.url.DEADLINE_FACTOR, 10)
+        sock = FakeSocket([b'a', b'b'])
+        with mock.patch('socket.socket', return_value=sock):
+            self.assertEqual(net.fetch('host.example.com', 1, timeout=5), (True, 'ab'))
+        # every read is given the timeout, or what is left of the deadline if less
+        self.assertLessEqual(sock.timeout, 5)
+
+    def test_no_timeout_means_no_deadline(self):
+        sock = FakeSocket([b'a'])
+        with mock.patch('socket.socket', return_value=sock):
+            self.assertEqual(
+                net.fetch('host.example.com', 1, timeout=None), (True, 'a')
+            )
+        self.assertIsNone(sock.timeout)
+
+    def test_a_deadline_that_is_not_a_positive_number_is_refused(self):
+        for deadline in (0, False, True, -1, float('nan'), float('inf'), '5'):
+            with self.subTest(deadline=deadline):
+                with mock.patch('socket.socket', return_value=FakeSocket([b'a'])):
+                    success, message = net.fetch(
+                        'host.example.com', 1, deadline=deadline
+                    )
+                self.assertFalse(success)
+                self.assertIn('`deadline`', message)
+
+    def test_fetch_socket_validates_it_too(self):
+        success, message = net.fetch_socket('/run/x.sock', deadline=0)
+        self.assertFalse(success)
+        self.assertIn('`deadline`', message)
 
 
 class TestGetProxy(unittest.TestCase):

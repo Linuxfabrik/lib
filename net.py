@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101202'
+__version__ = '2026101204'
 
 import ipaddress
 import os
@@ -20,6 +20,7 @@ import random
 import re
 import socket
 import ssl
+import time
 import urllib.parse
 import urllib.request
 
@@ -31,6 +32,7 @@ except ImportError:
     HAVE_PSUTIL = False
 
 from . import (
+    human,  # pylint: disable=C0413
     txt,  # pylint: disable=C0413
     url,  # pylint: disable=C0413
 )
@@ -229,6 +231,8 @@ def _socket_fetch(
     dialog=None,
     timeout=3,
     socket_name='socket',
+    max_bytes=url.DEFAULT_MAX_BYTES,
+    deadline=None,
 ):
     """
     Fetch data via an open socket connection.
@@ -257,6 +261,14 @@ def _socket_fetch(
         Socket timeout in seconds. Defaults to `3`.
     socket_name : str, optional
         A human-readable name used in error messages for context. Defaults to `"socket"`.
+    max_bytes : int or None, optional
+        Most bytes read in the whole exchange, all steps of a dialog together. More is
+        refused, not cut off. `None` reads without a limit. Defaults to
+        `url.DEFAULT_MAX_BYTES` (64 MiB).
+    deadline : int or float, optional
+        Seconds the whole exchange, connect and every step of a dialog together, may
+        take. Defaults to `None`, which is `url.DEADLINE_FACTOR` (10) times `timeout`,
+        and no limit where `timeout` is `None`.
 
     Returns
     -------
@@ -268,6 +280,10 @@ def _socket_fetch(
     Notes
     -----
     - Timeout and socket errors are handled gracefully.
+    - `timeout` bounds every connect, read and write on its own, so an exchange that goes
+      on steadily is not cut off by it. A server that sends a byte inside every read
+      timeout, or never closes the connection, is given up on once the whole exchange
+      has taken `deadline` seconds.
     - Responses are decoded as UTF-8 and, on any invalid byte, as Latin-1, so a sensor
       that answers in another encoding still yields text the consumer can print.
     - This is an internal function intended for use by `fetch()`, `fetch_socket()`, and similar
@@ -281,6 +297,43 @@ def _socket_fetch(
     """
     if payload is not None and dialog is not None:
         return False, f'{socket_name}: payload and dialog are mutually exclusive.'
+    if deadline is not None and (
+        isinstance(deadline, bool)
+        or not isinstance(deadline, (int, float))
+        or not 0 < deadline <= url.MAX_TIMEOUT * url.DEADLINE_FACTOR
+    ):
+        return False, (
+            f'{socket_name}: `deadline` must be a number of seconds above 0 and at '
+            f'most {url.MAX_TIMEOUT * url.DEADLINE_FACTOR}, or None, not {deadline!r}'
+        )
+
+    deadline_seconds = deadline
+    if deadline_seconds is None and timeout:
+        deadline_seconds = timeout * url.DEADLINE_FACTOR
+    end = time.monotonic() + deadline_seconds if deadline_seconds else None
+    received_total = 0
+
+    def recv(sock):
+        # A read gets what is left of the deadline as its timeout when that is less than
+        # the timeout. A fixed timeout would restart with every chunk the server drips.
+        if end is not None:
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                raise socket.timeout('overall deadline reached')
+            sock.settimeout(min(timeout, remaining) if timeout else remaining)
+        return sock.recv(65536)
+
+    def expired():
+        # a read that was given what is left of the deadline times out on its own
+        return end is not None and time.monotonic() >= end
+
+    deadline_message = f'{socket_name} did not finish within {deadline_seconds}s.'
+
+    too_much = (
+        f'{socket_name}: refused to read more than {human.bytes2human(max_bytes)}.'
+        if max_bytes is not None
+        else None
+    )
 
     try:
         with open_socket_func() as s:
@@ -311,8 +364,10 @@ def _socket_fetch(
                     received = b''
                     while True:
                         try:
-                            chunk = s.recv(1024)
+                            chunk = recv(s)
                         except socket.timeout:
+                            if expired():
+                                return False, deadline_message
                             return False, (
                                 f'{socket_name} timed out waiting for pattern {expect!r}.'
                             )
@@ -323,6 +378,9 @@ def _socket_fetch(
                                 f'{socket_name} closed before pattern {expect!r} matched.'
                             )
                         received += chunk
+                        received_total += len(chunk)
+                        if max_bytes is not None and received_total > max_bytes:
+                            return False, too_much
                         buffer = _decode_received(received)
                         if pattern.search(buffer):
                             results.append(buffer)
@@ -351,11 +409,16 @@ def _socket_fetch(
             fragments = []
             while True:
                 try:
-                    chunk = s.recv(1024)
+                    chunk = recv(s)
                     if not chunk:
                         break
+                    received_total += len(chunk)
+                    if max_bytes is not None and received_total > max_bytes:
+                        return False, too_much
                     fragments.append(chunk)
                 except socket.timeout:
+                    if expired():
+                        return False, deadline_message
                     return False, f'{socket_name} timed out.'
                 except OSError as e:
                     return False, f'Cannot fetch data from {socket_name}: {e}'
@@ -366,7 +429,17 @@ def _socket_fetch(
         return False, f'Error using {socket_name}: {e}'
 
 
-def fetch(host, port, msg=None, dialog=None, timeout=3, ipv6=False, tls=False):
+def fetch(
+    host,
+    port,
+    msg=None,
+    dialog=None,
+    timeout=3,
+    ipv6=False,
+    tls=False,
+    max_bytes=url.DEFAULT_MAX_BYTES,
+    deadline=None,
+):
     """
     Fetch data via a TCP/IP socket connection.
 
@@ -391,12 +464,22 @@ def fetch(host, port, msg=None, dialog=None, timeout=3, ipv6=False, tls=False):
         performed, so multi-step protocols (SMTP, NUT, IMAP, POP3, FTP, ...) work. Mutually
         exclusive with `msg`. See `_socket_fetch` for details.
     timeout : int, optional
-        Socket timeout in seconds. Defaults to `3`.
+        Socket timeout in seconds, for every connect, read and write on its own.
+        Defaults to `3`.
     ipv6 : bool, optional
         Use an IPv6 connection instead of IPv4. Defaults to `False`.
     tls : bool, optional
         Wrap the socket in a TLS 1.2+ context with SNI. The server certificate is verified
         against the trust store of the host, including its name. Defaults to `False`.
+    max_bytes : int or None, optional
+        Most bytes read in the whole exchange. More is refused, not cut off, so a server
+        that never stops cannot exhaust the memory of the caller. `None` reads without a
+        limit. Defaults to `url.DEFAULT_MAX_BYTES` (64 MiB).
+    deadline : int or float, optional
+        Seconds the whole exchange may take. A server that keeps sending just inside
+        `timeout`, or never closes the connection, is given up on then. Defaults to
+        `None`, which is `url.DEADLINE_FACTOR` (10) times `timeout`. Has to be a finite
+        number above 0.
 
     Returns
     -------
@@ -450,13 +533,22 @@ def fetch(host, port, msg=None, dialog=None, timeout=3, ipv6=False, tls=False):
             dialog=dialog,
             timeout=timeout,
             socket_name=f'TCP socket {host}:{port}',
+            deadline=deadline,
+            max_bytes=max_bytes,
         )
 
     except Exception as e:
         return False, f'Could not open TCP socket {host}:{port}: {e}'
 
 
-def fetch_socket(sock_file, cmd=None, dialog=None, timeout=3):
+def fetch_socket(
+    sock_file,
+    cmd=None,
+    dialog=None,
+    timeout=3,
+    max_bytes=url.DEFAULT_MAX_BYTES,
+    deadline=None,
+):
     """
     Fetch data via a Unix domain socket connection.
 
@@ -474,6 +566,15 @@ def fetch_socket(sock_file, cmd=None, dialog=None, timeout=3):
         Dialog mode. See `fetch()` for the step format. Mutually exclusive with `cmd`.
     timeout : int, optional
         Socket timeout in seconds. Defaults to `3`.
+    max_bytes : int or None, optional
+        Most bytes read in the whole exchange. More is refused, not cut off, so a server
+        that never stops cannot exhaust the memory of the caller. `None` reads without a
+        limit. Defaults to `url.DEFAULT_MAX_BYTES` (64 MiB).
+    deadline : int or float, optional
+        Seconds the whole exchange may take. A server that keeps sending just inside
+        `timeout`, or never closes the connection, is given up on then. Defaults to
+        `None`, which is `url.DEADLINE_FACTOR` (10) times `timeout`. Has to be a finite
+        number above 0.
 
     Returns
     -------
@@ -508,6 +609,8 @@ def fetch_socket(sock_file, cmd=None, dialog=None, timeout=3):
             dialog=dialog,
             timeout=timeout,
             socket_name=f'Unix socket "{sock_file}"',
+            deadline=deadline,
+            max_bytes=max_bytes,
         )
 
     except FileNotFoundError:
