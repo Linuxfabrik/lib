@@ -11,7 +11,7 @@
 """Provides datetime functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026101202'
 
 import datetime
 import email.utils
@@ -374,6 +374,9 @@ def _parse(timestr, pattern, tzinfo=None):
     Shared by `timestr2datetime()` and `timestr2epoch()` so both accept the same values; see
     `timestr2epoch()` for what `pattern='iso8601'` covers.
     """
+    if not isinstance(timestr, str):
+        # the documented error of a value that is not a time, whatever the pattern
+        raise ValueError(f'Not a time string: {timestr!r}')
     if pattern == 'rfc2822':
         # The date of e-mail headers, RSS and HTTP (`Wed, 1 Apr 2026 10:00:00 +0000`).
         # RFC 2822 allows a one-digit day and leaves the weekday and the seconds out,
@@ -531,7 +534,13 @@ def timestrdiff(
     Returns
     -------
     float
-        The absolute difference between the two timestamps in seconds.
+        The absolute difference between the two timestamps in seconds. Where one of them
+        carries an offset and the other does not, the one without is read as local time.
+
+    Raises
+    ------
+    ValueError
+        If one of the strings does not match its pattern, or is not a string.
 
     Examples
     --------
@@ -540,6 +549,10 @@ def timestrdiff(
     """
     dt1 = timestr2datetime(timestr1, pattern1)
     dt2 = timestr2datetime(timestr2, pattern2)
+    if (dt1.tzinfo is None) != (dt2.tzinfo is None):
+        # a time with an offset and one without cannot be subtracted: the one without is
+        # local time, as everywhere else in this module
+        dt1, dt2 = (dt.astimezone() if dt.tzinfo is None else dt for dt in (dt1, dt2))
     return abs((dt1 - dt2).total_seconds())
 
 

@@ -301,6 +301,80 @@ class TestBadInput(unittest.TestCase):
             t.timestr2epoch('not a date')
 
 
+class TestNotATimeString(unittest.TestCase):
+    """A value that is no string is the documented ValueError, not an AttributeError out
+    of `.strip()` and not a TypeError that depends on the pattern."""
+
+    def test_every_pattern_raises_value_error(self):
+        for pattern in ('iso8601', 'rfc2822', '%Y-%m-%d %H:%M:%S'):
+            for value in (None, 5, 1.5, b'2025-01-01', ['2025-01-01']):
+                with self.subTest(pattern=pattern, value=value):
+                    with self.assertRaises(ValueError):
+                        t.timestr2datetime(value, pattern)
+                    with self.assertRaises(ValueError):
+                        t.timestr2epoch(value, pattern)
+
+    def test_timestrdiff_raises_value_error_too(self):
+        with self.assertRaises(ValueError):
+            t.timestrdiff(None, '2025-01-01 12:00:00')
+
+
+@unittest.skipUnless(hasattr(_time, 'tzset'), 'time.tzset() does not exist on Windows')
+class TestTimestrdiffMixedOffsets(unittest.TestCase):
+    """One time with an offset and one without used to be a TypeError. The one without
+    is local time, as in `timestr2epoch()`."""
+
+    def setUp(self):
+        self.saved_tz = os.environ.get('TZ')
+        os.environ['TZ'] = 'Europe/Zurich'  # UTC+1 in January
+        _time.tzset()
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        if self.saved_tz is None:
+            os.environ.pop('TZ', None)
+        else:
+            os.environ['TZ'] = self.saved_tz
+        _time.tzset()
+
+    def test_a_naive_time_is_local_time(self):
+        # 12:00 local is 11:00 UTC
+        self.assertEqual(
+            t.timestrdiff(
+                '2025-01-01T12:00:00+00:00',
+                '2025-01-01 12:00:00',
+                'iso8601',
+                '%Y-%m-%d %H:%M:%S',
+            ),
+            3600.0,
+        )
+
+    def test_the_order_does_not_matter(self):
+        self.assertEqual(
+            t.timestrdiff(
+                '2025-01-01 12:00:00',
+                '2025-01-01T12:00:00+00:00',
+                '%Y-%m-%d %H:%M:%S',
+                'iso8601',
+            ),
+            3600.0,
+        )
+
+    def test_two_naive_or_two_aware_times_are_unchanged(self):
+        self.assertEqual(
+            t.timestrdiff('2025-01-01 12:00:00', '2025-01-01 11:00:00'), 3600.0
+        )
+        self.assertEqual(
+            t.timestrdiff(
+                '2025-01-01T12:00:00+01:00',
+                '2025-01-01T12:00:00+00:00',
+                'iso8601',
+                'iso8601',
+            ),
+            3600.0,
+        )
+
+
 class TestIso8601Offsets(unittest.TestCase):
     """`journalctl --output=short-iso` writes `+0200`, without the colon
     `datetime.fromisoformat()` insists on before Python 3.11."""
