@@ -11,9 +11,15 @@
 """Interacts with the UptimeRobot API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100902'
+__version__ = '2026101201'
 
 from . import url
+
+# What a walk over a list may take: 5'000 objects, ten times the largest account measured,
+# and at most 500 pages, which is enough for a `limit` of 10 and bounds the requests where
+# a server hands out one object per page. UptimeRobot itself hands out at most 50.
+MAX_OBJECTS = 5000
+MAX_PAGES = 500
 
 
 def delete_alert_contact(params):
@@ -531,9 +537,7 @@ def get_account_details(data):
     allowed_keys = {
         'api_key',
     }
-    for key in list(data.keys()):
-        if key not in allowed_keys:
-            data.pop(key)
+    data = {key: value for key, value in data.items() if key in allowed_keys}
 
     success, rl = get_response_header(
         'https://api.uptimerobot.com/v2/getAccountDetails',
@@ -592,6 +596,9 @@ def get_alert_contacts(params):
         params,
         'alert_contacts',
     )
+    if not success:
+        return success, result
+    success, result = _as_list(result)
     if not success:
         return success, result
 
@@ -666,6 +673,12 @@ def get_data(uri, data, result_key):
         - On success: (True, list_of_results)
         - On failure: (False, error_message)
 
+    Notes
+    -----
+    - A list that goes on beyond `MAX_OBJECTS` objects or `MAX_PAGES` pages is an error, not
+      a partial result: a server that never says it is done would otherwise be believed.
+    - The caller's `data` is left as it is.
+
     Examples
     --------
     >>> get_data('https://example.com/api', {'key': 'value'}, 'items')
@@ -675,9 +688,11 @@ def get_data(uri, data, result_key):
         offset = int(data.get('offset') or 0)
     except (TypeError, ValueError):
         return (False, f'offset must be a number, not {data.get("offset")!r}')
+    # the caller's dict is not ours to change
+    data = dict(data)
     result = []
     data['format'] = 'json'
-    while True:
+    for _ in range(MAX_PAGES):
         data['offset'] = offset
         success, item = url.fetch_json(
             uri,
@@ -690,29 +705,67 @@ def get_data(uri, data, result_key):
         )
         if not success:
             return (False, item)
+        if not isinstance(item, dict) or 'stat' not in item:
+            return (False, 'UptimeRobot did not answer with a status.')
         if item['stat'] != 'ok':
-            return (False, f'{item["error"]["type"]}: {item["error"]["message"]}')
+            error = item.get('error')
+            if (
+                isinstance(error, dict)
+                and isinstance(error.get('type'), str)
+                and isinstance(error.get('message'), str)
+            ):
+                return (False, f'{error["type"]}: {error["message"]}')
+            return (False, 'UptimeRobot reported a failure without saying which.')
         if item.get(result_key) is None:
             # status was ok, but response doesn't deliver the result key
+            if not isinstance(item.get('message'), str):
+                return (False, f'UptimeRobot answered without "{result_key}".')
             return (True, item['message'])
         page = item[result_key]
         if not isinstance(page, list):
             return (True, [page])
+        if not all(isinstance(entry, dict) for entry in page):
+            return (False, f'UptimeRobot listed "{result_key}" in a shape not known.')
         result += page
         # getMonitors, getMWindows and getPSPs nest `total` in `pagination`,
         # getAlertContacts puts it at the top level (the documentation shows the
         # latter for getPSPs too, the API does not). Verified against the
         # UptimeRobot v2 API on 2026-10-09.
         pagination = item.get('pagination') or (item if 'total' in item else None)
-        if not pagination or not page:
+        if not isinstance(pagination, dict) or not page:
             # a single page, or nothing left
             break
         # Step by what the page held, not by a fixed 50: the page size is the `limit`
         # the caller sent, and a fixed step skipped every record in between. Verified
         # against the UptimeRobot v2 API on 2026-10-09, 152 monitors with limit=10.
         offset += len(page)
-        if offset >= int(pagination.get('total', 0)):
+        if len(result) > MAX_OBJECTS:
+            return (
+                False,
+                f'UptimeRobot kept listing "{result_key}" beyond {MAX_OBJECTS} objects.',
+            )
+        try:
+            total = int(pagination.get('total', 0))
+        except (TypeError, ValueError):
+            return (False, 'UptimeRobot reported a total that is not a number.')
+        if offset >= total:
             break
+    else:
+        # A walk that does not end is a server that never says it is done. Handing
+        # back what was collected would present a partial list as a complete one.
+        return (
+            False,
+            f'UptimeRobot kept listing "{result_key}" beyond {MAX_PAGES} pages.',
+        )
+    return (True, result)
+
+
+def _as_list(result):
+    """Return `(True, result)` for a list of objects, else `(False, message)`: the list
+    functions work on every entry, which is wrong for the message `get_data()` hands
+    back where the answer carried no list."""
+    if not isinstance(result, list) or not all(isinstance(r, dict) for r in result):
+        return (False, 'UptimeRobot did not answer with a list.')
     return (True, result)
 
 
@@ -811,6 +864,9 @@ def get_monitors(params):
     )
     if not success:
         return success, result
+    success, result = _as_list(result)
+    if not success:
+        return success, result
 
     # convert uptimerobot result values to human
     replace_map = {
@@ -871,8 +927,8 @@ def get_monitors(params):
 
     def replace_values(item):
         # replace the nested alert_contacts 'type' value
-        for contact in item.get('alert_contacts', []):
-            if 'type' in contact:
+        for contact in item.get('alert_contacts') or []:
+            if isinstance(contact, dict) and 'type' in contact:
                 contact['type'] = replace_map['alert_contacts_type'].get(
                     contact['type'],
                     contact['type'],
@@ -963,6 +1019,9 @@ def get_mwindows(params):
     )
     if not success:
         return success, result
+    success, result = _as_list(result)
+    if not success:
+        return success, result
 
     # convert uptimerobot result values to human
     replace_map = {
@@ -1033,6 +1092,9 @@ def get_psps(params):
     )
     if not success:
         return success, result
+    success, result = _as_list(result)
+    if not success:
+        return success, result
 
     # convert uptimerobot result values to human
     replace_map = {
@@ -1094,7 +1156,8 @@ def get_response_header(uri, data):
     >>> get_response_header('https://example.com/api', {'key': 'value'})
     (True, {'Content-Type': 'application/json', 'Content-Length': '123', ...})
     """
-    result = []
+    # the caller's dict is not ours to change
+    data = dict(data)
     data['format'] = 'json'
     success, result = url.fetch_json(
         uri,
@@ -1108,6 +1171,8 @@ def get_response_header(uri, data):
     )
     if not success:
         return (False, result)
+    if not isinstance(result, dict) or 'response_header' not in result:
+        return (False, 'UptimeRobot did not answer with response headers.')
     return (True, result['response_header'])
 
 

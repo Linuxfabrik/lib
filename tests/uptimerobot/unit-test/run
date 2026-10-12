@@ -237,11 +237,11 @@ class TestGetData(UptimeRobotTestCase):
         self.assertTrue(success)
         self.assertEqual(result, 'noop')
 
-    def test_missing_result_key_and_message_raises_keyerror(self):
-        # Defensive pin: stat ok, no result key, no message -> KeyError('message').
+    def test_missing_result_key_and_message_is_an_error(self):
         self.patch_fetch(ok({'stat': 'ok'}))
-        with self.assertRaises(KeyError):
-            uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitor')
+        success, result = uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitor')
+        self.assertFalse(success)
+        self.assertIn('"monitor"', result)
 
     def test_api_error_formats_type_and_message(self):
         self.patch_fetch(ok(ERROR_ENVELOPE))
@@ -385,13 +385,97 @@ class TestGetData(UptimeRobotTestCase):
         self.assertFalse(success)
         self.assertEqual(result, 'page 2 broke')
 
-    def test_mutates_caller_data_dict(self):
-        # Pin the in-place mutation: format/offset are injected into the passed dict.
+    def test_leaves_the_caller_data_dict_alone(self):
         self.patch_fetch(ok(ok_envelope('monitors', [{'id': 1}])))
         data = {'api_key': 'k'}
         uptimerobot.get_data('http://x', data, 'monitors')
-        self.assertEqual(data['format'], 'json')
-        self.assertEqual(data['offset'], 0)
+        self.assertEqual(data, {'api_key': 'k'})
+
+    def test_an_answer_of_the_wrong_shape_is_an_error_not_a_traceback(self):
+        for payload in (
+            {},
+            [],
+            None,
+            'x',
+            {'stat': 'fail'},
+            {'stat': 'fail', 'error': 'x'},
+            {'stat': 'fail', 'error': {'type': 1}},
+            {'stat': 'ok', 'monitors': ['x']},
+            {'stat': 'ok', 'monitors': [None]},
+            {'stat': 'ok'},
+            {'stat': 'ok', 'message': 5},
+        ):
+            with self.subTest(payload=payload):
+                self.patch_fetch(ok(payload))
+                success, result = uptimerobot.get_data(
+                    'http://x', {'api_key': 'k'}, 'monitors'
+                )
+                self.assertFalse(success)
+                self.assertIsInstance(result, str)
+
+    def test_a_total_that_is_not_a_number_is_an_error(self):
+        self.patch_fetch(
+            ok({'stat': 'ok', 'monitors': [{'id': 1}], 'pagination': {'total': 'x'}})
+        )
+        success, result = uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitors')
+        self.assertFalse(success)
+        self.assertIn('total', result)
+
+    def test_a_walk_that_never_ends_is_refused_after_max_pages(self):
+        # a server that always says there are 10**12 monitors more
+        fetch = self.patch_fetch(
+            ok({'stat': 'ok', 'monitors': [{'id': 1}], 'pagination': {'total': 10**12}})
+        )
+        success, result = uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitors')
+        self.assertFalse(success)
+        self.assertIn(f'beyond {uptimerobot.MAX_PAGES} pages', result)
+        self.assertEqual(fetch.call_count, uptimerobot.MAX_PAGES)
+
+    def test_a_walk_with_many_objects_is_refused_beyond_max_objects(self):
+        page = [{'id': n} for n in range(50)]
+        fetch = self.patch_fetch(
+            ok({'stat': 'ok', 'monitors': page, 'pagination': {'total': 10**12}})
+        )
+        success, result = uptimerobot.get_data('http://x', {'api_key': 'k'}, 'monitors')
+        self.assertFalse(success)
+        self.assertIn(f'beyond {uptimerobot.MAX_OBJECTS} objects', result)
+        self.assertEqual(fetch.call_count, uptimerobot.MAX_OBJECTS // 50 + 1)
+
+    def test_a_small_limit_can_still_walk_to_the_object_cap(self):
+        # limit=10 gives 500 pages for 5'000 objects: the page cap must not bite first
+        page = [{'id': n} for n in range(10)]
+        responses = [
+            ok({'stat': 'ok', 'monitors': page, 'pagination': {'total': 5000}})
+            for _ in range(500)
+        ]
+        self.patch_fetch(side_effect=responses)
+        success, result = uptimerobot.get_data(
+            'http://x', {'api_key': 'k', 'limit': 10}, 'monitors'
+        )
+        self.assertTrue(success)
+        self.assertEqual(len(result), 5000)
+
+    def test_a_list_function_does_not_work_on_a_message(self):
+        # stat ok, no list: the message `get_data()` hands back is not a list of objects
+        for function in (
+            uptimerobot.get_monitors,
+            uptimerobot.get_alert_contacts,
+            uptimerobot.get_mwindows,
+            uptimerobot.get_psps,
+        ):
+            with self.subTest(function=function.__name__):
+                self.patch_fetch(ok({'stat': 'ok', 'message': 'x'}))
+                success, result = function({'api_key': 'k'})
+                self.assertFalse(success)
+                self.assertIn('did not answer with a list', result)
+
+    def test_monitors_with_odd_alert_contacts_do_not_raise(self):
+        for contacts in (None, 'x', ['x'], [None]):
+            with self.subTest(alert_contacts=contacts):
+                self.patch_fetch(
+                    ok(ok_envelope('monitors', [{'id': 1, 'alert_contacts': contacts}]))
+                )
+                self.assertTrue(uptimerobot.get_monitors({'api_key': 'k'})[0])
 
 
 # -----------------------------------------------------------------------------
@@ -1170,7 +1254,7 @@ class TestGetAccountDetails(UptimeRobotTestCase):
         self.assertNotIn('limit', header_data)
         self.assertEqual(header_data['api_key'], 'k')
 
-    def test_mutates_input_dict_in_place(self):
+    def test_leaves_the_input_dict_alone(self):
         self.patch_fetch(
             side_effect=self._two_call_side_effect(
                 {},
@@ -1179,9 +1263,7 @@ class TestGetAccountDetails(UptimeRobotTestCase):
         )
         data = {'api_key': 'k', 'junk': 'x'}
         uptimerobot.get_account_details(data)
-        # 'junk' was popped, format/offset injected by get_data.
-        self.assertNotIn('junk', data)
-        self.assertEqual(data['api_key'], 'k')
+        self.assertEqual(data, {'api_key': 'k', 'junk': 'x'})
 
     def test_data_request_error_sets_success_false(self):
         # The header call succeeds but the data call reports an API error; the
