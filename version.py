@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026101202'
 
 import datetime
 import json
@@ -301,6 +301,36 @@ def _vendor_life_cycle(package_path, timeout, load_eol):
     return None
 
 
+def _cycle_parts(cycle):
+    """Return the numbers of a release cycle that is a plain version (`3.10`, `22.04`)
+    as a tuple, and `None` for any other (`11-24h2-e`, `current`)."""
+    cycle = str(cycle)
+    if not re.fullmatch(r'\d+(?:\.\d+)*', cycle):
+        return None
+    return tuple(int(part) for part in cycle.split('.'))
+
+
+def _find_cycle(eol, parts):
+    """Return the entry whose cycle names the version `parts`, compared as numbers.
+    Spelled out as text the lookup missed products such as Ubuntu, which endoflife.date
+    lists as `22.04` while a version reads `(22, 4, 0)`: a dozen products there pad a part
+    with a zero (amazon-linux, docker-engine, openwrt, nixos and Ubuntu among them)."""
+    for item in eol:
+        if isinstance(item, dict) and _cycle_parts(item.get('cycle')) == tuple(parts):
+            return item
+    return None
+
+
+def _shown(latest, parsed):
+    """The version of an available release as the message names it: the way endoflife.date
+    spells it where a part is zero-padded (`26.04.1`), else as the tuple reads."""
+    match = re.search(r'\d+(?:[._]\d+)*', str(latest))
+    spelled = '.'.join(re.split(r'[._]', match.group())[:3]) if match else ''
+    if re.search(r'(?:^|\.)0\d', spelled):
+        return spelled
+    return '.'.join(map(str, parsed))
+
+
 def check_eol(
     product,
     version_string,
@@ -439,8 +469,7 @@ def check_eol(
                 break
     else:
         for i in range(1, len(installed) + 1):
-            lookup = '.'.join(map(str, installed[:i]))
-            _, cycles_eoldate = base.lookup_lod(eol, 'cycle', lookup)
+            cycles_eoldate = _find_cycle(eol, installed[:i])
             if cycles_eoldate:
                 break
 
@@ -524,7 +553,7 @@ def check_eol(
         return state, ''.join(msg) + unreachable_note
 
     try:
-        latest_versions = [version(item['latest']) for item in eol]
+        latest_versions = [(version(item['latest']), item['latest']) for item in eol]
     except (TypeError, KeyError):
         state = base.get_worst(state, unreachable_state)
         # the parts carry their own separators, as in every other return here
@@ -532,19 +561,20 @@ def check_eol(
 
     major, minor, patch = installed
 
-    for v_major, v_minor, v_patch in latest_versions:
+    for (v_major, v_minor, v_patch), latest in latest_versions:
+        available = _shown(latest, (v_major, v_minor, v_patch))
         if v_major > major:
-            msg.append(f', major {v_major}.{v_minor}.{v_patch} available')
+            msg.append(f', major {available} available')
             if check_major:
                 state = STATE_WARN
             break
         if v_major == major and v_minor > minor:
-            msg.append(f', minor {v_major}.{v_minor}.{v_patch} available')
+            msg.append(f', minor {available} available')
             if check_minor:
                 state = STATE_WARN
             break
         if v_major == major and v_minor == minor and v_patch > patch:
-            msg.append(f', patch {v_major}.{v_minor}.{v_patch} available')
+            msg.append(f', patch {available} available')
             if check_patch:
                 state = STATE_WARN
             break

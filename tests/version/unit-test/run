@@ -305,6 +305,106 @@ class TestCheckEolFallback(unittest.TestCase):
         self.assertNotIn('unreachable', msg)
 
 
+UBUNTU_PRODUCT = 'https://endoflife.date/api/linuxfabrik-unit-test-ubuntu.json'
+# Ubuntu names its cycles with a zero-padded month, `22.04`, as a dozen products in the
+# data of endoflife.date pad a part. Dates far out on both sides keep the state
+# independent of the calendar: 20.04 ended in 2000, the others end in 2100.
+UBUNTU_CYCLES = [
+    {
+        'cycle': '26.04',
+        'eol': '2100-01-01',
+        'support': '2100-01-01',
+        'latest': '26.04.1',
+    },
+    {
+        'cycle': '24.04',
+        'eol': '2100-01-01',
+        'support': '2100-01-01',
+        'latest': '24.04.3',
+    },
+    {
+        'cycle': '22.04',
+        'eol': '2100-01-01',
+        'support': '2100-01-01',
+        'latest': '22.04.5',
+    },
+    {
+        'cycle': '20.04',
+        'eol': '2000-01-01',
+        'support': '2000-01-01',
+        'latest': '20.04.6',
+    },
+]
+
+
+class TestCheckEolZeroPaddedCycle(unittest.TestCase):
+    """A version `22.04.3` reads (22, 4, 3), and the cycle endoflife.date lists is
+    `22.04`: every Ubuntu host was UNKNOWN, and an Ubuntu past its end of life never
+    alerted."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix='lftest-eol-')
+        self.saved_tempdir = tempfile.tempdir
+        tempfile.tempdir = self.tmpdir
+        self.assertTrue(
+            cache.set(
+                UBUNTU_PRODUCT,
+                json.dumps(UBUNTU_CYCLES),
+                expire=lib_time.now() + 3600,
+                filename='linuxfabrik-lib-version.db',
+            )
+        )
+
+    def tearDown(self):
+        tempfile.tempdir = self.saved_tempdir
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def check(self, version_string, **kwargs):
+        return version.check_eol(UBUNTU_PRODUCT, version_string, timeout=1, **kwargs)
+
+    def test_a_supported_release_is_ok(self):
+        for version_string in ('22.04', '22.04.3', '24.04.1'):
+            with self.subTest(version=version_string):
+                state, msg = self.check(version_string)
+                self.assertEqual(state, STATE_OK, msg)
+                self.assertIn('EOL 2100-01-01', msg)
+                self.assertNotIn('unknown', msg)
+
+    def test_the_newest_release_is_ok(self):
+        state, msg = self.check('26.04.1')
+        self.assertEqual(state, STATE_OK, msg)
+        self.assertNotIn('available', msg)
+
+    def test_a_release_past_its_end_of_life_warns(self):
+        state, msg = self.check('20.04.2')
+        self.assertEqual(state, STATE_WARN, msg)
+        self.assertIn('EOL 2000-01-01', msg)
+
+    def test_the_available_release_is_named_the_way_the_cycle_spells_it(self):
+        _, msg = self.check('22.04.3', check_patch=True, check_minor=False)
+        self.assertIn('major 26.04.1 available', msg)
+        self.assertNotIn('26.4.1', msg)
+
+    def test_a_release_the_data_does_not_list_is_still_unknown(self):
+        state, msg = self.check('23.10')
+        self.assertEqual(state, STATE_UNKNOWN, msg)
+
+    def test_other_products_keep_their_lookup(self):
+        # `3.10` is no `3.1`, and a cycle `1.10` is no `1.1`
+        cycles = [
+            {'cycle': '3.10', 'eol': '2100-01-01', 'latest': '3.10.1'},
+            {'cycle': '3.1', 'eol': '2000-01-01', 'latest': '3.1.1'},
+        ]
+        cache.set(
+            UBUNTU_PRODUCT,
+            json.dumps(cycles),
+            expire=lib_time.now() + 3600,
+            filename='linuxfabrik-lib-version.db',
+        )
+        self.assertEqual(self.check('3.10.1')[0], STATE_OK)
+        self.assertEqual(self.check('3.1.1')[0], STATE_WARN)
+
+
 class TestCheckEolNamedCycle(unittest.TestCase):
     """`check_eol(cycle=...)` for products whose cycles are not version numbers.
 
