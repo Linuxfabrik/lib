@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_mysql.py: `check_privileges()` counts only privileges granted on `*.*` or the given database, and `select()` names the error first
 * disk.py: `copy_dir()` names the first file it could not copy and how many more
 * huawei_pacific.py: `get_data()` keeps its session after a request that timed out
+* logsource.py: `read()` cuts a line at 1 MiB and stops reading rotated or compressed files at 512 MiB uncompressed, and says so in `notice`
 * net.py: `fetch()` and `fetch_socket()` refuse an answer above 64 MiB and give up on an exchange after ten times the timeout
 * powershell.py: `run_ps()` reads Windows output like `shell_exec()`
 * redfish.py: `get_sensor_state()`, `get_state()` and `get_perfdata()` rate a fatal threshold CRIT and a critical one WARN, and evaluate the health in every state but `Absent` and `Disabled`
@@ -85,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files, and `allowed_roots` given as a single path or an empty list no longer reads without confinement
 * huawei_dorado.py: `get_creds()` refuses a device ID that would change the path of every later request
 * kvm.py: `virsh()` refuses a URI that makes libvirt run a program, open a file or connect to a socket
-* logsource.py: `read()` reads each source from one checked handle
+* logsource.py: `read()` reads each source from one checked handle, and a line of any length or a compressed file that inflates enormously can no longer exhaust the memory
 * net.py: `get_proxy()` no longer puts a password or token into its error message
 * nextcloud.py: `run_occ()` refuses an untrusted installation, a symlinked `config.php` and any file `occ` loads that another account can change
 * openstack.py: `connect()` reuses a cached token only for the same identity

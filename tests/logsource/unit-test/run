@@ -22,6 +22,7 @@ import datetime
 import gzip
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -1298,6 +1299,251 @@ class TestCompressedSource(unittest.TestCase):
         _, second = lib.logsource.read(self.path, position=first['position'])
         self.assertEqual(second['lines'], ['x'])
         self.assertTrue(second['restarted'])
+
+
+class TestBoundedReads(unittest.TestCase):
+    """One run reads a bounded number of bytes, and no line is held beyond a bound.
+
+    Anybody who can create a file in a log directory decides what a rotated file holds, and
+    a root consumer reads it. The bounds are patched down so the files stay small, apart
+    from the one test that runs the real constants under a memory limit."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix='logsource-bounds-')
+        self.addCleanup(shutil.rmtree, self.tmpdir, ignore_errors=True)
+        self.path = os.path.join(self.tmpdir, 'app.log')
+        for name, value in (('MAX_LINE_BYTES', 100), ('MAX_ROTATED_BYTES', 10000)):
+            patcher = patch.object(lib.logsource, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def write(self, name, data, mode='wb'):
+        path = os.path.join(self.tmpdir, name)
+        with open(path, mode) as handle:
+            handle.write(data)
+        return path
+
+    def read(self, position=None, **kwargs):
+        success, result = lib.logsource.read(
+            self.path, position, allowed_roots=[self.tmpdir], **kwargs
+        )
+        self.assertTrue(success, msg=result)
+        return result
+
+    # one line
+
+    def test_a_line_over_the_bound_is_cut_and_the_offset_moves_past_it(self):
+        content = b'short\n' + b'x' * 350 + b'\nafter\n'
+        self.write('app.log', content)
+        result = self.read()
+        self.assertEqual(result['lines'], ['short', 'x' * 100, 'after'])
+        self.assertEqual(result['position']['offset'], len(content))
+        self.assertIn('Shortened 1 line(s)', result['notice'])
+        self.assertTrue(result['truncated'])
+
+    def test_the_next_run_goes_on_after_a_cut_line(self):
+        self.write('app.log', b'a\n' + b'x' * 350 + b'\n')
+        first = self.read()
+        self.write('app.log', b'a\n' + b'x' * 350 + b'\nnext\n')
+        second = self.read(first['position'])
+        self.assertEqual(second['lines'], ['next'])
+        self.assertEqual(second['notice'], '')
+
+    def test_a_line_without_a_line_end_shorter_than_the_bound_waits(self):
+        self.write('app.log', b'whole\n' + b'x' * 99)
+        result = self.read()
+        self.assertEqual(result['lines'], ['whole'])
+        self.assertEqual(result['position']['offset'], 6)
+        self.assertEqual(result['notice'], '')
+
+    def test_a_line_without_a_line_end_at_the_bound_is_consumed_whole(self):
+        # waiting for a line end that may never come would read these bytes every run,
+        # and nothing of it was lost
+        self.write('app.log', b'whole\n' + b'x' * 100)
+        result = self.read()
+        self.assertEqual(result['lines'], ['whole', 'x' * 100])
+        self.assertEqual(result['position']['offset'], 106)
+        self.assertEqual(result['notice'], '')
+        self.assertFalse(result['truncated'])
+
+    def test_a_line_without_a_line_end_over_the_bound_is_cut_and_consumed(self):
+        self.write('app.log', b'whole\n' + b'x' * 101)
+        result = self.read()
+        self.assertEqual(result['lines'], ['whole', 'x' * 100])
+        self.assertEqual(result['position']['offset'], 107)
+        self.assertIn('Shortened 1 line(s)', result['notice'])
+
+    def test_only_a_line_that_lost_bytes_is_shortened(self):
+        # the payload one under, at and one over the bound, each with its line end
+        for payload, end, shortened in (
+            (99, b'\n', False),
+            (100, b'\n', False),
+            (100, b'\r\n', False),
+            (101, b'\n', True),
+            (101, b'\r\n', True),
+            (250, b'\n', True),
+        ):
+            with self.subTest(payload=payload, end=end):
+                self.write('app.log', b'x' * payload + end)
+                result = self.read()
+                self.assertEqual(result['lines'], ['x' * min(payload, 100)])
+                self.assertEqual(result['position']['offset'], payload + len(end))
+                self.assertEqual('Shortened' in result['notice'], shortened)
+                self.assertEqual(result['truncated'], shortened)
+
+    def test_what_arrives_after_the_cut_is_a_line_of_its_own(self):
+        self.write('app.log', b'x' * 100)
+        first = self.read()
+        self.write('app.log', b'x' * 100 + b'tail\n')
+        second = self.read(first['position'])
+        self.assertEqual(second['lines'], ['tail'])
+
+    def test_a_line_of_exactly_the_bound_with_its_line_end_is_not_cut(self):
+        self.write('app.log', b'x' * 99 + b'\n')
+        result = self.read()
+        self.assertEqual(result['lines'], ['x' * 99])
+        self.assertEqual(result['notice'], '')
+        self.assertFalse(result['truncated'])
+
+    def test_a_normal_log_is_read_as_before(self):
+        content = b''.join(b'line %d\n' % n for n in range(500))
+        self.write('app.log', content)
+        result = self.read(max_lines=10)
+        self.assertEqual(result['lines'][-1], 'line 499')
+        self.assertEqual(result['position']['offset'], len(content))
+        self.assertEqual(result['notice'], '')
+
+    # a rotated file
+
+    def test_a_compressed_file_that_inflates_beyond_the_budget_is_stopped(self):
+        self.write('app.log', b'live\n')
+        with gzip.open(os.path.join(self.tmpdir, 'app.log.1.gz'), 'wb') as handle:
+            for _ in range(200):
+                handle.write(b'0' * 10000)  # 2 MB of zeros, a few KB on disk
+        result = self.read(max_lines=10, rotated=1)
+        self.assertIn('Stopped reading', result['notice'])
+        self.assertIn('app.log.1.gz', result['notice'])
+        self.assertTrue(result['truncated'])
+        self.assertEqual(result['lines'][-1], 'live')
+
+    def test_the_budget_is_shared_by_all_rotated_files(self):
+        for number in (1, 2, 3):
+            path = os.path.join(self.tmpdir, f'app.log.{number}')
+            self.write(f'app.log.{number}', b''.join(b'%d\n' % n for n in range(1500)))
+            os.utime(path, (1000 - number, 1000 - number))
+        self.write('app.log', b'live\n')
+        result = self.read(rotated=3)
+        self.assertIn('Stopped reading', result['notice'])
+
+    def test_empty_lines_are_counted_too(self):
+        # a file of line ends only is a few bytes per line but a string object each
+        self.write('app.log.1', b'\n' * 5000)
+        self.write('app.log', b'live\n')
+        result = self.read(max_lines=5, rotated=1)
+        self.assertIn('Stopped reading', result['notice'])
+
+    def test_a_rotated_file_within_the_budget_is_read_whole(self):
+        self.write('app.log.1', b'old one\nold two')
+        self.write('app.log', b'live\n')
+        result = self.read(rotated=1)
+        self.assertEqual(result['lines'], ['old one', 'old two', 'live'])
+        self.assertEqual(result['notice'], '')
+
+    def test_a_long_line_in_a_rotated_file_is_cut(self):
+        self.write('app.log.1', b'x' * 350 + b'\nold\n')
+        self.write('app.log', b'live\n')
+        result = self.read(rotated=1)
+        self.assertEqual(result['lines'], ['x' * 100, 'old', 'live'])
+        self.assertIn('Shortened 1 line(s)', result['notice'])
+
+    def test_the_rest_of_a_rotated_file_after_a_rotation_is_bounded_too(self):
+        # the file the previous run stopped in was moved aside and is read on from there
+        self.write('app.log', b'first\n')
+        first = self.read()
+        os.rename(self.path, os.path.join(self.tmpdir, 'app.log.1'))
+        with open(os.path.join(self.tmpdir, 'app.log.1'), 'ab') as handle:
+            handle.write(b'x' * 350 + b'\n')
+        self.write('app.log', b'live\n')
+        result = self.read(first['position'])
+        self.assertEqual(result['lines'][0], 'x' * 100)
+        self.assertIn('Shortened 1 line(s)', result['notice'])
+
+    def test_a_compressed_source_is_bounded(self):
+        path = os.path.join(self.tmpdir, 'archive.log.1.gz')
+        with gzip.open(path, 'wb') as handle:
+            for _ in range(200):
+                handle.write(b'0' * 10000)
+        success, result = lib.logsource.read(path, None, allowed_roots=[self.tmpdir])
+        self.assertTrue(success, msg=result)
+        self.assertIn('Stopped reading', result['notice'])
+
+    def test_read_many_passes_the_bounds_on(self):
+        self.write('app.log', b'live\n')
+        with gzip.open(os.path.join(self.tmpdir, 'app.log.1.gz'), 'wb') as handle:
+            for _ in range(200):
+                handle.write(b'0' * 10000)
+        success, result = lib.logsource.read_many(
+            [self.path], allowed_roots=[self.tmpdir], max_lines=10, rotated=1
+        )
+        self.assertTrue(success, msg=result)
+        self.assertIn('Stopped reading', result['notice'])
+
+
+@unittest.skipUnless(
+    sys.platform.startswith('linux'), 'the memory limit is set with RLIMIT_AS'
+)
+class TestBoundedReadsUnderALimit(unittest.TestCase):
+    """The real bounds, with the memory of the process limited, so a regression fails with
+    a MemoryError instead of taking the machine down. A 300 MiB file of zeros is a few
+    hundred KB as a gzip, and 300 MiB as one line."""
+
+    LIMIT = 700 * 1024 * 1024
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix='logsource-limit-')
+        self.addCleanup(shutil.rmtree, self.tmpdir, ignore_errors=True)
+        self.path = os.path.join(self.tmpdir, 'app.log')
+        with open(self.path, 'wb') as handle:
+            handle.write(b'first\nsecond\n')
+
+    def _run(self, code):
+        parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = (
+            'import resource, sys\n'
+            f'resource.setrlimit(resource.RLIMIT_AS, ({self.LIMIT}, {self.LIMIT}))\n'
+            f'sys.path.insert(0, {parent!r})\n'
+            'import lib.logsource as ls\n'
+            f'directory = {self.tmpdir!r}\n' + code
+        )
+        done = subprocess.run(
+            [sys.executable, '-c', script], capture_output=True, text=True, timeout=300
+        )
+        self.assertEqual(done.returncode, 0, msg=done.stderr[-800:])
+        return done.stdout
+
+    def test_a_gzip_bomb_without_a_line_end_is_stopped(self):
+        with gzip.open(os.path.join(self.tmpdir, 'app.log.1.gz'), 'wb') as handle:
+            for _ in range(600):
+                handle.write(b'0' * 1024 * 1024)
+        out = self._run(
+            "ok, r = ls.read(directory + '/app.log', None, allowed_roots=[directory],"
+            ' max_lines=10, rotated=1)\n'
+            "print(ok, r['lines'][-2:], r['notice'])\n"
+        )
+        self.assertIn("True ['first', 'second']", out)
+        self.assertIn('Stopped reading', out)
+
+    def test_one_line_of_300_mib_is_cut(self):
+        with open(self.path, 'ab') as handle:
+            for _ in range(300):
+                handle.write(b'0' * 1024 * 1024)
+        out = self._run(
+            "ok, r = ls.read(directory + '/app.log', None, allowed_roots=[directory],"
+            ' max_lines=10)\n'
+            "print(ok, len(r['lines']), r['position']['offset'], r['notice'])\n"
+        )
+        self.assertIn('Shortened 1 line(s)', out)
+        self.assertIn(str(13 + 300 * 1024 * 1024), out)
 
 
 class TestCoveredWindow(unittest.TestCase):

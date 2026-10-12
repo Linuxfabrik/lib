@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026101202'
 
 import collections
 import datetime
@@ -339,6 +339,88 @@ def systemd_booted(root=''):
 # fingerprint has to do here.
 _FINGERPRINT_LENGTH = 256
 
+# What one run takes from a log. Anybody who can create a file in a log directory
+# decides what a rotated file holds, and a root consumer reads it: a line without a line
+# end, or a compressed file that is a megabyte on disk and a terabyte as text, must cost a
+# bounded amount of memory and time.
+#
+# A line over `MAX_LINE_BYTES` is no log line any more. Its first `MAX_LINE_BYTES` bytes are
+# reported, the rest of it up to the line end is skipped, and the offset moves past all of
+# it. A last line without a line end that is shorter than that is held back for the next run
+# as before; one that has reached the bound is cut off the same way, because waiting for a
+# line end that never comes would read the same bytes on every run. The bytes that arrive
+# after the cut are then read as a line of their own.
+#
+# `MAX_ROTATED_BYTES` is the most a run reads out of rotated files and of a compressed
+# source, counted uncompressed. Every line is counted with `_LINE_OVERHEAD` on top, the
+# memory of the string that holds it, so that a file of empty lines is bounded too. 512 MiB
+# is more than a day of access log of a busy web server, which the consumers read one
+# rotated file of; where the bound is reached the reading stops and the notice says so. The live file of a plain source
+# is not capped: it is read from where the previous run stopped, and everything in it is
+# what the consumer asked for.
+MAX_LINE_BYTES = 1024 * 1024
+MAX_ROTATED_BYTES = 512 * 1024 * 1024
+_LINE_OVERHEAD = 64
+
+
+class _BudgetExhausted(Exception):
+    """A run has read as much out of rotated files as it may."""
+
+
+class _ReadState:
+    """What one run has used up of its bounds, and what it has to report about them.
+
+    `budget` is the number of bytes a run may still take, or None where there is no cap.
+    """
+
+    def __init__(self, budget=None):
+        self.budget = budget
+        self.shortened = 0
+        self.stopped = None
+
+    def charge(self, size):
+        """Count `size` more bytes, and raise `_BudgetExhausted` once the budget is gone."""
+        if self.budget is None:
+            return
+        self.budget -= size + _LINE_OVERHEAD
+        if self.budget < 0:
+            raise _BudgetExhausted
+
+
+def _bounded_lines(handle, state):
+    """Yield `(line, consumed, final)` for every line of `handle`, each `line` at most
+    `MAX_LINE_BYTES` long.
+
+    `consumed` is how many bytes of the file the line took, its line end and the part of a
+    too long line that was skipped included, so the caller's offset stays exact. `final`
+    says the line is complete: it has its line end, or it has reached the bound, which is as
+    long as a line may get. A last line that is not final is for the caller to hold back. A
+    line that really lost bytes to the bound is counted in `state.shortened`; one that is
+    exactly as long as the bound, with or without its line end, is returned whole. The bytes
+    are charged to `state` as they are read, which raises `_BudgetExhausted` when it runs out.
+    """
+    while True:
+        line = handle.readline(MAX_LINE_BYTES)
+        if not line:
+            return
+        consumed = len(line)
+        state.charge(consumed)
+        if len(line) >= MAX_LINE_BYTES and not line.endswith(b'\n'):
+            # Skip the rest of the line in pieces, so none of it is held. Nothing was lost
+            # if all that follows is the line end.
+            lost = False
+            while True:
+                rest = handle.readline(MAX_LINE_BYTES)
+                consumed += len(rest)
+                state.charge(len(rest))
+                if rest not in (b'', b'\n', b'\r\n'):
+                    lost = True
+                if not rest or rest.endswith(b'\n'):
+                    break
+            if lost:
+                state.shortened += 1
+        yield line, consumed, line.endswith(b'\n') or len(line) >= MAX_LINE_BYTES
+
 
 def _is_rewritten(raw, fingerprint, length):
     """Tell whether the head of an open file still matches the fingerprint of the previous run.
@@ -483,7 +565,7 @@ def _is_truncated(size, position, compressed):
     return size < position.get('offset', 0)
 
 
-def _resume_rotated(path, position, allowed_roots, lines):
+def _resume_rotated(path, position, allowed_roots, lines, state):
     """Read what the file held after `position` before a rotator moved it aside.
 
     The stored inode names the file the previous run stopped in. If a predecessor still
@@ -499,7 +581,8 @@ def _resume_rotated(path, position, allowed_roots, lines):
 
     Returns `(resumed, files, read, notices)`: whether the file was found, the files that
     were read in order, how many lines they had, and why a newer predecessor was skipped.
-    The lines are appended to `lines`.
+    The lines are appended to `lines`. What is read is charged to `state`; where its budget
+    is gone, the reading stops with `state.stopped` set.
     """
     stored_inode = str(position.get('inode'))
     offset = position.get('offset', 0)
@@ -549,11 +632,15 @@ def _resume_rotated(path, position, allowed_roots, lines):
                 predecessor_handle.seek(start)
                 # A rotated file is complete, so a last line without a line end is
                 # read as it is rather than held back for a run that never comes.
-                for line in predecessor_handle:
+                for line, _, _ in _bounded_lines(predecessor_handle, state):
                     read += 1
                     lines.append(
                         txt.to_text(line, errors='strict_or_latin1').rstrip('\r\n')
                     )
+        except _BudgetExhausted:
+            state.stopped = predecessor
+            files.append(predecessor)
+            break
         except OSError as e:
             if number == 0:
                 return False, [], 0, []
@@ -627,6 +714,7 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
     read = 0
     notices = []
     rotated_read = []
+    state = _ReadState(MAX_ROTATED_BYTES)
     for predecessor in _rotated_files(path, rotated) if rotated else []:
         success, opened = _open_log_file(predecessor, allowed_roots)
         if not success:
@@ -635,18 +723,22 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
         predecessor_handle, predecessor_raw = opened
         try:
             with predecessor_raw, predecessor_handle:
-                for line in predecessor_handle:
+                for line, _, _ in _bounded_lines(predecessor_handle, state):
                     read += 1
                     lines.append(
                         txt.to_text(line, errors='strict_or_latin1').rstrip('\r\n')
                     )
+        except _BudgetExhausted:
+            state.stopped = predecessor
+            rotated_read.append(predecessor)
+            break
         except OSError as e:
             notices.append(f'I/O error "{e.strerror}" while reading {predecessor}')
             continue
         rotated_read.append(predecessor)
-    if moved_aside:
+    if moved_aside and state.stopped is None:
         resumed, files, resumed_read, resumed_notices = _resume_rotated(
-            path, position, allowed_roots, lines
+            path, position, allowed_roots, lines, state
         )
         if resumed:
             # nothing between the stored offset and the live file is missing
@@ -654,29 +746,47 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
         read += resumed_read
         rotated_read += files
         notices += resumed_notices
+    if handle is raw:
+        # the live file of a plain source is read from where the previous run stopped,
+        # and all of it is what the consumer asked for
+        state.budget = None
     try:
         handle.seek(offset)
-        for line in handle:
-            if not line.endswith(b'\n'):
+        for line, consumed, final in _bounded_lines(handle, state):
+            if not final:
                 # The writer is in the middle of this line. Reporting it now would
                 # hand out half a line and the rest of it on the next run, so it
                 # is left for the next run to read whole.
                 break
             read += 1
             lines.append(txt.to_text(line, errors='strict_or_latin1').rstrip('\r\n'))
-            offset += len(line)
+            offset += consumed
+    except _BudgetExhausted:
+        # only a compressed source gets here, which is read from its start every time
+        state.stopped = path
     except OSError as e:
         return False, f'I/O error "{e.strerror}" while reading {path}'
+    notice = []
+    if notices:
+        notice.append('Skipped a rotated file: ' + '; '.join(notices) + '.')
+    if state.stopped:
+        notice.append(
+            f'Stopped reading {state.stopped}: more than '
+            f'{MAX_ROTATED_BYTES // 1024 // 1024} MiB uncompressed.'
+        )
+    if state.shortened:
+        notice.append(
+            f'Shortened {state.shortened} line(s) longer than '
+            f'{MAX_LINE_BYTES // 1024 // 1024} MiB.'
+        )
     return True, {
         'fidelity': FIDELITY_EXACT,
         'kind': KIND_FILE,
         'label': path,
         'lines': list(lines),
-        # Nothing reads a file but us, so the only thing to pass on is a rotated
-        # predecessor that was asked for and could not be read.
-        'notice': (
-            'Skipped a rotated file: ' + '; '.join(notices) + '.' if notices else ''
-        ),
+        # What the consumer hears about the file: a rotated predecessor that could not be
+        # read, a read that was stopped by its budget, and lines that were cut.
+        'notice': ' '.join(notice),
         'position': {
             'fingerprint': fingerprint,
             'inode': inode,
@@ -689,7 +799,7 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
         },
         'restarted': restarted,
         'rotated': rotated_read,
-        'truncated': read > len(lines),
+        'truncated': read > len(lines) or bool(state.shortened or state.stopped),
     }
 
 
@@ -966,6 +1076,11 @@ def read(
     A last line without a line end is held back until it is complete, because its writer is in
     the middle of it. A rotated file never grows again, so there it is read as it is.
 
+    One run is bounded. A line over `MAX_LINE_BYTES` is cut to that many bytes and the rest of
+    it is skipped, and what is read out of rotated files and of a compressed source stops at
+    `MAX_ROTATED_BYTES` uncompressed. Both are reported in `notice`, and `truncated` is set,
+    because whoever can create a file in a log directory decides what is in it.
+
     Parameters
     ----------
     source : str
@@ -1117,6 +1232,11 @@ def read_many(
         Handed to `read()` for every source.
     timeout : int, optional
         Handed to `read()` for every source, each in its own right.
+
+    Notes
+    -----
+    - Every source has its own byte budget (see `read()`), so N sources can read N times
+      `MAX_ROTATED_BYTES` out of their rotated files.
 
     Returns
     -------
