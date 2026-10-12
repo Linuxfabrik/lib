@@ -26,6 +26,7 @@ import os
 import ssl
 import subprocess
 import sys
+import time
 import unittest
 from unittest import mock
 
@@ -1564,6 +1565,168 @@ class TestFetchLeavesNothingInTheMessage(unittest.TestCase):
     def test_url_httpx_cannot_parse(self):
         self._assert_clean('http://[::1/x?token=SECRET8&pw=SECRET9')
         self._assert_clean('http://usr:SECRET7@[::1/x?sid=SECRET8')
+
+
+@skip_without_httpx
+class TestOverallDeadline(unittest.TestCase):
+    """`timeout` keeps its meaning for every connect, read and write on its own, so a
+    transfer that goes on steadily is never cut off by it. A server that keeps sending
+    just inside it would hold `fetch()` for as long as it liked (49.5 s for
+    `timeout=2` against 1000 bytes every 0.5 s), so the request as a whole ends after
+    `deadline`, which is `DEADLINE_FACTOR` times the timeout unless given. Run against
+    the real httpx and httpcore, because the deadline sits in an internal of the
+    connection pool."""
+
+    DRIP_INTERVAL = 0.2
+
+    def setUp(self):
+        import socketserver
+        import threading
+
+        interval = self.DRIP_INTERVAL
+        test = self
+
+        class Dripper(socketserver.BaseRequestHandler):
+            def handle(self):
+                self.request.recv(65536)
+                mode = self.server.mode
+                try:
+                    if mode in ('body', 'steady'):
+                        # `steady` sends a short answer a byte at a time, `body` never ends
+                        size = 6 if mode == 'steady' else 100000
+                        self.request.sendall(
+                            f'HTTP/1.1 200 OK\r\nContent-Length: {size}\r\n\r\n'.encode()
+                        )
+                        for _ in range(size):
+                            self.request.sendall(b'x')
+                            time.sleep(interval if mode == 'body' else 0.3)
+                    elif mode == 'big':
+                        self.request.sendall(
+                            b'HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n'
+                            + b'x' * 100
+                        )
+                    else:
+                        # headers that never end
+                        for byte in b'HTTP/1.1 200 OK\r\nX-Slow: ' + b'y' * 100000:
+                            self.request.sendall(bytes([byte]))
+                            time.sleep(interval)
+                except OSError:
+                    pass  # the client gave up, which is what the test wants
+                test.handled += 1
+
+        class Server(socketserver.ThreadingTCPServer):
+            allow_reuse_address = True
+            daemon_threads = True
+            mode = 'body'
+
+        self.handled = 0
+        self.server = Server(('127.0.0.1', 0), Dripper)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.url = f'http://127.0.0.1:{self.server.server_address[1]}/'
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+
+    def _timed_fetch(self, mode, **kwargs):
+        self.server.mode = mode
+        started = time.monotonic()
+        result = url.fetch(self.url, no_proxy=True, **kwargs)
+        return result, time.monotonic() - started
+
+    # a transfer that is slow but steady is left alone
+
+    def test_a_steady_slow_answer_longer_than_the_timeout_succeeds(self):
+        # 6 bytes, one every 0.3 s: 1.8 s in all, every read well inside the timeout
+        (success, body), elapsed = self._timed_fetch('steady', timeout=1)
+        self.assertEqual((success, body), (True, 'xxxxxx'))
+        self.assertGreater(elapsed, 1.0)
+
+    def test_an_over_long_but_steady_answer_ends_at_an_explicit_deadline(self):
+        (success, message), elapsed = self._timed_fetch('steady', timeout=1, deadline=1)
+        self.assertFalse(success)
+        self.assertIn('Timeout after 1s', message)
+        self.assertLess(elapsed, 2.5)
+
+    # an endless drip ends
+
+    def test_dripped_body_ends_at_the_deadline(self):
+        for extended in (False, True):
+            with self.subTest(extended=extended):
+                (success, message), elapsed = self._timed_fetch(
+                    'body', timeout=1, deadline=1.5, extended=extended
+                )
+                self.assertFalse(success)
+                self.assertIn('Timeout after 1.5s', message)
+                self.assertLess(elapsed, 3)
+
+    def test_dripped_headers_end_at_the_deadline(self):
+        for extended in (False, True):
+            with self.subTest(extended=extended):
+                (success, message), elapsed = self._timed_fetch(
+                    'headers', timeout=1, deadline=1.5, extended=extended
+                )
+                self.assertFalse(success)
+                self.assertIn('Timeout after 1.5s', message)
+                self.assertLess(elapsed, 3)
+
+    def test_dripped_body_without_size_limit_ends_at_the_deadline(self):
+        (success, _), elapsed = self._timed_fetch(
+            'body', timeout=1, deadline=1.5, max_bytes=None
+        )
+        self.assertFalse(success)
+        self.assertLess(elapsed, 3)
+
+    def test_a_timeout_is_retried(self):
+        self.server.mode = 'body'
+        with mock.patch.object(url, '_fetch_once', wraps=url._fetch_once) as once:
+            url.fetch(self.url, no_proxy=True, timeout=0.5, deadline=0.8, retries=1)
+        self.assertEqual(once.call_count, 2)
+
+    # the default and the arguments
+
+    def test_the_default_is_ten_times_the_timeout(self):
+        self.assertEqual(url.DEADLINE_FACTOR, 10)
+        seen = []
+        real = url._apply_deadline
+
+        def spy(client, deadline):
+            seen.append(deadline - time.monotonic())
+            return real(client, deadline)
+
+        self.server.mode = 'big'
+        with mock.patch.object(url, '_apply_deadline', spy):
+            self.assertTrue(url.fetch(self.url, no_proxy=True, timeout=2)[0])
+            self.assertTrue(
+                url.fetch(self.url, no_proxy=True, timeout=2, deadline=7)[0]
+            )
+        self.assertAlmostEqual(seen[0], 20, delta=1)
+        self.assertAlmostEqual(seen[1], 7, delta=1)
+
+    def test_no_timeout_means_no_deadline(self):
+        self.server.mode = 'big'
+        with mock.patch.object(url, '_apply_deadline') as apply:
+            self.assertTrue(url.fetch(self.url, no_proxy=True, timeout=None)[0])
+        apply.assert_not_called()
+
+    def test_a_deadline_that_is_not_a_positive_number_is_refused(self):
+        for deadline in (0, False, True, -1, float('nan'), float('inf'), '5', 10**400):
+            with self.subTest(deadline=deadline):
+                success, message = url.fetch(self.url, deadline=deadline)
+                self.assertFalse(success)
+                self.assertIn('`deadline`', message)
+
+    def test_fetch_json_takes_a_deadline(self):
+        success, message = url.fetch_json(self.url, deadline=0)
+        self.assertFalse(success)
+        self.assertIn('`deadline`', message)
+
+    def test_a_body_beyond_max_bytes_is_still_refused(self):
+        (success, message), _ = self._timed_fetch('big', timeout=2, max_bytes=10)
+        self.assertFalse(success)
+        self.assertIn('Refused to read a response larger than', message)
 
 
 class TestRedirectOriginCheck(unittest.TestCase):

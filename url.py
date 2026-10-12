@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101202'
+__version__ = '2026101203'
 
 import base64
 import json
@@ -76,6 +76,20 @@ _REDIRECT_SAFE_HEADERS = frozenset(
 # (the complete endoflife.date catalogue), an estimated 20 MiB for a REST API listing
 # 100'000 objects. A caller expecting more passes `max_bytes`.
 DEFAULT_MAX_BYTES = 64 * 1024 * 1024
+
+# The longest `timeout` `fetch()` accepts, in seconds: a bit over eleven days. A larger
+# value is a mistake, and the arithmetic of a deadline fails on an absurdly large one.
+MAX_TIMEOUT = 1_000_000
+
+# `timeout` is the time every connect, read and write may take on its own, and keeps
+# that meaning: a transfer that goes on steadily, a big download or a redirect chain,
+# runs as long as it needs. A server that keeps sending just inside every read would
+# hold a request for ever though, so the request as a whole gets this many times the
+# `timeout` as a backstop. Ten is what a transfer measured on its own phases would
+# need at the very most for ten phases (connect, a few redirects, the read of the
+# answer) and still leaves every one that completed before untouched; the endless
+# drip is ended all the same. `deadline` sets it explicitly.
+DEADLINE_FACTOR = 10
 
 
 # Certificate verification failures an operator runs into in practice, keyed by
@@ -181,6 +195,10 @@ def _leaks_credentials_on_redirect(src, dst):
         and _default_port(dst) == 443
     )
     return not https_upgrade
+
+
+class _DeadlineError(Exception):
+    """The overall deadline of a request has passed."""
 
 
 class _RefusedError(Exception):
@@ -359,6 +377,92 @@ def _capture_tls_info(response):
         )
     except (AttributeError, TypeError, ValueError):
         return None, None, None
+
+
+def _build_deadline_backend(deadline):
+    """Return a factory that wraps an httpcore network backend so that the sum of all
+    its phases, not each phase on its own, ends at `deadline` (a `time.monotonic()`
+    value). Every connect, TLS handshake, read and write gets the time that is left
+    as its timeout, and one that finds none left raises the timeout error httpcore
+    has for it. Returns `None` when httpcore does not expose the public
+    `NetworkBackend` / `NetworkStream` base classes.
+
+    httpx hands its timeout to every read separately, so a server that sends one byte
+    just inside it never ends the request. Verified against httpx 0.28.1 and httpcore
+    1.0.9 (`ConnectionPool._network_backend`).
+    """
+    if httpcore is None or not hasattr(httpcore, 'NetworkBackend'):
+        return None
+
+    def left(timeout, error):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise error('overall deadline reached')
+        return remaining if timeout is None else min(timeout, remaining)
+
+    class _DeadlineStream(httpcore.NetworkStream):
+        def __init__(self, inner):
+            self._inner = inner
+
+        def read(self, max_bytes, timeout=None):
+            return self._inner.read(max_bytes, left(timeout, httpcore.ReadTimeout))
+
+        def write(self, buffer, timeout=None):
+            self._inner.write(buffer, left(timeout, httpcore.WriteTimeout))
+
+        def close(self):
+            return self._inner.close()
+
+        def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+            return _DeadlineStream(
+                self._inner.start_tls(
+                    ssl_context,
+                    server_hostname=server_hostname,
+                    timeout=left(timeout, httpcore.ConnectTimeout),
+                )
+            )
+
+        def get_extra_info(self, info):
+            return self._inner.get_extra_info(info)
+
+    class _DeadlineBackend(httpcore.NetworkBackend):
+        def __init__(self, inner):
+            self._inner = inner
+
+        def connect_tcp(self, host, port, timeout=None, **kwargs):
+            return _DeadlineStream(
+                self._inner.connect_tcp(
+                    host, port, timeout=left(timeout, httpcore.ConnectTimeout), **kwargs
+                )
+            )
+
+        def connect_unix_socket(self, path, timeout=None, **kwargs):
+            return _DeadlineStream(
+                self._inner.connect_unix_socket(
+                    path, timeout=left(timeout, httpcore.ConnectTimeout), **kwargs
+                )
+            )
+
+        def sleep(self, seconds):
+            self._inner.sleep(seconds)
+
+    return _DeadlineBackend
+
+
+def _apply_deadline(client, deadline):
+    """Put the overall `deadline` on every connection pool of an httpx client. Returns
+    False when the client has a shape this does not know, in which case only the
+    timeout httpx applies to each phase holds."""
+    wrap = _build_deadline_backend(deadline)
+    if wrap is None:
+        return False
+    transports = [client._transport, *client._mounts.values()]
+    pools = [getattr(t, '_pool', None) for t in transports if t is not None]
+    if not pools or any(not hasattr(p, '_network_backend') for p in pools):
+        return False
+    for pool in pools:
+        pool._network_backend = wrap(pool._network_backend)
+    return True
 
 
 # Phase-by-phase timing instrumentation for `extended=True`. We swap httpcore's default
@@ -721,24 +825,29 @@ def compare_github_refs(
         return True, False
 
 
-def _read_limited(response, max_bytes):
+def _read_limited(response, max_bytes, deadline=None):
     """Return the decoded body of a streamed httpx response, raising `_RefusedError`
     as soon as it grows past `max_bytes` (`None` reads without a limit). Only gzip and
     deflate are decoded, which inflate a received block by about a thousandfold at
     most, so a single block overshoots the limit by a bounded amount before it is
-    refused."""
-    if max_bytes is None:
+    refused. Past `deadline` (a `time.monotonic()` value) it raises `_DeadlineError`,
+    which backs up the per-read timeout where the pool could not be given the deadline."""
+    if max_bytes is None and deadline is None:
         return response.read()
-    message = f'Refused to read a response larger than {human.bytes2human(max_bytes)}'
+    message = 'Refused to read a response larger than '
+    if max_bytes is not None:
+        message += human.bytes2human(max_bytes)
     declared = response.headers.get('content-length', '')
-    if declared.isdigit() and int(declared) > max_bytes:
+    if max_bytes is not None and declared.isdigit() and int(declared) > max_bytes:
         raise _RefusedError(message)
     chunks = []
     size = 0
     for chunk in response.iter_bytes():
         size += len(chunk)
-        if size > max_bytes:
+        if max_bytes is not None and size > max_bytes:
             raise _RefusedError(message)
+        if deadline is not None and time.monotonic() >= deadline:
+            raise _DeadlineError()
         chunks.append(chunk)
     return b''.join(chunks)
 
@@ -801,6 +910,7 @@ def _fetch_once(
     response_on_error=False,
     cacert=None,
     max_bytes=DEFAULT_MAX_BYTES,
+    deadline=None,
 ):
     """Make one attempt of `fetch()`, which documents every parameter and wraps this
     in its retry loop.
@@ -850,6 +960,17 @@ def _fetch_once(
         )
 
     url_safe = txt.sanitize_sensitive_data(url)
+
+    # The timeout of httpx applies to every connect, read and write on its own, so a
+    # server that answers a byte at a time never runs into it. This is the end of the
+    # whole request, redirects included, `DEADLINE_FACTOR` times the timeout unless a
+    # `deadline` is given. `timeout=None` means no limit at all, as it always did.
+    deadline_seconds = deadline
+    if deadline_seconds is None and timeout:
+        deadline_seconds = timeout * DEADLINE_FACTOR
+    deadline = None
+    if deadline_seconds:
+        deadline = time.monotonic() + deadline_seconds
 
     if data:
         try:
@@ -950,6 +1071,13 @@ def _fetch_once(
     except Exception as e:
         return False, f'{e} while fetching {url_safe}', False
 
+    if deadline is not None:
+        try:
+            _apply_deadline(client, deadline)
+        except Exception:
+            # a client of a shape this does not know: `_read_limited()` still checks
+            pass
+
     method = (method or ('POST' if body else 'GET')).upper()
     tls_version = None
     alpn = None
@@ -971,7 +1099,7 @@ def _fetch_once(
             # Read body and capture metadata before raise_for_status() so the
             # response_on_error path can surface error bodies, status codes and
             # timings to the caller (when using response_on_error).
-            body_bytes = _read_limited(response, max_bytes)
+            body_bytes = _read_limited(response, max_bytes, deadline)
             status_code = response.status_code
             # HTTP header field names are case-insensitive (RFC 9110, section 5.1).
             # Canonicalize them to lower case so callers can look a header up
@@ -993,7 +1121,23 @@ def _fetch_once(
             )
         else:
             success = False
+    except _DeadlineError:
+        return (
+            False,
+            f'Timeout after {deadline_seconds}s while fetching {url_safe}',
+            True,
+        )
     except httpx.HTTPError as e:
+        if (
+            deadline is not None
+            and isinstance(e, httpx.TimeoutException)
+            and time.monotonic() >= deadline
+        ):
+            return (
+                False,
+                f'Timeout after {deadline_seconds}s while fetching {url_safe}',
+                True,
+            )
         verify_message = _tls_verify_message(e, url_safe)
         if verify_message:
             return False, verify_message, False
@@ -1087,6 +1231,7 @@ def fetch(
     retries=0,
     max_bytes=DEFAULT_MAX_BYTES,
     retry_if=None,
+    deadline=None,
 ):
     """
     Fetch any URL with optional POST, basic/digest authentication and SSL/TLS handling.
@@ -1152,8 +1297,14 @@ def fetch(
           If True, disables environment-based proxy detection (`HTTP_PROXY`, `HTTPS_PROXY`,
           `NO_PROXY`). Defaults to False.
     timeout : int, optional
-          Timeout in seconds for the request, applied to all phases (connect, read, write,
-          pool). Defaults to 8 seconds.
+          Timeout in seconds for each connect, read and write on its own. A transfer that
+          goes on steadily is not cut off by it, but a server that keeps sending just
+          inside it is: the request as a whole ends after `deadline` seconds. `None`
+          disables both limits, and 0 is not supported. Defaults to 8 seconds.
+    deadline : int or float, optional
+          Seconds the whole request may take, redirects included, as a backstop against
+          a server that never stops sending. Defaults to `None`, which is
+          `DEADLINE_FACTOR` (10) times `timeout`. Has to be a finite number above 0.
     header : dict, optional
           Headers to include in the request. Note: `Connection: close` and the
           `User-Agent: Linuxfabrik Monitoring Plugins` header are always set after the user's
@@ -1244,6 +1395,15 @@ def fetch(
     ...     extended=True,
     ... )
     """
+    if deadline is not None and (
+        isinstance(deadline, bool)
+        or not isinstance(deadline, (int, float))
+        or not 0 < deadline <= MAX_TIMEOUT * DEADLINE_FACTOR
+    ):
+        return False, (
+            '`deadline` must be a number of seconds above 0 and at most '
+            f'{MAX_TIMEOUT * DEADLINE_FACTOR}, or None, not {deadline!r}'
+        )
     if retry_if is not None and not callable(retry_if):
         return False, f'`retry_if` must be callable or None, not {retry_if!r}'
     attempt = 0
@@ -1252,6 +1412,7 @@ def fetch(
             url,
             cacert=cacert,
             data=data,
+            deadline=deadline,
             digest_auth_password=digest_auth_password,
             digest_auth_user=digest_auth_user,
             encoding=encoding,
@@ -1299,6 +1460,7 @@ def fetch_json(
     max_bytes=DEFAULT_MAX_BYTES,
     retry_if=None,
     allow_empty=False,
+    deadline=None,
 ):
     """
     Fetch JSON from a URL with optional POST, authentication and SSL/TLS handling.
@@ -1344,6 +1506,7 @@ def fetch_json(
         url,
         cacert=cacert,
         data=data,
+        deadline=deadline,
         digest_auth_password=digest_auth_password,
         digest_auth_user=digest_auth_user,
         encoding=encoding,
