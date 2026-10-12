@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Highlights:** Files a privileged process reads on a caller's behalf are now checked on the handle that was actually opened, so swapping a directory in the path no longer redirects the read. `run_occ()` no longer lets an account without access to a Nextcloud installation choose the code or the account `occ` runs as. Consumers start faster, a typical local check saves 9 to 17 ms of CPU time per run.
+**Highlights:** Files a privileged process reads on a caller's behalf are now checked on the handle that was actually opened, so swapping a directory in the path no longer redirects the read. `run_occ()` no longer lets an account without access to a Nextcloud installation choose the code or the account `occ` runs as. Error messages no longer expose credentials, such as the userinfo or query secrets of a URL or a header value, `url.fetch()` and `net.fetch()` end a server that keeps dripping data and `url.fetch()` follows redirect chains of several hops, and `check_eol()` gives Ubuntu hosts a real end-of-life verdict. Consumers start faster, a typical local check saves 9 to 17 ms of CPU time per run.
 
 ### Added
 
