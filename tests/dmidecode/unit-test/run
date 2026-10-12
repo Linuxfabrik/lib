@@ -219,10 +219,6 @@ class TestDmidecodeParse(unittest.TestCase):
         self.assertEqual(dmidecode.dmiget(parsed, 'Processor'), [])
 
     def test_multiline_block_joined_with_tabs(self):
-        # RECORD2_RE / IN_BLOCK_RE each define a single capture group, so
-        # re.findall yields plain strings and the parser indexes [0][0], i.e.
-        # the FIRST CHARACTER of the match. This is the module's actual (quirky)
-        # behavior for in-block sections; pin it so a future change is noticed.
         block = (
             'Handle 0x2000, DMI type 38, 18 bytes\n'
             'IPMI Device Information\n'
@@ -232,10 +228,52 @@ class TestDmidecodeParse(unittest.TestCase):
         )
         parsed = dmidecode.dmidecode_parse(block)
         rec = parsed[('0x2000', '38', '18')]
-        # block element key is the first char of 'Characteristics'
-        self.assertIn('C', rec)
-        # in-block items are reduced to their first chars, joined by '\t\t'
-        self.assertEqual(rec['C'], 'F\t\tS')
+        self.assertEqual(rec['Characteristics'], 'First feature\t\tSecond feature')
+        self.assertNotIn('C', rec)
+
+    def test_a_record_with_two_blocks_keeps_both(self):
+        # a type 4 record as dmidecode prints it: `Flags` and `Characteristics` are
+        # blocks, and the first character of both used to name them
+        block = (
+            'Handle 0x0400, DMI type 4, 48 bytes\n'
+            'Processor Information\n'
+            '\tSocket Designation: CPU1\n'
+            '\tStatus: Populated, Enabled\n'
+            '\tFlags:\n'
+            '\t\tFPU (Floating-point unit on-chip)\n'
+            '\t\tVME (Virtual mode extension)\n'
+            '\t\tDE (Debugging extension)\n'
+            '\tVersion: Intel Xeon\n'
+            '\tCharacteristics:\n'
+            '\t\t64-bit capable\n'
+            '\t\tMulti-Core\n'
+            '\tCore Enabled: 4'
+        )
+        rec = dmidecode.dmidecode_parse(block)[('0x0400', '4', '48')]
+        self.assertEqual(
+            rec['Flags'],
+            'FPU (Floating-point unit on-chip)\t\tVME (Virtual mode extension)'
+            '\t\tDE (Debugging extension)',
+        )
+        self.assertEqual(rec['Characteristics'], '64-bit capable\t\tMulti-Core')
+        self.assertEqual(rec['Version'], 'Intel Xeon')
+        self.assertEqual(rec['Core Enabled'], '4')
+        self.assertNotIn('F', rec)
+        self.assertNotIn('C', rec)
+
+    def test_a_bios_record_reads_its_characteristics(self):
+        block = (
+            'Handle 0x0000, DMI type 0, 26 bytes\n'
+            'BIOS Information\n'
+            '\tVendor: Dell Inc.\n'
+            '\tCharacteristics:\n'
+            '\t\tPCI is supported\n'
+            '\t\tBIOS is upgradeable (Flash)\n'
+            '\tBIOS Revision: 2.9'
+        )
+        rec = dmidecode.dmidecode_parse(block)[('0x0000', '0', '26')]
+        self.assertIn('BIOS is upgradeable (Flash)', rec['Characteristics'])
+        self.assertEqual(rec['BIOS Revision'], '2.9')
 
 
 class TestDmiget(unittest.TestCase):

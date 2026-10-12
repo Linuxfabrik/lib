@@ -14,7 +14,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026101202'
 
 import re
 
@@ -289,7 +289,7 @@ def dmidecode_parse(output):
             if in_block_element is not None:
                 in_block_data = IN_BLOCK_RE.findall(line)
                 if in_block_data:
-                    in_block_list.append(in_block_data[0][0])
+                    in_block_list.append(in_block_data[0])
                     current[in_block_element] = '\t\t'.join(in_block_list)
                     continue
                 else:
@@ -304,7 +304,7 @@ def dmidecode_parse(output):
 
             record_data2 = RECORD2_RE.findall(line)
             if record_data2:
-                in_block_element = record_data2[0][0]
+                in_block_element = record_data2[0]
                 in_block_list = []
 
         # Type-specific filters (drop obviously irrelevant entries)
