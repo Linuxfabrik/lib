@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * db_mysql.py: `check_privileges()` takes `database`, for privileges that suffice on one database
 * disk.py: `get_block_devices()` and `get_real_disks()` list the mount points in `mount_points`, with spaces and other escaped characters decoded
 * disk.py: `get_private_dir()`, a directory only the current account can use, on Windows as well
-* disk.py: `open_file()` for confined reads, `resolve_trusted_path()`, and `get_fingerprint()` on an open file
+* disk.py: `open_file()` for confined reads, `resolve_trusted_path()` and `resolve_trusted_tree()`, and `get_fingerprint()` on an open file
 * endoflifedate.py: offline data for Debian, Ubuntu, Windows and Windows Server
 * lftest.py: `fixture_root()`, which accepts a test-only configuration root inside the unit tests only
 * lynis.py: reads the report of a Lynis audit and lists its findings and suggestions
@@ -75,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files
 * logsource.py: `read()` reads each source, rotated files included, from one checked handle
 * net.py: `get_proxy()` no longer puts the password or token of a URL, or the password of a proxy, into its error message
-* nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`
+* nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`, and any file `occ` loads that another account can change, app directories outside the installation included
 * openstack.py: `connect()` reuses a cached token only for the same domain, user, password and interface, so checks for different customers on one host no longer run with each other's token
 * ssh.py: `rsync()`, `run()` and `scp()` refuse a port that is not a number from 1 to 65535, which `rsync()` handed to ssh as further options such as `ProxyCommand`
 * txt.py: `sanitize_sensitive_data()` also redacts credentials under prefixed names such as `db_password` or `client_secret`, `passwd`, quoted values with spaces or escaped quotes, and URL passwords containing `@` or `/`

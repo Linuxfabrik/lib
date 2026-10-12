@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 import csv
 import errno
@@ -1761,6 +1761,42 @@ def _check_acl(path, st, uids, gids):
     return bool(masks), None
 
 
+def _trusted_ids(owners):
+    """Return the UIDs and GIDs `resolve_trusted_path()` and `resolve_trusted_tree()`
+    accept: root, the given owners, and the primary groups of all of them."""
+    uids = {0}
+    for owner in owners or ():
+        if isinstance(owner, int) and not isinstance(owner, bool) and owner >= 0:
+            uids.add(owner)
+    gids = {0}
+    for uid in uids:
+        try:
+            gids.add(pwd.getpwuid(uid).pw_gid)
+        except KeyError:
+            pass
+    return uids, gids
+
+
+def _untrusted_reason(current, st, uids, gids):
+    """Return why an account other than root and the trusted owners can change the
+    object `current` whose `lstat()` result is `st`, or None if nobody else can. The
+    single check behind `resolve_trusted_path()` and `resolve_trusted_tree()`."""
+    if st.st_uid not in uids:
+        return f'belongs to uid {st.st_uid}, which is not trusted for this'
+    if _stat.S_ISSOCK(st.st_mode) or _stat.S_ISLNK(st.st_mode):
+        # Who may connect to a socket or follow a symlink says nothing about who may
+        # replace it; that takes write access to the directory, which is checked.
+        return None
+    if st.st_mode & _stat.S_IWOTH:
+        return 'is writable by everyone'
+    has_mask, reason = _check_acl(current, st, uids, gids)
+    if reason:
+        return reason
+    if not has_mask and st.st_mode & _stat.S_IWGRP and st.st_gid not in gids:
+        return f'is writable by group {st.st_gid}, which is not trusted for this'
+    return None
+
+
 def resolve_trusted_path(path, owners=None):
     """
     Resolve a path and confirm that nobody but root and the given owners can change
@@ -1817,16 +1853,7 @@ def resolve_trusted_path(path, owners=None):
             False,
             f'Refusing "{path}": ownership cannot be checked on this platform.',
         )
-    uids = {0}
-    for owner in owners or ():
-        if isinstance(owner, int) and not isinstance(owner, bool) and owner >= 0:
-            uids.add(owner)
-    gids = {0}
-    for uid in uids:
-        try:
-            gids.add(pwd.getpwuid(uid).pw_gid)
-        except KeyError:
-            pass
+    uids, gids = _trusted_ids(owners)
     real = os.path.realpath(path)
     # Walk from the top down: once a directory is trusted, nobody else can change
     # its entries, so the check of the next level cannot be undermined from above.
@@ -1844,23 +1871,115 @@ def resolve_trusted_path(path, owners=None):
             )
         if _stat.S_ISLNK(st.st_mode):
             return False, f'Refusing "{path}": "{current}" changed while being checked.'
-        if st.st_uid not in uids:
-            return False, (
-                f'Refusing "{path}": "{current}" belongs to uid {st.st_uid}, which '
-                'is not trusted for this.'
-            )
-        if _stat.S_ISSOCK(st.st_mode):
-            continue
-        if st.st_mode & _stat.S_IWOTH:
-            return False, f'Refusing "{path}": "{current}" is writable by everyone.'
-        has_mask, reason = _check_acl(current, st, uids, gids)
+        reason = _untrusted_reason(current, st, uids, gids)
         if reason:
             return False, f'Refusing "{path}": "{current}" {reason}.'
-        if not has_mask and st.st_mode & _stat.S_IWGRP and st.st_gid not in gids:
-            return False, (
-                f'Refusing "{path}": "{current}" is writable by group {st.st_gid}, '
-                'which is not trusted for this.'
-            )
+    return True, real
+
+
+def resolve_trusted_tree(path, owners=None, prune=None, name_objects=True):
+    """
+    Resolve a directory and confirm that nobody but root and the given owners can change
+    anything below it.
+
+    `resolve_trusted_path()` covers a single file. A program that loads code from a
+    whole tree, an interpreter running an application, can be given someone else's code
+    through any file in it. This checks the path itself like `resolve_trusted_path()`,
+    and then every directory, file and symlink below it the same way, from the top
+    down. A symlink is followed, and its target has to pass as well, a directory
+    target with everything below it.
+
+    Parameters
+    ----------
+    path : str
+        The directory to check. It has to exist.
+    owners : iterable of int, optional
+        UIDs trusted besides root, see `resolve_trusted_path()`.
+    prune : callable, optional
+        Called with the path of each directory and each symlink found below `path`,
+        as the walk reaches it: its trusted parent directory and its name, never a
+        resolved target. When it returns True, that entry is left out: a directory
+        with everything below it, a symlink with its target and the path to it. For
+        example a data directory that holds no code but may hold millions of files,
+        possibly linked in from a volume of its own. The entry itself cannot be
+        replaced by anybody else, since the directory holding it is checked. Never
+        decide on a resolved path: whoever controls a component of it could point the
+        decision at any directory in the tree.
+    name_objects : bool, optional
+        Name the object below `path` that failed the check. Pass False where the
+        caller chose `path` but may not be able to list what is below it, such as a
+        consumer running as root on a path an unprivileged account passed: the
+        message would otherwise reveal names the caller cannot see. Defaults to True.
+
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the tree is trusted, otherwise False.
+          - tuple[1] (**str**): The resolved path, or an error message naming the
+            first object somebody else can change.
+
+    Notes
+    -----
+    - Top-down order is what makes the result hold: once a directory is trusted,
+      nobody else can add, remove or replace its entries, so nothing checked below it
+      can be swapped afterwards either.
+    - A directory that cannot be listed is refused, since what it holds is unknown.
+    - Linux only, like `resolve_trusted_path()`.
+
+    Examples
+    --------
+    >>> resolve_trusted_tree('/usr/share/nextcloud', owners=[48])
+    (True, '/usr/share/nextcloud')
+    """
+    success, real = resolve_trusted_path(path, owners=owners)
+    if not success:
+        return False, real
+    uids, gids = _trusted_ids(owners)
+
+    def refuse(detail):
+        if name_objects:
+            return False, f'Refusing "{path}": {detail}.'
+        return False, (
+            f'Refusing "{path}": something below it can be changed by an account other '
+            'than root and the trusted owners, or cannot be examined.'
+        )
+
+    pending = [real]
+    seen = {real}
+    while pending:
+        directory = pending.pop()
+        try:
+            with os.scandir(directory) as entries:
+                names = sorted(entry.name for entry in entries)
+        except OSError as e:
+            return refuse(f'cannot list "{directory}" ({e.strerror})')
+        for name in names:
+            current = os.path.join(directory, name)
+            try:
+                st = os.lstat(current)
+            except OSError as e:
+                return refuse(f'cannot examine "{current}" ({e.strerror})')
+            if (
+                (_stat.S_ISDIR(st.st_mode) or _stat.S_ISLNK(st.st_mode))
+                and prune
+                and prune(current)
+            ):
+                continue
+            reason = _untrusted_reason(current, st, uids, gids)
+            if reason:
+                return refuse(f'"{current}" {reason}')
+            if _stat.S_ISLNK(st.st_mode):
+                # the link itself is safe in a trusted directory, its target has to be
+                # trusted on its own, all the way from `/`
+                success, target = resolve_trusted_path(current, owners=owners)
+                if not success:
+                    return refuse(target.removeprefix('Refusing ').rstrip('.'))
+                if os.path.isdir(target) and target not in seen:
+                    seen.add(target)
+                    pending.append(target)
+                continue
+            if _stat.S_ISDIR(st.st_mode):
+                pending.append(current)
     return True, real
 
 

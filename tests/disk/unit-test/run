@@ -1315,6 +1315,166 @@ NOBODY = 65534
 
 
 @unittest.skipUnless(hasattr(os, 'setxattr'), 'POSIX ACLs are a Linux feature here')
+class TestResolveTrustedTree(unittest.TestCase):
+    """Nothing below a trusted tree can be changed by anybody but the given owners.
+
+    One test per place somebody else could slip code in: a file or directory deep in
+    the tree, a symlink leading out of it, and a directory that cannot be read.
+    """
+
+    def setUp(self):
+        self.uid = os.getuid()
+        self.base = _trusted_base()
+        if self.base is None:
+            self.skipTest('no directory on this host is trusted for the test user')
+        self.tree = os.path.join(self.base, 'app')
+        self.deep = os.path.join(self.tree, 'lib', 'sub')
+        os.makedirs(self.deep)
+        disk.write_file(os.path.join(self.deep, 'code.php'), '<?php\n')
+
+    def tearDown(self):
+        for directory, dirs, _files in os.walk(self.base):
+            for name in dirs:
+                os.chmod(os.path.join(directory, name), 0o700)
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def check(self, **kwargs):
+        return disk.resolve_trusted_tree(self.tree, owners=[self.uid], **kwargs)
+
+    def test_trusted_tree_resolves(self):
+        self.assertEqual(self.check(), (True, os.path.realpath(self.tree)))
+
+    def test_file_deep_in_the_tree_writable_by_everyone_is_refused(self):
+        os.chmod(os.path.join(self.deep, 'code.php'), 0o666)
+        success, result = self.check()
+        self.assertFalse(success)
+        self.assertIn('code.php" is writable by everyone', result)
+
+    def test_directory_deep_in_the_tree_writable_by_everyone_is_refused(self):
+        os.chmod(self.deep, 0o777)
+        success, result = self.check()
+        self.assertFalse(success)
+        self.assertIn('sub" is writable by everyone', result)
+
+    def test_symlink_out_to_an_untrusted_directory_is_refused(self):
+        outside = tempfile.mkdtemp(prefix='lftest-disk-tree-outside-')
+        self.addCleanup(shutil.rmtree, outside, True)
+        os.symlink(outside, os.path.join(self.tree, 'apps'))
+        success, result = self.check()
+        self.assertFalse(success)
+        self.assertIn('writable by everyone', result)
+
+    def test_symlink_target_contents_are_checked(self):
+        outside = os.path.join(self.base, 'outside')
+        os.makedirs(outside)
+        disk.write_file(os.path.join(outside, 'evil.php'), '<?php\n')
+        os.chmod(os.path.join(outside, 'evil.php'), 0o666)
+        os.symlink(outside, os.path.join(self.tree, 'apps'))
+        success, result = self.check()
+        self.assertFalse(success)
+        self.assertIn('evil.php" is writable by everyone', result)
+
+    def test_symlink_loop_terminates(self):
+        os.symlink(self.tree, os.path.join(self.deep, 'loop'))
+        self.assertEqual(self.check(), (True, os.path.realpath(self.tree)))
+
+    @unittest.skipIf(os.geteuid() == 0, 'root can list any directory')
+    def test_unlistable_directory_is_refused(self):
+        os.chmod(self.deep, 0o300)
+        success, result = self.check()
+        self.assertFalse(success)
+        self.assertIn('cannot list', result)
+
+    def test_pruned_directory_is_not_searched(self):
+        data = os.path.join(self.tree, 'data')
+        os.makedirs(data)
+        disk.write_file(os.path.join(data, 'upload'), 'x')
+        os.chmod(os.path.join(data, 'upload'), 0o666)
+        self.assertFalse(self.check()[0])
+        self.assertEqual(
+            self.check(prune=lambda d: os.path.basename(d) == 'data'),
+            (True, os.path.realpath(self.tree)),
+        )
+
+    # Its entry cannot be replaced, since the directory holding it is checked, and
+    # nothing is loaded from it, so a pruned directory is not checked itself either.
+    def test_a_pruned_directory_is_not_checked_itself(self):
+        data = os.path.join(self.tree, 'data')
+        os.makedirs(data)
+        os.chmod(data, 0o777)
+        self.assertEqual(
+            self.check(prune=lambda d: d == os.path.realpath(data)),
+            (True, os.path.realpath(self.tree)),
+        )
+
+    def test_a_symlink_to_a_pruned_directory_is_not_followed(self):
+        data = os.path.join(self.base, 'data')
+        os.makedirs(data)
+        disk.write_file(os.path.join(data, 'upload'), 'x')
+        os.chmod(os.path.join(data, 'upload'), 0o666)
+        os.symlink(data, os.path.join(self.tree, 'data'))
+        entry = os.path.join(os.path.realpath(self.tree), 'data')
+        self.assertFalse(self.check()[0])
+        self.assertEqual(
+            self.check(prune=lambda d: d == entry),
+            (True, os.path.realpath(self.tree)),
+        )
+
+    # A data directory on a volume of its own, linked into the installation: the path
+    # to it is not checked either, as it would not be without the link.
+    def test_the_path_to_a_pruned_symlink_target_is_not_checked(self):
+        volume = tempfile.mkdtemp(prefix='lftest-disk-tree-volume-')
+        self.addCleanup(shutil.rmtree, volume, True)
+        data = os.path.join(volume, 'data')
+        os.makedirs(data)
+        os.symlink(data, os.path.join(self.tree, 'data'))
+        entry = os.path.join(os.path.realpath(self.tree), 'data')
+        self.assertFalse(self.check()[0])
+        self.assertEqual(
+            self.check(prune=lambda d: d == entry),
+            (True, os.path.realpath(self.tree)),
+        )
+
+    # prune decides on the entry as the walk reaches it, never on a resolved target:
+    # otherwise whoever controls a link elsewhere could point the decision at code.
+    def test_prune_never_sees_a_resolved_target(self):
+        seen = []
+        outside = os.path.join(self.base, 'outside')
+        os.makedirs(outside)
+        os.symlink(outside, os.path.join(self.tree, 'apps'))
+        self.check(prune=lambda d: seen.append(d) or False)
+        real_tree = os.path.realpath(self.tree)
+        self.assertIn(os.path.join(real_tree, 'apps'), seen)
+        self.assertNotIn(os.path.realpath(outside), seen)
+        for entry in seen:
+            self.assertTrue(entry.startswith(real_tree + os.sep), entry)
+
+    # A caller that chose the path may not be allowed to see below it, so the refusal
+    # can leave out the name of what failed.
+    def test_name_objects_false_hides_the_object(self):
+        os.chmod(os.path.join(self.deep, 'code.php'), 0o666)
+        success, result = self.check(name_objects=False)
+        self.assertFalse(success)
+        self.assertNotIn('code.php', result)
+        self.assertNotIn('sub', result)
+        self.assertIn('something below it can be changed', result)
+
+    def test_name_objects_false_hides_a_symlink_target(self):
+        outside = tempfile.mkdtemp(prefix='lftest-disk-tree-secret-')
+        self.addCleanup(shutil.rmtree, outside, True)
+        os.symlink(outside, os.path.join(self.tree, 'apps'))
+        success, result = self.check(name_objects=False)
+        self.assertFalse(success)
+        self.assertNotIn('secret', result)
+
+    def test_untrusted_tree_root_is_refused(self):
+        work = tempfile.mkdtemp(prefix='lftest-disk-tree-')
+        self.addCleanup(shutil.rmtree, work, True)
+        success, result = disk.resolve_trusted_tree(work, owners=[self.uid])
+        self.assertFalse(success)
+        self.assertIn('writable by everyone', result)
+
+
 class TestResolveTrustedPathAcl(unittest.TestCase):
     """An ACL entry that lets another account write counts like a mode bit.
 

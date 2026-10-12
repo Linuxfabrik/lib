@@ -97,7 +97,7 @@ def load_fixture(name):
 def located(owner):
     """Return a stand-in for `_locate()` that finds an installation owned by `owner`."""
 
-    def _locate(path):
+    def _locate(path, php, timeout=None):
         return True, (path, os.path.join(path, 'occ'), owner)
 
     return _locate
@@ -211,7 +211,7 @@ class TestCommandConstruction(_Base):
             ),
         ):
             nextcloud.run_occ(NC_PATH, 'status')
-        go.assert_called_once_with(NC_PATH)
+        go.assert_called_once_with(NC_PATH, PHP_BIN, timeout=None)
 
     def test_full_command_list(self):
         self.run_occ(NC_PATH, 'status')
@@ -382,20 +382,35 @@ class TestInstallationTrust(unittest.TestCase):
             f.write('<?php\n')
         return nc
 
-    def run_occ(self, path):
+    def run_occ(self, path, apps=(), data=None, config_ret=None):
+        """Run `run_occ()` with PHP stubbed out. The configuration read answers with
+        `apps` and `data` (default: `data/` below the installation), or `config_ret`."""
+        if data is None:
+            data = os.path.join(path, 'data')
+        config = json.dumps({'apps': list(apps), 'data': data})
+
+        def shell_exec(cmd, **kwargs):
+            if '-r' in cmd:
+                return config_ret or (True, (config, '', 0))
+            return True, ('{}', '', 0)
+
         with (
             mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN),
             mock.patch.object(
-                nextcloud.shell, 'shell_exec', return_value=(True, ('{}', '', 0))
+                nextcloud.shell, 'shell_exec', side_effect=shell_exec
             ) as shell_mock,
         ):
             result = nextcloud.run_occ(path, 'status')
         self.shell_mock = shell_mock
         return result
 
+    def occ_ran(self):
+        return any('-r' not in call.args[0] for call in self.shell_mock.call_args_list)
+
     def test_trusted_installation_runs_resolved_occ_as_its_owner(self):
         self.assertEqual(self.run_occ(self.nc), (True, {}))
         (cmd,), kwargs = self.shell_mock.call_args
+        self.assertTrue(self.occ_ran())
         occ = os.path.realpath(os.path.join(self.nc, 'occ'))
         self.assertIn(occ, cmd)
         self.assertEqual(kwargs['cwd'], os.path.realpath(self.nc))
@@ -438,6 +453,173 @@ class TestInstallationTrust(unittest.TestCase):
             self.shell_mock.assert_not_called()
         finally:
             shutil.rmtree(work, ignore_errors=True)
+
+    # occ loads far more than occ and config.php: console.php, lib/, 3rdparty/, the
+    # apps and config/*.config.php. Any of them somebody else can change runs their
+    # code as the owner of config.php, root included. The refusal does not name the
+    # object: the caller chose the path, but may not be allowed to look below it.
+    def test_code_below_the_installation_somebody_else_can_change_is_refused(self):
+        for relative in (
+            'console.php',
+            os.path.join('apps', 'files', 'appinfo', 'app.php'),
+            os.path.join('lib', 'base.php'),
+        ):
+            with self.subTest(relative=relative):
+                path = os.path.join(self.nc, relative)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, 'w') as f:
+                    f.write('<?php\n')
+                os.chmod(path, 0o666)
+                ok, msg = self.run_occ(self.nc)
+                self.assertFalse(ok)
+                self.assertIn('something below it can be changed', msg)
+                self.assertNotIn(os.path.basename(relative), msg)
+                self.assertFalse(self.occ_ran())
+                os.remove(path)
+
+    # The configuration is PHP that is about to run; it is checked first.
+    def test_configuration_somebody_else_can_change_never_runs(self):
+        extra = os.path.join(self.nc, 'config', 'extra.config.php')
+        with open(extra, 'w') as f:
+            f.write('<?php\n')
+        os.chmod(extra, 0o666)
+        ok, msg = self.run_occ(self.nc)
+        self.assertFalse(ok)
+        self.assertIn('something below it can be changed', msg)
+        self.shell_mock.assert_not_called()
+
+    def test_configuration_is_read_as_the_owner(self):
+        self.run_occ(self.nc)
+        (cmd,), _kwargs = self.shell_mock.call_args_list[0]
+        self.assertIn('-r', cmd)
+        root = os.path.realpath(self.nc)
+        self.assertEqual(cmd[-2:], [root, os.path.join(root, 'config') + os.sep])
+        if os.geteuid() != os.getuid():
+            self.assertEqual(cmd[:3], ['sudo', '--user', f'#{os.getuid()}'])
+
+    # PHP's own message is not passed on: a parse error quotes the configuration,
+    # here the database password, and the caller may not be allowed to read it.
+    def test_unreadable_configuration_is_refused_without_quoting_it(self):
+        parse_error = (
+            'PHP Parse error:  syntax error, unexpected single-quoted string '
+            '"linuxfabrik", expecting "]" in /var/www/nextcloud/config/config.php on '
+            'line 7'
+        )
+        for config_ret in (
+            (True, ('', parse_error, 255)),
+            (True, (parse_error, '', 255)),
+        ):
+            with self.subTest(config_ret=config_ret):
+                ok, msg = self.run_occ(self.nc, config_ret=config_ret)
+                self.assertFalse(ok)
+                self.assertIn('Could not read the configuration', msg)
+                self.assertIn('rc=255', msg)
+                self.assertNotIn('linuxfabrik', msg)
+                self.assertNotIn('Parse error', msg)
+                self.assertFalse(self.occ_ran())
+
+    # Nothing is loaded from the data directory and its entry cannot be replaced, so
+    # its own mode does not matter either.
+    def test_data_directory_writable_by_everyone_is_accepted(self):
+        data = os.path.join(self.nc, 'data')
+        os.makedirs(data)
+        os.chmod(data, 0o777)
+        self.assertEqual(self.run_occ(self.nc), (True, {}))
+
+    # A data directory on a volume of its own, linked into the installation, is left
+    # out like one that datadirectory names directly.
+    def test_linked_data_directory_on_another_volume_is_accepted(self):
+        volume = tempfile.mkdtemp(prefix='lftest-nextcloud-volume-')
+        self.addCleanup(shutil.rmtree, volume, True)
+        data = os.path.join(volume, 'data')
+        os.makedirs(data)
+        os.chmod(data, 0o777)
+        os.symlink(data, os.path.join(self.nc, 'data'))
+        self.assertEqual(self.run_occ(self.nc), (True, {}))
+        # Named by its resolved location below a directory another account controls,
+        # it cannot decide anything: the link in the installation is followed and the
+        # path to its target checked like any other.
+        self.assertFalse(self.run_occ(self.nc, data=data)[0])
+
+    # Where datadirectory resolves to must not decide what is left out: whoever
+    # controls a component of its path would point it at apps/ and have the code
+    # there skipped, which then runs as the owner of config.php.
+    def test_data_directory_path_cannot_be_pointed_at_code(self):
+        ext = os.path.join(self.base, 'ext')
+        os.makedirs(ext)
+        os.chmod(ext, 0o777)  # a mount point or a home another account controls
+        apps = os.path.join(self.nc, 'apps')
+        code = os.path.join(apps, 'evil', 'app.php')
+        os.makedirs(os.path.dirname(code))
+        with open(code, 'w') as f:
+            f.write('<?php\n')
+        os.chmod(code, 0o666)
+        data = os.path.join(ext, 'data')
+        os.makedirs(data)
+        self.assertFalse(self.run_occ(self.nc, data=data)[0])
+        # the other account swaps the data directory for a link to apps/
+        os.rmdir(data)
+        os.symlink(apps, data)
+        ok, _msg = self.run_occ(self.nc, data=data)
+        self.assertFalse(ok)
+        self.assertFalse(self.occ_ran())
+
+    # An app directory is checked on its own even when the data directory would hide
+    # it from the check of the installation.
+    def test_app_directory_named_as_data_directory_is_still_checked(self):
+        apps = os.path.join(self.nc, 'apps')
+        code = os.path.join(apps, 'evil', 'app.php')
+        os.makedirs(os.path.dirname(code))
+        with open(code, 'w') as f:
+            f.write('<?php\n')
+        os.chmod(code, 0o666)
+        ok, _msg = self.run_occ(self.nc, apps=[apps], data=apps)
+        self.assertFalse(ok)
+
+    # The data directory holds no code, and can hold millions of files.
+    def test_configured_data_directory_is_not_searched(self):
+        upload = os.path.join(self.nc, 'storage', 'alice', 'files', 'upload.php')
+        os.makedirs(os.path.dirname(upload))
+        with open(upload, 'w') as f:
+            f.write('<?php\n')
+        os.chmod(upload, 0o666)
+        self.assertFalse(self.run_occ(self.nc)[0])
+        self.assertEqual(
+            self.run_occ(self.nc, data=os.path.join(self.nc, 'storage')), (True, {})
+        )
+
+    # apps_paths can place apps outside the installation (Fedora:
+    # /var/lib/nextcloud/apps); occ loads them as well.
+    def test_app_directory_outside_the_installation_is_checked(self):
+        outside = os.path.join(self.base, 'appstore')
+        os.makedirs(os.path.join(outside, 'evil'))
+        self.assertEqual(self.run_occ(self.nc, apps=[outside]), (True, {}))
+        code = os.path.join(outside, 'evil', 'app.php')
+        with open(code, 'w') as f:
+            f.write('<?php\n')
+        os.chmod(code, 0o666)
+        ok, msg = self.run_occ(self.nc, apps=[outside])
+        self.assertFalse(ok)
+        self.assertIn('app directory its configuration names', msg)
+        self.assertNotIn('appstore', msg)
+        self.assertFalse(self.occ_ran())
+
+    def test_app_directory_in_the_data_directory_is_checked(self):
+        apps = os.path.join(self.nc, 'data', 'apps')
+        os.makedirs(apps)
+        code = os.path.join(apps, 'app.php')
+        with open(code, 'w') as f:
+            f.write('<?php\n')
+        os.chmod(code, 0o666)
+        ok, _msg = self.run_occ(self.nc, apps=[apps])
+        self.assertFalse(ok)
+
+    # occ refuses a missing app directory itself; it is not checked for later.
+    def test_missing_app_directory_is_refused(self):
+        ok, msg = self.run_occ(self.nc, apps=[os.path.join(self.base, 'nowhere')])
+        self.assertFalse(ok)
+        self.assertIn('does not exist', msg)
+        self.assertNotIn('nowhere', msg)
 
     def test_installation_writable_by_everyone_is_refused(self):
         os.chmod(self.nc, 0o777)
