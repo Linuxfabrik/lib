@@ -88,8 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`, and any file `occ` loads that another account can change, app directories outside the installation included
 * openstack.py: `connect()` reuses a cached token only for the same domain, user, password and interface, so checks for different customers on one host no longer run with each other's token
 * ssh.py: `rsync()`, `run()` and `scp()` refuse a port that is not a number from 1 to 65535, which `rsync()` handed to ssh as further options such as `ProxyCommand`
-* txt.py: `sanitize_sensitive_data()` also redacts credentials under prefixed names such as `db_password` or `client_secret`, `passwd`, quoted values with spaces or escaped quotes, and URL passwords containing `@` or `/`
-* url.py: the error messages of `fetch()` and `fetch_json()` no longer show part of a password containing `/`, or the values of `api_key`, `secret` and similar query parameters
+* txt.py: `sanitize_sensitive_data()` also redacts credentials under prefixed names such as `db_password` or `client_secret`, `passwd`, quoted values with spaces or escaped quotes, and URL passwords containing `@` or `/`, a URL's userinfo when its scheme is missing, and the query parameters `auth`, `pw`, `sid` and `sig`
+* url.py: the error messages of `fetch()` and `fetch_json()` no longer show part of a password containing `/`, or the values of `api_key`, `secret` and similar query parameters, nor the userinfo of a URL without a scheme
 
 
 ## [v8.2.0] - 2026-09-22

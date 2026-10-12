@@ -1535,6 +1535,37 @@ class TestExtendedThroughAnAuthenticatingProxy(unittest.TestCase):
         self.assertEqual(self.received, [expected, expected])
 
 
+class TestFetchLeavesNothingInTheMessage(unittest.TestCase):
+    """The message of a failed request never carries the userinfo or a secret query
+    value of the URL, however malformed the URL is. The redaction itself lives in
+    `lib.txt.sanitize_sensitive_data()`."""
+
+    SECRETS = ('SECRET7', 'SECRET8', 'SECRET9')
+
+    def _assert_clean(self, target):
+        success, message = url.fetch(target, timeout=1, no_proxy=True)
+        self.assertFalse(success)
+        for secret in self.SECRETS:
+            self.assertNotIn(secret, message, msg=target)
+
+    @skip_without_httpx
+    def test_userinfo_without_a_scheme(self):
+        self._assert_clean('usr:SECRET7@h/x?token=SECRET8')
+
+    @skip_without_httpx
+    def test_userinfo_after_scheme_relative_slashes(self):
+        self._assert_clean('//usr:SECRET7@h/')
+
+    @skip_without_httpx
+    def test_query_name_the_name_list_did_not_know(self):
+        self._assert_clean('ftp://127.0.0.1/x?pw=SECRET8')
+
+    @skip_without_httpx
+    def test_url_httpx_cannot_parse(self):
+        self._assert_clean('http://[::1/x?token=SECRET8&pw=SECRET9')
+        self._assert_clean('http://usr:SECRET7@[::1/x?sid=SECRET8')
+
+
 class TestRedirectOriginCheck(unittest.TestCase):
     """Pure origin comparison used to decide whether a redirect may keep
     credential headers."""

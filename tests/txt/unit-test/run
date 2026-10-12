@@ -337,6 +337,68 @@ class TestSanitizeSensitiveData(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertEqual(txt.sanitize_sensitive_data(url), expected)
 
+    def test_redacts_userinfo_without_a_scheme(self):
+        for text, expected in (
+            ('usr:linuxfabrik@h/x', 'usr:******@h/x'),
+            ('for //usr:linuxfabrik@h/', 'for //usr:******@h/'),
+            ('(usr:linuxfabrik@h)', '(usr:******@h)'),
+            ('usr:linuxfabrik@h/x?token=a', 'usr:******@h/x?token=******'),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(txt.sanitize_sensitive_data(text), expected)
+
+    def test_keeps_what_only_looks_like_scheme_less_userinfo(self):
+        for text in (
+            'Contact: admin@example.com',
+            'mail admin@example.com now',
+            'https://h/?mail=a:b@example.com',
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(txt.sanitize_sensitive_data(text), text)
+
+    def test_a_counter_under_a_short_name_is_kept(self):
+        # Postfix prints the statistics of an smtpd session like this
+        line = 'disconnect from unknown[192.0.2.1] ehlo=1 auth=0/1 quit=1 commands=2/3'
+        self.assertEqual(txt.sanitize_sensitive_data(line), line)
+        for name in ('auth', 'sid', 'sig', 'pw'):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    txt.sanitize_sensitive_data(f'{name}=12'), f'{name}=12'
+                )
+                self.assertEqual(
+                    txt.sanitize_sensitive_data(f'{name}=1/2'), f'{name}=1/2'
+                )
+
+    def test_a_value_under_a_short_name_that_is_no_counter_is_redacted(self):
+        for text, expected in (
+            ('auth=SECRET9', 'auth=******'),
+            ('?auth=abc123', '?auth=******'),
+            ('?auth=123abc', '?auth=******'),
+            ('auth=1/2/3', 'auth=******'),
+            ('auth=-1', 'auth=******'),
+            ('x?sid=abc&pw=SECRET9', 'x?sid=******&pw=******'),
+            ('http-auth=12', 'http-auth=******'),
+            ('Authorization: Bearer abc', 'Authorization: Bearer ******'),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(txt.sanitize_sensitive_data(text), expected)
+
+    def test_redacts_query_names_a_service_uses_for_a_secret(self):
+        for name in (
+            'pw',
+            'auth',
+            'sig',
+            'signature',
+            'sid',
+            'session_id',
+            'credential',
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    txt.sanitize_sensitive_data(f'https://h/x?{name}=linuxfabrik&a=1'),
+                    f'https://h/x?{name}=******&a=1',
+                )
+
     # A password that starts with digits looks like a port; it is masked all the same.
     def test_redacts_url_password_that_starts_with_digits(self):
         for url in (

@@ -18,7 +18,7 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 import html
 import operator
@@ -61,10 +61,12 @@ ANSI_ESCAPE_PATTERN = re.compile(
 # `bypass` and `monkey` do not. `\b` cannot do that: it treats `_` as part of a word.
 # The environment variables of common clients that glue a prefix to the word without a
 # separator are listed on their own; a bare `pwd` is not, since `PWD` is the working
-# directory in every environment dump.
+# directory in every environment dump. `pw`, `auth`, `sig`, `sid` and the like are the
+# query parameters a service uses for a secret that a URL carries without being asked.
 SENSITIVE_NAMES = (
     r'password|passwd|pass|token|key|secret|api[_-]?key|access[_-]?token|http[_-]?auth'
     r'|mysql_pwd|pgpassword|sshpass'
+    r'|pw|auth|sig|signature|sid|session[_-]?id|credentials?'
 )
 
 SENSITIVE_FIELDS_PATTERN = re.compile(
@@ -110,6 +112,23 @@ SENSITIVE_URL_PATTERN = re.compile(
 # is left alone, and so is a bare 'https://user@host' that names no password.
 # The password is bounded at 256 characters: unbounded, a text with an '@' and many
 # 'x://y:' in front of it took quadratic time, 2.5 s for 56 KB.
+
+SENSITIVE_BARE_USERINFO_PATTERN = re.compile(
+    r'(?i)(?:^|(?<=[\s"\x27(\[<,])|(?<=//))([^\s:/\\@"\x27=<>]+:)(?!//)'
+    r'[^\s/\\@"\x27]{1,256}(@)'
+    r'(?=(?!if\d|none\b)[a-z0-9.\[\]:-]+(?:[/?#\s"\x27),;]|$))'
+)
+# The userinfo of an address whose scheme is missing, misspelled or implied, which
+# SENSITIVE_URL_PATTERN does not see because it wants `scheme://`:
+#   usr:secret123@host.example.com/x
+#   //usr:secret123@host.example.com/
+# It has to start a word (or follow `//`), and it is the narrow form on purpose: no `/`,
+# `\` or blank in the password, and what follows the `@` has to read like a host
+# (letters, digits, dots, dashes, brackets, a port) up to the end, a `/`, `?`, `#`, a
+# blank or a quote. That keeps what only looks alike: `dev:eth0@if5` and `lo@NONE` of
+# `ip link`, `pkg-1.2.3:5@x86_64` of a package listing, `path:/var/lib/foo@bar` and
+# `C:\Users\a@b`. A password holding one of the characters left out is found by the
+# `scheme://` form.
 
 SENSITIVE_JSON_PATTERN = re.compile(
     rf'(?i)("(?:[^"\\]*[^a-z0-9"\\])?(?:{SENSITIVE_NAMES})"\s*:\s*")'
@@ -502,9 +521,21 @@ def pluralize(noun, value, suffix='s'):
     return noun if int(value) == 1 else f'{noun}{suffix}'
 
 
+# Short names that are a secret in a query string (`?auth=abc123`) and a counter in a log
+# line: Postfix's `ehlo=1 auth=0/1 quit=1` is the statistics of a session, and a plain
+# number or a pair of them (`0/1`) is no credential.
+_COUNTER_NAME_PATTERN = re.compile(r'(?i)(?:^|[^a-z0-9_-])(?:auth|pw|sid|sig)\s*=\s*$')
+_COUNTER_VALUE_PATTERN = re.compile(r'\d+(?:/\d+)?')
+
+
 def _redact_field(match, replacement):
-    """Replace the value of a `name=value` match, keeping the quotes of a quoted one."""
+    """Replace the value of a `name=value` match, keeping the quotes of a quoted one.
+    A counter (`auth=0/1`) under a short name is left as it is."""
     value = match.group(2)
+    if _COUNTER_NAME_PATTERN.search(
+        match.group(1)
+    ) and _COUNTER_VALUE_PATTERN.fullmatch(value):
+        return match.group(0)
     quote = value[0] if value[0] in '"\'' else ''
     return f'{match.group(1)}{quote}{replacement}{quote}'
 
@@ -541,7 +572,10 @@ def sanitize_sensitive_data(msg, replacement='******'):
     - A credential that sits in its own element of a stringified argument list is
       redacted too, which is the shape an argv takes in an error message.
     - A credential carried inside a URL's userinfo is redacted as well, which is how
-      a proxy or a repository address smuggles one past a name-based match.
+      a proxy or a repository address smuggles one past a name-based match, also when
+      the scheme is missing (`usr:secret@host/x`, `//usr:secret@host/`).
+    - Query parameters a service uses for a secret (`pw`, `auth`, `sig`, `sid`, ...) are
+      redacted alongside `password` and `token`.
     - A name that merely starts with a sensitive word keeps its value, so an option
       naming a credential *file* still shows the path an admin needs to see.
 
@@ -574,6 +608,8 @@ def sanitize_sensitive_data(msg, replacement='******'):
     # sanitized ten times faster.
     if '://' in msg and '@' in msg:
         msg = SENSITIVE_URL_PATTERN.sub(rf'\1{replacement}\2', msg)
+    if ':' in msg and '@' in msg:
+        msg = SENSITIVE_BARE_USERINFO_PATTERN.sub(rf'\1{replacement}\2', msg)
     if '=' in msg or '-p' in msg or '-P' in msg:
         msg = SENSITIVE_FIELDS_PATTERN.sub(
             lambda match: _redact_field(match, replacement), msg
