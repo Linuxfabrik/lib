@@ -23,9 +23,10 @@ readable label instead of `'Unknown'`, regardless of which firmware answers.
 # pylint: disable=C0302
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092202'
+__version__ = '2026101201'
 
 import json
+import re
 from time import sleep as _sleep
 
 from . import base, cache, time, url
@@ -683,6 +684,22 @@ def get_cp_type(cp):
 _UNUSABLE_ACCOUNT_STATES = frozenset({3, 8, 9, 10, 11})
 
 
+# What the appliance puts into a path as its device ID: digits and letters, as seen on
+# every appliance; a `/`, `..`, `?`, `#` or `%` in it would address another path or end the
+# path. A value of the login response is the appliance's word for it, not ours, and is
+# checked before it travels into any request.
+_DEVICE_ID_REGEX = re.compile(r'[0-9A-Za-z_-]+')
+
+
+def _valid_device_id(device_id):
+    """Return the device ID as a string if it is one that may become part of a path,
+    else `None`. A number is accepted as the text it prints as."""
+    if isinstance(device_id, bool) or not isinstance(device_id, (str, int)):
+        return None
+    device_id = str(device_id)
+    return device_id if _DEVICE_ID_REGEX.fullmatch(device_id) else None
+
+
 def _cached_session(session_key):
     """
     Read a cached `(iBaseToken, Cookie, deviceId)` triple, or `None` if there is no usable one.
@@ -717,7 +734,11 @@ def _cached_session(session_key):
         return None
 
     if isinstance(session, list) and len(session) == 3 and all(session):
-        return session[0], session[1], session[2]
+        # a poisoned entry must not bypass the check the login applies
+        device_id = _valid_device_id(session[2])
+        if device_id is None:
+            return None
+        return session[0], session[1], device_id
     return None
 
 
@@ -932,6 +953,11 @@ def get_creds(args, force_relogin=False):
     # A caller-supplied device ID wins. It is the one an operator can look up in
     # DeviceManager, so an appliance whose answer does not match it is still addressable.
     device_id = getattr(args, 'DEVICE_ID', '') or session_data.get('deviceid')
+    if device_id and _valid_device_id(device_id) is None:
+        base.cu(
+            f'Login at {args.URL} succeeded, but the device ID is not one that can be used '
+            'in a request path.'
+        )
     if not device_id:
         base.cu(
             f'Login at {args.URL} succeeded, but the response carries no device ID and none '
@@ -941,12 +967,12 @@ def get_creds(args, force_relogin=False):
     if caching:
         cache.set(
             session_key,
-            json.dumps([ibasetoken, cookie, device_id]),
+            json.dumps([ibasetoken, cookie, _valid_device_id(device_id)]),
             time.now() + args.CACHE_EXPIRE * 60,
             filename=CACHE_FILENAME,
         )
 
-    return ibasetoken, cookie, device_id
+    return ibasetoken, cookie, _valid_device_id(device_id)
 
 
 def _as_envelope(success, response):

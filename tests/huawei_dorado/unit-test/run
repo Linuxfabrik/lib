@@ -64,6 +64,7 @@ conditions.
 """
 
 import contextlib
+import copy
 import io
 import json
 import sys
@@ -869,6 +870,63 @@ class TestGetCreds(HuaweiHttpTestBase):
         self.args = Args(DEVICE_ID='OPERATOR-SUPPLIED')
         _, _, device_id = huawei.get_creds(self.args)
         self.assertEqual(device_id, 'OPERATOR-SUPPLIED')
+
+    def _login_with(self, device_id):
+        login = copy.deepcopy(LOGIN_OK)
+        login[1]['response_json']['data']['deviceid'] = device_id
+        self.fetch_json.return_value = login
+        self.args = Args(DEVICE_ID='')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            try:
+                return huawei.get_creds(self.args), out.getvalue()
+            except SystemExit:
+                return None, out.getvalue()
+
+    def test_a_device_id_that_would_leave_the_path_is_refused(self):
+        # a login response is the appliance's word, and the id goes into every later path
+        for device_id in (
+            '1/../../../x',
+            '1?x=1#',
+            'x%2f..%2f',
+            '../x',
+            'a b',
+            'a\nb',
+            '',
+            '1/',
+        ):
+            with self.subTest(device_id=device_id):
+                creds, output = self._login_with(device_id)
+                self.assertIsNone(creds)
+                self.cache_set.assert_not_called()
+                self.assertNotIn(device_id or 'zz', output.replace('Login at', ''))
+
+    def test_a_device_id_that_is_not_text_is_refused(self):
+        for device_id in (None, True, ['1'], {'a': 1}, 1.5):
+            with self.subTest(device_id=device_id):
+                creds, _ = self._login_with(device_id)
+                self.assertIsNone(creds)
+
+    def test_a_numeric_device_id_is_accepted_as_text(self):
+        creds, _ = self._login_with(1234)
+        self.assertEqual(creds[2], '1234')
+        creds, _ = self._login_with('0a1b-C_2')
+        self.assertEqual(creds[2], '0a1b-C_2')
+
+    def test_a_poisoned_cache_entry_is_not_used(self):
+        for device_id in ('1/../../../x', '1?x=1#', 'x%2f..%2f'):
+            with self.subTest(device_id=device_id):
+                self.cache_get.return_value = json.dumps(['token', 'cookie', device_id])
+                self.fetch_json.reset_mock()
+                _, _, cached_id = huawei.get_creds(self.args)
+                # the cache was not trusted: a login took place
+                self.assertTrue(self.fetch_json.called)
+                self.assertEqual(cached_id, 'DEV0001')
+
+    def test_a_good_cache_entry_is_used(self):
+        self.cache_get.return_value = json.dumps(['token', 'cookie', 'DEV0001'])
+        self.assertEqual(huawei.get_creds(self.args), ('token', 'cookie', 'DEV0001'))
+        self.fetch_json.assert_not_called()
 
     def test_login_body_carries_credentials_and_scope(self):
         huawei.get_creds(self.args)
