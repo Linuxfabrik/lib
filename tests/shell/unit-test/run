@@ -702,5 +702,337 @@ class TestShellExecHidesArgumentsOnSpawnFailure(unittest.TestCase):
             self.assertNotIn('secret123', msg)
 
 
+MIB = 1024 * 1024
+
+
+def _python(code):
+    """The argv of a command that runs `code` with the interpreter of the tests."""
+    return [sys.executable, '-c', code]
+
+
+class TestShellExecMaxBytes(unittest.TestCase):
+    """`max_bytes` stops a command that prints more than the caller wants to hold. Without
+    it everything is captured, as it always was."""
+
+    def test_the_default_reads_everything(self):
+        code = "import sys; sys.stdout.write('x' * 3000000); sys.stderr.write('e')"
+        success, (out, err, retc) = shell.shell_exec(_python(code))
+        self.assertTrue(success)
+        self.assertEqual((len(out), err, retc), (3000000, 'e', 0))
+
+    def test_a_small_output_is_the_same_with_and_without_a_cap(self):
+        code = "import sys; print('out'); print('err', file=sys.stderr); sys.exit(3)"
+        plain = shell.shell_exec(_python(code))
+        for cap in (MIB, (MIB, MIB), (MIB, None), (None, MIB)):
+            with self.subTest(cap=cap):
+                self.assertEqual(shell.shell_exec(_python(code), max_bytes=cap), plain)
+
+    def test_a_stdout_over_the_cap_is_refused_and_the_command_is_killed(self):
+        code = (
+            'import os, sys, time\n'
+            "open(sys.argv[1], 'w').write(str(os.getpid()))\n"
+            'for _ in range(500):\n'
+            "    sys.stdout.buffer.write(b'x' * 1048576); sys.stdout.buffer.flush()\n"
+            'time.sleep(30)\n'
+        )
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = os.path.join(directory, 'pid')
+            started = time.monotonic()
+            result = shell.shell_exec(
+                [sys.executable, '-c', code, pid_file], max_bytes=4 * MIB, timeout=20
+            )
+            elapsed = time.monotonic() - started
+            with open(pid_file, encoding='utf-8') as handle:
+                pid = int(handle.read())
+        self.assertEqual(result[0], False)
+        self.assertEqual(result[1], f'The output of {sys.executable} exceeded 4 MiB.')
+        self.assertLess(elapsed, 10)
+        if os.name != 'nt':
+            # killed and reaped, not left as a zombie or a runaway
+            with self.assertRaises(ProcessLookupError):
+                os.kill(pid, 0)
+
+    def test_a_stderr_over_its_own_cap_is_refused(self):
+        code = "import sys\nsys.stdout.write('fine')\nsys.stderr.write('e' * 5000000)\n"
+        success, message = shell.shell_exec(_python(code), max_bytes=(100 * MIB, MIB))
+        self.assertFalse(success)
+        self.assertIn('exceeded 1 MiB', message)
+
+    def test_a_stdout_that_is_open_stays_open_with_none(self):
+        code = "import sys; sys.stdout.write('x' * 3000000)"
+        success, (out, _, _) = shell.shell_exec(_python(code), max_bytes=(None, MIB))
+        self.assertTrue(success)
+        self.assertEqual(len(out), 3000000)
+
+    def test_the_timeout_still_applies(self):
+        started = time.monotonic()
+        result = shell.shell_exec(
+            _python('import time; time.sleep(30)'), timeout=1, max_bytes=MIB
+        )
+        self.assertEqual(result, (False, 'Timeout after 1 seconds.'))
+        self.assertLess(time.monotonic() - started, 6)
+
+    def test_stdin_is_delivered_while_the_output_is_read(self):
+        # both pipes fill up: the input is 3 MB, and the command answers with 3 MB while
+        # it reads. Reading one pipe after the other would deadlock.
+        code = 'import sys\ndata = sys.stdin.read()\nsys.stdout.write(data)\n'
+        payload = 'y' * 3000000
+        success, (out, _, retc) = shell.shell_exec(
+            _python(code), stdin=payload, max_bytes=8 * MIB, timeout=30
+        )
+        self.assertTrue(success)
+        self.assertEqual((len(out), retc), (3000000, 0))
+
+    def test_a_command_that_does_not_read_its_stdin_does_not_hang_the_call(self):
+        success, (out, _, _) = shell.shell_exec(
+            _python("print('done')"), stdin='z' * 3000000, max_bytes=MIB, timeout=20
+        )
+        self.assertTrue(success)
+        self.assertEqual(out.strip(), 'done')
+
+    def test_a_missing_program_is_reported_as_before(self):
+        success, message = shell.shell_exec(['no-such-program-lf'], max_bytes=MIB)
+        self.assertFalse(success)
+        self.assertIn('not found', message)
+
+    def test_invalid_bytes_are_decoded_as_before(self):
+        code = "import sys; sys.stdout.buffer.write(b'caf\\xe9')"
+        plain = shell.shell_exec(_python(code))
+        self.assertEqual(shell.shell_exec(_python(code), max_bytes=MIB), plain)
+
+
+class TestShellExecMaxBytesArguments(unittest.TestCase):
+    """A `max_bytes` that cannot be used is refused before anything is started."""
+
+    def test_what_is_refused(self):
+        for value in (
+            '5',
+            b'5',
+            -1,
+            0,
+            1.5,
+            True,
+            False,
+            (1,),
+            (1, 2, 3),
+            [1],
+            (0, MIB),
+            (MIB, -1),
+            (MIB, '5'),
+            (True, MIB),
+            {'out': MIB},
+            (),
+        ):
+            with self.subTest(value=value):
+                with mock.patch.object(shell.subprocess, 'Popen') as popen:
+                    success, message = shell.shell_exec(
+                        _python("print('x')"), max_bytes=value
+                    )
+                self.assertFalse(success)
+                self.assertIn('max_bytes must be', message)
+                popen.assert_not_called()
+
+    def test_what_is_accepted(self):
+        for value in (
+            None,
+            1,
+            MIB,
+            (MIB, MIB),
+            [MIB, MIB],
+            (None, MIB),
+            (MIB, None),
+            (None, None),
+        ):
+            with self.subTest(value=value):
+                result = shell.shell_exec(_python("print('x')"), max_bytes=value)
+                self.assertNotIn('max_bytes must be', str(result))
+
+    def test_a_refusal_leaves_no_child_behind(self):
+        import tempfile
+
+        code = (
+            'import os, sys, time\n'
+            "open(sys.argv[1], 'w').write(str(os.getpid()))\n"
+            'time.sleep(30)\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = os.path.join(directory, 'pid')
+            success, _ = shell.shell_exec(
+                [sys.executable, '-c', code, pid_file], max_bytes='5'
+            )
+            self.assertFalse(success)
+            self.assertFalse(os.path.exists(pid_file))
+
+    def test_an_error_inside_the_read_kills_and_reaps_the_command(self):
+        import tempfile
+
+        code = (
+            'import os, sys, time\n'
+            "open(sys.argv[1], 'w').write(str(os.getpid()))\n"
+            'time.sleep(30)\n'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = os.path.join(directory, 'pid')
+
+            def fail(p, *args):
+                # the child is up once its pid file is written
+                for _ in range(100):
+                    if os.path.exists(pid_file) and os.path.getsize(pid_file):
+                        break
+                    time.sleep(0.05)
+                raise RuntimeError('boom')
+
+            with (
+                mock.patch.object(shell, '_communicate_bounded', fail),
+                self.assertRaises(RuntimeError),
+            ):
+                shell.shell_exec([sys.executable, '-c', code, pid_file], max_bytes=MIB)
+            with open(pid_file, encoding='utf-8') as handle:
+                pid = int(handle.read())
+        if os.name != 'nt':
+            with self.assertRaises(ProcessLookupError):
+                os.kill(pid, 0)
+
+    def test_a_cap_is_named_in_words_that_fit_it(self):
+        for cap, words in (
+            (1000, '1000 bytes'),
+            (MIB, '1 MiB'),
+            (4 * MIB, '4 MiB'),
+            (MIB + MIB // 2, '1.5 MiB'),
+            (MIB - 1, '1048575 bytes'),
+        ):
+            with self.subTest(cap=cap):
+                self.assertEqual(shell._size(cap), words)
+        _, message = shell.shell_exec(
+            _python("import sys; sys.stdout.write('x' * 5000)"), max_bytes=1000
+        )
+        self.assertEqual(
+            message, f'The output of {sys.executable} exceeded 1000 bytes.'
+        )
+
+
+class TestCommunicateBoundedThreads(unittest.TestCase):
+    """The reader that Windows uses, run here on the pipes of a POSIX command: it needs
+    nothing but `read1()` and file objects. A reviewer can check it against these cases."""
+
+    def _run(self, code, stdin='', timeout=10, limits=(MIB, MIB)):
+        p = subprocess.Popen(
+            _python(code),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.addCleanup(p.kill)
+        deadline = time.monotonic() + timeout
+        state = {}
+        try:
+            result = shell._communicate_bounded_threads(
+                p,
+                stdin.encode() if stdin else None,
+                deadline,
+                timeout,
+                limits,
+                'cmd',
+                state,
+            )
+        finally:
+            self.state = state
+            p.kill()
+            p.wait()
+            for pipe in (p.stdout, p.stderr):
+                pipe.close()
+        return result
+
+    def test_the_output_comes_back(self):
+        out, err = self._run("import sys; print('out'); print('err', file=sys.stderr)")
+        self.assertEqual((out.strip(), err.strip()), (b'out', b'err'))
+
+    def test_stdin_is_delivered(self):
+        out, _ = self._run(
+            'import sys; sys.stdout.write(sys.stdin.read())',
+            stdin='y' * 3000000,
+            limits=(8 * MIB, MIB),
+        )
+        self.assertEqual(len(out), 3000000)
+
+    def test_a_stream_over_its_cap_raises(self):
+        with self.assertRaises(shell._OutputTooLarge) as caught:
+            self._run(
+                "import sys; sys.stderr.write('e' * 5000000)", limits=(8 * MIB, MIB)
+            )
+        self.assertEqual(caught.exception.cap, MIB)
+
+    def test_the_timeout_raises(self):
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self._run('import time; time.sleep(30)', timeout=1)
+
+    def test_a_command_that_closes_stdout_early_does_not_burn_the_cpu(self):
+        # stdout ended, stderr lives for a second: the wait must sleep, not spin
+        code = 'import os, sys, time\nos.close(1)\ntime.sleep(1)\n'
+        cpu = time.process_time()
+        self._run(code, timeout=5)
+        self.assertLess(time.process_time() - cpu, 0.5)
+
+    def test_the_feeder_is_handed_back_while_it_writes(self):
+        # a command that never reads its input: the feeder blocks on a full pipe
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self._run('import time; time.sleep(30)', stdin='z' * 3000000, timeout=1)
+        feeder = self.state['feeder']
+        self.assertTrue(shell._feeding(self.state) or not feeder.is_alive())
+
+
+@unittest.skipUnless(
+    sys.platform.startswith('linux'), 'the memory limit is set with RLIMIT_AS'
+)
+class TestShellExecMaxBytesUnderALimit(unittest.TestCase):
+    """The real thing, with the memory of the caller limited, so a command that prints more
+    than the machine has fails the test instead of the machine."""
+
+    LIMIT = 400 * MIB
+
+    def _run(self, child_code, cap, expect):
+        parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = (
+            'import resource, sys\n'
+            f'resource.setrlimit(resource.RLIMIT_AS, ({self.LIMIT}, {self.LIMIT}))\n'
+            f'sys.path.insert(0, {parent!r})\n'
+            'import lib.shell as shell\n'
+            f'cmd = [sys.executable, "-c", {child_code!r}]\n'
+            f'print(shell.shell_exec(cmd, max_bytes={cap!r}, timeout=120))\n'
+        )
+        done = subprocess.run(
+            [sys.executable, '-c', script], capture_output=True, text=True, timeout=200
+        )
+        self.assertEqual(done.returncode, 0, msg=done.stderr[-600:])
+        self.assertIn(expect, done.stdout)
+
+    def test_300_mib_on_stdout(self):
+        self._run(
+            'import sys\n'
+            'for _ in range(300):\n'
+            '    sys.stdout.buffer.write(b"x" * 1048576); sys.stdout.buffer.flush()\n',
+            32 * MIB,
+            "exceeded 32 MiB.')",
+        )
+
+    def test_one_line_of_100_mib(self):
+        self._run(
+            'import sys; sys.stdout.buffer.write(b"y" * 104857600)',
+            32 * MIB,
+            "exceeded 32 MiB.')",
+        )
+
+    def test_a_full_stderr(self):
+        self._run(
+            'import sys\n'
+            'for _ in range(300):\n'
+            '    sys.stderr.buffer.write(b"e" * 1048576); sys.stderr.buffer.flush()\n',
+            (128 * MIB, MIB),
+            "exceeded 1 MiB.')",
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

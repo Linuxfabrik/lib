@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * redfish.py: `get_chassis()` returns the `Thermal` and `Power` links, `UNMONITORED_STATES`
 * restic.py: `repo_args()` and `password_file_arg()`
 * rhelappstreams.py: the life cycle of the RHEL Application Streams
+* shell.py: `shell_exec()` takes `max_bytes`
 * time.py: `datetime2local()`; `timestr2datetime()` and `timestr2epoch()` take `pattern='rfc2822'`
 * url.py: `fetch()` and `fetch_json()` take `deadline`
 * version.py: `check_eol()` takes `cycle` and `package_path`
@@ -86,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files, and `allowed_roots` given as a single path or an empty list no longer reads without confinement
 * huawei_dorado.py: `get_creds()` refuses a device ID that would change the path of every later request
 * kvm.py: `virsh()` refuses a URI that makes libvirt run a program, open a file or connect to a socket
-* logsource.py: `read()` reads each source from one checked handle, and a line of any length or a compressed file that inflates enormously can no longer exhaust the memory
+* logsource.py: `read()` reads each source from one checked handle, and a line of any length, a compressed file that inflates enormously or a command that never stops printing can no longer exhaust the memory
 * net.py: `get_proxy()` no longer puts a password or token into its error message
 * nextcloud.py: `run_occ()` refuses an untrusted installation, a symlinked `config.php` and any file `occ` loads that another account can change
 * openstack.py: `connect()` reuses a cached token only for the same identity

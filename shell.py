@@ -11,13 +11,14 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 
 import os
 import shlex
 import shutil
 import subprocess  # nosec B404 - this library is the subprocess helper
+import time
 
 from . import txt
 
@@ -159,6 +160,219 @@ def _decode_windows_output(raw):
         return txt.to_text(raw, encoding=_OEM_CODEC, errors='replace')
 
 
+class _OutputTooLarge(Exception):
+    """A command printed more than the caller allows. `cap` is the limit it went past."""
+
+    def __init__(self, cap):
+        super().__init__(cap)
+        self.cap = cap
+
+
+def _limits(max_bytes):
+    """Return the caps for standard output and standard error as a pair, or `None` if
+    `max_bytes` is not something `shell_exec()` takes: `None`, an integer of at least 1
+    (a cap for each stream), or a pair of those (stdout, stderr), `None` leaving a stream
+    open. A `bool` is no number here, and nothing else is accepted."""
+    if isinstance(max_bytes, (tuple, list)):
+        if len(max_bytes) != 2:
+            return None
+        limits = tuple(max_bytes)
+    else:
+        limits = (max_bytes, max_bytes)
+    for limit in limits:
+        if limit is None:
+            continue
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            return None
+    return limits
+
+
+def _size(size):
+    """A cap in words: whole MiB as `4 MiB`, a larger one with one decimal, less as bytes."""
+    mib = 1024 * 1024
+    if size < mib:
+        return f'{size} bytes'
+    if size % mib == 0:
+        return f'{size // mib} MiB'
+    return f'{size / mib:.1f} MiB'
+
+
+def _communicate_bounded(p, stdin, timeout, limits, cmd, state):
+    """Like `Popen.communicate()`, but a stream that grows past its cap stops the read.
+
+    Returns `(stdout, stderr)` as bytes, raises `subprocess.TimeoutExpired` where
+    `communicate()` would, and `_OutputTooLarge` when a stream is over its cap. The caller
+    kills the command. Output is taken in pieces and never held beyond the cap plus one
+    piece, which is the point: `communicate()` keeps everything a runaway command prints.
+    Both pipes are read at the same time, so a command that fills one while the other is
+    full does not block.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    if os.name == 'nt':
+        return _communicate_bounded_threads(
+            p, stdin, deadline, timeout, limits, cmd, state
+        )
+    import selectors  # POSIX: the pipes are plain file descriptors
+
+    chunks = {'out': [], 'err': []}
+    sizes = {'out': 0, 'err': 0}
+    caps = dict(zip(('out', 'err'), limits))
+    selector = selectors.DefaultSelector()
+    selector.register(p.stdout, selectors.EVENT_READ, 'out')
+    selector.register(p.stderr, selectors.EVENT_READ, 'err')
+    pending = memoryview(stdin) if stdin else None
+    position = 0
+    if pending is not None:
+        os.set_blocking(p.stdin.fileno(), False)
+        selector.register(p.stdin, selectors.EVENT_WRITE, 'in')
+    elif p.stdin is not None:
+        p.stdin.close()
+    try:
+        while selector.get_map():
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            for key, _ in selector.select(remaining):
+                if key.data == 'in':
+                    try:
+                        position += os.write(
+                            key.fd, pending[position : position + 65536]
+                        )
+                    except BlockingIOError:
+                        continue
+                    except BrokenPipeError:
+                        position = len(pending)
+                    if position >= len(pending):
+                        selector.unregister(p.stdin)
+                        p.stdin.close()
+                    continue
+                data = os.read(key.fd, 65536)
+                if not data:
+                    selector.unregister(key.fileobj)
+                    continue
+                chunks[key.data].append(data)
+                sizes[key.data] += len(data)
+                if caps[key.data] is not None and sizes[key.data] > caps[key.data]:
+                    raise _OutputTooLarge(caps[key.data])
+        remaining = None if deadline is None else max(deadline - time.monotonic(), 0)
+        p.wait(timeout=remaining)
+    finally:
+        selector.close()
+        # `communicate()` closes the pipes it read, and so does this
+        p.stdout.close()
+        p.stderr.close()
+    return b''.join(chunks['out']), b''.join(chunks['err'])
+
+
+def _communicate_bounded_threads(p, stdin, deadline, timeout, limits, cmd, state):
+    """`_communicate_bounded()` for Windows, where a pipe cannot be waited on with
+    `select()`: a thread per pipe, polled from here. The threads are daemons and end with
+    the caller, as the ones of `communicate()` do. The thread that feeds standard input is
+    handed back in `state['feeder']`, so the caller can tell whether it is still writing."""
+    import threading  # only here: nothing else of this module needs it
+
+    chunks = {'out': bytearray(), 'err': bytearray()}
+    too_large = []
+
+    def pump(stream, key, cap):
+        while True:
+            data = stream.read1(65536)
+            if not data:
+                return
+            chunks[key].extend(data)
+            if cap is not None and len(chunks[key]) > cap:
+                too_large.append(cap)
+                return
+
+    def feed():
+        try:
+            p.stdin.write(stdin)
+        except OSError:
+            pass
+        finally:
+            try:
+                p.stdin.close()
+            except OSError:
+                pass
+
+    threads = [
+        threading.Thread(target=pump, args=(p.stdout, 'out', limits[0]), daemon=True),
+        threading.Thread(target=pump, args=(p.stderr, 'err', limits[1]), daemon=True),
+    ]
+    if stdin:
+        state['feeder'] = threading.Thread(target=feed, daemon=True)
+        threads.append(state['feeder'])
+    elif p.stdin is not None:
+        p.stdin.close()
+    for thread in threads:
+        thread.start()
+    while any(thread.is_alive() for thread in threads):
+        if too_large:
+            raise _OutputTooLarge(too_large[0])
+        if deadline is not None and time.monotonic() >= deadline:
+            raise subprocess.TimeoutExpired(cmd, timeout)
+        time.sleep(0.02)
+    if too_large:
+        raise _OutputTooLarge(too_large[0])
+    remaining = None if deadline is None else max(deadline - time.monotonic(), 0)
+    p.wait(timeout=remaining)
+    return bytes(chunks['out']), bytes(chunks['err'])
+
+
+def _feeding(state):
+    """Whether the thread that writes standard input of the command is still at it."""
+    feeder = state.get('feeder')
+    return feeder is not None and feeder.is_alive()
+
+
+def _kill(p, keep_stdin=False):
+    """Kill a command and let go of it, without waiting for ever on a child that cannot
+    die: it is reaped as far as `_KILL_GRACE` allows and its pipes are closed. With
+    `keep_stdin`, standard input stays open: a thread is still writing to it, and closing a
+    pipe under a blocked write is what a Windows caller must not do. The write ends with the
+    process."""
+    p.kill()
+    try:
+        # Reaping the child is what turns the kill into a finished process, but it
+        # must not become a second wait without an end. A command that blocks on
+        # storage that has gone away - `lvs` while one PV does not answer, `df` on a
+        # dead network mount - sits in an uninterruptible sleep, where it takes the
+        # signal and still cannot act on it. Verified on Rocky 10 / kernel 6.12
+        # against a suspended device-mapper device: without a bound, a call with
+        # `timeout=5` never returned. Give the kill a moment to land and hand the
+        # timeout back either way; the orphan ends when its storage answers again.
+        #
+        # Wait for the process, not for its pipes. A grandchild the command left
+        # behind keeps the pipes open after the command itself is gone, and
+        # reading them until the end left the killed command unreaped: a zombie
+        # for as long as the caller runs. `wait()` with a timeout polls the process
+        # alone (`waitpid(WNOHANG)`, CPython `Popen._wait()`), so it is bounded the
+        # same way.
+        p.wait(timeout=_KILL_GRACE)
+    except subprocess.TimeoutExpired:
+        pass
+    # Let go of the pipes rather than leaving them open for the lifetime of the
+    # caller. An orphan writing into them gets EPIPE the next time it runs, which
+    # is one more thing that ends it.
+    #
+    # Not stdout and stderr on Windows. There communicate() reads them in daemon
+    # threads that are still blocked in read() after a timeout, and closing a pipe
+    # waits for the lock that read holds (`ENTER_BUFFERED` in CPython's
+    # Modules/_io/bufferedio.c). A child that inherited the pipes, a program
+    # started from a PowerShell command for example, kept them open, and a call
+    # with `timeout=3` returned after 29 seconds. Measured with Python 3.13 on
+    # Windows Server 2025. The threads end with the caller.
+    pipes = (p.stdin,) if os.name == 'nt' else (p.stdin, p.stdout, p.stderr)
+    if keep_stdin:
+        pipes = tuple(pipe for pipe in pipes if pipe is not p.stdin)
+    for pipe in pipes:
+        try:
+            if pipe is not None:
+                pipe.close()
+        except OSError:
+            pass
+
+
 def shell_exec(
     cmd,
     env=None,
@@ -168,6 +382,7 @@ def shell_exec(
     lc_all='C',
     run_as=None,
     run_as_session=True,
+    max_bytes=None,
 ):
     """
     Execute a command in a subprocess, given as a list of arguments (argv).
@@ -223,6 +438,15 @@ def shell_exec(
         plain form; the session wrapper turns the permitted program into `env` and makes
         the rule miss. Leave it at True wherever a per-user session service such as
         rootless Podman or `systemctl --user` has to be reached. Defaults to True.
+    max_bytes : int or tuple, optional
+        The most the command may print, in bytes: one number for standard output and
+        standard error each, or `(stdout, stderr)`; `None` for one of the two leaves it open.
+        Both are read as they come, and a command that goes past its cap is killed and
+        reported as `(False, 'The output of <program> exceeded <N> MiB.')`, instead of
+        being held in memory until it ends. A value that is none of these, a `bool`, a number
+        below 1 or a tuple of another length for example, is refused with
+        `(False, message)` before the command is started. Defaults to None, which reads
+        everything the command prints, as before.
 
     Returns
     -------
@@ -259,6 +483,16 @@ def shell_exec(
         )
     # The program the caller asked for, before `run_as` puts `sudo` in front of it.
     program = cmd[0] if cmd else ''
+    limits = None
+    if max_bytes is not None:
+        # before anything is started: a value that is refused later would leave a child
+        # behind
+        limits = _limits(max_bytes)
+        if limits is None:
+            return False, (
+                'max_bytes must be None, an integer of at least 1, or a pair of those '
+                f'(stdout, stderr), not {max_bytes!r}.'
+            )
 
     if run_as:
         import pwd  # Unix-only; per-user session switching does not apply on Windows
@@ -314,51 +548,36 @@ def shell_exec(
         # program is missing and every argument would otherwise be shown.
         return False, f'Error "{e}" while calling command "{program}"'
 
+    state = {}  # what the Windows reader hands back, see _communicate_bounded_threads()
     try:
-        stdout, stderr = p.communicate(
-            input=txt.to_bytes(stdin) if stdin else None,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        p.kill()
-        try:
-            # Reaping the child is what turns the kill into a finished process, but it
-            # must not become a second wait without an end. A command that blocks on
-            # storage that has gone away - `lvs` while one PV does not answer, `df` on a
-            # dead network mount - sits in an uninterruptible sleep, where it takes the
-            # signal and still cannot act on it. Verified on Rocky 10 / kernel 6.12
-            # against a suspended device-mapper device: without a bound, a call with
-            # `timeout=5` never returned. Give the kill a moment to land and hand the
-            # timeout back either way; the orphan ends when its storage answers again.
-            #
-            # Wait for the process, not for its pipes. A grandchild the command left
-            # behind keeps the pipes open after the command itself is gone, and
-            # reading them until the end left the killed command unreaped: a zombie
-            # for as long as the caller runs. `wait()` with a timeout polls the process
-            # alone (`waitpid(WNOHANG)`, CPython `Popen._wait()`), so it is bounded the
-            # same way.
-            p.wait(timeout=_KILL_GRACE)
-        except subprocess.TimeoutExpired:
-            pass
-        # Let go of the pipes rather than leaving them open for the lifetime of the
-        # caller. An orphan writing into them gets EPIPE the next time it runs, which
-        # is one more thing that ends it.
-        #
-        # Not stdout and stderr on Windows. There communicate() reads them in daemon
-        # threads that are still blocked in read() after a timeout, and closing a pipe
-        # waits for the lock that read holds (`ENTER_BUFFERED` in CPython's
-        # Modules/_io/bufferedio.c). A child that inherited the pipes, a program
-        # started from a PowerShell command for example, kept them open, and a call
-        # with `timeout=3` returned after 29 seconds. Measured with Python 3.13 on
-        # Windows Server 2025. The threads end with the caller.
-        pipes = (p.stdin,) if os.name == 'nt' else (p.stdin, p.stdout, p.stderr)
-        for pipe in pipes:
+        if max_bytes is None:
+            stdout, stderr = p.communicate(
+                input=txt.to_bytes(stdin) if stdin else None,
+                timeout=timeout,
+            )
+        else:
             try:
-                if pipe is not None:
-                    pipe.close()
-            except OSError:
-                pass
+                stdout, stderr = _communicate_bounded(
+                    p,
+                    txt.to_bytes(stdin) if stdin else None,
+                    timeout,
+                    limits,
+                    cmd,
+                    state,
+                )
+            except (subprocess.TimeoutExpired, _OutputTooLarge):
+                raise
+            except BaseException:
+                # whatever else goes wrong, the command it was reading from does not
+                # outlive the call
+                _kill(p, keep_stdin=_feeding(state))
+                raise
+    except subprocess.TimeoutExpired:
+        _kill(p, keep_stdin=_feeding(state))
         return False, f'Timeout after {timeout} seconds.'
+    except _OutputTooLarge as e:
+        _kill(p, keep_stdin=_feeding(state))
+        return False, f'The output of {program} exceeded {_size(e.cap)}.'
 
     # Decode the captured bytes. On Windows a program picks the code page of its
     # piped output itself, see _decode_windows_output().

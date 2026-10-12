@@ -1546,6 +1546,133 @@ class TestBoundedReadsUnderALimit(unittest.TestCase):
         self.assertIn(str(13 + 300 * 1024 * 1024), out)
 
 
+class TestCommandOutputIsBounded(unittest.TestCase):
+    """What `journalctl` and the container client print is held in memory by the caller,
+    so it is capped: past the cap the command is killed and the read fails."""
+
+    def test_journalctl_gets_a_cap_for_its_output_and_a_small_one_for_its_hints(self):
+        with patch(
+            'lib.shell.shell_exec', return_value=(True, ('', '', 0))
+        ) as shell_exec:
+            lib.logsource.read('systemd:sshd')
+        self.assertEqual(
+            shell_exec.call_args.kwargs['max_bytes'],
+            (
+                lib.logsource.MAX_COMMAND_OUTPUT_BYTES,
+                lib.logsource.MAX_JOURNALCTL_STDERR_BYTES,
+            ),
+        )
+
+    def test_a_container_client_gets_the_same_cap_for_both_streams(self):
+        # most applications log to standard error, which is log content here
+        for source in ('podman:db', 'docker:db', 'kubectl:db'):
+            with self.subTest(source=source):
+                with patch(
+                    'lib.shell.shell_exec', return_value=(True, ('', '', 0))
+                ) as shell_exec:
+                    lib.logsource.read(source)
+                self.assertEqual(
+                    shell_exec.call_args.kwargs['max_bytes'],
+                    lib.logsource.MAX_COMMAND_OUTPUT_BYTES,
+                )
+
+    def test_the_caps(self):
+        self.assertEqual(lib.logsource.MAX_COMMAND_OUTPUT_BYTES, 128 * 1024 * 1024)
+        self.assertEqual(lib.logsource.MAX_JOURNALCTL_STDERR_BYTES, 1024 * 1024)
+
+    def test_a_command_that_went_over_the_cap_fails_the_read(self):
+        message = 'The output of journalctl exceeded 128 MiB.'
+        for source in ('systemd:sshd', 'docker:db'):
+            with self.subTest(source=source):
+                with patch('lib.shell.shell_exec', return_value=(False, message)):
+                    success, result = lib.logsource.read(source)
+                self.assertFalse(success)
+                self.assertEqual(result, message)
+
+
+@unittest.skipUnless(sys.platform.startswith('linux'), 'a fake program and RLIMIT_AS')
+class TestRunawayCommandUnderALimit(unittest.TestCase):
+    """A fake `journalctl` and `podman` that never stop printing, read with the memory of
+    the process limited and the cap lowered, so a regression is a MemoryError."""
+
+    LIMIT = 400 * 1024 * 1024
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix='logsource-fake-')
+        self.addCleanup(shutil.rmtree, self.tmpdir, ignore_errors=True)
+        for program in ('journalctl', 'podman'):
+            path = os.path.join(self.tmpdir, program)
+            with open(path, 'w', encoding='utf-8') as handle:
+                handle.write(
+                    f'#!{sys.executable}\n'
+                    'import sys\n'
+                    'chunk = b"x" * 1048576\n'
+                    'while True:\n'
+                    '    sys.stdout.buffer.write(chunk)\n'
+                    '    sys.stdout.buffer.flush()\n'
+                )
+            os.chmod(path, 0o755)
+
+    def _read(self, source):
+        parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = (
+            'import os, resource, sys\n'
+            f'resource.setrlimit(resource.RLIMIT_AS, ({self.LIMIT}, {self.LIMIT}))\n'
+            f'os.environ["PATH"] = {self.tmpdir!r} + os.pathsep + os.environ["PATH"]\n'
+            f'sys.path.insert(0, {parent!r})\n'
+            'import lib.logsource as ls\n'
+            'ls.MAX_COMMAND_OUTPUT_BYTES = 32 * 1024 * 1024\n'
+            f'print(ls.read({source!r}, max_lines=10, timeout=60))\n'
+        )
+        done = subprocess.run(
+            [sys.executable, '-c', script], capture_output=True, text=True, timeout=120
+        )
+        self.assertEqual(done.returncode, 0, msg=done.stderr[-600:])
+        return done.stdout
+
+    def test_journalctl(self):
+        out = self._read('systemd:sshd')
+        self.assertIn('exceeded 32 MiB', out)
+
+    def test_a_container_client(self):
+        out = self._read('podman:db')
+        self.assertIn('exceeded 32 MiB', out)
+
+
+class TestContainerStderrIsRead(unittest.TestCase):
+    """Applications log to standard error as much as to standard output, so a container
+    client's standard error is read like its standard output, up to the same cap."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix='logsource-stderr-')
+        self.addCleanup(shutil.rmtree, self.tmpdir, ignore_errors=True)
+        path = os.path.join(self.tmpdir, 'podman')
+        with open(path, 'w', encoding='utf-8') as handle:
+            handle.write(
+                f'#!{sys.executable}\n'
+                'import sys\n'
+                'for n in range(30000):\n'
+                '    sys.stderr.write("2026-08-28T15:30:26.%09d+02:00 " % n + "x" * 70 + "\\n")\n'
+            )
+        os.chmod(path, 0o755)
+        saved = os.environ['PATH']
+        os.environ['PATH'] = self.tmpdir + os.pathsep + saved
+        self.addCleanup(os.environ.__setitem__, 'PATH', saved)
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'a fake program')
+    def test_three_mib_on_standard_error_are_read(self):
+        success, result = lib.logsource.read('podman:db')
+        self.assertTrue(success, msg=result)
+        self.assertEqual(len(result['lines']), 30000)
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'a fake program')
+    def test_a_cap_below_that_refuses_it(self):
+        with patch.object(lib.logsource, 'MAX_COMMAND_OUTPUT_BYTES', 1024 * 1024):
+            success, result = lib.logsource.read('podman:db')
+        self.assertFalse(success)
+        self.assertIn('exceeded 1 MiB', result)
+
+
 class TestCoveredWindow(unittest.TestCase):
     """Which stretch of time a set of logs covers."""
 

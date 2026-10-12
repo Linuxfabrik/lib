@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101202'
+__version__ = '2026101203'
 
 import collections
 import datetime
@@ -361,6 +361,18 @@ _FINGERPRINT_LENGTH = 256
 MAX_LINE_BYTES = 1024 * 1024
 MAX_ROTATED_BYTES = 512 * 1024 * 1024
 _LINE_OVERHEAD = 64
+
+# What a journald unit or a container may print in one read, per stream: a resumed read
+# hands over everything logged since the cursor or the timestamp, and `--lines` or `--tail`
+# do not cap it. A runaway unit would otherwise be held in memory whole, up to what it prints
+# within the timeout. Past the cap the command is killed and the read fails with a message
+# that says so. A capture costs about three times its size in memory (the chunks, the joined
+# bytes, the decoded text and the split lines), which is why it is a quarter of what is
+# read out of rotated files. `journalctl` says little on standard error, hints only, so
+# its cap is small; a container client passes what the application wrote to standard error,
+# which is log content, and gets the same cap as standard output.
+MAX_COMMAND_OUTPUT_BYTES = 128 * 1024 * 1024
+MAX_JOURNALCTL_STDERR_BYTES = 1024 * 1024
 
 
 class _BudgetExhausted(Exception):
@@ -866,7 +878,11 @@ def _read_journald(unit, position, max_lines, since, timeout):
         # below instead. Verified against systemd 259, src/journal/journalctl-show.c,
         # seek_journal().
         cmd.append(f'--lines={max_lines}')
-    success, result = shell.shell_exec(cmd, timeout=timeout)
+    success, result = shell.shell_exec(
+        cmd,
+        timeout=timeout,
+        max_bytes=(MAX_COMMAND_OUTPUT_BYTES, MAX_JOURNALCTL_STDERR_BYTES),
+    )
     if not success:
         return False, result
     stdout, stderr, retc = result
@@ -998,7 +1014,9 @@ def _read_container(engine, target, position, max_lines, since, timeout):
     if max_lines:
         cmd.append(f'--tail={max_lines}')
     cmd.append(target)
-    success, result = shell.shell_exec(cmd, timeout=timeout)
+    success, result = shell.shell_exec(
+        cmd, timeout=timeout, max_bytes=MAX_COMMAND_OUTPUT_BYTES
+    )
     if not success:
         return False, result
     stdout, stderr, retc = result
