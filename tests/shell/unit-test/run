@@ -875,8 +875,10 @@ class TestShellExecMaxBytesArguments(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             pid_file = os.path.join(directory, 'pid')
+            commands = []
 
             def fail(p, *args):
+                commands.append(p)
                 # the child is up once its pid file is written
                 for _ in range(100):
                     if os.path.exists(pid_file) and os.path.getsize(pid_file):
@@ -889,6 +891,12 @@ class TestShellExecMaxBytesArguments(unittest.TestCase):
                 self.assertRaises(RuntimeError),
             ):
                 shell.shell_exec([sys.executable, '-c', code, pid_file], max_bytes=MIB)
+            # No reader was started before the injected error, so nobody is blocked on the
+            # pipes. On Windows `_kill()` leaves stdout and stderr to the caller by design
+            # (the readers of a real call may still be blocked in them), and this test is the
+            # caller: close them, so the run prints no ResourceWarning.
+            for pipe in (commands[0].stdout, commands[0].stderr):
+                pipe.close()
             with open(pid_file, encoding='utf-8') as handle:
                 pid = int(handle.read())
         if os.name != 'nt':
