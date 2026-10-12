@@ -891,6 +891,80 @@ class TestIdentifierQuoting(unittest.TestCase):
         self.assertEqual(load[0]['a1'], 10)
         self.assertEqual(load[0]['an'], 7.5)
 
+    def _load_table(self, rows):
+        db.create_table(self.conn, 'name TEXT, a, timestamp', table='t')
+        for name, value, timestamp in rows:
+            db.insert(
+                self.conn,
+                {'name': name, 'a': value, 'timestamp': timestamp},
+                table='t',
+            )
+        db.commit(self.conn)
+
+    def test_compute_load_skips_a_sensor_with_a_null_value(self):
+        self._load_table([('vm', 100, 1), ('vm', None, 2), ('vm', 300, 3)])
+        self.assertEqual(
+            db.compute_load(self.conn, 'name', ['a'], 3, table='t'), (True, False)
+        )
+
+    def test_compute_load_skips_a_sensor_with_a_null_timestamp(self):
+        self._load_table([('vm', 100, 1), ('vm', 200, None), ('vm', 300, 3)])
+        self.assertEqual(
+            db.compute_load(self.conn, 'name', ['a'], 3, table='t'), (True, False)
+        )
+
+    def test_compute_load_skips_a_sensor_with_a_text_value(self):
+        self._load_table([('vm', 100, 1), ('vm', 'x', 2), ('vm', 300, 3)])
+        self.assertEqual(
+            db.compute_load(self.conn, 'name', ['a'], 3, table='t'), (True, False)
+        )
+
+    def test_compute_load_keeps_the_healthy_sensors_beside_a_broken_one(self):
+        self._load_table(
+            [('bad', 1, 1), ('bad', None, 2), ('good', 10, 1), ('good', 20, 2)]
+        )
+        ok, load = db.compute_load(self.conn, 'name', ['a'], 2, table='t')
+        self.assertTrue(ok)
+        self.assertEqual([row['name'] for row in load], ['good'])
+
+    def _cut_table(self, rows):
+        db.create_table(self.conn, 'name TEXT, n INTEGER, timestamp INTEGER', table='t')
+        for name, n, timestamp in rows:
+            db.insert(
+                self.conn, {'name': name, 'n': n, 'timestamp': timestamp}, table='t'
+            )
+        db.commit(self.conn)
+
+    def _count(self, where):
+        ok, rows = db.select(self.conn, f'SELECT COUNT(*) AS c FROM t WHERE {where}')
+        self.assertTrue(ok, rows)
+        return rows[0]['c']
+
+    def test_cut_per_sensor_trims_a_sensor_without_a_name(self):
+        # `NULL = NULL` is unknown, so these rows were never deleted
+        self._cut_table([(None, n, n) for n in range(6)])
+        self.assertEqual(
+            db.cut_per_sensor(self.conn, 'name', _max=2, table='t'), (True, True)
+        )
+        self.assertEqual(self._count('name IS NULL'), 2)
+
+    def test_cut_per_sensor_trims_rows_without_a_timestamp_first(self):
+        self._cut_table([('a', 1, None), ('a', 2, None), ('a', 3, 10), ('a', 4, 11)])
+        db.cut_per_sensor(self.conn, 'name', _max=2, table='t')
+        _, rows = db.select(self.conn, 'SELECT n FROM t ORDER BY n')
+        self.assertEqual([row['n'] for row in rows], [3, 4])
+
+    def test_cut_per_sensor_refuses_a_max_that_is_not_an_int(self):
+        self._cut_table([('a', 1, 1)])
+        for bad in (True, '3', 2.5, None):
+            with self.subTest(_max=bad):
+                success, message = db.cut_per_sensor(
+                    self.conn, 'name', _max=bad, table='t'
+                )
+                self.assertFalse(success)
+                self.assertIn('_max', message)
+        self.assertEqual(self._count('1 = 1'), 1)
+
     @unittest.skipUnless(HAS_GENERATED_COLUMNS, 'needs SQLite 3.31.0')
     def test_create_index_accepts_generated_column(self):
         # PRAGMA table_info omits generated columns, so validating against it rejected a column

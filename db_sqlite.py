@@ -32,7 +32,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026101201'
 
 import csv
 import functools
@@ -549,6 +549,11 @@ def commit(conn):
         return False, f'Commit failed: {e}'
 
 
+def _is_number(value):
+    """Return whether `value` is an int or a float, the types a rate is computed from."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     """
     Calculate per-second load metrics based on historical data in a SQLite table.
@@ -586,7 +591,8 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
     -----
     - The table must contain a `timestamp` column (UNIX epoch seconds).
     - A sensor whose counter is lower than it was is left out too. The counter did not
-      go backwards, it started over, and no rate can be computed across a restart.
+      go backwards, it started over, and no rate can be computed across a restart. So is
+      a sensor with a missing (NULL) value or timestamp in the rows compared.
     - A sensor with fewer than `count` entries is left out of the result rather than
       blanking out the whole call. Sensors come and go while a consumer runs (an interface
       is brought up, a virtual machine is started), and one of them being new is no reason
@@ -666,6 +672,16 @@ def compute_load(conn, sensorcol, datacols, count, table='perfdata'):
         # that appeared a moment ago must not blank out the ones that have been
         # measured all along.
         if len(perfdata) < count:
+            continue
+        # A row without a value or timestamp (NULL, or text in a column without numeric
+        # affinity) carries no rate either, and compared or subtracted it raised a
+        # TypeError out of the whole call. The sensor is left out like after a restart.
+        used = (perfdata[0], perfdata[1], perfdata[count - 1])
+        if any(
+            not _is_number(row.get(key))
+            for row in used
+            for key in ('timestamp', *[key for key in datacols if key in perfdata[0]])
+        ):
             continue
 
         load1_delta = perfdata[0]['timestamp'] - perfdata[1]['timestamp']
@@ -1140,8 +1156,11 @@ def cut_per_sensor(
     Keep the five newest samples of every interface:
     >>> cut_per_sensor(conn, sensorcol='interface', _max=5)
     """
-    if _max < 1:
-        return False, f'Keeping rows per sensor needs a _max of at least 1, got {_max}'
+    if not isinstance(_max, int) or isinstance(_max, bool) or _max < 1:
+        return (
+            False,
+            f'Keeping rows per sensor needs a _max of at least 1, got {_max!r}',
+        )
 
     known = __table_columns(conn, table)
     if known and sensorcol not in known:
@@ -1151,17 +1170,23 @@ def cut_per_sensor(
     quoted_sensorcol = __quote_ident(sensorcol)
 
     # Delete every row that already has `_max` newer rows of the same sensor.
-    # `table` and `sensorcol` are quoted above, `_max` is bound.
+    # `table` and `sensorcol` are quoted above, `_max` is bound. `IS` rather than `=`,
+    # and a missing timestamp counted as the oldest: with `=` and `>`, NULL compares as
+    # unknown, so the rows of a NULL sensor, or without a timestamp, were never deleted
+    # and grew the table without bound.
     sql = f"""
         DELETE FROM {quoted_table}
         WHERE rowid IN (
             SELECT a.rowid FROM {quoted_table} a
             WHERE (
                 SELECT COUNT(*) FROM {quoted_table} b
-                WHERE b.{quoted_sensorcol} = a.{quoted_sensorcol}
+                WHERE b.{quoted_sensorcol} IS a.{quoted_sensorcol}
                   AND (
-                    b.timestamp > a.timestamp
-                    OR (b.timestamp = a.timestamp AND b.rowid > a.rowid)
+                    IFNULL(b.timestamp, -1) > IFNULL(a.timestamp, -1)
+                    OR (
+                      IFNULL(b.timestamp, -1) = IFNULL(a.timestamp, -1)
+                      AND b.rowid > a.rowid
+                    )
                   )
             ) >= :_max
         );
