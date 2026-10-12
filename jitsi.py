@@ -12,7 +12,7 @@
 needed by more than one Jitsi consumer."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026101201'
 
 import base64  # pylint: disable=C0413
 
@@ -44,10 +44,9 @@ def get_data(args, _type='json'):
 
     Returns
     -------
-    tuple
+    tuple (bool, dict or str)
         - **success** (`bool`): Whether the request succeeded.
-        - **result** (`dict` or `str`): Parsed JSON or raw response.
-        - **False** (`bool`): False if fetch failed.
+        - **result** (`dict` or `str`): Parsed JSON or raw response, or the error message.
 
     Examples
     --------
@@ -71,6 +70,6 @@ def get_data(args, _type='json'):
     )
 
     if not success:
-        return (success, result, False)
+        return (False, result)
 
     return (True, result)
