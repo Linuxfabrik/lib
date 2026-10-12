@@ -380,7 +380,13 @@ class TestTreeOps(unittest.TestCase):
         self.assertEqual(disk.rm_dir(dst_dir), (True, None))
         self.assertFalse(os.path.isdir(dst_dir))
 
-    @unittest.skipIf(os.geteuid() == 0, 'root reads every file regardless of its mode')
+    @unittest.skipIf(
+        os.name == 'nt', 'chmod does not make a file unreadable on Windows'
+    )
+    @unittest.skipIf(
+        hasattr(os, 'geteuid') and os.geteuid() == 0,
+        'root reads every file regardless of its mode',
+    )
     def test_copy_dir_names_the_first_failed_file_and_counts_the_rest(self):
         # copytree() collects one entry per failed file; SUSE ships lynis' include
         # files readable by root only, which made that list run to 13,000 characters
@@ -1227,6 +1233,7 @@ class TestConfinedOpenRoots(unittest.TestCase):
         self.assertTrue(disk.is_within(self.inside, [self.root]))
 
 
+@unittest.skipUnless(hasattr(os, 'getuid'), 'no POSIX owners here')
 class TestResolveTrustedPath(unittest.TestCase):
     """Nobody but the given owners can change what a trusted path resolves to.
 
@@ -1429,7 +1436,9 @@ class TestResolveTrustedTree(unittest.TestCase):
         os.symlink(self.tree, os.path.join(self.deep, 'loop'))
         self.assertEqual(self.check(), (True, os.path.realpath(self.tree)))
 
-    @unittest.skipIf(os.geteuid() == 0, 'root can list any directory')
+    @unittest.skipIf(
+        hasattr(os, 'geteuid') and os.geteuid() == 0, 'root can list any directory'
+    )
     def test_unlistable_directory_is_refused(self):
         os.chmod(self.deep, 0o300)
         success, result = self.check()
@@ -1526,6 +1535,7 @@ class TestResolveTrustedTree(unittest.TestCase):
         self.assertIn('writable by everyone', result)
 
 
+@unittest.skipUnless(hasattr(os, 'getuid'), 'no POSIX owners here')
 class TestResolveTrustedPathAcl(unittest.TestCase):
     """An ACL entry that lets another account write counts like a mode bit.
 
