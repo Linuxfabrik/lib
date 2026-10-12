@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101202'
+__version__ = '2026101203'
 
 import csv
 import errno
@@ -446,7 +446,10 @@ def get_fingerprint(filename, length=256, algorithm='sha256'):
         if hasattr(filename, 'read'):
             filename.seek(0)
             return _fingerprint_handle(filename, fingerprint, length)
-        with open(filename, mode='rb') as f:
+        success, handle = open_file(filename, binary=True)
+        if not success:
+            return False, handle
+        with handle as f:
             return _fingerprint_handle(f, fingerprint, length)
     except OSError as e:
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
@@ -1162,7 +1165,8 @@ def grep_file(filename, pattern):
     """
     Search for a regex pattern in a file, similar to the `grep` command.
 
-    Returns the first match found; if no match is found or an error occurs, returns False.
+    Returns the first group of the first match, or the whole match where the pattern has
+    no group.
 
     Parameters
     ----------
@@ -1174,26 +1178,33 @@ def grep_file(filename, pattern):
     Returns
     -------
     tuple
-          - tuple[0] (**bool**): True if the operation succeeded (no I/O or file handling errors),
-            otherwise False.
-          - tuple[1] (**str**): The string matched by `pattern` (if any), or an error message if
-            unsuccessful.
+          - tuple[0] (**bool**): True if the file could be read and `pattern` is a valid
+            regular expression, otherwise False.
+          - tuple[1] (**str**): The first group of the match, the whole match where
+            `pattern` has no group, the empty string where nothing matches, or an error
+            message if unsuccessful.
 
     Examples
     --------
     >>> success, nc_version = grep_file('version.php', r'\\$OC_version=array\\((.*)\\)')
     """
     try:
-        with open(filename, 'r', encoding='utf-8') as f:
+        success, handle = open_file(filename)
+        if not success:
+            return False, handle
+        with handle as f:
             data = f.read()
     except OSError as e:
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
 
-    match = re.search(pattern, data)
+    try:
+        match = re.search(pattern, data)
+    except (re.error, TypeError) as e:
+        return False, f'Invalid regular expression {pattern!r}: {e}'
     if match:
-        return True, match.group(1)
+        return True, match.group(1) if match.re.groups else match.group(0)
     return True, ''
 
 
@@ -1356,7 +1367,7 @@ def mkdir(path, mode=0o755, exist_ok=True):
         return False, f'Unknown error creating {path}: {e}'
 
 
-def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
+def open_file(filename, binary=False, allowed_roots=None, nofollow=False, newline=None):
     """
     Open a file for reading, optionally confined to a set of directories.
 
@@ -1381,8 +1392,12 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
         nothing, and a single path given as a string is refused rather than read as
         its characters. Defaults to None (no containment).
     nofollow : bool, optional
-        Refuse a symlink as the last path component (`O_NOFOLLOW`). Defaults to
-        False.
+        Refuse a symlink as the last path component (`O_NOFOLLOW`). Like
+        `allowed_roots`, it also refuses anything that is not a regular file. Defaults
+        to False.
+    newline : str, optional
+        Passed to the text mode of the file as `newline`, like `open()`. Defaults to
+        None.
 
     Returns
     -------
@@ -1393,6 +1408,11 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
 
     Notes
     -----
+    - With `allowed_roots` or `nofollow`, only a regular file is opened: a FIFO or any
+      other non-regular file is refused at once instead of hanging the caller. Without
+      either, a FIFO is opened too, non-blocking: one with a writer delivers what it is
+      fed, one without a writer reads as empty instead of hanging the caller for ever.
+      A writer that shows up after the open is not waited for.
     - A hard link inside a root that points to a file elsewhere is indistinguishable
       from a regular file. On Linux, `fs.protected_hardlinks=1` (the default on
       current distributions) keeps an unprivileged user from creating one to a file
@@ -1422,23 +1442,15 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
             f'Refusing to read "{filename}": resolved path is outside the allowed '
             f'roots ({", ".join(allowed_roots)}); bind-mount it in if intended.'
         )
-    if not allowed_roots and not nofollow:
-        try:
-            if binary:
-                return True, open(filename, mode='rb')
-            return True, open(filename, mode='r', encoding='utf-8')
-        except OSError as e:
-            return False, (
-                f'I/O error "{e.strerror}" while opening or reading {filename}'
-            )
-        except Exception as e:
-            return False, f'Unknown error opening or reading {filename}: {e}'
     flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0)
     if nofollow:
         # POSIX-only. Where it is missing getattr() yields 0 and the flag is absent.
         flags |= getattr(os, 'O_NOFOLLOW', 0)
     # POSIX-only as well. Windows has neither the flag nor FIFOs in the filesystem.
-    nonblock = getattr(os, 'O_NONBLOCK', 0) if allowed_roots else 0
+    # Set in every case: a FIFO named by a caller would hang a plain `open()` for ever
+    # when nobody writes to it. Non-blocking, the open returns at once, and the reads
+    # that follow are blocking again.
+    nonblock = getattr(os, 'O_NONBLOCK', 0)
     if nonblock:
         # Opening a FIFO for reading blocks until a writer shows up. Non-blocking,
         # the open returns at once and the type check below refuses it.
@@ -1450,11 +1462,14 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
     try:
+        opened = os.fstat(fd)
+        # Without confinement the file is read as it always was, a pipe from a process
+        # substitution or `/dev/stdin` included. A FIFO nobody writes to then reads as
+        # empty instead of hanging the open, which is why it is opened non-blocking.
+        if (allowed_roots or nofollow) and not _stat.S_ISREG(opened.st_mode):
+            os.close(fd)
+            return False, f'Refusing to read "{filename}": not a regular file.'
         if allowed_roots:
-            opened = os.fstat(fd)
-            if not _stat.S_ISREG(opened.st_mode):
-                os.close(fd)
-                return False, f'Refusing to read "{filename}": not a regular file.'
             # The file that was opened has to be the one the path names now, and
             # the path still has to lie inside the roots. A path that was
             # redirected between the check and the open fails one of the two.
@@ -1478,7 +1493,7 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
             os.set_blocking(fd, True)
         if binary:
             return True, os.fdopen(fd, 'rb')
-        return True, os.fdopen(fd, mode='r', encoding='utf-8')
+        return True, os.fdopen(fd, mode='r', encoding='utf-8', newline=newline)
     except OSError as e:
         os.close(fd)
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
@@ -1532,7 +1547,10 @@ def read_csv(
     """
     reader = None
     try:
-        with open(filename, 'r', newline=newline, encoding='utf-8') as csvfile:
+        success, csvfile = open_file(filename, newline=newline)
+        if not success:
+            return False, csvfile
+        with csvfile:
             reader = (
                 csv.DictReader(csvfile, delimiter=delimiter, quotechar=quotechar)
                 if as_dict

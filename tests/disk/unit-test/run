@@ -1668,5 +1668,120 @@ class TestFingerprintFromHandle(unittest.TestCase):
                 )
 
 
+class TestGrepFile(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        self.file = os.path.join(self.dir, 'version.php')
+        with open(self.file, 'w', encoding='utf-8') as handle:
+            handle.write("$OC_version=array(30,0,1);\nname = 'linuxfabrik'\n")
+
+    def test_returns_the_first_group(self):
+        self.assertEqual(disk.grep_file(self.file, r'array\((.*)\)'), (True, '30,0,1'))
+
+    def test_returns_the_whole_match_without_a_group(self):
+        self.assertEqual(
+            disk.grep_file(self.file, r'linuxfabrik'), (True, 'linuxfabrik')
+        )
+
+    def test_returns_an_empty_string_without_a_match(self):
+        self.assertEqual(disk.grep_file(self.file, r'nothing here'), (True, ''))
+
+    def test_an_invalid_regular_expression_is_an_error_not_a_traceback(self):
+        success, message = disk.grep_file(self.file, r'array\((')
+        self.assertFalse(success)
+        self.assertIn('Invalid regular expression', message)
+
+    def test_a_pattern_that_is_not_a_string_is_an_error(self):
+        success, message = disk.grep_file(self.file, None)
+        self.assertFalse(success)
+        self.assertIn('Invalid regular expression', message)
+
+
+@unittest.skipUnless(hasattr(os, 'mkfifo'), 'a FIFO needs POSIX')
+class TestFifoDoesNotBlock(unittest.TestCase):
+    """A path chosen by a caller may be a FIFO, and opening one for reading waits for a
+    writer that never comes. Every reader returns at once instead: confined ones refuse
+    it, plain ones read it as empty. One with a writer is read as before. Each call
+    runs in a process of its own with a hard bound, so a regression fails the test
+    instead of hanging the suite."""
+
+    BOUND = 10
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        self.fifo = os.path.join(self.dir, 'fifo')
+        os.mkfifo(self.fifo)
+
+    def _call(self, expression, stdin=None):
+        parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = (
+            'import sys\n'
+            f'sys.path.insert(0, {parent!r})\n'
+            'import lib.disk as disk\n'
+            f'print(repr({expression}))\n'
+        )
+        try:
+            done = subprocess.run(
+                [sys.executable, '-c', script],
+                input=stdin or '',
+                capture_output=True,
+                text=True,
+                timeout=self.BOUND,
+            )
+        except subprocess.TimeoutExpired:
+            self.fail(f'{expression} blocked on a FIFO for {self.BOUND} s')
+        self.assertEqual(done.returncode, 0, msg=done.stderr)
+        return done.stdout.strip()
+
+    def _refused(self, expression):
+        out = self._call(expression)
+        self.assertIn('(False,', out)
+        self.assertIn('not a regular file', out)
+
+    def test_read_file_with_nofollow_only_refuses_it(self):
+        self._refused(f'disk.read_file({self.fifo!r}, nofollow=True)')
+
+    def test_read_file_with_roots_refuses_it(self):
+        self._refused(f'disk.read_file({self.fifo!r}, allowed_roots=[{self.dir!r}])')
+
+    def test_open_file_with_nofollow_only_refuses_it(self):
+        self._refused(f'disk.open_file({self.fifo!r}, nofollow=True)')
+
+    def test_read_env_with_nofollow_refuses_it(self):
+        self._refused(f'disk.read_env({self.fifo!r}, nofollow=True)')
+
+    def test_read_file_reads_it_as_empty(self):
+        self.assertEqual(self._call(f'disk.read_file({self.fifo!r})'), "(True, '')")
+
+    def test_read_file_binary_reads_it_as_empty(self):
+        out = self._call(f'disk.read_file({self.fifo!r}, binary=True)')
+        self.assertEqual(out, "(True, b'')")
+
+    def test_read_env_reads_it_as_empty(self):
+        self.assertIn('(True,', self._call(f'disk.read_env({self.fifo!r})'))
+
+    def test_get_fingerprint_does_not_hang(self):
+        self.assertIn('(True,', self._call(f'disk.get_fingerprint({self.fifo!r})'))
+
+    def test_grep_file_does_not_hang(self):
+        self.assertEqual(
+            self._call(f'disk.grep_file({self.fifo!r}, "x")'), "(True, '')"
+        )
+
+    def test_read_csv_does_not_hang(self):
+        self.assertIn('(True,', self._call(f'disk.read_csv({self.fifo!r})'))
+
+    def test_a_pipe_with_a_writer_is_read(self):
+        # `--filename=<(command)` and `/dev/stdin` hand over a pipe with a writer
+        out = self._call("disk.read_file('/dev/stdin')", stdin='from a pipe')
+        self.assertEqual(out, "(True, 'from a pipe')")
+        out = self._call("disk.get_fingerprint('/dev/stdin', length=0)", stdin='abc')
+        self.assertIn(
+            'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', out
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

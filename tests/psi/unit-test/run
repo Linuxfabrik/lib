@@ -128,30 +128,31 @@ class TestRead(unittest.TestCase):
         # The kernel creates pressure/irq whenever the accounting is compiled in and
         # then refuses the read with EOPNOTSUPP while it is switched off at runtime
         # (`tsc=noirqtime` on x86). No regular file can be made to answer that way, so
-        # the errno is injected here; psi_show() in kernel/sched/psi.c is the reference.
+        # the errno is injected here, at the `os.open()` that `lib.disk` reads through;
+        # psi_show() in kernel/sched/psi.c is the reference.
         self.write('irq', IRQ)
-        real_open = open
+        real_open = os.open
 
         def refuse(path, *args, **kwargs):
             if str(path).endswith(os.path.join('pressure', 'irq')):
                 raise OSError(errno.EOPNOTSUPP, 'Operation not supported')
             return real_open(path, *args, **kwargs)
 
-        with mock.patch('builtins.open', refuse):
+        with mock.patch('os.open', refuse):
             self.assertEqual(psi.read('irq', root=self.root), (True, None))
 
     def test_a_file_that_cannot_be_read_is_still_an_error(self):
         # every other reason a read fails stays an error, so a broken host is not
         # reported as one that simply keeps no statistics
         self.write('irq', IRQ)
-        real_open = open
+        real_open = os.open
 
         def refuse(path, *args, **kwargs):
             if str(path).endswith(os.path.join('pressure', 'irq')):
                 raise OSError(errno.EACCES, 'Permission denied')
             return real_open(path, *args, **kwargs)
 
-        with mock.patch('builtins.open', refuse):
+        with mock.patch('os.open', refuse):
             success, result = psi.read('irq', root=self.root)
         self.assertFalse(success)
         self.assertIn('Permission denied', result)
