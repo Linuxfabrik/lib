@@ -10,17 +10,19 @@
 
 """Library for accessing MySQL/MariaDB servers."""
 
+import configparser
+import os
 import re
 import sys
 import warnings
 
-from . import base, version
+from . import base, txt, version
 from .globals import STATE_UNKNOWN
 
 warnings.filterwarnings('ignore', category=UserWarning, module='pymysql')
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 try:
     import pymysql.cursors
@@ -272,6 +274,22 @@ def commit(conn):
         return False, f'Commit failed: {e}'
 
 
+def _options_file_parses(path):
+    """Tell whether an options file can be read the way pymysql reads it, with the same
+    parser (`pymysql.optionfile.Parser`, a `ConfigParser` that allows keys without a
+    value). Only used to tell an error of the file from one of the arguments."""
+    parser = getattr(
+        getattr(pymysql, 'optionfile', None),
+        'Parser',
+        lambda: configparser.RawConfigParser(allow_no_value=True),
+    )()
+    try:
+        parser.read(os.path.expanduser(path))
+    except (configparser.Error, UnicodeError):
+        return False
+    return True
+
+
 def connect(mysql_connection, **kwargs):
     """
     Connect to a MySQL or MariaDB server using a dictionary of connection parameters.
@@ -304,7 +322,13 @@ def connect(mysql_connection, **kwargs):
 
     Notes
     -----
-    - If connection fails, the error message contains the reason for failure.
+    - If connection fails, the error message contains the reason for failure, except
+      for an options file that cannot be parsed: that names the file and the kind of
+      error, never a line of it.
+    - `defaults_file` is opened as the calling process, root included, wherever it
+      points. That is by design: it is a path an administrator chooses, and no check
+      here confines it. A consumer that lets an unprivileged account choose the path of
+      a process with more privileges has to confine it itself.
     - `pymysql`'s `read_default_file` and `read_default_group` allow connection settings from a
       `.cnf` file.
     - After the connection is up, the function aligns the session's character set and collation
@@ -329,16 +353,35 @@ def connect(mysql_connection, **kwargs):
     ... else:
     ...     print(conn)
     """
+    defaults_file = mysql_connection.get('defaults_file')
+
     try:
         conn = pymysql.connect(
-            read_default_file=mysql_connection.get('defaults_file'),
+            read_default_file=defaults_file,
             read_default_group=mysql_connection.get('defaults_group', 'client'),
             cursorclass=mysql_connection.get('cursorclass', pymysql.cursors.DictCursor),
             connect_timeout=mysql_connection.get('timeout', 3),
             **kwargs,
         )
     except Exception as e:
-        return False, f'Connecting to DB failed: {e}'
+        # The parser of the options file quotes the offending line, and converting a
+        # value fails with the value in the message. Whoever named the file gets to
+        # read its content that way, so such an error is reduced to its kind. A
+        # ValueError comes from the file only if the file does not parse: a timeout or
+        # a port handed in as an argument fails the same way with a file that is fine.
+        if defaults_file and (
+            isinstance(e, (configparser.Error, UnicodeError))
+            or (isinstance(e, ValueError) and not _options_file_parses(defaults_file))
+        ):
+            return False, (
+                f'Connecting to DB failed: the options file "{defaults_file}" '
+                f'cannot be read ({type(e).__name__}).'
+            )
+        message = txt.sanitize_sensitive_data(f'Connecting to DB failed: {e}')
+        # `int(port)` quotes what it could not read, which may be a line of the file
+        return False, re.sub(
+            r'(invalid literal for int\(\) with base \d+: ).*', r"\1'******'", message
+        )
 
     _align_session_collation(conn)
     return True, conn

@@ -17,7 +17,9 @@ a container test (run via tools/run-container-tests; podman required).
 """
 
 import os
+import shutil
 import sys
+import tempfile
 import typing
 import unittest
 from unittest import mock
@@ -424,6 +426,92 @@ class TestGetFlavor(unittest.TestCase):
     def test_without_a_responding_binary_it_is_none(self):
         with mock.patch.object(db_mysql, 'get_server_info', return_value=None):
             self.assertIsNone(db_mysql.get_flavor())
+
+
+class TestConnectOptionsFile(unittest.TestCase):
+    """The options file is named by the caller. What the parser says about it must not
+    carry a line of it."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+
+    def _file(self, content, mode='w'):
+        path = os.path.join(self.dir, 'my.cnf')
+        with open(path, mode) as handle:
+            handle.write(content)
+        return path
+
+    def _connect(self, path, **kwargs):
+        # port 1 on the loopback: nothing listens, so a file that parses ends in an
+        # ordinary connection error without any server
+        kwargs = {'host': '127.0.0.1', 'port': 1, **kwargs}
+        return db_mysql.connect({'defaults_file': path, 'timeout': 1}, **kwargs)
+
+    def _assert_no_content(self, content, mode='w', **kwargs):
+        success, message = self._connect(self._file(content, mode), **kwargs)
+        self.assertFalse(success)
+        self.assertNotIn('SECRETLINE', message)
+        self.assertIn('cannot be read', message)
+        self.assertIn(self.dir, message)
+
+    def test_a_file_without_a_section_header(self):
+        self._assert_no_content('root:x:0:0:SECRETLINE:/root:/bin/bash\n')
+
+    def test_a_bad_line_after_a_valid_section(self):
+        # a repeated option names itself in the parser's message
+        self._assert_no_content('[client]\nSECRETLINE=1\nSECRETLINE=2\n')
+
+    def test_a_value_that_does_not_convert_is_not_quoted(self):
+        # the file parses, so the error is passed on, without the value it quotes
+        success, message = self._connect(
+            self._file('[client]\nport=SECRETLINE\n'), port=None
+        )
+        self.assertFalse(success)
+        self.assertNotIn('SECRETLINE', message)
+        self.assertIn('invalid literal', message)
+
+    def test_an_argument_that_is_wrong_keeps_the_text_beside_a_good_file(self):
+        path = self._file('[client]\nuser=a\n')
+        success, message = self._connect(path, port='abc')
+        self.assertFalse(success)
+        self.assertIn('invalid literal', message)
+        self.assertNotIn('cannot be read', message)
+        for timeout in (0, -1):
+            with self.subTest(timeout=timeout):
+                success, message = db_mysql.connect(
+                    {'defaults_file': path, 'timeout': timeout}, host='127.0.0.1'
+                )
+                self.assertFalse(success)
+                self.assertIn('connect_timeout', message)
+                self.assertNotIn('cannot be read', message)
+
+    def test_a_file_that_is_not_text(self):
+        self._assert_no_content(b'[client]\npassword=\xff\xfeSECRETLINE\n', 'wb')
+
+    def test_a_connection_error_keeps_its_text(self):
+        success, message = self._connect(self._file('[client]\nuser=a\n'))
+        self.assertFalse(success)
+        self.assertIn("Can't connect to MySQL server", message)
+
+    def test_a_password_in_an_error_is_redacted(self):
+        with mock.patch.object(
+            db_mysql.pymysql, 'connect', side_effect=TypeError('password=linuxfabrik')
+        ):
+            success, message = db_mysql.connect({}, host='127.0.0.1')
+        self.assertFalse(success)
+        self.assertNotIn('linuxfabrik', message)
+
+    def test_the_path_is_handed_to_pymysql_as_it_is(self):
+        # opened as the caller, also as root: the path is the administrator's choice
+        path = self._file('[client]\nuser=a\n')
+        with (
+            mock.patch.object(db_mysql.pymysql, 'connect') as connect,
+            mock.patch.object(db_mysql, '_align_session_collation'),
+        ):
+            success, _ = db_mysql.connect({'defaults_file': path})
+        self.assertTrue(success)
+        self.assertEqual(connect.call_args[1]['read_default_file'], path)
 
 
 class TestContainer(unittest.TestCase):

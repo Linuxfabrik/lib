@@ -79,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 * container.py: `run()` runs as another account only if it owns a subordinate UID range
+* db_mysql.py: `connect()` no longer quotes a line of the options file in its error message, so a file that is not one cannot be read out through it
 * db_sqlite.py: `get_db_dir()` no longer keeps databases where other accounts may plant or swap them, such as `C:\Windows\Temp` of SYSTEM on Windows
 * disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files, and a single path or an empty list as `allowed_roots` no longer reads without confinement
 * kvm.py: `virsh()` and every reader built on it refuse a connection URI that makes libvirt run a program, open a file or connect to a socket the caller names, such as `qemu+ext://` or `?command=`
