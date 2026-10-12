@@ -207,6 +207,19 @@ class _RefusedError(Exception):
     the next attempt would be refused the same way."""
 
 
+def _has_body(request):
+    """Tell whether an httpx request carries a body. `request.content` only exists on a
+    request httpx built from bytes: one it rebuilt for a redirect raises
+    `RequestNotRead`, which made every redirect chain longer than one hop fail. The
+    headers tell then, the framing of a body is `Content-Length` or chunked."""
+    try:
+        return bool(request.content)
+    except Exception:
+        return request.headers.get('content-length', '0') not in ('', '0') or (
+            'transfer-encoding' in request.headers
+        )
+
+
 def _install_safe_redirect_stripping(client):
     """Wrap an httpx client's redirect logic so nothing a caller sent to one
     origin reaches another one. Credential headers are dropped when a redirect
@@ -240,7 +253,7 @@ def _install_safe_redirect_stripping(client):
         redirect = original_build(request, response)
         if (
             redirect.stream is request.stream
-            and request.content
+            and _has_body(request)
             and _leaks_credentials_on_redirect(request.url, redirect.url)
         ):
             raise _RefusedError(

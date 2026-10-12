@@ -1816,6 +1816,46 @@ class TestOverallDeadline(unittest.TestCase):
         self.assertEqual((success, body), (True, 'xxxxxx'))
         self.assertGreater(elapsed, 1.0)
 
+    def test_a_redirect_chain_longer_than_the_timeout_succeeds(self):
+        import http.server
+        import threading
+
+        class Slow(http.server.BaseHTTPRequestHandler):
+            # three hops of 0.6 s each, 1.8 s in all, every one inside the timeout
+            def do_GET(self):
+                time.sleep(0.6)
+                if self.path.count('/') < 3:
+                    self.send_response(302)
+                    self.send_header('Location', self.path + 'n/')
+                    self.send_header('Content-Length', '0')
+                    self.end_headers()
+                else:
+                    self.send_response(200)
+                    self.send_header('Content-Length', '2')
+                    self.end_headers()
+                    self.wfile.write(b'ok')
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Slow)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            started = time.monotonic()
+            result = url.fetch(
+                f'http://127.0.0.1:{server.server_address[1]}/',
+                no_proxy=True,
+                timeout=1,
+            )
+            elapsed = time.monotonic() - started
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+        self.assertEqual(result, (True, 'ok'))
+        self.assertGreater(elapsed, 1.0)
+
     def test_an_over_long_but_steady_answer_ends_at_an_explicit_deadline(self):
         (success, message), elapsed = self._timed_fetch('steady', timeout=1, deadline=1)
         self.assertFalse(success)
@@ -2051,6 +2091,48 @@ class TestRedirectBodyRefusal(unittest.TestCase):
                 self.assertEqual(result, (True, 'ok'))
                 self.assertEqual(hops[0][1], 'POST')
                 self.assertTrue(self._leaked(hops))
+
+    def _chain(self, status, targets, **kwargs):
+        # `targets` are the Locations answered on the way, the last request gets 200
+        seen = []
+        pending = list(targets)
+
+        def handler(request):
+            seen.append(str(request.url))
+            if pending:
+                return httpx.Response(status, headers={'Location': pending.pop(0)})
+            return httpx.Response(200, stream=httpx.ByteStream(b'ok'))
+
+        with patch_mock_transport(handler):
+            result = url.fetch('https://kc/token', timeout=1, **kwargs)
+        return result, seen
+
+    def test_a_chain_of_redirects_is_followed(self):
+        # a rebuilt request has no `.content`: every chain longer than one hop failed
+        result, seen = self._chain(
+            302, ['https://kc/a', 'https://kc/b', 'https://kc/c']
+        )
+        self.assertEqual(result, (True, 'ok'))
+        self.assertEqual(len(seen), 4)
+
+    def test_the_body_is_refused_on_a_later_hop_too(self):
+        for status in (307, 308):
+            with self.subTest(status=status):
+                result, seen = self._chain(
+                    status,
+                    ['https://kc/a', 'https://evil/collect'],
+                    data={'password': self.SECRET},
+                )
+                self.assertFalse(result[0])
+                self.assertIn('Refused to resend the request body', result[1])
+                self.assertNotIn('https://evil/collect', seen)
+
+    def test_a_body_stays_with_the_origin_over_several_hops(self):
+        result, seen = self._chain(
+            307, ['https://kc/a', 'https://kc/b'], data={'password': self.SECRET}
+        )
+        self.assertEqual(result, (True, 'ok'))
+        self.assertEqual(len(seen), 3)
 
     def test_cross_origin_307_without_body_is_followed(self):
         for method in ('GET', 'DELETE'):
