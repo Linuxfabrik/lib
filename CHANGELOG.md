@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * container.py: `get_engine_error()` reports Podman's missing rootless statistics on cgroups v1 as UNKNOWN
 * db_mysql.py: `check_privileges()` counts only privileges granted on `*.*` or the given database, including those of active roles, and no longer takes `SUPER` for any other privilege; `select()` names the error first
 * disk.py: `copy_dir()` names the first file that could not be copied and how many more, instead of all of them
+* huawei_pacific.py: `get_data()` no longer logs in again after a request that timed out, so a slow appliance keeps its session and the next attempt starts sooner
 * lftest.py: the MySQL/MariaDB test account has `SELECT` on `*.*`, as the plugins document
 * lvm.py: the hint on missing LVM tools names the SUSE package command too
 * powershell.py: `run_ps()` reads Windows output like `shell_exec()`, as UTF-8 where valid and in the OEM code page otherwise

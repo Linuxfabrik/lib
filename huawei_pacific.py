@@ -15,7 +15,7 @@ generation of endpoints below /dsware/service/ and /dfv/service/.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026101201'
 
 import json
 from time import sleep as _sleep
@@ -837,13 +837,16 @@ def _as_envelope(success, response):
 
     # An HTTP error status still carries the appliance's own JSON body, which names the
     # actual cause (`-401` for a session it no longer accepts, for example). Only the
-    # status made `url.fetch_json()` skip the decode, so decode it here.
+    # status made `url.fetch_json()` skip the decode, so decode it here. Every shape
+    # `get_result_code()` reads is kept, the bare `result` and the `error` object of the
+    # older endpoints included: `get_data()` takes the synthesised `'n/a'` for a request
+    # that got no answer, and would not log in again after such a rejection.
     if not success and isinstance(response, str):
         try:
             parsed = json.loads(response)
         except ValueError:
             parsed = None
-        if isinstance(parsed, dict) and isinstance(parsed.get('result'), dict):
+        if get_result_code(parsed) is not None:
             return parsed
 
     return {
@@ -914,12 +917,17 @@ def get_data(
     -----
     - Success is indicated by a status code of `0`. The `api/v2` endpoints report it as
       `result.code`, the older ones as a bare `result`; `get_result_code()` reads both.
-    - Makes at most three attempts, forcing a fresh login before the second one, and waits one
-      second between attempts. The retry count is kept low on purpose, so one call stays within
-      the caller's own timeout: the worst case is three requests plus one login,
-      plus two seconds of waiting. This budget is per call. A caller that chains several calls,
-      for example `get_management_ips()` followed by a hardware query, has to size its own
-      timeout for the sum.
+    - Makes at most three attempts and waits one second between attempts. The first attempt
+      the appliance rejects is followed by one fresh login. The retry count is kept low on
+      purpose, so one call stays within the caller's own timeout: the worst case is three
+      requests plus one login, plus two seconds of waiting. This budget is per call. A caller
+      that chains several calls, for example `get_management_ips()` followed by a hardware
+      query, has to size its own timeout for the sum.
+    - A request that got no answer at all (a timeout, a refused connection) does not force a
+      fresh login. It says nothing about the session, and on a slow appliance the extra login
+      only makes the next attempt slower while discarding a session that is still valid. The
+      same holds for an answer that carries no status code in any of the shapes
+      `get_result_code()` reads, such as an HTML error page from a proxy in between.
     - A rejected request is retried instead of aborting the caller: a transport failure, an HTTP
       error status and a response that is not the documented `{'result': {'code': ...}}` envelope
       all count as a failed attempt and are handed back in that envelope. The caller therefore
@@ -944,13 +952,20 @@ def get_data(
     uri = f'{args.URL}/{base_path}/{endpoint}'
 
     result = {}
+    relogged = False
 
     for attempt in range(1, max_attempts + 1):
-        # On the second attempt, drop the cached session and log in again; a
-        # rejected request is most likely an expired session that retrying
-        # with the same token cannot fix. The third attempt then reuses that
-        # fresh token to absorb a remaining transient error.
-        x_auth_token = get_creds(args, force_relogin=attempt == 2)
+        # After the appliance rejected a request, drop the cached session and log in again
+        # once; a rejected request is most likely an expired session that retrying with
+        # the same token cannot fix. A request that never got an answer (a timeout, a
+        # refused connection) says nothing about the session, so it is retried with the
+        # cached one: logging in again would cost a round trip on an appliance that is
+        # already slow, and throw a valid session away.
+        force_relogin = (
+            attempt > 1 and not relogged and get_result_code(result) != 'n/a'
+        )
+        relogged = relogged or force_relogin
+        x_auth_token = get_creds(args, force_relogin=force_relogin)
         header = {'X-Auth-Token': x_auth_token}
         if payload or not method:
             # Announce a JSON body when the request carries one, and on a request whose
