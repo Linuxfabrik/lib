@@ -14,7 +14,7 @@ Copied and refactored from py-dmidecode (https://github.com/zaibon/py-dmidecode)
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 import re
 
@@ -109,6 +109,25 @@ def cpu_speed(dmi):
     return 0
 
 
+def _cpu_enabled(cpu):
+    """Return whether a processor entry is a CPU that runs.
+
+    `Core Enabled` decides where dmidecode prints it, which it does only for a structure
+    of SMBIOS 2.5 and later and a value other than 0 ("unknown"). Without it, `Status`
+    decides, which dmidecode always prints: `Unpopulated`, or `Populated, ` followed by
+    one of Unknown, Enabled, Disabled by user, Disabled by firmware, Idle (waiting to be
+    enabled), out of spec and Other. Only `Enabled` is a CPU that runs. Verified against
+    dmidecode 7ada24d (`dmidecode.c`, `dmi_processor_status()` and type 4).
+    """
+    cores = cpu.get('Core Enabled')
+    if cores is not None:
+        try:
+            return int(cores) > 0
+        except (TypeError, ValueError):
+            pass
+    return cpu.get('Status', '').strip() == 'Populated, Enabled'
+
+
 def cpu_type(dmi):
     """
     Retrieve the CPU type string.
@@ -129,7 +148,8 @@ def cpu_type(dmi):
     Notes
     -----
     - The `Version` field is sanitized to remove `(R)`, `(TM)`, and `'NotSpecified'` strings.
-    - Only the first enabled CPU entry is considered.
+    - Only the first enabled CPU entry is considered. Without `Core Enabled`, which
+      SMBIOS before 2.5 does not carry, a CPU is enabled when its `Status` says so.
 
     Examples
     --------
@@ -137,7 +157,7 @@ def cpu_type(dmi):
     'Intel Xeon Silver 4210 CPU'
     """
     for cpu in dmiget(dmi, 'Processor'):
-        if int(cpu.get('Core Enabled', 0)) > 0:
+        if _cpu_enabled(cpu):
             cpu_version = (
                 cpu.get('Version', '').replace('(R)', '').replace('(TM)', '').strip()
             )
