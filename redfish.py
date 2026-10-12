@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092801'
+__version__ = '2026101201'
 
 import atexit
 import base64
@@ -22,7 +22,7 @@ import sys
 import urllib.parse
 
 from . import base, cache, db_sqlite, disk, human, time, txt, url
-from .globals import STATE_CRIT, STATE_OK, STATE_WARN
+from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 # Shared cache database filename for the Redfish fetch layer. The fetch helpers below cache by URL,
 # but only when a caller opts in by passing a non-zero `cache_expire`; with the default
@@ -304,15 +304,39 @@ MEMORY_NESTED_KEYS = {
     'Status_HealthRollup': ('Status', 'HealthRollup'),
 }
 
-# Some controllers leave the standard Status.State/Health empty on memory
-# modules and report the real condition only in an OEM-specific field. These
-# tables fold those vendor operational values back onto the standard Redfish
-# vocabulary so the generic get_state() can evaluate them. Modules in an absent
-# state are skipped by the callers; healthy operational states map to "Enabled",
-# everything else is surfaced as a problem.
+# Some controllers leave the standard Status.State/Health empty on memory modules and
+# report the real condition only in an OEM-specific field. These tables fold those
+# vendor operational values back onto the standard Redfish vocabulary so the generic
+# get_state() can evaluate them. Modules in an absent state are skipped by the callers;
+# healthy operational states map to "Enabled", a configuration error to "Critical" and
+# everything else to "Warning", since the module needs attention but the server keeps
+# running.
+#
+# HPE's `DIMMStatus` (HpeMemory) knows 17 values. `NotPresent` is absent. Healthy are
+# `GoodInUse`, `GoodPartiallyInUse` (works, partially in use), `PresentSpare` (a spare
+# module), `PresentUnused` (present, not in use), `AddedButUnused` and
+# `UpgradedButUnused` (added or upgraded, used after the next configuration change).
+# Critical is `ConfigurationError`. A warning are `Null` (value temporarily
+# unavailable), `Unknown`, `Other`, `ExpectedButMissing`, `DoesNotMatch`,
+# `NotSupported`, `Degraded`, `MapOutConfiguration` and `MapOutError`. This follows
+# checkmk's `HPE_DIMM_STATE`, which rates `Unknown` and `Other` UNKNOWN; `get_state()`
+# knows no UNKNOWN, so they warn. Values and descriptions verified against checkmk
+# 703065fdf7d (cmk/plugins/redfish/agent_based/redfish_memory.py), as HPE's own
+# HpeMemory schema was not available.
 MEMORY_OEM_ABSENT_STATES = ('Absent', 'EmptyOrNotInstalled', 'NotPresent')
+MEMORY_OEM_CRITICAL_STATES = ('ConfigurationError',)
 MEMORY_OEM_HEALTHY_HEALTH = ('enabled', 'nominal', 'ok')
-MEMORY_OEM_HEALTHY_STATES = ('Enabled', 'GoodInUse', 'Operable', 'Quiesced')
+MEMORY_OEM_HEALTHY_STATES = (
+    'AddedButUnused',
+    'Enabled',
+    'GoodInUse',
+    'GoodPartiallyInUse',
+    'Operable',
+    'PresentSpare',
+    'PresentUnused',
+    'Quiesced',
+    'UpgradedButUnused',
+)
 
 PROCESSOR_KEYS = (
     'Id',
@@ -406,6 +430,18 @@ SYSTEMS_STORAGE_NESTED_KEYS = {
     'Status_Health': ('Status', 'Health'),
     'Status_HealthRollup': ('Status', 'HealthRollup'),
 }
+
+# The `Status.State` values whose `Health` says nothing about a fault, so that
+# `get_state()` and `get_sensor_state()` answer OK and a consumer leaves the item out.
+# Of the 13 values the Redfish `Resource` schema defines, only these two qualify:
+# `Absent` is a slot without a device ("Absent resources" in the Redfish Specification),
+# `Disabled` a function or resource that is unavailable. Every other state names a
+# device that is there, including the ones that are not serving right now
+# (`StandbySpare`, `StandbyOffline`, `UnavailableOffline`), and a failed spare power
+# supply is a fault. `Status.State` is optional, so an empty one is evaluated as well.
+# Verified against the `State` enum and the `Status` definition of `Resource.json` in
+# DMTF Redfish-Publications 2026.2 (Resource.v1_25_0).
+UNMONITORED_STATES = ('Absent', 'Disabled')
 
 VOLUME_KEYS = (
     'CapacityBytes',
@@ -1696,6 +1732,46 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
     return {'Authorization': f'Basic {encoded}'}
 
 
+def _nested(redfish, path):
+    """
+    Follow `path` through the nested objects of a Redfish resource.
+
+    Every step may be missing, and every step may be `null`. The Redfish schemas declare
+    `Status.State`, `Status.Health`, `Status.HealthRollup` and a threshold's `Reading`
+    as nullable. The objects around them (`Status`, `Thresholds`, a single threshold,
+    `Location`) are not, but firmware that does not conform sends `null` there as well,
+    for an empty slot for example. A projection must not fail on either. Verified
+    against DMTF Redfish-Publications 2026.2 (Resource.v1_25_0, Memory.v1_24_0,
+    Sensor.v1_14_0).
+
+    Parameters
+    ----------
+    redfish : dict
+        The Redfish resource.
+    path : tuple of str
+        The keys to follow, e.g. `('Status', 'Health')`.
+
+    Returns
+    -------
+    str, int or float
+        The value at the end of the path, or `''` if a step is missing, `null` or not an
+        object, or the value itself is not a scalar.
+
+    Examples
+    --------
+    >>> _nested({'Status': {'Health': 'OK'}}, ('Status', 'Health'))
+    'OK'
+    >>> _nested({'Status': None}, ('Status', 'Health'))
+    ''
+    """
+    ref = redfish
+    for step in path:
+        if not isinstance(ref, dict):
+            return ''
+        ref = ref.get(step)
+    return ref if isinstance(ref, (str, int, float)) else ''
+
+
 def get_chassis(redfish):
     """
     Extract chassis information from a Redfish API response.
@@ -1746,9 +1822,8 @@ def get_chassis(redfish):
     {'AssetTag': '12345', 'ChassisType': 'Rackmount', 'Id': '1', 'PowerState': 'On', ...}
     """
     data = {key: redfish.get(key, '') for key in CHASSIS_KEYS}
-    for output_key, (parent_key, child_key) in CHASSIS_NESTED_KEYS.items():
-        parent = redfish.get(parent_key)
-        data[output_key] = parent.get(child_key, '') if isinstance(parent, dict) else ''
+    for out_key, path in CHASSIS_NESTED_KEYS.items():
+        data[out_key] = _nested(redfish, path)
     return data
 
 
@@ -1790,10 +1865,7 @@ def get_chassis_power_powercontrol(redfish):
     data = {key: redfish.get(key, '') for key in CHASSIS_POWER_CONTROL_KEYS}
 
     for out_key, path in CHASSIS_POWER_CONTROL_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -1843,8 +1915,8 @@ def get_chassis_power_powersupplies(redfish):
     if data['LastPowerOutputWatts'] in ('', None):
         data['LastPowerOutputWatts'] = redfish.get('PowerOutputWatts', '')
 
-    for output_key, (parent_key, child_key) in CHASSIS_POWER_NESTED_KEYS.items():
-        data[output_key] = redfish.get(parent_key, {}).get(child_key, '')
+    for out_key, path in CHASSIS_POWER_NESTED_KEYS.items():
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -1890,8 +1962,8 @@ def get_chassis_power_voltages(redfish):
     """
     data = {key: redfish.get(key, '') for key in CHASSIS_VOLTAGE_KEYS}
 
-    for output_key, (parent_key, child_key) in CHASSIS_VOLTAGE_NESTED_KEYS.items():
-        data[output_key] = redfish.get(parent_key, {}).get(child_key, '')
+    for out_key, path in CHASSIS_VOLTAGE_NESTED_KEYS.items():
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -1949,10 +2021,7 @@ def get_chassis_sensors(redfish):
     data = {key: redfish.get(key, '') for key in CHASSIS_SENSOR_KEYS}
 
     for out_key, path in CHASSIS_SENSOR_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -2001,10 +2070,7 @@ def get_chassis_thermal_fans(redfish):
     data = {key: redfish.get(key, '') for key in CHASSIS_FAN_KEYS}
 
     for out_key, path in CHASSIS_FAN_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     # vendor quirk: Dell, Fujitsu and Huawei report fan speed in RPM under
     # "ReadingRPM"; HP and Lenovo report a percentage. Normalize both onto
@@ -2054,10 +2120,7 @@ def get_chassis_thermal_redundancy(redfish):
     data = {key: redfish.get(key, '') for key in CHASSIS_THERMAL_REDUNDANCY_KEYS}
 
     for out_key, path in CHASSIS_THERMAL_REDUNDANCY_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -2107,10 +2170,7 @@ def get_chassis_thermal_temperatures(redfish):
     data = {key: redfish.get(key, '') for key in CHASSIS_THERMAL_TEMP_KEYS}
 
     for out_key, path in CHASSIS_THERMAL_TEMP_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -2254,10 +2314,7 @@ def get_manager(redfish):
     data = {key: redfish.get(key, '') for key in MANAGER_KEYS}
 
     for out_key, path in MANAGER_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -2276,6 +2333,12 @@ def get_manager_logservices_sel_entries(
       compiled regular expressions.
     - **cutoff_epoch**: when non-zero, drop (and count) entries whose `Created` timestamp is older
       than this Unix epoch, so a long-since resolved event no longer keeps the state non-OK.
+
+    The entries have to arrive with their content. A controller that does not honour
+    `$expand` lists them as bare references (`{"@odata.id": "..."}`), which
+    `fetch_members()` resolves. A reference that is still bare here cannot be judged, so
+    it is reported as an entry that was not read, with STATE_UNKNOWN, instead of passing
+    as one without a severity.
 
     Parameters
     ----------
@@ -2298,6 +2361,8 @@ def get_manager_logservices_sel_entries(
           - `STATE_OK` (0): nothing to report.
           - `STATE_WARN` (1): some entries are warnings.
           - `STATE_CRIT` (2): some entries are critical.
+          - `STATE_UNKNOWN` (3): some entries arrived as bare references and were not
+            read.
         - **aged_out** (`int`): How many non-OK entries were suppressed because they were older than
           `cutoff_epoch`.
 
@@ -2324,18 +2389,33 @@ def get_manager_logservices_sel_entries(
     state = STATE_OK
     aged_out = 0
     utc = time.get_timezone('UTC')
-    for entry in redfish.get('Members', []):
-        severity = entry.get('Severity', '').lower()
+    for entry in redfish.get('Members') or []:
+        if not isinstance(entry, dict):
+            continue
+        if not is_member_expanded(entry):
+            # a bare reference: its severity is unknown, so it must not pass as OK
+            lines.append(
+                '* {}: entry not read, the controller listed it without its'
+                ' content{}'.format(
+                    entry.get('@odata.id', ''),
+                    base.state2str(STATE_UNKNOWN, prefix=' '),
+                )
+            )
+            state = base.get_worst(state, STATE_UNKNOWN)
+            continue
+        # `Severity` and `Message` are nullable in the LogEntry schema (verified against
+        # LogEntry.v1_22_0 in DMTF Redfish-Publications 2026.2)
+        severity = f'{entry.get("Severity") or ""}'.lower()
         if severity == 'ok':
             continue
-        message = entry.get('Message', '')
+        message = f'{entry.get("Message") or ""}'
         # --ignore: drop entries whose message matches any ignore pattern
         if ignore and any(p.search(message) for p in ignore):
             continue
         # --match: keep only entries whose message matches a match pattern
         if match and not any(p.search(message) for p in match):
             continue
-        created = entry.get('Created', '')
+        created = entry.get('Created') or ''
         # aging: drop (and count) entries older than the cutoff. A naive
         # timestamp is read as UTC, which is what controllers commonly report.
         if cutoff_epoch and created:
@@ -2348,8 +2428,10 @@ def get_manager_logservices_sel_entries(
                 aged_out += 1
                 continue
         msg_state = SEVERITY_TO_STATE.get(severity, STATE_OK)
+        # an entry without a message is still named, instead of an empty line
+        shown = message or entry.get('Name') or entry.get('@odata.id') or ''
         lines.append(
-            '* {}: {}{}'.format(created, message, base.state2str(msg_state, prefix=' '))
+            '* {}: {}{}'.format(created, shown, base.state2str(msg_state, prefix=' '))
         )
         state = base.get_worst(state, msg_state)
     return '\n'.join(lines) + ('\n' if lines else ''), state, aged_out
@@ -2417,6 +2499,18 @@ def get_perfdata(data, key='Reading'):
     return base.get_perfdata(label, value, uom, warn, crit, _min, _max)
 
 
+# The `Status.State` values in which a sensor reports a live reading, so that its
+# thresholds are evaluated. `Enabled`, `Quiesced` (enabled, restricted commands),
+# `Degraded` (enabled, degraded mode) and `Qualified` (within the acceptable range) are
+# operating states. An empty state is included because `Status.State` is optional.
+# `Deferring`, `InTest`, `Starting`, `StandbyOffline`, `StandbySpare`,
+# `UnavailableOffline` and `Updating` are left out: the device is not doing its regular
+# work, so a value outside its thresholds is no alarm. `Absent` and `Disabled` never get
+# this far, see `UNMONITORED_STATES`. The descriptions are those of `Resource.json` in
+# DMTF Redfish-Publications 2026.2 (Resource.v1_25_0).
+_READING_STATES = ('', None, 'Degraded', 'Enabled', 'Qualified', 'Quiesced')
+
+
 def get_sensor_state(data, key='Reading'):
     """
     Determine the state of a Redfish sensor according to status, health, thresholds, and range.
@@ -2424,11 +2518,18 @@ def get_sensor_state(data, key='Reading'):
     This function evaluates the sensor reading in the following order:
 
     1. **Status_State**
-       If `data['Status_State']` is not `'Enabled'` or `'Quiesced'`, the sensor is considered OK.
+       If `data['Status_State']` is one of `UNMONITORED_STATES`, the sensor is
+       considered OK.
     2. **Status_HealthRollup / Status_Health**
        - Returns STATE_CRIT if either is `'Critical'`.
        - Returns STATE_WARN if either is `'Warning'`.
+       The health counts even without a reading, and in every state outside
+       `UNMONITORED_STATES`.
     3. **Thresholds**
+       Only for a reading that is live: a state in `_READING_STATES`, or none at all,
+       since `Status.State` is optional. A spare, a device in standby or under test, or
+       one that is starting or updating reports a value that says nothing about the
+       running system, and a reading that is not a number is not evaluated either.
        Checks in this sequence for any defined thresholds:
        - **Fatal**                 (`Thresholds_LowerFatal`,        `Thresholds_UpperFatal`)        → STATE_CRIT
        - **User-defined critical** (`Thresholds_LowerCriticalUser`, `Thresholds_UpperCriticalUser`) → STATE_WARN
@@ -2507,25 +2608,19 @@ def get_sensor_state(data, key='Reading'):
         except (TypeError, ValueError):
             return None
 
+    # get redfish's states first: the health counts even when there is no reading
+    health_state = get_state(data)
+    if health_state != STATE_OK:
+        return health_state
+    if data.get('Status_State') not in _READING_STATES:
+        return STATE_OK
+
     # read the actual sensor reading
     raw = data.get(key)
     try:
         reading = float(raw)
     except (TypeError, ValueError):
         return STATE_OK
-
-    # get redfish's states first
-    if data.get('Status_State') not in ('Enabled', 'Quiesced'):
-        return STATE_OK
-
-    for field in ('Status_HealthRollup', 'Status_Health'):
-        value = data.get(field)
-        if value:
-            value = value.lower()
-            if value == 'critical':
-                return STATE_CRIT
-            if value == 'warning':
-                return STATE_WARN
 
     # a user-defined threshold of 0 means "not configured": HPE iLO 6 reports
     # `UpperCautionUser.Reading: 0` on a sensor whose user thresholds were never set
@@ -2601,10 +2696,13 @@ def get_state(data):
     """
     Determine the state of an entity based on its health and status.
 
-    This function checks the `Status_State` and `Status_HealthRollup` values in the provided data
-    dictionary and returns a state based on these values. It assigns `STATE_CRIT` if the status or
-    health rollup indicates a critical state, `STATE_WARN` for warning states, or `STATE_OK` if no
-    critical or warning states are found.
+    This function checks the `Status_HealthRollup` and `Status_Health` values in the
+    provided data dictionary and returns a state based on these values. It assigns
+    `STATE_CRIT` if either indicates a critical state, `STATE_WARN` for warning states,
+    or `STATE_OK` if no critical or warning states are found. An item whose
+    `Status_State` is one of `UNMONITORED_STATES` (`Absent`, `Disabled`) is OK
+    regardless of its health. In every other state, an empty one included, the health
+    counts: a spare or offline device that fails is a fault.
 
     Parameters
     ----------
@@ -2630,14 +2728,17 @@ def get_state(data):
     ... }
     >>> get_state(data)
     2
+    >>> get_state({'Status_State': 'StandbySpare', 'Status_Health': 'Critical'})
+    2
     """
-    if data.get('Status_State') not in ('Enabled', 'Quiesced'):
+    if data.get('Status_State') in UNMONITORED_STATES:
         return STATE_OK
 
     for field in ('Status_HealthRollup', 'Status_Health'):
         value = data.get(field)
         if value:
-            value = value.lower()
+            # a firmware may send a number where the schema names a string
+            value = str(value).lower()
             if value == 'critical':
                 return STATE_CRIT
             if value == 'warning':
@@ -2705,10 +2806,7 @@ def get_systems(redfish):
     data = {key: redfish.get(key, '') for key in SYSTEMS_KEYS}
 
     for out_key, path in SYSTEMS_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -2759,10 +2857,7 @@ def get_systems_ethernetinterfaces(redfish):
     data = {key: redfish.get(key, '') for key in ETHERNET_KEYS}
 
     for out_key, path in ETHERNET_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -2835,10 +2930,7 @@ def get_systems_memory(redfish):
     data = {key: redfish.get(key, '') for key in MEMORY_KEYS}
 
     for out_key, path in MEMORY_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     # the vendor is detected from the member's own Oem block, so the projection
     # stays self-contained (dict in, dict out)
@@ -2857,7 +2949,8 @@ def get_systems_memory(redfish):
         data['CapacityMiB'] = ''
 
     # vendor quirk: when the standard Status block is empty, fold the
-    # OEM-specific status field into Status_State / Status_Health.
+    # OEM-specific status field into Status_State / Status_Health. A standard state
+    # the controller filled in wins: it is what the Redfish schema defines.
     oem = redfish.get('Oem') or {}
     oem_block = next(iter(oem.values()), {}) if isinstance(oem, dict) else {}
     if not isinstance(oem_block, dict):
@@ -2865,19 +2958,25 @@ def get_systems_memory(redfish):
 
     oem_state = ''
     if vendor == 'hpe':
-        oem_state = oem_block.get('DIMMStatus', '')
-    elif vendor == 'fujitsu' and oem_block.get('SignalStatus'):
-        oem_state = oem_block.get('SignalStatus', '')
-        # Fujitsu reports the health verdict separately in LegacyStatus
+        oem_state = oem_block.get('DIMMStatus') or ''
+    elif vendor in ('fujitsu', 'ts_fujitsu') and oem_block.get('SignalStatus'):
+        # iRMC names its Oem block `ts_fujitsu`, as check_redfish
+        # (cr_module/classes/redfish.py) and checkmk (cmk/plugins/redfish/lib.py)
+        # read it
+        oem_state = oem_block.get('SignalStatus') or ''
+        # Fujitsu reports the health verdict separately in LegacyStatus. It only ever
+        # raises the health, so a standard verdict the controller filled in is not
+        # overwritten with a better one.
         legacy = oem_block.get('LegacyStatus')
-        if legacy:
-            data['Status_Health'] = (
-                'OK' if legacy.lower() in MEMORY_OEM_HEALTHY_HEALTH else 'Critical'
-            )
+        if isinstance(legacy, str) and legacy:
+            if legacy.lower() not in MEMORY_OEM_HEALTHY_HEALTH:
+                data['Status_Health'] = 'Critical'
+            elif not data['Status_Health']:
+                data['Status_Health'] = 'OK'
     elif redfish.get('DIMMStatus'):
-        oem_state = redfish.get('DIMMStatus', '')
+        oem_state = redfish.get('DIMMStatus') or ''
 
-    if oem_state:
+    if oem_state and isinstance(oem_state, str) and not data['Status_State']:
         if oem_state in MEMORY_OEM_ABSENT_STATES:
             data['Status_State'] = 'Absent'
         elif oem_state in MEMORY_OEM_HEALTHY_STATES:
@@ -2885,10 +2984,12 @@ def get_systems_memory(redfish):
             if not data['Status_Health']:
                 data['Status_Health'] = 'OK'
         else:
-            # an unrecognized operational value means the module needs attention
+            # any other operational value means the module needs attention
             data['Status_State'] = 'Enabled'
-            if data['Status_Health'] in ('', 'OK'):
+            if oem_state in MEMORY_OEM_CRITICAL_STATES:
                 data['Status_Health'] = 'Critical'
+            elif data['Status_Health'] in ('', 'OK'):
+                data['Status_Health'] = 'Warning'
 
     return data
 
@@ -2940,10 +3041,7 @@ def get_systems_processors(redfish):
     data = {key: redfish.get(key, '') for key in PROCESSOR_KEYS}
 
     for out_key, path in PROCESSOR_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -2991,10 +3089,7 @@ def get_systems_storage(redfish):
     data = {key: redfish.get(key, '') for key in SYSTEMS_STORAGE_KEYS}
 
     for out_key, path in SYSTEMS_STORAGE_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     return data
 
@@ -3063,10 +3158,7 @@ def get_systems_storage_drives(redfish):
     data = {key: redfish.get(key, '') for key in SYSTEMS_STORAGE_DRIVES_KEYS}
 
     for out_key, path in SYSTEMS_STORAGE_DRIVES_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     capacity = _capacity(redfish.get('CapacityBytes'))
     data['CapacityBytes'] = human.bytes2human(capacity) if capacity else ''
@@ -3131,10 +3223,7 @@ def get_systems_storage_volumes(redfish):
     data = {key: redfish.get(key, '') for key in VOLUME_KEYS}
 
     for out_key, path in VOLUME_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     capacity = _capacity(redfish.get('CapacityBytes'))
     data['CapacityBytes'] = human.bytes2human(capacity) if capacity else ''
@@ -3184,10 +3273,7 @@ def get_updateservice_firmwareinventory(redfish):
     data = {key: redfish.get(key, '') for key in FIRMWARE_KEYS}
 
     for out_key, path in FIRMWARE_NESTED_KEYS.items():
-        ref = redfish
-        for step in path:
-            ref = ref.get(step, {})
-        data[out_key] = ref if isinstance(ref, (str, int, float)) else ''
+        data[out_key] = _nested(redfish, path)
 
     return data
 

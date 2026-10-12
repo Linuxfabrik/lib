@@ -87,7 +87,7 @@ sys.path.insert(0, '..')
 import lib.base as base
 import lib.human as human
 import lib.redfish as redfish
-from lib.globals import STATE_CRIT, STATE_OK, STATE_WARN
+from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 # ---------------------------------------------------------------------------
 # Captured-style Redfish payloads. These are decoded exactly the way a plugin
@@ -1210,6 +1210,84 @@ class TestGetManagerLogservicesSelEntries(unittest.TestCase):
             ('', STATE_OK, 0),
         )
 
+    def test_bare_reference_is_unknown_not_ok(self):
+        # A controller without $expand lists the entries as references. Their severity
+        # is unknown, so they must not pass as entries without one.
+        body = {
+            'Members': [
+                {'@odata.id': '/redfish/v1/Managers/1/LogServices/SEL/Entries/7'},
+                {
+                    'Created': '2021-08-01',
+                    'Message': 'Temp high',
+                    'Severity': 'Warning',
+                },
+            ]
+        }
+        msg, state, _ = redfish.get_manager_logservices_sel_entries(body)
+        # get_worst() ranks UNKNOWN below WARN
+        self.assertEqual(state, STATE_WARN)
+        self.assertIn('/redfish/v1/Managers/1/LogServices/SEL/Entries/7', msg)
+        self.assertIn('[UNKNOWN]', msg)
+        self.assertIn('Temp high', msg)
+        _, state, _ = redfish.get_manager_logservices_sel_entries(
+            {'Members': body['Members'][:1]}
+        )
+        self.assertEqual(state, STATE_UNKNOWN)
+
+    def test_a_critical_entry_beats_a_bare_reference(self):
+        body = {
+            'Members': [
+                {'@odata.id': '/redfish/v1/Managers/1/LogServices/SEL/Entries/7'},
+                {
+                    'Created': '2021-08-01',
+                    'Message': 'PSU lost',
+                    'Severity': 'Critical',
+                },
+            ]
+        }
+        _, state, _ = redfish.get_manager_logservices_sel_entries(body)
+        self.assertEqual(state, STATE_CRIT)
+
+    def test_null_fields_do_not_raise(self):
+        # Severity, Message and Created are nullable in the LogEntry schema.
+        body = {
+            'Members': [
+                {'Created': None, 'Message': None, 'Severity': 'Critical', 'Id': '1'},
+                {'Created': '2021-08-01', 'Message': 'm', 'Severity': None, 'Id': '2'},
+                'not an object',
+            ]
+        }
+        msg, state, _ = redfish.get_manager_logservices_sel_entries(
+            body,
+            match=[re.compile('.*')],
+            ignore=[re.compile('nothing')],
+            cutoff_epoch=1,
+        )
+        self.assertEqual(state, STATE_CRIT)
+        self.assertIn(CRIT_SUFFIX, msg)
+
+    def test_entry_without_message_is_named(self):
+        body = {
+            'Members': [
+                {
+                    '@odata.id': '/redfish/v1/Managers/1/LogServices/SEL/Entries/3',
+                    'Created': None,
+                    'Message': None,
+                    'Severity': 'Warning',
+                }
+            ]
+        }
+        msg, _, _ = redfish.get_manager_logservices_sel_entries(body)
+        self.assertEqual(
+            msg, f'* : /redfish/v1/Managers/1/LogServices/SEL/Entries/3{WARN_SUFFIX}\n'
+        )
+
+    def test_null_members(self):
+        self.assertEqual(
+            redfish.get_manager_logservices_sel_entries({'Members': None}),
+            ('', STATE_OK, 0),
+        )
+
     def test_missing_members_key(self):
         self.assertEqual(
             redfish.get_manager_logservices_sel_entries({}), ('', STATE_OK, 0)
@@ -1422,6 +1500,83 @@ class TestGetPerfdata(unittest.TestCase):
 # get_sensor_state
 # ---------------------------------------------------------------------------
 class TestGetSensorState(unittest.TestCase):
+    def test_health_counts_in_a_present_state(self):
+        # A failed spare power supply sensor is a fault, not an idle reading.
+        self.assertEqual(
+            redfish.get_sensor_state(
+                {
+                    'Reading': 0,
+                    'Status_State': 'StandbySpare',
+                    'Status_Health': 'Critical',
+                }
+            ),
+            STATE_CRIT,
+        )
+
+    def test_health_counts_without_a_reading(self):
+        self.assertEqual(
+            redfish.get_sensor_state(
+                {'Reading': None, 'Status_State': 'Enabled', 'Status_Health': 'Warning'}
+            ),
+            STATE_WARN,
+        )
+
+    def test_thresholds_are_skipped_on_a_device_that_is_not_running(self):
+        # A device in standby reads 0; that is no undervoltage.
+        for state in (
+            'Deferring',
+            'InTest',
+            'StandbyOffline',
+            'StandbySpare',
+            'Starting',
+            'UnavailableOffline',
+            'Updating',
+        ):
+            with self.subTest(state=state):
+                self.assertEqual(
+                    redfish.get_sensor_state(
+                        {
+                            'Reading': 0,
+                            'Status_State': state,
+                            'Thresholds_LowerCritical': 10,
+                        }
+                    ),
+                    STATE_OK,
+                )
+
+    def test_thresholds_count_in_an_operating_or_missing_state(self):
+        for state in ('', 'Degraded', 'Enabled', 'Qualified', 'Quiesced'):
+            with self.subTest(state=state):
+                self.assertEqual(
+                    redfish.get_sensor_state(
+                        {
+                            'Reading': 0,
+                            'Status_State': state,
+                            'Thresholds_LowerCritical': 10,
+                        }
+                    ),
+                    STATE_WARN,
+                )
+        self.assertEqual(
+            redfish.get_sensor_state({'Reading': 0, 'Thresholds_LowerCritical': 10}),
+            STATE_WARN,
+        )
+
+    def test_unmonitored_states_are_ok(self):
+        for state in redfish.UNMONITORED_STATES:
+            with self.subTest(state=state):
+                self.assertEqual(
+                    redfish.get_sensor_state(
+                        {
+                            'Reading': 0,
+                            'Status_State': state,
+                            'Status_Health': 'Critical',
+                            'Thresholds_LowerFatal': 10,
+                        }
+                    ),
+                    STATE_OK,
+                )
+
     BASE: typing.ClassVar = {
         'Status_State': 'Enabled',
         'Status_Health': '',
@@ -1760,12 +1915,118 @@ class TestGetState(unittest.TestCase):
             STATE_WARN,
         )
 
-    def test_missing_state_key_is_ok(self):
-        # No Status_State at all -> not in ('Enabled','Quiesced') -> OK.
-        self.assertEqual(redfish.get_state({'Status_Health': 'Critical'}), STATE_OK)
+    def test_missing_state_key_is_evaluated(self):
+        # Status.State is optional in the Resource schema, so a controller that leaves
+        # it out still reports its health.
+        self.assertEqual(redfish.get_state({'Status_Health': 'Critical'}), STATE_CRIT)
+        self.assertEqual(
+            redfish.get_state({'Status_State': '', 'Status_Health': 'Warning'}),
+            STATE_WARN,
+        )
+
+    def test_every_present_state_is_evaluated(self):
+        # Every State value of the Resource schema except Absent and Disabled names a
+        # device that is there; a spare or offline power supply that fails is a fault.
+        for state in (
+            'Deferring',
+            'Degraded',
+            'Enabled',
+            'InTest',
+            'Qualified',
+            'Quiesced',
+            'StandbyOffline',
+            'StandbySpare',
+            'Starting',
+            'UnavailableOffline',
+            'Updating',
+        ):
+            with self.subTest(state=state):
+                self.assertEqual(
+                    redfish.get_state(
+                        {'Status_State': state, 'Status_Health': 'Critical'}
+                    ),
+                    STATE_CRIT,
+                )
+
+    def test_unmonitored_states_are_ok(self):
+        for state in redfish.UNMONITORED_STATES:
+            with self.subTest(state=state):
+                self.assertEqual(
+                    redfish.get_state(
+                        {'Status_State': state, 'Status_Health': 'Critical'}
+                    ),
+                    STATE_OK,
+                )
+
+    def test_non_string_health_does_not_raise(self):
+        self.assertEqual(
+            redfish.get_state({'Status_State': 'Enabled', 'Status_Health': 0}),
+            STATE_OK,
+        )
 
     def test_empty_dict_is_ok(self):
         self.assertEqual(redfish.get_state({}), STATE_OK)
+
+
+class TestNullNestedObjects(unittest.TestCase):
+    # The Redfish schemas declare State, Health, HealthRollup and a threshold's Reading
+    # as nullable. Firmware that does not conform sends null for the objects around them
+    # too (Status, Thresholds, Location, a link), for an empty slot for example. Every
+    # projection reads such a null like a missing key instead of raising.
+    PROJECTIONS = (
+        (redfish.get_chassis, redfish.CHASSIS_NESTED_KEYS),
+        (
+            redfish.get_chassis_power_powercontrol,
+            redfish.CHASSIS_POWER_CONTROL_NESTED_KEYS,
+        ),
+        (redfish.get_chassis_power_powersupplies, redfish.CHASSIS_POWER_NESTED_KEYS),
+        (redfish.get_chassis_power_voltages, redfish.CHASSIS_VOLTAGE_NESTED_KEYS),
+        (redfish.get_chassis_sensors, redfish.CHASSIS_SENSOR_NESTED_KEYS),
+        (redfish.get_chassis_thermal_fans, redfish.CHASSIS_FAN_NESTED_KEYS),
+        (
+            redfish.get_chassis_thermal_redundancy,
+            redfish.CHASSIS_THERMAL_REDUNDANCY_NESTED_KEYS,
+        ),
+        (
+            redfish.get_chassis_thermal_temperatures,
+            redfish.CHASSIS_THERMAL_TEMP_NESTED_KEYS,
+        ),
+        (redfish.get_manager, redfish.MANAGER_NESTED_KEYS),
+        (redfish.get_systems, redfish.SYSTEMS_NESTED_KEYS),
+        (redfish.get_systems_ethernetinterfaces, redfish.ETHERNET_NESTED_KEYS),
+        (redfish.get_systems_memory, redfish.MEMORY_NESTED_KEYS),
+        (redfish.get_systems_processors, redfish.PROCESSOR_NESTED_KEYS),
+        (redfish.get_systems_storage, redfish.SYSTEMS_STORAGE_NESTED_KEYS),
+        (
+            redfish.get_systems_storage_drives,
+            redfish.SYSTEMS_STORAGE_DRIVES_NESTED_KEYS,
+        ),
+        (redfish.get_systems_storage_volumes, redfish.VOLUME_NESTED_KEYS),
+        (redfish.get_updateservice_firmwareinventory, redfish.FIRMWARE_NESTED_KEYS),
+    )
+
+    def test_null_at_every_level_reads_as_empty(self):
+        for func, nested in self.PROJECTIONS:
+            for path in nested.values():
+                # null at each step of the path, the leaf included
+                for depth in range(1, len(path) + 1):
+                    resource = None
+                    for step in reversed(path[:depth]):
+                        resource = {step: resource}
+                    with self.subTest(func=func.__name__, path=path[:depth]):
+                        out = func(resource)
+                        self.assertEqual(out[_out_key(nested, path)], '')
+
+    def test_reported_repro(self):
+        self.assertEqual(redfish.get_systems({'Status': None})['Status_Health'], '')
+
+    def test_scalar_where_an_object_belongs_reads_as_empty(self):
+        out = redfish.get_chassis_sensors({'Thresholds': {'UpperCritical': 90}})
+        self.assertEqual(out['Thresholds_UpperCritical'], '')
+
+
+def _out_key(nested, path):
+    return next(key for key, value in nested.items() if value == path)
 
 
 # ---------------------------------------------------------------------------
@@ -1870,8 +2131,8 @@ class TestGetSystemsMemory(unittest.TestCase):
             {'Oem': {'Hpe': {'DIMMStatus': 'DegradedInUse'}}}
         )
         self.assertEqual(out['Status_State'], 'Enabled')
-        self.assertEqual(out['Status_Health'], 'Critical')
-        self.assertEqual(redfish.get_state(out), STATE_CRIT)
+        self.assertEqual(out['Status_Health'], 'Warning')
+        self.assertEqual(redfish.get_state(out), STATE_WARN)
 
     def test_hpe_dimmstatus_absent(self):
         out = redfish.get_systems_memory({'Oem': {'Hpe': {'DIMMStatus': 'NotPresent'}}})
@@ -1891,6 +2152,91 @@ class TestGetSystemsMemory(unittest.TestCase):
         )
         self.assertEqual(out['Status_Health'], 'Critical')
         self.assertEqual(redfish.get_state(out), STATE_CRIT)
+
+    def test_ts_fujitsu_legacy_status_error_is_flagged(self):
+        # iRMC names its Oem block `ts_fujitsu`, which is also what get_vendor() returns
+        out = redfish.get_systems_memory(
+            {
+                'Oem': {
+                    'ts_fujitsu': {'SignalStatus': 'Enabled', 'LegacyStatus': 'Error'}
+                },
+                'Status': {'State': 'Enabled', 'Health': 'OK'},
+            }
+        )
+        self.assertEqual(out['Status_Health'], 'Critical')
+        self.assertEqual(redfish.get_state(out), STATE_CRIT)
+
+    def test_ts_fujitsu_without_standard_status(self):
+        out = redfish.get_systems_memory(
+            {'Oem': {'ts_fujitsu': {'SignalStatus': 'Enabled', 'LegacyStatus': 'Ok'}}}
+        )
+        self.assertEqual(out['Status_State'], 'Enabled')
+        self.assertEqual(out['Status_Health'], 'OK')
+
+    def test_ts_fujitsu_ok_legacy_keeps_a_worse_standard_health(self):
+        out = redfish.get_systems_memory(
+            {
+                'Oem': {
+                    'ts_fujitsu': {'SignalStatus': 'Enabled', 'LegacyStatus': 'Ok'}
+                },
+                'Status': {'State': 'Enabled', 'Health': 'Warning'},
+            }
+        )
+        self.assertEqual(out['Status_Health'], 'Warning')
+
+    def test_hpe_dimmstatus_harmless_values_are_ok(self):
+        for dimm_status in (
+            'AddedButUnused',
+            'GoodInUse',
+            'GoodPartiallyInUse',
+            'PresentSpare',
+            'PresentUnused',
+            'UpgradedButUnused',
+        ):
+            with self.subTest(dimm_status=dimm_status):
+                out = redfish.get_systems_memory(
+                    {'Oem': {'Hpe': {'DIMMStatus': dimm_status}}}
+                )
+                self.assertEqual(out['Status_State'], 'Enabled')
+                self.assertEqual(redfish.get_state(out), STATE_OK)
+
+    def test_hpe_dimmstatus_configuration_error_is_critical(self):
+        out = redfish.get_systems_memory(
+            {'Oem': {'Hpe': {'DIMMStatus': 'ConfigurationError'}}}
+        )
+        self.assertEqual(redfish.get_state(out), STATE_CRIT)
+
+    def test_hpe_dimmstatus_problem_values_warn(self):
+        # checkmk's HPE_DIMM_STATE rates these WARN (Unknown and Other UNKNOWN)
+        for dimm_status in (
+            'Degraded',
+            'DoesNotMatch',
+            'ExpectedButMissing',
+            'MapOutConfiguration',
+            'MapOutError',
+            'NotSupported',
+            'Null',
+            'Other',
+            'Unknown',
+        ):
+            with self.subTest(dimm_status=dimm_status):
+                out = redfish.get_systems_memory(
+                    {'Oem': {'Hpe': {'DIMMStatus': dimm_status}}}
+                )
+                self.assertEqual(redfish.get_state(out), STATE_WARN)
+
+    def test_hpe_standard_status_wins_over_dimmstatus(self):
+        # A spare module reports a standard state of its own; DIMMStatus only stands in
+        # where the controller left the standard Status empty.
+        out = redfish.get_systems_memory(
+            {
+                'Oem': {'Hpe': {'DIMMStatus': 'PresentSpare'}},
+                'Status': {'State': 'StandbySpare', 'Health': 'OK'},
+            }
+        )
+        self.assertEqual(out['Status_State'], 'StandbySpare')
+        self.assertEqual(out['Status_Health'], 'OK')
+        self.assertEqual(redfish.get_state(out), STATE_OK)
 
     def test_generic_top_level_dimmstatus(self):
         out = redfish.get_systems_memory({'DIMMStatus': 'GoodInUse'})

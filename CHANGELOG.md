@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lynis.py: reads the report of a Lynis audit and lists its findings and suggestions
 * logsource.py: `systemd_booted()`, which tells whether systemd runs the host, like `sd_booted()`
 * powershell.py: `run_ps()` takes `timeout`
-* redfish.py: `get_chassis()` returns the `Thermal` and `Power` links of a chassis
+* redfish.py: `get_chassis()` returns the `Thermal` and `Power` links of a chassis, `UNMONITORED_STATES` names the states a consumer leaves out
 * restic.py: `repo_args()` and `password_file_arg()` for restic's repository and password arguments
 * rhelappstreams.py: the life cycle of the RHEL Application Streams, refreshed weekly from Red Hat's data
 * time.py: `datetime2local()` turns a time with an offset into local time; `timestr2datetime()` and `timestr2epoch()` take `pattern='rfc2822'` for the dates of e-mail, RSS and HTTP
@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lftest.py: the MySQL/MariaDB test account has `SELECT` on `*.*`, as the plugins document
 * lvm.py: the hint on missing LVM tools names the SUSE package command too
 * powershell.py: `run_ps()` reads Windows output like `shell_exec()`, as UTF-8 where valid and in the OEM code page otherwise
-* redfish.py: `get_sensor_state()` returns CRIT only above a fatal threshold and WARN above a critical one, and treats a user-defined threshold of `0` as not set; `get_perfdata()` follows
+* redfish.py: `get_sensor_state()` returns CRIT only above a fatal threshold and WARN above a critical one, and treats a user-defined threshold of `0` as not set; `get_perfdata()` follows; `get_state()` and `get_sensor_state()` evaluate the health in every state but `Absent` and `Disabled`; `get_manager_logservices_sel_entries()` reports a log entry that arrived as a bare reference as UNKNOWN; `get_systems_memory()` rates an HPE module problem other than a configuration error as a warning
 * shell.py: `shell_exec()` names a missing program and how to make it available, instead of the raw OS error
 * smb.py: imports faster, a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
 * version.py: `check_eol()` names the date only once when full support ends on the day of the end of life, and `version2float()` gives each version part three decimal places of its own, so the value sorts like the version (1.10.0 above 1.9.0)
@@ -59,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint, and no longer loses lines at a rotation or when daylight saving time ends, hands out half-written lines, or falls behind on a busy unit, and `timestamp()` no longer fails on a date local time cannot hold
 * net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, and `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
-* redfish.py: `start_trace()` works on Windows
+* redfish.py: `get_systems_memory()` no longer rates spare and unused HPE modules CRIT and reads Fujitsu iRMC modules, the `get_*()` projections and `get_manager_logservices_sel_entries()` no longer fail on a `null` value, and `start_trace()` works on Windows
 * ssh.py: `rsync()` and `scp()` reach an IPv6 address, and `rsync()` keeps an ssh option or key path containing spaces together
 * task.py: `run()` and `run_each()` no longer repeat the consumer's output when a job prints or ends the program, and report such a job as a failure
 * uptimerobot.py: `new_monitor()` and `edit_monitor()` send the port monitor presets UptimeRobot expects, so `https`, `ftp`, `smtp`, `pop3` and `imap` no longer fail, `post_content_type` accepts `application/json`, and the `get_*()` functions return every record, alert contacts past the first 50 and with a `limit` included, starting at a given `offset`
