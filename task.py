@@ -16,8 +16,13 @@ inside the same process therefore does nothing: the process is in the kernel and
 come back to run the timeout.
 
 The way out is to make the call somewhere the caller can dispose of, so the work runs in
-a child process and the deadline is enforced by killing that child. The sleep ends on any
-signal that would terminate the process anyway, which is what makes the kill work.
+a child process and the deadline is enforced by killing that child. Most of these sleeps
+end on a signal that terminates the process, which is what makes the kill work. A few
+waits in the kernel do not, among them writing back data to a server that is gone when a
+file on it is closed, which also happens when a process exits with such a file open
+(`nfs_file_flush()` -> `nfs_wb_all()` -> `folio_wait_bit()` in `TASK_UNINTERRUPTIBLE`,
+verified against Linux 7.3-rc3). A child stuck there is left behind rather than holding
+up the caller, and is collected by init once the caller ends.
 
 Every job is started before the first one is waited for, and they share a single
 deadline, so ten unreachable mount points take as long as one instead of ten times as
@@ -29,7 +34,7 @@ nothing to protect against and would only cost a process per job.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 import json
 import os
@@ -53,6 +58,12 @@ _TOO_LARGE = f'the answer was larger than {MAX_RESULT_BYTES} bytes'
 
 # What a job is given back when nothing readable came out of it.
 _UNREADABLE = 'the answer could not be read'
+
+# How long the children are given, together, to actually end before `run_each()` returns
+# without them. Long enough for a process that can act on SIGKILL, short enough that one
+# which cannot does not extend the caller's deadline in any meaningful way. Same as
+# `shell._KILL_GRACE`.
+_KILL_GRACE = 1
 
 
 def run(func, timeout=8):
@@ -103,6 +114,31 @@ def _flush_std_streams():
             stream.flush()
         except (AttributeError, OSError, ValueError):
             pass
+
+
+def _reap(pids):
+    """
+    Collect the given children, waiting `_KILL_GRACE` seconds for all of them together.
+
+    A blocking `os.waitpid(pid, 0)` would wait for as long as a child sleeps in the
+    kernel without reacting to SIGKILL, which is exactly what `run_each()` must not do.
+    A child that has not ended when the grace period is over is left behind; init
+    collects it once the caller ends. `WNOHANG` polls the child alone, like
+    `subprocess.Popen.wait()` with a timeout does.
+    """
+    deadline = time.monotonic() + _KILL_GRACE
+    pids = list(pids)
+    while pids:
+        for pid in list(pids):
+            try:
+                done, _ = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                done = pid
+            if done:
+                pids.remove(pid)
+        if not pids or time.monotonic() >= deadline:
+            return
+        time.sleep(0.01)
 
 
 def run_each(jobs, timeout=8):
@@ -159,6 +195,8 @@ def run_each(jobs, timeout=8):
     started = time.time()
     results = {}
     pending = {}
+    # every child started, to be collected before returning
+    children = []
     # Read ends the parent already holds. A child inherits them and closes them right
     # away, so that no child keeps another job's pipe alive.
     inherited = []
@@ -218,16 +256,22 @@ def run_each(jobs, timeout=8):
             del pending[read_fd]
             poller.unregister(read_fd)
             os.close(read_fd)
-            os.waitpid(job['pid'], 0)
+            # The end of the pipe does not mean the child is gone: it may still be
+            # closing other files on its way out. It is collected below, bounded.
+            children.append(job['pid'])
             results[job['key']] = (
                 (False, _TOO_LARGE) if job['oversized'] else _decode(job['chunks'])
             )
 
     for read_fd, job in pending.items():
-        os.kill(job['pid'], signal.SIGKILL)
-        os.waitpid(job['pid'], 0)
+        try:
+            os.kill(job['pid'], signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        children.append(job['pid'])
         os.close(read_fd)
         results[job['key']] = (False, TIMEOUT)
+    _reap(children)
     return results
 
 

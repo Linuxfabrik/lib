@@ -23,6 +23,7 @@ import subprocess
 import sys
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, '..')
 
@@ -165,6 +166,53 @@ class TestRunEachDeadline(unittest.TestCase):
 @unittest.skipUnless(
     hasattr(os, 'fork'), 'without fork() the jobs run in the calling process'
 )
+class TestRunEachChildThatDoesNotEnd(unittest.TestCase):
+    """A child stuck in an uninterruptible kernel wait survives SIGKILL; closing a file
+    on an NFS server that is gone puts it there (nfs_file_flush() -> folio_wait_bit()
+    in TASK_UNINTERRUPTIBLE). No unit test can produce that, so os.waitpid() is made
+    to report every child as still running, and the real children are collected
+    afterwards. run_each() must return anyway, within the deadline and the grace."""
+
+    def run_with_children_that_never_end(self, jobs, timeout):
+        real_waitpid = os.waitpid
+        calls = []
+        pids = []
+
+        def waitpid(pid, options):
+            calls.append(options)
+            pids.append(pid)
+            if options & os.WNOHANG:
+                return 0, 0
+            return real_waitpid(pid, options)  # would block: must not happen
+
+        with mock.patch.object(task.os, 'waitpid', side_effect=waitpid):
+            started = time.monotonic()
+            result = task.run_each(jobs, timeout=timeout)
+            elapsed = time.monotonic() - started
+        for pid in set(pids):
+            try:
+                real_waitpid(pid, 0)
+            except ChildProcessError:
+                pass
+        return result, elapsed, calls
+
+    def test_a_killed_child_that_does_not_end_does_not_hold_the_caller(self):
+        jobs = [(i, sleeper(30)) for i in range(3)]
+        result, elapsed, calls = self.run_with_children_that_never_end(jobs, 1)
+        self.assertEqual(result, dict.fromkeys(range(3), (False, task.TIMEOUT)))
+        # one shared grace period, not one per child
+        self.assertLess(elapsed, 1 + task._KILL_GRACE + 1)
+        self.assertTrue(all(options & os.WNOHANG for options in calls))
+
+    def test_a_child_that_answered_but_does_not_end_does_not_hold_the_caller(self):
+        result, elapsed, calls = self.run_with_children_that_never_end(
+            [('a', lambda: 42)], 5
+        )
+        self.assertEqual(result, {'a': (True, 42)})
+        self.assertLess(elapsed, task._KILL_GRACE + 1)
+        self.assertTrue(all(options & os.WNOHANG for options in calls))
+
+
 class TestRunEachLeavesNothingBehind(unittest.TestCase):
     def test_no_child_survives_a_deadline(self):
         before = child_count()
