@@ -20,11 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lftest.py: `fixture_root()`, which accepts a test-only configuration root inside the unit tests only
 * lynis.py: reads the report of a Lynis audit and lists its findings and suggestions
 * logsource.py: `systemd_booted()`, which tells whether systemd runs the host, like `sd_booted()`
+* net.py: `fetch()` and `fetch_socket()` take `max_bytes` and `deadline`
 * powershell.py: `run_ps()` takes `timeout`
 * redfish.py: `get_chassis()` returns the `Thermal` and `Power` links of a chassis, `UNMONITORED_STATES` names the states a consumer leaves out
 * restic.py: `repo_args()` and `password_file_arg()` for restic's repository and password arguments
 * rhelappstreams.py: the life cycle of the RHEL Application Streams, refreshed weekly from Red Hat's data
 * time.py: `datetime2local()` turns a time with an offset into local time; `timestr2datetime()` and `timestr2epoch()` take `pattern='rfc2822'` for the dates of e-mail, RSS and HTTP
+* url.py: `fetch()` and `fetch_json()` take `deadline`
 * version.py: `check_eol()` takes `cycle`, for products whose release cycles are not version numbers, and `package_path`, which applies the life cycle RHEL, Debian and Ubuntu give the software they ship
 * wordpress.py: `find_installation()`, the first WordPress installation in the usual places, `/var/www` included
 
@@ -37,11 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * huawei_pacific.py: `get_data()` no longer logs in again after a request that timed out, so a slow appliance keeps its session and the next attempt starts sooner
 * lftest.py: the MySQL/MariaDB test account has `SELECT` on `*.*`, as the plugins document
 * lvm.py: the hint on missing LVM tools names the SUSE package command too
+* net.py: `fetch()` and `fetch_socket()` refuse an answer above 64 MiB and give up on an exchange after ten times the timeout
 * powershell.py: `run_ps()` reads Windows output like `shell_exec()`, as UTF-8 where valid and in the OEM code page otherwise
 * redfish.py: `get_sensor_state()` returns CRIT only above a fatal threshold and WARN above a critical one, and treats a user-defined threshold of `0` as not set; `get_perfdata()` follows; `get_state()` and `get_sensor_state()` evaluate the health in every state but `Absent` and `Disabled`; `get_manager_logservices_sel_entries()` reports a log entry that arrived as a bare reference as UNKNOWN; `get_systems_memory()` rates an HPE module problem other than a configuration error as a warning
 * shell.py: `shell_exec()` names a missing program and how to make it available, instead of the raw OS error
 * smb.py: imports faster, a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
-* version.py: `check_eol()` names the date only once when full support ends on the day of the end of life, and `version2float()` gives each version part three decimal places of its own, so the value sorts like the version (1.10.0 above 1.9.0)
+* url.py: `fetch()` and `fetch_json()` give up on a request after ten times the timeout, refuse a header value with control characters or a leading or trailing blank, and a timeout outside 0 to 1000000 or of an unknown type
+* version.py: `check_eol()` names the date only once when full support ends on the day of the end of life and names an available release the way its cycle spells it (`26.04.1`), and `version2float()` sorts like the version (1.10.0 above 1.9.0)
 
 ### Removed
 
@@ -53,27 +57,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * base.py: on Windows, what argparse writes to stderr no longer arrives with an empty line after every line, `get_state()` answers UNKNOWN to a threshold that is not a number instead of raising, and the messages of `coe()`, `cu()` and `verbose()` are no longer cut short at a `|`, and `guess_type()` no longer truncates a float
 * container.py: `run()` accepts an account whose subordinate UID range comes from SSSD or another `subid:` module, not only from `/etc/subuid`
 * db_sqlite.py: `compute_load()` leaves out a sensor with a missing or non-numeric value instead of raising, and `cut_per_sensor()` also trims sensors and rows without a name or timestamp and refuses a `_max` that is not an integer
-* disk.py: `get_real_disks()` keeps logical volumes apart on hosts without udev, and `is_within()` works with the filesystem root as a root, `grep_file()` reports an invalid pattern and returns the whole match of one without a group, and an unread FIFO no longer hangs `read_file()`, `read_env()`, `read_csv()`, `get_fingerprint()` or `grep_file()`
-* dmidecode.py: `ram()` counts every module of a set of identical ones and reads the sizes of dmidecode 3.7 and terabyte modules, instead of reporting too little or nothing, and `cpu_type()` names the CPU of an SMBIOS older than 2.5, and `dmidecode_parse()` keeps the name of a block such as `Flags` or `Characteristics` instead of its first letter
+* disk.py: `get_real_disks()` keeps logical volumes apart on hosts without udev, `is_within()` works with the filesystem root as a root, and a FIFO nobody writes to no longer hangs the file readers
+* dmidecode.py: `ram()` counts every module of a set of identical ones and reads the sizes of dmidecode 3.7 and terabyte modules, `cpu_type()` works on an SMBIOS older than 2.5, and block names such as `Flags` are no longer cut to a letter
 * feedparser.py: `parse_atom()` and `parse_rss()` read every date the formats allow, apply its offset, date an empty or unreadable one to 1970 instead of failing, and no longer take the title or date of a feed from its first entry, or the title of an entry from its `<source>`
 * human.py: `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), and `humanduration2seconds()` and `humanrange2seconds()` read a fraction such as `0.5D` instead of only its decimal places; `bytes2human()`, `number2human()` and `seconds2human()` no longer fail on infinity, move a value that rounds up into the next unit, and show a duration below a picosecond as `0s`
 * icinga.py: `api_post()` reaches a server whose name starts with `v1` or `v2` and reports a URL it cannot read instead of raising, `build_icingaweb2_url()` answers such a URL with `None`, and `get_service()` finds exactly the service named, also one whose name holds a quote, a backslash or a `*`
 * infomaniak.py: `get_swiss_backup_slots()` applies the proxy, TLS and timeout settings to the products request too
-* jitsi.py: `get_data()` returns a `(success, result)` pair on failure too, instead of a triple
+* jitsi.py: `get_data()` reports a failure the way every other function of the library does
 * logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint, and no longer loses lines at a rotation or when daylight saving time ends, hands out half-written lines, falls behind on a busy unit, or reads a compressed file named directly again on every run; `timestamp()` no longer fails on a date local time cannot hold
 * lvm.py: `parse_report()` answers a report of an unexpected shape with an error instead of raising
 * mail.py: `send()` reports a message it cannot build, a line break in a header or an incomplete inline image, as an error instead of raising
-* net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data, and `get_proxy()` reports a target or proxy URL it cannot read instead of raising; `fetch()` and `fetch_socket()` no longer garble a character the answer splits between two reads; `fetch()` and `fetch_socket()` no longer wait for ever on a server that keeps sending, and refuse an answer beyond `max_bytes`
+* net.py: `FAMILIYSTR` names an IPv6 address on Windows, `fetch(tls=True)` returns the answer instead of the encrypted data, `get_proxy()` reports an unreadable URL, and `fetch()` and `fetch_socket()` no longer garble split characters or wait forever on a server that keeps sending
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
 * redfish.py: `get_systems_memory()` no longer rates spare and unused HPE modules CRIT and reads Fujitsu iRMC modules, the `get_*()` projections and `get_manager_logservices_sel_entries()` no longer fail on a `null` value, `build_url()` reports a base URL it cannot read instead of raising, `get_auth_header()` no longer fails on a session location the controller garbles, and `start_trace()` works on Windows
 * smb.py: `glob()` reports a missing directory instead of listing it as empty and lists a pattern without matches as empty instead of failing, `open_file()` names a directory, and both take an `smb://` URL
 * ssh.py: `rsync()` and `scp()` reach an IPv6 address, and `rsync()` keeps an ssh option or key path containing spaces together
 * task.py: `run()` and `run_each()` no longer repeat the consumer's output when a job prints or ends the program, report such a job as a failure, and return on time when a job cannot be killed
-* time.py: `epoch2iso()` and `get_weekday()` answer an empty string to a timestamp beyond what the platform can represent instead of failing; `timestr2datetime()` and `timestr2epoch()` raise the documented ValueError for a value that is no string, and `timestrdiff()` reads a time without an offset as local time instead of raising
-* uptimerobot.py: `new_monitor()` and `edit_monitor()` send the port monitor presets UptimeRobot expects, so `https`, `ftp`, `smtp`, `pop3` and `imap` no longer fail, `post_content_type` accepts `application/json`, and the `get_*()` functions return every record, alert contacts past the first 50 and with a `limit` included, starting at a given `offset`; the list functions answer an unexpected response with an error instead of raising, and a list that never ends is given up on
-* url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example, `fetch(extended=True)` authenticates to a proxy, `fetch()` and `fetch_json()` report a URL they cannot read instead of raising, and `split_basic_auth()` keeps the brackets of an IPv6 address and hands back a URL it cannot read unchanged; `fetch()` with `insecure` no longer fails on a `cacert` it cannot read; `fetch()` and `fetch_json()` no longer wait for ever on a server that keeps sending, follow a chain of more than one redirect, and answer a wrong argument type or an unusable header with an error instead of raising
+* time.py: `epoch2iso()` and `get_weekday()` answer an empty string beyond the range of the platform, `timestr2datetime()` and `timestr2epoch()` raise ValueError for a value that is no string, and `timestrdiff()` copes with mixed offsets
+* uptimerobot.py: `new_monitor()` and `edit_monitor()` send the port monitor presets UptimeRobot expects, the `get_*()` functions return every record, and a response of the wrong shape or a list that never ends is an error
+* url.py: HTTPS on Windows verifies sites with a root certificate not yet downloaded, `extended=True` authenticates to a proxy, redirect chains of several hops work, and `fetch()` no longer waits forever or raises on bad input
 * user.py: `get_uid_min()` reads an indented `UID_MIN`, and a repeated or commented one the way useradd on RHEL 10 and Fedora does
-* version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable, answers UNKNOWN to a version without a number instead of calling it older than anything listed, and no longer doubles a blank in its message; `version()` no longer reads a pre-release, a build suffix or a date as part of the version; `check_eol()` finds release cycles that are zero-padded, such as Ubuntu `22.04`
+* version.py: `check_eol()` names a missing httpx, answers UNKNOWN to a version without a number, finds zero-padded release cycles such as Ubuntu `22.04`, and `version()` no longer reads a pre-release or build suffix as part of the version
 * winrm.py: `run_ps()` returns the output as PowerShell shows it again instead of the type names of the objects, behind a JEA endpoint as a list of their properties, and no longer writes a Python warning about the progress stream; without pypsrp, `run_cmd()` and `run_ps()` work with the default transport `negotiate` and without one
 * wordpress.py: `get_header_value()`, `get_plugins()`, `get_themes()`, and `get_site_url()`, which no longer reports the enclosing site when its own `wp-config.php` cannot be read
 
@@ -90,8 +94,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`, and any file `occ` loads that another account can change, app directories outside the installation included
 * openstack.py: `connect()` reuses a cached token only for the same domain, user, password and interface, so checks for different customers on one host no longer run with each other's token
 * ssh.py: `rsync()`, `run()` and `scp()` refuse a port that is not a number from 1 to 65535, which `rsync()` handed to ssh as further options such as `ProxyCommand`
-* txt.py: `sanitize_sensitive_data()` also redacts credentials under prefixed names such as `db_password` or `client_secret`, `passwd`, quoted values with spaces or escaped quotes, and URL passwords containing `@` or `/`, a URL's userinfo when its scheme is missing, and the query parameters `auth`, `pw`, `sid` and `sig`, and the headers `X-Auth-Token`, `X-Api-Key`, `Api-Key`, `Cookie` and `Proxy-Authorization`
-* url.py: the error messages of `fetch()` and `fetch_json()` no longer show part of a password containing `/`, or the values of `api_key`, `secret` and similar query parameters, nor the userinfo of a URL without a scheme or the value of a header
+* txt.py: `sanitize_sensitive_data()` redacts credentials under prefixed names such as `db_password`, URL passwords containing `@` or `/`, the headers that carry a credential, such as X-Auth-Token, Cookie and Authorization, and userinfo without a scheme
+* url.py: the error messages of `fetch()` and `fetch_json()` no longer show part of a password containing `/`, secret query values, the userinfo of a URL without a scheme or a header value
 
 
 ## [v8.2.0] - 2026-09-22
