@@ -383,6 +383,89 @@ class TestSanitizeSensitiveData(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(txt.sanitize_sensitive_data(text), expected)
 
+    def test_redacts_a_header_that_carries_a_secret(self):
+        for text, expected in (
+            ('Api-Key: linuxfabrik', 'Api-Key: ******'),
+            ('x-api-key:linuxfabrik', 'x-api-key:******'),
+            ('X-Auth-Token: linuxfabrik done', 'X-Auth-Token: ****** done'),
+            ('X-Subject-Token: linuxfabrik', 'X-Subject-Token: ******'),
+            ('X-Redfish-Token: linuxfabrik', 'X-Redfish-Token: ******'),
+            ('Private-Token: linuxfabrik', 'Private-Token: ******'),
+            (
+                'Proxy-Authorization: Basic linuxfabrik',
+                'Proxy-Authorization: Basic ******',
+            ),
+            ('X-Session-Id: linuxfabrik', 'X-Session-Id: ******'),
+            ('Session-Id: linuxfabrik', 'Session-Id: ******'),
+            ('Authorization: Negotiate linuxfabrik', 'Authorization: Negotiate ******'),
+            ('Authorization: NTLM linuxfabrik', 'Authorization: NTLM ******'),
+            (
+                'Authorization: Digest username="u", response="linuxfabrik"',
+                'Authorization: Digest ******',
+            ),
+            ('Cookie: a=linuxfabrik; b=linuxfabrik tail', 'Cookie: ******'),
+            ('Set-Cookie: sid=linuxfabrik; Path=/', 'Set-Cookie: ******'),
+            ('Set-Cookie: a=linuxfabrik, b=linuxfabrik', 'Set-Cookie: ******'),
+            (
+                'GET /x HTTP/1.1\r\nX-Api-Key: linuxfabrik\r\nAccept: */*',
+                'GET /x HTTP/1.1\r\nX-Api-Key: ******\r\nAccept: */*',
+            ),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(txt.sanitize_sensitive_data(text), expected)
+
+    def test_a_cookie_header_is_redacted_whole_whatever_its_pairs_are_called(self):
+        # the pass for `sessionid=...` used to swallow the `;` and the pairs behind it stayed
+        for text in (
+            'Cookie: csrftoken=linuxfabrik; sessionid=linuxfabrik; other=linuxfabrik',
+            'Cookie: a=linuxfabrik; token=linuxfabrik; other=linuxfabrik',
+            'Cookie: a=linuxfabrik; key=linuxfabrik; x=linuxfabrik; y=linuxfabrik',
+            'Cookie: sid=linuxfabrik; z=linuxfabrik',
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(txt.sanitize_sensitive_data(text), 'Cookie: ******')
+
+    def test_header_redaction_stays_linear(self):
+        import time
+
+        for text in (
+            'Cookie: ' + 'a=b; ' * 100000,
+            'X-Api-Key:' + ' ' * 1000000,
+            'Cookie:' + '\t' * 500000 + 'x',
+            ('Set-Cookie: ' + 'a' * 50 + '\n') * 20000,
+        ):
+            started = time.monotonic()
+            txt.sanitize_sensitive_data(text)
+            self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_redacts_a_header_in_a_json_or_dictionary_dump(self):
+        out = txt.sanitize_sensitive_data(
+            '{"X-Auth-Token": "linuxfabrik", "Api-Key": "linuxfabrik", '
+            '"Cookie": "a=linuxfabrik"}'
+        )
+        self.assertNotIn('linuxfabrik', out)
+        out = txt.sanitize_sensitive_data(
+            "{'Cookie': 'a=linuxfabrik', 'Proxy-Authorization': 'Basic linuxfabrik', "
+            "'Authorization': 'Bearer linuxfabrik', 'Accept': 'text/html'}"
+        )
+        self.assertNotIn('linuxfabrik', out)
+        self.assertIn("'Accept': 'text/html'", out)
+
+    def test_keeps_a_header_or_sentence_that_only_looks_like_a_secret(self):
+        for text in (
+            'Token-Type: Bearer',
+            'Invalid token: expired',
+            'token: expired',
+            'Host: example.com:8443',
+            'X-Api-Version: 3',
+            'Cookie-Policy: strict',
+            'Keys: 5',
+            'Content-Type: application/json',
+            'X-Request-Id: 42',
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(txt.sanitize_sensitive_data(text), text)
+
     def test_redacts_query_names_a_service_uses_for_a_secret(self):
         for name in (
             'pw',

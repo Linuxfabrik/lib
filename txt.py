@@ -18,7 +18,7 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026101202'
 
 import html
 import operator
@@ -67,6 +67,7 @@ SENSITIVE_NAMES = (
     r'password|passwd|pass|token|key|secret|api[_-]?key|access[_-]?token|http[_-]?auth'
     r'|mysql_pwd|pgpassword|sshpass'
     r'|pw|auth|sig|signature|sid|session[_-]?id|credentials?'
+    r'|authorization|cookie'
 )
 
 SENSITIVE_FIELDS_PATTERN = re.compile(
@@ -130,6 +131,24 @@ SENSITIVE_BARE_USERINFO_PATTERN = re.compile(
 # `C:\Users\a@b`. A password holding one of the characters left out is found by the
 # `scheme://` form.
 
+SENSITIVE_HEADER_PATTERN = re.compile(
+    r'(?i)(?<![a-z0-9-])((?:x-[a-z0-9-]*(?:token|key|secret|auth|password|passwd|session'
+    r'|session-?id)|api-?key|private-token|job-token|session-?id)[ \t]*:[ \t]*)\S+'
+)
+SENSITIVE_COOKIE_PATTERN = re.compile(
+    r'(?i)(?<![a-z0-9-])((?:set-)?cookie[ \t]*:[ \t]*)[^\r\n]+'
+)
+# An HTTP header that carries a secret, in the `Name: value` form of a request dump or a
+# log line:
+#   X-Auth-Token: abc123          X-Subject-Token, X-Redfish-Token, X-Api-Key, ...
+#   Api-Key: abc123               Private-Token, Job-Token, X-Session-Id
+#   Cookie: a=1; b=2              Set-Cookie: sid=abc123; Path=/
+# Only these names, not every word that ends in `token`, so that a sentence such as
+# "Invalid token: expired" and a header such as `Token-Type: Bearer` keep the part of the
+# message that explains what is wrong. A cookie header is redacted to the end of the line:
+# its pairs are not told apart, and the one that names a secret says nothing about the
+# others. `Proxy-Authorization` is left to SENSITIVE_AUTH_PATTERN.
+
 SENSITIVE_JSON_PATTERN = re.compile(
     rf'(?i)("(?:[^"\\]*[^a-z0-9"\\])?(?:{SENSITIVE_NAMES})"\s*:\s*")'
     r'(?:[^"\\]|\\.)*(")'
@@ -151,11 +170,13 @@ SENSITIVE_MAPPING_PATTERN = re.compile(
 # f-string around a dict therefore escapes the double-quoted pattern above.
 
 SENSITIVE_AUTH_PATTERN = re.compile(
-    r'(?i)(Authorization:\s*(?:Bearer|Basic|Digest|Token)\s+)\S+'
+    r'(?i)(Authorization:\s*(?:Bearer|Basic|Digest|Negotiate|NTLM|Token)\s+)[^\r\n]+'
 )
 # Matches HTTP Authorization headers like:
 #   Authorization: Bearer abc123
 #   Authorization: Basic dXNlcjpwYXNz
+#   Authorization: Digest username="u", response="abc"
+# The rest of the line is the credential, the scheme stays (`Digest` has commas).
 # Captures the prefix (group 1), replacing the credential value.
 
 SENSITIVE_ARGV_PATTERN = re.compile(
@@ -574,6 +595,9 @@ def sanitize_sensitive_data(msg, replacement='******'):
     - A credential carried inside a URL's userinfo is redacted as well, which is how
       a proxy or a repository address smuggles one past a name-based match, also when
       the scheme is missing (`usr:secret@host/x`, `//usr:secret@host/`).
+    - An HTTP header that carries a secret (`X-Auth-Token`, `X-Api-Key`, `Api-Key`,
+      `Cookie`, `Set-Cookie`, `Proxy-Authorization`, ...) is redacted in the `Name: value`
+      form, and its name in a JSON or dictionary dump as well.
     - Query parameters a service uses for a secret (`pw`, `auth`, `sig`, `sid`, ...) are
       redacted alongside `password` and `token`.
     - A name that merely starts with a sensitive word keeps its value, so an option
@@ -610,6 +634,11 @@ def sanitize_sensitive_data(msg, replacement='******'):
         msg = SENSITIVE_URL_PATTERN.sub(rf'\1{replacement}\2', msg)
     if ':' in msg and '@' in msg:
         msg = SENSITIVE_BARE_USERINFO_PATTERN.sub(rf'\1{replacement}\2', msg)
+    if ':' in msg:
+        # before the key=value pass: that one redacts the value of a cookie called
+        # `sessionid` and takes the `;` with it, which cuts the chain of the pairs behind
+        msg = SENSITIVE_COOKIE_PATTERN.sub(rf'\1{replacement}', msg)
+        msg = SENSITIVE_HEADER_PATTERN.sub(rf'\1{replacement}', msg)
     if '=' in msg or '-p' in msg or '-P' in msg:
         msg = SENSITIVE_FIELDS_PATTERN.sub(
             lambda match: _redact_field(match, replacement), msg
