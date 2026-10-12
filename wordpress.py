@@ -18,7 +18,7 @@ them take the path to the installation root, the directory holding `wp-includes/
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026081101'
+__version__ = '2026101201'
 
 import glob as _glob
 import os
@@ -150,11 +150,18 @@ def _header_value(header, field):
     The opening PHP tag is allowed in front of the field for the same reason: a file that
     puts its whole header on the first line, `<?php /* Plugin Name: Foo */`, is a plugin
     to WordPress, and a consumer that did not accept the tag would not see it at all.
+
+    The colon follows the field name directly, and the value ends with its line. An
+    empty field is therefore empty, as in WordPress, instead of taking the next line as
+    its value. Verified against `get_file_data()` in wordpress-develop a1f7749fef
+    (7.2-alpha).
     """
     match = re.search(
-        rf'(?im)^(?:[ \t]*<\?php)?[ \t*#/@]*{re.escape(field)}\s*:\s*(.+)$', header
+        rf'(?im)^(?:[ \t]*<\?(?:php)?)?[ \t*#/@]*{re.escape(field)}:(.*)$', header
     )
-    if not match:
+    # WordPress drops a raw value that PHP reads as false, which besides the empty
+    # string is only `'0'`: `Version:0` is empty there, `Version: 0` is `'0'`.
+    if not match or match.group(1) in ('', '0'):
         return ''
     return COMMENT_TAIL.sub('', match.group(1)).strip()
 
@@ -165,7 +172,8 @@ def get_header_value(filename, field):
 
     WordPress describes a plugin through a comment block at the top of its main PHP file
     and a theme through the same kind of block at the top of its `style.css`. Each field
-    sits on its own line as `Field: value`, optionally preceded by comment markers.
+    sits on its own line as `Field: value`, optionally preceded by comment markers. The
+    colon has to follow the field name directly, as WordPress requires.
 
     Parameters
     ----------
@@ -356,8 +364,11 @@ def get_site_url(path):
     - `WP_HOME` wins over `WP_SITEURL`. The first is the address visitors use, the
       second the one the core itself is reached under; they differ on installations
       keeping the core in a subdirectory.
-    - Looked up in `<path>/wp-config.php` first, then one directory above, which is the
-      only other place WordPress itself accepts the file in.
+    - Looked up where `wp-load.php` looks: in `<path>/wp-config.php`, and only if that
+      does not exist, one directory above, unless that directory holds a `wp-settings.php`
+      and is therefore another installation. A file that exists but cannot be read is a
+      failure, not a reason to report the address of a different site. Verified against
+      `wp-load.php` in wordpress-develop a1f7749fef (7.2-alpha).
     - A value assembled at runtime, such as `'https://' . $_SERVER['HTTP_HOST']`, is not
       a fixed URL and is skipped rather than returned half-read.
     - `define()`, `@define()` and `const` are all read, and a definition PHP would skip
@@ -373,35 +384,37 @@ def get_site_url(path):
     >>> get_site_url('/var/www/html/wordpress')
     (True, 'https://www.example.com')
     """
-    error = ''
-    for candidate in (
-        os.path.join(path, CONFIG_FILE),
-        os.path.join(path, os.pardir, CONFIG_FILE),
-    ):
-        success, config = disk.read_file(candidate, binary=True, max_bytes=CONFIG_BYTES)
-        if not success:
-            error = error or config
-            continue
-        config = BLOCK_COMMENT.sub('', txt.to_text(config, errors='strict_or_latin1'))
-        for constant in SITE_URL_CONSTANTS:
-            # Matches both PHP quoting styles and tolerates whitespace anywhere the
-            # language does. The closing quote must be followed by the end of the
-            # argument, so a concatenated expression does not match at all. `@define()`
-            # is the same call with its warnings suppressed, and `const` is the other
-            # spelling PHP makes visible to `defined()`, so WordPress honours all three.
-            match = re.search(
-                LINE_START + rf"""@?define\s*\(\s*(['"]){constant}\1\s*,\s*"""
-                r"""(['"])(?P<url>https?://[^'"]+)\2\s*[,)]""",
-                config,
-            ) or re.search(
-                LINE_START + rf"""const\s+{constant}\s*=\s*"""
-                r"""(['"])(?P<url>https?://[^'"]+)\1\s*;""",
-                config,
-            )
-            if match:
-                return (True, match.group('url').rstrip('/'))
-        return (True, '')
-    return (False, error or f'No "{CONFIG_FILE}" found below "{path}".')
+    # `file_exists()` in PHP follows symlinks, as `os.path.exists()` does
+    candidate = os.path.join(path, CONFIG_FILE)
+    parent = os.path.join(path, os.pardir)
+    if not os.path.exists(candidate):
+        candidate = os.path.join(parent, CONFIG_FILE)
+        if not os.path.exists(candidate) or os.path.exists(
+            os.path.join(parent, 'wp-settings.php')
+        ):
+            return (False, f'No "{CONFIG_FILE}" found below "{path}".')
+    success, config = disk.read_file(candidate, binary=True, max_bytes=CONFIG_BYTES)
+    if not success:
+        return (False, config)
+    config = BLOCK_COMMENT.sub('', txt.to_text(config, errors='strict_or_latin1'))
+    for constant in SITE_URL_CONSTANTS:
+        # Matches both PHP quoting styles and tolerates whitespace anywhere the
+        # language does. The closing quote must be followed by the end of the
+        # argument, so a concatenated expression does not match at all. `@define()`
+        # is the same call with its warnings suppressed, and `const` is the other
+        # spelling PHP makes visible to `defined()`, so WordPress honours all three.
+        match = re.search(
+            LINE_START + rf"""@?define\s*\(\s*(['"]){constant}\1\s*,\s*"""
+            r"""(['"])(?P<url>https?://[^'"]+)\2\s*[,)]""",
+            config,
+        ) or re.search(
+            LINE_START + rf"""const\s+{constant}\s*=\s*"""
+            r"""(['"])(?P<url>https?://[^'"]+)\1\s*;""",
+            config,
+        )
+        if match:
+            return (True, match.group('url').rstrip('/'))
+    return (True, '')
 
 
 def _scan_plugins(path):

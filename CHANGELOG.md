@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example, `fetch(extended=True)` authenticates to a proxy, and `split_basic_auth()` keeps the brackets of an IPv6 address
 * version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable, and answers UNKNOWN to a version without a number instead of calling it older than anything listed; `version()` no longer reads a pre-release, a build suffix or a date as part of the version
 * winrm.py: `run_ps()` returns the output as PowerShell shows it again instead of the type names of the objects, behind a JEA endpoint as a list of their properties, and no longer writes a Python warning about the progress stream
+* wordpress.py: `get_header_value()`, `get_plugins()`, `get_themes()`, and `get_site_url()`, which no longer reports the enclosing site when its own `wp-config.php` cannot be read
 
 ### Security
 

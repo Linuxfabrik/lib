@@ -323,6 +323,15 @@ class TestWordPress(unittest.TestCase):
     def test_get_plugin_slugs_on_missing_installation(self):
         self.assertEqual(wordpress.get_plugin_slugs(self.empty), {})
 
+    def test_get_plugins_skips_an_empty_plugin_name(self):
+        root = tempfile.mkdtemp(prefix='lftest-wordpress-empty-name-')
+        self.addCleanup(shutil.rmtree, root, True)
+        write(
+            os.path.join(root, 'wp-content', 'plugins', 'nameless', 'nameless.php'),
+            '<?php\n/*\n * Plugin Name:\n * Version: 1.0\n */\n',
+        )
+        self.assertEqual(wordpress.get_plugins(root), {})
+
     def test_get_plugins_ignores_placeholder(self):
         self.assertNotIn('index', wordpress.get_plugins(self.wp))
 
@@ -430,6 +439,54 @@ class TestSiteUrl(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn('wp-config.php', result)
 
+    # wp-load.php takes the configuration one level up only when that level is not an
+    # installation of its own, with its own wp-settings.php.
+    def test_parent_config_of_another_installation_is_not_used(self):
+        root = tempfile.mkdtemp(prefix='lftest-wordpress-nested-')
+        self.addCleanup(shutil.rmtree, root, True)
+        write(os.path.join(root, 'wp-config.php'), WP_CONFIG_PHP)
+        write(os.path.join(root, 'wp-settings.php'), '<?php\n')
+        blog = os.path.join(root, 'blog')
+        write(os.path.join(blog, 'wp-includes', 'version.php'), VERSION_PHP)
+        success, result = wordpress.get_site_url(blog)
+        self.assertFalse(success)
+        self.assertNotIn('example.com', result)
+
+    # A configuration that exists but cannot be read is a failure; the one above belongs
+    # to a different site.
+    @unittest.skipIf(
+        os.name != 'posix' or os.geteuid() == 0,
+        'needs POSIX permissions and an account they apply to',
+    )
+    def test_unreadable_config_does_not_fall_back_to_the_parent(self):
+        root = tempfile.mkdtemp(prefix='lftest-wordpress-unreadable-')
+        self.addCleanup(shutil.rmtree, root, True)
+        write(os.path.join(root, 'wp-config.php'), WP_CONFIG_PHP)
+        blog = os.path.join(root, 'blog')
+        own = os.path.join(blog, 'wp-config.php')
+        write(own, WP_CONFIG_SITEURL_ONLY_PHP)
+        os.chmod(own, 0)
+        self.addCleanup(os.chmod, own, 0o600)
+        success, result = wordpress.get_site_url(blog)
+        self.assertFalse(success)
+        self.assertNotIn('www.example.com', result)
+
+    # PHP's file_exists() follows a symlink, so a dangling one counts as missing and
+    # WordPress takes the configuration one level up.
+    @unittest.skipUnless(
+        hasattr(os, 'symlink') and os.name == 'posix', 'needs symlinks'
+    )
+    def test_dangling_symlink_counts_as_missing(self):
+        root = tempfile.mkdtemp(prefix='lftest-wordpress-dangling-')
+        self.addCleanup(shutil.rmtree, root, True)
+        write(os.path.join(root, 'wp-config.php'), WP_CONFIG_PHP)
+        blog = os.path.join(root, 'blog')
+        os.makedirs(blog)
+        os.symlink(os.path.join(root, 'gone.php'), os.path.join(blog, 'wp-config.php'))
+        self.assertEqual(
+            wordpress.get_site_url(blog), (True, 'https://www.example.com')
+        )
+
     # PHP evaluates none of the commented forms, so a stale staging address must not be
     # handed back in place of the address the site is actually served under.
     def test_commented_out_definitions_are_skipped(self):
@@ -534,6 +591,33 @@ class TestHeaderValue(unittest.TestCase):
 
     def test_absent_field(self):
         self.assertEqual(wordpress.get_header_value(self.plugin, 'Network'), '')
+
+    # The value ends with its line: an empty field must not take the next line, the
+    # way WordPress's get_file_data() reads it.
+    def test_empty_field_does_not_take_the_next_line(self):
+        header = '<?php\n/*\n * Plugin Name: Empty\n * Version:\n * Author: Bob\n */\n'
+        self.assertEqual(wordpress._header_value(header, 'Version'), '')
+        self.assertEqual(wordpress._header_value(header, 'Author'), 'Bob')
+        self.assertEqual(
+            wordpress._header_value(' * Version: \t\n * Author: Bob\n', 'Version'), ''
+        )
+
+    # get_file_data() tests the raw capture for truth, and PHP reads the string '0' as
+    # false. Verified with PHP 8: `Version:0` gives '', `Version: 0` gives '0'.
+    def test_raw_zero_is_empty_as_in_php(self):
+        self.assertEqual(wordpress._header_value(' * Version:0\n', 'Version'), '')
+        self.assertEqual(wordpress._header_value(' * Version: 0\n', 'Version'), '0')
+
+    # WordPress wants the colon right behind the field name.
+    def test_space_before_the_colon_is_no_field(self):
+        self.assertEqual(wordpress._header_value(' * Version : 1.0\n', 'Version'), '')
+
+    # WordPress accepts the short opening tag as well.
+    def test_field_behind_the_short_opening_tag(self):
+        self.assertEqual(
+            wordpress._header_value('<? /* Plugin Name: Short */\n', 'Plugin Name'),
+            'Short',
+        )
 
     def test_unreadable_file(self):
         self.assertEqual(
