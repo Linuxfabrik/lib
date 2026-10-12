@@ -462,23 +462,25 @@ class TestGetSwissBackupSlots(InfomaniakTestCase):
         self.assertTrue(slot_call.kwargs['no_proxy'])
         self.assertEqual(slot_call.kwargs['timeout'], 99)
 
-    def test_inner_products_call_uses_defaults_not_caller_kwargs(self):
-        # Quirk worth pinning: get_swiss_backup_slots() calls
-        # get_swiss_backup_products() positionally, so insecure / no_proxy /
-        # timeout from the caller are NOT propagated to the products request;
-        # it always uses the function defaults.
+    def test_every_request_forwards_the_transport_kwargs(self):
+        # The products request is part of the same call; behind a mandatory proxy it
+        # failed while the slot requests would have passed.
         m = self.patch_fetch(side_effect=self._two_products_side_effect())
         infomaniak.get_swiss_backup_slots(
             'ACC',
             'TOK',
             insecure=True,
             no_proxy=True,
+            proxy='http://proxy.example.com:3128',
             timeout=99,
         )
-        products_call = m.call_args_list[0]
-        self.assertFalse(products_call.kwargs['insecure'])
-        self.assertFalse(products_call.kwargs['no_proxy'])
-        self.assertEqual(products_call.kwargs['timeout'], 8)
+        self.assertEqual(m.call_count, 3)
+        for call in m.call_args_list:
+            with self.subTest(uri=call.args[0]):
+                self.assertTrue(call.kwargs['insecure'])
+                self.assertTrue(call.kwargs['no_proxy'])
+                self.assertEqual(call.kwargs['proxy'], 'http://proxy.example.com:3128')
+                self.assertEqual(call.kwargs['timeout'], 99)
 
     def test_products_failure_propagated(self):
         self.patch_fetch(fail('products down'))

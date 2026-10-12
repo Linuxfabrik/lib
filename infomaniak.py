@@ -11,7 +11,7 @@
 """Provides functions using the Infomanik REST-API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026101201'
 
 from . import url
 
@@ -180,7 +180,14 @@ def get_swiss_backup_slots(
     >>> if success:
     ...     print(slots)
     """
-    success, products = get_swiss_backup_products(account_id, token)
+    success, products = get_swiss_backup_products(
+        account_id,
+        token,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        proxy=proxy,
+        timeout=timeout,
+    )
     if not success:
         return success, products
 

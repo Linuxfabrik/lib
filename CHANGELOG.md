@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * feedparser.py: `parse_atom()` and `parse_rss()` read every date the formats allow, apply its offset, and date an empty or unreadable one to 1970 instead of failing
 * human.py: `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), and `humanduration2seconds()` and `humanrange2seconds()` read a fraction such as `0.5D` instead of only its decimal places
 * icinga.py: `api_post()` reaches a server whose name starts with `v1` or `v2`
+* infomaniak.py: `get_swiss_backup_slots()` applies the proxy, TLS and timeout settings to the products request too
 * logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint, and no longer loses lines at a rotation or when daylight saving time ends, hands out half-written lines, or falls behind on a busy unit, and `timestamp()` no longer fails on a date local time cannot hold
 * net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, and `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
