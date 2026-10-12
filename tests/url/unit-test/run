@@ -1661,6 +1661,84 @@ class TestFetchArgumentTypes(unittest.TestCase):
             )
 
 
+class TestHeaderValuesStayOutOfMessages(unittest.TestCase):
+    """A token read from a file keeps its newline, and h11 then quotes the whole value
+    in its error. The message names the header at most."""
+
+    SECRET = 'SECRETTOKEN'
+
+    @skip_without_httpx
+    def test_an_illegal_value_is_refused_naming_only_the_header(self):
+        for name in ('Authorization', 'X-Api-Key', 'Cookie', 'X-Custom'):
+            for tail in ('\n', '\r\n', '\x00', '\x0b'):
+                with self.subTest(name=name, tail=repr(tail)):
+                    success, message = url.fetch(
+                        'http://127.0.0.1:9/',
+                        header={name: f'Bearer {self.SECRET}{tail}'},
+                    )
+                    self.assertFalse(success)
+                    self.assertIn(f'"{name}"', message)
+                    self.assertNotIn(self.SECRET, message)
+
+    @skip_without_httpx
+    def test_an_illegal_name_is_refused(self):
+        success, message = url.fetch('http://127.0.0.1:9/', header={'bad name': 'x'})
+        self.assertFalse(success)
+        self.assertIn('"bad name"', message)
+
+    @skip_without_httpx
+    def test_bytes_are_checked_like_text(self):
+        success, message = url.fetch(
+            'http://127.0.0.1:9/', header={b'X-Api-Key': b'SECRETTOKEN\n'}
+        )
+        self.assertFalse(success)
+        self.assertNotIn(self.SECRET, message)
+
+    @skip_without_httpx
+    def test_a_legal_value_goes_through(self):
+        with patch_mock_transport(
+            lambda request: httpx.Response(200, stream=httpx.ByteStream(b'ok'))
+        ):
+            self.assertEqual(
+                url.fetch(
+                    'https://example.com/',
+                    header={'Authorization': 'Bearer abc.def', 'X-Two': 'a b\tc'},
+                ),
+                (True, 'ok'),
+            )
+
+    @skip_without_httpx
+    def test_what_slips_past_the_check_is_hidden_in_the_error_text(self):
+        # whatever an engine quotes of a credential header is replaced, in the forms
+        # an exception uses for it
+        header = {'Authorization': f'Bearer {self.SECRET}', 'Accept': 'text/html'}
+
+        def handler(request):
+            raise httpx.LocalProtocolError(
+                f"Illegal header value b'Bearer {self.SECRET}', "
+                f"'Bearer {self.SECRET}', Bearer {self.SECRET}, Accept: text/html"
+            )
+
+        with patch_mock_transport(handler):
+            success, message = url.fetch('https://example.com/', header=header)
+        self.assertFalse(success)
+        self.assertNotIn(self.SECRET, message)
+        self.assertIn('text/html', message)
+
+    @skip_without_httpx
+    def test_an_unforeseen_error_is_scrubbed_too(self):
+        def handler(request):
+            raise RuntimeError(f'boom Bearer {self.SECRET}')
+
+        with patch_mock_transport(handler):
+            success, message = url.fetch(
+                'https://example.com/',
+                header={'Authorization': f'Bearer {self.SECRET}'},
+            )
+        self.assertFalse(success)
+        self.assertNotIn(self.SECRET, message)
+
+
 @skip_without_httpx
 class TestOverallDeadline(unittest.TestCase):
     """`timeout` keeps its meaning for every connect, read and write on its own, so a

@@ -891,6 +891,52 @@ def _import_httpx():
             httpcore = None
 
 
+# What h11 accepts as the name and the value of a header (RFC 9110, section 5), as its
+# own `_abnf` module spells it. A value with a line break or a NUL is the usual shape of
+# a token read from a file, with its newline.
+_HEADER_NAME_REGEX = re.compile(r"[-!#$%&'*+.^_`|~0-9a-zA-Z]+")
+_HEADER_VALUE_REGEX = re.compile(r'([^\x00\s]+(?:[ \t]+[^\x00\s]+)*)?')
+
+
+def _as_text(value):
+    return value.decode('latin-1') if isinstance(value, bytes) else value
+
+
+def _check_headers(header):
+    """Return a message naming the first header h11 would refuse, or None. The message
+    names the header and never carries its value: the value is a credential more often
+    than not, and the error h11 raises quotes it."""
+    for name, value in header.items():
+        if not _HEADER_NAME_REGEX.fullmatch(_as_text(name)):
+            return f'The header name "{_as_text(name)}" is not valid.'
+        if not _HEADER_VALUE_REGEX.fullmatch(_as_text(value)):
+            return (
+                f'The value of the header "{_as_text(name)}" contains a line break, '
+                'a control character or a NUL.'
+            )
+    return None
+
+
+def _hide_header_values(text, header):
+    """Replace the values of the headers that look like credentials in `text`, in the
+    forms an exception quotes them: as they are, and as a `str` or `bytes` literal.
+    Whether a header carries a secret is decided by `txt.sanitize_sensitive_data()`, the
+    one place that knows the names."""
+    for name, value in (header or {}).items():
+        line = f'{_as_text(name)}: {_as_text(value)}'
+        value = _as_text(value)
+        if not value or txt.sanitize_sensitive_data(line) == line:
+            continue
+        for form in (
+            value,
+            repr(value)[1:-1],
+            repr(value.encode('latin-1', 'replace'))[2:-1],
+        ):
+            if form:
+                text = text.replace(form, '******')
+    return text
+
+
 def _fetch_once(
     url,
     insecure=False,
@@ -1142,7 +1188,7 @@ def _fetch_once(
         verify_message = _tls_verify_message(e, url_safe)
         if verify_message:
             return False, verify_message, False
-        message = f'URL error "{e}" for {url_safe}'
+        message = f'URL error "{_hide_header_values(str(e), header)}" for {url_safe}'
         # A port that speaks TLS answers a plaintext request with a TLS record or
         # closes the connection, which surfaces as a protocol error naming
         # neither TLS nor the scheme.
@@ -1164,7 +1210,11 @@ def _fetch_once(
         return False, f'{e} while fetching {url_safe}', False
     except Exception as e:
         # unforeseen, so it keeps the benefit of the doubt it always had
-        return False, f'{e} while fetching {url_safe}', True
+        return (
+            False,
+            f'{_hide_header_values(str(e), header)} while fetching {url_safe}',
+            True,
+        )
 
     try:
         charset = response_charset or 'UTF-8'
@@ -1416,6 +1466,9 @@ def fetch(
             f'`timeout` must be a number of seconds between 0 and {MAX_TIMEOUT}, '
             f'or None, not {timeout!r}'
         )
+    message = _check_headers(header or {})
+    if message:
+        return False, message
     if not isinstance(retries, int) or retries < 0:
         return False, f'`retries` must be a non-negative integer, not {retries!r}'
     if method is not None and not isinstance(method, str):
