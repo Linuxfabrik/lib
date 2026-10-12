@@ -891,6 +891,12 @@ class TestShellExecMaxBytesArguments(unittest.TestCase):
                 self.assertRaises(RuntimeError),
             ):
                 shell.shell_exec([sys.executable, '-c', code, pid_file], max_bytes=MIB)
+            # killed and reaped on every platform: `returncode` is set only by a `wait()` or
+            # `poll()` that saw the child end, and the one that did it here is the one in
+            # `_kill()`, as the test itself asks nothing of the child before this point
+            self.assertIsNotNone(
+                commands[0].returncode, 'the command was not killed and reaped'
+            )
             # No reader was started before the injected error, so nobody is blocked on the
             # pipes. On Windows `_kill()` leaves stdout and stderr to the caller by design
             # (the readers of a real call may still be blocked in them), and this test is the
