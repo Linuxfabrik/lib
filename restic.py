@@ -14,7 +14,7 @@ whoever chose the values (for example root via sudo).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092701'
+__version__ = '2026101201'
 
 import os
 import urllib.parse
@@ -73,7 +73,14 @@ def _sftp_host(repo):
     everything after the second `@` is the host.
     """
     if repo[:7].lower() == 'sftp://':
-        return urllib.parse.urlsplit(repo).hostname or ''
+        # None for a location urllib refuses: a bracketed host that is no IP address,
+        # or a missing `]`. restic refuses both as well (Go's url.Parse, verified with
+        # restic 0.19.1 built with Go 1.26), but a build with an older Go may not, and
+        # would hand `[-oProxyCommand=...]` to ssh as `-oProxyCommand=...`.
+        try:
+            return urllib.parse.urlsplit(repo).hostname or ''
+        except ValueError:
+            return None
     host = repo[5:].split(':', 1)[0]
     return host.split('@', 2)[-1]
 
@@ -121,10 +128,17 @@ def repo_args(repo=None, repository_file=None, owners=None):
                 'run an external program. Put the repository location into a file '
                 'that only root can change and pass it with --repository-file.'
             )
-        if scheme == 'sftp' and _sftp_host(repo).startswith('-'):
-            return False, (
-                'Refusing an `sftp:` repository whose host starts with "-", because '
-                'ssh would read it as an option.'
-            )
+        if scheme == 'sftp':
+            host = _sftp_host(repo)
+            if host is None:
+                return False, (
+                    'Refusing an `sftp:` repository whose host is not a valid host '
+                    'name or IP address.'
+                )
+            if host.startswith('-'):
+                return False, (
+                    'Refusing an `sftp:` repository whose host starts with "-", '
+                    'because ssh would read it as an option.'
+                )
         return True, [f'--repo={repo}']
     return _trusted_file_arg('repository-file', repository_file, owners)

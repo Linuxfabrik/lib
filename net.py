@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100902'
+__version__ = '2026101201'
 
 import ipaddress
 import os
@@ -807,9 +807,11 @@ def get_proxy(target_url, no_proxy=False):
     if no_proxy:
         return (True, None)
 
-    parsed = urllib.parse.urlsplit(target_url)
-    scheme = (parsed.scheme or 'https').lower()
     try:
+        # urlsplit() itself raises for a bracketed host that is no IP address, since
+        # gh-103848 (CPython 3.9.21, 3.10.16, 3.11.4, 3.12.0, and backports)
+        parsed = urllib.parse.urlsplit(target_url)
+        scheme = (parsed.scheme or 'https').lower()
         host = (parsed.hostname or '').lower()
         port = parsed.port
     except ValueError as e:
@@ -847,7 +849,11 @@ def get_proxy(target_url, no_proxy=False):
     if '://' not in proxy:
         # a bare `proxy.example.com:3128` means a plain HTTP proxy
         proxy = f'http://{proxy}'
-    if not urllib.parse.urlsplit(proxy).hostname:
+    try:
+        proxy_host = urllib.parse.urlsplit(proxy).hostname
+    except ValueError:
+        proxy_host = None
+    if not proxy_host:
         return (
             False,
             f'Cannot read a hostname from the configured proxy '

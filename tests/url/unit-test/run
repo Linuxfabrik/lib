@@ -220,6 +220,14 @@ class TestStripTags(unittest.TestCase):
 
 
 class TestSplitBasicAuth(unittest.TestCase):
+    # urlsplit() raises ValueError for a host in brackets that is no IP address
+    # (since gh-103848: CPython 3.9.21, 3.10.16, 3.11.4, 3.12.0) and for a missing
+    # `]` (every version). Neither may
+    # escape a function that promises (success, result).
+    def test_an_unreadable_bracketed_host_is_left_as_it_is(self):
+        value = 'http://user:linuxfabrik@[::1/x'
+        self.assertEqual(url.split_basic_auth(value), (value, {}))
+
     def test_no_userinfo_returns_url_and_empty_headers(self):
         self.assertEqual(
             url.split_basic_auth('https://example.com/path'),

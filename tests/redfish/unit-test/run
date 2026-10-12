@@ -2397,6 +2397,41 @@ class TestGetVendor(unittest.TestCase):
 # build_url (@odata.id SSRF pinning)
 # ---------------------------------------------------------------------------
 class TestBuildUrl(unittest.TestCase):
+    # urlsplit() raises ValueError for a host in brackets that is no IP address
+    # (since gh-103848: CPython 3.9.21, 3.10.16, 3.11.4, 3.12.0) and for a missing
+    # `]` (every version). Neither may
+    # escape a function that promises (success, result).
+    def test_an_unreadable_base_url_is_a_failure(self):
+        success, message = redfish.build_url('https://[::1', '/redfish/v1')
+        self.assertFalse(success)
+        self.assertIn('Cannot read the base URL', message)
+
+    # The message ends up in the plugin output; the credentials of the URL do not.
+    def test_an_unreadable_base_url_is_named_without_its_password(self):
+        success, message = redfish.build_url('http://user:linuxfabrik@[::1/x', '/x')
+        self.assertFalse(success)
+        self.assertNotIn('linuxfabrik', message)
+
+    # The Location header comes from the controller: one urllib cannot read is
+    # skipped, the @odata.id of the body still counts.
+    def test_session_url_skips_an_unreadable_location(self):
+        for location in ('http://[::1/x', 'http://[-oProxyCommand=id]/x'):
+            with self.subTest(location=location):
+                result = {
+                    'response_header': {'location': location},
+                    'response_json': {
+                        '@odata.id': '/redfish/v1/SessionService/Sessions/1'
+                    },
+                }
+                self.assertIn(
+                    redfish._session_url('https://bmc.example.com', result),
+                    (
+                        'https://bmc.example.com/redfish/v1/SessionService/Sessions/1',
+                        # a Python without gh-103848 reads the second location
+                        'https://bmc.example.com/x',
+                    ),
+                )
+
     def test_relative_link_is_pinned_to_base_host(self):
         self.assertEqual(
             redfish.build_url('https://bmc', '/redfish/v1/Systems/1'),

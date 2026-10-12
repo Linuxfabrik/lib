@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 import base64
 import json
@@ -1606,8 +1606,15 @@ def split_basic_auth(url):
     >>> h
     {'Authorization': 'Basic YWxpY2U6bGludXhmYWJyaWs='}
     """
-    parsed = urllib.parse.urlparse(url)
-    if not parsed.username:
+    try:
+        parsed = urllib.parse.urlparse(url)
+        username = parsed.username
+    except ValueError:
+        # A bracketed host that is no IP address, refused by urlsplit() since
+        # gh-103848 (CPython 3.9.21, 3.10.16, 3.11.4, 3.12.0, and backports). The URL
+        # goes back as it is; the request that follows reports it.
+        return url, {}
+    if not username:
         return url, {}
 
     user = urllib.parse.unquote(parsed.username)

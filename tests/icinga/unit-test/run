@@ -83,6 +83,16 @@ class IcingaTestBase(unittest.TestCase):
 
 
 class TestApiPost(IcingaTestBase):
+    # urlsplit() raises ValueError for a host in brackets that is no IP address
+    # (since gh-103848: CPython 3.9.21, 3.10.16, 3.11.4, 3.12.0) and for a missing
+    # `]` (every version). Neither may
+    # escape a function that promises (success, result).
+    def test_an_unreadable_bracketed_host_is_a_failure(self):
+        success, message = icinga.api_post('https://[::1/v1/x', USER, PASSWORD)
+        self.assertFalse(success)
+        self.assertIn('Cannot read the URL', message)
+        self.fetch_json.assert_not_called()
+
     def test_returns_fetch_json_result_unchanged(self):
         sentinel = (True, {'results': [{'code': 200}]})
         self.fetch_json.return_value = sentinel
@@ -212,9 +222,25 @@ class TestGetService(IcingaTestBase):
     def test_filter_matches_service_name(self):
         icinga.get_service(URI, USER, PASSWORD, 'host!special-service')
         data = self.sent_kwargs()['data']
-        self.assertEqual(
-            data['filter'], 'match("host!special-service", service.__name)'
-        )
+        self.assertEqual(data['filter'], 'service.__name == lf_service')
+        self.assertEqual(data['filter_vars'], {'lf_service': 'host!special-service'})
+
+    # The name is a value in filter_vars, never part of the expression. Spliced into
+    # it, a `"` added a filter of its own (every service matched, verified against
+    # Icinga 2.15), a trailing backslash broke the parse, and match() read `*` as a
+    # glob.
+    def test_service_name_never_reaches_the_filter_expression(self):
+        for name in (
+            'h1!C:\\Temp\\',
+            'h1!say "hi"',
+            'h1!web-*',
+            'h1!nope", service.__name) || match("*',
+        ):
+            with self.subTest(name=name):
+                icinga.get_service(URI, USER, PASSWORD, name)
+                data = self.sent_kwargs()['data']
+                self.assertEqual(data['filter'], 'service.__name == lf_service')
+                self.assertEqual(data['filter_vars'], {'lf_service': name})
 
     def test_default_attrs_is_name_plus_state(self):
         icinga.get_service(URI, USER, PASSWORD, 'host!svc')
@@ -252,6 +278,9 @@ class TestGetService(IcingaTestBase):
 
 class TestBuildIcingaweb2Url(unittest.TestCase):
     """Assert host/service URL composition and untrusted-input handling."""
+
+    def test_an_unreadable_base_url_is_none(self):
+        self.assertIsNone(icinga.build_icingaweb2_url('https://[::1/icingaweb2', 'h'))
 
     BASE = 'https://example.com/icingaweb2'
 

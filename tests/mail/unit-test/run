@@ -100,6 +100,34 @@ class TestSend(unittest.TestCase):
             )
         self.assertEqual(result, (True, True))
 
+    # A message that cannot be built is a failure like any other: (False, message),
+    # and no connection is opened. These raised out of send() before.
+    def test_a_message_that_cannot_be_built_is_reported(self):
+        cases = (
+            {'subject': 'Hi\nBcc: x@example.com'},
+            {'recipient': 'to@example.com\nBcc: x@example.com'},
+            {'html': '<p>x</p>', 'images': [{'data': b'x', 'maintype': 'image'}]},
+            {'html': '<p>x</p>', 'images': ['not an image']},
+        )
+        for kwargs in cases:
+            with self.subTest(kwargs=kwargs):
+                _FakeSMTP.instances.clear()
+                arguments = {'recipient': 'to@example.com', **kwargs}
+                with patch_smtp():
+                    success, message = mail.send(
+                        'localhost', 'from@example.com', plain='Body', **arguments
+                    )
+                self.assertFalse(success)
+                self.assertTrue(message.startswith('Error: '))
+                self.assertEqual(_FakeSMTP.instances, [])
+
+    def test_no_plain_body_counts_as_empty(self):
+        with patch_smtp():
+            result = mail.send(
+                'localhost', 'from@example.com', 'to@example.com', plain=None
+            )
+        self.assertEqual(result, (True, True))
+
     def test_smtp_constructed_with_server_port_timeout(self):
         with patch_smtp():
             mail.send(

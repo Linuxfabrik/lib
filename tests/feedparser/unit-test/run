@@ -431,6 +431,61 @@ class TestFeedDates(unittest.TestCase):
                 self.assertEqual(result['entries'][0]['updated_parsed'], no_date)
 
 
+class TestMetadataComesFromTheFeedItself(unittest.TestCase):
+    """BeautifulSoup's attribute access searches the whole subtree: a feed without
+    its own title or date took those of its first entry, an entry without a title
+    the one of its <source>. Only direct children count now."""
+
+    def test_rss_channel_without_pub_date_has_no_update_time(self):
+        result = feedparser.parse_rss(
+            rss_soup(
+                '<?xml version="1.0"?><rss version="2.0"><channel><title>Chan</title>'
+                '<item><title>I1</title>'
+                '<pubDate>Wed, 10 Apr 2024 06:12:00 +0000</pubDate></item>'
+                '</channel></rss>'
+            )
+        )
+        self.assertNotIn('updated', result)
+        self.assertEqual([entry['title'] for entry in result['entries']], ['I1'])
+
+    def test_rss_channel_falls_back_to_its_own_last_build_date(self):
+        result = feedparser.parse_rss(
+            rss_soup(
+                '<?xml version="1.0"?><rss version="2.0"><channel><title>Chan</title>'
+                '<lastBuildDate>Tue, 09 Apr 2024 06:12:00 +0000</lastBuildDate>'
+                '<item><pubDate>Wed, 10 Apr 2024 06:12:00 +0000</pubDate></item>'
+                '</channel></rss>'
+            )
+        )
+        self.assertEqual(result['updated'], 'Tue, 09 Apr 2024 06:12:00 +0000')
+
+    def test_atom_feed_without_title_and_with_a_late_updated(self):
+        # Atom does not fix the order of a feed's elements
+        result = feedparser.parse_atom(
+            atom_soup(
+                '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+                '<entry><title>E1</title><updated>2024-04-17T15:04:00Z</updated>'
+                '</entry><updated>2020-01-01T00:00:00Z</updated></feed>'
+            )
+        )
+        self.assertEqual(result['title'], 'n/a')
+        self.assertEqual(result['updated'], '2020-01-01T00:00:00Z')
+        self.assertEqual([entry['title'] for entry in result['entries']], ['E1'])
+
+    def test_atom_entry_title_is_not_taken_from_its_source(self):
+        result = feedparser.parse_atom(
+            atom_soup(
+                '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+                '<title>F</title><entry><source><title>Src</title>'
+                '<updated>2001-01-01T00:00:00Z</updated></source><id>x</id></entry>'
+                '</feed>'
+            )
+        )
+        entry = result['entries'][0]
+        self.assertEqual(entry['title'], 'n/a')
+        self.assertEqual(entry['updated'], '1970-01-01T00:00:00')
+
+
 class TestParseAtom(unittest.TestCase):
     """parse_atom() metadata, entries, timestamps and summary fallbacks."""
 

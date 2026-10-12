@@ -357,6 +357,22 @@ class TestFetchSocket(unittest.TestCase):
 
 
 class TestGetProxy(unittest.TestCase):
+    # urlsplit() raises ValueError for a host in brackets that is no IP address
+    # (since gh-103848: CPython 3.9.21, 3.10.16, 3.11.4, 3.12.0) and for a missing
+    # `]` (every version). Neither may
+    # escape a function that promises (success, result).
+    def test_an_unreadable_bracketed_host_is_a_failure(self):
+        success, _message = self._proxy('http://[::1/x', {})
+        self.assertFalse(success)
+        result = self._proxy('http://[-oProxyCommand=id]/x', {})
+        self.assertIsInstance(result, tuple)
+
+    def test_an_unreadable_proxy_from_the_environment_is_a_failure(self):
+        success, _message = self._proxy(
+            'http://example.com/', {'http_proxy': 'http://[::1:3128'}
+        )
+        self.assertFalse(success)
+
     def _proxy(self, target, env, **kwargs):
         with mock.patch.dict(os.environ, env, clear=True):
             return net.get_proxy(target, **kwargs)

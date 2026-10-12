@@ -11,7 +11,7 @@
 """This module tries to make accessing the Icinga2 API easier."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 import base64
 import html
@@ -97,7 +97,12 @@ def api_post(
     """
     # Only the path: replacing `//v1` in the whole URI also hit the `//` after the
     # scheme of a host such as `v1.icinga.example.com`.
-    parts = urllib.parse.urlsplit(uri)
+    try:
+        parts = urllib.parse.urlsplit(uri)
+    except ValueError as e:
+        # a bracketed host that is no IP address, refused by urlsplit() since gh-103848
+        # (CPython 3.9.21, 3.10.16, 3.11.4, 3.12.0, and backports)
+        return False, f'Cannot read the URL "{txt.sanitize_sensitive_data(uri)}": {e}'
     uri = urllib.parse.urlunsplit(
         parts._replace(path=re.sub(r'/{2,}', '/', parts.path))
     )
@@ -168,7 +173,11 @@ def build_icingaweb2_url(base_url, hostname, servicename=None):
         return None
     if not base_url or not hostname:
         return None
-    if urllib.parse.urlsplit(base_url).scheme.lower() not in ('http', 'https'):
+    try:
+        scheme = urllib.parse.urlsplit(base_url).scheme.lower()
+    except ValueError:
+        return None
+    if scheme not in ('http', 'https'):
         return None
     if isinstance(servicename, str) and servicename:
         query = urllib.parse.urlencode(
@@ -279,7 +288,9 @@ def get_service(
 
     Notes
     -----
-    - The `servicename` must match the `__name` attribute exactly.
+    - The `servicename` must match the `__name` attribute exactly. It is passed as a
+      filter variable, so quotes, backslashes and glob characters in it are taken
+      literally.
     - Uses a `GET` override on a `POST` request (`X-HTTP-Method-Override` header).
 
     Examples
@@ -297,8 +308,14 @@ def get_service(
     >>> print(result['result'][0]['attrs'])
     """
     uri = f'{uri.rstrip("/")}/v1/objects/services'
+    # The name travels in `filter_vars`, so it is a value and never part of the
+    # filter expression: a `"` in it could otherwise add a filter of its own, and a
+    # trailing `\\` (a Windows path) broke the parse. `==` rather than `match()`,
+    # which compares globs and would let a `*` in the name select other services.
+    # Verified against lib/remote/filterutility.cpp of Icinga 2 v2.16.0-206-g703e7d4d3.
     data = {
-        'filter': f'match("{servicename}", service.__name)',
+        'filter': 'service.__name == lf_service',
+        'filter_vars': {'lf_service': servicename},
         'attrs': ['name', *attrs.split(',')],
     }
     return api_post(

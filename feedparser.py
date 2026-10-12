@@ -14,7 +14,7 @@ Time zone handling is not implemented.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026101201'
 
 import datetime
 import sys
@@ -209,6 +209,26 @@ def parse(
     return True, parse_rss(soup)
 
 
+def _child(parent, name):
+    """Return the direct child `name` of `parent`, or None.
+
+    BeautifulSoup's attribute access (`soup.title`, `channel.pubDate`) searches the
+    whole subtree, so a feed without a title of its own took the one of its first entry,
+    a channel without `pubDate` the date of its first item, and an entry without a
+    title the one of its `<source>`. Atom does not fix the order of a feed's elements
+    either, so even a feed's own `<updated>` could come after the first entry's.
+    Verified against beautifulsoup 4.15.0 (`Tag.__getattr__()` is `find()`, which
+    searches recursively unless told `recursive=False`).
+    """
+    return parent.find(name, recursive=False) if parent is not None else None
+
+
+def _child_string(parent, name, default):
+    """Return the text of the direct child `name` of `parent`, or `default`."""
+    child = _child(parent, name)
+    return child.string if child is not None else default
+
+
 def parse_atom(soup):
     """
     Parse an Atom XML feed into a structured dictionary.
@@ -241,27 +261,28 @@ def parse_atom(soup):
         'entries': [...],
     }
     """
+    feed = soup.find('feed')
     result = {
-        'title': soup.title.string if soup.title else 'n/a',
-        'updated': soup.updated.string if soup.updated else '1970-01-01T00:00:00',
+        'title': _child_string(feed, 'title', 'n/a'),
+        'updated': _child_string(feed, 'updated', '1970-01-01T00:00:00'),
     }
     result['updated_parsed'] = _parse_atom_date(result['updated'])
 
     result['entries'] = []
-    for entry in soup.find_all('entry'):
+    for entry in feed.find_all('entry', recursive=False) if feed is not None else []:
         tmp = {
-            'title': entry.title.string if entry.title else 'n/a',
-            'id': entry.id.string if entry.id else 'n/a',
-            'updated': entry.updated.string if entry.updated else '1970-01-01T00:00:00',
+            'title': _child_string(entry, 'title', 'n/a'),
+            'id': _child_string(entry, 'id', 'n/a'),
+            'updated': _child_string(entry, 'updated', '1970-01-01T00:00:00'),
         }
         tmp['updated_parsed'] = _parse_atom_date(tmp['updated'])
         # summary
         try:
-            parsed_summary = BeautifulSoup(entry.summary.string, 'lxml')
+            parsed_summary = BeautifulSoup(_child(entry, 'summary').string, 'lxml')
             tmp['summary'] = parsed_summary.get_text()
         except Exception:
             try:
-                parsed_summary = BeautifulSoup(entry.content.string, 'lxml')
+                parsed_summary = BeautifulSoup(_child(entry, 'content').string, 'lxml')
                 tmp['summary'] = parsed_summary.get_text()
             except Exception:
                 tmp['summary'] = ''
@@ -303,37 +324,30 @@ def parse_rss(soup):
     }
     """
     result = {}
-    result['title'] = (
-        soup.rss.channel.title.string
-        if soup.rss and soup.rss.channel and soup.rss.channel.title
-        else 'n/a'
+    channel = _child(soup.find('rss'), 'channel')
+    result['title'] = _child_string(channel, 'title', 'n/a')
+
+    updated = _child_string(channel, 'pubDate', None) or _child_string(
+        channel, 'lastBuildDate', None
     )
-
-    updated = None
-    try:
-        updated = soup.rss.channel.pubDate.string
-    except Exception:
-        try:
-            updated = soup.rss.channel.lastBuildDate.string
-        except Exception:
-            pass
-
     if updated:
         result['updated'] = updated
         result['updated_parsed'] = _parse_rss_date(updated)
 
     result['entries'] = []
-    for entry in soup.find_all('item'):
+    for entry in (
+        channel.find_all('item', recursive=False) if channel is not None else []
+    ):
         tmp = {
-            'title': entry.title.string if entry.title else 'n/a',
-            'id': entry.guid.string if entry.guid else 'n/a',
-            'updated': entry.pubDate.string
-            if entry.pubDate
-            else 'Wed, 01 Jan 1970 00:00:00',
+            'title': _child_string(entry, 'title', 'n/a'),
+            'id': _child_string(entry, 'guid', 'n/a'),
+            'updated': _child_string(entry, 'pubDate', 'Wed, 01 Jan 1970 00:00:00'),
         }
         tmp['updated_parsed'] = _parse_rss_date(tmp['updated'])
         try:
-            description_soup = BeautifulSoup(entry.description.string, 'lxml')
+            description_soup = BeautifulSoup(
+                _child(entry, 'description').string, 'lxml'
+            )
             tmp['summary'] = description_soup.get_text()
         except Exception:
             tmp['summary'] = ''

@@ -622,7 +622,11 @@ def _replay_key(url_string):
     `$expand` or after the plain fallback. A trailing slash is dropped as well, because the
     service root is requested as both `/redfish/v1` and `/redfish/v1/`.
     """
-    return urllib.parse.urlsplit(url_string).path.rstrip('/') or '/'
+    try:
+        path = urllib.parse.urlsplit(url_string).path
+    except ValueError:
+        path = url_string
+    return path.rstrip('/') or '/'
 
 
 def _replay_response(url_string):
@@ -794,10 +798,16 @@ def _record(request_url, result, cached=False):
     """
     if not _RESPONSES['on']:
         return
-    parts = urllib.parse.urlsplit(request_url)
-    request = parts.path + (f'?{parts.query}' if parts.query else '')
+    try:
+        parts = urllib.parse.urlsplit(request_url)
+    except ValueError:
+        parts = None
+    if parts is None:
+        request = request_url
+    else:
+        request = parts.path + (f'?{parts.query}' if parts.query else '')
     success, payload = result
-    if not success:
+    if not success and parts is not None:
         payload = str(payload).replace(f'{parts.scheme}://{parts.netloc}', '')
     _RESPONSES['items'].append((request, _redact(payload), cached))
 
@@ -875,7 +885,15 @@ def build_url(base_url, odata_id):
         or odata_id.startswith('//')
     ):
         return False, f'Refusing non-relative Redfish @odata.id link: {odata_id!r}'
-    parts = urllib.parse.urlsplit(base_url)
+    try:
+        parts = urllib.parse.urlsplit(base_url)
+    except ValueError as e:
+        # a bracketed host that is no IP address, refused by urlsplit() since gh-103848
+        # (CPython 3.9.21, 3.10.16, 3.11.4, 3.12.0, and backports); the URL can carry
+        # credentials, and this message ends up in the plugin output
+        return False, (
+            f'Cannot read the base URL "{txt.sanitize_sensitive_data(base_url)}": {e}'
+        )
     return True, f'{parts.scheme}://{parts.netloc}{odata_id}'
 
 
@@ -1358,9 +1376,12 @@ def _session_url(base_url, result):
         if not isinstance(candidate, str) or not candidate:
             continue
         # Take the path only, so an absolute URL naming another host cannot survive.
-        success, session_url = build_url(
-            base_url, urllib.parse.urlsplit(candidate).path
-        )
+        # The candidate comes from the controller; one urllib cannot read is skipped.
+        try:
+            path = urllib.parse.urlsplit(candidate).path
+        except ValueError:
+            continue
+        success, session_url = build_url(base_url, path)
         if success:
             return session_url
     return ''

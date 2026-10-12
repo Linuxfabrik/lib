@@ -14,7 +14,7 @@ optionally encrypted with STARTTLS or implicit TLS.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026091401'
+__version__ = '2026101201'
 
 import smtplib
 import ssl
@@ -100,7 +100,7 @@ def send(
         Message subject. Only set as a header when
         non-empty. Defaults to `''`.
     plain : str, optional
-        Plain-text body. Defaults to `''`.
+        Plain-text body. `None` counts as empty. Defaults to `''`.
     html : str, optional
         HTML body. When set, the message becomes a
         `multipart/alternative` with the plain-text part first. Defaults to `''`
@@ -136,7 +136,9 @@ def send(
     tuple (bool, bool or str)
         - On success: `(True, True)`.
         - On failure: `(False, 'Error: <error message>')`, also for an unknown
-          `encryption`, in which case no connection is opened. The answer of the server
+          `encryption` or a message that cannot be built, such as a header with a line
+          break in it or an image without its `cid`, in which case no connection is
+          opened. The answer of the server
           is decoded to text, and a certificate that does not verify or a port that does
           not speak TLS is explained.
 
@@ -162,22 +164,35 @@ def send(
             f'{", ".join(ENCRYPTIONS)}',
         )
 
-    msg = EmailMessage()
-    msg['From'] = sender
-    msg['To'] = recipient
-    if subject:
-        msg['Subject'] = subject
-
-    msg.set_content(plain)
-    if html:
-        msg.add_alternative(html, subtype='html')
-        for image in images or []:
-            msg.get_payload()[1].add_related(
-                image['data'],
-                image['maintype'],
-                image['subtype'],
-                cid=image['cid'],
+    image_keys = ('cid', 'data', 'maintype', 'subtype')
+    for image in (images or []) if html else []:
+        if not isinstance(image, dict) or any(key not in image for key in image_keys):
+            return False, (
+                'Error: an inline image needs `data`, `maintype`, `subtype` and `cid`'
             )
+
+    # Building the message raises too: a line break in a header is refused rather than
+    # turned into a second header, which is right, but has to arrive as the documented
+    # (False, message) like every other failure.
+    try:
+        msg = EmailMessage()
+        msg['From'] = sender
+        msg['To'] = recipient
+        if subject:
+            msg['Subject'] = subject
+
+        msg.set_content(plain or '')
+        if html:
+            msg.add_alternative(html, subtype='html')
+            for image in images or []:
+                msg.get_payload()[1].add_related(
+                    image['data'],
+                    image['maintype'],
+                    image['subtype'],
+                    cid=image['cid'],
+                )
+    except Exception as e:
+        return False, f'Error: the message cannot be built: {e}'
 
     # smtplib verifies nothing unless it is handed a context: without one, both
     # SMTP.starttls() and SMTP_SSL fall back to ssl._create_stdlib_context, which is
