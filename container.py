@@ -46,7 +46,7 @@ except ImportError:
     pwd = None
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092801'
+__version__ = '2026101201'
 
 # What the client puts in front of the answer it got. The CLI wraps every answer of
 # the engine in "Error response from daemon:", and a swarm control plane adds a gRPC
@@ -162,9 +162,50 @@ COMMAND_DISPLAY_LENGTH = 100
 # 9, Debian 12, Ubuntu 24.04 and SLES 15 SP7), and a rootless engine needs one.
 SUBUID_FILE = '/etc/subuid'
 
+# Where libsubid learns which source holds the ranges, from its `subid:` line.
+NSSWITCH_FILE = '/etc/nsswitch.conf'
+
+
+def _subid_module():
+    """Return the NSS module libsubid takes the subordinate ranges from, `files` if none.
+
+    Read like `nss_init()` of shadow does: the first line that is not a comment, starts
+    with `subid:` (in any case) and carries a value names the module, its first word.
+    `files`, or no such line, means `/etc/subuid`. Verified against shadow-maint/shadow
+    44211cf, `lib/nss.c`.
+    """
+    success, content = disk.read_file(NSSWITCH_FILE)
+    if not success:
+        return 'files'
+    for line in content.splitlines():
+        if line.startswith('#') or len(line) < 7 or line[:6].lower() != 'subid:':
+            continue
+        words = line[6:].split()
+        if words:
+            return words[0]
+    return 'files'
+
 
 def _has_subordinate_ids(user):
-    """Tell whether `user` owns a subordinate UID range, listed by name or by UID."""
+    """Tell whether `user` owns a subordinate UID range.
+
+    With `subid: files` in nsswitch.conf, or none, the range is listed in
+    `/etc/subuid` by name or by UID. With another module, SSSD for a FreeIPA account
+    for example, libsubid asks that module, and so does `getsubids` of shadow-utils,
+    which is asked here; without it the account is refused.
+    """
+    if _subid_module() != 'files':
+        success, name = shell.safe_cli_value(user, 'user')
+        if not success:
+            return False
+        success, result = shell.shell_exec(['getsubids', name], timeout=5)
+        if not success:
+            return False
+        stdout, _, retc = result
+        # one line per range: `<index>: <owner> <start> <count>`
+        return retc == 0 and any(
+            re.match(r'^\d+:\s', line) for line in stdout.splitlines()
+        )
     success, content = disk.read_file(SUBUID_FILE)
     if not success:
         return False
@@ -206,7 +247,8 @@ def run(cmd, timeout, started=None, run_as=None):
     run_as : str, optional
         Run the client as this user, for an engine that
         keeps the containers of every user apart. Only an account that owns a
-        subordinate UID range in `/etc/subuid` is accepted, which is what a rootless
+        subordinate UID range is accepted, in `/etc/subuid` or from the module that
+        `subid:` in `/etc/nsswitch.conf` names, which is what a rootless
         engine needs anyway: the client typically runs through `sudo`, and whoever
         chooses the account must not reach the containers of an arbitrary one.
         Defaults to the current user.
@@ -247,7 +289,7 @@ def run(cmd, timeout, started=None, run_as=None):
     if run_as and not _has_subordinate_ids(run_as):
         return False, (
             f'Refusing to run the container engine as `{run_as}`: the account has no '
-            f'subordinate UID range in {SUBUID_FILE}, which rootless containers need.',
+            'subordinate UID range, which rootless containers need.',
             STATE_UNKNOWN,
         )
     if started is None:

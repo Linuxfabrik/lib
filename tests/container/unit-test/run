@@ -280,6 +280,89 @@ class TestGetEngineError(unittest.TestCase):
         self.assertTrue(message.startswith('Error response from daemon:'))
 
 
+class TestSubordinateIds(unittest.TestCase):
+    """Who counts as an owner of a subordinate UID range: `/etc/subuid`, or the module
+    `subid:` in `/etc/nsswitch.conf` names, asked through `getsubids`."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix='lftest-subid-')
+        self.addCleanup(lambda: __import__('shutil').rmtree(self.dir, True))
+        self.subuid = os.path.join(self.dir, 'subuid')
+        with open(self.subuid, 'w', encoding='utf-8') as handle:
+            handle.write('rocketchat:100000:65536\n')
+        self.nsswitch = os.path.join(self.dir, 'nsswitch.conf')
+
+    def _owns(self, user, nsswitch=None, getsubids=(True, ('', '', 1))):
+        if nsswitch is not None:
+            with open(self.nsswitch, 'w', encoding='utf-8') as handle:
+                handle.write(nsswitch)
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(container, 'SUBUID_FILE', self.subuid)
+            )
+            stack.enter_context(
+                mock.patch.object(container, 'NSSWITCH_FILE', self.nsswitch)
+            )
+            shell = stack.enter_context(
+                mock.patch.object(container.shell, 'shell_exec', return_value=getsubids)
+            )
+            owns = container._has_subordinate_ids(user)
+        return owns, shell
+
+    def test_without_nsswitch_the_file_decides(self):
+        self.assertTrue(self._owns('rocketchat')[0])
+        self.assertFalse(self._owns('nobody')[0])
+
+    def test_files_in_nsswitch_means_the_file(self):
+        for line in ('subid: files\n', 'subid:\tfiles\n', 'SUBID: files\n'):
+            with self.subTest(line=line):
+                owns, shell = self._owns('rocketchat', line)
+                self.assertTrue(owns)
+                shell.assert_not_called()
+
+    def test_a_comment_or_a_line_without_a_value_is_not_the_setting(self):
+        for content in ('#subid: sss\n', 'subid:\n', 'passwd: files\n'):
+            with self.subTest(content=content):
+                owns, shell = self._owns('rocketchat', content)
+                self.assertTrue(owns)
+                shell.assert_not_called()
+
+    def test_another_module_asks_getsubids(self):
+        answer = (True, ('0: alice 524288 65536\n', '', 0))
+        owns, shell = self._owns('alice', 'subid: sss\n', answer)
+        self.assertTrue(owns)
+        self.assertEqual(shell.call_args.args[0], ['getsubids', 'alice'])
+
+    def test_getsubids_without_a_range_refuses(self):
+        for answer in (
+            (True, ('', '', 0)),
+            (True, ('Error: no ranges\n', '', 1)),
+            (True, ('0: alice 1 1\n', '', 1)),
+        ):
+            with self.subTest(answer=answer):
+                self.assertFalse(self._owns('alice', 'subid: sss\n', answer)[0])
+
+    def test_a_missing_getsubids_refuses(self):
+        self.assertFalse(self._owns('alice', 'subid: sss\n', (False, 'not found'))[0])
+
+    def test_a_user_that_looks_like_an_option_is_refused_without_a_call(self):
+        owns, shell = self._owns('-h', 'subid: sss\n')
+        self.assertFalse(owns)
+        shell.assert_not_called()
+
+    def test_the_refusal_does_not_name_a_file_that_was_not_asked(self):
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(container, 'SUBUID_FILE', self.subuid)
+            )
+            stack.enter_context(
+                mock.patch.object(container, 'NSSWITCH_FILE', self.nsswitch)
+            )
+            success, result = container.run(['podman', 'ps'], 8, run_as='nobody')
+        self.assertFalse(success)
+        self.assertIn('no subordinate UID range', result[0])
+
+
 class TestRun(unittest.TestCase):
     """run(): one time budget for all engine commands of a run."""
 
