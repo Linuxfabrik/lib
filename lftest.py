@@ -682,6 +682,25 @@ def _run_mysql_compatible_resolved(image_ref, command, seed):
         wait_log='port: 3306',
         wait_log_timeout=180,
     ) as container:
+        # The MYSQL_USER account only gets ALL PRIVILEGES on MYSQL_DATABASE. The
+        # plugins document `GRANT SELECT ON *.*` (they read information_schema and
+        # mysql.*), and `db_mysql.check_privileges()` counts only grants on `*.*`.
+        container.exec(
+            [
+                'sh',
+                '-c',
+                'if command -v mariadb >/dev/null 2>&1; then CLIENT=mariadb; '
+                'else CLIENT=mysql; fi; '
+                'SQL="GRANT SELECT ON *.* TO \'test\'@\'%\'"; '
+                # sclorg images (CONTAINER_SCRIPTS_PATH is set) let root in on the
+                # socket without a password and reject one, the others require it.
+                # A rejected login counts as an aborted connection, so pick one.
+                'if [ -n "$CONTAINER_SCRIPTS_PATH" ]; then '
+                '"$CLIENT" -uroot -e "$SQL"; '
+                'else "$CLIENT" -uroot -ptest -e "$SQL"; fi',
+            ]
+        )
+
         if seed:
             # MariaDB 11.x upstream dropped the `mysql` client symlink
             # in favour of `mariadb`; sclorg c10s ships both; MySQL

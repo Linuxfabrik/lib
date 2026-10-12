@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * container.py: `get_engine_error()` reports Podman's missing rootless statistics on cgroups v1 as UNKNOWN
 * db_mysql.py: `check_privileges()` counts only privileges granted on `*.*` or the given database, including those of active roles, and no longer takes `SUPER` for any other privilege; `select()` names the error first
 * disk.py: `copy_dir()` names the first file that could not be copied and how many more, instead of all of them
+* lftest.py: the MySQL/MariaDB test account has `SELECT` on `*.*`, as the plugins document
 * lvm.py: the hint on missing LVM tools names the SUSE package command too
 * powershell.py: `run_ps()` reads Windows output like `shell_exec()`, as UTF-8 where valid and in the OEM code page otherwise
 * redfish.py: `get_sensor_state()` returns CRIT only above a fatal threshold and WARN above a critical one, and treats a user-defined threshold of `0` as not set; `get_perfdata()` follows

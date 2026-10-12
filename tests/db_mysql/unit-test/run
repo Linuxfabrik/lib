@@ -485,15 +485,19 @@ def _check_image(test, containerfile):
             test.assertTrue(all(isinstance(part, int) for part in server_version))
             test.assertGreaterEqual(server_version, (10, 0, 0))
 
-            # the defaults file's account has the SELECT smoke-test privilege.
+            # the defaults file's account has the SELECT smoke-test privilege and
+            # lftest grants it SELECT on *.*.
             ok, _ = db_mysql.check_privileges(conn)
             test.assertTrue(ok)
+            ok, _ = db_mysql.check_privileges(conn, 'SELECT')
+            test.assertTrue(ok)
 
-            # ...but only privileges on its own database, which do not count
-            # globally, even though the account is named `test`.
+            # ...but ALL PRIVILEGES on its own database does not count globally,
+            # even though the account is named `test`.
             ok, message = db_mysql.check_privileges(conn, 'SELECT', 'PROCESS')
             test.assertFalse(ok)
-            test.assertIn('SELECT, PROCESS', message)
+            test.assertIn('PROCESS', message)
+            test.assertNotIn('SELECT', message)
 
             test.assertEqual(db_mysql.commit(conn), (True, None))
         finally:
