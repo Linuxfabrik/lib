@@ -30,11 +30,12 @@ Typical use case:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082503'
+__version__ = '2026101201'
 
 import re
+from urllib.parse import unquote
 
-from . import human, shell
+from . import human, shell, txt
 
 DEFAULT_TIMEOUT = 8
 
@@ -688,7 +689,8 @@ def _explain_virsh_error(stderr, uri):
       is passed on as libvirt worded it, because libvirt says it better than a guess
       would. Error strings verified against libvirt 12.0.0.
     """
-    stderr = stderr.strip()
+    stderr = txt.sanitize_sensitive_data(stderr.strip())
+    uri = _display_uri(uri)
     advice = ''
     if 'failed to connect to the hypervisor' in stderr:
         advice = (
@@ -711,6 +713,111 @@ def _explain_virsh_error(stderr, uri):
             'which cannot be granted without someone to type a password. '
         )
     return f'{advice}{stderr}' if advice else stderr
+
+
+# What a URI may carry. Verified against libvirt 12.7 (src/remote/remote_driver.c,
+# remote_sockets.c, util/viruri.c, docs/uri.rst) and probed with virsh 12.0.0 on Fedora:
+# - Refused, because they make libvirt run a program, open a file or talk to a socket
+#   somebody else can plant, or let the daemon open another URI: `command` is the
+#   program of the `ext` transport and replaces the `ssh` of the ssh transport, `argv`
+#   its argument, `netcat` the program run on the far side, `socket` the socket to talk
+#   to, `keyfile`, `known_hosts`, `pkipath` and `authfile` files to read, `name` the URI
+#   the daemon opens in turn (`qemu:///embed`, `test:///<file>`). So is the `ext`
+#   transport itself. The plugins use `qemu:///system` and `qemu+ssh://user@host/system`
+#   and none of these.
+# - Accepted, because they take a fixed set of words that libvirt validates, or a
+#   number: `known_hosts_verify`, `mode`, `no_tty`, `no_verify`, `proxy` and `sshauth`.
+#   Anything else is refused, since libvirt grows new parameters and passes those it
+#   does not know on to the far end.
+# - A query name is percent-decoded and compared case-insensitively, and both `&` and
+#   `;` separate parameters.
+# - `qemu:///embed?root=...` runs the driver inside virsh on a directory of the
+#   caller's choosing, `test:///<file>` reads a file, so the driver and the path are
+#   fixed too. The paths of the drivers allowed are `/system`, `/session` and, for
+#   Xen and LXC, `/` or none.
+_URI_DRIVERS = ('lxc', 'qemu', 'vz', 'xen')
+_URI_PARAMETERS = (
+    'known_hosts_verify',
+    'mode',
+    'no_tty',
+    'no_verify',
+    'proxy',
+    'sshauth',
+)
+_URI_PATHS = ('', '/', '/session', '/system')
+_URI_TRANSPORTS = ('', 'libssh', 'libssh2', 'ssh', 'tcp', 'tls', 'unix')
+_URI_REGEX = re.compile(
+    r'^(?P<driver>[A-Za-z][A-Za-z0-9]*)(?:\+(?P<transport>[A-Za-z0-9]+))?://'
+    r'(?P<authority>[^/?#\s]*)(?P<path>/[^?#\s]*)?(?:\?(?P<query>[^#\s]*))?'
+)
+
+
+def _display_uri(uri):
+    """Return the URI the way it may appear in a message: a password in its userinfo
+    is redacted."""
+    return txt.sanitize_sensitive_data(uri)
+
+
+def _check_uri(uri):
+    """
+    Refuse a connection URI that could make libvirt run a program or open a file.
+
+    Parameters
+    ----------
+    uri : str
+        The URI a caller wants to connect to.
+
+    Returns
+    -------
+    tuple (bool, str)
+        `(True, uri)` if the URI only names a hypervisor, else `(False, message)`.
+
+    Notes
+    -----
+    - An allowlist, because libvirt passes every parameter it does not know on to the
+      far end and grows new ones.
+    - Fails closed: a URI that cannot be read is refused, never repaired.
+    """
+    hint = (
+        'Use a URI like "qemu:///system" or "qemu+ssh://user@host/system", with at '
+        f'most the parameters {", ".join(_URI_PARAMETERS)}.'
+    )
+    if not isinstance(uri, str):
+        return False, f'Refusing a libvirt URI that is not a string. {hint}'
+    shown = _display_uri(uri)
+    match = _URI_REGEX.fullmatch(uri)
+    if not match:
+        return (
+            False,
+            f'Refusing the libvirt URI "{shown}", which cannot be read. {hint}',
+        )
+    if match['driver'].lower() not in _URI_DRIVERS:
+        return False, (
+            f'Refusing the libvirt URI "{shown}": the driver "{match["driver"]}" is not '
+            f'one of {", ".join(_URI_DRIVERS)}.'
+        )
+    if (match['transport'] or '').lower() not in _URI_TRANSPORTS:
+        return False, (
+            f'Refusing the libvirt URI "{shown}": the transport "{match["transport"]}" '
+            f'is not one of {", ".join(t for t in _URI_TRANSPORTS if t)}.'
+        )
+    # libvirt percent-decodes the user and the host before it hands them to ssh
+    authority = unquote(match['authority'])
+    if authority.startswith('-') or authority.rpartition('@')[2].startswith('-'):
+        return False, f'Refusing the libvirt URI "{shown}": the host starts with "-".'
+    if (match['path'] or '') not in _URI_PATHS:
+        return False, (
+            f'Refusing the libvirt URI "{shown}": the path is not one of '
+            f'{", ".join(p for p in _URI_PATHS if p)}.'
+        )
+    for parameter in re.split(r'[&;]', match['query'] or ''):
+        name = unquote(parameter.partition('=')[0]).lower()
+        if name and name not in _URI_PARAMETERS:
+            return False, (
+                f'Refusing the libvirt URI "{shown}": the parameter "{name}" can run a '
+                f'program or open a file. {hint}'
+            )
+    return True, uri
 
 
 def virsh(args, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
@@ -742,11 +849,23 @@ def virsh(args, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
       connection is the only one that works unattended.
     - The URI is bound to its option as `--connect=<uri>`, so a value that starts
       with a dash cannot turn into an option of its own.
+    - A libvirt.conf alias such as `default` is refused too: an alias can point to any
+      URI, the dangerous ones included, so it is resolved by the caller or not at all.
+    - The URI is checked against what the kvm plugins need, `qemu:///system` and
+      `qemu+ssh://user@host/system`, and more advanced libvirt URIs are refused on
+      purpose, a UNIX `socket` and every parameter that names a file included.
+    - The URI may only name a hypervisor. One that makes libvirt run a program or talk
+      to a socket somebody can plant (`qemu+ext://`, `?command=`, `?socket=`, ...) is refused
+      with `(False, message)`, see `_check_uri()`.
 
     Examples
     --------
     >>> success, stdout = virsh(['list', '--all', '--name'])
     """
+    success, uri = _check_uri(uri)
+    if not success:
+        return False, uri
+
     if not shell.which('virsh'):
         return False, (
             'The "virsh" command was not found. It ships with the libvirt client '

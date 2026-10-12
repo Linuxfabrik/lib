@@ -184,6 +184,143 @@ class TestVirsh(unittest.TestCase):
             self.assertEqual(kvm.virsh(['list']), (False, 'timed out'))
 
 
+class TestVirshUriGuard(unittest.TestCase):
+    """A caller-chosen URI must not make libvirt run a program or open a path.
+
+    Probed against libvirt 12.0.0: `?command=` replaces the `ssh` of the ssh
+    transport and is the program of the `ext` transport, `argv` is its argument,
+    and a query name is matched case-insensitively after percent-decoding, with
+    `&` and `;` as separators.
+    """
+
+    def _refused(self, uri):
+        with (
+            mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'),
+            _virsh(stdout='ok') as exec_mock,
+        ):
+            success, message = kvm.virsh(['list'], uri=uri)
+        self.assertFalse(success, uri)
+        self.assertIn('URI', message)
+        exec_mock.assert_not_called()
+
+    def _accepted(self, uri):
+        with (
+            mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'),
+            _virsh(stdout='ok') as exec_mock,
+        ):
+            success, _ = kvm.virsh(['list'], uri=uri)
+        self.assertTrue(success, uri)
+        self.assertEqual(exec_mock.call_args[0][0][2], f'--connect={uri}')
+
+    def test_ext_transport_is_refused(self):
+        self._refused('qemu+ext:///system?command=/usr/bin/touch&argv=/x')
+        self._refused('qemu+EXT:///system')
+
+    def test_command_replaces_ssh_is_refused(self):
+        self._refused('qemu+ssh://host/system?command=/usr/bin/touch')
+
+    def test_query_name_is_matched_like_libvirt(self):
+        self._refused('qemu+ssh://host/system?COMMAND=/usr/bin/touch')
+        self._refused('qemu+ssh://host/system?%63ommand=/usr/bin/touch')
+        self._refused('qemu+ssh://host/system?no_tty=1;command=/usr/bin/touch')
+        self._refused('qemu+ssh://host/system?no_tty=1&command=/usr/bin/touch')
+
+    def test_other_program_and_path_parameters_are_refused(self):
+        for name in ('argv', 'name', 'netcat'):
+            self._refused(f'qemu+ssh://host/system?{name}=/x')
+
+    def test_socket_is_refused_beside_every_transport(self):
+        # also the local one: a root caller would parse what a planted socket answers
+        for transport in ('ssh', 'libssh', 'libssh2', 'tcp', 'tls', 'unix'):
+            self._refused(f'qemu+{transport}://host/system?socket=/x')
+        self._refused(
+            'qemu+unix:///system?socket=/opt/libvirt/run/libvirt/libvirt-sock'
+        )
+        self._refused('qemu:///system?socket=/run/libvirt/libvirt-sock')
+
+    def test_parameters_that_make_libvirt_open_a_file_are_refused(self):
+        for name in ('authfile', 'keyfile', 'known_hosts', 'pkipath', 'tls_priority'):
+            self._refused(f'qemu+ssh://host/system?{name}=/etc/libvirt/{name}')
+
+    def test_an_alias_is_refused(self):
+        for alias in ('default', 'qemu', 'prod'):
+            self._refused(alias)
+
+    def test_a_trailing_slash_is_refused_like_libvirt_does(self):
+        # probed: "unexpected qemu URI path '/system/', try qemu:///system"
+        self._refused('qemu:///system/')
+
+    def test_unknown_parameter_is_refused(self):
+        self._refused('qemu+ssh://host/system?whatever=1')
+
+    def test_path_that_selects_a_directory_is_refused(self):
+        self._refused('qemu:///embed?root=/tmp/x')
+        self._refused('qemu:///../../tmp/x')
+
+    def test_driver_that_reads_a_file_is_refused(self):
+        self._refused('test:///etc/shadow')
+
+    def test_malformed_uri_is_refused(self):
+        for uri in (
+            '',
+            None,
+            5,
+            '--connect=x',
+            'qemu:///system ?x',
+            'qemu:///a\nb',
+            'qemu:///system\n',
+            'qemu+ssh://-oProxyCommand=x/system',
+            'qemu:///system#a',
+        ):
+            self._refused(uri)
+
+    def test_percent_encoded_dash_in_user_or_host_is_refused(self):
+        self._refused('qemu+ssh://%2doProxyCommand=x@/system')
+        self._refused('qemu+ssh://user@%2dhost/system')
+
+    def test_a_refusal_does_not_show_the_password(self):
+        for uri in (
+            'qemu+ssh://user:linuxfabrik@host/system?command=x',
+            'qemu+ext://user:linuxfabrik@host/system',
+            'qemu+ssh://user:linuxfabrik@host/etc',
+        ):
+            with (
+                mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'),
+                _virsh(),
+            ):
+                success, message = kvm.virsh(['list'], uri=uri)
+            self.assertFalse(success)
+            self.assertNotIn('linuxfabrik', message)
+            self.assertIn('user:******@host', message)
+
+    def test_a_failed_connection_does_not_show_the_password(self):
+        uri = 'qemu+ssh://user:linuxfabrik@host/system'
+        stderr = f'error: failed to connect to the hypervisor\nerror: {uri}: refused'
+        with (
+            mock.patch.object(kvm.shell, 'which', return_value='/usr/bin/virsh'),
+            _virsh(stderr=stderr, retc=1),
+        ):
+            success, message = kvm.virsh(['list'], uri=uri)
+        self.assertFalse(success)
+        self.assertNotIn('linuxfabrik', message)
+
+    def test_the_usual_uris_pass(self):
+        for uri in (
+            'qemu:///system',
+            'qemu:///session',
+            'qemu+ssh://root@host.example/system',
+            'qemu+ssh://host.example/system?no_tty=1&known_hosts_verify=ignore',
+            'qemu+tls://host.example/system?no_verify=1',
+            'qemu+tcp://192.0.2.1:16509/system',
+            'qemu+libssh2://user@host/system?known_hosts_verify=ignore',
+            'xen+ssh://user@host/system',
+            'qemu+unix:///system',
+            'lxc:///',
+            'xen:///',
+        ):
+            self._accepted(uri)
+
+
 class TestReaders(unittest.TestCase):
     """The functions that put a virsh call and a parser together."""
 

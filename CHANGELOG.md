@@ -81,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * container.py: `run()` runs as another account only if it owns a subordinate UID range
 * db_sqlite.py: `get_db_dir()` no longer keeps databases where other accounts may plant or swap them, such as `C:\Windows\Temp` of SYSTEM on Windows
 * disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files, and a single path or an empty list as `allowed_roots` no longer reads without confinement
+* kvm.py: `virsh()` and every reader built on it refuse a connection URI that makes libvirt run a program, open a file or connect to a socket the caller names, such as `qemu+ext://` or `?command=`
 * logsource.py: `read()` reads each source, rotated files included, from one checked handle
 * net.py: `get_proxy()` no longer puts the password or token of a URL, or the password of a proxy, into its error message
 * nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`, and any file `occ` loads that another account can change, app directories outside the installation included
