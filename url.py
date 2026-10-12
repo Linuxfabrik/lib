@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026101202'
 
 import base64
 import json
@@ -294,8 +294,12 @@ def _build_ssl_context(insecure, tls_min, tls_max, cacert=None):
     would leave every public CA valid. Verified against Python 3.14 on Fedora 44.
 
     A bundle that cannot be read raises a ValueError rather than leaving the caller with a
-    connection that verifies against something else than it asked for.
+    connection that verifies against something else than it asked for. With `insecure`
+    the bundle is not read at all: nothing is verified against it, so a missing one must
+    not fail the request.
     """
+    if insecure:
+        cacert = None
     try:
         if not cacert:
             ctx = ssl.create_default_context()

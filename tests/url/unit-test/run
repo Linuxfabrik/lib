@@ -359,6 +359,14 @@ class TestBuildSslContext(unittest.TestCase):
         self.assertFalse(ctx.check_hostname)
         self.assertEqual(ctx.verify_mode, ssl.CERT_NONE)
 
+    # Nothing is verified with insecure, so the bundle is not read: a missing one used
+    # to fail the request although the parameter promises to be ignored then.
+    def test_insecure_does_not_read_the_bundle(self):
+        for cacert in ('/nonexistent/ca.pem', __file__):
+            with self.subTest(cacert=cacert):
+                ctx = url._build_ssl_context(True, None, None, cacert=cacert)
+                self.assertEqual(ctx.verify_mode, ssl.CERT_NONE)
+
     def test_old_interpreter_pinning_raises_runtime_error(self):
         # Simulate Python 3.6 (no ssl.TLSVersion): _TLS_VERSIONS is empty and a
         # pinning request must raise RuntimeError before touching the context.

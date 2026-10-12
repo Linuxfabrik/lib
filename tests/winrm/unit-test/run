@@ -322,6 +322,53 @@ class TestMapTransport(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestPywinrmTransport(unittest.TestCase):
+    """pywinrm knows no `negotiate`, the documented default, and no missing transport:
+    both ended in "unsupported auth method" (pywinrm v0.5.0). Negotiate picks Kerberos
+    or NTLM, and so does the fallback."""
+
+    def transport(self, **overrides):
+        args = make_args(**overrides)
+        return winrm_lib._pywinrm_transport(args, winrm_lib._build_auth(args))
+
+    def test_negotiate_with_credentials_is_ntlm(self):
+        for value in ('negotiate', 'Negotiate', None, ''):
+            with self.subTest(transport=value):
+                self.assertEqual(self.transport(WINRM_TRANSPORT=value), 'ntlm')
+
+    def test_negotiate_without_credentials_is_kerberos(self):
+        for value in ('negotiate', None):
+            with self.subTest(transport=value):
+                self.assertEqual(
+                    self.transport(
+                        WINRM_TRANSPORT=value, WINRM_USERNAME=None, WINRM_PASSWORD=None
+                    ),
+                    'kerberos',
+                )
+
+    def test_a_transport_pywinrm_knows_passes(self):
+        for value in ('basic', 'credssp', 'kerberos', 'ntlm', 'plaintext', 'ssl'):
+            with self.subTest(transport=value):
+                self.assertEqual(self.transport(WINRM_TRANSPORT=value), value)
+
+    def test_run_cmd_and_run_ps_hand_the_mapped_transport_to_pywinrm(self):
+        for run in (winrm_lib.run_cmd, winrm_lib.run_ps):
+            with self.subTest(run=run.__name__):
+                session = MagicMock()
+                session.run_cmd.return_value = make_pywinrm_result(0, b'', b'')
+                session.run_ps.return_value = make_pywinrm_result(0, b'', b'')
+                winrm_mock = MagicMock()
+                winrm_mock.Session.return_value = session
+                with (
+                    force_jea(have_jea=False, have_winrm=True),
+                    patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+                ):
+                    run(make_args(), 'hostname')
+                self.assertEqual(
+                    winrm_mock.Session.call_args.kwargs['transport'], 'ntlm'
+                )
+
+
 class TestPsLiteral(unittest.TestCase):
     def test_value_round_trips(self):
         for value in HOSTILE:

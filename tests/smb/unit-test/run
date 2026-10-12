@@ -47,15 +47,19 @@ except ImportError as exc:  # pragma: no cover - depends on venv contents
 # ----------------------------------------------------------------------------
 
 
-def make_smboserror(strerror, context=None):
-    """Return a real SMBOSError with a controlled strerror and __context__."""
-    # 0xC0000022 == STATUS_ACCESS_DENIED: any valid ntstatus works, we override
-    # strerror afterwards to drive the exact branch under test.
-    err = smbexc.SMBOSError(ntstatus=0xC0000022, filename='smb://server/share/file')
+def make_smboserror(strerror, ntstatus=0xC0000022):
+    """Return a real SMBOSError carrying `ntstatus`, the way smbclient raises it.
+
+    smbclient collects the error of an open inside an `except` block and raises it
+    later, so the server's answer is in `ntstatus`, never in `__context__`.
+    0xC0000022 is STATUS_ACCESS_DENIED; strerror is overridden to drive the message.
+    """
+    err = smbexc.SMBOSError(ntstatus=ntstatus, filename='smb://server/share/file')
     err.strerror = strerror
-    if context is not None:
-        err.__context__ = context
     return err
+
+
+NT = smbexc.NtStatus if HAVE_SMB else None
 
 
 def make_dir_entry(is_file):
@@ -89,8 +93,9 @@ class TestGlobSuccess(unittest.TestCase):
         with patch.object(smb, 'smbclient') as cli:
             cli._os.SMBDirEntry.from_path.return_value = entry
             smb.glob('smb://srv/s/f', 'alice', 'linuxfabrik', timeout=9, encrypt=False)
+        # smbclient takes `server/share/path`; the `smb://` of a URL is removed
         cli._os.SMBDirEntry.from_path.assert_called_once_with(
-            'smb://srv/s/f',
+            'srv/s/f',
             username='alice',
             password='linuxfabrik',
             connection_timeout=9,
@@ -127,7 +132,7 @@ class TestGlobSuccess(unittest.TestCase):
                 encrypt=True,
             )
         cli.scandir.assert_called_once_with(
-            'smb://server/share/dir',
+            'server/share/dir',
             mode='rb',
             username='user',
             password='pass',
@@ -173,20 +178,41 @@ class TestGlobErrors(unittest.TestCase):
         self.assertEqual(msg, 'Login failed')
 
     def test_smboserror_with_objectnamenotfound_context(self):
-        err = make_smboserror('whatever', context=smbexc.ObjectNameNotFound())
+        err = make_smboserror('whatever', ntstatus=NT.STATUS_OBJECT_NAME_NOT_FOUND)
         with patch.object(smb, 'smbclient') as cli:
             cli._os.SMBDirEntry.from_path.side_effect = err
             ok, msg = smb.glob('smb://s/missing', 'user', 'pass', timeout=5)
         self.assertFalse(ok)
         self.assertEqual(msg, 'No such file or directory on the SMB server.')
 
-    def test_smboserror_no_such_file_strerror_means_empty_dir(self):
-        # No matching context, but strerror signals "No such file or directory":
-        # glob treats this as an empty result set, not a hard error.
-        err = make_smboserror('No such file or directory')
+    # A missing directory was taken for an empty one: smbclient raises the open
+    # error later, with the status in `ntstatus` and no `__context__`, and its text
+    # "No such file or directory" was read as "nothing matched". Verified against a
+    # Samba server with smbprotocol 1.16.0.
+    def test_a_missing_directory_or_parent_is_an_error(self):
+        for status in (
+            NT.STATUS_OBJECT_NAME_NOT_FOUND,
+            NT.STATUS_OBJECT_PATH_NOT_FOUND,
+            NT.STATUS_NOT_FOUND,
+        ):
+            with self.subTest(status=hex(status)):
+                err = make_smboserror('No such file or directory', ntstatus=status)
+                with patch.object(smb, 'smbclient') as cli:
+                    cli._os.SMBDirEntry.from_path.side_effect = err
+                    ok, msg = smb.glob('smb://s/nope', 'user', 'pass', timeout=5)
+                self.assertFalse(ok)
+                self.assertEqual(msg, 'No such file or directory on the SMB server.')
+
+    # A pattern that matches nothing is answered with STATUS_NO_SUCH_FILE, which
+    # smbprotocol 1.16 raises out of the listing. That is an empty result.
+    def test_a_pattern_that_matches_nothing_is_empty(self):
+        dir_entry = make_dir_entry(is_file=False)
         with patch.object(smb, 'smbclient') as cli:
-            cli._os.SMBDirEntry.from_path.side_effect = err
-            ok, result = smb.glob('smb://s/empty', 'user', 'pass', timeout=5)
+            cli._os.SMBDirEntry.from_path.return_value = dir_entry
+            cli.scandir.side_effect = smbexc.NoSuchFile()
+            ok, result = smb.glob(
+                'smb://s/dir', 'user', 'pass', timeout=5, pattern='*.x'
+            )
         self.assertTrue(ok)
         self.assertEqual(result, [])
 
@@ -239,7 +265,7 @@ class TestOpenFileSuccess(unittest.TestCase):
             cli.open_file.return_value = fobj
             smb.open_file('smb://s/f', 'bob', 'linuxfabrik', timeout=11, encrypt=False)
         cli.open_file.assert_called_once_with(
-            'smb://s/f',
+            's/f',
             mode='rb',
             username='bob',
             password='linuxfabrik',
@@ -276,7 +302,7 @@ class TestOpenFileErrors(unittest.TestCase):
         self.assertEqual(msg, str(exc))
 
     def test_smboserror_file_is_a_directory_context(self):
-        err = make_smboserror('Is a directory', context=smbexc.FileIsADirectory())
+        err = make_smboserror('Is a directory', ntstatus=NT.STATUS_FILE_IS_A_DIRECTORY)
         with patch.object(smb, 'smbclient') as cli:
             cli.open_file.side_effect = err
             ok, msg = smb.open_file('smb://s/dir', 'user', 'pass', timeout=5)
@@ -284,7 +310,7 @@ class TestOpenFileErrors(unittest.TestCase):
         self.assertEqual(msg, 'The file specified is a directory, expected a file.')
 
     def test_smboserror_objectnamenotfound_context(self):
-        err = make_smboserror('No such file', context=smbexc.ObjectNameNotFound())
+        err = make_smboserror('No such file', ntstatus=NT.STATUS_OBJECT_NAME_NOT_FOUND)
         with patch.object(smb, 'smbclient') as cli:
             cli.open_file.side_effect = err
             ok, msg = smb.open_file('smb://s/missing', 'user', 'pass', timeout=5)
@@ -302,9 +328,9 @@ class TestOpenFileErrors(unittest.TestCase):
             'I/O error "Permission denied" while opening or reading smb://s/f',
         )
 
-    def test_smboserror_no_context_does_not_match_directory_branch(self):
-        # __context__ is None: must fall through to the generic I/O message,
-        # never to the directory- or not-found-specific strings.
+    def test_smboserror_other_status_does_not_match_directory_branch(self):
+        # Any other status falls through to the generic I/O message, never to the
+        # directory- or not-found-specific strings.
         err = make_smboserror('Some other error')
         with patch.object(smb, 'smbclient') as cli:
             cli.open_file.side_effect = err

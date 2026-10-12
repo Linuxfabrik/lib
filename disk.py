@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026101202'
 
 import csv
 import errno
@@ -1246,7 +1246,8 @@ def is_within(path, roots):
     path : str
         The path to check. It need not exist; only its resolved location matters.
     roots : iterable of str
-        The directories `path` is allowed to resolve into.
+        The directories `path` is allowed to resolve into. A single path given as a
+        string is not a list of roots and yields False, as does an empty iterable.
 
     Returns
     -------
@@ -1261,6 +1262,9 @@ def is_within(path, roots):
     >>> is_within('/var/log/../etc/shadow', ['/var/log'])
     False
     """
+    if isinstance(roots, (str, bytes, os.PathLike)):
+        # iterated, a string yields characters, and `/` would contain every path
+        return False
     # normcase() is a no-op on POSIX but lowercases and normalizes separators on
     # Windows, where paths are case-insensitive; without it the containment check
     # would wrongly reject `C:\Var\Log\...` against a `C:\var\log` root.
@@ -1373,8 +1377,9 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
         When given, only a regular file whose real path lies inside one of these
         roots is opened. A symlink pointing out of a root, a path that changed while
         it was being opened, and anything that is not a regular file (a FIFO that
-        would block the reader, a device) are refused. Defaults to None (no
-        containment).
+        would block the reader, a device) are refused. An empty iterable allows
+        nothing, and a single path given as a string is refused rather than read as
+        its characters. Defaults to None (no containment).
     nofollow : bool, optional
         Refuse a symlink as the last path component (`O_NOFOLLOW`). Defaults to
         False.
@@ -1397,6 +1402,21 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False):
     --------
     >>> success, handle = open_file('/var/log/messages', allowed_roots=['/var/log'])
     """
+    if allowed_roots is not None:
+        # A single path is a string, which iterates as characters: `'/var/log'` made
+        # `/` a root and opened every file. An empty list allowed everything as well,
+        # because it is false. Neither is what a caller who asked for confinement
+        # wants, so the first is refused and the second allows nothing.
+        if isinstance(allowed_roots, (str, bytes, os.PathLike)):
+            return False, (
+                f'Refusing to read "{filename}": the allowed roots have to be a list '
+                'of directories, not a single path.'
+            )
+        allowed_roots = list(allowed_roots)
+        if not allowed_roots:
+            return False, (
+                f'Refusing to read "{filename}": no directory is allowed to read from.'
+            )
     if allowed_roots and not is_within(filename, allowed_roots):
         return False, (
             f'Refusing to read "{filename}": resolved path is outside the allowed '

@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026101202'
 
 import ipaddress
 import os
@@ -206,6 +206,22 @@ def cidr_to_hosts(cidr, max_hosts=65536):
     return (True, [str(host) for host in network.hosts()])
 
 
+def _decode_received(raw):
+    """Decode what a socket delivered so far, for matching while more may follow.
+
+    UTF-8 where it is valid, Latin-1 where it is not, like `txt.to_text()` with
+    `strict_or_latin1`. A sequence that is only cut off at the end is not invalid, the
+    rest of the character is still in transit: decoding it as Latin-1 would turn the
+    whole answer into mojibake, so it is left out until it is complete.
+    """
+    try:
+        return raw.decode('utf-8')
+    except UnicodeDecodeError as e:
+        if e.reason == 'unexpected end of data':
+            return raw[: e.start].decode('utf-8')
+        return raw.decode('latin-1')
+
+
 def _socket_fetch(
     open_socket_func,
     connect_args,
@@ -290,7 +306,9 @@ def _socket_fetch(
                         continue
 
                     pattern = re.compile(expect, re.MULTILINE)
-                    buffer = ''
+                    # bytes are collected and decoded together, so a character split
+                    # across two reads is not decoded in halves
+                    received = b''
                     while True:
                         try:
                             chunk = s.recv(1024)
@@ -304,7 +322,8 @@ def _socket_fetch(
                             return False, (
                                 f'{socket_name} closed before pattern {expect!r} matched.'
                             )
-                        buffer += txt.to_text(chunk, errors='strict_or_latin1')
+                        received += chunk
+                        buffer = _decode_received(received)
                         if pattern.search(buffer):
                             results.append(buffer)
                             break
@@ -327,19 +346,21 @@ def _socket_fetch(
                 except Exception:
                     pass  # Not fatal
 
+            # decoded once at the end: a character split across two reads made both
+            # halves invalid UTF-8, and each chunk fell back to Latin-1 on its own
             fragments = []
             while True:
                 try:
                     chunk = s.recv(1024)
                     if not chunk:
                         break
-                    fragments.append(txt.to_text(chunk, errors='strict_or_latin1'))
+                    fragments.append(chunk)
                 except socket.timeout:
                     return False, f'{socket_name} timed out.'
                 except OSError as e:
                     return False, f'Cannot fetch data from {socket_name}: {e}'
 
-            return True, ''.join(fragments)
+            return True, txt.to_text(b''.join(fragments), errors='strict_or_latin1')
 
     except Exception as e:
         return False, f'Error using {socket_name}: {e}'

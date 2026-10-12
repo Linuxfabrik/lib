@@ -339,6 +339,23 @@ class TestFetchSocket(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn('not supported on this platform', message)
 
+    # A character split across two reads made both halves invalid UTF-8, and each
+    # chunk fell back to Latin-1 on its own: `ä` became `Ã¤`.
+    def test_a_character_split_across_reads_survives(self):
+        raw = ('ä' * 600).encode()
+        sock = FakeSocket([raw[:1023], raw[1023:]])
+        self.assertEqual(self._fetch(sock, cmd=b'show stat\n'), (True, 'ä' * 600))
+
+    def test_a_character_split_across_reads_survives_a_dialog(self):
+        sock = FakeSocket([b'value: caf\xc3', b'\xa9 end\n'])
+        success, answers = self._fetch(sock, dialog=[(b'get\n', 'end')])
+        self.assertTrue(success)
+        self.assertEqual(answers, ['value: café end\n'])
+
+    def test_an_answer_that_is_not_utf8_is_read_as_latin1(self):
+        sock = FakeSocket([b'caf\xe9', b' end\n'])
+        self.assertEqual(self._fetch(sock, cmd=b'x'), (True, 'café end\n'))
+
     def test_sends_the_command_and_reads_the_answer(self):
         sock = FakeSocket([b'stat one\n'])
         self.assertEqual(self._fetch(sock, cmd=b'show stat\n'), (True, 'stat one\n'))

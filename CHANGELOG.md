@@ -59,24 +59,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * infomaniak.py: `get_swiss_backup_slots()` applies the proxy, TLS and timeout settings to the products request too
 * logsource.py: `read()` names missing journal rights instead of passing on journalctl's hint, and no longer loses lines at a rotation or when daylight saving time ends, hands out half-written lines, falls behind on a busy unit, or reads a compressed file named directly again on every run; `timestamp()` no longer fails on a date local time cannot hold
 * mail.py: `send()` reports a message it cannot build, a line break in a header or an incomplete inline image, as an error instead of raising
-* net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data, and `get_proxy()` reports a target or proxy URL it cannot read instead of raising
+* net.py: `FAMILIYSTR` names an IPv6 address "6" instead of "irda" on Windows, `fetch(tls=True)` verifies against the trust store of the host and returns the answer instead of the encrypted data, and `get_proxy()` reports a target or proxy URL it cannot read instead of raising; `fetch()` and `fetch_socket()` no longer garble a character the answer splits between two reads
 * powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout, even when a child process keeps the output open
 * redfish.py: `get_systems_memory()` no longer rates spare and unused HPE modules CRIT and reads Fujitsu iRMC modules, the `get_*()` projections and `get_manager_logservices_sel_entries()` no longer fail on a `null` value, `build_url()` reports a base URL it cannot read instead of raising, `get_auth_header()` no longer fails on a session location the controller garbles, and `start_trace()` works on Windows
+* smb.py: `glob()` reports a missing directory instead of listing it as empty and lists a pattern without matches as empty instead of failing, `open_file()` names a directory, and both take an `smb://` URL
 * ssh.py: `rsync()` and `scp()` reach an IPv6 address, and `rsync()` keeps an ssh option or key path containing spaces together
 * task.py: `run()` and `run_each()` no longer repeat the consumer's output when a job prints or ends the program, report such a job as a failure, and return on time when a job cannot be killed
 * time.py: `epoch2iso()` and `get_weekday()` answer an empty string to a timestamp beyond what the platform can represent instead of failing
 * uptimerobot.py: `new_monitor()` and `edit_monitor()` send the port monitor presets UptimeRobot expects, so `https`, `ftp`, `smtp`, `pop3` and `imap` no longer fail, `post_content_type` accepts `application/json`, and the `get_*()` functions return every record, alert contacts past the first 50 and with a `limit` included, starting at a given `offset`
-* url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example, `fetch(extended=True)` authenticates to a proxy, `fetch()` and `fetch_json()` report a URL they cannot read instead of raising, and `split_basic_auth()` keeps the brackets of an IPv6 address and hands back a URL it cannot read unchanged
+* url.py: HTTPS requests on Windows verify sites whose root certificate Windows has not downloaded yet, Let's Encrypt for example, `fetch(extended=True)` authenticates to a proxy, `fetch()` and `fetch_json()` report a URL they cannot read instead of raising, and `split_basic_auth()` keeps the brackets of an IPv6 address and hands back a URL it cannot read unchanged; `fetch()` with `insecure` no longer fails on a `cacert` it cannot read
 * user.py: `get_uid_min()` reads an indented `UID_MIN`, and a repeated or commented one the way useradd on RHEL 10 and Fedora does
 * version.py: `check_eol()` names a missing httpx instead of calling endoflife.date unreachable, answers UNKNOWN to a version without a number instead of calling it older than anything listed, and no longer doubles a blank in its message; `version()` no longer reads a pre-release, a build suffix or a date as part of the version
-* winrm.py: `run_ps()` returns the output as PowerShell shows it again instead of the type names of the objects, behind a JEA endpoint as a list of their properties, and no longer writes a Python warning about the progress stream
+* winrm.py: `run_ps()` returns the output as PowerShell shows it again instead of the type names of the objects, behind a JEA endpoint as a list of their properties, and no longer writes a Python warning about the progress stream; without pypsrp, `run_cmd()` and `run_ps()` work with the default transport `negotiate` and without one
 * wordpress.py: `get_header_value()`, `get_plugins()`, `get_themes()`, and `get_site_url()`, which no longer reports the enclosing site when its own `wp-config.php` cannot be read
 
 ### Security
 
 * container.py: `run()` runs as another account only if it owns a subordinate UID range
 * db_sqlite.py: `get_db_dir()` no longer keeps databases where other accounts may plant or swap them, such as `C:\Windows\Temp` of SYSTEM on Windows
-* disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files
+* disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files, and a single path or an empty list as `allowed_roots` no longer reads without confinement
 * logsource.py: `read()` reads each source, rotated files included, from one checked handle
 * net.py: `get_proxy()` no longer puts the password or token of a URL, or the password of a proxy, into its error message
 * nextcloud.py: `run_occ()` refuses an untrusted installation or a symlinked `config.php`, and any file `occ` loads that another account can change, app directories outside the installation included

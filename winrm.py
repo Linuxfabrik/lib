@@ -11,7 +11,7 @@
 """This library collects some Microsoft WinRM related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092802'
+__version__ = '2026101201'
 
 import base64
 import re
@@ -95,6 +95,35 @@ def _map_transport(args):
     use_ssl = transport == 'ssl'
     port = 5986 if use_ssl else 5985
     return (psrp_auth, use_ssl, port)
+
+
+def _pywinrm_transport(args, auth):
+    """
+    Return the pywinrm transport for `args`, which knows no `negotiate`.
+
+    `negotiate`, the documented default, is what pypsrp speaks; pywinrm refuses it with
+    "unsupported auth method", and a missing transport the same way. Negotiate picks
+    Kerberos or NTLM, so without credentials, where `_build_auth()` leaves the Kerberos
+    credential cache to it, it becomes `kerberos`, and with credentials `ntlm`. Every
+    other value is one pywinrm knows and passes as it is. Verified against pywinrm
+    v0.5.0 (`winrm/transport.py`, `build_session()`).
+
+    Parameters
+    ----------
+    args
+        Object with `WINRM_TRANSPORT`.
+    auth : tuple
+        `(username, password)` as `_build_auth()` returns it.
+
+    Returns
+    -------
+    str
+        The transport to hand to `winrm.Session()`.
+    """
+    transport = (getattr(args, 'WINRM_TRANSPORT', None) or '').lower()
+    if transport in ('', 'negotiate'):
+        return 'ntlm' if auth[0] and auth[1] else 'kerberos'
+    return transport
 
 
 def _ps_literal(value):
@@ -301,7 +330,7 @@ def run_cmd(args, cmd, params=None):
             session = winrm.Session(
                 args.WINRM_HOSTNAME,
                 auth=auth,
-                transport=args.WINRM_TRANSPORT,
+                transport=_pywinrm_transport(args, auth),
             )
 
             result = session.run_cmd(command)
@@ -503,7 +532,7 @@ def run_ps(args, cmd, params=None):
             session = winrm.Session(
                 args.WINRM_HOSTNAME,
                 auth=auth,
-                transport=args.WINRM_TRANSPORT,
+                transport=_pywinrm_transport(args, auth),
             )
 
             # pywinrm only runs script text, so the structured call pypsrp makes is
