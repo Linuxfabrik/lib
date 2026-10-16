@@ -20,7 +20,10 @@ reports of Lynis 3.0.7 to 3.1.7 on Debian 12/13, Rocky 8/9/10 and Ubuntu
 
 Lynis rewrites the report while it audits: the file is truncated when an audit
 starts and `hardening_index` and `report_datetime_end` are written last, so a
-report read during an audit lacks both.
+report read during an audit lacks both. Every audit run as root replaces the
+report, a partial one (`--tests`, `--tests-from-group`, `--tests-from-category`)
+included. `test_group` and `test_category` record the last two, `--tests` leaves
+no trace except the small number of tests done (`lynis_tests_done`).
 
 Typical use case:
 
@@ -36,7 +39,7 @@ from . import base
 from .globals import STATE_OK, STATE_WARN
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092801'
+__version__ = '2026101601'
 
 # Where Lynis keeps its files when it runs as root.
 CUSTOM_PROFILE = '/etc/lynis/custom.prf'
@@ -59,10 +62,13 @@ def parse_report(text):
     dict
         `hardening_index` (int, or None while the audit that writes the report is
         still running), `hostname`, `ipv4_addresses` and `ipv6_addresses` (lists),
-        `lynis_version`, `os_name`, `report_datetime_end` (`YYYY-MM-DD HH:MM:SS` in
-        the audited host's local time, empty while the audit is still running),
-        `suggestions` and `warnings` (lists of the raw `TEST-ID|text|details|...`
-        values).
+        `lynis_tests_done` (int, the number of tests performed, or None while the
+        audit is still running), `lynis_version`, `os_name`, `report_datetime_end`
+        (`YYYY-MM-DD HH:MM:SS` in the audited host's local time, empty while the
+        audit is still running), `suggestions` and `warnings` (lists of the raw
+        `TEST-ID|text|details|...` values), `test_category` and `test_group`
+        (`all` unless the audit was limited to a category or to groups, the groups
+        separated by spaces).
 
     Examples
     --------
@@ -74,19 +80,22 @@ def parse_report(text):
         'hostname': '',
         'ipv4_addresses': [],
         'ipv6_addresses': [],
+        'lynis_tests_done': None,
         'lynis_version': '',
         'os_name': '',
         'report_datetime_end': '',
         'suggestions': [],
+        'test_category': '',
+        'test_group': '',
         'warnings': [],
     }
     for line in text.splitlines():
         key, sep, value = line.partition('=')
         if not sep:
             continue
-        if key == 'hardening_index':
+        if key in ('hardening_index', 'lynis_tests_done'):
             try:
-                data['hardening_index'] = int(value)
+                data[key] = int(value)
             except ValueError:
                 pass
         elif key == 'warning[]':
@@ -97,7 +106,14 @@ def parse_report(text):
             data['ipv4_addresses'].append(value)
         elif key == 'network_ipv6_address[]':
             data['ipv6_addresses'].append(value)
-        elif key in ('hostname', 'lynis_version', 'os_name', 'report_datetime_end'):
+        elif key in (
+            'hostname',
+            'lynis_version',
+            'os_name',
+            'report_datetime_end',
+            'test_category',
+            'test_group',
+        ):
             data[key] = value
     return data
 

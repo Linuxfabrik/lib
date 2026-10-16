@@ -16,6 +16,7 @@ The fixtures are real reports of `lynis audit system --cronjob`, anonymised
     report-debian12       Lynis 3.0.8 on Debian 12, one finding
     report-audit-running  Lynis 3.1.7 on Rocky 8, copied while the audit was still
                           running, so it lacks hardening_index and report_datetime_end
+    report-partial-group  Lynis 3.1.7 on Rocky 8, `--tests-from-group "ssh kernel"`
 """
 
 import os
@@ -46,6 +47,9 @@ class TestParseReport(unittest.TestCase):
         self.assertEqual(len(report['suggestions']), 37)
         self.assertEqual(report['ipv4_addresses'], ['127.0.0.1', '192.0.2.10'])
         self.assertEqual(report['ipv6_addresses'], ['::1', 'fe80::200:5eff:fe00:5300'])
+        self.assertEqual(report['lynis_tests_done'], 242)
+        self.assertEqual(report['test_category'], 'all')
+        self.assertEqual(report['test_group'], 'all')
 
     def test_complete_report_with_finding(self):
         report = lynis.parse_report(fixture('report-debian12'))
@@ -58,10 +62,18 @@ class TestParseReport(unittest.TestCase):
         )
         self.assertEqual(len(report['suggestions']), 49)
 
+    def test_report_of_a_partial_audit(self):
+        report = lynis.parse_report(fixture('report-partial-group'))
+        self.assertEqual(report['hardening_index'], 59)
+        self.assertEqual(report['lynis_tests_done'], 15)
+        self.assertEqual(report['test_category'], 'all')
+        self.assertEqual(report['test_group'], 'ssh kernel')
+
     def test_report_of_a_running_audit(self):
         # lynis writes hardening_index and report_datetime_end last
         report = lynis.parse_report(fixture('report-audit-running'))
         self.assertIsNone(report['hardening_index'])
+        self.assertIsNone(report['lynis_tests_done'])
         self.assertEqual(report['report_datetime_end'], '')
         self.assertEqual(report['lynis_version'], '3.1.7')
         self.assertEqual(len(report['warnings']), 1)
@@ -74,20 +86,24 @@ class TestParseReport(unittest.TestCase):
                 'hostname': '',
                 'ipv4_addresses': [],
                 'ipv6_addresses': [],
+                'lynis_tests_done': None,
                 'lynis_version': '',
                 'os_name': '',
                 'report_datetime_end': '',
                 'suggestions': [],
+                'test_category': '',
+                'test_group': '',
                 'warnings': [],
             },
         )
 
     def test_malformed_lines(self):
         report = lynis.parse_report(
-            'hardening_index=abc\nno separator\n=\nhostname=a=b\n'
+            'hardening_index=abc\nlynis_tests_done=\nno separator\n=\nhostname=a=b\n'
         )
-        # a non-numeric index counts as missing, only the first `=` separates
+        # a non-numeric number counts as missing, only the first `=` separates
         self.assertIsNone(report['hardening_index'])
+        self.assertIsNone(report['lynis_tests_done'])
         self.assertEqual(report['hostname'], 'a=b')
 
 
