@@ -39,13 +39,106 @@ from . import base
 from .globals import STATE_OK, STATE_WARN
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101601'
+__version__ = '2026102301'
 
 # Where Lynis keeps its files when it runs as root.
 CUSTOM_PROFILE = '/etc/lynis/custom.prf'
 LOG = '/var/log/lynis.log'
 PID = '/var/run/lynis.pid'
 REPORT = '/var/log/lynis-report.dat'
+
+
+def get_findings_msg(findings, suggestions):
+    """
+    List the findings and suggestions of one or more reports as output text.
+
+    A finding is marked `[WARNING]`, a suggestion is hardening advice and carries no
+    state. Both lists are sorted by test ID, so a category stays together and the
+    same item on several hosts ends up side by side. A closing line tells how to
+    look up an item and how to accept it.
+
+    Parameters
+    ----------
+    findings : list of dict
+        Rows from `parse_findings()` of the `warning[]` entries. A row with a `host`
+        key is prefixed with that host.
+    suggestions : list of dict
+        Rows from `parse_findings()` of the `suggestion[]` entries, likewise.
+
+    Returns
+    -------
+    str
+        The lists, each preceded by an empty line, or an empty string if there is
+        nothing to list.
+
+    Examples
+    --------
+    >>> get_findings_msg(
+    ...     [], [{'test': 'KRNL-5820', 'finding': 'Disable core dumps', 'details': ''}]
+    ... )
+    '\\n\\nSuggestions:\\n* KRNL-5820: Disable core dumps.\\n\\nTo look up an item, ...'
+    """
+    msg = ''
+    for rows, label, item_state in (
+        (findings, 'Findings', STATE_WARN),
+        (suggestions, 'Suggestions', STATE_OK),
+    ):
+        if not rows:
+            continue
+        msg += f'\n\n{label}:'
+        for row in sorted(
+            rows, key=lambda r: (r['test'], r.get('host', ''), r['finding'])
+        ):
+            host = f'{row["host"]}: ' if row.get('host') else ''
+            text = f'{row["finding"].rstrip(".")}.'
+            if row['details']:
+                text += f' {row["details"].rstrip(".")}.'
+            msg += (
+                f'\n* {host}{row["test"]}: {text}'
+                f'{base.state2str(item_state, prefix=" ")}'
+            )
+    if findings or suggestions:
+        example = min(row['test'] for row in findings or suggestions)
+        msg += (
+            f'\n\nTo look up an item, run `lynis show details {example}` on the host. '
+            f'To accept it, add `skip-test={example}` to `{CUSTOM_PROFILE}`.'
+        )
+    return msg
+
+
+def parse_findings(entries):
+    """
+    Split Lynis `warning[]` or `suggestion[]` values into rows.
+
+    Parameters
+    ----------
+    entries : list of str
+        Values of the form `TEST-ID|text|details|solution|`. Lynis writes `-` for an
+        empty field.
+
+    Returns
+    -------
+    list of dict
+        One row per entry, with `test`, `finding` and `details` (empty instead of
+        `-`).
+
+    Examples
+    --------
+    >>> parse_findings(['KRNL-5820|Disable core dumps|-|-|'])
+    [{'test': 'KRNL-5820', 'finding': 'Disable core dumps', 'details': ''}]
+    """
+    rows = []
+    for entry in entries:
+        fields = entry.split('|')
+        details = fields[2] if len(fields) > 2 else ''
+        rows.append(
+            {
+                'test': fields[0],
+                'finding': fields[1] if len(fields) > 1 else '',
+                'details': '' if details == '-' else details,
+            }
+        )
+    return rows
 
 
 def parse_report(text):
@@ -116,96 +209,3 @@ def parse_report(text):
         ):
             data[key] = value
     return data
-
-
-def parse_findings(entries):
-    """
-    Split Lynis `warning[]` or `suggestion[]` values into rows.
-
-    Parameters
-    ----------
-    entries : list of str
-        Values of the form `TEST-ID|text|details|solution|`. Lynis writes `-` for an
-        empty field.
-
-    Returns
-    -------
-    list of dict
-        One row per entry, with `test`, `finding` and `details` (empty instead of
-        `-`).
-
-    Examples
-    --------
-    >>> parse_findings(['KRNL-5820|Disable core dumps|-|-|'])
-    [{'test': 'KRNL-5820', 'finding': 'Disable core dumps', 'details': ''}]
-    """
-    rows = []
-    for entry in entries:
-        fields = entry.split('|')
-        details = fields[2] if len(fields) > 2 else ''
-        rows.append(
-            {
-                'test': fields[0],
-                'finding': fields[1] if len(fields) > 1 else '',
-                'details': '' if details == '-' else details,
-            }
-        )
-    return rows
-
-
-def get_findings_msg(findings, suggestions):
-    """
-    List the findings and suggestions of one or more reports for the plugin output.
-
-    A finding is marked `[WARNING]`, a suggestion is hardening advice and carries no
-    state. Both lists are sorted by test ID, so a category stays together and the
-    same item on several hosts ends up side by side. A closing line tells how to
-    look up an item and how to accept it.
-
-    Parameters
-    ----------
-    findings : list of dict
-        Rows from `parse_findings()` of the `warning[]` entries. A row with a `host`
-        key is prefixed with that host.
-    suggestions : list of dict
-        Rows from `parse_findings()` of the `suggestion[]` entries, likewise.
-
-    Returns
-    -------
-    str
-        The lists, each preceded by an empty line, or an empty string if there is
-        nothing to list.
-
-    Examples
-    --------
-    >>> get_findings_msg(
-    ...     [], [{'test': 'KRNL-5820', 'finding': 'Disable core dumps', 'details': ''}]
-    ... )
-    '\\n\\nSuggestions:\\n* KRNL-5820: Disable core dumps.\\n\\nTo look up an item, ...'
-    """
-    msg = ''
-    for rows, label, item_state in (
-        (findings, 'Findings', STATE_WARN),
-        (suggestions, 'Suggestions', STATE_OK),
-    ):
-        if not rows:
-            continue
-        msg += f'\n\n{label}:'
-        for row in sorted(
-            rows, key=lambda r: (r['test'], r.get('host', ''), r['finding'])
-        ):
-            host = f'{row["host"]}: ' if row.get('host') else ''
-            text = f'{row["finding"].rstrip(".")}.'
-            if row['details']:
-                text += f' {row["details"].rstrip(".")}.'
-            msg += (
-                f'\n* {host}{row["test"]}: {text}'
-                f'{base.state2str(item_state, prefix=" ")}'
-            )
-    if findings or suggestions:
-        example = min(row['test'] for row in findings or suggestions)
-        msg += (
-            f'\n\nTo look up an item, run `lynis show details {example}` on the host. '
-            f'To accept it, add `skip-test={example}` to `{CUSTOM_PROFILE}`.'
-        )
-    return msg

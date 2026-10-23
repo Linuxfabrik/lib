@@ -302,39 +302,6 @@ def parse(source):
     return True, (kind, prefix if kind == KIND_CONTAINER else None, target)
 
 
-def systemd_booted(root=''):
-    """
-    Tell whether systemd is the service manager this host runs, the way `sd_booted()` does.
-
-    A unit file says only that a package shipped one: Devuan, Alpine and other hosts with
-    another init system still carry the `.service` files of the packages they install, and
-    there is no journal to read for those units. systemd creates its runtime unit directory
-    very early at boot, so its presence answers the question, and nothing else does.
-
-    The path is fixed and read without following a symlink at its end, and only root can
-    create it below `/run`, so no caller of a privileged consumer steers the answer.
-    Verified against `sd_booted()` in systemd's `src/libsystemd/sd-daemon/sd-daemon.c`,
-    which tests `access_nofollow("/run/systemd/system/", F_OK)`.
-
-    Parameters
-    ----------
-    root : str, optional
-        Prefix for the path, for the unit tests of a consumer that stand in a directory tree
-        for the host. Defaults to the host itself.
-
-    Returns
-    -------
-    bool
-        True if systemd runs the host, otherwise False, also on Windows.
-
-    Examples
-    --------
-    >>> systemd_booted()  # doctest: +SKIP
-    True
-    """
-    return os.path.lexists(f'{root}/run/systemd/system')
-
-
 # Enough of the head of a file to tell two lines of text apart, which is all the
 # fingerprint has to do here.
 _FINGERPRINT_LENGTH = 256
@@ -1510,6 +1477,39 @@ def syslog_identifier(line):
     if not match:
         return None
     return match.group('identifier')
+
+
+def systemd_booted(root=''):
+    """
+    Tell whether systemd is the service manager this host runs, the way `sd_booted()` does.
+
+    A unit file says only that a package shipped one: Devuan, Alpine and other hosts with
+    another init system still carry the `.service` files of the packages they install, and
+    there is no journal to read for those units. systemd creates its runtime unit directory
+    very early at boot, so its presence answers the question, and nothing else does.
+
+    The path is fixed and read without following a symlink at its end, and only root can
+    create it below `/run`, so no caller of a privileged consumer steers the answer.
+    Verified against `sd_booted()` in systemd's `src/libsystemd/sd-daemon/sd-daemon.c`,
+    which tests `access_nofollow("/run/systemd/system/", F_OK)`.
+
+    Parameters
+    ----------
+    root : str, optional
+        Prefix for the path, for the unit tests of a consumer that stand in a directory tree
+        for the host. Defaults to the host itself.
+
+    Returns
+    -------
+    bool
+        True if systemd runs the host, otherwise False, also on Windows.
+
+    Examples
+    --------
+    >>> systemd_booted()  # doctest: +SKIP
+    True
+    """
+    return os.path.lexists(f'{root}/run/systemd/system')
 
 
 def _syslog_datetime(match):

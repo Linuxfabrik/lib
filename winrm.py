@@ -560,7 +560,7 @@ def run_ps(args, cmd, params=None):
             # pywinrm turns the CLIXML progress stream of PowerShell into text and says
             # so with a Python warning on stderr when that stream is not well-formed,
             # which the German progress messages of Windows Server 2025 are not. That
-            # warning would end up in the plugin output; the stream itself is dropped
+            # warning would end up in the output; the stream itself is dropped
             # below on success anyway.
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore')
