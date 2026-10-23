@@ -87,13 +87,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files, and `allowed_roots` given as a single path or an empty list no longer reads without confinement
 * huawei_dorado.py: `get_creds()` refuses a device ID that would change the path of every later request
 * kvm.py: `virsh()` refuses a URI that makes libvirt run a program, open a file or connect to a socket
+* lftest.py: `test()` reads a fixture from the handle it checked, so a directory swapped below `unit-test/` no longer redirects the read
 * logsource.py: `read()` reads each source from one checked handle, and a line of any length, a compressed file that inflates enormously or a command that never stops printing can no longer exhaust the memory
 * net.py: `get_proxy()` no longer puts a password or token into its error message
 * nextcloud.py: `run_occ()` refuses an untrusted installation, a symlinked `config.php` and any file `occ` loads that another account can change
 * openstack.py: `connect()` reuses a cached token only for the same identity
 * ssh.py: `rsync()`, `run()` and `scp()` refuse a port that is not a number from 1 to 65535
 * txt.py: `sanitize_sensitive_data()` redacts more credentials: prefixed names such as `db_password`, URL passwords containing `@` or `/`, userinfo without a scheme and the headers that carry a credential
-* url.py: the error messages of `fetch()` and `fetch_json()` no longer show secret query values, userinfo or a header value
+* url.py: the error messages of `fetch()` and `fetch_json()` no longer show secret query values, userinfo or a header value, a bare token in `Authorization` included
 
 
 ## [v8.2.0] - 2026-09-22
