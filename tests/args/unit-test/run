@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -176,6 +177,14 @@ class TestNumberUnitMethod(unittest.TestCase):
     def test_blanks_between_the_parts(self):
         self.assertEqual(args.number_unit_method('10 G'), ('10', 'G', 'USED'))
         self.assertEqual(args.number_unit_method(' 10 % free '), ('10', '%', 'FREE'))
+
+    def test_a_long_run_of_blanks_is_refused_in_linear_time(self):
+        # Two `\s*` around an optional unit took quadratic time: 30000 blanks 21 s.
+        for text in ('1' + ' ' * 100000 + 'x', '1G' + ' ' * 100000 + 'x'):
+            with self.subTest(text=text[:3]):
+                started = time.monotonic()
+                self.assertEqual(args.number_unit_method(text), ('', '%', 'USED'))
+                self.assertLess(time.monotonic() - started, 1)
 
     def test_a_unit_may_carry_its_byte_suffix(self):
         self.assertEqual(args.number_unit_method('10GiB'), ('10', 'G', 'USED'))

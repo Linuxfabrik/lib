@@ -19,7 +19,7 @@ import textwrap
 from . import base, human, txt
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026102301'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -581,10 +581,13 @@ def load_secret(path, param='--password-file'):
 
 # `<number>[unit][method]`, blanks allowed between the parts. A unit may carry a
 # trailing `B` or `iB` (`10GiB`, `10MB`): the unit is binary either way, and these
-# were always accepted.
+# were always accepted. The blanks after the unit belong to the unit's group: two
+# `\s*` in a row with only an optional group between them split a run of blanks in
+# quadratically many ways, and a threshold of `1`, 30000 blanks and `x` took 21 s to
+# refuse (Python 3.14).
 _NUMBER_UNIT_METHOD = re.compile(
     r'(?P<number>\d+(?:\.\d+)?|\.\d+)\s*'
-    r'(?:(?P<unit>[%KMGTP])(?:I?B)?)?\s*'
+    r'(?:(?P<unit>[%KMGTP])(?:I?B)?\s*)?'
     r'(?P<method>USED|FREE)?',
     re.IGNORECASE,
 )
