@@ -306,7 +306,17 @@ class TestIpv6Target(unittest.TestCase):
 
 class TestPort(unittest.TestCase):
     def test_refuses_what_is_no_port(self):
-        for port in ('22 -oProxyCommand=touch_pwned', 'abc', 0, 65536, '-1', True):
+        for port in (
+            '22 -oProxyCommand=touch_pwned',
+            'abc',
+            0,
+            65536,
+            '-1',
+            True,
+            '\u00b2',
+            '\u0662\u0662',
+            ' 22',
+        ):
             for func in (ssh.run, ssh.scp, ssh.rsync):
                 with self.subTest(port=port, func=func.__name__):
                     args = (

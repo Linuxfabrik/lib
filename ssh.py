@@ -19,7 +19,7 @@ subject to local shell interpretation. All functions return the same
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026100901'
+__version__ = '2026102301'
 
 import ipaddress
 
@@ -47,7 +47,14 @@ def _check_port(port):
     if port is None or port == '':
         return True, None
     text = str(port)
-    if isinstance(port, bool) or not text.isdigit() or not 1 <= int(text) <= 65535:
+    # ASCII digits only: `str.isdigit()` also takes `²` (which `int()` then refuses
+    # with a ValueError) and other scripts' digits
+    if (
+        isinstance(port, bool)
+        or not text
+        or text.strip('0123456789')
+        or not 1 <= int(text) <= 65535
+    ):
         return False, f'Refusing ssh port that is not a number from 1 to 65535: {port}'
     return True, None
 
