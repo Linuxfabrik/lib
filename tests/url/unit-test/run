@@ -1726,6 +1726,22 @@ class TestHeaderValuesStayOutOfMessages(unittest.TestCase):
         self.assertIn('text/html', message)
 
     @skip_without_httpx
+    def test_a_bare_token_in_authorization_is_hidden_too(self):
+        # some services take the token without a scheme (`Authorization: <token>`)
+        for name in ('Authorization', 'proxy-authorization'):
+            with self.subTest(name=name):
+
+                def handler(request):
+                    raise RuntimeError(f'boom {self.SECRET}')
+
+                with patch_mock_transport(handler):
+                    success, message = url.fetch(
+                        'https://example.com/', header={name: self.SECRET}
+                    )
+                self.assertFalse(success)
+                self.assertNotIn(self.SECRET, message)
+
+    @skip_without_httpx
     def test_an_unforeseen_error_is_scrubbed_too(self):
         def handler(request):
             raise RuntimeError(f'boom Bearer {self.SECRET}')

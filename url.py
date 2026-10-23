@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101204'
+__version__ = '2026102301'
 
 import base64
 import collections.abc
@@ -930,15 +930,24 @@ def _check_headers(header):
     return None
 
 
+_AUTHORIZATION_HEADERS = ('authorization', 'proxy-authorization')
+
+
 def _hide_header_values(text, header):
     """Replace the values of the headers that look like credentials in `text`, in the
     forms an exception quotes them: as they are, and as a `str` or `bytes` literal.
     Whether a header carries a secret is decided by `txt.sanitize_sensitive_data()`, the
-    one place that knows the names."""
+    one place that knows the names. `Authorization` and `Proxy-Authorization` always do:
+    that function only knows them with a scheme (`Bearer ...`), and some services take
+    the bare token there."""
     for name, value in (header or {}).items():
         line = f'{_as_text(name)}: {_as_text(value)}'
         value = _as_text(value)
-        if not value or txt.sanitize_sensitive_data(line) == line:
+        if not value:
+            continue
+        if _as_text(name).lower() not in _AUTHORIZATION_HEADERS and (
+            txt.sanitize_sensitive_data(line) == line
+        ):
             continue
         for form in (
             value,
