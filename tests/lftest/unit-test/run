@@ -362,6 +362,27 @@ class TestFixtureConfinement(unittest.TestCase):
         sys.argv[0] = os.path.join(plugin_dir, 'plugin')
         self.assertEqual(lftest.test(['stdout/shadow']), ('stdout/shadow', '', 0))
 
+    def test_directory_swapped_after_the_check_is_refused(self):
+        # unit-test/stdout/ is a real directory when the path is checked and a
+        # symlink out of the tree when the file is read.
+        plugin_dir = os.path.join(self.tmp, 'plugins')
+        stdout_dir = os.path.join(plugin_dir, 'unit-test', 'stdout')
+        os.makedirs(stdout_dir)
+        with open(os.path.join(stdout_dir, 'shadow'), 'w') as handle:
+            handle.write('fixture')
+        sys.argv[0] = os.path.join(plugin_dir, 'plugin')
+        isfile = os.path.isfile
+
+        def swap(path):
+            result = isfile(path)
+            shutil.rmtree(stdout_dir)
+            os.symlink(self.secret, stdout_dir)
+            return result
+
+        with mock.patch.object(lftest.os.path, 'isfile', side_effect=swap):
+            stdout = lftest.test(['stdout/shadow'])[0]
+        self.assertNotIn('$leak$', stdout)
+
 
 class TestFixtureRoot(unittest.TestCase):
     """fixture_root(): a configuration root counts only inside unit-test/."""

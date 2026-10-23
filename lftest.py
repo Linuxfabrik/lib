@@ -21,7 +21,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092702'
+__version__ = '2026102301'
 
 
 def attach_each(test_class, items, action, id_func=str):
@@ -1145,5 +1145,9 @@ def _read_fixture(value):
     candidate = os.path.realpath(os.path.join(fixtures_dir, value))
     if candidate == fixtures_dir or candidate.startswith(fixtures_dir + os.sep):
         if os.path.isfile(candidate):
-            _, value = disk.read_file(candidate)
+            # Confined again on the handle that is read: a directory below the anchor
+            # swapped for a symlink after the check above must not redirect the read.
+            _, value = disk.read_file(
+                candidate, allowed_roots=[fixtures_dir], nofollow=True
+            )
     return value
