@@ -1421,6 +1421,9 @@ class TestResolveTrustedTree(unittest.TestCase):
         success, result = self.check()
         self.assertFalse(success)
         self.assertIn('writable by everyone', result)
+        # the message of the symlink target is folded into one refusal
+        self.assertTrue(result.startswith(f'Refusing "{self.tree}": "'))
+        self.assertEqual(result.count('Refusing'), 1)
 
     def test_symlink_target_contents_are_checked(self):
         outside = os.path.join(self.base, 'outside')

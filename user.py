@@ -35,7 +35,7 @@ import os
 from . import disk, txt
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026102301'
 
 try:
     import grp
@@ -177,7 +177,10 @@ def _strtoul(text):
     which is `strtoul()`): decimal, hexadecimal after `0x` and octal after a leading
     `0`, an optional `+` and leading blanks, nothing behind the number and no minus
     sign. None for anything else."""
-    text = text.lstrip(' \t').removeprefix('+')
+    text = text.lstrip(' \t')
+    # not `str.removeprefix()`, which RHEL 8's Python 3.6 does not have
+    if text.startswith('+'):
+        text = text[1:]
     base, digits = 10, text
     if text[:2].lower() == '0x':
         base, digits = 16, text[2:]

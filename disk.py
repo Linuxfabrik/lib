@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101203'
+__version__ = '2026102301'
 
 import csv
 import errno
@@ -2011,7 +2011,10 @@ def resolve_trusted_tree(path, owners=None, prune=None, name_objects=True):
                 # trusted on its own, all the way from `/`
                 success, target = resolve_trusted_path(current, owners=owners)
                 if not success:
-                    return refuse(target.removeprefix('Refusing ').rstrip('.'))
+                    # not str.removeprefix(), which Python 3.6 lacks
+                    if target.startswith('Refusing '):
+                        target = target[len('Refusing ') :]
+                    return refuse(target.rstrip('.'))
                 if os.path.isdir(target) and target not in seen:
                     seen.add(target)
                     pending.append(target)
