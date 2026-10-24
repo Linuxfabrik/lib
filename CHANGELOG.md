@@ -91,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lftest.py: `test()` reads a fixture from the handle it checked, so a directory swapped below `unit-test/` no longer redirects the read
 * logsource.py: `read()` reads each source from one checked handle, never follows a rotated file swapped for a symlink, and a line of any length, a compressed file that inflates enormously or a command that never stops printing can no longer exhaust the memory
 * net.py: `get_proxy()` no longer puts a password or token into its error message
-* nextcloud.py: `run_occ()` refuses an untrusted installation, a symlinked `config.php` and any file `occ` loads that another account can change
+* nextcloud.py: `run_occ()` refuses an untrusted installation or `php`, a symlinked `config.php` and any file `occ` loads that another account can change
 * openstack.py: `connect()` reuses a cached token only for the same identity
 * shell.py: `safe_cli_value()` checks bytes and path-like values as well
 * ssh.py: `rsync()`, `run()` and `scp()` refuse a port that is not a number from 1 to 65535, and `rsync()` and `scp()` a local path that would be read as an option

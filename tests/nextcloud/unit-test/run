@@ -103,7 +103,13 @@ def located(owner):
     return _locate
 
 
-def patched(which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0)), euid=OTHER_UID):
+def patched(
+    which=PHP_BIN,
+    owner=UID,
+    shell_ret=(True, ('{}', '', 0)),
+    euid=OTHER_UID,
+    php_trusted=True,
+):
     """
     Build the four patchers that isolate run_occ from the host.
 
@@ -115,11 +121,21 @@ def patched(which=PHP_BIN, owner=UID, shell_ret=(True, ('{}', '', 0)), euid=OTHE
     the sudo prefix is on unless a test says otherwise.
     """
     which_p = mock.patch.object(nextcloud.shutil, 'which', return_value=which)
+    # the interpreter is judged like any program run on the caller's behalf
+    trusted_p = mock.patch.object(
+        nextcloud.disk,
+        'resolve_trusted_path',
+        side_effect=lambda candidate, owners=None: (
+            (True, candidate)
+            if php_trusted
+            else (False, f'Refusing "{candidate}": writable by everyone.')
+        ),
+    )
     owner_p = mock.patch.object(nextcloud, '_locate', side_effect=located(owner))
     euid_p = mock.patch.object(nextcloud.os, 'geteuid', create=True, return_value=euid)
     shell_mock = mock.Mock(return_value=shell_ret)
     shell_p = mock.patch.object(nextcloud.shell, 'shell_exec', shell_mock)
-    return (which_p, owner_p, euid_p, shell_p), shell_mock
+    return (which_p, trusted_p, owner_p, euid_p, shell_p), shell_mock
 
 
 class _Base(unittest.TestCase):
@@ -132,12 +148,13 @@ class _Base(unittest.TestCase):
         owner=UID,
         shell_ret=(True, ('{}', '', 0)),
         euid=OTHER_UID,
+        php_trusted=True,
         **kwargs,
     ):
-        (which_p, owner_p, euid_p, shell_p), shell_mock = patched(
-            which, owner, shell_ret, euid
+        (which_p, trusted_p, owner_p, euid_p, shell_p), shell_mock = patched(
+            which, owner, shell_ret, euid, php_trusted
         )
-        with which_p, owner_p, euid_p, shell_p:
+        with which_p, trusted_p, owner_p, euid_p, shell_p:
             result = nextcloud.run_occ(*args, **kwargs)
         self.shell_mock = shell_mock
         return result
@@ -224,6 +241,14 @@ class TestCommandConstruction(_Base):
     def test_command_uses_resolved_php_path(self):
         self.run_occ(NC_PATH, 'status', which='/opt/php8/bin/php')
         self.assertIn('/opt/php8/bin/php', self.argv())
+
+    def test_an_untrusted_php_is_not_run(self):
+        success, message = self.run_occ(
+            NC_PATH, 'status', which='/tmp/php', php_trusted=False
+        )
+        self.assertFalse(success)
+        self.assertIn('/tmp/php', message)
+        self.shell_mock.assert_not_called()
 
     def test_command_points_at_occ_in_path(self):
         self.run_occ('/srv/nc', 'status')
@@ -416,6 +441,31 @@ class TestInstallationTrust(unittest.TestCase):
         self.assertEqual(kwargs['cwd'], os.path.realpath(self.nc))
         if os.geteuid() != os.getuid():
             self.assertEqual(cmd[:3], ['sudo', '--user', f'#{os.getuid()}'])
+
+    def test_installation_named_through_a_symlink_runs_by_its_real_path(self):
+        link = os.path.join(self.base, 'nextcloud-link')
+        os.symlink(self.nc, link)
+        self.assertEqual(self.run_occ(link), (True, {}))
+        (cmd,), kwargs = self.shell_mock.call_args
+        self.assertEqual(kwargs['cwd'], os.path.realpath(self.nc))
+
+    def test_occ_that_resolves_elsewhere_after_the_check_is_refused(self):
+        # a link flipped between the checks: what was checked has to be what runs
+        real_resolve = nextcloud.disk.resolve_trusted_path
+
+        def flipping(candidate, owners=None):
+            success, result = real_resolve(candidate, owners=owners)
+            if success and candidate.endswith(os.sep + 'occ'):
+                return True, os.path.join(self.base, 'elsewhere', 'occ')
+            return success, result
+
+        with mock.patch.object(
+            nextcloud.disk, 'resolve_trusted_path', side_effect=flipping
+        ):
+            ok, msg = self.run_occ(self.nc)
+        self.assertFalse(ok)
+        self.assertIn('real path', msg)
+        self.assertFalse(self.occ_ran())
 
     def test_symlinked_config_php_is_refused(self):
         # The owner of the link target would decide the account, here root.

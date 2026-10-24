@@ -11,7 +11,7 @@
 """This library collects some Nextcloud related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026102401'
 
 import json
 import os
@@ -138,6 +138,10 @@ def _locate(path, php, timeout=None):
         path = os.fspath(path)
     except TypeError:
         return False, f'Refusing `{path}`: not a path.'
+    # Resolved once, and everything below is joined to that one name: resolving the
+    # installation, `config.php` and `occ` one by one would let a symlink flipped in
+    # between have one tree checked and another one run.
+    path = os.path.realpath(path)
     config = os.path.join(path, 'config', 'config.php')
     try:
         config_stat = os.lstat(config)
@@ -149,13 +153,18 @@ def _locate(path, php, timeout=None):
     if not stat.S_ISREG(config_stat.st_mode):
         return False, f'Refusing `{config}`: not a regular file.'
     uid = config_stat.st_uid
-    resolved = []
-    for candidate in (path, config, os.path.join(path, 'occ')):
+    occ = os.path.join(path, 'occ')
+    for candidate in (path, config, occ):
         success, result = disk.resolve_trusted_path(candidate, owners=[uid])
         if not success:
             return False, result
-        resolved.append(result)
-    root, _config, occ = resolved
+        # nothing below a trusted installation may lead somewhere else
+        if result != candidate:
+            return False, (
+                f'Refusing `{candidate}`: it resolves to `{result}`, the installation'
+                ' has to be used by its real path.'
+            )
+    root = path
 
     # the configuration is code; check all of it before it runs
     success, result = disk.resolve_trusted_tree(
@@ -294,6 +303,10 @@ def run_occ(path, cmd, _format='json', timeout=None):
             'Could not find a `php` interpreter in PATH. Install PHP or make sure it is '
             'reachable for the user running this process.'
         )
+    # the interpreter runs the installation's code with its owner's rights, or root's
+    success, php = disk.resolve_trusted_path(php)
+    if not success:
+        return False, php
 
     success, result = _locate(path, php, timeout=timeout)
     if not success:
