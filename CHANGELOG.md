@@ -94,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * nextcloud.py: `run_occ()` refuses an untrusted installation, a symlinked `config.php` and any file `occ` loads that another account can change
 * openstack.py: `connect()` reuses a cached token only for the same identity
 * ssh.py: `rsync()`, `run()` and `scp()` refuse a port that is not a number from 1 to 65535
-* txt.py: `sanitize_sensitive_data()` redacts more credentials: prefixed names such as `db_password`, URL passwords containing `@` or `/`, userinfo without a scheme and the headers that carry a credential
+* txt.py: `sanitize_sensitive_data()` redacts more credentials: prefixed names such as `db_password`, URL passwords containing `@`, `/` or a blank or longer than 256 characters, userinfo without a scheme and the headers that carry a credential
 * url.py: the error messages of `fetch()` and `fetch_json()` no longer show secret query values, userinfo or a header value, a bare token in `Authorization` included, and `max_bytes` also bounds the body of a redirect
 
 

@@ -511,6 +511,25 @@ class TestSanitizeSensitiveData(unittest.TestCase):
         txt.sanitize_sensitive_data(text)
         self.assertLess(time.monotonic() - started, 1)
 
+    # The bound of the first pass must not leave a long password (a JWT used as a
+    # basic-auth password) in the clear.
+    def test_redacts_url_password_longer_than_the_bound(self):
+        secret = 'S' * 300
+        redacted = txt.sanitize_sensitive_data(f'URL error for http://user:{secret}@host/')
+        self.assertNotIn(secret[:20], redacted)
+        self.assertIn('http://user:******@host/', redacted)
+
+    def test_redacts_url_password_with_a_blank(self):
+        redacted = txt.sanitize_sensitive_data('for https://user:lf fabrik@host.example/')
+        self.assertNotIn('fabrik', redacted)
+        self.assertIn('https://user:******@host.example/', redacted)
+
+    def test_many_url_starts_without_slash_stay_fast(self):
+        text = ('x://y:' + 'z' * 50) * 2000 + '@'
+        started = time.monotonic()
+        txt.sanitize_sensitive_data(text)
+        self.assertLess(time.monotonic() - started, 1)
+
     # An '@' in the path after the host is taken for the end of the password: too much
     # is hidden, never too little.
     # A port in front of an '@' in the path is masked like a password: the two look

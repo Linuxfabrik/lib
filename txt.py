@@ -18,7 +18,7 @@ intentionally left out and where to re-check it.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101202'
+__version__ = '2026102401'
 
 import html
 import operator
@@ -113,6 +113,16 @@ SENSITIVE_URL_PATTERN = re.compile(
 # is left alone, and so is a bare 'https://user@host' that names no password.
 # The password is bounded at 256 characters: unbounded, a text with an '@' and many
 # 'x://y:' in front of it took quadratic time, 2.5 s for 56 KB.
+
+SENSITIVE_URL_FALLBACK_PATTERN = re.compile(
+    r'(?i)([a-z][a-z0-9+.-]*://[^\s:/@]*:)[^/?#\n]*(@)'
+)
+# The fail-closed second pass behind SENSITIVE_URL_PATTERN, for the passwords its bound
+# leaves out: one longer than 256 characters (a JWT as a basic-auth password) and one
+# with a blank in it. It redacts from the colon up to the last '@' before the next '/',
+# '?', '#' or line end. Every run starts after a '://' and stops at the next '/', which
+# is at the latest the one of the following '://', so it stays linear. Where the first
+# pass has already redacted, it only redacts the replacement again.
 
 SENSITIVE_BARE_USERINFO_PATTERN = re.compile(
     r'(?i)(?:^|(?<=[\s"\x27(\[<,])|(?<=//))([^\s:/\\@"\x27=<>]+:)(?!//)'
@@ -632,6 +642,7 @@ def sanitize_sensitive_data(msg, replacement='******'):
     # sanitized ten times faster.
     if '://' in msg and '@' in msg:
         msg = SENSITIVE_URL_PATTERN.sub(rf'\1{replacement}\2', msg)
+        msg = SENSITIVE_URL_FALLBACK_PATTERN.sub(rf'\1{replacement}\2', msg)
     if ':' in msg and '@' in msg:
         msg = SENSITIVE_BARE_USERINFO_PATTERN.sub(rf'\1{replacement}\2', msg)
     if ':' in msg:
