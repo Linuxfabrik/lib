@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101202'
+__version__ = '2026102401'
 
 
 import os
@@ -107,7 +107,8 @@ def safe_cli_value(value, name='value'):
     Parameters
     ----------
     value : any
-        The value to check. Non-string values pass through unchanged.
+        The value to check. A `str`, `bytes` or path-like object is checked by its text,
+        any other value passes through unchanged.
     name : str, optional
         Human-readable name used in the error message. Defaults to
         `'value'`.
@@ -122,8 +123,11 @@ def safe_cli_value(value, name='value'):
     --------
     >>> host = lib.base.coe(lib.shell.safe_cli_value(args.HOSTNAME, '--hostname'))
     """
-    if isinstance(value, str) and value.startswith('-'):
-        return False, f'Refusing {name} that starts with "-": {value}'
+    # bytes and path-like objects reach argv as they are, so they are checked as well
+    if isinstance(value, (str, bytes, os.PathLike)):
+        text = os.fsdecode(value)
+        if text.startswith('-'):
+            return False, f'Refusing {name} that starts with "-": {text}'
     return True, value
 
 

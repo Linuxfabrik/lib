@@ -19,6 +19,7 @@ core security property: shell metacharacters in an argument stay literal.
 
 import gc
 import os
+import pathlib
 import subprocess
 import sys
 import time
@@ -583,6 +584,15 @@ class TestSafeCliValue(unittest.TestCase):
     def test_single_dash_is_rejected(self):
         ok, _msg = shell.safe_cli_value('-f', '--hostname')
         self.assertFalse(ok)
+
+    def test_bytes_and_paths_are_checked_as_well(self):
+        # they reach argv as they are, just like a str
+        for value in (b'-oProxyCommand=evil', pathlib.Path('-oProxyCommand=evil')):
+            with self.subTest(value=value):
+                ok, msg = shell.safe_cli_value(value, '--hostname')
+                self.assertFalse(ok)
+                self.assertIn('-oProxyCommand=evil', msg)
+        self.assertEqual(shell.safe_cli_value(b'host', 'x'), (True, b'host'))
 
     def test_non_string_passes_through(self):
         self.assertEqual(shell.safe_cli_value(5, 'count'), (True, 5))

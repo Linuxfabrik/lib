@@ -159,7 +159,32 @@ class TestScp(unittest.TestCase):
             ssh.scp('myhost', '/local/dir', '/remote/dir', recursive=True)
         cmd = captured['cmd']
         self.assertEqual(cmd[:3], ['scp', '-r', '-p'])
-        self.assertEqual(cmd[-2:], ['/local/dir', 'myhost:/remote/dir'])
+        self.assertEqual(cmd[-3:], ['--', '/local/dir', 'myhost:/remote/dir'])
+
+
+class TestLocalPathIsNoOption(unittest.TestCase):
+    """The local path sits in an operand slot of scp and rsync. One that starts with
+    `-` would be read as an option (`-oProxyCommand=...` runs a command), so it is
+    refused, and `--` ends the options in front of the operands as well."""
+
+    def test_option_shaped_local_path_is_refused(self):
+        for local in ('-oProxyCommand=touch_pwned', '--rsh=touch_pwned'):
+            for func in (ssh.scp, ssh.rsync):
+                with self.subTest(local=local, func=func.__name__):
+                    with mock.patch('lib.ssh.shell.shell_exec') as m:
+                        ok, msg = func('myhost', local, '/r')
+                    self.assertFalse(ok)
+                    self.assertIn('local path', msg)
+                    m.assert_not_called()
+
+    def test_operands_follow_the_end_of_the_options(self):
+        for func in (ssh.scp, ssh.rsync):
+            with self.subTest(func=func.__name__):
+                captured, fake = capture()
+                with mock.patch('lib.ssh.shell.shell_exec', side_effect=fake):
+                    func('myhost', '/l', '/r')
+                cmd = captured['cmd']
+                self.assertEqual(cmd[-3], '--')
 
 
 class TestScpKeywords(unittest.TestCase):
@@ -222,7 +247,7 @@ class TestRsync(unittest.TestCase):
         self.assertEqual(cmd[cmd.index('--rsync-path') + 1], 'sudo rsync')
         self.assertIn('--rsh', cmd)
         self.assertEqual(cmd[cmd.index('--rsh') + 1], 'ssh -q')
-        self.assertEqual(cmd[-2:], ['/local/dir/', 'myhost:/remote/dir/'])
+        self.assertEqual(cmd[-3:], ['--', '/local/dir/', 'myhost:/remote/dir/'])
 
     def test_port_and_password_reach_the_transport(self):
         captured = {}
@@ -316,6 +341,7 @@ class TestPort(unittest.TestCase):
             '\u00b2',
             '\u0662\u0662',
             ' 22',
+            '9' * 5000,
         ):
             for func in (ssh.run, ssh.scp, ssh.rsync):
                 with self.subTest(port=port, func=func.__name__):

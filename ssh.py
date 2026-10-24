@@ -19,7 +19,7 @@ subject to local shell interpretation. All functions return the same
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102301'
+__version__ = '2026102401'
 
 import ipaddress
 
@@ -53,6 +53,9 @@ def _check_port(port):
         isinstance(port, bool)
         or not text
         or text.strip('0123456789')
+        # a port has five digits at most; `int()` refuses a string of thousands of
+        # them with a ValueError from Python 3.11 on
+        or len(text) > 5
         or not 1 <= int(text) <= 65535
     ):
         return False, f'Refusing ssh port that is not a number from 1 to 65535: {port}'
@@ -224,7 +227,11 @@ def rsync(
         `(True, (stdout, stderr, retc))` on success, else
         `(False, error_message)`.
     """
-    for ok, msg in (_check_target(host, username), _check_port(port)):
+    for ok, msg in (
+        _check_target(host, username),
+        _check_port(port),
+        shell.safe_cli_value(local, 'local path'),
+    ):
         if not ok:
             return False, msg
     # rsync's --rsh takes the remote-shell command as a single string and splits it
@@ -236,7 +243,8 @@ def rsync(
     cmd = ['rsync', '--archive']
     if sudo:
         cmd += ['--rsync-path', 'sudo rsync']
-    cmd += ['--rsh', rsh, f'{local}/', _copy_target(host, username, f'{remote}/')]
+    # `--` ends the options, so no operand is ever read as one
+    cmd += ['--rsh', rsh, '--', f'{local}/', _copy_target(host, username, f'{remote}/')]
     cmd, env = _with_password(cmd, password)
     return shell.shell_exec(cmd, env=env, timeout=timeout)
 
@@ -346,7 +354,11 @@ def scp(
         `(True, (stdout, stderr, retc))` on success, else
         `(False, error_message)`.
     """
-    for ok, msg in (_check_target(host, username), _check_port(port)):
+    for ok, msg in (
+        _check_target(host, username),
+        _check_port(port),
+        shell.safe_cli_value(local, 'local path'),
+    ):
         if not ok:
             return False, msg
     cmd = ['scp']
@@ -355,7 +367,8 @@ def scp(
     cmd += options or []
     if port:
         cmd += ['-P', str(port)]
-    cmd += [local, _copy_target(host, username, remote)]
+    # `--` ends the options, so no operand is ever read as one
+    cmd += ['--', local, _copy_target(host, username, remote)]
     cmd, env = _with_password(cmd, password)
     return shell.shell_exec(cmd, env=env, timeout=timeout)
 
