@@ -66,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * logsource.py: `read()` no longer loses lines at a rotation or when daylight saving time ends, `timestamp()`
 * lvm.py: `parse_report()`
 * mail.py: `send()`
-* net.py: `fetch()` returns the answer instead of the encrypted data with `tls=True` and no longer waits forever, `fetch_socket()`, `get_proxy()`, `FAMILIYSTR`
+* net.py: `fetch()` returns the answer instead of the encrypted data with `tls=True` and no longer waits forever, not even for the name server, `fetch_socket()`, `get_proxy()`, `FAMILIYSTR`
 * powershell.py: `run_ps()` returns on time on Windows after a timeout
 * shell.py: `shell_exec()` returns on time on Windows after a timeout and ends everything the command started
 * redfish.py: `build_url()`, `get_auth_header()`, `get_manager_logservices_sel_entries()`, `get_systems_memory()`, `start_trace()` on Windows

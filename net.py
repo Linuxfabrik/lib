@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102301'
+__version__ = '2026102401'
 
 import ipaddress
 import os
@@ -298,6 +298,13 @@ def _socket_fetch(
     """
     if payload is not None and dialog is not None:
         return False, f'{socket_name}: payload and dialog are mutually exclusive.'
+    if max_bytes is not None and (
+        isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 0
+    ):
+        return False, (
+            f'{socket_name}: `max_bytes` must be a non-negative integer or None, '
+            f'not {max_bytes!r}'
+        )
     if deadline is not None and (
         isinstance(deadline, bool)
         or not isinstance(deadline, (int, float))
@@ -526,10 +533,25 @@ def fetch(
         context.minimum_version = ssl.TLSVersion.TLSv1_2
         return context.wrap_socket(raw_sock, server_hostname=host)
 
+    # Resolved here, bounded by the timeout: `connect()` with a host name calls the
+    # resolver of the operating system without one, which can wait far longer than a
+    # caller may run (CPython `setipaddr()` in Modules/socketmodule.c).
+    try:
+        address = getaddrinfo(
+            host,
+            int(port),
+            family=AF_INET6 if ipv6 else AF_INET,
+            socktype=socket.SOCK_STREAM,
+            timeout=timeout,
+        )[0][4]
+    except socket.timeout:
+        return False, f'Timeout after {timeout}s while resolving {host}'
+    except Exception as e:
+        return False, f'Could not resolve {host}: {e}'
     try:
         return _socket_fetch(
             open_tcp_socket,
-            (host, int(port)),
+            address,
             payload=msg,
             dialog=dialog,
             timeout=timeout,

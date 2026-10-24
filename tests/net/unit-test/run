@@ -199,7 +199,22 @@ class TestAddressRegex(unittest.TestCase):
             self.assertIsNone(net.normalize_address(text), text)
 
 
-class TestFetch(unittest.TestCase):
+class _ResolveAsGiven:
+    """`fetch()` resolves the host itself, bounded by the timeout. The fake sockets
+    here stand for a server at the host as given, so the resolver hands it back."""
+
+    def setUp(self):
+        super().setUp()
+        resolver = mock.patch.object(
+            net,
+            'getaddrinfo',
+            side_effect=lambda host, port, **kwargs: [(0, 0, 0, '', (host, port))],
+        )
+        resolver.start()
+        self.addCleanup(resolver.stop)
+
+
+class TestFetch(_ResolveAsGiven, unittest.TestCase):
     def _fetch(self, sock, **kwargs):
         with mock.patch('socket.socket', return_value=sock):
             return net.fetch('host.example.com', 4242, **kwargs)
@@ -329,6 +344,33 @@ class TestFetch(unittest.TestCase):
         self.assertIn('closed before pattern', message)
 
 
+class TestFetchResolvesWithinTheTimeout(unittest.TestCase):
+    """`connect()` with a host name would call the resolver of the operating system
+    without a timeout, so `fetch()` resolves first, bounded by the timeout."""
+
+    def test_a_resolver_that_does_not_answer_is_given_up_on(self):
+        with (
+            mock.patch.object(net, 'getaddrinfo', side_effect=socket.timeout()) as m,
+            mock.patch('socket.socket') as sock,
+        ):
+            success, message = net.fetch('host.example.com', 4242, timeout=3)
+        self.assertFalse(success)
+        self.assertEqual(message, 'Timeout after 3s while resolving host.example.com')
+        self.assertEqual(m.call_args.kwargs['timeout'], 3)
+        sock.assert_not_called()
+
+    def test_the_resolved_address_is_connected_to(self):
+        sock = FakeSocket([b'PONG\n'])
+        with (
+            mock.patch.object(
+                net, 'getaddrinfo', return_value=[(0, 0, 0, '', ('192.0.2.1', 4242))]
+            ),
+            mock.patch('socket.socket', return_value=sock),
+        ):
+            self.assertEqual(net.fetch('host.example.com', 4242), (True, 'PONG\n'))
+        self.assertEqual(sock.connected_to, ('192.0.2.1', 4242))
+
+
 class TestFetchSocket(unittest.TestCase):
     def _fetch(self, sock, **kwargs):
         # AF_UNIX is created where the platform lacks it (CPython on Windows), so the
@@ -377,13 +419,20 @@ class TestFetchSocket(unittest.TestCase):
         self.assertIn('/run/haproxy.sock', message)
 
 
-class TestSocketBounds(unittest.TestCase):
+class TestSocketBounds(_ResolveAsGiven, unittest.TestCase):
     """Nothing is read without a bound: `timeout` ends the whole exchange, and the
     answer is refused beyond `max_bytes`."""
 
     def _fetch(self, sock, **kwargs):
         with mock.patch('socket.socket', return_value=sock):
             return net.fetch('host.example.com', 4242, **kwargs)
+
+    def test_an_invalid_limit_is_refused(self):
+        for value in (-1, '5', True, 1.5):
+            with self.subTest(value=value):
+                success, message = self._fetch(FakeSocket([b'x']), max_bytes=value)
+                self.assertFalse(success)
+                self.assertIn('`max_bytes` must be a non-negative integer', message)
 
     def test_the_default_limit_is_the_one_of_url(self):
         self.assertEqual(net.url.DEFAULT_MAX_BYTES, 64 * 1024 * 1024)
@@ -425,7 +474,7 @@ class TestSocketBounds(unittest.TestCase):
         self.assertIn('refused to read more than', message)
 
 
-class TestSocketDeadline(unittest.TestCase):
+class TestSocketDeadline(_ResolveAsGiven, unittest.TestCase):
     """`timeout` keeps its meaning for every connect, read and write on its own, so an
     exchange that goes on steadily is not cut off by it. A server that sends a byte
     inside every read timeout, or never closes the connection, ends after `deadline`,
@@ -436,6 +485,7 @@ class TestSocketDeadline(unittest.TestCase):
     DRIP_INTERVAL = 0.2
 
     def setUp(self):
+        super().setUp()
         import socketserver
         import threading
 
