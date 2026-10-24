@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * redfish.py: `get_sensor_state()`, `get_state()` and `get_perfdata()` rate a fatal threshold CRIT and a critical one WARN, and evaluate the health in every state but `Absent` and `Disabled`
 * shell.py: `shell_exec()` names a missing program instead of the raw OS error
 * smb.py: a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
-* url.py: `fetch()` and `fetch_json()` give up after ten times the timeout and refuse malformed header values and timeouts
+* url.py: `fetch()` and `fetch_json()` give up after ten times the timeout, wait no longer than the timeout for a name server and refuse malformed header values and timeouts
 * version.py: `check_eol()` names an available release the way its cycle spells it, and `version2float()` sorts like the version
 
 ### Removed

@@ -11,7 +11,7 @@
 """Get for example HTML or JSON from an URL."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102301'
+__version__ = '2026102401'
 
 import base64
 import collections.abc
@@ -444,11 +444,45 @@ def _build_deadline_backend(deadline):
             self._inner = inner
 
         def connect_tcp(self, host, port, timeout=None, **kwargs):
-            return _DeadlineStream(
-                self._inner.connect_tcp(
-                    host, port, timeout=left(timeout, httpcore.ConnectTimeout), **kwargs
+            if getattr(self._inner, 'resolves_within_timeout', False):
+                return _DeadlineStream(
+                    self._inner.connect_tcp(
+                        host,
+                        port,
+                        timeout=left(timeout, httpcore.ConnectTimeout),
+                        **kwargs,
+                    )
                 )
-            )
+            # httpcore's own backend resolves the name in socket.create_connection(),
+            # which has no timeout, so a hanging resolver would outlast the deadline.
+            # Resolve here within the time that is left and connect to one address
+            # after the other, the way create_connection() does. The TLS server name
+            # is the host of the URL either way (`server_hostname` of start_tls()).
+            from . import net  # net imports this module
+
+            try:
+                addrs = net.getaddrinfo(
+                    host,
+                    port,
+                    socktype=socket.SOCK_STREAM,
+                    timeout=left(timeout, httpcore.ConnectTimeout),
+                )
+            except socket.timeout as e:  # before OSError, it is one since 3.10
+                raise httpcore.ConnectTimeout(str(e)) from e
+            except OSError as e:
+                raise httpcore.ConnectError(str(e)) from e
+            error = httpcore.ConnectError(f'no address for {host}')
+            for _, _, _, _, sockaddr in addrs:
+                remaining = left(timeout, httpcore.ConnectTimeout)
+                try:
+                    return _DeadlineStream(
+                        self._inner.connect_tcp(
+                            sockaddr[0], port, timeout=remaining, **kwargs
+                        )
+                    )
+                except (httpcore.ConnectError, httpcore.ConnectTimeout) as e:
+                    error = e
+            raise error
 
         def connect_unix_socket(self, path, timeout=None, **kwargs):
             return _DeadlineStream(
@@ -541,6 +575,10 @@ def _build_timing_classes():
         for unix sockets (not used by HTTP(S) checks).
         """
 
+        # resolves within the connect timeout itself, so the deadline backend must not
+        # resolve in its place and leave nothing to time
+        resolves_within_timeout = True
+
         def __init__(self):
             self.timings = {}
             # The default sync backend is used as a fallback for connect_unix_socket.
@@ -560,10 +598,16 @@ def _build_timing_classes():
             local_address=None,
             socket_options=None,
         ):
+            from . import net  # net imports this module
+
             t = time.monotonic()
             try:
-                addrs = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-            except socket.gaierror as e:
+                addrs = net.getaddrinfo(
+                    host, port, socktype=socket.SOCK_STREAM, timeout=timeout
+                )
+            except socket.timeout as e:  # before OSError, it is one since 3.10
+                raise httpcore.ConnectTimeout(str(e)) from e
+            except OSError as e:
                 raise httpcore.ConnectError(str(e)) from e
             self.timings['dns'] = time.monotonic() - t
 

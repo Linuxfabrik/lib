@@ -23,6 +23,7 @@ test classes skip while the pure-helper tests still run.
 import base64
 import datetime
 import os
+import socket
 import ssl
 import subprocess
 import sys
@@ -1955,6 +1956,78 @@ class TestOverallDeadline(unittest.TestCase):
         (success, message), _ = self._timed_fetch('big', timeout=2, max_bytes=10)
         self.assertFalse(success)
         self.assertIn('Refused to read a response larger than', message)
+
+
+class TestResolverWithinTheDeadline(unittest.TestCase):
+    """`socket.getaddrinfo()` has no timeout and waits as long as the system resolver
+    does, so a name server that does not answer would hold `fetch()` far beyond its
+    deadline. Both backends resolve within the time that is left, and the default one
+    still tries one address after the other."""
+
+    def setUp(self):
+        import http.server
+        import threading
+
+        class Ok(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header('Content-Length', '2')
+                self.end_headers()
+                self.wfile.write(b'ok')
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Ok)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.real_getaddrinfo = socket.getaddrinfo
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+
+    def fake_getaddrinfo(self, host, port, *args, **kwargs):
+        if host == 'hang.example':
+            time.sleep(5)  # a name server that does not answer
+        if host == 'two.example':
+            # the first address refuses, the second one answers
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.2', port)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', port)),
+            ]
+        return self.real_getaddrinfo(host, port, *args, **kwargs)
+
+    def test_a_hanging_resolver_ends_at_the_timeout(self):
+        for extended in (False, True):
+            with self.subTest(extended=extended):
+                started = time.monotonic()
+                with mock.patch('socket.getaddrinfo', self.fake_getaddrinfo):
+                    result = url.fetch(
+                        f'http://hang.example:{self.port}/',
+                        no_proxy=True,
+                        timeout=1,
+                        deadline=1.5,
+                        extended=extended,
+                    )
+                elapsed = time.monotonic() - started
+                self.assertFalse(result[0])
+                self.assertLess(elapsed, 2.5)
+
+    def test_every_address_of_a_name_is_tried(self):
+        with mock.patch('socket.getaddrinfo', self.fake_getaddrinfo):
+            result = url.fetch(f'http://two.example:{self.port}/', no_proxy=True)
+        self.assertEqual(result, (True, 'ok'))
+
+    def test_a_resolving_name_still_works(self):
+        for extended in (False, True):
+            with self.subTest(extended=extended):
+                result = url.fetch(
+                    f'http://localhost:{self.port}/', no_proxy=True, extended=extended
+                )
+                self.assertTrue(result[0])
 
 
 class TestRedirectOriginCheck(unittest.TestCase):
