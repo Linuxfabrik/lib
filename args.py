@@ -19,7 +19,7 @@ import textwrap
 from . import base, human, txt
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102302'
+__version__ = '2026102401'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -325,6 +325,20 @@ HELP_TEXTS = {
     '--warning-seconds': 'WARN threshold in seconds.',
     '--warning-temperature': 'WARN threshold in degrees Celsius.',
     '--warning-voltage': 'WARN threshold in volts.',
+    '--winrm-domain': (
+        'AD domain name for NTLM authentication. '
+        'When set, the username is sent as user@DOMAIN. '
+        'Not needed for Kerberos or local accounts.'
+    ),
+    '--winrm-password': (
+        'WinRM account password. '
+        'Optional for Kerberos (uses the credential cache from kinit).'
+    ),
+    '--winrm-transport': 'WinRM transport type.',
+    '--winrm-username': (
+        'WinRM account name. '
+        'Optional for Kerberos (uses the credential cache from kinit).'
+    ),
 }
 
 

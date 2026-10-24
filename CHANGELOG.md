@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* args.py: further shared help texts (`--winrm-*`)
 * base.py: `symmetric_range()`, the perfdata range of a threshold applied in both directions
 * db_mysql.py: `check_privileges()` takes `database`
 * disk.py: `get_private_dir()`, `open_file()`, `resolve_trusted_path()`, `resolve_trusted_tree()`; `get_block_devices()` and `get_real_disks()` list `mount_points`; `get_fingerprint()` takes an open file
