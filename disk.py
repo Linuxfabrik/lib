@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102301'
+__version__ = '2026102401'
 
 import csv
 import errno
@@ -1437,7 +1437,16 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False, newlin
             return False, (
                 f'Refusing to read "{filename}": no directory is allowed to read from.'
             )
-    if allowed_roots and not is_within(filename, allowed_roots):
+    # `is_within()` resolves `..` lexically, also past a component that does not exist
+    # or is no directory, while the kernel walks every component on the open. A path
+    # such as `/root/.ssh/id_rsa/../../../var/log/messages` would pass the check and then
+    # fail with "Not a directory" or "No such file or directory", which tells the caller
+    # what exists outside the roots. Such a path is refused like one outside them.
+    if allowed_roots and (
+        not is_within(filename, allowed_roots)
+        or os.pardir
+        in os.fsdecode(filename).replace(os.altsep or os.sep, os.sep).split(os.sep)
+    ):
         return False, (
             f'Refusing to read "{filename}": resolved path is outside the allowed '
             f'roots ({", ".join(allowed_roots)}); bind-mount it in if intended.'

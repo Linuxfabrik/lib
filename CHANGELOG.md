@@ -85,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * container.py: `run()` runs as another account only if it owns a subordinate UID range
 * db_mysql.py: `connect()` no longer quotes the options file in its error message
 * db_sqlite.py: `get_db_dir()` refuses directories where other accounts may plant or swap databases
-* disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files, and `allowed_roots` given as a single path or an empty list no longer reads without confinement
+* disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files, `allowed_roots` given as a single path or an empty list no longer reads without confinement, and a `..` in a confined path reveals nothing outside the roots
 * huawei_dorado.py: `get_creds()` refuses a device ID that would change the path of every later request
 * kvm.py: `virsh()` refuses a URI that makes libvirt run a program, open a file or connect to a socket
 * lftest.py: `test()` reads a fixture from the handle it checked, so a directory swapped below `unit-test/` no longer redirects the read
