@@ -21,7 +21,7 @@ import tempfile
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102301'
+__version__ = '2026102401'
 
 
 def attach_each(test_class, items, action, id_func=str):
@@ -106,68 +106,6 @@ NO_CONTAINER_ENV = 'LFTEST_NO_CONTAINER'
 # on the same host is using.
 RUN_ID_ENV = 'LFTEST_RUN_ID'
 RUN_ID_LABEL = 'ch.linuxfabrik.lftest.run'
-
-
-def in_test_process():
-    """Return whether this process is a unit test rather than a monitoring plugin.
-
-    A plugin imports this module for its `--test` fixtures and must not be given a
-    test environment, so anything that changes how a plugin talks to the outside
-    world asks here first. A test is recognised by `unittest`, which every
-    `unit-test/run` imports before it reaches this module, and by the markers the
-    runners put into the environment.
-    """
-    return (
-        'unittest' in sys.modules
-        or NO_CONTAINER_ENV in os.environ
-        or RUN_ID_ENV in os.environ
-    )
-
-
-def prepare_container_env(force=False):
-    """Point testcontainers at rootless podman, unless the caller said otherwise.
-
-    testcontainers-python reads `DOCKER_HOST` and nothing else, so a host that
-    runs podman rather than docker has to be told where its socket is. It also
-    starts a reaper container (Ryuk) that waits for a published port, which never
-    becomes reachable under rootless podman: the test then fails minutes later
-    with `TimeoutError: container did not become running`, naming neither podman
-    nor the reaper. Every context manager in this module stops what it started,
-    so the reaper is not what keeps the host clean here.
-
-    Called on import, so it takes effect however a test was started: through
-    `tools/run-unit-tests` or by running `unit-test/run` directly. Values the
-    caller already set are kept, which is how a docker host or a running reaper
-    stays in charge. A helper that starts a container calls it again with `force`,
-    so it does not depend on what the import saw.
-
-    Outside a test process this does nothing, unless `force` says otherwise.
-    `DOCKER_HOST` is read by the `docker` client as well, so a plugin that ends up
-    with the podman socket in it reports `Cannot connect to the Docker daemon` on a
-    host where docker is running fine.
-
-    Parameters
-    ----------
-    force : bool, optional
-        Prepare the environment even outside a test
-        process, for a caller that starts a container itself.
-    """
-    if not force and not in_test_process():
-        return
-    if 'DOCKER_HOST' not in os.environ:
-        if 'CONTAINER_HOST' in os.environ:
-            os.environ['DOCKER_HOST'] = os.environ['CONTAINER_HOST']
-        elif os.name != 'nt':
-            # Windows has no rootless podman socket to point at (and no
-            # `os.getuid()`); the container clients there find their named pipe on
-            # their own.
-            os.environ['DOCKER_HOST'] = (
-                f'unix:///run/user/{os.getuid()}/podman/podman.sock'
-            )
-    os.environ.setdefault('TESTCONTAINERS_RYUK_DISABLED', 'true')
-
-
-prepare_container_env()
 
 
 def attach_tests(test_class, tests, plugin_attr='check'):
@@ -324,6 +262,22 @@ def fixture_root(path):
     return False, 'A configuration root is accepted only inside the unit tests.'
 
 
+def in_test_process():
+    """Return whether this process is a unit test rather than a monitoring plugin.
+
+    A plugin imports this module for its `--test` fixtures and must not be given a
+    test environment, so anything that changes how a plugin talks to the outside
+    world asks here first. A test is recognised by `unittest`, which every
+    `unit-test/run` imports before it reaches this module, and by the markers the
+    runners put into the environment.
+    """
+    return (
+        'unittest' in sys.modules
+        or NO_CONTAINER_ENV in os.environ
+        or RUN_ID_ENV in os.environ
+    )
+
+
 @contextlib.contextmanager
 def network():
     """Yield a testcontainers `Network`, removed on exit.
@@ -361,6 +315,52 @@ def network():
         yield net
     finally:
         net.remove()
+
+
+def prepare_container_env(force=False):
+    """Point testcontainers at rootless podman, unless the caller said otherwise.
+
+    testcontainers-python reads `DOCKER_HOST` and nothing else, so a host that
+    runs podman rather than docker has to be told where its socket is. It also
+    starts a reaper container (Ryuk) that waits for a published port, which never
+    becomes reachable under rootless podman: the test then fails minutes later
+    with `TimeoutError: container did not become running`, naming neither podman
+    nor the reaper. Every context manager in this module stops what it started,
+    so the reaper is not what keeps the host clean here.
+
+    Called on import, so it takes effect however a test was started: through
+    `tools/run-unit-tests` or by running `unit-test/run` directly. Values the
+    caller already set are kept, which is how a docker host or a running reaper
+    stays in charge. A helper that starts a container calls it again with `force`,
+    so it does not depend on what the import saw.
+
+    Outside a test process this does nothing, unless `force` says otherwise.
+    `DOCKER_HOST` is read by the `docker` client as well, so a plugin that ends up
+    with the podman socket in it reports `Cannot connect to the Docker daemon` on a
+    host where docker is running fine.
+
+    Parameters
+    ----------
+    force : bool, optional
+        Prepare the environment even outside a test
+        process, for a caller that starts a container itself.
+    """
+    if not force and not in_test_process():
+        return
+    if 'DOCKER_HOST' not in os.environ:
+        if 'CONTAINER_HOST' in os.environ:
+            os.environ['DOCKER_HOST'] = os.environ['CONTAINER_HOST']
+        elif os.name != 'nt':
+            # Windows has no rootless podman socket to point at (and no
+            # `os.getuid()`); the container clients there find their named pipe on
+            # their own.
+            os.environ['DOCKER_HOST'] = (
+                f'unix:///run/user/{os.getuid()}/podman/podman.sock'
+            )
+    os.environ.setdefault('TESTCONTAINERS_RYUK_DISABLED', 'true')
+
+
+prepare_container_env()
 
 
 def require_container_runtime():
@@ -883,6 +883,47 @@ run_mariadb = run_mysql_compatible
 run_mariadb_from_containerfile = run_mysql_compatible_from_containerfile
 
 
+def _read_fixture(value):
+    """
+    Resolve a `--test` channel value to fixture content, confined to the calling
+    script's own `unit-test/` directory.
+
+    The unit-test harness passes fixture paths relative to that `unit-test/`
+    directory (for example `stdout/ok`) and invokes the script as an
+    unprivileged user from within it. To keep that working while preventing
+    `--test` from reading arbitrary files where the script runs as root (for
+    example through a sudoers allowlist), the read is confined to
+    `<script_dir>/unit-test/`. The directory is anchored to the script's own
+    location (`sys.argv[0]`), not the current working directory, which an
+    attacker controls. On a deployed host the script usually lives in a flat
+    directory with no `unit-test/` sibling, so nothing there resolves to a
+    readable fixture and the value is returned verbatim. This closes the
+    arbitrary root file read reported in GHSA-rh9c-rqvg-f7pr.
+
+    A value that does not resolve to a contained fixture file (an absolute path,
+    a `..` escape, or an inline literal test string) is returned unchanged.
+    """
+    if not value:
+        return value
+    # Symlinks *below* the anchor are caught by the realpath containment check
+    # below, because they resolve to a path outside fixtures_dir.
+    fixtures_dir = _fixtures_dir()
+    if fixtures_dir is None:
+        return value
+    candidate = os.path.realpath(os.path.join(fixtures_dir, value))
+    if candidate == fixtures_dir or candidate.startswith(fixtures_dir + os.sep):
+        if os.path.isfile(candidate):
+            # Confined again on the handle that is read: a directory below the anchor
+            # swapped for a symlink after the check above must not redirect the read.
+            success, content = disk.read_file(
+                candidate, allowed_roots=[fixtures_dir], nofollow=True
+            )
+            # a refused read stays the value it was, never the refusal as content
+            if success:
+                value = content
+    return value
+
+
 def test(args):
     """
     Returns the content of two files and the provided return code. The first file represents STDOUT,
@@ -1113,41 +1154,3 @@ def test_text(args, path=None, missing_ok=False):
             return None
         base.cu(f'Test fixture not found: "{wanted}".')
     return stdout
-
-
-def _read_fixture(value):
-    """
-    Resolve a `--test` channel value to fixture content, confined to the calling
-    script's own `unit-test/` directory.
-
-    The unit-test harness passes fixture paths relative to that `unit-test/`
-    directory (for example `stdout/ok`) and invokes the script as an
-    unprivileged user from within it. To keep that working while preventing
-    `--test` from reading arbitrary files where the script runs as root (for
-    example through a sudoers allowlist), the read is confined to
-    `<script_dir>/unit-test/`. The directory is anchored to the script's own
-    location (`sys.argv[0]`), not the current working directory, which an
-    attacker controls. On a deployed host the script usually lives in a flat
-    directory with no `unit-test/` sibling, so nothing there resolves to a
-    readable fixture and the value is returned verbatim. This closes the
-    arbitrary root file read reported in GHSA-rh9c-rqvg-f7pr.
-
-    A value that does not resolve to a contained fixture file (an absolute path,
-    a `..` escape, or an inline literal test string) is returned unchanged.
-    """
-    if not value:
-        return value
-    # Symlinks *below* the anchor are caught by the realpath containment check
-    # below, because they resolve to a path outside fixtures_dir.
-    fixtures_dir = _fixtures_dir()
-    if fixtures_dir is None:
-        return value
-    candidate = os.path.realpath(os.path.join(fixtures_dir, value))
-    if candidate == fixtures_dir or candidate.startswith(fixtures_dir + os.sep):
-        if os.path.isfile(candidate):
-            # Confined again on the handle that is read: a directory below the anchor
-            # swapped for a symlink after the check above must not redirect the read.
-            _, value = disk.read_file(
-                candidate, allowed_roots=[fixtures_dir], nofollow=True
-            )
-    return value

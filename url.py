@@ -1538,10 +1538,12 @@ def fetch(
     if timeout is not None and (
         isinstance(timeout, bool)
         or not isinstance(timeout, (int, float))
-        or not 0 <= timeout <= MAX_TIMEOUT
+        or not 0 < timeout <= MAX_TIMEOUT
     ):
+        # 0 is no time at all: httpx then fails the connect at once, with an error
+        # ("Operation now in progress") that names neither the cause nor the value
         return False, (
-            f'`timeout` must be a number of seconds between 0 and {MAX_TIMEOUT}, '
+            f'`timeout` must be a number of seconds above 0 and at most {MAX_TIMEOUT}, '
             f'or None, not {timeout!r}'
         )
     message = _check_headers(header or {})
