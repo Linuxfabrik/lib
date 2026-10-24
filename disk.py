@@ -1003,8 +1003,11 @@ def get_private_dir(path, prefix='linuxfabrik-monitoring-plugins'):
     euid = os.geteuid()
     # Whoever may rename the entries of `path` can swap the private directory for one of
     # their own after it was checked. /tmp lets everybody create entries, but its sticky bit
-    # keeps them from renaming or deleting those of others. stat() follows a symlink, so the
-    # directory it leads to is the one judged.
+    # keeps them from renaming or deleting those of others. The base is resolved first and
+    # used by its resolved name: judged through a symlink and then used by the link's name,
+    # it would be whatever the link points to by the time the directory is created, and
+    # whoever owns the link could point it at a directory of their own.
+    path = os.path.realpath(path)
     try:
         base = os.stat(path)
     except OSError as e:

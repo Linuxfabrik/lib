@@ -750,6 +750,28 @@ class TestGetOwningPackage(unittest.TestCase):
         m.assert_not_called()
 
 
+@unittest.skipUnless(hasattr(os, 'geteuid'), 'POSIX ownership only')
+class TestGetPrivateDirPosix(unittest.TestCase):
+    """A base reached through a symlink is used by its resolved name, so whoever owns
+    the link cannot point it elsewhere after the check."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix='lftest-disk-private-')
+        self.real = os.path.join(self.base, 'real')
+        os.makedirs(self.real, mode=0o700)
+        self.link = os.path.join(self.base, 'link')
+        os.symlink(self.real, self.link)
+
+    def tearDown(self):
+        shutil.rmtree(self.base, ignore_errors=True)
+
+    def test_a_symlinked_base_is_used_by_its_resolved_name(self):
+        ok, private_dir = disk.get_private_dir(self.link)
+        self.assertTrue(ok, private_dir)
+        self.assertEqual(os.path.dirname(private_dir), os.path.realpath(self.real))
+        self.assertNotIn(self.link, private_dir)
+
+
 @unittest.skipUnless(os.name == 'nt', 'the DACL checks are Windows-only')
 class TestGetPrivateDirWindows(unittest.TestCase):
     """get_private_dir() on Windows: the temp dir itself if private, else a subdirectory."""
