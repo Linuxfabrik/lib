@@ -222,6 +222,11 @@ class TestReadFile(unittest.TestCase):
         result = self.read()
         self.assertEqual(result['lines'], [])
         self.assertEqual(result['position']['offset'], 0)
+        self.assertEqual(result['size'], 0)
+
+    def test_size_comes_from_the_handle_read(self):
+        self.write('one\ntwo\n', 'w')
+        self.assertEqual(self.read()['size'], len('one\ntwo\n'))
 
     def test_line_without_trailing_newline_waits_for_its_end(self):
         # the writer is in the middle of the line, so it is not handed out yet

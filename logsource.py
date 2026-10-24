@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026102402'
 
 import collections
 import datetime
@@ -785,6 +785,9 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
         },
         'restarted': restarted,
         'rotated': rotated_read,
+        # taken from the handle the lines came from, never from a second look at the
+        # path, which could see another file by then
+        'size': file_stat.st_size,
         'truncated': read > len(lines) or bool(state.shortened or state.stopped),
     }
 
@@ -1129,6 +1132,10 @@ def read(
             - `rotated` (`list` of `str`): the rotated files that were read ahead of the source,
               in the order their lines appear. Empty unless `rotated` asked for them, or a
               rotation since the stored position was resumed in.
+            - `size` (`int`): for a file only, its size in bytes, taken from the handle it was
+              read from. A consumer that wants the size of a file it lets this function read
+              takes it from here: a second look at the path may see another file, and with
+              `allowed_roots` one outside the roots.
             - `truncated` (`bool`): True if `max_lines` dropped lines from the result.
 
     Notes

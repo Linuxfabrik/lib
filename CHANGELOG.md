@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * disk.py: `get_private_dir()`, `open_file()`, `resolve_trusted_path()`, `resolve_trusted_tree()`; `get_block_devices()` and `get_real_disks()` list `mount_points`; `get_fingerprint()` takes an open file
 * endoflifedate.py: offline data for Debian, Ubuntu, Windows and Windows Server
 * lftest.py: `fixture_root()`
-* logsource.py: `systemd_booted()`
+* logsource.py: `systemd_booted()`; `read()` returns the `size` of a file
 * lynis.py: the report of a Lynis audit, with its findings and suggestions
 * net.py: `getaddrinfo()` with a timeout; `fetch()` and `fetch_socket()` take `max_bytes` and `deadline`
 * powershell.py: `run_ps()` takes `timeout`
