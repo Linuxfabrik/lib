@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * net.py: `getaddrinfo()` with a timeout; `fetch()` and `fetch_socket()` take `max_bytes` and `deadline`
 * powershell.py: `run_ps()` takes `timeout`
 * redfish.py: `get_chassis()` returns the `Thermal` and `Power` links, `UNMONITORED_STATES`
-* restic.py: `repo_args()` and `password_file_arg()`
+* restic.py: `error_lines()`, `password_file_arg()`, `repo_args()` and `READ_ONLY_ARGS`, the arguments that point restic at a repository without letting a caller redirect its writes
 * rhelappstreams.py: the life cycle of the RHEL Application Streams
 * shell.py: `shell_exec()` takes `max_bytes`
 * time.py: `datetime2local()`; `timestr2datetime()` and `timestr2epoch()` take `pattern='rfc2822'`

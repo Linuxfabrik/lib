@@ -14,12 +14,28 @@ whoever chose the values (for example root via sudo).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026102401'
 
+import json
 import os
 import urllib.parse
 
 from . import disk
+
+# Global options that keep a read-only command from writing anything. Without a lock,
+# restic creates nothing in the repository, so a `locks/` entry the caller planted as
+# a symlink is never written through; without the cache, restic creates nothing below
+# its cache directory, whose subdirectory it names after the ID in the repository's
+# `config`, which it does not validate (`cache.New()` joins it into the path,
+# internal/restic/config.go and internal/global/global.go, verified against restic
+# 0.19.1). `check`, `snapshots` and `stats` honour both.
+READ_ONLY_ARGS = ('--no-cache', '--no-lock')
+
+# The backends restic recognises by their prefix (internal/backend/location). Any other
+# location is a path in the local filesystem.
+_REMOTE_SCHEMES = frozenset(
+    ('azure', 'b2', 'gs', 'rclone', 'rest', 's3', 'sftp', 'swift')
+)
 
 
 def _trusted_file_arg(option, path, owners):
@@ -30,8 +46,61 @@ def _trusted_file_arg(option, path, owners):
         owners = [os.geteuid()] if hasattr(os, 'geteuid') else []
     success, resolved = disk.resolve_trusted_path(path, owners=owners)
     if not success:
-        return False, resolved
+        # One answer for every refusal: the reason `resolve_trusted_path()` gives
+        # names the first component it could not examine, which would tell the
+        # caller what exists below a directory only root may list.
+        return False, (
+            f'Refusing `{path}` for --{option}: it has to exist, and nobody but root '
+            'and the account running restic may be able to change it or any '
+            'directory above it.'
+        )
     return True, [f'--{option}={resolved}']
+
+
+def error_lines(stderr, limit=10):
+    """Return restic's human-readable error lines from its stderr.
+
+    Before restic 0.18 they are plain text. Since 0.18, with `--json`, each is a JSON
+    object carrying the text in `message`, for example
+    `{"message_type":"exit_error","code":12,"message":"Fatal: wrong password or no key
+    found"}` (verified against restic 0.19.1). Both shapes come back as plain lines,
+    capped at `limit`, so a damaged repository cannot flood the output.
+
+    Parameters
+    ----------
+    stderr : str
+        What restic wrote to stderr.
+    limit : int, optional
+        How many lines to return at most; the first and the last half are kept.
+        Defaults to 10.
+
+    Returns
+    -------
+    list of str
+    """
+    if not isinstance(stderr, str):
+        return []
+    lines = []
+    for line in stderr.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            message = json.loads(line)
+        except ValueError:
+            lines.append(line)
+            continue
+        if not isinstance(message, dict):
+            # a line that merely parses as JSON, such as a number
+            lines.append(line)
+        elif isinstance(message.get('message'), str):
+            lines.extend(
+                part.strip() for part in message['message'].splitlines() if part.strip()
+            )
+    if len(lines) > limit:
+        half = max(limit // 2, 1)
+        lines = [*lines[:half], '...', *lines[-half:]]
+    return lines
 
 
 def password_file_arg(password_file, owners=None):
@@ -94,13 +163,20 @@ def repo_args(repo=None, repository_file=None, owners=None):
     A caller of a privileged consumer must not be able to make restic run a program
     of their choosing. Two of restic's backends start an external program: `rclone:`
     runs `rclone`, which the repository string configures, and `sftp:` runs `ssh`
-    with the host as its first argument. The other backends (local, rest, s3, azure,
-    gs, b2, swift) talk HTTP or open a path. An `sftp:` host starting with `-` is
+    with the host as its first argument. An `sftp:` host starting with `-` is
     refused, since ssh would read it as an option. An `rclone:` location is refused
-    when it comes straight from the caller, and has to be placed in a
-    `repository_file` instead, which is accepted
-    only where nobody but root and `owners` can change it (see
-    `disk.resolve_trusted_path()`); its resolved path is what restic is given.
+    when it comes straight from the caller, and so is a `rest:` location over a Unix
+    socket, which connects to a socket of the caller's choosing. They have to be
+    placed in a `repository_file` instead, which is accepted only where nobody but
+    root and `owners` can change it (see `disk.resolve_trusted_path()`); its resolved
+    path is what restic is given.
+
+    A local repository is a directory restic writes to: locks, and the files it
+    creates there. One the caller can change, or reach through a symlink they can
+    swap, would let them redirect those writes, so it is accepted on the same terms
+    as `repository_file`, and its resolved path is what restic is given. The remote
+    backends (rest, s3, azure, gs, b2, swift) talk HTTP. A read-only command adds
+    `READ_ONLY_ARGS` on top.
 
     Parameters
     ----------
@@ -109,8 +185,8 @@ def repo_args(repo=None, repository_file=None, owners=None):
     repository_file : str, optional
         Path to a file whose first line is the repository location.
     owners : iterable of int, optional
-        UIDs trusted to own `repository_file` besides root. Defaults to the current
-        effective user.
+        UIDs trusted to own `repository_file` or a local repository besides root.
+        Defaults to the current effective user.
 
     Returns
     -------
@@ -128,6 +204,19 @@ def repo_args(repo=None, repository_file=None, owners=None):
                 'run an external program. Put the repository location into a file '
                 'that only root can change and pass it with --repository-file.'
             )
+        if scheme == 'rest' and '+unix:' in repo.lower():
+            return False, (
+                'Refusing a `rest:` repository over a Unix socket given with --repo. '
+                'Put the repository location into a file that only root can change '
+                'and pass it with --repository-file.'
+            )
+        if scheme not in _REMOTE_SCHEMES:
+            # `local:/srv/repo`, or a plain path
+            prefix = 'local:' if scheme == 'local' else ''
+            success, result = _trusted_file_arg('repo', repo[len(prefix) :], owners)
+            if not success:
+                return False, result
+            return True, [result[0].replace('--repo=', f'--repo={prefix}', 1)]
         if scheme == 'sftp':
             host = _sftp_host(repo)
             if host is None:
