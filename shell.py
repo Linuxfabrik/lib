@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102402'
+__version__ = '2026102403'
 
 
 import os
@@ -89,10 +89,6 @@ def quote_cli_value(value):
     return shlex.quote(str(value))
 
 
-# Python's codec for the OEM code page of the running Windows (cp437, cp850, ...).
-_OEM_CODEC = 'oem'
-
-
 def safe_cli_value(value, name='value'):
     """
     Reject a value that a called program could misinterpret as an option.
@@ -130,6 +126,10 @@ def safe_cli_value(value, name='value'):
         if text.startswith('-'):
             return False, f'Refusing {name} that starts with "-": {text}'
     return True, value
+
+
+# Python's codec for the OEM code page of the running Windows (cp437, cp850, ...).
+_OEM_CODEC = 'oem'
 
 
 def _decode_windows_output(raw):
@@ -202,6 +202,64 @@ def _size(size):
     return f'{size / mib:.1f} MiB'
 
 
+def _communicate_bounded_threads(p, stdin, deadline, timeout, limits, cmd, state):
+    """`_communicate_bounded()` for Windows, where a pipe cannot be waited on with
+    `select()`: a thread per pipe, polled from here. The threads are daemons and end with
+    the caller, as the ones of `communicate()` do. The thread that feeds standard input is
+    handed back in `state['feeder']`, so the caller can tell whether it is still writing,
+    and the pipes with the thread that reads each of them in `state['pumps']`, for
+    `_close_finished_pipes()`."""
+    import threading  # only here: nothing else of this module needs it
+
+    chunks = {'out': bytearray(), 'err': bytearray()}
+    too_large = []
+
+    def pump(stream, key, cap):
+        while True:
+            data = stream.read1(65536)
+            if not data:
+                return
+            chunks[key].extend(data)
+            if cap is not None and len(chunks[key]) > cap:
+                too_large.append(cap)
+                return
+
+    def feed():
+        try:
+            p.stdin.write(stdin)
+        except OSError:
+            pass
+        finally:
+            try:
+                p.stdin.close()
+            except OSError:
+                pass
+
+    threads = [
+        threading.Thread(target=pump, args=(p.stdout, 'out', limits[0]), daemon=True),
+        threading.Thread(target=pump, args=(p.stderr, 'err', limits[1]), daemon=True),
+    ]
+    state['pumps'] = ((p.stdout, threads[0]), (p.stderr, threads[1]))
+    if stdin:
+        state['feeder'] = threading.Thread(target=feed, daemon=True)
+        threads.append(state['feeder'])
+    elif p.stdin is not None:
+        p.stdin.close()
+    for thread in threads:
+        thread.start()
+    while any(thread.is_alive() for thread in threads):
+        if too_large:
+            raise _OutputTooLarge(too_large[0])
+        if deadline is not None and time.monotonic() >= deadline:
+            raise subprocess.TimeoutExpired(cmd, timeout)
+        time.sleep(0.02)
+    if too_large:
+        raise _OutputTooLarge(too_large[0])
+    remaining = None if deadline is None else max(deadline - time.monotonic(), 0)
+    p.wait(timeout=remaining)
+    return bytes(chunks['out']), bytes(chunks['err'])
+
+
 def _communicate_bounded(p, stdin, timeout, limits, cmd, state):
     """Like `Popen.communicate()`, but a stream that grows past its cap stops the read.
 
@@ -267,64 +325,6 @@ def _communicate_bounded(p, stdin, timeout, limits, cmd, state):
         p.stdout.close()
         p.stderr.close()
     return b''.join(chunks['out']), b''.join(chunks['err'])
-
-
-def _communicate_bounded_threads(p, stdin, deadline, timeout, limits, cmd, state):
-    """`_communicate_bounded()` for Windows, where a pipe cannot be waited on with
-    `select()`: a thread per pipe, polled from here. The threads are daemons and end with
-    the caller, as the ones of `communicate()` do. The thread that feeds standard input is
-    handed back in `state['feeder']`, so the caller can tell whether it is still writing,
-    and the pipes with the thread that reads each of them in `state['pumps']`, for
-    `_close_finished_pipes()`."""
-    import threading  # only here: nothing else of this module needs it
-
-    chunks = {'out': bytearray(), 'err': bytearray()}
-    too_large = []
-
-    def pump(stream, key, cap):
-        while True:
-            data = stream.read1(65536)
-            if not data:
-                return
-            chunks[key].extend(data)
-            if cap is not None and len(chunks[key]) > cap:
-                too_large.append(cap)
-                return
-
-    def feed():
-        try:
-            p.stdin.write(stdin)
-        except OSError:
-            pass
-        finally:
-            try:
-                p.stdin.close()
-            except OSError:
-                pass
-
-    threads = [
-        threading.Thread(target=pump, args=(p.stdout, 'out', limits[0]), daemon=True),
-        threading.Thread(target=pump, args=(p.stderr, 'err', limits[1]), daemon=True),
-    ]
-    state['pumps'] = ((p.stdout, threads[0]), (p.stderr, threads[1]))
-    if stdin:
-        state['feeder'] = threading.Thread(target=feed, daemon=True)
-        threads.append(state['feeder'])
-    elif p.stdin is not None:
-        p.stdin.close()
-    for thread in threads:
-        thread.start()
-    while any(thread.is_alive() for thread in threads):
-        if too_large:
-            raise _OutputTooLarge(too_large[0])
-        if deadline is not None and time.monotonic() >= deadline:
-            raise subprocess.TimeoutExpired(cmd, timeout)
-        time.sleep(0.02)
-    if too_large:
-        raise _OutputTooLarge(too_large[0])
-    remaining = None if deadline is None else max(deadline - time.monotonic(), 0)
-    p.wait(timeout=remaining)
-    return bytes(chunks['out']), bytes(chunks['err'])
 
 
 def _close_finished_pipes(state):

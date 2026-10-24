@@ -667,6 +667,12 @@ def parse_volumes(stdout):
     return volumes
 
 
+def _display_uri(uri):
+    """Return the URI the way it may appear in a message: a password in its userinfo
+    is redacted."""
+    return txt.sanitize_sensitive_data(uri)
+
+
 def _explain_virsh_error(stderr, uri):
     """
     Turn a virsh error into a sentence that names the next step.
@@ -723,8 +729,8 @@ def _explain_virsh_error(stderr, uri):
 #   its argument, `netcat` the program run on the far side, `socket` the socket to talk
 #   to, `keyfile`, `known_hosts`, `pkipath` and `authfile` files to read, `name` the URI
 #   the daemon opens in turn (`qemu:///embed`, `test:///<file>`). So is the `ext`
-#   transport itself. The plugins use `qemu:///system` and `qemu+ssh://user@host/system`
-#   and none of these.
+#   transport itself. Reading the state of a hypervisor needs `qemu:///system` and
+#   `qemu+ssh://user@host/system` and none of these.
 # - Accepted, because they take a fixed set of words that libvirt validates, or a
 #   number: `known_hosts_verify`, `mode`, `no_tty`, `no_verify`, `proxy` and `sshauth`.
 #   Anything else is refused, since libvirt grows new parameters and passes those it
@@ -750,12 +756,6 @@ _URI_REGEX = re.compile(
     r'^(?P<driver>[A-Za-z][A-Za-z0-9]*)(?:\+(?P<transport>[A-Za-z0-9]+))?://'
     r'(?P<authority>[^/?#\s]*)(?P<path>/[^?#\s]*)?(?:\?(?P<query>[^#\s]*))?'
 )
-
-
-def _display_uri(uri):
-    """Return the URI the way it may appear in a message: a password in its userinfo
-    is redacted."""
-    return txt.sanitize_sensitive_data(uri)
 
 
 def _check_uri(uri):
@@ -851,7 +851,7 @@ def virsh(args, uri=DEFAULT_URI, timeout=DEFAULT_TIMEOUT):
       with a dash cannot turn into an option of its own.
     - A libvirt.conf alias such as `default` is refused too: an alias can point to any
       URI, the dangerous ones included, so it is resolved by the caller or not at all.
-    - The URI is checked against what the kvm plugins need, `qemu:///system` and
+    - The URI is checked against what reading a hypervisor's state needs, `qemu:///system` and
       `qemu+ssh://user@host/system`, and more advanced libvirt URIs are refused on
       purpose, a UNIX `socket` and every parameter that names a file included.
     - The URI may only name a hypervisor. One that makes libvirt run a program or talk

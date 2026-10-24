@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* args.py, base.py, txt.py, url.py: import faster, and `sanitize_sensitive_data()` is faster on long output
+* args.py, base.py, txt.py: import faster, and `sanitize_sensitive_data()` is faster on long output
 * container.py: `get_engine_error()` reports Podman's missing rootless statistics on cgroups v1 as UNKNOWN
 * db_mysql.py: `check_privileges()` counts only privileges granted on `*.*` or the given database, and `select()` names the error first
 * disk.py: `copy_dir()` names the first file it could not copy and how many more
@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * redfish.py: `get_sensor_state()`, `get_state()` and `get_perfdata()` rate a fatal threshold CRIT and a critical one WARN, and evaluate the health in every state but `Absent` and `Disabled`
 * shell.py: `shell_exec()` names a missing program instead of the raw OS error
 * smb.py: a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
-* url.py: `fetch()` and `fetch_json()` give up after ten times the timeout, wait no longer than the timeout for a name server and refuse malformed header values and timeouts
+* url.py: imports faster, `fetch()` and `fetch_json()` give up after ten times the timeout, wait no longer than the timeout for a name server and refuse malformed header values and timeouts
 * version.py: `check_eol()` names an available release the way its cycle spells it, and `version2float()` sorts like the version
 
 ### Removed

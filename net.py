@@ -962,8 +962,8 @@ def get_proxy(target_url, no_proxy=False):
         host = (parsed.hostname or '').lower()
         port = parsed.port
     except ValueError as e:
-        # The URL can carry credentials, and this message ends up in the plugin
-        # output and the history of the monitoring server.
+        # The URL can carry credentials, and this message ends up in the caller's
+        # output, and from there wherever that is kept.
         return (
             False,
             f'Cannot read host and port from "{txt.sanitize_sensitive_data(target_url)}": {e}',

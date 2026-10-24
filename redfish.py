@@ -890,7 +890,7 @@ def build_url(base_url, odata_id):
     except ValueError as e:
         # a bracketed host that is no IP address, refused by urlsplit() since gh-103848
         # (CPython 3.9.21, 3.10.16, 3.11.4, 3.12.0, and backports); the URL can carry
-        # credentials, and this message ends up in the plugin output
+        # credentials, and this message ends up in the caller's output
         return False, (
             f'Cannot read the base URL "{txt.sanitize_sensitive_data(base_url)}": {e}'
         )

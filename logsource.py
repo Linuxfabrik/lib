@@ -903,7 +903,7 @@ def _read_journald(unit, position, max_lines, since, timeout):
         # journalctl says on stderr, and with an exit code of 0, that it is only
         # showing what the caller is allowed to see. Where that leaves nothing at
         # all, returning an empty result would report a quiet log on a host whose
-        # log simply cannot be read, which is the worst answer a check can give.
+        # log simply cannot be read, which is the worst answer a reader can give.
         # Verified against systemd 257 on Debian 13, where an account outside the
         # `adm` and `systemd-journal` groups sees no system entries at all.
         return False, (
@@ -1414,7 +1414,7 @@ def sort_by_time(lines, parse_line=None):
         decorated.append((moment is not None, moment, index, line))
     # Naive and aware values cannot be compared, so the sort runs over the naive
     # form of each: an offset moves a line by hours at worst, a `TypeError`
-    # takes the whole check down.
+    # takes the whole read down.
     if len({moment.tzinfo is None for _, moment, _, _ in decorated if moment}) > 1:
         decorated = [
             (dated, moment.replace(tzinfo=None) if moment else None, index, line)
