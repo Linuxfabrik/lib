@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026102301'
 
 import math
 import numbers
@@ -1531,6 +1531,51 @@ def sum_lod(mylist):
                 total[key] = total.get(key, 0) + value
 
     return total
+
+
+def symmetric_range(threshold):
+    """
+    Return the range of a threshold that applies to a signed value in both directions.
+
+    A check that compares the magnitude of a signed value with a threshold, such as a
+    clock offset that may be fast or slow, evaluates `abs(value)` against `300`, but
+    reports the signed value in its performance data. There, `300` would mean "0 to
+    300" and put every negative value out of range. This returns `-300:300` instead,
+    which is what the check alerts on. A range expression stays as it is, since it
+    already says what it means.
+
+    Parameters
+    ----------
+    threshold : str, int, float or None
+        A threshold as given on the command line.
+
+    Returns
+    -------
+    str or None
+        `-<threshold>:<threshold>` for a non-negative number, otherwise `threshold`
+        unchanged.
+
+    Examples
+    --------
+    >>> symmetric_range('300')
+    '-300:300'
+    >>> symmetric_range('0.5')
+    '-0.5:0.5'
+    >>> symmetric_range('10:20')
+    '10:20'
+    >>> symmetric_range(None) is None
+    True
+    """
+    if threshold is None:
+        return None
+    text = str(threshold).strip()
+    try:
+        value = float(text)
+    except ValueError:
+        return threshold
+    if value < 0 or value != value:  # negative or NaN: no magnitude to mirror
+        return threshold
+    return f'-{text}:{text}'
 
 
 def verbose(enabled, msg):

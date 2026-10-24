@@ -1257,6 +1257,45 @@ class TestSumLod(unittest.TestCase):
         self.assertEqual(base.sum_lod([{'a': True}, {'a': 1}]), {'a': 2})
 
 
+class TestSymmetricRange(unittest.TestCase):
+    """symmetric_range() mirrors a plain number and keeps everything else."""
+
+    def test_plain_number_is_mirrored(self):
+        self.assertEqual(base.symmetric_range('300'), '-300:300')
+        self.assertEqual(base.symmetric_range('60000'), '-60000:60000')
+
+    def test_float_and_zero(self):
+        self.assertEqual(base.symmetric_range('0.5'), '-0.5:0.5')
+        self.assertEqual(base.symmetric_range('0'), '-0:0')
+
+    def test_int_and_float_types(self):
+        self.assertEqual(base.symmetric_range(300), '-300:300')
+        self.assertEqual(base.symmetric_range(1.5), '-1.5:1.5')
+
+    def test_surrounding_whitespace_is_dropped(self):
+        self.assertEqual(base.symmetric_range(' 300 '), '-300:300')
+
+    def test_range_expressions_stay(self):
+        for spec in ('10:20', '10:', '~:50', '@10:20', ':30'):
+            self.assertEqual(base.symmetric_range(spec), spec)
+
+    def test_negative_and_nan_stay(self):
+        self.assertEqual(base.symmetric_range('-5'), '-5')
+        self.assertEqual(base.symmetric_range('nan'), 'nan')
+
+    def test_none_and_empty(self):
+        self.assertIsNone(base.symmetric_range(None))
+        self.assertEqual(base.symmetric_range(''), '')
+
+    def test_mirrored_range_matches_what_the_check_alerts_on(self):
+        # every value the check accepts by its magnitude lies inside the range
+        spec = base.symmetric_range('300')
+        for value in (-300, -5, 0, 5, 300):
+            self.assertEqual(base.get_state(value, spec, None, _operator='range'), 0)
+        for value in (-301, 301):
+            self.assertEqual(base.get_state(value, spec, None, _operator='range'), 1)
+
+
 class TestVerbose(unittest.TestCase):
     def _capture(self, enabled, msg):
         out = io.StringIO()
