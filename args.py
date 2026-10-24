@@ -19,7 +19,7 @@ import textwrap
 from . import base, human, txt
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102301'
+__version__ = '2026102302'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -290,8 +290,7 @@ HELP_TEXTS = {
         'Send a short message. This can be useful when using an SMS relay, for example.'
     ),
     '--stratum': (
-        'Warns if the determined stratum of the time server is greater than or equal '
-        'to this value. '
+        'Warns if the stratum of this host is greater than or equal to this value. '
         'Stratum 1 indicates a computer with a locally attached reference clock. '
         'A computer that is synchronised to a stratum 1 computer is at stratum 2. '
         'A computer that is synchronised to a stratum 2 computer is at stratum 3, '
