@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lftest.py: `fixture_root()`
 * logsource.py: `systemd_booted()`
 * lynis.py: the report of a Lynis audit, with its findings and suggestions
-* net.py: `fetch()` and `fetch_socket()` take `max_bytes` and `deadline`
+* net.py: `getaddrinfo()` with a timeout; `fetch()` and `fetch_socket()` take `max_bytes` and `deadline`
 * powershell.py: `run_ps()` takes `timeout`
 * redfish.py: `get_chassis()` returns the `Thermal` and `Power` links, `UNMONITORED_STATES`
 * restic.py: `repo_args()` and `password_file_arg()`

@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101204'
+__version__ = '2026102301'
 
 import ipaddress
 import os
@@ -20,6 +20,7 @@ import random
 import re
 import socket
 import ssl
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -1147,6 +1148,78 @@ def get_subnet_hosts(interface=None, max_hosts=65536):
             return cidr_to_hosts(f'{address}/{cidr}', max_hosts=max_hosts)
 
     return (False, f'No IPv4 or IPv6 address found on interface "{interface}".')
+
+
+def getaddrinfo(host, port, family=0, socktype=0, proto=0, flags=0, timeout=None):
+    """
+    Resolve a host name like `socket.getaddrinfo()`, but give up after `timeout`.
+
+    `socket.getaddrinfo()` has no timeout of its own and waits as long as the resolver of
+    the operating system does, which can be far longer than a check may run (several
+    name servers times their timeout times the attempts). With a `timeout`, the lookup
+    runs in a daemon thread the caller stops waiting for; the thread ends on its own
+    once the resolver gives up, or with the process.
+
+    Parameters
+    ----------
+    host : str
+        Host name or IP address.
+    port : int or str or None
+        Port number or service name, as for `socket.getaddrinfo()`.
+    family : int, optional
+        Address family, for example `AF_INET`. Defaults to `0` (any).
+    socktype : int, optional
+        Socket type, for example `SOCK_UDP`. Defaults to `0` (any).
+    proto : int, optional
+        Protocol, for example `PROTO_UDP`. Defaults to `0` (any).
+    flags : int, optional
+        `socket.AI_*` flags. Defaults to `0`.
+    timeout : float or None, optional
+        Seconds to wait for the resolver. `None` waits as long as the resolver does.
+        Defaults to `None`.
+
+    Returns
+    -------
+    list
+        The 5-tuples `(family, type, proto, canonname, sockaddr)` that
+        `socket.getaddrinfo()` returns.
+
+    Raises
+    ------
+    socket.timeout
+        If the resolver has not answered within `timeout` seconds.
+    OSError
+        Whatever `socket.getaddrinfo()` raises, for example `socket.gaierror` for an
+        unknown name, so a caller can tell the reasons apart.
+    UnicodeError
+        For a host name that cannot be encoded with IDNA.
+
+    Examples
+    --------
+    >>> getaddrinfo('192.0.2.1', 123, socktype=SOCK_UDP, timeout=5)[0][4]
+    ('192.0.2.1', 123)
+    """
+    if timeout is None:
+        return socket.getaddrinfo(host, port, family, socktype, proto, flags)
+
+    box = {}
+
+    def worker():
+        try:
+            box['result'] = socket.getaddrinfo(
+                host, port, family, socktype, proto, flags
+            )
+        except Exception as e:  # handed to the caller below
+            box['error'] = e
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if 'error' in box:
+        raise box['error']
+    if 'result' not in box:
+        raise socket.timeout(f'name resolution of {host} timed out after {timeout}s')
+    return box['result']
 
 
 def ip_to_cidr(ip):

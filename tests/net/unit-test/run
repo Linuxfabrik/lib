@@ -882,5 +882,35 @@ class TestGetSubnetHosts(unittest.TestCase):
         self.assertIn('psutil', message)
 
 
+class TestGetaddrinfo(unittest.TestCase):
+    """getaddrinfo() behaves like socket.getaddrinfo() and bounds the wait."""
+
+    def test_numeric_address_resolves_without_a_resolver(self):
+        result = net.getaddrinfo('192.0.2.1', 123, socktype=net.SOCK_UDP, timeout=5)
+        self.assertEqual(result[0][4], ('192.0.2.1', 123))
+
+    def test_without_timeout_calls_socket_getaddrinfo_directly(self):
+        with mock.patch('socket.getaddrinfo', return_value=['answer']) as gai:
+            self.assertEqual(net.getaddrinfo('host.example', 123), ['answer'])
+        gai.assert_called_once_with('host.example', 123, 0, 0, 0, 0)
+
+    def test_resolver_error_reaches_the_caller(self):
+        error = socket.gaierror(socket.EAI_NONAME, 'Name or service not known')
+        with (
+            mock.patch('socket.getaddrinfo', side_effect=error),
+            self.assertRaises(socket.gaierror) as ctx,
+        ):
+            net.getaddrinfo('host.example', 123, timeout=5)
+        self.assertEqual(ctx.exception.errno, socket.EAI_NONAME)
+
+    def test_hanging_resolver_times_out(self):
+        # a resolver that answers only after 3 s, as when a name server is unreachable
+        with mock.patch('socket.getaddrinfo', side_effect=lambda *_: time.sleep(3)):
+            start = time.monotonic()
+            with self.assertRaises(socket.timeout):
+                net.getaddrinfo('host.example', 123, timeout=0.3)
+            self.assertLess(time.monotonic() - start, 2)
+
+
 if __name__ == '__main__':
     unittest.main()
