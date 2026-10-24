@@ -2544,6 +2544,34 @@ class TestResponseSizeLimit(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn('Refused to read', message)
 
+    def _redirect_then_ok(self, redirect_body, headers=None):
+        # httpx reads the body of every redirect response before it follows the
+        # redirect, so the limit has to hold there as well
+        def handler(request):
+            if request.url.path == '/r':
+                return httpx.Response(
+                    302,
+                    headers={'Location': '/final', **(headers or {})},
+                    stream=httpx.ByteStream(redirect_body),
+                )
+            return httpx.Response(200, stream=httpx.ByteStream(b'ok'))
+
+        with patch_mock_transport(handler):
+            return url.fetch('https://example.com/r', timeout=1, max_bytes=1024 * 1024)
+
+    def test_redirect_body_beyond_the_limit_is_refused(self):
+        import gzip
+
+        packed = gzip.compress(b'\0' * 2 * 1024 * 1024)
+        success, message = self._redirect_then_ok(
+            packed, headers={'Content-Encoding': 'gzip'}
+        )
+        self.assertFalse(success)
+        self.assertIn('Refused to read', message)
+
+    def test_redirect_with_a_small_body_is_followed(self):
+        self.assertEqual(self._redirect_then_ok(b'moved'), (True, 'ok'))
+
 
 class TestBodyHint(unittest.TestCase):
     """A failed request must not echo the request body: it routinely carries the

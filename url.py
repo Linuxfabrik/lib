@@ -220,11 +220,12 @@ def _has_body(request):
         )
 
 
-def _install_safe_redirect_stripping(client):
+def _install_safe_redirect_stripping(client, max_bytes=None, deadline=None):
     """Wrap an httpx client's redirect logic so nothing a caller sent to one
     origin reaches another one. Credential headers are dropped when a redirect
     crosses the origin, and a redirect that would resend the request body there
-    is refused. Patched on the instance (not via subclassing) so it also works
+    is refused. The body of every redirect response is read within `max_bytes`
+    and `deadline`, like the final one. Patched on the instance (not via subclassing) so it also works
     when a caller has replaced `httpx.Client` with a test double, and so
     importing lib.url never touches `httpx` at module scope. httpx looks both
     internals up on the instance, so each wrapper shadows the original bound
@@ -261,6 +262,15 @@ def _install_safe_redirect_stripping(client):
                 f' HTTP {response.status_code} redirect to'
                 f' {txt.sanitize_sensitive_data(str(redirect.url))}'
             )
+        # httpx reads the body of a redirect response in full with `response.read()`
+        # right after this returns, before the caller sees any of it, so a server
+        # could answer every hop with a body of any size, or a small gzip that
+        # inflates enormously. Reading it here, within the limits, leaves httpx the
+        # cached content: `read()` only reads while `_content` is unset.
+        # Verified against httpx 0.26.0 and 0.28.1 (`_send_handling_redirects`,
+        # `Response.read`).
+        if max_bytes is not None or deadline is not None:
+            response._content = _read_limited(response, max_bytes, deadline)
         return redirect
 
     if original_build is not None:
@@ -1180,7 +1190,9 @@ def _fetch_once(
             client_kwargs['verify'] = ctx
             client_kwargs['http1'] = http_version in ('1.0', '1.1')
             client_kwargs['http2'] = http_version == '2'
-        client = _install_safe_redirect_stripping(httpx.Client(**client_kwargs))
+        client = _install_safe_redirect_stripping(
+            httpx.Client(**client_kwargs), max_bytes=max_bytes, deadline=deadline
+        )
     except Exception as e:
         return False, f'{e} while fetching {url_safe}', False
 

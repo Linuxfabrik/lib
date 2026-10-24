@@ -95,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * openstack.py: `connect()` reuses a cached token only for the same identity
 * ssh.py: `rsync()`, `run()` and `scp()` refuse a port that is not a number from 1 to 65535
 * txt.py: `sanitize_sensitive_data()` redacts more credentials: prefixed names such as `db_password`, URL passwords containing `@` or `/`, userinfo without a scheme and the headers that carry a credential
-* url.py: the error messages of `fetch()` and `fetch_json()` no longer show secret query values, userinfo or a header value, a bare token in `Authorization` included
+* url.py: the error messages of `fetch()` and `fetch_json()` no longer show secret query values, userinfo or a header value, a bare token in `Authorization` included, and `max_bytes` also bounds the body of a redirect
 
 
 ## [v8.2.0] - 2026-09-22
