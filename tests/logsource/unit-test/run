@@ -585,6 +585,31 @@ class TestReadRotated(unittest.TestCase):
         self.assertEqual(result['lines'], ['live'])
         self.assertNotIn('secret', ' '.join(result['lines']))
 
+    def test_predecessor_swapped_for_a_symlink_after_the_check_is_not_read(self):
+        # without allowed_roots: whoever owns the log directory replaces the rotated
+        # file by a link to a file of root's between the lstat() of the selection and
+        # the open
+        secret = os.path.join(self.tmpdir, 'secret')
+        with open(secret, 'w') as handle:
+            handle.write('secret\n')
+        self.write('app.log.1', 'rotated\n', mtime=1000)
+        self.write('app.log', 'live\n', mtime=2000)
+        real_rotated_files = lib.logsource._rotated_files
+
+        def swapping_rotated_files(*args, **kwargs):
+            found = real_rotated_files(*args, **kwargs)
+            predecessor = os.path.join(self.tmpdir, 'app.log.1')
+            os.remove(predecessor)
+            os.symlink(secret, predecessor)
+            return found
+
+        with patch.object(
+            lib.logsource, '_rotated_files', side_effect=swapping_rotated_files
+        ):
+            result = self.read(rotated=1)
+        self.assertEqual(result['lines'], ['live'])
+        self.assertNotIn('secret', ' '.join(result['lines']))
+
     def test_unreadable_predecessor_is_named_and_the_live_file_still_read(self):
         # a rotation that was interrupted leaves a truncated archive behind; the
         # live file is what the caller asked about and has to be reported anyway

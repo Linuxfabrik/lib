@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101203'
+__version__ = '2026102401'
 
 import collections
 import datetime
@@ -442,7 +442,7 @@ _COMPRESSION_MODULES = {
 }
 
 
-def _open_log_file(path, allowed_roots=None):
+def _open_log_file(path, allowed_roots=None, nofollow=None):
     """Open a log file for reading in binary, decompressing it where its name says so.
 
     The file is opened once, through `disk.open_file()`, so with `allowed_roots` it is
@@ -453,6 +453,10 @@ def _open_log_file(path, allowed_roots=None):
     Returns `(True, (handle, raw))`, where `handle` yields the uncompressed lines and
     `raw` is the file underneath it; the caller closes both. For an uncompressed file
     the two are the same object.
+
+    `nofollow` defaults to following no symlink where `allowed_roots` is given. A rotated
+    predecessor is never read through one: `_rotated_files()` judged it by `lstat()`,
+    and a link swapped in after that would hand the reader any file it points to.
 
     The module that reads a compression is imported here rather than at the top, because a
     Python can be built without one, and that must not keep this module from being imported at
@@ -470,7 +474,10 @@ def _open_log_file(path, allowed_roots=None):
             )
         break
     success, raw = disk.open_file(
-        path, binary=True, allowed_roots=allowed_roots, nofollow=bool(allowed_roots)
+        path,
+        binary=True,
+        allowed_roots=allowed_roots,
+        nofollow=bool(allowed_roots) if nofollow is None else nofollow,
     )
     if not success:
         return False, raw
@@ -581,7 +588,7 @@ def _resume_rotated(path, position, allowed_roots, lines, state):
     read = 0
     notices = []
     for number, predecessor in enumerate(predecessors[index:]):
-        success, opened = _open_log_file(predecessor, allowed_roots)
+        success, opened = _open_log_file(predecessor, allowed_roots, nofollow=True)
         if not success:
             if number == 0:
                 return False, [], 0, []
@@ -695,7 +702,7 @@ def _read_open_file(path, handle, raw, position, allowed_roots, max_lines, rotat
     rotated_read = []
     state = _ReadState(MAX_ROTATED_BYTES)
     for predecessor in _rotated_files(path, rotated) if rotated else []:
-        success, opened = _open_log_file(predecessor, allowed_roots)
+        success, opened = _open_log_file(predecessor, allowed_roots, nofollow=True)
         if not success:
             notices.append(opened)
             continue
