@@ -11,10 +11,11 @@
 """This library collects some Microsoft WinRM related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026102401'
 
 import base64
 import re
+import threading
 import warnings
 
 try:
@@ -227,75 +228,51 @@ def _psrp_objects_to_text(output):
     return separator.join(blocks)
 
 
-def run_cmd(args, cmd, params=None):
+def _within(timeout, func, *args):
     """
-    Run a native command on a remote Windows host via WinRM/PSRP and return a
-    normalized result dictionary.
+    Return what `func(*args)` returns, or a timeout result when it takes longer.
 
-    Prefers **pypsrp (PSRP)** if available (for JEA/PowerShell Remoting
-    compatibility); otherwise falls back to **pywinrm**. Authentication,
-    transport and SSL/port selection are derived from the provided `args`.
+    Neither backend bounds a whole call: both poll for output again and again while the
+    remote command runs, so a command that hangs blocks the caller forever. The call
+    runs in a daemon thread instead, which the caller leaves behind when the timeout
+    has passed; it ends with the process. The remote command keeps running until the
+    WinRM service closes the shell nobody polls any more: after `_IDLE_TIMEOUT` for the
+    runspace of `run_ps()` over pypsrp, after the idle timeout of the service otherwise
+    (two hours by default).
 
     Parameters
     ----------
-    args
-        An object (e.g., `argparse.Namespace`) that provides at least:
-
-          - `WINRM_HOSTNAME` (`str`): Target host or IP.
-          - `WINRM_USERNAME` (`str`, optional): Username. If `None` or empty when using
-            Kerberos transport, will use existing Kerberos credentials from credential cache
-            (e.g., obtained via `kinit`).
-          - `WINRM_PASSWORD` (`str`, optional): Password. If `None` or empty when using
-            Kerberos transport, will use existing Kerberos credentials from credential cache.
-          - `WINRM_TRANSPORT` (`str`, optional): Transport (e.g., `'negotiate'`, `'kerberos'`,
-            `'ntlm'`, `'credssp'`, `'basic'`, `'ssl'`). Defaults to `'negotiate'` if unset.
-          - `WINRM_DOMAIN` (`str`, optional): If set, username is sent as `user@domain`.
-        (Additional fields may be honored by the underlying libraries if present.)
-    cmd : str
-        The executable/command to run remotely (native command, not a PowerShell
-         script block). Without `params` it is handed to `cmd.exe` as it stands, so it
-         must not contain untrusted data.
-    params : list[str], optional
-        Positional arguments passed to the command. Each
-         one reaches the program as a single argument, whatever it contains: `cmd.exe`
-         never parses them. Defaults to `None`, which sends no arguments.
+    timeout : int or float or None
+        Seconds to wait. `None` waits as long as the call takes.
+    func : callable
+        The call, returning a result dictionary.
+    *args
+        Its arguments.
 
     Returns
     -------
     dict
-        A normalized result with:
-
-          - `retc` (`int`): Process return code (`0` on success).
-          - `stdout` (`str`): Captured standard output (text).
-          - `stderr` (`str`): Captured standard error (text).
-
-    Notes
-    -----
-    - If **pypsrp** is available, maps `WINRM_TRANSPORT` to an appropriate PSRP auth
-      and chooses SSL/port (5986 for SSL, 5985 otherwise), then executes the command
-      via `Client.execute_cmd()`.
-    - If pypsrp is unavailable but **pywinrm** is installed, executes via
-      `Session.run_cmd()`.
-    - With `params`, the command runs through an encoded PowerShell call rather than
-      through `cmd.exe`, which would read `&`, `|` or `>` in an argument as the start
-      of another command. Return code, stdout and stderr are those of the program. A
-      `.bat` or `.cmd` file is still interpreted by `cmd.exe`, arguments included.
-    - For Kerberos authentication: if `WINRM_USERNAME` and `WINRM_PASSWORD` are not provided
-      (or are empty/None), the function will attempt to use existing Kerberos credentials
-      from the credential cache (obtained via `kinit`).
-    - On any exception, returns `{'retc': 1, 'stdout': '', 'stderr': <exception text>}`.
-    - If neither backend is present, returns an error indicating that no compatible
-      remoting library is available.
-
-    Examples
-    --------
-    >>> # With explicit credentials:
-    >>> run_cmd(args, 'ipconfig', ['/all'])
-    {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
-    >>> # With Kerberos using kinit credentials (username/password can be None):
-    >>> run_cmd(args, 'ipconfig', ['/all'])
-    {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
+        The result of `func`, or `{'retc': 1, 'stdout': '',
+        'stderr': 'Timeout after <timeout> seconds.'}`.
     """
+    if timeout is None:
+        return func(*args)
+    results = []
+    worker = threading.Thread(target=lambda: results.append(func(*args)))
+    worker.daemon = True
+    worker.start()
+    worker.join(timeout)
+    if results:
+        return results[0]
+    return {
+        'retc': 1,
+        'stdout': '',
+        'stderr': f'Timeout after {timeout} seconds.',
+    }
+
+
+def _run_cmd(args, cmd, params):
+    """Run `run_cmd()` without a timeout, see there."""
     auth = _build_auth(args)
     command = _native_call(cmd, params) if params else cmd
 
@@ -353,89 +330,98 @@ def run_cmd(args, cmd, params=None):
     }
 
 
+def run_cmd(args, cmd, params=None, timeout=None):
+    """
+    Run a native command on a remote Windows host via WinRM/PSRP and return a
+    normalized result dictionary.
+
+    Prefers **pypsrp (PSRP)** if available (for JEA/PowerShell Remoting
+    compatibility); otherwise falls back to **pywinrm**. Authentication,
+    transport and SSL/port selection are derived from the provided `args`.
+
+    Parameters
+    ----------
+    args
+        An object (e.g., `argparse.Namespace`) that provides at least:
+
+          - `WINRM_HOSTNAME` (`str`): Target host or IP.
+          - `WINRM_USERNAME` (`str`, optional): Username. If `None` or empty when using
+            Kerberos transport, will use existing Kerberos credentials from credential cache
+            (e.g., obtained via `kinit`).
+          - `WINRM_PASSWORD` (`str`, optional): Password. If `None` or empty when using
+            Kerberos transport, will use existing Kerberos credentials from credential cache.
+          - `WINRM_TRANSPORT` (`str`, optional): Transport (e.g., `'negotiate'`, `'kerberos'`,
+            `'ntlm'`, `'credssp'`, `'basic'`, `'ssl'`). Defaults to `'negotiate'` if unset.
+          - `WINRM_DOMAIN` (`str`, optional): If set, username is sent as `user@domain`.
+        (Additional fields may be honored by the underlying libraries if present.)
+    cmd : str
+        The executable/command to run remotely (native command, not a PowerShell
+         script block). Without `params` it is handed to `cmd.exe` as it stands, so it
+         must not contain untrusted data.
+    params : list[str], optional
+        Positional arguments passed to the command. Each
+         one reaches the program as a single argument, whatever it contains: `cmd.exe`
+         never parses them. Defaults to `None`, which sends no arguments.
+    timeout : int or float, optional
+        Seconds to wait for the result. After that the call returns a result with
+        `retc` 1 and `Timeout after <timeout> seconds.` in `stderr`. Defaults to
+        `None` (no timeout).
+
+    Returns
+    -------
+    dict
+        A normalized result with:
+
+          - `retc` (`int`): Process return code (`0` on success).
+          - `stdout` (`str`): Captured standard output (text).
+          - `stderr` (`str`): Captured standard error (text).
+
+    Notes
+    -----
+    - If **pypsrp** is available, maps `WINRM_TRANSPORT` to an appropriate PSRP auth
+      and chooses SSL/port (5986 for SSL, 5985 otherwise), then executes the command
+      via `Client.execute_cmd()`.
+    - If pypsrp is unavailable but **pywinrm** is installed, executes via
+      `Session.run_cmd()`.
+    - With `params`, the command runs through an encoded PowerShell call rather than
+      through `cmd.exe`, which would read `&`, `|` or `>` in an argument as the start
+      of another command. Return code, stdout and stderr are those of the program. A
+      `.bat` or `.cmd` file is still interpreted by `cmd.exe`, arguments included.
+    - For Kerberos authentication: if `WINRM_USERNAME` and `WINRM_PASSWORD` are not provided
+      (or are empty/None), the function will attempt to use existing Kerberos credentials
+      from the credential cache (obtained via `kinit`).
+    - On any exception, returns `{'retc': 1, 'stdout': '', 'stderr': <exception text>}`.
+    - If neither backend is present, returns an error indicating that no compatible
+      remoting library is available.
+
+    Examples
+    --------
+    >>> # With explicit credentials:
+    >>> run_cmd(args, 'ipconfig', ['/all'])
+    {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
+    >>> # With Kerberos using kinit credentials (username/password can be None):
+    >>> run_cmd(args, 'ipconfig', ['/all'])
+    {'retc': 0, 'stdout': 'Windows IP Configuration\\r\\n...','stderr': ''}
+    """
+    return _within(timeout, _run_cmd, args, cmd, params)
+
+
 # What PowerShell accepts as a parameter name. A name is spliced into the script text as
 # it stands, so anything else could carry script of its own.
 _PS_PARAMETER_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 
-def run_ps(args, cmd, params=None):
-    """
-    Run PowerShell on a remote Windows host via WinRM/PSRP
-    and return a normalized result dictionary.
+# Seconds after which the WinRM service closes a runspace whose client stopped polling,
+# such as one left behind by a timeout. A client that waits for output polls at least
+# every 20 seconds, so a command that runs longer is not affected. The service default
+# of two hours lets abandoned runspaces pile up until the shell quota of the account
+# (30 by default) refuses every further connection. Verified against Windows Server
+# 2025: such a runspace was gone about two minutes later instead of two hours.
+_IDLE_TIMEOUT = 60
 
-    Prefers **pypsrp (PSRP)** if available (best for
-    JEA/PowerShell Remoting); otherwise falls back to
-    **pywinrm**.
 
-    Parameters
-    ----------
-    args
-        Object (e.g. `argparse.Namespace`) with:
-
-          - `WINRM_HOSTNAME` (`str`): Target host or IP.
-          - `WINRM_USERNAME` (`str`, optional): Username.
-            If empty with Kerberos transport, the credential
-            cache (`kinit`) is used.
-          - `WINRM_PASSWORD` (`str`, optional): Password.
-            Same Kerberos fallback as username.
-          - `WINRM_TRANSPORT` (`str`, optional): Transport
-            (e.g. `'negotiate'`, `'kerberos'`, `'ntlm'`,
-            `'credssp'`, `'basic'`, `'ssl'`).
-            Defaults to `'negotiate'`.
-          - `WINRM_DOMAIN` (`str`, optional): If set,
-            username is sent as `user@domain`.
-          - `WINRM_CONFIGURATION_NAME` (`str`, optional):
-            JEA endpoint name. Defaults to
-            `'Microsoft.PowerShell'`. Only with **pypsrp**.
-    cmd : str
-        What to execute remotely. Meaning
-        depends on `params`:
-
-          - `params is None` — `cmd` is an arbitrary
-            PowerShell script (pipelines, expressions, etc.)
-            executed via `add_script()`.
-          - `params` given (`list` or `dict`) — `cmd` is a
-            single cmdlet name executed via `add_cmdlet()`
-            (optimal for JEA allow/deny).
-    params : list[str], dict, or None
-          - `None` (default) — no params; `cmd` is run as a
-            script.
-          - `list[str]` — positional arguments added via
-            `add_argument()`.
-          - `dict` — named parameters added via
-            `add_parameter(name, value)`.
-          Values may be untrusted: each one reaches the cmdlet
-          as a single value, whatever it contains. With
-          **pywinrm** every value is converted to `str`, and a
-          parameter name that PowerShell would not accept is
-          refused with `retc` 1.
-
-    Returns
-    -------
-    dict
-        Normalized result with:
-
-          - `retc` (`int`): `0` if no errors.
-          - `stdout` (`str`): Captured output.
-          - `stderr` (`str`): Error/diagnostic output.
-            For **pywinrm**: CLIXML progress noise is
-            suppressed when `retc == 0`.
-
-    Examples
-    --------
-    Pipeline (params=None, uses add_script):
-    >>> run_ps(args, 'Get-Process | Select -First 1')
-
-    Positional params (uses add_cmdlet + add_argument):
-    >>> run_ps(args, 'Get-Service', ['WinRM'])
-
-    Named params (uses add_cmdlet + add_parameter):
-    >>> run_ps(
-    ...     args,
-    ...     'Get-WmiObject',
-    ...     {'Class': 'Win32_OperatingSystem'},
-    ... )
-    """
+def _run_ps(args, cmd, params):
+    """Run `run_ps()` without a timeout, see there."""
     auth = _build_auth(args)
 
     configuration_name = getattr(
@@ -476,6 +462,7 @@ def run_ps(args, cmd, params=None):
             with RunspacePool(
                 wsman,
                 configuration_name=(configuration_name or 'Microsoft.PowerShell'),
+                idle_timeout=_IDLE_TIMEOUT,
             ) as pool:
                 ps = PowerShell(pool)
                 if params is not None:
@@ -588,3 +575,88 @@ def run_ps(args, cmd, params=None):
         'stdout': '',
         'stderr': 'No compatible remoting library available (pypsrp or pywinrm).',
     }
+
+
+def run_ps(args, cmd, params=None, timeout=None):
+    """
+    Run PowerShell on a remote Windows host via WinRM/PSRP
+    and return a normalized result dictionary.
+
+    Prefers **pypsrp (PSRP)** if available (best for
+    JEA/PowerShell Remoting); otherwise falls back to
+    **pywinrm**.
+
+    Parameters
+    ----------
+    args
+        Object (e.g. `argparse.Namespace`) with:
+
+          - `WINRM_HOSTNAME` (`str`): Target host or IP.
+          - `WINRM_USERNAME` (`str`, optional): Username.
+            If empty with Kerberos transport, the credential
+            cache (`kinit`) is used.
+          - `WINRM_PASSWORD` (`str`, optional): Password.
+            Same Kerberos fallback as username.
+          - `WINRM_TRANSPORT` (`str`, optional): Transport
+            (e.g. `'negotiate'`, `'kerberos'`, `'ntlm'`,
+            `'credssp'`, `'basic'`, `'ssl'`).
+            Defaults to `'negotiate'`.
+          - `WINRM_DOMAIN` (`str`, optional): If set,
+            username is sent as `user@domain`.
+          - `WINRM_CONFIGURATION_NAME` (`str`, optional):
+            JEA endpoint name. Defaults to
+            `'Microsoft.PowerShell'`. Only with **pypsrp**.
+    cmd : str
+        What to execute remotely. Meaning
+        depends on `params`:
+
+          - `params is None` — `cmd` is an arbitrary
+            PowerShell script (pipelines, expressions, etc.)
+            executed via `add_script()`.
+          - `params` given (`list` or `dict`) — `cmd` is a
+            single cmdlet name executed via `add_cmdlet()`
+            (optimal for JEA allow/deny).
+    params : list[str], dict, or None
+          - `None` (default) — no params; `cmd` is run as a
+            script.
+          - `list[str]` — positional arguments added via
+            `add_argument()`.
+          - `dict` — named parameters added via
+            `add_parameter(name, value)`.
+          Values may be untrusted: each one reaches the cmdlet
+          as a single value, whatever it contains. With
+          **pywinrm** every value is converted to `str`, and a
+          parameter name that PowerShell would not accept is
+          refused with `retc` 1.
+    timeout : int or float, optional
+        Seconds to wait for the result. After that the call returns a result with
+        `retc` 1 and `Timeout after <timeout> seconds.` in `stderr`. Defaults to
+        `None` (no timeout).
+
+    Returns
+    -------
+    dict
+        Normalized result with:
+
+          - `retc` (`int`): `0` if no errors.
+          - `stdout` (`str`): Captured output.
+          - `stderr` (`str`): Error/diagnostic output.
+            For **pywinrm**: CLIXML progress noise is
+            suppressed when `retc == 0`.
+
+    Examples
+    --------
+    Pipeline (params=None, uses add_script):
+    >>> run_ps(args, 'Get-Process | Select -First 1')
+
+    Positional params (uses add_cmdlet + add_argument):
+    >>> run_ps(args, 'Get-Service', ['WinRM'])
+
+    Named params (uses add_cmdlet + add_parameter):
+    >>> run_ps(
+    ...     args,
+    ...     'Get-WmiObject',
+    ...     {'Class': 'Win32_OperatingSystem'},
+    ... )
+    """
+    return _within(timeout, _run_ps, args, cmd, params)

@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * time.py: `datetime2local()`; `timestr2datetime()` and `timestr2epoch()` take `pattern='rfc2822'`
 * url.py: `fetch()` and `fetch_json()` take `deadline`
 * version.py: `check_eol()` takes `cycle` and `package_path`
+* winrm.py: `run_cmd()` and `run_ps()` take `timeout`
 * wordpress.py: `find_installation()`
 
 ### Changed
@@ -46,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * smb.py: a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
 * url.py: imports faster, `fetch()` and `fetch_json()` give up after ten times the timeout, wait no longer than the timeout for a name server and refuse malformed header values and timeouts
 * version.py: `check_eol()` names an available release the way its cycle spells it, and `version2float()` sorts like the version
+* winrm.py: `run_ps()` over pypsrp has the server close a runspace its caller left behind after a minute instead of two hours
 
 ### Removed
 

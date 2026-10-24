@@ -29,6 +29,8 @@ noise suppression and the exception-to-stderr normalization.
 import base64
 import re
 import sys
+import threading
+import time
 import types
 import unittest
 from unittest.mock import MagicMock, call, patch
@@ -790,6 +792,14 @@ class TestRunPsJea(unittest.TestCase):
         _, kwargs = runspace_cls.call_args
         self.assertEqual(kwargs['configuration_name'], 'LF.JEA')
 
+    def test_runspace_left_behind_is_closed_soon(self):
+        # a runspace abandoned after a timeout must not hold a slot of the shell
+        # quota for the two hours of the service default
+        ps = make_powershell(outputs=['x'])
+        _, runspace_cls, _, _, _ = self._run(make_args(), 'cmd', None, ps)
+        _, kwargs = runspace_cls.call_args
+        self.assertEqual(kwargs['idle_timeout'], 60)
+
     def test_exception_inside_jea_is_normalized(self):
         # Make RunspacePool.__enter__ raise to hit the except branch.
         ps = make_powershell(outputs=[])
@@ -1008,6 +1018,59 @@ class TestRunPsNoBackend(unittest.TestCase):
         self.assertEqual(result['retc'], 1)
         self.assertEqual(result['stdout'], '')
         self.assertIn('No compatible remoting library available', result['stderr'])
+
+
+# ============================================================================
+# timeout
+# ============================================================================
+
+
+@unittest.skipUnless(HAVE_MODULE, 'lib.winrm import failed: ' + IMPORT_ERROR)
+class TestTimeout(unittest.TestCase):
+    """A remote command that hangs must not block the caller past `timeout`."""
+
+    def hanging_session(self, release):
+        """Return a pywinrm module mock whose calls block until `release` is set."""
+        winrm_mock = MagicMock(name='winrm')
+
+        def block(_command):
+            release.wait(10)
+            return make_pywinrm_result(0, b'late', b'')
+
+        winrm_mock.Session.return_value.run_cmd.side_effect = block
+        winrm_mock.Session.return_value.run_ps.side_effect = block
+        return winrm_mock
+
+    def test_hanging_call_returns_timeout(self):
+        for func in (winrm_lib.run_cmd, winrm_lib.run_ps):
+            release = threading.Event()
+            with (
+                force_jea(have_jea=False, have_winrm=True),
+                patch.object(
+                    winrm_lib, 'winrm', self.hanging_session(release), create=True
+                ),
+            ):
+                started = time.monotonic()
+                result = func(make_args(), 'whoami', None, timeout=0.2)
+                elapsed = time.monotonic() - started
+            release.set()
+            self.assertLess(elapsed, 2)
+            self.assertEqual(
+                result,
+                {'retc': 1, 'stdout': '', 'stderr': 'Timeout after 0.2 seconds.'},
+            )
+
+    def test_fast_call_returns_its_result(self):
+        winrm_mock = MagicMock(name='winrm')
+        winrm_mock.Session.return_value.run_cmd.return_value = make_pywinrm_result(
+            0, b'host01', b''
+        )
+        with (
+            force_jea(have_jea=False, have_winrm=True),
+            patch.object(winrm_lib, 'winrm', winrm_mock, create=True),
+        ):
+            result = winrm_lib.run_cmd(make_args(), 'hostname', None, timeout=5)
+        self.assertEqual(result, {'retc': 0, 'stdout': 'host01', 'stderr': ''})
 
 
 if __name__ == '__main__':
