@@ -22,6 +22,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 import time
 import typing
 import unittest
@@ -633,6 +634,32 @@ class TestShellExecRealCommands(unittest.TestCase):
         success, result = shell.shell_exec(['sleep', '5'], timeout=1)
         self.assertFalse(success)
         self.assertEqual(result, 'Timeout after 1 seconds.')
+
+    @unittest.skipIf(os.name == 'nt', 'process groups are POSIX')
+    def test_real_timeout_ends_what_the_command_started(self):
+        # a grandchild left running piles up with every run of a scheduled caller
+        with tempfile.TemporaryDirectory() as scratch:
+            pidfile = os.path.join(scratch, 'pid')
+            success, _ = shell.shell_exec(
+                ['sh', '-c', f'sleep 300 & echo $! > {pidfile}; wait'],
+                timeout=1,
+            )
+            self.assertFalse(success)
+            with open(pidfile, encoding='utf-8') as handle:
+                pid = int(handle.read())
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                with open(f'/proc/{pid}/stat', encoding='utf-8') as handle:
+                    # a zombie waits only to be reaped by its new parent
+                    if handle.read().split(') ', 1)[1].startswith('Z'):
+                        break
+            except FileNotFoundError:
+                break
+            time.sleep(0.1)
+        else:
+            os.kill(pid, 9)
+            self.fail(f'the grandchild {pid} outlived the timeout')
 
     def test_real_timeout_holds_when_the_pipes_outlive_the_command(self):
         # Killing the command does not close its pipes when something else holds them

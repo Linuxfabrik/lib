@@ -11,12 +11,13 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026102402'
 
 
 import os
 import shlex
 import shutil
+import signal
 import subprocess  # nosec B404 - this library is the subprocess helper
 import time
 
@@ -352,7 +353,23 @@ def _kill(p, keep_stdin=False):
     `keep_stdin`, standard input stays open: a thread is still writing to it, and closing a
     pipe under a blocked write is what a Windows caller must not do. The write ends with the
     process."""
-    p.kill()
+    # The whole process group, not only the command: a shell that started a pipeline
+    # or a program that forked a helper leaves those running otherwise, and a check
+    # that runs every few minutes piles them up. The command leads a session of its
+    # own (`start_new_session` in shell_exec()), so the group is exactly what it
+    # started. A member that belongs to another account (the command behind `sudo`)
+    # cannot be signalled from here; the rest of the group still is.
+    pid = getattr(p, 'pid', None)
+    # never a group that is not the command's own, such as init's
+    if os.name != 'nt' and isinstance(pid, int) and pid > 1:
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    try:
+        p.kill()
+    except OSError:
+        pass
     try:
         # Reaping the child is what turns the kill into a finished process, but it
         # must not become a second wait without an end. A command that blocks on
@@ -545,6 +562,8 @@ def shell_exec(
             env=env,
             shell=False,
             cwd=cwd,
+            # a process group of its own, so a timeout can end everything it started
+            start_new_session=os.name != 'nt',
         )
     except FileNotFoundError as e:
         # Popen raises the same error for a working directory that does not exist, and

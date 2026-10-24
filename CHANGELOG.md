@@ -67,7 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lvm.py: `parse_report()`
 * mail.py: `send()`
 * net.py: `fetch()` returns the answer instead of the encrypted data with `tls=True` and no longer waits forever, `fetch_socket()`, `get_proxy()`, `FAMILIYSTR`
-* powershell.py, shell.py: `run_ps()` and `shell_exec()` return on time on Windows after a timeout
+* powershell.py: `run_ps()` returns on time on Windows after a timeout
+* shell.py: `shell_exec()` returns on time on Windows after a timeout and ends everything the command started
 * redfish.py: `build_url()`, `get_auth_header()`, `get_manager_logservices_sel_entries()`, `get_systems_memory()`, `start_trace()` on Windows
 * smb.py: `glob()`, `open_file()`
 * ssh.py: `rsync()`, `scp()`
