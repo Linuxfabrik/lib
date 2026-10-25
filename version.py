@@ -150,7 +150,7 @@ def _load_eol(product, insecure, no_proxy, proxy, timeout):
         return eol, False, False
 
     # endoflife.date is unreachable, or could not be asked at all because the Python
-    # running the consumer lacks httpx (a plugin started with the system Python instead
+    # running the consumer lacks httpx (started with the system Python instead
     # of the one of its venv). The caller tells the two apart in its message: they are
     # fixed in different places.
     try:

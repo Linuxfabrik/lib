@@ -305,8 +305,6 @@ def _tls_verify_error(exc):
     walked rather than the outermost type inspected. Returns None when the
     failure was not a certificate verification failure.
     """
-    import ssl
-
     seen = []
     while exc is not None and exc not in seen:
         if isinstance(exc, ssl.SSLCertVerificationError):
