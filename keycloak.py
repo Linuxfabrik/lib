@@ -25,9 +25,18 @@ Typical use case:
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026082501'
+__version__ = '2026102401'
+
+import urllib.parse
 
 from . import url
+
+
+def _realm(args):
+    """Return the realm of `args` percent-encoded, so that it stays one segment of the
+    path: a `/`, `?` or `#` in it would send the request, and in `obtain_admin_token()`
+    the credentials, to another path than the realm's."""
+    return urllib.parse.quote(str(args.REALM), safe='')
 
 
 def discover_oidc_endpoints(args):
@@ -61,13 +70,14 @@ def discover_oidc_endpoints(args):
     -----
     - This uses the standard `.well-known/openid-configuration` path.
     - Automatically removes any trailing slash in the base URL.
+    - The realm is percent-encoded, so it stays one segment of the path.
 
     Examples
     --------
     >>> success, endpoints = discover_oidc_endpoints(args)
     """
     url_base = args.URL.rstrip('/')
-    uri = f'{url_base}/realms/{args.REALM}/.well-known/openid-configuration'
+    uri = f'{url_base}/realms/{_realm(args)}/.well-known/openid-configuration'
     return url.fetch_json(
         uri,
         insecure=args.INSECURE,
@@ -98,7 +108,9 @@ def get_data(args, token_data, uri):
     token_data : dict
         A dictionary containing at least the `access_token`.
     uri : str
-        Relative URI to be appended to the base URL (e.g., `/admin/realms/myrealm/users`).
+        Path to be appended to the base URL (e.g., `/admin/realms/myrealm/users`). It
+        has to start with a single `/`: anything else would join the host name of the
+        base URL, or name another host, and the Bearer token would go there.
 
     Returns
     -------
@@ -114,6 +126,14 @@ def get_data(args, token_data, uri):
     --------
     >>> success, result = get_data(args, token_data, '/admin/realms/myrealm/users')
     """
+    # `https://kc.example.com` + `admin` is the host kc.example.comadmin, and `//other`
+    # or `@other` name another host. The token must not leave the configured one.
+    if not isinstance(uri, str) or (
+        uri and (not uri.startswith('/') or uri.startswith('//'))
+    ):
+        return False, (
+            f'Refusing a Keycloak API path that does not start with a single "/": {uri!r}'
+        )
     url_base = args.URL.rstrip('/')
     full_url = f'{url_base}{uri}'
     headers = {'Authorization': f'Bearer {token_data.get("access_token", "")}'}
@@ -222,7 +242,7 @@ def obtain_admin_token(args, oidc_config):
     if not oidc_config.get('token_endpoint'):
         return False, f'Realm "{args.REALM}" does not announce an OIDC token endpoint.'
     url_base = args.URL.rstrip('/')
-    token_endpoint = f'{url_base}/realms/{args.REALM}/protocol/openid-connect/token'
+    token_endpoint = f'{url_base}/realms/{_realm(args)}/protocol/openid-connect/token'
     payload = {
         'grant_type': 'password',
         'client_id': args.CLIENT_ID,

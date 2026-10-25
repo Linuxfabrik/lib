@@ -156,16 +156,17 @@ class TestDiscoverOidcEndpoints(unittest.TestCase):
             'https://example.com/auth/realms/myrealm/.well-known/openid-configuration',
         )
 
-    def test_realm_with_special_characters_passed_through(self):
-        # The module does not URL-encode the realm; assert the actual behaviour.
-        args = make_discover_args(REALM='my realm/x')
+    def test_realm_with_special_characters_stays_one_segment(self):
+        # a `/`, `?` or `#` in the realm would change the path of the request
+        args = make_discover_args(REALM='my realm/x?y#z')
         with mock.patch.object(
             keycloak.url, 'fetch_json', return_value=(True, {})
         ) as m:
             keycloak.discover_oidc_endpoints(args)
         self.assertEqual(
             m.call_args.args[0],
-            'https://kc.example.com/realms/my realm/x/.well-known/openid-configuration',
+            'https://kc.example.com/realms/my%20realm%2Fx%3Fy%23z'
+            '/.well-known/openid-configuration',
         )
 
     def test_no_auth_header_sent(self):
@@ -296,14 +297,30 @@ class TestGetData(unittest.TestCase):
             keycloak.get_data(args, {'access_token': 'TOK'}, '/x')
         self.assertEqual(m.call_args.args[0], 'https://kc.example.com/x')
 
-    def test_uri_without_leading_slash_concatenated_literally(self):
-        # The module does not insert a separator; document the real behaviour.
+    def test_uri_that_would_name_another_host_is_refused(self):
+        # `https://kc.example.com` + `admin/serverinfo` is the host
+        # kc.example.comadmin, `//` and `@` name another one: the Bearer token would
+        # go there
         args = make_get_data_args(URL='https://kc.example.com')
-        with mock.patch.object(
-            keycloak.url, 'fetch_json', return_value=(True, {})
-        ) as m:
-            keycloak.get_data(args, {'access_token': 'TOK'}, 'admin/serverinfo')
-        self.assertEqual(m.call_args.args[0], 'https://kc.example.comadmin/serverinfo')
+        for uri in ('admin/serverinfo', '//evil.example.com/x', '@evil.example.com/x'):
+            with self.subTest(uri=uri):
+                with mock.patch.object(
+                    keycloak.url, 'fetch_json', return_value=(True, {})
+                ) as m:
+                    success, message = keycloak.get_data(
+                        args, {'access_token': 'TOK'}, uri
+                    )
+                self.assertFalse(success)
+                self.assertIn('does not start with a single "/"', message)
+                self.assertNotIn('TOK', message)
+                m.assert_not_called()
+
+    def test_uri_that_is_no_string_is_refused(self):
+        args = make_get_data_args()
+        with mock.patch.object(keycloak.url, 'fetch_json') as m:
+            success, _message = keycloak.get_data(args, {'access_token': 'TOK'}, None)
+        self.assertFalse(success)
+        m.assert_not_called()
 
     def test_empty_uri(self):
         args = make_get_data_args(URL='https://kc.example.com')
@@ -472,6 +489,19 @@ class TestObtainAdminToken(unittest.TestCase):
         self.assertEqual(
             m.call_args.args[0],
             'https://kc.example.com/realms/myrealm/protocol/openid-connect/token',
+        )
+
+    def test_realm_cannot_move_the_credentials_to_another_path(self):
+        args = make_token_args(URL='https://kc.example.com', REALM='x/../../evil?')
+        oidc = {'token_endpoint': 'https://kc.example.com/token'}
+        with mock.patch.object(
+            keycloak.url, 'fetch_json', return_value=(True, {})
+        ) as m:
+            keycloak.obtain_admin_token(args, oidc)
+        self.assertEqual(
+            m.call_args.args[0],
+            'https://kc.example.com/realms/x%2F..%2F..%2Fevil%3F'
+            '/protocol/openid-connect/token',
         )
 
     def test_hostile_token_endpoint_ignored(self):
