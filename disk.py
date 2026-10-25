@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102402'
+__version__ = '2026102501'
 
 import csv
 import errno
@@ -263,6 +263,12 @@ def _get_kernel_device(device):
     if not os.path.exists(link):
         return device
     return f'/dev/{os.path.basename(os.path.realpath(link))}'
+
+
+# Block-device name prefixes that never carry meaningful I/O for monitoring
+# (loopback, RAM disks, compressed RAM, floppy and optical devices). They are
+# skipped by get_block_devices().
+_PSEUDO_DEVICE_PREFIXES = ('fd', 'loop', 'ram', 'sr', 'zram')
 
 
 def get_block_devices():
@@ -1316,12 +1322,6 @@ def is_within(path, roots):
     return False
 
 
-# Block-device name prefixes that never carry meaningful I/O for monitoring
-# (loopback, RAM disks, compressed RAM, floppy and optical devices). They are
-# skipped by get_block_devices().
-_PSEUDO_DEVICE_PREFIXES = ('fd', 'loop', 'ram', 'sr', 'zram')
-
-
 def make_temp_dir(prefix=''):
     """
     Create a unique temporary directory and return its path.
@@ -1391,6 +1391,82 @@ def mkdir(path, mode=0o755, exist_ok=True):
         return False, f'OS error "{e.strerror}" while creating {path}'
     except Exception as e:
         return False, f'Unknown error creating {path}: {e}'
+
+
+def _resolve_components(path, may_step_up=None):
+    """Resolve `path` the way the kernel walks it on an open, one component at a time.
+
+    `os.path.realpath()` applies a `..` lexically, also behind a file or a missing
+    directory, while the kernel steps up from the real directory and fails on anything
+    else. A symlink whose target takes such a detour therefore resolves into a root
+    for the check, and the answer of the open then tells whether the detour exists.
+
+    Returns the set of locations the walk looked at, or None as soon as a `..` would
+    be applied to a location `may_step_up()` does not accept. Without `may_step_up`,
+    every `..` is applied. A `..` from the target of a symlink owned by root is always
+    applied: only root can set that target, and distributions ship such links, for
+    example `/etc/httpd/logs -> ../../var/log/httpd` on RHEL. POSIX only.
+    """
+    path = os.path.abspath(os.fsdecode(path))
+    # (component, whether it comes from the target of a root-owned symlink)
+    pending = [(part, False) for part in path.split(os.sep) if part]
+    current = os.sep
+    visited = {current}
+    links = 0
+    while pending:
+        name, trusted = pending.pop(0)
+        if name == os.curdir:
+            continue
+        if name == os.pardir:
+            if may_step_up is not None and not trusted and not may_step_up(current):
+                return None
+            current = os.path.dirname(current)
+            continue
+        candidate = os.path.join(current, name)
+        visited.add(candidate)
+        try:
+            info = os.lstat(candidate)
+            is_link = _stat.S_ISLNK(info.st_mode)
+        except OSError:
+            # Missing, or not reachable: the open reports it. Carry on by name, so a
+            # `..` behind it is still judged.
+            is_link = False
+        if is_link:
+            links += 1
+            if links > 40:
+                # The kernel gives up the same way (ELOOP) and the open reports it.
+                return visited
+            try:
+                target = os.readlink(candidate)
+            except OSError:
+                # Replaced between lstat() and readlink(): the open judges what is
+                # there by then, and the check after it compares the handle.
+                current = candidate
+                continue
+            if os.path.isabs(target):
+                current = os.sep
+            by_root = info.st_uid == 0
+            pending[:0] = [(part, by_root) for part in target.split(os.sep) if part]
+            continue
+        current = candidate
+    return visited
+
+
+def _detour_outside(filename, roots):
+    """Return whether opening `filename` would step up out of a location that lies
+    outside `roots` and is not on the way to one of them (see `_resolve_components()`).
+    """
+    if os.name != 'posix':
+        return False
+    real_roots = [os.path.realpath(root) for root in roots]
+    on_the_way = set()
+    for root in roots:
+        on_the_way |= _resolve_components(root) or set()
+
+    def may_step_up(location):
+        return location in on_the_way or is_within(location, real_roots)
+
+    return _resolve_components(filename, may_step_up) is None
 
 
 def open_file(filename, binary=False, allowed_roots=None, nofollow=False, newline=None):
@@ -1467,11 +1543,13 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False, newlin
     # or is no directory, while the kernel walks every component on the open. A path
     # such as `/root/.ssh/id_rsa/../../../var/log/messages` would pass the check and then
     # fail with "Not a directory" or "No such file or directory", which tells the caller
-    # what exists outside the roots. Such a path is refused like one outside them.
+    # what exists outside the roots. Such a path is refused like one outside them, and
+    # so is a symlink on the way whose target takes the same detour.
     if allowed_roots and (
         not is_within(filename, allowed_roots)
         or os.pardir
         in os.fsdecode(filename).replace(os.altsep or os.sep, os.sep).split(os.sep)
+        or _detour_outside(filename, allowed_roots)
     ):
         return False, (
             f'Refusing to read "{filename}": resolved path is outside the allowed '
@@ -1516,6 +1594,7 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False, newlin
                 current is None
                 or (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino)
                 or not is_within(filename, allowed_roots)
+                or _detour_outside(filename, allowed_roots)
             ):
                 os.close(fd)
                 return False, (

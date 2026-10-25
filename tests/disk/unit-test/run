@@ -1322,6 +1322,70 @@ class TestConfinedOpenRoots(unittest.TestCase):
         self.assertEqual(len(answers), 1)
         self.assertIn('outside the allowed roots', answers.pop())
 
+    def test_a_detour_through_a_symlink_says_nothing_about_it(self):
+        # The same detour, taken by the target of a symlink inside the roots: as the
+        # last component and as a directory on the way, with and without nofollow.
+        os.makedirs(os.path.join(self.base, 'somedir'))
+        answers = set()
+        for detour in ('outside', 'missing', 'somedir'):
+            last = os.path.join(self.root, f'last-{detour}')
+            os.symlink(os.path.join(self.base, detour, '..', 'root', 'f'), last)
+            on_the_way = os.path.join(self.root, f'dir-{detour}')
+            os.symlink(os.path.join(self.base, detour, '..'), on_the_way)
+            for path in (last, os.path.join(on_the_way, 'root', 'f')):
+                for nofollow in (False, True):
+                    with self.subTest(path=path, nofollow=nofollow):
+                        success, message = disk.read_file(
+                            path, allowed_roots=[self.root], nofollow=nofollow
+                        )
+                        self.assertFalse(success)
+                        answers.add(message.replace(path, '<path>'))
+        self.assertEqual(len(answers), 1)
+        self.assertIn('outside the allowed roots', answers.pop())
+
+    @unittest.skipUnless(os.name == 'posix', 'needs POSIX symlinks and owners')
+    def test_a_root_owned_symlink_may_step_up_outside_the_roots(self):
+        # RHEL ships `/etc/httpd/logs -> ../../var/log/httpd`. Only root can set the
+        # target of a root-owned link, so its `..` reveals nothing a caller chose.
+        os.makedirs(os.path.join(self.base, 'etc', 'httpd'))
+        logs = os.path.join(self.base, 'etc', 'httpd', 'logs')
+        os.symlink(os.path.join('..', '..', 'root'), logs)
+        path = os.path.join(logs, 'f')
+        success, message = disk.read_file(path, allowed_roots=[self.root])
+        self.assertFalse(success)
+        self.assertIn('outside the allowed roots', message)
+
+        real_lstat = os.lstat
+
+        def lstat_owned_by_root(candidate, *args, **kwargs):
+            info = real_lstat(candidate, *args, **kwargs)
+            if os.fsdecode(candidate) != logs:
+                return info
+            fields = list(info)
+            fields[4] = 0  # st_uid
+            return os.stat_result(fields)
+
+        with mock.patch.object(disk.os, 'lstat', lstat_owned_by_root):
+            self.assertEqual(
+                disk.read_file(path, allowed_roots=[self.root]), (True, 'inside')
+            )
+
+    def test_a_symlink_that_stays_inside_the_roots_is_followed(self):
+        os.makedirs(os.path.join(self.root, 'sub'))
+        disk.write_file(os.path.join(self.root, 'sub', 'g'), 'g')
+        os.symlink(os.path.join('..', 'root', 'sub', 'g'), os.path.join(self.root, 'rel'))
+        os.symlink(os.path.join(self.root, 'sub'), os.path.join(self.root, 'abs'))
+        root_link = os.path.join(self.base, 'root-link')
+        os.symlink(self.root, root_link)
+        for path, roots in (
+            (os.path.join(self.root, 'rel'), [self.root]),
+            (os.path.join(self.root, 'abs', 'g'), [self.root]),
+            (os.path.join(root_link, 'sub', 'g'), [self.root]),
+            (os.path.join(self.root, 'sub', 'g'), [root_link]),
+        ):
+            with self.subTest(path=path, roots=roots):
+                self.assertEqual(disk.read_file(path, allowed_roots=roots), (True, 'g'))
+
     def test_is_within_refuses_a_single_path_and_no_roots(self):
         self.assertFalse(disk.is_within(self.outside, self.base))
         self.assertFalse(disk.is_within(self.outside, []))
