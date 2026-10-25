@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * args.py: further shared help texts (`--winrm-*`)
 * base.py: `symmetric_range()`, the perfdata range of a threshold applied in both directions
 * db_mysql.py: `check_privileges()` takes `database`
-* disk.py: `get_private_dir()`, `open_file()`, `resolve_trusted_path()`, `resolve_trusted_tree()`; `get_block_devices()` and `get_real_disks()` list `mount_points`; `get_fingerprint()` takes an open file
+* disk.py: `get_private_dir()`, `open_file()`, `resolve_trusted_path()`, `resolve_trusted_tree()`; `grep_file()` and `read_csv()` take `allowed_roots` and `nofollow`; `get_block_devices()` and `get_real_disks()` list `mount_points`; `get_fingerprint()` takes an open file
 * endoflifedate.py: offline data for Debian, Ubuntu, Windows and Windows Server
 * lftest.py: `fixture_root()`
 * logsource.py: `systemd_booted()`; `read()` returns the `size` of a file
@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * smb.py: a missing smbclient is reported by `glob()` and `open_file()` instead of failing the import
 * url.py: imports faster, `fetch()` and `fetch_json()` give up after ten times the timeout, wait no longer than the timeout for a name server and refuse malformed header values and timeouts
 * version.py: `check_eol()` names an available release the way its cycle spells it, and `version2float()` sorts like the version
-* winrm.py: `run_ps()` over pypsrp has the server close a runspace its caller left behind after a minute instead of two hours
+* winrm.py: `run_ps()` over pypsrp 0.9 and newer has the server close a runspace its caller left behind after a minute instead of two hours
 
 ### Removed
 
@@ -56,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 * args.py: arguments with characters outside of ASCII from the Icinga 2 agent for Windows, `number_unit_method()`
-* base.py: `coe()`, `cu()`, `get_state()`, `guess_type()`, `verbose()`
+* base.py: `coe()`, `cu()`, `get_state()`, `guess_type()`, `symmetric_range()`, `verbose()`
 * container.py: `run()` accepts an account whose subordinate UID range comes from SSSD
 * db_sqlite.py: `compute_load()`, `cut_per_sensor()`
 * disk.py: `get_real_disks()`, `grep_file()`, `is_within()`, and a FIFO nobody writes to no longer hangs the file readers
@@ -65,22 +65,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * human.py: `bytes2human()`, `human2seconds()` ([#409](https://github.com/Linuxfabrik/lib/issues/409)), `humanduration2seconds()`, `humanrange2seconds()`, `number2human()`, `seconds2human()`
 * icinga.py: `api_post()`, `build_icingaweb2_url()`, `get_service()`
 * infomaniak.py: `get_swiss_backup_slots()` applies the proxy, TLS and timeout settings to the products request too
-* jitsi.py: `get_data()`
+* jitsi.py: `get_data()` returns a `(False, message)` pair on failure, not a triple
 * logsource.py: `read()` no longer loses lines at a rotation or when daylight saving time ends, `timestamp()`
 * lvm.py: `parse_report()`
 * mail.py: `send()`
 * net.py: `fetch()` returns the answer instead of the encrypted data with `tls=True` and no longer waits forever, not even for the name server, `fetch_socket()`, `get_proxy()`, `FAMILIYSTR`
 * powershell.py: `run_ps()` returns on time on Windows after a timeout
-* shell.py: `shell_exec()` returns on time on Windows after a timeout and ends everything the command started
 * redfish.py: `build_url()`, `get_auth_header()`, `get_manager_logservices_sel_entries()`, `get_systems_memory()`, `start_trace()` on Windows
+* shell.py: `shell_exec()` returns on time on Windows after a timeout and ends everything the command started
 * smb.py: `glob()`, `open_file()`
 * ssh.py: `rsync()`, `scp()`
-* task.py: `run()`, `run_each()`
+* task.py: `run()`, `run_each()`, whose deadline no longer follows changes of the system clock
 * time.py: `epoch2iso()`, `get_weekday()`, `timestr2datetime()`, `timestr2epoch()`, `timestrdiff()`
 * uptimerobot.py: `edit_monitor()`, `new_monitor()`, and the `get_*()` functions return every record
 * url.py: `fetch()` follows redirect chains of several hops and verifies more HTTPS sites on Windows, `extended=True` authenticates to a proxy, `fetch_json()`, `split_basic_auth()`
 * user.py: `get_uid_min()`
-* version.py: `check_eol()` finds zero-padded release cycles such as Ubuntu `22.04`, `version()`
+* version.py: `check_eol()` finds zero-padded release cycles such as Ubuntu `22.04`, `cycle_bounds()`, `version()`, `version2float()`
 * winrm.py: `run_cmd()`, `run_ps()`
 * wordpress.py: `get_header_value()`, `get_plugins()`, `get_site_url()`, `get_themes()`
 
@@ -89,8 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * container.py: `run()` runs as another account only if it owns a subordinate UID range
 * db_mysql.py: `connect()` no longer quotes the options file in its error message
 * db_sqlite.py: `get_db_dir()` refuses directories where other accounts may plant or swap databases
-* disk.py: `read_file()` and `read_env()` check the opened handle and refuse non-regular files, `allowed_roots` given as a single path or an empty list no longer reads without confinement, and a `..` in a confined path reveals nothing outside the roots
+* disk.py: `get_private_dir()` also refuses a base below a directory where other accounts may rename entries, `read_file()` and `read_env()` check the opened handle and refuse non-regular files, `allowed_roots` given as a single path or an empty list no longer reads without confinement, and a `..` in a confined path reveals nothing outside the roots
 * huawei_dorado.py: `get_creds()` refuses a device ID that would change the path of every later request
+* keycloak.py: `get_data()` refuses an API path that would send the token to another host, and the realm stays one segment of the request path
 * kvm.py: `virsh()` refuses a URI that makes libvirt run a program, open a file or connect to a socket
 * lftest.py: `test()` reads a fixture from the handle it checked, so a directory swapped below `unit-test/` no longer redirects the read
 * logsource.py: `read()` reads each source from one checked handle, never follows a rotated file swapped for a symlink, and a line of any length, a compressed file that inflates enormously or a command that never stops printing can no longer exhaust the memory
