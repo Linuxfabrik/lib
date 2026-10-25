@@ -219,6 +219,12 @@ class TestCommandConstruction(_Base):
     def test_owner_lookup_targets_config_php(self):
         with (
             mock.patch.object(nextcloud.shutil, 'which', return_value=PHP_BIN),
+            # keep the host out: on a runner /usr/bin/php links to /usr/bin/php8.3
+            mock.patch.object(
+                nextcloud.disk,
+                'resolve_trusted_path',
+                side_effect=lambda candidate, owners=None: (True, candidate),
+            ),
             mock.patch.object(nextcloud, '_locate', side_effect=located(UID)) as go,
             mock.patch.object(
                 nextcloud.os, 'geteuid', create=True, return_value=OTHER_UID
