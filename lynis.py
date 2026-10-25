@@ -35,17 +35,26 @@ Typical use case:
     print(lib.lynis.get_findings_msg(findings, suggestions))
 """
 
+import re
+
 from . import base
 from .globals import STATE_OK, STATE_WARN
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102301'
+__version__ = '2026102401'
 
 # Where Lynis keeps its files when it runs as root.
 CUSTOM_PROFILE = '/etc/lynis/custom.prf'
 LOG = '/var/log/lynis.log'
 PID = '/var/run/lynis.pid'
 REPORT = '/var/log/lynis-report.dat'
+
+
+# What a test ID consists of: `KRNL-5820`, `LYNIS`, `MAIL-8818:disable_vrfy_command`,
+# `dockerfile` (the IDs `ReportWarning` and `ReportSuggestion` are called with in the
+# Lynis source). Only such an ID becomes part of the command the closing line
+# suggests, since a report from another host may carry anything.
+_TEST_ID_REGEX = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.:-]*')
 
 
 def get_findings_msg(findings, suggestions):
@@ -55,7 +64,8 @@ def get_findings_msg(findings, suggestions):
     A finding is marked `[WARNING]`, a suggestion is hardening advice and carries no
     state. Both lists are sorted by test ID, so a category stays together and the
     same item on several hosts ends up side by side. A closing line tells how to
-    look up an item and how to accept it.
+    look up an item and how to accept it, naming the lowest test ID as an example; it
+    is left out if no test ID is fit to be part of a command.
 
     Parameters
     ----------
@@ -97,8 +107,13 @@ def get_findings_msg(findings, suggestions):
                 f'\n* {host}{row["test"]}: {text}'
                 f'{base.state2str(item_state, prefix=" ")}'
             )
-    if findings or suggestions:
-        example = min(row['test'] for row in findings or suggestions)
+    examples = [
+        row['test']
+        for row in findings or suggestions
+        if _TEST_ID_REGEX.fullmatch(row['test'])
+    ]
+    if examples:
+        example = min(examples)
         msg += (
             f'\n\nTo look up an item, run `lynis show details {example}` on the host. '
             f'To accept it, add `skip-test={example}` to `{CUSTOM_PROFILE}`.'

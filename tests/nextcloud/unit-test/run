@@ -446,7 +446,7 @@ class TestInstallationTrust(unittest.TestCase):
         link = os.path.join(self.base, 'nextcloud-link')
         os.symlink(self.nc, link)
         self.assertEqual(self.run_occ(link), (True, {}))
-        (cmd,), kwargs = self.shell_mock.call_args
+        _, kwargs = self.shell_mock.call_args
         self.assertEqual(kwargs['cwd'], os.path.realpath(self.nc))
 
     def test_occ_that_resolves_elsewhere_after_the_check_is_refused(self):
@@ -663,6 +663,24 @@ class TestInstallationTrust(unittest.TestCase):
         os.chmod(code, 0o666)
         ok, _msg = self.run_occ(self.nc, apps=[apps])
         self.assertFalse(ok)
+
+    # occ runs in the installation, so a relative app directory is relative to it and
+    # not to the working directory of the caller
+    def test_relative_app_directory_is_checked_below_the_installation(self):
+        apps = os.path.join(self.nc, 'apps-extra')
+        os.makedirs(os.path.join(apps, 'evil'))
+        cwd = os.getcwd()
+        os.chdir(self.base)
+        try:
+            self.assertEqual(self.run_occ(self.nc, apps=['apps-extra']), (True, {}))
+            code = os.path.join(apps, 'evil', 'app.php')
+            with open(code, 'w') as f:
+                f.write('<?php\n')
+            os.chmod(code, 0o666)
+            self.assertFalse(self.run_occ(self.nc, apps=['apps-extra'])[0])
+            self.assertFalse(self.occ_ran())
+        finally:
+            os.chdir(cwd)
 
     # occ refuses a missing app directory itself; it is not checked for later.
     def test_missing_app_directory_is_refused(self):

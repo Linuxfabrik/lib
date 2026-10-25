@@ -190,6 +190,27 @@ class TestGetFindingsMsg(unittest.TestCase):
         # the example in the closing line is the lowest test ID
         self.assertIn('`lynis show details B-2`', msg)
 
+    def test_no_command_is_built_from_a_hostile_test_id(self):
+        # a report from another host may carry anything as its test ID
+        msg = lynis.get_findings_msg(
+            [{'test': 'X; rm -rf /', 'finding': 'x', 'details': ''}], []
+        )
+        self.assertIn('* X; rm -rf /: x. [WARNING]', msg)
+        self.assertNotIn('lynis show details', msg)
+        msg = lynis.get_findings_msg(
+            [
+                {'test': '$(id)', 'finding': 'x', 'details': ''},
+                {
+                    'test': 'MAIL-8818:disable_vrfy_command',
+                    'finding': 'y',
+                    'details': '',
+                },
+            ],
+            [],
+        )
+        self.assertIn('`lynis show details MAIL-8818:disable_vrfy_command`', msg)
+        self.assertNotIn('show details $(id)', msg)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -11,7 +11,7 @@
 """This library collects some Nextcloud related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026102402'
 
 import json
 import os
@@ -175,7 +175,10 @@ def _locate(path, php, timeout=None):
     success, result = _read_config(php, root, uid, timeout)
     if not success:
         return False, result
-    app_dirs, data_dir = result
+    # A relative path is relative to the installation, the working directory of `occ`
+    # (console.php chdirs there); an absolute one stays as it is.
+    app_dirs = [os.path.join(root, app_dir) for app_dir in result[0]]
+    data_dir = os.path.join(root, result[1])
 
     # Leave out the data directory, but only as the entry its configured path names
     # below a parent nobody else can change. Its resolved location must not decide:

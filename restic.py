@@ -14,7 +14,7 @@ whoever chose the values (for example root via sudo).
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026102402'
 
 import json
 import os
@@ -30,31 +30,6 @@ from . import disk
 # internal/restic/config.go and internal/global/global.go, verified against restic
 # 0.19.1). `check`, `snapshots` and `stats` honour both.
 READ_ONLY_ARGS = ('--no-cache', '--no-lock')
-
-# The backends restic recognises by their prefix (internal/backend/location). Any other
-# location is a path in the local filesystem.
-_REMOTE_SCHEMES = frozenset(
-    ('azure', 'b2', 'gs', 'rclone', 'rest', 's3', 'sftp', 'swift')
-)
-
-
-def _trusted_file_arg(option, path, owners):
-    """Return `['--<option>=<resolved path>']` for a file nobody but root and
-    `owners` can change, or `(False, message)`.
-    """
-    if owners is None:
-        owners = [os.geteuid()] if hasattr(os, 'geteuid') else []
-    success, resolved = disk.resolve_trusted_path(path, owners=owners)
-    if not success:
-        # One answer for every refusal: the reason `resolve_trusted_path()` gives
-        # names the first component it could not examine, which would tell the
-        # caller what exists below a directory only root may list.
-        return False, (
-            f'Refusing `{path}` for --{option}: it has to exist, and nobody but root '
-            'and the account running restic may be able to change it or any '
-            'directory above it.'
-        )
-    return True, [f'--{option}={resolved}']
 
 
 def error_lines(stderr, limit=10):
@@ -103,6 +78,25 @@ def error_lines(stderr, limit=10):
     return lines
 
 
+def _trusted_file_arg(option, path, owners):
+    """Return `['--<option>=<resolved path>']` for a file nobody but root and
+    `owners` can change, or `(False, message)`.
+    """
+    if owners is None:
+        owners = [os.geteuid()] if hasattr(os, 'geteuid') else []
+    success, resolved = disk.resolve_trusted_path(path, owners=owners)
+    if not success:
+        # One answer for every refusal: the reason `resolve_trusted_path()` gives
+        # names the first component it could not examine, which would tell the
+        # caller what exists below a directory only root may list.
+        return False, (
+            f'Refusing `{path}` for --{option}: it has to exist, and nobody but root '
+            'and the account running restic may be able to change it or any '
+            'directory above it.'
+        )
+    return True, [f'--{option}={resolved}']
+
+
 def password_file_arg(password_file, owners=None):
     """Return `['--password-file=<resolved path>']`, or `(False, message)`.
 
@@ -128,7 +122,17 @@ def password_file_arg(password_file, owners=None):
     """
     if not password_file:
         return False, 'Specify --password-file with a file that only root can change.'
+    if not isinstance(password_file, str):
+        return False, 'The password file has to be given as a string.'
     return _trusted_file_arg('password-file', password_file, owners)
+
+
+# The backends restic registers (internal/backend/all/all.go, verified against restic
+# 0.19.1), except `local`: azure, b2, gs, local, rclone, rest, s3, sftp and swift. Any
+# other location is a path in the local filesystem.
+_REMOTE_SCHEMES = frozenset(
+    ('azure', 'b2', 'gs', 'rclone', 'rest', 's3', 'sftp', 'swift')
+)
 
 
 def _sftp_host(repo):
@@ -196,6 +200,8 @@ def repo_args(repo=None, repository_file=None, owners=None):
     """
     if bool(repo) == bool(repository_file):
         return False, 'Specify exactly one of --repo and --repository-file.'
+    if not isinstance(repo or repository_file, str):
+        return False, 'The repository has to be given as a string.'
     if repo:
         scheme = repo.split(':', 1)[0].strip().lower() if ':' in repo else ''
         if scheme == 'rclone':

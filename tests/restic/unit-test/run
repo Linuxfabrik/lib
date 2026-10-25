@@ -77,6 +77,18 @@ class TestRepoArgs(unittest.TestCase):
         self.assertFalse(restic.repo_args()[0])
         self.assertFalse(restic.repo_args(repo='/srv/b', repository_file='/etc/r')[0])
 
+    def test_a_value_that_is_no_string_is_refused(self):
+        for kwargs in ({'repo': 5}, {'repository_file': ['/etc/r']}):
+            with self.subTest(kwargs=kwargs):
+                self.assertEqual(
+                    restic.repo_args(**kwargs),
+                    (False, 'The repository has to be given as a string.'),
+                )
+        self.assertEqual(
+            restic.password_file_arg(5),
+            (False, 'The password file has to be given as a string.'),
+        )
+
     def test_a_remote_repo_is_passed_through(self):
         for repo in ('rest:https://backup.example.com/repo', 's3:s3.example.com/b'):
             with self.subTest(repo=repo):
