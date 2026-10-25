@@ -143,10 +143,11 @@ def _decode_windows_output(raw):
     same user "müller" arrives as `0x81` from one program and as `0xC3 0xBC` from the
     other, and in an interactive session as `0x81` from both. Measured with Icinga 2
     v2.16.5 on Windows Server 2025 (`net user`, `net localgroup` and `query user` write
-    the OEM code page, `cmd /c echo` and `powershell` follow the console). Non-ASCII text in an OEM code page is practically never valid
-    UTF-8, so trying UTF-8 strictly first and falling back to the OEM code page reads
-    both (Linuxfabrik/monitoring-plugins#681). `chcp 65001` does not help: it changes
-    the console, which is not where a pipe gets its encoding from.
+    the OEM code page, `cmd /c echo` and `powershell` follow the console). Non-ASCII
+    text in an OEM code page is practically never valid UTF-8, so trying UTF-8 strictly
+    first and falling back to the OEM code page reads both
+    (Linuxfabrik/monitoring-plugins#681). `chcp 65001` does not help: it changes the
+    console, which is not where a pipe gets its encoding from.
 
     Parameters
     ----------
@@ -496,7 +497,7 @@ def shell_exec(
           - **stderr** (`str`): Standard error of the command (decoded to text).
           - **return_code** (`int`): Exit status of the command.
         - On failure:
-          `(False, error_message)` — a string describing the error.
+          `(False, error_message)`, a string describing the error.
 
     Notes
     -----

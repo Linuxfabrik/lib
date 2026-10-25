@@ -15,12 +15,6 @@ __version__ = '2026101201'
 
 from . import url
 
-# What a walk over a list may take: 5'000 objects, ten times the largest account measured,
-# and at most 500 pages, which is enough for a `limit` of 10 and bounds the requests where
-# a server hands out one object per page. UptimeRobot itself hands out at most 50.
-MAX_OBJECTS = 5000
-MAX_PAGES = 500
-
 
 def delete_alert_contact(params):
     """
@@ -552,6 +546,15 @@ def get_account_details(data):
     return success, account, rl
 
 
+def _as_list(result):
+    """Return `(True, result)` for a list of objects, else `(False, message)`: the list
+    functions work on every entry, which is wrong for the message `get_data()` hands
+    back where the answer carried no list."""
+    if not isinstance(result, list) or not all(isinstance(r, dict) for r in result):
+        return (False, 'UptimeRobot did not answer with a list.')
+    return (True, result)
+
+
 def get_alert_contacts(params):
     """
     Call the UptimeRobot API to retrieve alert contacts.
@@ -647,6 +650,13 @@ def get_alert_contacts(params):
     result = [replace_values(item) for item in result]
 
     return success, result
+
+
+# What a walk over a list may take: 5'000 objects, ten times the largest account measured,
+# and at most 500 pages, which is enough for a `limit` of 10 and bounds the requests where
+# a server hands out one object per page. UptimeRobot itself hands out at most 50.
+MAX_OBJECTS = 5000
+MAX_PAGES = 500
 
 
 def get_data(uri, data, result_key):
@@ -757,15 +767,6 @@ def get_data(uri, data, result_key):
             False,
             f'UptimeRobot kept listing "{result_key}" beyond {MAX_PAGES} pages.',
         )
-    return (True, result)
-
-
-def _as_list(result):
-    """Return `(True, result)` for a list of objects, else `(False, message)`: the list
-    functions work on every entry, which is wrong for the message `get_data()` hands
-    back where the answer carried no list."""
-    if not isinstance(result, list) or not all(isinstance(r, dict) for r in result):
-        return (False, 'UptimeRobot did not answer with a list.')
     return (True, result)
 
 

@@ -322,9 +322,9 @@ _FINGERPRINT_LENGTH = 256
 # source, counted uncompressed. Every line is counted with `_LINE_OVERHEAD` on top, the
 # memory of the string that holds it, so that a file of empty lines is bounded too. 512 MiB
 # is more than a day of access log of a busy web server, which the consumers read one
-# rotated file of; where the bound is reached the reading stops and the notice says so. The live file of a plain source
-# is not capped: it is read from where the previous run stopped, and everything in it is
-# what the consumer asked for.
+# rotated file of; where the bound is reached the reading stops and the notice says so.
+# The live file of a plain source is not capped: it is read from where the previous run
+# stopped, and everything in it is what the consumer asked for.
 MAX_LINE_BYTES = 1024 * 1024
 MAX_ROTATED_BYTES = 512 * 1024 * 1024
 _LINE_OVERHEAD = 64
@@ -1136,7 +1136,8 @@ def read(
               read from. A consumer that wants the size of a file it lets this function read
               takes it from here: a second look at the path may see another file, and with
               `allowed_roots` one outside the roots.
-            - `truncated` (`bool`): True if `max_lines` dropped lines from the result.
+            - `truncated` (`bool`): True if `max_lines` dropped lines from the result, a line
+              was shortened, or the read stopped at its byte budget.
 
     Notes
     -----
@@ -1232,11 +1233,6 @@ def read_many(
     timeout : int, optional
         Handed to `read()` for every source, each in its own right.
 
-    Notes
-    -----
-    - Every source has its own byte budget (see `read()`), so N sources can read N times
-      `MAX_ROTATED_BYTES` out of their rotated files.
-
     Returns
     -------
     tuple
@@ -1257,12 +1253,15 @@ def read_many(
               what they hold, for a consumer to pass on.
             - `sources` (`list` of `dict`): What `read()` returned per source that could be read,
               in the same order, so a consumer can name each one and what came from it.
-            - `truncated` (`bool`): Whether any source stopped at `max_lines`.
+            - `truncated` (`bool`): Whether the result of any source is truncated, see
+              `read()`.
 
     Notes
     -----
     - A source named twice is read once, and so is one reached by two paths that resolve to the
       same file.
+    - Every source has its own byte budget (see `read()`), so N sources can read N times
+      `MAX_ROTATED_BYTES` out of their rotated files.
 
     Examples
     --------

@@ -1255,7 +1255,7 @@ class TestConfinedRace(unittest.TestCase):
         fifo = os.path.join(self.logdir, 'fifo.log')
         os.mkfifo(fifo)
 
-        def give_up(signum, frame):
+        def give_up(_signum, _frame):
             raise TimeoutError('read() blocked on a FIFO')
 
         previous = signal.signal(signal.SIGALRM, give_up)

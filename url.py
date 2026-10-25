@@ -93,6 +93,172 @@ MAX_TIMEOUT = 1_000_000
 DEADLINE_FACTOR = 10
 
 
+def _check_github_name(value, name):
+    """Reject anything that is not a GitHub owner or repository name.
+
+    Owner and repository names end up in the path of the API request. Upstream limits
+    them to letters, digits and `.`, `_`, `-`, so anything else is either a typo or an
+    attempt to reach a different endpoint through the path. `..` is refused separately
+    because the regex alone would let it pass and it is exactly what a path traversal
+    needs.
+
+    Returns a `(success, result)` tuple suitable for `lib.base.coe()`.
+    """
+    if (
+        not isinstance(value, str)
+        or '..' in value
+        or not re.match(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$', value)
+    ):
+        return False, f'Refusing {name} that is not a GitHub name: {value}'
+    return True, value
+
+
+def _check_github_ref(value, name):
+    """Reject anything that is not a usable git ref (branch or tag).
+
+    Same reasoning as `_check_github_name()`, except that a ref legitimately carries
+    slashes (`feature/some-branch`), so those stay allowed while `..`, query strings and
+    everything else that would change the shape of the request do not.
+
+    Returns a `(success, result)` tuple suitable for `lib.base.coe()`.
+    """
+    if (
+        not isinstance(value, str)
+        or '..' in value
+        or not re.match(r'^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$', value)
+    ):
+        return False, f'Refusing {name} that is not a git ref: {value}'
+    return True, value
+
+
+def _fetch_github_json(url, insecure, no_proxy, proxy, timeout, header):
+    """Fetch a GitHub API endpoint, telling "nothing there" apart from "could not ask".
+
+    GitHub answers 404 both for a repository that does not exist and for one that has no
+    release yet. A consumer cannot tell those apart and does not need to, because both
+    mean there is nothing here to compare against, so that case comes back as `(True,
+    None)`. A request that never got an answer comes back as `(False, errormessage)` and
+    stays distinguishable. The two errors an administrator can act on get a message that
+    names the remedy: 401 is a token GitHub does not accept, 403 and 429 are the
+    exhausted rate limit.
+
+    Returns a `(success, result)` tuple.
+    """
+    success, result = fetch_json(
+        url,
+        extended=True,
+        header=header,
+        insecure=insecure,
+        no_proxy=no_proxy,
+        proxy=proxy,
+        response_on_error=True,
+        timeout=timeout,
+    )
+    status_code = result.get('status_code') if isinstance(result, dict) else None
+
+    if status_code == 404:
+        return True, None
+    if status_code == 401:
+        return False, (
+            'GitHub rejected the API token. Check that it is still valid and has not'
+            ' expired.'
+        )
+    if status_code in (403, 429):
+        return False, (
+            f'GitHub refused the request with HTTP {status_code}. Without a token'
+            f' the API allows 60 requests per hour and IP address; supply one or'
+            f' ask less often.'
+        )
+    if not success:
+        if isinstance(result, str):
+            return False, result
+        return False, f'GitHub answered with HTTP {status_code}.'
+    if not isinstance(result, dict):
+        return False, 'GitHub answered with an unreadable response.'
+
+    return True, result.get('response_json')
+
+
+def compare_github_refs(
+    user,
+    repo,
+    base,
+    head,
+    insecure=False,
+    no_proxy=False,
+    proxy=None,
+    timeout=8,
+    header=None,
+):
+    """
+    Count how far a GitHub repository's `head` ref is ahead of its `base` ref.
+
+    Answers "how many commits has this branch gained since the release I am running",
+    which is what a consumer needs to say something concrete about an installation
+    tracking a development branch instead of a release.
+
+    Note that GitHub also reports a non-zero count when the two refs have diverged, so
+    the number says how many commits are on `head` and not on `base` - not that `base`
+    is simply an ancestor of `head`.
+
+    Parameters
+    ----------
+    user : str
+        The GitHub username or organization name.
+    repo : str
+        The GitHub repository name.
+    base : str
+        The ref to compare from, typically the installed tag.
+    head : str
+        The ref to compare to, typically a branch such as `main`.
+    insecure, no_proxy, proxy, timeout, header
+        See `get_latest_version_from_github()`.
+
+    Returns
+    -------
+    tuple
+        - **success** (`bool`): True if the comparison was successfully fetched, False
+          otherwise.
+        - **result** (`int` | `bool`):
+
+          - The number of commits `head` carries that `base` does not.
+          - `False` if GitHub did not answer with a comparison, for example because
+            one of the two refs does not exist.
+
+    Examples
+    --------
+    >>> compare_github_refs('Linuxfabrik', 'monitoring-plugins', 'v1.2.3', 'main')
+    (True, 38)
+    """
+    success, result = _check_github_name(user, 'GitHub user')
+    if not success:
+        return success, result
+    success, result = _check_github_name(repo, 'GitHub repository')
+    if not success:
+        return success, result
+    success, result = _check_github_ref(base, 'GitHub base ref')
+    if not success:
+        return success, result
+    success, result = _check_github_ref(head, 'GitHub head ref')
+    if not success:
+        return success, result
+
+    url = f'https://api.github.com/repos/{user}/{repo}/compare/{base}...{head}'
+    success, result = _fetch_github_json(
+        url, insecure, no_proxy, proxy, timeout, header
+    )
+
+    if not success:
+        return success, result
+    if not isinstance(result, dict) or 'ahead_by' not in result:
+        return True, False
+
+    try:
+        return True, int(result['ahead_by'])
+    except (TypeError, ValueError):
+        return True, False
+
+
 # Certificate verification failures an operator runs into in practice, keyed by
 # the OpenSSL X509_V_ERR_* code that `ssl.SSLCertVerificationError` reports in
 # `verify_code`. The code is matched instead of the message text, which is not
@@ -218,6 +384,33 @@ def _has_body(request):
         return request.headers.get('content-length', '0') not in ('', '0') or (
             'transfer-encoding' in request.headers
         )
+
+
+def _read_limited(response, max_bytes, deadline=None):
+    """Return the decoded body of a streamed httpx response, raising `_RefusedError`
+    as soon as it grows past `max_bytes` (`None` reads without a limit). Only gzip and
+    deflate are decoded, which inflate a received block by about a thousandfold at
+    most, so a single block overshoots the limit by a bounded amount before it is
+    refused. Past `deadline` (a `time.monotonic()` value) it raises `_DeadlineError`,
+    which backs up the per-read timeout where the pool could not be given the deadline."""
+    if max_bytes is None and deadline is None:
+        return response.read()
+    message = 'Refused to read a response larger than '
+    if max_bytes is not None:
+        message += human.bytes2human(max_bytes)
+    declared = response.headers.get('content-length', '')
+    if max_bytes is not None and declared.isdigit() and int(declared) > max_bytes:
+        raise _RefusedError(message)
+    chunks = []
+    size = 0
+    for chunk in response.iter_bytes():
+        size += len(chunk)
+        if max_bytes is not None and size > max_bytes:
+            raise _RefusedError(message)
+        if deadline is not None and time.monotonic() >= deadline:
+            raise _DeadlineError()
+        chunks.append(chunk)
+    return b''.join(chunks)
 
 
 def _install_safe_redirect_stripping(client, max_bytes=None, deadline=None):
@@ -725,199 +918,6 @@ def _build_timing_transport(ssl_context, http1, http2, proxy):
             network_backend=backend,
         )
     return transport, backend
-
-
-def _check_github_name(value, name):
-    """Reject anything that is not a GitHub owner or repository name.
-
-    Owner and repository names end up in the path of the API request. Upstream limits
-    them to letters, digits and `.`, `_`, `-`, so anything else is either a typo or an
-    attempt to reach a different endpoint through the path. `..` is refused separately
-    because the regex alone would let it pass and it is exactly what a path traversal
-    needs.
-
-    Returns a `(success, result)` tuple suitable for `lib.base.coe()`.
-    """
-    if (
-        not isinstance(value, str)
-        or '..' in value
-        or not re.match(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$', value)
-    ):
-        return False, f'Refusing {name} that is not a GitHub name: {value}'
-    return True, value
-
-
-def _check_github_ref(value, name):
-    """Reject anything that is not a usable git ref (branch or tag).
-
-    Same reasoning as `_check_github_name()`, except that a ref legitimately carries
-    slashes (`feature/some-branch`), so those stay allowed while `..`, query strings and
-    everything else that would change the shape of the request do not.
-
-    Returns a `(success, result)` tuple suitable for `lib.base.coe()`.
-    """
-    if (
-        not isinstance(value, str)
-        or '..' in value
-        or not re.match(r'^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$', value)
-    ):
-        return False, f'Refusing {name} that is not a git ref: {value}'
-    return True, value
-
-
-def _fetch_github_json(url, insecure, no_proxy, proxy, timeout, header):
-    """Fetch a GitHub API endpoint, telling "nothing there" apart from "could not ask".
-
-    GitHub answers 404 both for a repository that does not exist and for one that has no
-    release yet. A consumer cannot tell those apart and does not need to, because both
-    mean there is nothing here to compare against, so that case comes back as `(True,
-    None)`. A request that never got an answer comes back as `(False, errormessage)` and
-    stays distinguishable. The two errors an administrator can act on get a message that
-    names the remedy: 401 is a token GitHub does not accept, 403 and 429 are the
-    exhausted rate limit.
-
-    Returns a `(success, result)` tuple.
-    """
-    success, result = fetch_json(
-        url,
-        extended=True,
-        header=header,
-        insecure=insecure,
-        no_proxy=no_proxy,
-        proxy=proxy,
-        response_on_error=True,
-        timeout=timeout,
-    )
-    status_code = result.get('status_code') if isinstance(result, dict) else None
-
-    if status_code == 404:
-        return True, None
-    if status_code == 401:
-        return False, (
-            'GitHub rejected the API token. Check that it is still valid and has not'
-            ' expired.'
-        )
-    if status_code in (403, 429):
-        return False, (
-            f'GitHub refused the request with HTTP {status_code}. Without a token'
-            f' the API allows 60 requests per hour and IP address; supply one or'
-            f' ask less often.'
-        )
-    if not success:
-        if isinstance(result, str):
-            return False, result
-        return False, f'GitHub answered with HTTP {status_code}.'
-    if not isinstance(result, dict):
-        return False, 'GitHub answered with an unreadable response.'
-
-    return True, result.get('response_json')
-
-
-def compare_github_refs(
-    user,
-    repo,
-    base,
-    head,
-    insecure=False,
-    no_proxy=False,
-    proxy=None,
-    timeout=8,
-    header=None,
-):
-    """
-    Count how far a GitHub repository's `head` ref is ahead of its `base` ref.
-
-    Answers "how many commits has this branch gained since the release I am running",
-    which is what a consumer needs to say something concrete about an installation
-    tracking a development branch instead of a release.
-
-    Note that GitHub also reports a non-zero count when the two refs have diverged, so
-    the number says how many commits are on `head` and not on `base` - not that `base`
-    is simply an ancestor of `head`.
-
-    Parameters
-    ----------
-    user : str
-        The GitHub username or organization name.
-    repo : str
-        The GitHub repository name.
-    base : str
-        The ref to compare from, typically the installed tag.
-    head : str
-        The ref to compare to, typically a branch such as `main`.
-    insecure, no_proxy, proxy, timeout, header
-        See `get_latest_version_from_github()`.
-
-    Returns
-    -------
-    tuple
-        - **success** (`bool`): True if the comparison was successfully fetched, False
-          otherwise.
-        - **result** (`int` | `bool`):
-
-          - The number of commits `head` carries that `base` does not.
-          - `False` if GitHub did not answer with a comparison, for example because
-            one of the two refs does not exist.
-
-    Examples
-    --------
-    >>> compare_github_refs('Linuxfabrik', 'monitoring-plugins', 'v1.2.3', 'main')
-    (True, 38)
-    """
-    success, result = _check_github_name(user, 'GitHub user')
-    if not success:
-        return success, result
-    success, result = _check_github_name(repo, 'GitHub repository')
-    if not success:
-        return success, result
-    success, result = _check_github_ref(base, 'GitHub base ref')
-    if not success:
-        return success, result
-    success, result = _check_github_ref(head, 'GitHub head ref')
-    if not success:
-        return success, result
-
-    url = f'https://api.github.com/repos/{user}/{repo}/compare/{base}...{head}'
-    success, result = _fetch_github_json(
-        url, insecure, no_proxy, proxy, timeout, header
-    )
-
-    if not success:
-        return success, result
-    if not isinstance(result, dict) or 'ahead_by' not in result:
-        return True, False
-
-    try:
-        return True, int(result['ahead_by'])
-    except (TypeError, ValueError):
-        return True, False
-
-
-def _read_limited(response, max_bytes, deadline=None):
-    """Return the decoded body of a streamed httpx response, raising `_RefusedError`
-    as soon as it grows past `max_bytes` (`None` reads without a limit). Only gzip and
-    deflate are decoded, which inflate a received block by about a thousandfold at
-    most, so a single block overshoots the limit by a bounded amount before it is
-    refused. Past `deadline` (a `time.monotonic()` value) it raises `_DeadlineError`,
-    which backs up the per-read timeout where the pool could not be given the deadline."""
-    if max_bytes is None and deadline is None:
-        return response.read()
-    message = 'Refused to read a response larger than '
-    if max_bytes is not None:
-        message += human.bytes2human(max_bytes)
-    declared = response.headers.get('content-length', '')
-    if max_bytes is not None and declared.isdigit() and int(declared) > max_bytes:
-        raise _RefusedError(message)
-    chunks = []
-    size = 0
-    for chunk in response.iter_bytes():
-        size += len(chunk)
-        if max_bytes is not None and size > max_bytes:
-            raise _RefusedError(message)
-        if deadline is not None and time.monotonic() >= deadline:
-            raise _DeadlineError()
-        chunks.append(chunk)
-    return b''.join(chunks)
 
 
 # Status codes worth another attempt. Every other error status is the server's

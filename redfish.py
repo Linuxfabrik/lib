@@ -11,7 +11,7 @@
 """This library parses data returned from the Redfish API."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026102401'
 
 import atexit
 import base64
@@ -647,6 +647,97 @@ def _replay_response(url_string):
     return True, payload
 
 
+# What this run authenticated with, so a request that comes back "401 Unauthorized" can log in
+# again without every caller having to thread the credentials through. `header` is the very dict
+# the caller passes to the fetch helpers: renewing updates it in place, so the requests that
+# follow carry the new token too.
+_AUTH = {
+    'args': None,
+    'cache_expire': 0,
+    'cache_filename': CACHE_FILENAME,
+    'token_key': None,  # nosec B105 - the cache key naming the token, not a credential
+    # False once renewing has been tried, or once the controller has shown that the credentials
+    # themselves are rejected, in which case logging in again would only repeat the refusal.
+    'renewable': True,
+}
+
+# Requests that are themselves part of logging in. A 401 on one of these means the credentials
+# are wrong, not that a token went stale, so renewing on them would log in forever.
+_AUTH_REQUEST_KINDS = ('login', 'sessionsvc')
+
+
+def _is_unauthorized(payload):
+    """Say whether a failed fetch failed because the controller rejected the credentials.
+
+    `url.fetch_json()` reports an HTTP error as the string `HTTP error "401 Unauthorized" while
+    fetching ...`, which is what this recognizes. It is deliberately narrow: any other failure
+    (a timeout, a connection refused, a 500) must not trigger a new login.
+
+    The unit tests pin this against a real 401 from `url.fetch_json()`, so a change to its error
+    wording is caught there rather than silently disabling token renewal.
+    """
+    return isinstance(payload, str) and payload.startswith('HTTP error "401 ')
+
+
+def _should_renew(what, result):
+    """Say whether a fetch result warrants logging in again and retrying.
+
+    Only a 401 does, only on a request that is not itself part of logging in, and only while
+    renewing still stands a chance (see `_AUTH['renewable']`).
+    """
+    return (
+        _AUTH['renewable']
+        and not result[0]
+        and what not in _AUTH_REQUEST_KINDS
+        and _is_unauthorized(result[1])
+    )
+
+
+def _renew_auth(header):
+    """Log in again after a 401 and update `header` in place. Returns `True` if it can be retried.
+
+    A cached session token outlives its usefulness the moment the controller drops the session,
+    which it does on a reboot, when its session pool is evicted, or when an admin clears the
+    sessions by hand. Every consumer on that host then presents a token the controller no longer
+    knows and fails with a 401 until the cache entry expires. Renewing on the spot turns that
+    outage into a single extra login.
+
+    Only ever renews once per run: with wrong credentials every request would come back 401, and
+    retrying each of them would hammer the controller with logins instead of failing quickly.
+    """
+    if not _AUTH['renewable'] or _AUTH['args'] is None or not isinstance(header, dict):
+        return False
+    _AUTH['renewable'] = False
+    _trace(
+        'auth',
+        'the controller rejected the session token, so it dropped the session behind it. '
+        'Logging in again and retrying the request',
+    )
+    # Drop the stale token so this run, and every sibling consumer reading the same cache, stops
+    # presenting it.
+    if _AUTH['cache_expire'] and _AUTH['token_key']:
+        cache.set(
+            _AUTH['token_key'],
+            '',
+            time.now() - 1,
+            filename=_AUTH['cache_filename'],
+        )
+    fresh = get_auth_header(
+        _AUTH['args'],
+        cache_expire=_AUTH['cache_expire'],
+        cache_filename=_AUTH['cache_filename'],
+    )
+    if not fresh:
+        return False
+    # Replace whichever scheme the header carried: a renewal may come back as Basic auth when the
+    # controller can no longer create a session, and leaving a dead X-Auth-Token beside it would
+    # have the controller reject the retry too.
+    header.pop('X-Auth-Token', None)
+    header.pop('Authorization', None)
+    header.update(fresh)
+    return True
+
+
 def _fetch_json(what, url_string, timeout=8, retries=0, **kwargs):
     """Fetch JSON through `url.fetch_json()`, timing and tracing the call.
 
@@ -658,9 +749,10 @@ def _fetch_json(what, url_string, timeout=8, retries=0, **kwargs):
     `url.fetch_json()` retries internally, so the measured duration covers all `retries + 1`
     attempts. Both numbers are traced alongside it, which is what makes a long line readable: a
     request logged as `timeout=8 retries=10` that took 88 s spent them being retried, while one
-    that took 88 s at `retries=0` was answered slowly by the controller. Note that `timeout` is
-    an httpx per-phase timeout, not a deadline for the whole request, so a controller that keeps
-    dribbling out a large response can exceed it without ever tripping it.
+    that took 88 s at `retries=0` was answered slowly by the controller. Note that `timeout`
+    bounds every connect, read and write on its own, so a controller that keeps dribbling out a
+    large response can exceed it without tripping it; each attempt ends at
+    `url.DEADLINE_FACTOR` times `timeout` at the latest.
 
     Parameters
     ----------
@@ -1252,97 +1344,6 @@ def format_responses():
     return '\n\n'.join(blocks)
 
 
-# What this run authenticated with, so a request that comes back "401 Unauthorized" can log in
-# again without every caller having to thread the credentials through. `header` is the very dict
-# the caller passes to the fetch helpers: renewing updates it in place, so the requests that
-# follow carry the new token too.
-_AUTH = {
-    'args': None,
-    'cache_expire': 0,
-    'cache_filename': CACHE_FILENAME,
-    'token_key': None,  # nosec B105 - the cache key naming the token, not a credential
-    # False once renewing has been tried, or once the controller has shown that the credentials
-    # themselves are rejected, in which case logging in again would only repeat the refusal.
-    'renewable': True,
-}
-
-# Requests that are themselves part of logging in. A 401 on one of these means the credentials
-# are wrong, not that a token went stale, so renewing on them would log in forever.
-_AUTH_REQUEST_KINDS = ('login', 'sessionsvc')
-
-
-def _is_unauthorized(payload):
-    """Say whether a failed fetch failed because the controller rejected the credentials.
-
-    `url.fetch_json()` reports an HTTP error as the string `HTTP error "401 Unauthorized" while
-    fetching ...`, which is what this recognizes. It is deliberately narrow: any other failure
-    (a timeout, a connection refused, a 500) must not trigger a new login.
-
-    The unit tests pin this against a real 401 from `url.fetch_json()`, so a change to its error
-    wording is caught there rather than silently disabling token renewal.
-    """
-    return isinstance(payload, str) and payload.startswith('HTTP error "401 ')
-
-
-def _should_renew(what, result):
-    """Say whether a fetch result warrants logging in again and retrying.
-
-    Only a 401 does, only on a request that is not itself part of logging in, and only while
-    renewing still stands a chance (see `_AUTH['renewable']`).
-    """
-    return (
-        _AUTH['renewable']
-        and not result[0]
-        and what not in _AUTH_REQUEST_KINDS
-        and _is_unauthorized(result[1])
-    )
-
-
-def _renew_auth(header):
-    """Log in again after a 401 and update `header` in place. Returns `True` if it can be retried.
-
-    A cached session token outlives its usefulness the moment the controller drops the session,
-    which it does on a reboot, when its session pool is evicted, or when an admin clears the
-    sessions by hand. Every consumer on that host then presents a token the controller no longer
-    knows and fails with a 401 until the cache entry expires. Renewing on the spot turns that
-    outage into a single extra login.
-
-    Only ever renews once per run: with wrong credentials every request would come back 401, and
-    retrying each of them would hammer the controller with logins instead of failing quickly.
-    """
-    if not _AUTH['renewable'] or _AUTH['args'] is None or not isinstance(header, dict):
-        return False
-    _AUTH['renewable'] = False
-    _trace(
-        'auth',
-        'the controller rejected the session token, so it dropped the session behind it. '
-        'Logging in again and retrying the request',
-    )
-    # Drop the stale token so this run, and every sibling consumer reading the same cache, stops
-    # presenting it.
-    if _AUTH['cache_expire'] and _AUTH['token_key']:
-        cache.set(
-            _AUTH['token_key'],
-            '',
-            time.now() - 1,
-            filename=_AUTH['cache_filename'],
-        )
-    fresh = get_auth_header(
-        _AUTH['args'],
-        cache_expire=_AUTH['cache_expire'],
-        cache_filename=_AUTH['cache_filename'],
-    )
-    if not fresh:
-        return False
-    # Replace whichever scheme the header carried: a renewal may come back as Basic auth when the
-    # controller can no longer create a session, and leaving a dead X-Auth-Token beside it would
-    # have the controller reject the retry too.
-    header.pop('X-Auth-Token', None)
-    header.pop('Authorization', None)
-    header.update(fresh)
-    return True
-
-
 def _session_url(base_url, result):
     """Return the absolute URL of the session a login just created, or `''`.
 
@@ -1460,6 +1461,29 @@ def _drop_previous_session(args, cache_expire, cache_filename):
         _delete_session(previous.get('uri', ''), previous.get('token', ''), args)
 
 
+# Upper bound the Redfish schema sets for `SessionTimeout` (SessionService, 30 to
+# 86400 seconds). A larger value cannot be meant, and one beyond what SQLite stores as
+# an integer made every write of the token to the cache fail silently, so each run
+# logged in again.
+_SESSION_TIMEOUT_MAX = 86400
+
+
+def _session_timeout(value):
+    """Read a `SessionTimeout` as whole seconds, `0` when it is missing or unusable.
+
+    The value comes from the controller, or from a cache entry built from its answer,
+    so it is not trusted: anything but a positive number is `0`, and a number beyond
+    the schema's maximum is capped there.
+    """
+    if isinstance(value, bool):
+        return 0
+    try:
+        seconds = int(value or 0)
+    except (OverflowError, TypeError, ValueError):
+        return 0
+    return min(max(seconds, 0), _SESSION_TIMEOUT_MAX)
+
+
 def _extend_session(args, token_key, token, cache_filename):
     """Re-arm the cache lifetime of a session token that is about to be used again.
 
@@ -1516,29 +1540,6 @@ def _remember_session(
         time.now() + ttl,
         filename=cache_filename,
     )
-
-
-# Upper bound the Redfish schema sets for `SessionTimeout` (SessionService, 30 to
-# 86400 seconds). A larger value cannot be meant, and one beyond what SQLite stores as
-# an integer made every write of the token to the cache fail silently, so each run
-# logged in again.
-_SESSION_TIMEOUT_MAX = 86400
-
-
-def _session_timeout(value):
-    """Read a `SessionTimeout` as whole seconds, `0` when it is missing or unusable.
-
-    The value comes from the controller, or from a cache entry built from its answer,
-    so it is not trusted: anything but a positive number is `0`, and a number beyond
-    the schema's maximum is capped there.
-    """
-    if isinstance(value, bool):
-        return 0
-    try:
-        seconds = int(value or 0)
-    except (OverflowError, TypeError, ValueError):
-        return 0
-    return min(max(seconds, 0), _SESSION_TIMEOUT_MAX)
 
 
 def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
@@ -1659,7 +1660,7 @@ def get_auth_header(args, cache_expire=0, cache_filename=CACHE_FILENAME):
         method='POST',
     )
     # lib.url lower-cases all response header names (RFC 9110, section 5.1).
-    token = ''
+    token = ''  # nosec B105 - empty until the session login returns one
     session_url = ''
     if success and isinstance(result, dict):
         token = result.get('response_header', {}).get('x-auth-token', '')

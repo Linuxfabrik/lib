@@ -251,6 +251,64 @@ def get_locale(path):
     return (True, match.group(1) if match and match.group(1) else DEFAULT_LOCALE)
 
 
+def _slug_from_uri(uri):
+    """Return the plugin slug a `Plugin URI` names, or the empty string when it does not
+    point into the wordpress.org plugin directory. Both the `www` and the bare host occur
+    in the wild, as do both schemes, and the address may or may not end in a slash.
+    """
+    match = re.match(
+        r'(?i)^https?://(?:[a-z-]+\.)?wordpress\.org/(?:extend/)?plugins/([^/?#]+)',
+        uri or '',
+    )
+    return match.group(1) if match else ''
+
+
+def _scan_plugins(path):
+    """Read every plugin below `path` once and return what `get_plugin_slugs()` and
+    `get_plugins()` hand out slices of:
+    `{directory_slug: {'file': ..., 'slug': ..., 'version': ...}}`.
+
+    Mirrors how WordPress discovers plugins: a plugin is a PHP file lying directly in
+    `wp-content/plugins/` or directly in one of its immediate subdirectories and carrying
+    a `Plugin Name` header. Files without that header are not plugins, which excludes the
+    `index.php` placeholder WordPress ships in every directory as well as the remaining
+    source files of a plugin. Nested directories are not searched, matching WordPress,
+    which keeps the scan bounded on installations with many plugins.
+    """
+    plugins = {}
+    plugin_dir = os.path.join(path, 'wp-content', 'plugins')
+    # The directory is data, not a pattern: a `[` or `?` in the caller's path would
+    # otherwise be read as a glob metacharacter and silently match nothing.
+    quoted_dir = _glob.escape(plugin_dir)
+    candidates = disk.glob(os.path.join(quoted_dir, '*.php'), recursive=False)
+    candidates += disk.glob(os.path.join(quoted_dir, '*', '*.php'), recursive=False)
+    for candidate in candidates:
+        # One bounded read per file, then every field out of it.
+        header = _read_header(candidate)
+        if not _header_value(header, 'Plugin Name'):
+            continue
+        parent = os.path.dirname(candidate)
+        basename = os.path.basename(candidate)
+        if os.path.normcase(os.path.normpath(parent)) == os.path.normcase(
+            os.path.normpath(plugin_dir)
+        ):
+            slug = os.path.splitext(basename)[0]
+        else:
+            slug = os.path.basename(parent)
+        # A plugin directory can hold more than one file with a header, an admin page
+        # of the plugin among them. WordPress lists each of them separately and has no
+        # notion of a main file at all, so there is nothing to mirror here; the file
+        # named after its directory is the convention every plugin follows and is
+        # therefore preferred. Otherwise the first one in sorted order wins.
+        if slug not in plugins or os.path.splitext(basename)[0] == slug:
+            plugins[slug] = {
+                'file': candidate,
+                'slug': _slug_from_uri(_header_value(header, 'Plugin URI')) or slug,
+                'version': _header_value(header, 'Version') or UNKNOWN_VERSION,
+            }
+    return plugins
+
+
 def get_plugin_slugs(path):
     """
     Map every installed plugin to the slug the wordpress.org plugin directory knows it by.
@@ -415,63 +473,6 @@ def get_site_url(path):
         if match:
             return (True, match.group('url').rstrip('/'))
     return (True, '')
-
-
-def _scan_plugins(path):
-    """Read every plugin below `path` once and return what the public functions above
-    hand out slices of: `{directory_slug: {'file': ..., 'slug': ..., 'version': ...}}`.
-
-    Mirrors how WordPress discovers plugins: a plugin is a PHP file lying directly in
-    `wp-content/plugins/` or directly in one of its immediate subdirectories and carrying
-    a `Plugin Name` header. Files without that header are not plugins, which excludes the
-    `index.php` placeholder WordPress ships in every directory as well as the remaining
-    source files of a plugin. Nested directories are not searched, matching WordPress,
-    which keeps the scan bounded on installations with many plugins.
-    """
-    plugins = {}
-    plugin_dir = os.path.join(path, 'wp-content', 'plugins')
-    # The directory is data, not a pattern: a `[` or `?` in the caller's path would
-    # otherwise be read as a glob metacharacter and silently match nothing.
-    quoted_dir = _glob.escape(plugin_dir)
-    candidates = disk.glob(os.path.join(quoted_dir, '*.php'), recursive=False)
-    candidates += disk.glob(os.path.join(quoted_dir, '*', '*.php'), recursive=False)
-    for candidate in candidates:
-        # One bounded read per file, then every field out of it.
-        header = _read_header(candidate)
-        if not _header_value(header, 'Plugin Name'):
-            continue
-        parent = os.path.dirname(candidate)
-        basename = os.path.basename(candidate)
-        if os.path.normcase(os.path.normpath(parent)) == os.path.normcase(
-            os.path.normpath(plugin_dir)
-        ):
-            slug = os.path.splitext(basename)[0]
-        else:
-            slug = os.path.basename(parent)
-        # A plugin directory can hold more than one file with a header, an admin page
-        # of the plugin among them. WordPress lists each of them separately and has no
-        # notion of a main file at all, so there is nothing to mirror here; the file
-        # named after its directory is the convention every plugin follows and is
-        # therefore preferred. Otherwise the first one in sorted order wins.
-        if slug not in plugins or os.path.splitext(basename)[0] == slug:
-            plugins[slug] = {
-                'file': candidate,
-                'slug': _slug_from_uri(_header_value(header, 'Plugin URI')) or slug,
-                'version': _header_value(header, 'Version') or UNKNOWN_VERSION,
-            }
-    return plugins
-
-
-def _slug_from_uri(uri):
-    """Return the plugin slug a `Plugin URI` names, or the empty string when it does not
-    point into the wordpress.org plugin directory. Both the `www` and the bare host occur
-    in the wild, as do both schemes, and the address may or may not end in a slash.
-    """
-    match = re.match(
-        r'(?i)^https?://(?:[a-z-]+\.)?wordpress\.org/(?:extend/)?plugins/([^/?#]+)',
-        uri or '',
-    )
-    return match.group(1) if match else ''
 
 
 def get_themes(path):

@@ -477,7 +477,7 @@ def close(conn):
     Close a SQLite database connection safely.
 
     This function attempts to close an open database connection.
-    It does not automatically commit any uncommitted changes — if you close the connection
+    It does not automatically commit any uncommitted changes: if you close the connection
     without calling `commit()` first, any uncommitted changes will be lost.
 
     Parameters

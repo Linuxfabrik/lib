@@ -261,6 +261,53 @@ def failure_state(message):
     return STATE_UNKNOWN
 
 
+def _diagnosis(stdout, stderr):
+    """
+    Pick the lines worth quoting out of a run that failed.
+
+    LVM puts its messages both on stderr and into the `log` array of the report, and
+    the report itself is the last thing worth printing back at somebody. This takes
+    the log messages where the report parses, falls back to stderr otherwise, and
+    keeps the result to one line.
+    """
+    lines = []
+    try:
+        for entry in json.loads(stdout).get('log') or []:
+            message = (entry.get('log_message') or '').strip()
+            if message:
+                lines.append(message)
+    except (AttributeError, TypeError, ValueError):
+        pass
+    if not lines:
+        lines = [line.strip() for line in (stderr or '').splitlines() if line.strip()]
+    return ' '.join(' '.join(lines).split())[:300]
+
+
+def _run(cmd, section, timeout):
+    """Run one LVM reporting command and read its report."""
+    success, result = shell.shell_exec(list(cmd), timeout=timeout)
+    if not success:
+        if 'Timeout after' in result:
+            return (False, f'{NO_ANSWER} within {timeout}s. {NO_ANSWER_HELP}')
+        if 'No such file or directory' in result:
+            return (False, NOT_INSTALLED_HELP)
+        return (False, result)
+    stdout, stderr, retc = result
+    if retc != 0:
+        # LVM writes warnings to stderr even on a successful run, so its text is only
+        # worth reporting where the command actually failed. What it failed at has to
+        # be read from that text and never from the exit code: `ECMD_FAILED` in
+        # `tools/errors.h` is 5 and covers every failure alike, so a volume group that
+        # does not exist and a run without the rights both end in 5. Measured on
+        # lvm2 2.03.28: `lvs no-such-vg`, `lvs -o no_such_field` and an unprivileged
+        # `lvs` all exit 5.
+        text = f'{stderr}{stdout}'
+        if 'Permission denied' in text or 'Running as a non-root user' in text:
+            return (False, NO_PERMISSION_HELP)
+        return (False, f'LVM did not report: {_diagnosis(stdout, stderr)}')
+    return parse_report(stdout, section)
+
+
 def get_logical_volumes(timeout=8):
     """
     Ask LVM for the logical volumes of this host.
@@ -347,6 +394,11 @@ def health(lv):
     return HEALTH_LABELS.get(status, f'LVM reports it as "{status}"')
 
 
+def _roles(lv):
+    """Split `lv_role` into its parts."""
+    return (lv.get('lv_role') or '').split(',')
+
+
 def is_snapshot(lv):
     """
     Tell a snapshot, of either kind, from everything else.
@@ -391,6 +443,11 @@ def is_snapshot_invalid(lv):
     True
     """
     return lv.get('lv_snapshot_invalid') == 'snapshot invalid'
+
+
+def _layout(lv):
+    """Split `lv_layout` into its parts."""
+    return (lv.get('lv_layout') or '').split(',')
 
 
 def is_thin(lv):
@@ -547,60 +604,3 @@ def to_number(value):
         return float(value)
     except (TypeError, ValueError):
         return None
-
-
-def _diagnosis(stdout, stderr):
-    """
-    Pick the lines worth quoting out of a run that failed.
-
-    LVM puts its messages both on stderr and into the `log` array of the report, and
-    the report itself is the last thing worth printing back at somebody. This takes
-    the log messages where the report parses, falls back to stderr otherwise, and
-    keeps the result to one line.
-    """
-    lines = []
-    try:
-        for entry in json.loads(stdout).get('log') or []:
-            message = (entry.get('log_message') or '').strip()
-            if message:
-                lines.append(message)
-    except (AttributeError, TypeError, ValueError):
-        pass
-    if not lines:
-        lines = [line.strip() for line in (stderr or '').splitlines() if line.strip()]
-    return ' '.join(' '.join(lines).split())[:300]
-
-
-def _layout(lv):
-    """Split `lv_layout` into its parts."""
-    return (lv.get('lv_layout') or '').split(',')
-
-
-def _roles(lv):
-    """Split `lv_role` into its parts."""
-    return (lv.get('lv_role') or '').split(',')
-
-
-def _run(cmd, section, timeout):
-    """Run one LVM reporting command and read its report."""
-    success, result = shell.shell_exec(list(cmd), timeout=timeout)
-    if not success:
-        if 'Timeout after' in result:
-            return (False, f'{NO_ANSWER} within {timeout}s. {NO_ANSWER_HELP}')
-        if 'No such file or directory' in result:
-            return (False, NOT_INSTALLED_HELP)
-        return (False, result)
-    stdout, stderr, retc = result
-    if retc != 0:
-        # LVM writes warnings to stderr even on a successful run, so its text is only
-        # worth reporting where the command actually failed. What it failed at has to
-        # be read from that text and never from the exit code: `ECMD_FAILED` in
-        # `tools/errors.h` is 5 and covers every failure alike, so a volume group that
-        # does not exist and a run without the rights both end in 5. Measured on
-        # lvm2 2.03.28: `lvs no-such-vg`, `lvs -o no_such_field` and an unprivileged
-        # `lvs` all exit 5.
-        text = f'{stderr}{stdout}'
-        if 'Permission denied' in text or 'Running as a non-root user' in text:
-            return (False, NO_PERMISSION_HELP)
-        return (False, f'LVM did not report: {_diagnosis(stdout, stderr)}')
-    return parse_report(stdout, section)

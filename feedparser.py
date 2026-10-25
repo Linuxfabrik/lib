@@ -29,30 +29,6 @@ except ImportError:
 
 from . import time, url
 
-# What an entry without a readable date is dated to: far enough back that it never
-# counts as the newest one.
-_NO_DATE = datetime.datetime(1970, 1, 1)
-
-
-def _parse_atom_date(value):
-    """Parse an Atom date (RFC 3339), or return `_NO_DATE` where it cannot be read."""
-    if not value or not value.strip():
-        return _NO_DATE
-    try:
-        return time.datetime2local(time.timestr2datetime(value, pattern='iso8601'))
-    except ValueError:
-        return _NO_DATE
-
-
-def _parse_rss_date(value):
-    """Parse an RSS date (RFC 822), or return `_NO_DATE` where it cannot be read."""
-    if not value or not value.strip():
-        return _NO_DATE
-    try:
-        return time.datetime2local(time.timestr2datetime(value, pattern='rfc2822'))
-    except ValueError:
-        return _NO_DATE
-
 
 def fetch_soup(
     feed_url,
@@ -229,6 +205,21 @@ def _child_string(parent, name, default):
     return child.string if child is not None else default
 
 
+# What an entry without a readable date is dated to: far enough back that it never
+# counts as the newest one.
+_NO_DATE = datetime.datetime(1970, 1, 1)
+
+
+def _parse_atom_date(value):
+    """Parse an Atom date (RFC 3339), or return `_NO_DATE` where it cannot be read."""
+    if not value or not value.strip():
+        return _NO_DATE
+    try:
+        return time.datetime2local(time.timestr2datetime(value, pattern='iso8601'))
+    except ValueError:
+        return _NO_DATE
+
+
 def parse_atom(soup):
     """
     Parse an Atom XML feed into a structured dictionary.
@@ -288,6 +279,16 @@ def parse_atom(soup):
                 tmp['summary'] = ''
         result['entries'].append(tmp)
     return result
+
+
+def _parse_rss_date(value):
+    """Parse an RSS date (RFC 822), or return `_NO_DATE` where it cannot be read."""
+    if not value or not value.strip():
+        return _NO_DATE
+    try:
+        return time.datetime2local(time.timestr2datetime(value, pattern='rfc2822'))
+    except ValueError:
+        return _NO_DATE
 
 
 def parse_rss(soup):
