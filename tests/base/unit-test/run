@@ -271,8 +271,24 @@ class TestGetState(unittest.TestCase):
     def test_range_crit_outside(self):
         self.assertEqual(base.get_state(25, '10', '20', 'range'), STATE_CRIT)
 
-    def test_range_invalid_spec_returns_unknown(self):
-        self.assertEqual(base.get_state(5, 'a:b:c', None, 'range'), STATE_UNKNOWN)
+    def test_range_invalid_spec_ends_unknown_and_names_it(self):
+        # both thresholds, and a bad one next to a good one
+        for warn, crit, bad in (
+            ('a:b:c', None, 'a:b:c'),
+            (None, 'abc', 'abc'),
+            ('10', '1,5', '1,5'),
+            ('-10', None, '-10'),
+        ):
+            with self.subTest(warn=warn, crit=crit), capture_exit() as result:
+                base.get_state(5, warn, crit, 'range')
+            self.assertEqual(result['code'], STATE_UNKNOWN)
+            self.assertIn(f'Threshold `{bad}` is no valid Nagios range', result['out'])
+            self.assertNotIn('Traceback', result['out'])
+
+    def test_range_empty_spec_is_no_threshold(self):
+        for spec in ('', ' ', 'None'):
+            with self.subTest(spec=spec):
+                self.assertEqual(base.get_state(50, spec, spec, 'range'), STATE_OK)
 
     def test_range_none_thresholds_ok(self):
         self.assertEqual(base.get_state(5, None, None, 'range'), STATE_OK)
@@ -842,15 +858,13 @@ class TestMatchRangeMalformed(unittest.TestCase):
                 self.assertFalse(success)
                 self.assertIsInstance(reason, str)
 
-    def test_unreadable_threshold_yields_unknown(self):
+    def test_unreadable_threshold_ends_unknown(self):
         for spec in self.UNREADABLE:
-            with self.subTest(spec=spec):
-                self.assertEqual(
-                    base.get_state(5, spec, None, _operator='range'), STATE_UNKNOWN
-                )
-                self.assertEqual(
-                    base.get_state(5, None, spec, _operator='range'), STATE_UNKNOWN
-                )
+            for warn, crit in ((spec, None), (None, spec)):
+                with self.subTest(warn=warn, crit=crit), capture_exit() as result:
+                    base.get_state(5, warn, crit, _operator='range')
+                self.assertEqual(result['code'], STATE_UNKNOWN)
+                self.assertIn('is no valid Nagios range', result['out'])
 
 
 class TestMatchRangeNumberFormats(unittest.TestCase):

@@ -34,7 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* args.py, base.py, txt.py: import faster, and `sanitize_sensitive_data()` is faster on long output
+* args.py, txt.py: import faster, and `sanitize_sensitive_data()` is faster on long output
+* base.py: imports faster, `get_state()` ends the run UNKNOWN with a message on a threshold that is no Nagios range
 * container.py: `get_engine_error()` reports Podman's missing rootless statistics on cgroups v1 as UNKNOWN
 * db_mysql.py: `check_privileges()` counts only privileges granted on `*.*` or the given database, and `select()` names the error first
 * disk.py: `copy_dir()` names the first file it could not copy and how many more

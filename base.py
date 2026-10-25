@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026102501'
 
 import math
 import numbers
@@ -262,6 +262,22 @@ def get_perfdata(label, value, uom=None, warn=None, crit=None, _min=None, _max=N
     return msg.rstrip(';') + ' '
 
 
+def _check_range(spec):
+    """End the run UNKNOWN with a message if `spec` is given but no Nagios range."""
+    if spec is None:
+        return
+    text = str(spec).lstrip('\\')
+    if text.strip() == '' or text.lower() == 'none':
+        return
+    success, reason = _parse_range(text)
+    if not success:
+        cu(
+            f'Threshold `{text}` is no valid Nagios range ({reason}). A threshold is a'
+            ' number or a range such as `80`, `10:`, `~:50` or `@10:20`.',
+            traceback=False,
+        )
+
+
 def get_state(value, warn, crit, _operator='ge'):
     """
     Returns the STATE by comparing `value` to the given thresholds using
@@ -291,7 +307,9 @@ def get_state(value, warn, crit, _operator='ge'):
     int
         `STATE_OK`, `STATE_WARN`, or `STATE_CRIT`. `STATE_UNKNOWN` for a
         threshold that does not parse, an unknown `_operator`, or a `value` that is not
-        a number.
+        a number. With `_operator='range'`, a threshold that is no Nagios range does
+        not return: the run ends UNKNOWN through `cu()`, with a message naming the
+        threshold. An empty threshold means "no threshold", like `None`.
 
     Examples
     --------
@@ -309,6 +327,11 @@ def get_state(value, warn, crit, _operator='ge'):
         return STATE_UNKNOWN
 
     if _operator == 'range':
+        # A threshold that is no Nagios range is a typo of the operator. Answering it
+        # with a bare UNKNOWN on the item leaves them guessing, so it ends the run
+        # with a message that names the value.
+        for spec in (crit, warn):
+            _check_range(spec)
         if crit is not None:
             success, result = match_range(value, crit)
             if not success:
