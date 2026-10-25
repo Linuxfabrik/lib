@@ -11,7 +11,7 @@
 """Provides functions for handling software versions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101202'
+__version__ = '2026102401'
 
 import datetime
 import json
@@ -305,7 +305,8 @@ def _cycle_parts(cycle):
     """Return the numbers of a release cycle that is a plain version (`3.10`, `22.04`)
     as a tuple, and `None` for any other (`11-24h2-e`, `current`)."""
     cycle = str(cycle)
-    if not re.fullmatch(r'\d+(?:\.\d+)*', cycle):
+    # 18 digits at most, as in `version()`: `int()` refuses a string of thousands
+    if not re.fullmatch(r'\d{1,18}(?:\.\d{1,18})*', cycle):
         return None
     return tuple(int(part) for part in cycle.split('.'))
 
@@ -620,7 +621,7 @@ def cycle_bounds(eol):
             continue
         # A cycle named after an edition or a servicing channel ("11-24h2-e",
         # "23h2-ac", "2012-r2") has no order among the version numbers either.
-        if not re.fullmatch(r'\d+(?:\.\d+)*', cycle):
+        if not re.fullmatch(r'\d{1,18}(?:\.\d{1,18})*', cycle):
             continue
         cycles.append(version(cycle))
     if not cycles:
@@ -679,7 +680,10 @@ def version(ver, maxlen=3):
     # strings; rpmvercmp reads anything but ranks rc2 above the release as well. None of
     # them yields the (major, minor, patch) tuple the endoflife.date cycles are looked
     # up by.
-    match = re.search(r'\d+(?:[._]\d+)*', ver)
+    # A part is read with 18 digits at most. The string can come from a remote system,
+    # and Python refuses to convert one of more than 4300 digits with a ValueError
+    # (`sys.get_int_max_str_digits()`, since 3.11 and the security releases before).
+    match = re.search(r'\d{1,18}(?:[._]\d{1,18})*', ver)
     parts = [int(p) for p in re.split(r'[._]', match.group())] if match else []
 
     # Pad with zeros or truncate to match maxlen

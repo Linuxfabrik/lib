@@ -791,6 +791,22 @@ class TestGetProxy(unittest.TestCase):
         self.assertEqual(result, (True, 'http://proxy.example.com:3128'))
         proxy_bypass.assert_not_called()
 
+    def test_no_proxy_port_of_other_digits_is_no_port(self):
+        # `str.isdigit()` takes `²`, which `int()` refuses with a ValueError; the
+        # entry is then a host name that matches nothing, the proxy still applies
+        for entry in ('example.org:²', '[2001:db8::1]:²'):
+            with self.subTest(entry=entry):
+                self.assertEqual(
+                    self._proxy(
+                        'http://host.example.com/x',
+                        {
+                            'http_proxy': 'http://proxy.example.com:3128',
+                            'no_proxy': entry,
+                        },
+                    ),
+                    (True, 'http://proxy.example.com:3128'),
+                )
+
     def test_cidr_entry_covers_the_whole_network(self):
         self.assertEqual(
             self._proxy(

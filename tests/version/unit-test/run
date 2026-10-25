@@ -256,6 +256,10 @@ class TestCheckEol(unittest.TestCase):
                 self.assertEqual(state, STATE_UNKNOWN)
                 self.assertEqual(msg, f'no version number in "{version_string}"')
 
+    def test_a_version_of_thousands_of_digits_is_no_traceback(self):
+        # read like any other version of the same cycle
+        self.assertEqual(self.check('3.' + '1' * 5000), self.check('3.1'))
+
     def test_version_zero_is_still_a_version(self):
         # a real 0.x release, older than every listed cycle here
         state, msg = self.check('0')
@@ -848,6 +852,12 @@ class TestCycleBounds(unittest.TestCase):
             version.cycle_bounds([{'cycle': 8}, {'cycle': 9}]), ((8, 0, 0), (9, 0, 0))
         )
 
+    def test_cycle_of_thousands_of_digits_is_skipped(self):
+        self.assertEqual(
+            version.cycle_bounds([{'cycle': '1' * 5000}, {'cycle': '8'}]),
+            ((8, 0, 0), (8, 0, 0)),
+        )
+
     def test_four_part_cycle_truncates_like_version(self):
         self.assertEqual(
             version.cycle_bounds([{'cycle': '1.2.3.4'}]), ((1, 2, 3), (1, 2, 3))
@@ -914,6 +924,12 @@ class TestVersion(unittest.TestCase):
     def test_none_raises(self):
         with self.assertRaises(TypeError):
             version.version(None)
+
+    def test_a_part_of_thousands_of_digits_is_read_with_18(self):
+        # `int()` refuses a string of more than 4300 digits with a ValueError, and a
+        # version string can come from a remote system
+        self.assertEqual(version.version('3.' + '1' * 5000), (3, int('1' * 18), 0))
+        self.assertEqual(version.version2float('9' * 5000), float('9' * 18))
 
 
 class TestVersion2Float(unittest.TestCase):

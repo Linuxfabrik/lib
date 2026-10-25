@@ -12,7 +12,7 @@
 """Provides network related functions and variables."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026102402'
 
 import ipaddress
 import os
@@ -794,6 +794,31 @@ def get_netinfo():
     }
 
 
+def _is_ip_entry(entry):
+    """
+    Return whether an entry names an IP address or an IP network rather than a hostname.
+
+    Parameters
+    ----------
+    entry : str
+        The host part of a `no_proxy` entry.
+
+    Returns
+    -------
+    bool
+        `True` for `192.0.2.1`, `2001:db8::1` and `192.0.2.0/24`, `False` for `example.com`.
+    """
+    try:
+        ipaddress.ip_network(entry, strict=False)
+    except ValueError:
+        return False
+    return True
+
+
+# ASCII digits only, five at most: `str.isdigit()` also takes `²`, which `int()` refuses
+_PORT_REGEX = re.compile(r'[0-9]{1,5}')
+
+
 def _split_no_proxy_entry(entry):
     """
     Split one `no_proxy` entry into its scheme, host and port part.
@@ -820,37 +845,16 @@ def _split_no_proxy_entry(entry):
         # a bracketed IPv6 literal, optionally followed by a port
         literal, _, rest = entry[1:].partition(']')
         entry = literal
-        if rest.startswith(':') and rest[1:].isdigit():
+        if rest.startswith(':') and _PORT_REGEX.fullmatch(rest[1:]):
             port = int(rest[1:])
     elif ':' in entry and not _is_ip_entry(entry):
         # a bare IPv6 literal is nothing but colons and hex, so only a host that is not one
         # can carry a trailing port
         head, _, tail = entry.rpartition(':')
-        if tail.isdigit():
+        if _PORT_REGEX.fullmatch(tail):
             entry, port = head, int(tail)
 
     return scheme, entry, port
-
-
-def _is_ip_entry(entry):
-    """
-    Return whether an entry names an IP address or an IP network rather than a hostname.
-
-    Parameters
-    ----------
-    entry : str
-        The host part of a `no_proxy` entry.
-
-    Returns
-    -------
-    bool
-        `True` for `192.0.2.1`, `2001:db8::1` and `192.0.2.0/24`, `False` for `example.com`.
-    """
-    try:
-        ipaddress.ip_network(entry, strict=False)
-    except ValueError:
-        return False
-    return True
 
 
 def _no_proxy_matches(entry, scheme, host, port):
