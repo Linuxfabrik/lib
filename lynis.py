@@ -41,7 +41,7 @@ from . import base
 from .globals import STATE_OK, STATE_WARN
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026102501'
 
 # Where Lynis keeps its files when it runs as root.
 CUSTOM_PROFILE = '/etc/lynis/custom.prf'
@@ -115,7 +115,7 @@ def get_findings_msg(findings, suggestions):
     if examples:
         example = min(examples)
         msg += (
-            f'\n\nTo look up an item, run `lynis show details {example}` on the host. '
+            f'\n\nTo look up an item, run `sudo lynis show details {example}` on the host. '
             f'To accept it, add `skip-test={example}` to `{CUSTOM_PROFILE}`.'
         )
     return msg

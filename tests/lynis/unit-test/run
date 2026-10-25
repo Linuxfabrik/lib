@@ -156,7 +156,7 @@ class TestGetFindingsMsg(unittest.TestCase):
             'sessions.\n'
             '* LYNIS: This release is more than 4 months old. Check the website or '
             'GitHub to see if there is an update available.\n\n'
-            'To look up an item, run `lynis show details PKGS-7392` on the host. '
+            'To look up an item, run `sudo lynis show details PKGS-7392` on the host. '
             'To accept it, add `skip-test=PKGS-7392` to `/etc/lynis/custom.prf`.',
         )
 
@@ -165,7 +165,7 @@ class TestGetFindingsMsg(unittest.TestCase):
             [], [{'test': 'KRNL-5820', 'finding': 'Disable core dumps', 'details': ''}]
         )
         self.assertNotIn('[WARNING]', msg)
-        self.assertIn('`lynis show details KRNL-5820`', msg)
+        self.assertIn('`sudo lynis show details KRNL-5820`', msg)
 
     def test_details_and_trailing_dots(self):
         msg = lynis.get_findings_msg(
@@ -188,7 +188,7 @@ class TestGetFindingsMsg(unittest.TestCase):
             msg,
         )
         # the example in the closing line is the lowest test ID
-        self.assertIn('`lynis show details B-2`', msg)
+        self.assertIn('`sudo lynis show details B-2`', msg)
 
     def test_no_command_is_built_from_a_hostile_test_id(self):
         # a report from another host may carry anything as its test ID
@@ -208,7 +208,7 @@ class TestGetFindingsMsg(unittest.TestCase):
             ],
             [],
         )
-        self.assertIn('`lynis show details MAIL-8818:disable_vrfy_command`', msg)
+        self.assertIn('`sudo lynis show details MAIL-8818:disable_vrfy_command`', msg)
         self.assertNotIn('show details $(id)', msg)
 
 
