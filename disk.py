@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026102402'
 
 import csv
 import errno
@@ -946,8 +946,8 @@ def get_private_dir(path, prefix='linuxfabrik-monitoring-plugins'):
 
     - POSIX: always the subdirectory `<prefix>-uid<euid>`, created with `0700`, and refused
       if it is a symlink, belongs to someone else or grants group or other permissions.
-      `path` itself has to belong to root or the account, and if group or others may write
-      to it, it needs the sticky bit, as `/tmp` has.
+      `path` and every directory above it have to belong to root or the account, and if
+      group or others may write to one of them, it needs the sticky bit, as `/tmp` has.
     - Windows: `path` itself if it is private already, which the temporary directory of an
       ordinary account or of NetworkService is. Otherwise, as in `C:\\Windows\\Temp`, which
       SYSTEM uses and where every user may create files, the subdirectory `<prefix>-<SID>`,
@@ -1008,16 +1008,31 @@ def get_private_dir(path, prefix='linuxfabrik-monitoring-plugins'):
     # it would be whatever the link points to by the time the directory is created, and
     # whoever owns the link could point it at a directory of their own.
     path = os.path.realpath(path)
-    try:
-        base = os.stat(path)
-    except OSError as e:
-        return False, f'Inspecting directory {path} failed, Error: {e}'
-    if base.st_uid not in (0, euid):
-        return False, f'Directory {path} belongs to another account, refusing to use it'
-    if base.st_mode & 0o022 and not base.st_mode & _stat.S_ISVTX:
-        return False, (
-            f'Directory {path} lets other accounts replace its entries, refusing to use it'
-        )
+    # The same holds for every directory above the base: whoever may rename an entry of
+    # one of them can swap the whole branch, the private directory included. Walked from
+    # the top down, so once a level is found safe, nobody else can change the next one.
+    current = os.sep
+    components = [part for part in path.split(os.sep) if part]
+    for index in range(len(components) + 1):
+        if index:
+            current = os.path.join(current, components[index - 1])
+        try:
+            st = os.lstat(current)
+        except OSError as e:
+            return False, f'Inspecting directory {current} failed, Error: {e}'
+        if _stat.S_ISLNK(st.st_mode):
+            return False, (
+                f'Directory {current} changed while being checked, refusing to use it'
+            )
+        if st.st_uid not in (0, euid):
+            return False, (
+                f'Directory {current} belongs to another account, refusing to use it'
+            )
+        if st.st_mode & 0o022 and not st.st_mode & _stat.S_ISVTX:
+            return False, (
+                f'Directory {current} lets other accounts replace its entries, '
+                'refusing to use it'
+            )
     private_dir = os.path.join(path, f'{prefix}-uid{euid}')
     # Reject a pre-existing symlink outright: makedirs(exist_ok=True) would either follow it
     # (when it resolves to a directory) or fail with a confusing "File exists" (when it dangles).
@@ -1164,7 +1179,7 @@ def glob(pattern, recursive=True):
     return sorted(_glob.glob(pattern, recursive=recursive))
 
 
-def grep_file(filename, pattern):
+def grep_file(filename, pattern, allowed_roots=None, nofollow=False):
     """
     Search for a regex pattern in a file, similar to the `grep` command.
 
@@ -1177,6 +1192,12 @@ def grep_file(filename, pattern):
         Path to the file to search.
     pattern : str
         A Python regular expression pattern to search for.
+    allowed_roots : iterable of str, optional
+        Confine the read to these roots; a file resolving outside them is refused. See
+        `open_file()`. Defaults to None.
+    nofollow : bool, optional
+        Refuse a symlink as the last path component. See `open_file()`. Defaults to
+        False.
 
     Returns
     -------
@@ -1192,7 +1213,9 @@ def grep_file(filename, pattern):
     >>> success, nc_version = grep_file('version.php', r'\\$OC_version=array\\((.*)\\)')
     """
     try:
-        success, handle = open_file(filename)
+        success, handle = open_file(
+            filename, allowed_roots=allowed_roots, nofollow=nofollow
+        )
         if not success:
             return False, handle
         with handle as f:
@@ -1521,6 +1544,8 @@ def read_csv(
     newline='',
     as_dict=False,
     skip_empty_rows=False,
+    allowed_roots=None,
+    nofollow=False,
 ):
     """
     Read a CSV file and return its content as a list or dictionary.
@@ -1542,6 +1567,12 @@ def read_csv(
     skip_empty_rows : bool, optional
         If True, skip rows that contain only empty or
         whitespace fields. Defaults to False.
+    allowed_roots : iterable of str, optional
+        Confine the read to these roots; a file resolving outside them is refused. See
+        `open_file()`. Defaults to None.
+    nofollow : bool, optional
+        Refuse a symlink as the last path component. See `open_file()`. Defaults to
+        False.
 
     Returns
     -------
@@ -1559,7 +1590,9 @@ def read_csv(
     """
     reader = None
     try:
-        success, csvfile = open_file(filename, newline=newline)
+        success, csvfile = open_file(
+            filename, allowed_roots=allowed_roots, nofollow=nofollow, newline=newline
+        )
         if not success:
             return False, csvfile
         with csvfile:

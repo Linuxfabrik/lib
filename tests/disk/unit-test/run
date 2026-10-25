@@ -125,6 +125,50 @@ class TestFileHelpers(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn('outside the allowed roots', result)
 
+    def _planted_link(self):
+        """A root with a file inside and a symlink to a file outside of it."""
+        root = os.path.join(self.dir, 'root')
+        disk.mkdir(root)
+        inside = os.path.join(root, 'inside.csv')
+        disk.write_file(inside, 'a,b\n')
+        secret = os.path.join(self.dir, 'secret.csv')
+        disk.write_file(secret, 'linuxfabrik,x\n')
+        planted = os.path.join(root, 'planted.csv')
+        os.symlink(secret, planted)
+        return root, inside, planted
+
+    def test_grep_file_allowed_roots_refuses_escape(self):
+        root, inside, planted = self._planted_link()
+        self.assertEqual(
+            disk.grep_file(inside, r'(a),', allowed_roots=[root]), (True, 'a')
+        )
+        success, result = disk.grep_file(planted, r'(\w+),', allowed_roots=[root])
+        self.assertFalse(success)
+        self.assertIn('outside the allowed roots', result)
+
+    @unittest.skipUnless(hasattr(os, 'O_NOFOLLOW'), 'O_NOFOLLOW is POSIX-only')
+    def test_grep_file_nofollow_refuses_symlink(self):
+        _, _, planted = self._planted_link()
+        success, result = disk.grep_file(planted, r'(\w+),', nofollow=True)
+        self.assertFalse(success)
+        self.assertNotIn('linuxfabrik', result)
+
+    def test_read_csv_allowed_roots_refuses_escape(self):
+        root, inside, planted = self._planted_link()
+        self.assertEqual(
+            disk.read_csv(inside, allowed_roots=[root]), (True, [['a', 'b']])
+        )
+        success, result = disk.read_csv(planted, allowed_roots=[root])
+        self.assertFalse(success)
+        self.assertIn('outside the allowed roots', result)
+
+    @unittest.skipUnless(hasattr(os, 'O_NOFOLLOW'), 'O_NOFOLLOW is POSIX-only')
+    def test_read_csv_nofollow_refuses_symlink(self):
+        _, _, planted = self._planted_link()
+        success, result = disk.read_csv(planted, nofollow=True)
+        self.assertFalse(success)
+        self.assertNotIn('linuxfabrik', result)
+
     def test_get_fingerprint_hashes_the_head_only(self):
         disk.write_file(self.file, 'head' + 'tail')
         success, (fingerprint, hashed) = disk.get_fingerprint(self.file, length=4)
@@ -751,9 +795,10 @@ class TestGetOwningPackage(unittest.TestCase):
 
 
 @unittest.skipUnless(hasattr(os, 'geteuid'), 'POSIX ownership only')
+@unittest.skipIf(os.name == 'nt', 'the POSIX branch of get_private_dir()')
 class TestGetPrivateDirPosix(unittest.TestCase):
-    """A base reached through a symlink is used by its resolved name, so whoever owns
-    the link cannot point it elsewhere after the check."""
+    """get_private_dir() on POSIX: the base and every directory above it must be safe
+    from other accounts, and a symlinked base is used by its resolved name."""
 
     def setUp(self):
         self.base = tempfile.mkdtemp(prefix='lftest-disk-private-')
@@ -770,6 +815,18 @@ class TestGetPrivateDirPosix(unittest.TestCase):
         self.assertTrue(ok, private_dir)
         self.assertEqual(os.path.dirname(private_dir), os.path.realpath(self.real))
         self.assertNotIn(self.link, private_dir)
+
+    def test_an_ancestor_others_may_rename_entries_in_is_refused(self):
+        # whoever may rename an entry above the base can swap the whole branch
+        os.chmod(self.base, 0o777)  # nosec B103 - the ancestor is open on purpose
+        ok, msg = disk.get_private_dir(self.real)
+        self.assertFalse(ok)
+        self.assertIn(f'Directory {os.path.realpath(self.base)} lets other', msg)
+
+    def test_a_sticky_ancestor_is_accepted(self):
+        os.chmod(self.base, 0o1777)  # nosec B103 - a sticky ancestor, as /tmp is
+        ok, private_dir = disk.get_private_dir(self.real)
+        self.assertTrue(ok, private_dir)
 
 
 @unittest.skipUnless(os.name == 'nt', 'the DACL checks are Windows-only')
@@ -1155,7 +1212,7 @@ class TestConfinedOpen(unittest.TestCase):
         os.mkfifo(fifo)
         import signal
 
-        def give_up(signum, frame):
+        def give_up(_signum, _frame):
             raise TimeoutError('open_file() blocked on a FIFO')
 
         previous = signal.signal(signal.SIGALRM, give_up)
