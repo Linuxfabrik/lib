@@ -800,6 +800,36 @@ class TestRunPsJea(unittest.TestCase):
         _, kwargs = runspace_cls.call_args
         self.assertEqual(kwargs['idle_timeout'], 60)
 
+    def test_pypsrp_without_idle_timeout_still_runs(self):
+        # pypsrp 0.8.1, the newest on Python 3.9, has no idle_timeout argument
+        ps = make_powershell(outputs=['x'])
+        pool = make_runspace_pool(ps)
+
+        def runspace_pool(wsman, configuration_name, **kwargs):
+            if 'idle_timeout' in kwargs:
+                raise TypeError(
+                    "__init__() got an unexpected keyword argument 'idle_timeout'"
+                )
+            return pool
+
+        patches, runspace_cls, _, _, created = patch_pypsrp_powershell(pool, ps)
+        runspace_cls.side_effect = runspace_pool
+        try:
+            with force_jea():
+                for p in patches:
+                    p.start()
+                try:
+                    result = winrm_lib.run_ps(make_args(), 'cmd')
+                finally:
+                    for p in reversed(patches):
+                        p.stop()
+        finally:
+            for name in created:
+                sys.modules.pop(name, None)
+        self.assertEqual(result, {'retc': 0, 'stdout': 'x', 'stderr': ''})
+        self.assertEqual(runspace_cls.call_count, 2)
+        self.assertNotIn('idle_timeout', runspace_cls.call_args[1])
+
     def test_exception_inside_jea_is_normalized(self):
         # Make RunspacePool.__enter__ raise to hit the except branch.
         ps = make_powershell(outputs=[])
@@ -935,7 +965,14 @@ class TestRunPsPywinrm(unittest.TestCase):
             self.assertEqual(decode_literals(list_script), ['Get-Thing', value])
 
     def test_invalid_parameter_name_is_refused(self):
-        for name in ('Name; Write-Output INJECTED; #', 'Na me', '-Name', '1st', ''):
+        for name in (
+            'Name; Write-Output INJECTED; #',
+            'Na me',
+            '-Name',
+            '1st',
+            '',
+            'Name\n',
+        ):
             session, winrm_mock = self._session(make_pywinrm_result(0, b'', b''))
             with (
                 force_jea(have_jea=False, have_winrm=True),

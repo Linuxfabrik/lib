@@ -11,7 +11,7 @@
 """This library collects some Microsoft WinRM related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026102403'
 
 import base64
 import re
@@ -189,45 +189,6 @@ def _native_call(cmd, params):
     return f'powershell.exe -NoProfile -NonInteractive -EncodedCommand {encoded}'
 
 
-def _psrp_objects_to_text(output):
-    """
-    Render the output objects of a PSRP pipeline as text, like `Format-List`.
-
-    Behind a JEA endpoint the pipeline cannot end in `Out-String`, which the endpoint
-    may not expose, so the objects arrive deserialized, and `str()` of one is only
-    what its `ToString()` returns: the name of a service, the type name of most
-    others. Each property of a complex object becomes a line `Name : Value`, objects
-    are separated by an empty line; a plain value (a string, a number) stays as it is.
-
-    Parameters
-    ----------
-    output : list
-        What `PowerShell.invoke()` returned.
-
-    Returns
-    -------
-    str
-        The text.
-    """
-    blocks = []
-    for obj in output:
-        properties = {}
-        properties.update(getattr(obj, 'adapted_properties', None) or {})
-        properties.update(getattr(obj, 'extended_properties', None) or {})
-        if not properties:
-            blocks.append(str(obj))
-            continue
-        width = max(len(str(name)) for name in properties)
-        blocks.append(
-            '\n'.join(
-                f'{str(name).ljust(width)} : {"" if value is None else value}'
-                for name, value in properties.items()
-            )
-        )
-    separator = '\n\n' if any('\n' in block for block in blocks) else '\n'
-    return separator.join(blocks)
-
-
 def _within(timeout, func, *args):
     """
     Return what `func(*args)` returns, or a timeout result when it takes longer.
@@ -237,8 +198,8 @@ def _within(timeout, func, *args):
     runs in a daemon thread instead, which the caller leaves behind when the timeout
     has passed; it ends with the process. The remote command keeps running until the
     WinRM service closes the shell nobody polls any more: after `_IDLE_TIMEOUT` for the
-    runspace of `run_ps()` over pypsrp, after the idle timeout of the service otherwise
-    (two hours by default).
+    runspace of `run_ps()` over pypsrp 0.9 and newer, after the idle timeout of the
+    service otherwise (two hours by default).
 
     Parameters
     ----------
@@ -406,9 +367,48 @@ def run_cmd(args, cmd, params=None, timeout=None):
     return _within(timeout, _run_cmd, args, cmd, params)
 
 
+def _psrp_objects_to_text(output):
+    """
+    Render the output objects of a PSRP pipeline as text, like `Format-List`.
+
+    Behind a JEA endpoint the pipeline cannot end in `Out-String`, which the endpoint
+    may not expose, so the objects arrive deserialized, and `str()` of one is only
+    what its `ToString()` returns: the name of a service, the type name of most
+    others. Each property of a complex object becomes a line `Name : Value`, objects
+    are separated by an empty line; a plain value (a string, a number) stays as it is.
+
+    Parameters
+    ----------
+    output : list
+        What `PowerShell.invoke()` returned.
+
+    Returns
+    -------
+    str
+        The text.
+    """
+    blocks = []
+    for obj in output:
+        properties = {}
+        properties.update(getattr(obj, 'adapted_properties', None) or {})
+        properties.update(getattr(obj, 'extended_properties', None) or {})
+        if not properties:
+            blocks.append(str(obj))
+            continue
+        width = max(len(str(name)) for name in properties)
+        blocks.append(
+            '\n'.join(
+                f'{str(name).ljust(width)} : {"" if value is None else value}'
+                for name, value in properties.items()
+            )
+        )
+    separator = '\n\n' if any('\n' in block for block in blocks) else '\n'
+    return separator.join(blocks)
+
+
 # What PowerShell accepts as a parameter name. A name is spliced into the script text as
 # it stands, so anything else could carry script of its own.
-_PS_PARAMETER_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+_PS_PARAMETER_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
 
 
 # Seconds after which the WinRM service closes a runspace whose client stopped polling,
@@ -418,6 +418,39 @@ _PS_PARAMETER_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 # (30 by default) refuses every further connection. Verified against Windows Server
 # 2025: such a runspace was gone about two minutes later instead of two hours.
 _IDLE_TIMEOUT = 60
+
+
+def _runspace_pool(runspace_pool_class, wsman, configuration_name):
+    """
+    Create the pypsrp runspace pool, with `_IDLE_TIMEOUT` where pypsrp supports it.
+
+    `idle_timeout` exists from pypsrp 0.9.0 on, which needs Python 3.10. On Python 3.9,
+    as on RHEL 8 and 9, the newest pypsrp is 0.8.1, whose pool takes no such argument and
+    keeps the idle timeout of the service. Verified against pypsrp 0.8.1 and 0.9.1.
+
+    Parameters
+    ----------
+    runspace_pool_class : type
+        `pypsrp.powershell.RunspacePool`.
+    wsman : pypsrp.wsman.WSMan
+        The connection the pool runs on.
+    configuration_name : str
+        The session configuration (endpoint) to connect to.
+
+    Returns
+    -------
+    pypsrp.powershell.RunspacePool
+        The pool, not opened yet.
+    """
+    try:
+        return runspace_pool_class(
+            wsman,
+            configuration_name=configuration_name,
+            idle_timeout=_IDLE_TIMEOUT,
+        )
+    except TypeError:
+        # pypsrp 0.8.1 and older: unexpected keyword argument 'idle_timeout'
+        return runspace_pool_class(wsman, configuration_name=configuration_name)
 
 
 def _run_ps(args, cmd, params):
@@ -459,10 +492,10 @@ def _run_ps(args, cmd, params):
                 cert_validation=True,
             )
 
-            with RunspacePool(
+            with _runspace_pool(
+                RunspacePool,
                 wsman,
-                configuration_name=(configuration_name or 'Microsoft.PowerShell'),
-                idle_timeout=_IDLE_TIMEOUT,
+                configuration_name or 'Microsoft.PowerShell',
             ) as pool:
                 ps = PowerShell(pool)
                 if params is not None:
@@ -528,7 +561,8 @@ def _run_ps(args, cmd, params):
             if params is not None:
                 if isinstance(params, dict):
                     for name in params:
-                        if not _PS_PARAMETER_NAME.match(str(name)):
+                        # fullmatch: `$` would let a trailing newline through
+                        if not _PS_PARAMETER_NAME.fullmatch(str(name)):
                             return {
                                 'retc': 1,
                                 'stdout': '',
@@ -610,18 +644,18 @@ def run_ps(args, cmd, params=None, timeout=None):
         What to execute remotely. Meaning
         depends on `params`:
 
-          - `params is None` — `cmd` is an arbitrary
+          - `params is None`: `cmd` is an arbitrary
             PowerShell script (pipelines, expressions, etc.)
             executed via `add_script()`.
-          - `params` given (`list` or `dict`) — `cmd` is a
+          - `params` given (`list` or `dict`): `cmd` is a
             single cmdlet name executed via `add_cmdlet()`
             (optimal for JEA allow/deny).
     params : list[str], dict, or None
-          - `None` (default) — no params; `cmd` is run as a
+          - `None` (default): no params, `cmd` is run as a
             script.
-          - `list[str]` — positional arguments added via
+          - `list[str]`: positional arguments added via
             `add_argument()`.
-          - `dict` — named parameters added via
+          - `dict`: named parameters added via
             `add_parameter(name, value)`.
           Values may be untrusted: each one reaches the cmdlet
           as a single value, whatever it contains. With
