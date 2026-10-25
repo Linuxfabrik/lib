@@ -11,7 +11,7 @@
 """Provides functions to establish native SMB connections."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026102401'
 
 
 # smbclient and smbprotocol take about 45 ms to import. `_import_smbclient()` loads them on
@@ -32,6 +32,7 @@ def _import_smbclient():
             import smbclient
         if smbprotocol is _NOT_IMPORTED:
             import smbprotocol.exceptions
+            import smbprotocol.header  # the NT status codes, see _os_error_message()
     except ImportError as e:
         return f'Python module "{e.name or "smbprotocol"}" is not installed.'
     return None

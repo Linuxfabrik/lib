@@ -98,8 +98,12 @@ class TestRunEachResults(unittest.TestCase):
         hasattr(os, 'fork'), 'without fork() the jobs run in the calling process'
     )
     def test_a_job_whose_answer_is_not_json(self):
-        success, _ = task.run_each([('a', lambda: object())], timeout=5)['a']
+        success, msg = task.run_each([('a', lambda: object())], timeout=5)['a']
         self.assertFalse(success)
+        # said in words, not as an answer that could not be read
+        self.assertEqual(
+            msg, 'the answer is no JSON: Object of type object is not JSON serializable'
+        )
 
     def test_keys_can_be_any_hashable(self):
         jobs = [(1, lambda: 'one'), (('t', 2), lambda: 'two'), (None, lambda: 'none')]

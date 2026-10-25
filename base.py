@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102301'
+__version__ = '2026102401'
 
 import math
 import numbers
@@ -1561,6 +1561,8 @@ def symmetric_range(threshold):
     '-300:300'
     >>> symmetric_range('0.5')
     '-0.5:0.5'
+    >>> symmetric_range('+300')
+    '-300:300'
     >>> symmetric_range('10:20')
     '10:20'
     >>> symmetric_range(None) is None
@@ -1569,12 +1571,12 @@ def symmetric_range(threshold):
     if threshold is None:
         return None
     text = str(threshold).strip()
-    try:
-        value = float(text)
-    except ValueError:
+    # Only a single bound as the range syntax reads it (`_parse_range_atom()`), and not
+    # a negative one, which has no magnitude to mirror. A `+` is dropped, since `-+300`
+    # is no bound, and so is `-0`, which `--0` would not be either.
+    if not _RANGE_ATOM.match(text) or text.startswith('-'):
         return threshold
-    if value < 0 or value != value:  # negative or NaN: no magnitude to mirror
-        return threshold
+    text = text.lstrip('+')
     return f'-{text}:{text}'
 
 

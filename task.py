@@ -34,7 +34,7 @@ nothing to protect against and would only cost a process per job.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026102401'
 
 import json
 import os
@@ -141,140 +141,6 @@ def _reap(pids):
         time.sleep(0.01)
 
 
-def run_each(jobs, timeout=8):
-    """
-    Run every callable under one shared deadline, each in a process of its own.
-
-    All jobs are started before the first one is waited for, so the whole batch takes at
-    most `timeout` seconds no matter how many of them never come back.
-
-    A job's return value travels back as JSON, which is what makes it survive the process
-    boundary, so it has to consist of the types JSON can carry. Returning `None` is the
-    right answer for a job that only has to succeed or fail.
-
-    A job that raises is reported as a failure with the exception text. A job that misses
-    the deadline is reported as a failure with `TIMEOUT`, so the two can be told apart:
-    the first means the work was done and the answer was no, the second means no answer
-    was reached at all.
-
-    Parameters
-    ----------
-    jobs : list of tuple
-        `(key, callable)` pairs. The key identifies the job in
-        the result and can be any hashable value. The callable takes no arguments and
-        returns something JSON-serialisable.
-    timeout : int or float, optional
-        Seconds the whole batch is given.
-        Defaults to 8. A value of zero or less gives no job any time, so every one of them
-        is reported as `TIMEOUT`.
-
-    Returns
-    -------
-    dict
-        One entry per job, keyed by its key, each value a
-        `(True, result)` or `(False, error_message)` tuple.
-
-    Examples
-    --------
-    >>> jobs = [(mp, lambda mp=mp: os.statvfs(mp).f_bfree) for mp in ('/', '/mnt/data')]
-    >>> run_each(jobs, timeout=5)
-    {'/': (True, 3244913), '/mnt/data': (False, 'did not answer in time')}
-    """
-    if not jobs:
-        return {}
-
-    if not hasattr(os, 'fork'):
-        results = {}
-        for key, func in jobs:
-            try:
-                results[key] = (True, func())
-            except Exception as e:
-                results[key] = (False, str(e))
-        return results
-
-    started = time.time()
-    results = {}
-    pending = {}
-    # every child started, to be collected before returning
-    children = []
-    # Read ends the parent already holds. A child inherits them and closes them right
-    # away, so that no child keeps another job's pipe alive.
-    inherited = []
-
-    _flush_std_streams()
-    for key, func in jobs:
-        try:
-            read_fd, write_fd = os.pipe()
-        except OSError as e:
-            results[key] = (False, str(e))
-            continue
-        try:
-            pid = os.fork()
-        except OSError as e:
-            os.close(read_fd)
-            os.close(write_fd)
-            results[key] = (False, str(e))
-            continue
-        if pid == 0:
-            _work(func, read_fd, write_fd, inherited)
-        os.close(write_fd)
-        inherited.append(read_fd)
-        pending[read_fd] = {
-            'chunks': [],
-            'key': key,
-            'oversized': False,
-            'pid': pid,
-            'size': 0,
-        }
-
-    poller = select.poll()
-    for read_fd in pending:
-        poller.register(read_fd, select.POLLIN)
-
-    while pending:
-        remaining = started + timeout - time.time()
-        if remaining <= 0:
-            break
-        # poll() takes milliseconds, and a value that rounds down to zero would turn the
-        # wait into a busy loop, so it never goes below one.
-        for read_fd, _ in poller.poll(max(1, int(remaining * 1000))):
-            job = pending[read_fd]
-            chunk = os.read(read_fd, 65536)
-            if chunk:
-                # An answer can be larger than a pipe holds, which makes the child wait
-                # for the parent to read, so a descriptor is read until its end.
-                if job['oversized']:
-                    continue
-                job['chunks'].append(chunk)
-                job['size'] += len(chunk)
-                if job['size'] > MAX_RESULT_BYTES:
-                    # keep draining so the child can finish instead of waiting for
-                    # a reader that stopped, but throw the answer away
-                    job['chunks'] = []
-                    job['oversized'] = True
-                continue
-            del pending[read_fd]
-            poller.unregister(read_fd)
-            os.close(read_fd)
-            # The end of the pipe does not mean the child is gone: it may still be
-            # closing other files on its way out. It is collected below, bounded.
-            children.append(job['pid'])
-            results[job['key']] = (
-                (False, _TOO_LARGE) if job['oversized'] else _decode(job['chunks'])
-            )
-
-    for read_fd, job in pending.items():
-        try:
-            os.kill(job['pid'], signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        children.append(job['pid'])
-        os.close(read_fd)
-        results[job['key']] = (False, TIMEOUT)
-    _reap(children)
-    return results
-
-
 def _decode(chunks):
     """
     Turn what a child wrote back into a `(True, result)` or `(False, error_message)`
@@ -328,6 +194,145 @@ def _work(func, read_fd, write_fd, inherited):
             }
         except BaseException as e:
             answer = {'ok': False, 'error': str(e) or type(e).__name__}
-        os.write(write_fd, txt.to_bytes(json.dumps(answer)))
+        try:
+            payload = json.dumps(answer)
+        except (TypeError, ValueError) as e:
+            # a value JSON cannot carry, said in words instead of an unreadable answer
+            payload = json.dumps({'ok': False, 'error': f'the answer is no JSON: {e}'})
+        os.write(write_fd, txt.to_bytes(payload))
     finally:
         os._exit(0)
+
+
+def run_each(jobs, timeout=8):
+    """
+    Run every callable under one shared deadline, each in a process of its own.
+
+    All jobs are started before the first one is waited for, so the whole batch takes at
+    most `timeout` seconds no matter how many of them never come back.
+
+    A job's return value travels back as JSON, which is what makes it survive the process
+    boundary, so it has to consist of the types JSON can carry. Returning `None` is the
+    right answer for a job that only has to succeed or fail.
+
+    A job that raises is reported as a failure with the exception text. A job that misses
+    the deadline is reported as a failure with `TIMEOUT`, so the two can be told apart:
+    the first means the work was done and the answer was no, the second means no answer
+    was reached at all.
+
+    Parameters
+    ----------
+    jobs : list of tuple
+        `(key, callable)` pairs. The key identifies the job in
+        the result and can be any hashable value. The callable takes no arguments and
+        returns something JSON-serialisable.
+    timeout : int or float, optional
+        Seconds the whole batch is given.
+        Defaults to 8. A value of zero or less gives no job any time, so every one of them
+        is reported as `TIMEOUT`.
+
+    Returns
+    -------
+    dict
+        One entry per job, keyed by its key, each value a
+        `(True, result)` or `(False, error_message)` tuple.
+
+    Examples
+    --------
+    >>> jobs = [(mp, lambda mp=mp: os.statvfs(mp).f_bfree) for mp in ('/', '/mnt/data')]
+    >>> run_each(jobs, timeout=5)
+    {'/': (True, 3244913), '/mnt/data': (False, 'did not answer in time')}
+    """
+    if not jobs:
+        return {}
+
+    if not hasattr(os, 'fork'):
+        results = {}
+        for key, func in jobs:
+            try:
+                results[key] = (True, func())
+            except Exception as e:
+                results[key] = (False, str(e))
+        return results
+
+    started = time.monotonic()
+    results = {}
+    pending = {}
+    # every child started, to be collected before returning
+    children = []
+    # Read ends the parent already holds. A child inherits them and closes them right
+    # away, so that no child keeps another job's pipe alive.
+    inherited = []
+
+    _flush_std_streams()
+    for key, func in jobs:
+        try:
+            read_fd, write_fd = os.pipe()
+        except OSError as e:
+            results[key] = (False, str(e))
+            continue
+        try:
+            pid = os.fork()
+        except OSError as e:
+            os.close(read_fd)
+            os.close(write_fd)
+            results[key] = (False, str(e))
+            continue
+        if pid == 0:
+            _work(func, read_fd, write_fd, inherited)
+        os.close(write_fd)
+        inherited.append(read_fd)
+        pending[read_fd] = {
+            'chunks': [],
+            'key': key,
+            'oversized': False,
+            'pid': pid,
+            'size': 0,
+        }
+
+    poller = select.poll()
+    for read_fd in pending:
+        poller.register(read_fd, select.POLLIN)
+
+    while pending:
+        remaining = started + timeout - time.monotonic()
+        if remaining <= 0:
+            break
+        # poll() takes milliseconds, and a value that rounds down to zero would turn the
+        # wait into a busy loop, so it never goes below one.
+        for read_fd, _ in poller.poll(max(1, int(remaining * 1000))):
+            job = pending[read_fd]
+            chunk = os.read(read_fd, 65536)
+            if chunk:
+                # An answer can be larger than a pipe holds, which makes the child wait
+                # for the parent to read, so a descriptor is read until its end.
+                if job['oversized']:
+                    continue
+                job['chunks'].append(chunk)
+                job['size'] += len(chunk)
+                if job['size'] > MAX_RESULT_BYTES:
+                    # keep draining so the child can finish instead of waiting for
+                    # a reader that stopped, but throw the answer away
+                    job['chunks'] = []
+                    job['oversized'] = True
+                continue
+            del pending[read_fd]
+            poller.unregister(read_fd)
+            os.close(read_fd)
+            # The end of the pipe does not mean the child is gone: it may still be
+            # closing other files on its way out. It is collected below, bounded.
+            children.append(job['pid'])
+            results[job['key']] = (
+                (False, _TOO_LARGE) if job['oversized'] else _decode(job['chunks'])
+            )
+
+    for read_fd, job in pending.items():
+        try:
+            os.kill(job['pid'], signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        children.append(job['pid'])
+        os.close(read_fd)
+        results[job['key']] = (False, TIMEOUT)
+    _reap(children)
+    return results

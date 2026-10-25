@@ -1283,6 +1283,20 @@ class TestSymmetricRange(unittest.TestCase):
         self.assertEqual(base.symmetric_range('-5'), '-5')
         self.assertEqual(base.symmetric_range('nan'), 'nan')
 
+    def test_a_plus_sign_is_dropped_and_minus_zero_stays(self):
+        # `-+300` and `--0` are no range a check could read
+        self.assertEqual(base.symmetric_range('+300'), '-300:300')
+        self.assertEqual(base.symmetric_range('-0'), '-0')
+
+    def test_what_the_range_syntax_does_not_read_stays(self):
+        for spec in ('inf', '1_000', '0x10'):
+            self.assertEqual(base.symmetric_range(spec), spec)
+
+    def test_every_mirrored_range_can_be_read(self):
+        for threshold in ('300', '+300', '0', '0.5', '.5', '1e3', '90%'):
+            spec = base.symmetric_range(threshold)
+            self.assertTrue(base.match_range(5, spec)[0], (threshold, spec))
+
     def test_none_and_empty(self):
         self.assertIsNone(base.symmetric_range(None))
         self.assertEqual(base.symmetric_range(''), '')
