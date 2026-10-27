@@ -8,7 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Highlights:** Files a privileged process reads on a caller's behalf are now checked on the handle that was actually opened, so swapping a directory in the path no longer redirects the read. `run_occ()` no longer lets an account without access to a Nextcloud installation choose the code or the account `occ` runs as. Error messages no longer expose credentials, such as the userinfo or query secrets of a URL or a header value, `url.fetch()` and `net.fetch()` end a server that keeps dripping data and `url.fetch()` follows redirect chains of several hops, and `check_eol()` gives Ubuntu hosts a real end-of-life verdict. Consumers start faster, a typical local check saves 9 to 17 ms of CPU time per run.
+tbd
+
+
+## [v8.3.0] - 2026-10-27
+
+**Highlights:** Files a privileged process reads on a caller's behalf are now checked on the handle that was actually opened, so swapping a directory in the path no longer redirects the read. `run_occ()` no longer lets an account without access to a Nextcloud installation choose the code or the account `occ` runs as. Error messages no longer expose credentials, such as the userinfo or query secrets of a URL or a header value, `url.fetch()` and `net.fetch()` end a server that keeps dripping data and `url.fetch()` follows redirect chains of several hops, and `check_eol()` gives Ubuntu hosts a real end-of-life verdict. Consumers start faster, a typical local check saves 9 to 17 ms of CPU time per run. New modules read the report of a Lynis audit (`lynis.py`) and point restic at a repository without letting a caller redirect its writes (`restic.py`).
 
 ### Added
 
@@ -941,7 +946,8 @@ Minor improvements, barely any changes.
 Initial release.
 
 
-[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v8.2.0...HEAD
+[Unreleased]: https://github.com/Linuxfabrik/lib/compare/v8.3.0...HEAD
+[v8.3.0]: https://github.com/Linuxfabrik/lib/compare/v8.2.0...v8.3.0
 [v8.2.0]: https://github.com/Linuxfabrik/lib/compare/v8.1.0...v8.2.0
 [v8.1.0]: https://github.com/Linuxfabrik/lib/compare/v8.0.0...v8.1.0
 [v8.0.0]: https://github.com/Linuxfabrik/lib/compare/v7.1.0...v8.0.0
