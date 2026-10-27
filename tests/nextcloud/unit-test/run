@@ -532,7 +532,7 @@ class TestInstallationTrust(unittest.TestCase):
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, 'w') as f:
                     f.write('<?php\n')
-                os.chmod(path, 0o666)
+                os.chmod(path, 0o666)  # nosec B103 - writable by everyone on purpose
                 ok, msg = self.run_occ(self.nc)
                 self.assertFalse(ok)
                 self.assertIn('something below it can be changed', msg)
@@ -545,7 +545,7 @@ class TestInstallationTrust(unittest.TestCase):
         extra = os.path.join(self.nc, 'config', 'extra.config.php')
         with open(extra, 'w') as f:
             f.write('<?php\n')
-        os.chmod(extra, 0o666)
+        os.chmod(extra, 0o666)  # nosec B103 - writable by everyone on purpose
         ok, msg = self.run_occ(self.nc)
         self.assertFalse(ok)
         self.assertIn('something below it can be changed', msg)
@@ -641,7 +641,7 @@ class TestInstallationTrust(unittest.TestCase):
     def test_data_directory_writable_by_everyone_is_accepted(self):
         data = os.path.join(self.nc, 'data')
         os.makedirs(data)
-        os.chmod(data, 0o777)
+        os.chmod(data, 0o777)  # nosec B103 - writable by everyone on purpose
         self.assertEqual(self.run_occ(self.nc), (True, {}))
 
     # A data directory on a volume of its own, linked into the installation, is left
@@ -651,7 +651,7 @@ class TestInstallationTrust(unittest.TestCase):
         self.addCleanup(shutil.rmtree, volume, True)
         data = os.path.join(volume, 'data')
         os.makedirs(data)
-        os.chmod(data, 0o777)
+        os.chmod(data, 0o777)  # nosec B103 - writable by everyone on purpose
         os.symlink(data, os.path.join(self.nc, 'data'))
         self.assertEqual(self.run_occ(self.nc), (True, {}))
         # Named by its resolved location below a directory another account controls,
@@ -665,13 +665,13 @@ class TestInstallationTrust(unittest.TestCase):
     def test_data_directory_path_cannot_be_pointed_at_code(self):
         ext = os.path.join(self.base, 'ext')
         os.makedirs(ext)
-        os.chmod(ext, 0o777)  # a mount point or a home another account controls
+        os.chmod(ext, 0o777)  # nosec B103 - a mount point or a home another account controls
         apps = os.path.join(self.nc, 'apps')
         code = os.path.join(apps, 'evil', 'app.php')
         os.makedirs(os.path.dirname(code))
         with open(code, 'w') as f:
             f.write('<?php\n')
-        os.chmod(code, 0o666)
+        os.chmod(code, 0o666)  # nosec B103 - writable by everyone on purpose
         data = os.path.join(ext, 'data')
         os.makedirs(data)
         self.assertFalse(self.run_occ(self.nc, data=data)[0])
@@ -690,7 +690,7 @@ class TestInstallationTrust(unittest.TestCase):
         os.makedirs(os.path.dirname(code))
         with open(code, 'w') as f:
             f.write('<?php\n')
-        os.chmod(code, 0o666)
+        os.chmod(code, 0o666)  # nosec B103 - writable by everyone on purpose
         ok, _msg = self.run_occ(self.nc, apps=[apps], data=apps)
         self.assertFalse(ok)
 
@@ -700,7 +700,7 @@ class TestInstallationTrust(unittest.TestCase):
         os.makedirs(os.path.dirname(upload))
         with open(upload, 'w') as f:
             f.write('<?php\n')
-        os.chmod(upload, 0o666)
+        os.chmod(upload, 0o666)  # nosec B103 - writable by everyone on purpose
         self.assertFalse(self.run_occ(self.nc)[0])
         self.assertEqual(
             self.run_occ(self.nc, data=os.path.join(self.nc, 'storage')), (True, {})
@@ -715,7 +715,7 @@ class TestInstallationTrust(unittest.TestCase):
         code = os.path.join(outside, 'evil', 'app.php')
         with open(code, 'w') as f:
             f.write('<?php\n')
-        os.chmod(code, 0o666)
+        os.chmod(code, 0o666)  # nosec B103 - writable by everyone on purpose
         ok, msg = self.run_occ(self.nc, apps=[outside])
         self.assertFalse(ok)
         self.assertIn('app directory its configuration names', msg)
@@ -728,7 +728,7 @@ class TestInstallationTrust(unittest.TestCase):
         code = os.path.join(apps, 'app.php')
         with open(code, 'w') as f:
             f.write('<?php\n')
-        os.chmod(code, 0o666)
+        os.chmod(code, 0o666)  # nosec B103 - writable by everyone on purpose
         ok, _msg = self.run_occ(self.nc, apps=[apps])
         self.assertFalse(ok)
 
@@ -744,7 +744,7 @@ class TestInstallationTrust(unittest.TestCase):
             code = os.path.join(apps, 'evil', 'app.php')
             with open(code, 'w') as f:
                 f.write('<?php\n')
-            os.chmod(code, 0o666)
+            os.chmod(code, 0o666)  # nosec B103 - writable by everyone on purpose
             self.assertFalse(self.run_occ(self.nc, apps=['apps-extra'])[0])
             self.assertFalse(self.occ_ran())
         finally:
@@ -758,7 +758,7 @@ class TestInstallationTrust(unittest.TestCase):
         self.assertNotIn('nowhere', msg)
 
     def test_installation_writable_by_everyone_is_refused(self):
-        os.chmod(self.nc, 0o777)
+        os.chmod(self.nc, 0o777)  # nosec B103 - writable by everyone on purpose
         ok, msg = self.run_occ(self.nc)
         self.assertFalse(ok)
         self.assertIn('writable by everyone', msg)

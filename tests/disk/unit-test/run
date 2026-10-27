@@ -1373,7 +1373,9 @@ class TestConfinedOpenRoots(unittest.TestCase):
     def test_a_symlink_that_stays_inside_the_roots_is_followed(self):
         os.makedirs(os.path.join(self.root, 'sub'))
         disk.write_file(os.path.join(self.root, 'sub', 'g'), 'g')
-        os.symlink(os.path.join('..', 'root', 'sub', 'g'), os.path.join(self.root, 'rel'))
+        os.symlink(
+            os.path.join('..', 'root', 'sub', 'g'), os.path.join(self.root, 'rel')
+        )
         os.symlink(os.path.join(self.root, 'sub'), os.path.join(self.root, 'abs'))
         root_link = os.path.join(self.base, 'root-link')
         os.symlink(self.root, root_link)
@@ -1457,7 +1459,7 @@ class TestResolveTrustedPath(unittest.TestCase):
             shutil.rmtree(work, ignore_errors=True)
 
     def test_file_writable_by_everyone_is_refused(self):
-        os.chmod(self.file, 0o757)
+        os.chmod(self.file, 0o757)  # nosec B103 - writable by everyone on purpose
         success, result = disk.resolve_trusted_path(self.file, owners=[self.uid])
         self.assertFalse(success)
         self.assertIn('writable by everyone', result)
@@ -1489,7 +1491,7 @@ class TestResolveTrustedPath(unittest.TestCase):
         server = socket.socket(socket.AF_UNIX)
         try:
             server.bind(path)
-            os.chmod(path, 0o777)
+            os.chmod(path, 0o777)  # nosec B103 - writable by everyone on purpose
             self.assertEqual(
                 disk.resolve_trusted_path(path, owners=[self.uid]),
                 (True, os.path.realpath(path)),
@@ -1562,13 +1564,13 @@ class TestResolveTrustedTree(unittest.TestCase):
         self.assertEqual(self.check(), (True, os.path.realpath(self.tree)))
 
     def test_file_deep_in_the_tree_writable_by_everyone_is_refused(self):
-        os.chmod(os.path.join(self.deep, 'code.php'), 0o666)
+        os.chmod(os.path.join(self.deep, 'code.php'), 0o666)  # nosec B103 - writable by everyone on purpose
         success, result = self.check()
         self.assertFalse(success)
         self.assertIn('code.php" is writable by everyone', result)
 
     def test_directory_deep_in_the_tree_writable_by_everyone_is_refused(self):
-        os.chmod(self.deep, 0o777)
+        os.chmod(self.deep, 0o777)  # nosec B103 - writable by everyone on purpose
         success, result = self.check()
         self.assertFalse(success)
         self.assertIn('sub" is writable by everyone', result)
@@ -1588,7 +1590,7 @@ class TestResolveTrustedTree(unittest.TestCase):
         outside = os.path.join(self.base, 'outside')
         os.makedirs(outside)
         disk.write_file(os.path.join(outside, 'evil.php'), '<?php\n')
-        os.chmod(os.path.join(outside, 'evil.php'), 0o666)
+        os.chmod(os.path.join(outside, 'evil.php'), 0o666)  # nosec B103 - writable by everyone on purpose
         os.symlink(outside, os.path.join(self.tree, 'apps'))
         success, result = self.check()
         self.assertFalse(success)
@@ -1611,7 +1613,7 @@ class TestResolveTrustedTree(unittest.TestCase):
         data = os.path.join(self.tree, 'data')
         os.makedirs(data)
         disk.write_file(os.path.join(data, 'upload'), 'x')
-        os.chmod(os.path.join(data, 'upload'), 0o666)
+        os.chmod(os.path.join(data, 'upload'), 0o666)  # nosec B103 - writable by everyone on purpose
         self.assertFalse(self.check()[0])
         self.assertEqual(
             self.check(prune=lambda d: os.path.basename(d) == 'data'),
@@ -1623,7 +1625,7 @@ class TestResolveTrustedTree(unittest.TestCase):
     def test_a_pruned_directory_is_not_checked_itself(self):
         data = os.path.join(self.tree, 'data')
         os.makedirs(data)
-        os.chmod(data, 0o777)
+        os.chmod(data, 0o777)  # nosec B103 - writable by everyone on purpose
         self.assertEqual(
             self.check(prune=lambda d: d == os.path.realpath(data)),
             (True, os.path.realpath(self.tree)),
@@ -1633,7 +1635,7 @@ class TestResolveTrustedTree(unittest.TestCase):
         data = os.path.join(self.base, 'data')
         os.makedirs(data)
         disk.write_file(os.path.join(data, 'upload'), 'x')
-        os.chmod(os.path.join(data, 'upload'), 0o666)
+        os.chmod(os.path.join(data, 'upload'), 0o666)  # nosec B103 - writable by everyone on purpose
         os.symlink(data, os.path.join(self.tree, 'data'))
         entry = os.path.join(os.path.realpath(self.tree), 'data')
         self.assertFalse(self.check()[0])
@@ -1674,7 +1676,7 @@ class TestResolveTrustedTree(unittest.TestCase):
     # A caller that chose the path may not be allowed to see below it, so the refusal
     # can leave out the name of what failed.
     def test_name_objects_false_hides_the_object(self):
-        os.chmod(os.path.join(self.deep, 'code.php'), 0o666)
+        os.chmod(os.path.join(self.deep, 'code.php'), 0o666)  # nosec B103 - writable by everyone on purpose
         success, result = self.check(name_objects=False)
         self.assertFalse(success)
         self.assertNotIn('code.php', result)

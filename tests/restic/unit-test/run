@@ -201,7 +201,7 @@ class TestTrustedFiles(unittest.TestCase):
     def test_a_file_anybody_can_change_is_refused(self):
         work = tempfile.mkdtemp(prefix='lftest-restic-untrusted-')
         try:
-            os.chmod(work, 0o777)
+            os.chmod(work, 0o777)  # nosec B103 - writable by everyone on purpose
             planted = os.path.join(work, 'repo')
             with open(planted, 'w') as handle:
                 handle.write('sftp:x\n')
@@ -230,7 +230,7 @@ class TestTrustedFiles(unittest.TestCase):
         # restic writes its locks there: a planted `locks/` symlink would redirect them
         work = tempfile.mkdtemp(prefix='lftest-restic-untrusted-')
         try:
-            os.chmod(work, 0o777)
+            os.chmod(work, 0o777)  # nosec B103 - writable by everyone on purpose
             for given in (work, f'local:{work}'):
                 with self.subTest(given=given):
                     success, message = restic.repo_args(repo=given)
