@@ -413,9 +413,10 @@ class TestInstallationTrust(unittest.TestCase):
             f.write('<?php\n')
         return nc
 
-    def run_occ(self, path, apps=(), data=None, config_ret=None):
+    def run_occ(self, path, apps=(), data=None, config_ret=None, probe_ret=None):
         """Run `run_occ()` with PHP stubbed out. The configuration read answers with
-        `apps` and `data` (default: `data/` below the installation), or `config_ret`."""
+        `apps` and `data` (default: `data/` below the installation), or `config_ret`;
+        the sudo probe answers with `probe_ret` (default: sudo would run it)."""
         if data is None:
             data = os.path.join(path, 'data')
         config = json.dumps({'apps': list(apps), 'data': data})
@@ -423,6 +424,8 @@ class TestInstallationTrust(unittest.TestCase):
         def shell_exec(cmd, **kwargs):
             if '-r' in cmd:
                 return config_ret or (True, (config, '', 0))
+            if cmd[-1] == 'true':
+                return probe_ret or (True, ('', '', 0))
             return True, ('{}', '', 0)
 
         with (
@@ -436,7 +439,11 @@ class TestInstallationTrust(unittest.TestCase):
         return result
 
     def occ_ran(self):
-        return any('-r' not in call.args[0] for call in self.shell_mock.call_args_list)
+        # neither the configuration read nor the sudo probe
+        return any(
+            '-r' not in call.args[0] and call.args[0][-1] != 'true'
+            for call in self.shell_mock.call_args_list
+        )
 
     def test_trusted_installation_runs_resolved_occ_as_its_owner(self):
         self.assertEqual(self.run_occ(self.nc), (True, {}))
@@ -573,6 +580,61 @@ class TestInstallationTrust(unittest.TestCase):
                 self.assertNotIn('linuxfabrik', msg)
                 self.assertNotIn('Parse error', msg)
                 self.assertFalse(self.occ_ran())
+
+    # Without a sudo rule, PHP never runs. The failure is put down to sudo, with
+    # sudo's own answer to a separate `true`, which cannot quote the configuration.
+    # Measured with sudo 1.9 on Rocky 9: the lecture on stderr, then two `sudo:` lines.
+    def test_refused_sudo_is_named_instead_of_php(self):
+        refused = (
+            True,
+            (
+                '',
+                'We trust you have received the usual lecture\n'
+                'sudo: a terminal is required to read the password\n'
+                'sudo: a password is required\n',
+                1,
+            ),
+        )
+        not_the_owner = os.getuid() + 1
+        with mock.patch.object(
+            nextcloud.os, 'geteuid', create=True, return_value=not_the_owner
+        ):
+            ok, msg = self.run_occ(self.nc, config_ret=refused, probe_ret=refused)
+        self.assertFalse(ok)
+        self.assertIn(f'uid {os.getuid()}', msg)
+        self.assertIn('sudo answered "a password is required"', msg)
+        self.assertNotIn('Could not read the configuration', msg)
+        self.assertNotIn('lecture', msg)
+        probe = self.shell_mock.call_args_list[-1].args[0]
+        self.assertEqual(
+            probe, ['sudo', '--non-interactive', '--user', f'#{os.getuid()}', 'true']
+        )
+        self.assertFalse(self.occ_ran())
+
+    def test_php_failure_behind_a_working_sudo_keeps_quiet_about_php(self):
+        not_the_owner = os.getuid() + 1
+        with mock.patch.object(
+            nextcloud.os, 'geteuid', create=True, return_value=not_the_owner
+        ):
+            ok, msg = self.run_occ(
+                self.nc, config_ret=(True, ('', 'PHP Parse error: linuxfabrik', 255))
+            )
+        self.assertFalse(ok)
+        self.assertIn('Could not read the configuration', msg)
+        self.assertNotIn('linuxfabrik', msg)
+
+    def test_no_sudo_probe_when_running_as_the_owner(self):
+        with mock.patch.object(
+            nextcloud.os, 'geteuid', create=True, return_value=os.getuid()
+        ):
+            ok, msg = self.run_occ(
+                self.nc, config_ret=(True, ('', 'PHP Parse error', 255))
+            )
+        self.assertFalse(ok)
+        self.assertIn('Could not read the configuration', msg)
+        self.assertFalse(
+            any(call.args[0][-1] == 'true' for call in self.shell_mock.call_args_list)
+        )
 
     # Nothing is loaded from the data directory and its entry cannot be replaced, so
     # its own mode does not matter either.

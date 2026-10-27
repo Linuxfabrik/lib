@@ -11,7 +11,7 @@
 """This library collects some Nextcloud related functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102402'
+__version__ = '2026102701'
 
 import json
 import os
@@ -31,6 +31,35 @@ def _as_owner(cmd, uid):
     if not hasattr(os, 'geteuid') or os.geteuid() != uid:
         return ['sudo', '--user', f'#{uid}', *cmd]
     return cmd
+
+
+def _sudo_refusal(uid, timeout):
+    """Return why `sudo` refuses to run commands as `uid` for this process, or None if
+    no `sudo` is involved or it would run them. Asked with `true` instead of the failed
+    command, so the answer is sudo's own and cannot quote the configuration.
+    `--non-interactive` keeps sudo from waiting for a password nobody types."""
+    cmd = _as_owner(['true'], uid)
+    if cmd[0] != 'sudo':
+        return None
+    success, result = shell.shell_exec(
+        ['sudo', '--non-interactive', *cmd[1:]], timeout=timeout
+    )
+    if not success:
+        return result
+    _stdout, stderr, rc = result
+    if rc == 0:
+        return None
+    reasons = [
+        line[len('sudo:') :].strip()
+        for line in stderr.splitlines()
+        if line.startswith('sudo:')
+    ]
+    reason = reasons[-1] if reasons else f'rc={rc}'
+    return (
+        f'Could not run PHP as uid {uid}, the owner of `config/config.php`: sudo '
+        f'answered "{reason}". Allow the account running this to run commands as that '
+        'uid with sudo, or run it as root.'
+    )
 
 
 # Reads the configuration the way `OC\Config::readData()` does, `config.php` first and
@@ -96,6 +125,11 @@ def _read_config(php, root, uid, timeout):
         apps = [p for p in config['apps'] if isinstance(p, str) and p]
         data = config['data']
     except (KeyError, TypeError, ValueError):
+        # Most often PHP never ran, because sudo refused to switch to the owner. Said
+        # so, the message points at the cause instead of at PHP.
+        refusal = _sudo_refusal(uid, timeout)
+        if refusal:
+            return False, refusal
         # PHP's message is left out: a parse error quotes the configuration, a
         # password included, and the caller may not be allowed to read it
         return False, (

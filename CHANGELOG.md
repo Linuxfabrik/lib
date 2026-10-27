@@ -71,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * lvm.py: `parse_report()`
 * mail.py: `send()`
 * net.py: `fetch()` returns the answer instead of the encrypted data with `tls=True` and no longer waits forever, not even for the name server, `fetch_socket()`, `get_proxy()`, `FAMILIYSTR`
+* nextcloud.py: `run_occ()` names a sudo that refuses to switch to the owner of `config.php` instead of blaming PHP
 * powershell.py: `run_ps()` returns on time on Windows after a timeout
 * redfish.py: `build_url()`, `get_auth_header()`, `get_manager_logservices_sel_entries()`, `get_systems_memory()`, `start_trace()` on Windows
 * shell.py: `shell_exec()` returns on time on Windows after a timeout and ends everything the command started
