@@ -75,3 +75,28 @@ jobs:
 
       - name: 'Publish to PyPI'
         uses: 'pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086' # v1.14.3
+
+  # Lets the Monitoring Plugins pin the new version in all their lockfiles
+  # (`lf-update-lib.yml` there). Sent with the Linuxfabrik automation app, since
+  # GITHUB_TOKEN cannot reach another repository.
+  dispatch-monitoring-plugins:
+    name: 'Notify the Monitoring Plugins'
+    needs: 'publish-pypi'
+    runs-on: 'ubuntu-latest'
+    steps:
+      - name: 'Generate app token'
+        id: 'app-token'
+        uses: 'actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510' # v3.3.0
+        with:
+          client-id: '${{ vars.LF_AUTOMATION_CLIENT_ID }}'
+          private-key: '${{ secrets.LF_AUTOMATION_APP_PRIVATE_KEY }}'
+          repositories: 'monitoring-plugins'
+
+      - name: 'Dispatch lib-release to Linuxfabrik/monitoring-plugins'
+        env:
+          GH_TOKEN: '${{ steps.app-token.outputs.token }}'
+          TAG: '${{ github.event.release.tag_name }}'
+        run: |
+          gh api repos/Linuxfabrik/monitoring-plugins/dispatches \
+            --raw-field event_type='lib-release' \
+            --raw-field "client_payload[version]=${TAG#v}"
