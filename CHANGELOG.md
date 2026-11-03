@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 tbd
 
+### Added
+
+* icinga.py: `director_*()` functions that read the Icinga Director configuration through `icingacli`, resolve the per-host overrides of service variables and tell which variables reach a check command
+
 
 ## [v8.3.0] - 2026-10-27
 
