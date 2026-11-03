@@ -12,7 +12,7 @@
 Icinga Director easier."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026110302'
+__version__ = '2026110305'
 
 import base64
 import html
@@ -199,6 +199,267 @@ def build_icingaweb2_url(base_url, hostname, servicename=None):
         )
         path = f'icingadb/host?{query}'
     return urllib.parse.urljoin(f'{base_url}/', path)
+
+
+# The object classes of a basket that are compared, with the name a human knows them
+# by and the field that names an object. Fields left out of the comparison: `uuid`
+# (the key), icons, `notes`/`notes_url` of services (typically a description that is
+# reworded over time) and `description` of Service Sets.
+_BASKET_CLASSES = (
+    ('Datafield', 'Datafield', 'varname'),
+    ('Command', 'Command', 'object_name'),
+    ('HostTemplate', 'Host Template', 'object_name'),
+    ('ServiceTemplate', 'Service Template', 'object_name'),
+    ('ServiceSet', 'Service Set', 'object_name'),
+)
+_HOST_TEMPLATE_FIELDS = (
+    'accept_config', 'action_url', 'address', 'address6', 'api_key', 'check_command',
+    'check_interval', 'check_period', 'check_timeout', 'command_endpoint', 'disabled',
+    'display_name', 'enable_active_checks', 'enable_event_handler', 'enable_flapping',
+    'enable_notifications', 'enable_passive_checks', 'enable_perfdata', 'event_command',
+    'flapping_threshold_high', 'flapping_threshold_low', 'groups', 'has_agent',
+    'imports', 'master_should_connect', 'max_check_attempts', 'notes', 'notes_url',
+    'object_name', 'object_type', 'retry_interval', 'template_choice', 'volatile',
+    'zone',
+)  # fmt: skip
+_SERVICE_FIELDS = (
+    'action_url', 'apply_for', 'assign_filter', 'check_command', 'check_interval',
+    'check_period', 'check_timeout', 'command_endpoint', 'disabled', 'display_name',
+    'enable_active_checks', 'enable_event_handler', 'enable_flapping',
+    'enable_notifications', 'enable_passive_checks', 'enable_perfdata', 'event_command',
+    'flapping_threshold_high', 'flapping_threshold_low', 'groups', 'host', 'imports',
+    'max_check_attempts', 'object_name', 'object_type', 'retry_interval', 'service_set',
+    'template_choice', 'use_agent', 'use_var_overrides', 'volatile', 'zone',
+)  # fmt: skip
+# The directory part of every path in a command line, POSIX or Windows. A command is
+# compared without it, so the same plugin installed into another directory, on
+# another platform or under another distribution compares equal.
+_COMMAND_DIRECTORY = re.compile(
+    r'[A-Za-z]:\\(?:[^\\"\'\r\n]*\\)*'  # C:\Program Files\...\, spaces included
+    r'|(?<![^\s"\'])/(?:[^\s"\'/]*/)*'  # /usr/lib64/nagios/plugins/
+)
+# Sub-objects that are added or removed as a whole: `<group>.<name>.<field>`
+_BASKET_GROUPS = ('arguments', 'fields', 'services')
+
+
+def _as_dict(value):
+    """Return `value` if it is a dict, an empty dict otherwise. Baskets are input."""
+    return value if isinstance(value, dict) else {}
+
+
+def _basket_datafield_uuid(basket, datafield_id):
+    """Return the uuid of the data field a field binding points to, by its id."""
+    field = _as_dict(_as_dict(_as_dict(basket).get('Datafield')).get(str(datafield_id)))
+    return field.get('uuid') or str(datafield_id)
+
+
+def _basket_flatten(basket, cls, obj):
+    """Flatten one basket object into `{field: value}` for the comparison. Director
+    serializes the same object in several shapes, and only the content counts. A
+    field is a tuple of names, since a name (a service, an argument, a variable) may
+    contain a dot itself.
+    """
+    flat = {}
+    if cls == 'Datafield':
+        for key in ('datatype', 'format', 'varname'):
+            flat[(key,)] = obj.get(key)
+        for key, value in _as_dict(obj.get('settings')).items():
+            flat[('settings', key)] = value
+        return flat
+    if cls == 'Command':
+        for name, arg in _as_dict(obj.get('arguments')).items():
+            if not isinstance(arg, dict):
+                arg = {'value': arg}  # the short form of an argument
+            for key, value in arg.items():
+                flat[('arguments', name, key)] = value
+        command = obj.get('command') if isinstance(obj.get('command'), str) else ''
+        flat[('command',)] = _COMMAND_DIRECTORY.sub('', command)
+        for key in ('imports', 'is_string', 'methods_execute', 'object_name'):
+            flat[(key,)] = obj.get(key)
+        for key in ('object_type', 'timeout', 'zone'):
+            flat[(key,)] = obj.get(key)
+    elif cls == 'ServiceSet':
+        for key in ('assign_filter', 'object_name', 'object_type'):
+            flat[(key,)] = obj.get(key)
+        services = obj.get('services')
+        if isinstance(services, list):  # the format of older baskets
+            services = {
+                s.get('object_name'): s for s in services if isinstance(s, dict)
+            }
+        for name, service in _as_dict(services).items():
+            if isinstance(service, dict):
+                for key, value in _basket_flatten(
+                    basket, 'ServiceTemplate', service
+                ).items():
+                    flat[('services', name, *key)] = value
+        return flat
+    else:
+        fields = _HOST_TEMPLATE_FIELDS if cls == 'HostTemplate' else _SERVICE_FIELDS
+        for key in fields:
+            flat[(key,)] = obj.get(key)
+    flat[('disabled',)] = obj.get('disabled', False)
+    bindings = obj.get('fields')
+    for binding in bindings if isinstance(bindings, list) else []:
+        if isinstance(binding, dict):
+            uuid = _basket_datafield_uuid(basket, binding.get('datafield_id'))
+            # `is_required` does not survive an export and an import unchanged
+            flat[('fields', uuid, 'var_filter')] = binding.get('var_filter')
+    for key, value in _as_dict(obj.get('vars')).items():
+        flat[('vars', key)] = value
+    return flat
+
+
+def _basket_index(basket, cls, anchor):
+    """Return `{uuid (or name): (name, flat object)}` for one object class."""
+    index = {}
+    for key, obj in _as_dict(_as_dict(basket).get(cls)).items():
+        if not isinstance(obj, dict):
+            continue
+        name = obj.get(anchor) or key
+        index[obj.get('uuid') or name] = (name, _basket_flatten(basket, cls, obj))
+    return index
+
+
+def _basket_group(field):
+    """Return the `(<group>, <name>)` sub-object a flat field belongs to, or None."""
+    if len(field) >= 3 and field[0] in _BASKET_GROUPS:
+        return field[:2]
+    return None
+
+
+def _basket_change(field, live, shipped, varnames):
+    """Build one change: the service of a Service Set goes into its own key, and a
+    field binding is named by the variable of its data field instead of its uuid.
+    """
+    service = None
+    if field[0] == 'services' and len(field) >= 2:
+        service, field = field[1], field[2:]
+    field = list(field)
+    if len(field) >= 2 and field[0] == 'fields' and field[1] in varnames:
+        field[1] = varnames[field[1]]
+    return {
+        'field': '.'.join(field),
+        'live': live,
+        'service': service,
+        'shipped': shipped,
+    }
+
+
+def director_basket_diff(live, shipped):
+    """
+    Compare the objects of a Director basket with what the Director holds.
+
+    Covers the data fields, commands, host templates, service templates and Service
+    Sets of `shipped`. Objects are matched by their uuid. An object that exists only
+    in `live` is not reported: importing `shipped` leaves it alone.
+
+    Parameters
+    ----------
+    live : dict
+        The objects in the Director, as `director_basket_dump()` returns them.
+    shipped : dict
+        The basket to compare with, for example the one that ships with the
+        Linuxfabrik Monitoring Plugins.
+
+    Returns
+    -------
+    list of dict
+        One entry per object of `shipped` that is missing in `live` or differs from
+        it, sorted by class and name: `class` (for example `'Service Template'`),
+        `name`, `missing` (bool) and `changes`, a list of `{'field', 'live',
+        'service', 'shipped'}`. `live` and `shipped` are `None` on the side a field
+        is missing on. `service` names the service of a Service Set the field
+        belongs to, `None` otherwise. `field` is the path of the field, its parts
+        joined with dots (`vars.cpu_usage_warning`, `arguments.--warning.value`). A
+        sub-object (a command argument, a field binding, a service of a Service Set)
+        that exists on one side only is one change, named after the sub-object (a
+        service with an empty `field`), with its fields as the value.
+
+    Notes
+    -----
+    - Values are compared with `director_same_value()`, which absorbs the ways the
+      Director serializes the same value differently in an export.
+    - A basket without a `Datafield` section, as after `icingacli director migrate
+      datafields`, is compared without data fields.
+    """
+    varnames = {}
+    for basket in (live, shipped):
+        for field in _as_dict(_as_dict(basket).get('Datafield')).values():
+            if isinstance(field, dict) and field.get('uuid'):
+                varnames[field['uuid']] = field.get('varname') or field['uuid']
+    result = []
+    for cls, label, anchor in _BASKET_CLASSES:
+        live_index = _basket_index(live, cls, anchor)
+        for key, (name, theirs) in sorted(
+            _basket_index(shipped, cls, anchor).items(), key=lambda item: item[1][0]
+        ):
+            if key not in live_index:
+                result.append(
+                    {'changes': [], 'class': label, 'missing': True, 'name': name}
+                )
+                continue
+            ours = live_index[key][1]
+            groups_live = {_basket_group(f) for f in ours} - {None}
+            groups_shipped = {_basket_group(f) for f in theirs} - {None}
+            one_sided = groups_live ^ groups_shipped
+            changes = []
+            for group in sorted(one_sided):
+                sides = []
+                for flat in (ours, theirs):
+                    members = {
+                        '.'.join(f[2:]): v
+                        for f, v in flat.items()
+                        if _basket_group(f) == group
+                    }
+                    sides.append(members or None)
+                changes.append(_basket_change(group, *sides, varnames))
+            for field in sorted(set(ours) | set(theirs)):
+                if _basket_group(field) in one_sided:
+                    continue
+                if director_same_value(ours.get(field), theirs.get(field)):
+                    continue
+                changes.append(
+                    _basket_change(field, ours.get(field), theirs.get(field), varnames)
+                )
+            if changes:
+                result.append(
+                    {'changes': changes, 'class': label, 'missing': False, 'name': name}
+                )
+    return result
+
+
+def director_basket_dump(name='export', timeout=30):
+    """
+    Return the current state of the objects of a Director basket.
+
+    Runs `icingacli director basket dump`, which builds a snapshot of the objects the
+    basket covers in memory, without storing it. The basket definition has to cover
+    the object types the caller wants to compare.
+
+    Parameters
+    ----------
+    name : str, optional
+        The name of the basket definition in the Director. Defaults to `'export'`.
+    timeout : int or float, optional
+        Seconds the call may take. Defaults to `30`, as the dump takes 4 to 10
+        seconds (Director 1.12.1, about 700 commands and 5000 data fields).
+
+    Returns
+    -------
+    tuple (bool, dict or str)
+        `(True, basket)` or `(False, message)`.
+    """
+    if not isinstance(name, str) or not name:
+        return (False, 'director_basket_dump() needs the name of a basket.')
+    success, name = shell.safe_cli_value(name, 'basket name')
+    if not success:
+        return (False, name)
+    success, result = director_cli(['basket', 'dump', '--name', name], timeout=timeout)
+    if not success:
+        return (False, result)
+    if not isinstance(result, dict):
+        return (False, f'The Icinga Director returned no objects for basket "{name}".')
+    return (True, result)
 
 
 def director_cli(argv, timeout=8):

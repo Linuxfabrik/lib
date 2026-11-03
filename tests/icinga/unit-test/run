@@ -761,5 +761,285 @@ class TestDirectorSensitive(unittest.TestCase):
                 self.assertFalse(icinga.director_is_sensitive(name, {'login'}))
 
 
+def basket():
+    """A small basket in the shape `icingacli director basket dump` returns."""
+    data = {
+        'Datafield': {
+            '1': {'uuid': 'df-warn', 'varname': 'load_warning', 'datatype': 'String'},
+        },
+        'Command': {
+            'cmd-check-load': {
+                'uuid': 'cmd-1',
+                'object_name': 'cmd-check-load',
+                'object_type': 'object',
+                'command': '/usr/lib64/nagios/plugins/load',
+                'arguments': {'--warning': {'value': '$load_warning$'}},
+                'fields': [{'datafield_id': 1, 'is_required': 'n', 'var_filter': None}],
+                'timeout': 10,
+            },
+        },
+        'ServiceTemplate': {
+            'tpl-service-load': {
+                'uuid': 'tpl-1',
+                'object_name': 'tpl-service-load',
+                'object_type': 'template',
+                'check_command': 'cmd-check-load',
+                'max_check_attempts': 5,
+                'notes': 'Checks the load.',
+                'vars': {'load_warning': '80'},
+            },
+        },
+        'ServiceSet': {
+            'Linux Set': {
+                'uuid': 'set-1',
+                'object_name': 'Linux Set',
+                'object_type': 'template',
+                'services': {
+                    'Load': {
+                        'uuid': 'svc-1',
+                        'object_name': 'Load',
+                        'imports': ['tpl-service-load'],
+                        'vars': {},
+                    },
+                },
+            },
+        },
+    }
+    return data
+
+
+class TestDirectorBasketDiff(unittest.TestCase):
+    def test_identical_baskets(self):
+        self.assertEqual(icinga.director_basket_diff(basket(), basket()), [])
+
+    def test_serialization_noise_is_ignored(self):
+        live = basket()
+        # renumbered data field, same uuid
+        live['Datafield'] = {
+            '7': {'uuid': 'df-warn', 'varname': 'load_warning', 'datatype': 'String'}
+        }
+        live['Command']['cmd-check-load'] = {
+            'uuid': 'cmd-1',
+            'object_name': 'cmd-check-load',
+            'object_type': 'object',
+            'command': 'load',  # without the plugin directory
+            'arguments': {'--warning': '$load_warning$'},  # the short form
+            'disabled': False,
+            'fields': [{'datafield_id': 7, 'is_required': 'y', 'var_filter': None}],
+            'imports': [],
+            'timeout': '10',
+            'vars': {},
+        }
+        live['ServiceTemplate']['tpl-service-load'].update(
+            {'max_check_attempts': '5', 'groups': [], 'notes': 'Reworded.'}
+        )
+        self.assertEqual(icinga.director_basket_diff(live, basket()), [])
+
+    def test_command_compared_without_its_directory(self):
+        for live_cmd, shipped_cmd, same in (
+            ('/usr/lib/nagios/plugins/load', '/usr/lib64/nagios/plugins/load', True),
+            (
+                'C:\\Program Files\\icinga2\\sbin\\linuxfabrik\\load.exe',
+                'D:\\Plugins\\load.exe',
+                True,
+            ),
+            ('/usr/bin/sudo /opt/plugins/load', 'sudo /usr/lib64/load', True),
+            ('/usr/lib64/nagios/plugins/load', '/usr/lib64/nagios/plugins/disk', False),
+            ('load --url=/health/a', 'load --url=/health/b', False),
+        ):
+            with self.subTest(live=live_cmd, shipped=shipped_cmd):
+                live, shipped = basket(), basket()
+                live['Command']['cmd-check-load']['command'] = live_cmd
+                shipped['Command']['cmd-check-load']['command'] = shipped_cmd
+                result = icinga.director_basket_diff(live, shipped)
+                self.assertEqual(result == [], same)
+
+    def test_missing_object(self):
+        live = basket()
+        del live['ServiceTemplate']['tpl-service-load']
+        self.assertEqual(
+            icinga.director_basket_diff(live, basket()),
+            [
+                {
+                    'changes': [],
+                    'class': 'Service Template',
+                    'missing': True,
+                    'name': 'tpl-service-load',
+                }
+            ],
+        )
+
+    def test_changed_variable(self):
+        live = basket()
+        live['ServiceTemplate']['tpl-service-load']['vars']['load_warning'] = '90'
+        self.assertEqual(
+            icinga.director_basket_diff(live, basket()),
+            [
+                {
+                    'changes': [
+                        {
+                            'field': 'vars.load_warning',
+                            'live': '90',
+                            'service': None,
+                            'shipped': '80',
+                        }
+                    ],
+                    'class': 'Service Template',
+                    'missing': False,
+                    'name': 'tpl-service-load',
+                }
+            ],
+        )
+
+    def test_argument_on_one_side_is_one_change(self):
+        shipped = basket()
+        shipped['Command']['cmd-check-load']['arguments']['--critical'] = {
+            'value': '$load_critical$'
+        }
+        (entry,) = icinga.director_basket_diff(basket(), shipped)
+        self.assertEqual(entry['class'], 'Command')
+        self.assertEqual(
+            entry['changes'],
+            [
+                {
+                    'field': 'arguments.--critical',
+                    'live': None,
+                    'service': None,
+                    'shipped': {'value': '$load_critical$'},
+                }
+            ],
+        )
+
+    def test_field_binding_is_named_by_its_variable(self):
+        live = basket()
+        live['Command']['cmd-check-load']['fields'][0]['var_filter'] = 'x'
+        (entry,) = icinga.director_basket_diff(live, basket())
+        self.assertEqual(entry['changes'][0]['field'], 'fields.load_warning.var_filter')
+
+    def test_changed_service_of_a_set(self):
+        live = basket()
+        live['ServiceSet']['Linux Set']['services']['Load']['vars'] = {'x': '1'}
+        (entry,) = icinga.director_basket_diff(live, basket())
+        self.assertEqual(entry['class'], 'Service Set')
+        self.assertEqual(
+            entry['changes'],
+            [{'field': 'vars.x', 'live': '1', 'service': 'Load', 'shipped': None}],
+        )
+
+    def test_names_with_dots(self):
+        shipped = basket()
+        services = shipped['ServiceSet']['Linux Set']['services']
+        services['Systemd Unit - sshd.service'] = {
+            'uuid': 'svc-2',
+            'object_name': 'Systemd Unit - sshd.service',
+            'imports': ['tpl-service-systemd-unit'],
+        }
+        shipped['Command']['cmd-check-load']['arguments']['--a.b'] = {'value': '1'}
+        live = basket()
+        live['ServiceSet']['Linux Set']['services']['Systemd Unit - sshd.service'] = {
+            'uuid': 'svc-2',
+            'object_name': 'Systemd Unit - sshd.service',
+            'imports': ['tpl-service-systemd-unit-old'],
+        }
+        changes = {
+            e['class']: e['changes'] for e in icinga.director_basket_diff(live, shipped)
+        }
+        self.assertEqual(
+            changes['Service Set'],
+            [
+                {
+                    'field': 'imports',
+                    'live': ['tpl-service-systemd-unit-old'],
+                    'service': 'Systemd Unit - sshd.service',
+                    'shipped': ['tpl-service-systemd-unit'],
+                }
+            ],
+        )
+        self.assertEqual(
+            changes['Command'],
+            [
+                {
+                    'field': 'arguments.--a.b',
+                    'live': None,
+                    'service': None,
+                    'shipped': {'value': '1'},
+                }
+            ],
+        )
+
+    def test_service_on_one_side_has_an_empty_field(self):
+        live = basket()
+        del live['ServiceSet']['Linux Set']['services']['Load']
+        ((change,),) = [
+            e['changes'] for e in icinga.director_basket_diff(live, basket())
+        ]
+        self.assertEqual((change['service'], change['field']), ('Load', ''))
+        self.assertIsNone(change['live'])
+        self.assertEqual(change['shipped']['imports'], ['tpl-service-load'])
+
+    def test_objects_only_in_the_director_are_ignored(self):
+        live = basket()
+        live['Command']['cmd-custom'] = {'uuid': 'c-9', 'object_name': 'cmd-custom'}
+        self.assertEqual(icinga.director_basket_diff(live, basket()), [])
+
+    def test_without_datafields_and_wrong_input(self):
+        live = basket()
+        del live['Datafield']
+        result = icinga.director_basket_diff(live, basket())
+        self.assertEqual(
+            [(e['class'], e['missing']) for e in result],
+            [('Datafield', True), ('Command', False)],
+        )
+        self.assertEqual(icinga.director_basket_diff(None, None), [])
+        self.assertEqual(icinga.director_basket_diff({'Command': 'x'}, {}), [])
+        broken = basket()
+        broken['Command']['cmd-check-load'].update(
+            {'arguments': 'x', 'command': 42, 'fields': 'x', 'vars': ['x']}
+        )
+        broken['ServiceSet']['Linux Set']['services'] = 'x'
+        broken['Datafield']['1']['settings'] = 'x'
+        for live, shipped in ((broken, basket()), (basket(), broken)):
+            self.assertEqual(
+                [e['class'] for e in icinga.director_basket_diff(live, shipped)],
+                ['Command', 'Service Set'],
+            )
+
+
+class TestDirectorBasketDump(DirectorCliBase):
+    def test_returns_the_objects(self):
+        self.shell_exec.return_value = (True, ('{"Command": {}}', '', 0))
+        self.assertEqual(icinga.director_basket_dump(), (True, {'Command': {}}))
+        self.shell_exec.assert_called_once_with(
+            ['icingacli', 'director', 'basket', 'dump', '--name', 'export'], timeout=30
+        )
+
+    def test_passes_name_and_timeout(self):
+        self.shell_exec.return_value = (True, ('{}', '', 0))
+        icinga.director_basket_dump('mine', timeout=5)
+        self.shell_exec.assert_called_once_with(
+            ['icingacli', 'director', 'basket', 'dump', '--name', 'mine'], timeout=5
+        )
+
+    def test_refuses_option_like_or_empty_names(self):
+        for name in ('--help', '', None):
+            with self.subTest(name=name):
+                success, _ = icinga.director_basket_dump(name)
+                self.assertFalse(success)
+        self.shell_exec.assert_not_called()
+
+    def test_no_object(self):
+        self.shell_exec.return_value = (True, ('[]', '', 0))
+        self.assertEqual(
+            icinga.director_basket_dump(),
+            (False, 'The Icinga Director returned no objects for basket "export".'),
+        )
+
+    def test_failure_is_passed_on(self):
+        self.shell_exec.return_value = (True, ('', 'ERROR: no such basket\n', 1))
+        success, msg = icinga.director_basket_dump()
+        self.assertFalse(success)
+        self.assertIn('`icingacli director basket dump` failed with exit code 1', msg)
+
+
 if __name__ == '__main__':
     unittest.main()
