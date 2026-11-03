@@ -529,6 +529,11 @@ class TestDirectorHostServices(DirectorCliBase):
         self.assertIn('--all-services', argv)
         self.assertIn('--resolved', argv)
 
+    def test_passes_the_timeout(self):
+        self.shell_exec.return_value = (True, ('{"services": []}', '', 0))
+        self.assertEqual(icinga.director_host_services('web01', timeout=3), (True, []))
+        self.assertEqual(self.shell_exec.call_args.kwargs, {'timeout': 3})
+
     def test_option_like_host_name_is_refused(self):
         success, _ = icinga.director_host_services('--help')
         self.assertFalse(success)
@@ -742,6 +747,10 @@ class TestDirectorSensitive(unittest.TestCase):
 
     def test_sensitive_vars_of_wrong_input(self):
         self.assertEqual(icinga.director_sensitive_vars(None, 'x'), set())
+
+    def test_is_sensitive_by_name_alone(self):
+        self.assertTrue(icinga.director_is_sensitive('db_password'))
+        self.assertFalse(icinga.director_is_sensitive('login'))
 
     def test_is_sensitive(self):
         for name in ('login', 'db_password', 'API_KEY', 'snmp_community', 'x_token'):
