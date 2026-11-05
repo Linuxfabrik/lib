@@ -15,6 +15,11 @@ tbd
 * icinga.py: `director_*()` functions that read the Icinga Director configuration through `icingacli`, resolve the per-host overrides of service variables, tell which variables reach a check command and compare the Director with a basket
 
 
+### Changed
+
+* shell.py: `shell_exec()` asks a command that runs into its timeout to end (SIGTERM) and kills it only if it is still running 2 seconds later
+
+
 ## [v8.3.0] - 2026-10-27
 
 **Highlights:** Privileged file reads are checked on the handle that was actually opened, and `run_occ()` no longer lets an account without access to a Nextcloud installation choose what `occ` runs. Error messages no longer leak credentials, `url.fetch()` and `net.fetch()` end servers that keep dripping data, and `check_eol()` covers Ubuntu. Consumers start 9 to 17 ms faster per run. New modules: `lynis.py` and `restic.py`.

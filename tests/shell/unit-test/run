@@ -55,7 +55,9 @@ class FakePopen:
         self._stderr_bytes = recipe.get('stderr', b'')
         self.returncode = recipe.get('returncode', 0)
         self._timeout = recipe.get('timeout', False)
+        self.calls = []
         self.killed = False
+        self.terminated = False
         self.waited_for = None
         self.stdin = mock.MagicMock(name='stdin-pipe')
         self.stdout = mock.MagicMock(name='stdout-pipe')
@@ -71,9 +73,15 @@ class FakePopen:
         return self._stdout_bytes, self._stderr_bytes
 
     def kill(self):
+        self.calls.append('kill')
         self.killed = True
 
+    def terminate(self):
+        self.calls.append('terminate')
+        self.terminated = True
+
     def wait(self, timeout=None):
+        self.calls.append(('wait', timeout))
         self.waited_for = timeout
         return self.returncode
 
@@ -362,6 +370,36 @@ class TestShellExec(unittest.TestCase):
         self.assertEqual(process.waited_for, shell._KILL_GRACE)
         for pipe in (process.stdin, process.stdout, process.stderr):
             pipe.close.assert_called_once_with()
+
+    def test_timeout_asks_the_command_to_end_before_killing_it(self):
+        # SIGKILL leaves no chance to release a lock (rpm inside Berkeley DB), so the
+        # command gets SIGTERM and a bounded wait first
+        Fake = make_popen(timeout=True)
+        with (
+            mock.patch.object(shell.os, 'name', 'posix'),
+            mock.patch.object(shell.subprocess, 'Popen', Fake),
+        ):
+            success, _ = shell.shell_exec(['sleep', '100'], timeout=1)
+        self.assertFalse(success)
+        self.assertEqual(
+            Fake.instances[0].calls,
+            [
+                'terminate',
+                ('wait', shell._TERM_GRACE),
+                'kill',
+                ('wait', shell._KILL_GRACE),
+            ],
+        )
+
+    def test_timeout_on_windows_terminates_right_away(self):
+        Fake = make_popen(timeout=True)
+        with (
+            mock.patch.object(shell.os, 'name', 'nt'),
+            mock.patch.object(shell.subprocess, 'Popen', Fake),
+        ):
+            shell.shell_exec(['ping', '-n', '30', '127.0.0.1'], timeout=1)
+        self.assertFalse(Fake.instances[0].terminated)
+        self.assertEqual(Fake.instances[0].calls, ['kill', ('wait', shell._KILL_GRACE)])
 
     def test_timeout_on_windows_leaves_the_output_pipes_to_the_reader_threads(self):
         # On Windows communicate() reads stdout and stderr in threads that are still
@@ -660,6 +698,35 @@ class TestShellExecRealCommands(unittest.TestCase):
         else:
             os.kill(pid, 9)
             self.fail(f'the grandchild {pid} outlived the timeout')
+
+    @unittest.skipIf(os.name == 'nt', 'SIGTERM and traps are POSIX')
+    def test_real_timeout_lets_the_command_clean_up(self):
+        # what a command does on SIGTERM, closing a database for example, still happens
+        with tempfile.TemporaryDirectory() as scratch:
+            marker = os.path.join(scratch, 'cleaned-up')
+            success, result = shell.shell_exec(
+                [
+                    'sh',
+                    '-c',
+                    f'trap "echo done > {marker}; exit 0" TERM; sleep 30 & wait',
+                ],
+                timeout=1,
+            )
+            self.assertFalse(success)
+            self.assertEqual(result, 'Timeout after 1 seconds.')
+            self.assertTrue(os.path.exists(marker))
+
+    @unittest.skipIf(os.name == 'nt', 'SIGTERM and traps are POSIX')
+    def test_real_timeout_kills_a_command_that_ignores_sigterm(self):
+        start = time.time()
+        success, result = shell.shell_exec(
+            ['sh', '-c', 'trap "" TERM; sleep 30'],
+            timeout=1,
+        )
+        elapsed = time.time() - start
+        self.assertFalse(success)
+        self.assertEqual(result, 'Timeout after 1 seconds.')
+        self.assertLess(elapsed, 1 + shell._TERM_GRACE + shell._KILL_GRACE + 2)
 
     def test_real_timeout_holds_when_the_pipes_outlive_the_command(self):
         # Killing the command does not close its pipes when something else holds them

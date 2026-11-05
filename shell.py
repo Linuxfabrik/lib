@@ -11,7 +11,7 @@
 """Communicates with the Shell on Linux and Windows."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102403'
+__version__ = '2026110501'
 
 
 import os
@@ -31,6 +31,12 @@ from . import txt
 # timeout without it. Long enough for a process that can act on the signal, short enough
 # that one which cannot does not extend the caller's deadline in any meaningful way.
 _KILL_GRACE = 1
+
+# How long a command that ran into its timeout is given to end on SIGTERM before it is
+# killed. Ending on its own lets it release what it holds: closing a database it only
+# read takes milliseconds, and the bound keeps a command that ignores the signal from
+# extending the caller's deadline by more than this.
+_TERM_GRACE = 2
 
 RETC_SSHPASS = {
     1: 'Invalid command line argument',
@@ -348,12 +354,24 @@ def _feeding(state):
     return feeder is not None and feeder.is_alive()
 
 
+def _signal_group(pid, signum):
+    """Send `signum` to the process group a command leads, if it has one of its own."""
+    # never a group that is not the command's own, such as init's
+    if os.name != 'nt' and isinstance(pid, int) and pid > 1:
+        try:
+            os.killpg(pid, signum)
+        except OSError:
+            pass
+
+
 def _kill(p, keep_stdin=False):
-    """Kill a command and let go of it, without waiting for ever on a child that cannot
-    die: it is reaped as far as `_KILL_GRACE` allows and its pipes are closed. With
-    `keep_stdin`, standard input stays open: a thread is still writing to it, and closing a
-    pipe under a blocked write is what a Windows caller must not do. The write ends with the
-    process."""
+    """End a command and let go of it, without waiting for ever on a child that
+    cannot die. On POSIX the command is asked to end first (SIGTERM) and killed
+    (SIGKILL) only if it is still there after `_TERM_GRACE`; on Windows it is
+    terminated right away. It is reaped as far as `_KILL_GRACE` allows and its pipes
+    are closed. With `keep_stdin`, standard input stays open: a thread is still writing
+    to it, and closing a pipe under a blocked write is what a Windows caller must not
+    do. The write ends with the process."""
     # The whole process group, not only the command: a shell that started a pipeline
     # or a program that forked a helper leaves those running otherwise, and a check
     # that runs every few minutes piles them up. The command leads a session of its
@@ -361,12 +379,26 @@ def _kill(p, keep_stdin=False):
     # started. A member that belongs to another account (the command behind `sudo`)
     # cannot be signalled from here; the rest of the group still is.
     pid = getattr(p, 'pid', None)
-    # never a group that is not the command's own, such as init's
-    if os.name != 'nt' and isinstance(pid, int) and pid > 1:
+    # Ask before killing. SIGKILL gives a command no chance to release what it holds,
+    # and some of that outlives it: rpm 4.14 killed inside Berkeley DB leaves its
+    # database environment behind, and every later access as root fails with
+    # DB_RUNRECOVERY until an administrator removes it, which stops dnf and yum on the
+    # host. rpm closes the database on SIGTERM and exits. Verified on Rocky 8 with
+    # rpm 4.14.3: a read-only `rpm --query --all` SIGKILLed at random moments broke the
+    # database within a few dozen attempts, 400 SIGTERMs did not.
+    if os.name != 'nt':
+        _signal_group(pid, signal.SIGTERM)
         try:
-            os.killpg(pid, signal.SIGKILL)
+            p.terminate()
         except OSError:
             pass
+        try:
+            p.wait(timeout=_TERM_GRACE)
+        except subprocess.TimeoutExpired:
+            pass
+    # Whatever is left of the group gets no further say, the command included if it
+    # ignored the request.
+    _signal_group(pid, signal.SIGKILL)
     try:
         p.kill()
     except OSError:
@@ -453,8 +485,10 @@ def shell_exec(
     cwd : str, optional
         Working directory in which to execute the command. Defaults to None (current directory).
     timeout : int or float, optional
-        Maximum time (in seconds) to allow the command to run. If exceeded, the process is
-        terminated. Defaults to None (no timeout).
+        Maximum time (in seconds) to allow the command to run. If exceeded, the
+        command and everything it started are asked to end (SIGTERM) and killed
+        (SIGKILL) if they are still running two seconds later; on Windows the command
+        is terminated right away. Defaults to None (no timeout).
     lc_all : str, optional
         Value to set for the `LC_ALL` environment variable, forcing command output locale.
         Defaults to `'C'` (POSIX "C" locale, i.e., English).
