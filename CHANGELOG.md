@@ -17,6 +17,7 @@ tbd
 
 ### Changed
 
+* base.py: `oao()` and `cu()` collapse two or more blank lines in a row into one
 * shell.py: `shell_exec()` asks a command that runs into its timeout to end (SIGTERM) and kills it only if it is still running 2 seconds later
 
 

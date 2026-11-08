@@ -11,7 +11,7 @@
 """Provides very common every-day functions."""
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102501'
+__version__ = '2026110801'
 
 import math
 import numbers
@@ -29,6 +29,12 @@ from .globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 # Only such a `<` is escaped, so comparisons and shell snippets survive verbatim while
 # the output still cannot be mistaken for markup. See `oao()`.
 TAG_START = re.compile(r'<(?=\w+(?:\s\w+=[^>]*)?>)')
+
+# Two or more blank lines in a row, a blank line being empty or whitespace only. Output
+# is built from blocks that each may or may not end on a newline (`get_table()` does),
+# and joining them with a blank line in between then leaves two. One blank line is
+# what separates blocks; more only push the content apart. See `oao()`.
+BLANK_LINES = re.compile(r'\n(?:[ \t]*\n){2,}')
 
 WINDOWS = os.name == 'nt'
 LINUX = sys.platform.startswith('linux')
@@ -150,7 +156,8 @@ def cu(msg=None, traceback=True):
     ----------
     msg : str, optional
         An optional message to print before exiting.
-        If provided, it will be stripped, sanitized, and printed.
+        If provided, it will be stripped, sanitized, and printed. Two or more blank
+        lines in a row collapse into one, as in `oao()`.
     traceback : bool, optional
         Whether to attach the stack trace of the exception being handled. Defaults to
         `True`. Pass `False` where the exception is the expected answer rather than a
@@ -191,6 +198,7 @@ def cu(msg=None, traceback=True):
         # Normalize line endings to LF (see oao); error output may also carry
         # CRLF, for example when a Windows command prints its error to stdout.
         msg = msg.replace('\r\n', '\n').replace('\r', '\n')
+        msg = BLANK_LINES.sub('\n\n', msg)
         msg = _escape_tag_start(txt.sanitize_sensitive_data(msg).strip()).replace(
             '|', '!'
         )
@@ -1011,6 +1019,9 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
 
     Notes
     -----
+    - Two or more blank lines in a row collapse into one, so blocks joined with a blank
+      line in between stay one blank line apart even where a block already ends on a
+      newline.
     - Any `|` characters inside the message are replaced with `!`, the character being
       reserved as the performance data separator of the Monitoring Plugins output format.
     - A `<` that would open an HTML tag is replaced by `&lt;`, so a web interface cannot
@@ -1040,6 +1051,7 @@ def oao(msg, state=STATE_OK, perfdata='', always_ok=False, no_perfdata=False):
     # file or HTTP response) can carry CRLF or stray CR, which a web UI showing
     # the output with `white-space: pre-wrap` would render as an extra line break.
     msg = msg.replace('\r\n', '\n').replace('\r', '\n')
+    msg = BLANK_LINES.sub('\n\n', msg)
     msg = _escape_tag_start(txt.sanitize_sensitive_data(msg.strip())).replace('|', '!')
     if always_ok and msg:
         # Instead of splitlines(), we just split('\n', 1), so only first line is touched.

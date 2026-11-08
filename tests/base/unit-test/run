@@ -112,6 +112,12 @@ class TestCu(unittest.TestCase):
         self.assertNotIn('abc', h['out'])
         self.assertEqual(h['out'].strip(), 'token=****** &lt;tag> here ! a=1 x<y')
 
+    def test_blank_lines_collapse_like_oao(self):
+        with capture_exit() as h:
+            base.cu('could not run\n\n\nstderr line', traceback=False)
+        self.assertEqual(h['code'], STATE_UNKNOWN)
+        self.assertIn('could not run\n\nstderr line', h['out'])
+
     def test_traceback_is_escaped_like_oao(self):
         with capture_exit() as h:
             try:
@@ -985,6 +991,27 @@ class TestOao(unittest.TestCase):
         with capture_exit() as h:
             base.oao('a\rb', STATE_OK)
         self.assertEqual(h['out'].strip(), 'a\nb')
+
+    # A block that ends on a newline, joined to the next with a blank line, must not
+    # leave two blank lines in between. `get_table()` returns such a block.
+    def test_blank_lines_collapse_into_one(self):
+        table = base.get_table([{'a': '1'}], ['a'], header=['unit'])
+        with capture_exit() as h:
+            base.oao(f'1 failed unit\n\n\n{table}\n\nhint', STATE_WARN)
+        out = h['out']
+        self.assertIn('1 failed unit\n\nunit', out)
+        self.assertNotIn('\n\n\n', out)
+        self.assertIn('\n\nhint', out)
+
+    def test_whitespace_only_lines_count_as_blank(self):
+        with capture_exit() as h:
+            base.oao('a\n  \n\t\n\nb', STATE_OK)
+        self.assertEqual(h['out'].strip(), 'a\n\nb')
+
+    def test_a_single_blank_line_is_kept(self):
+        with capture_exit() as h:
+            base.oao('a\n\nb\nc', STATE_OK)
+        self.assertEqual(h['out'].strip(), 'a\n\nb\nc')
 
 
 class TestRange2Txt(unittest.TestCase):
