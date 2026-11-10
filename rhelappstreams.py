@@ -75,6 +75,7 @@ RHEL_APP_STREAMS = {
             'nodejs:20': ('Node.js 20', '2026-04-30'),
             'nodejs:22': ('Node.js 22', '2027-04-30'),
             'nodejs:24': ('Node.js 24', '2028-04-30'),
+            'nodejs:26': ('Node.js 26', '2029-04-30'),
             'perl:5.24': ('Perl 5.24', '2021-05-31'),
             'perl:5.26': ('Perl 5.26', '2029-05-31'),
             'perl:5.30': ('Perl 5.30', '2023-11-30'),
@@ -262,6 +263,8 @@ RHEL_APP_STREAMS = {
             'ruby:3.1': ('Ruby 3.1', '2025-03-31'),
             'ruby:3.3': ('Ruby 3.3', '2027-03-31'),
             'ruby:4.0': ('Ruby 4.0', '2029-03-31'),
+            'swig:4.1': ('SWIG 4.1', '2032-05-31'),
+            'swig:4.3': ('SWIG 4.3', '2030-12-31'),
         },
         'packages': {
             'aardvark-dns': ('container-tools', None),
