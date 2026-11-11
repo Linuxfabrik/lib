@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8; py-indent-offset: 4 -*-
+#
+# Author:  Linuxfabrik GmbH, Zurich, Switzerland
+# Contact: info (at) linuxfabrik (dot) ch
+#          https://www.linuxfabrik.ch/
+# License: The Unlicense, see LICENSE file.
+
+# https://github.com/Linuxfabrik/lib/blob/main/CONTRIBUTING.md
+
+"""Unit tests for lib.systemd.
+
+`SHOW` and `JOURNAL` were captured in a ubi10-init container (systemd 257) with ten
+units that were actually driven into failure: a mount of a missing device, a service
+exiting 3, one hitting its start limit, one with a missing binary, a Type=notify
+service that never notified, one with a missing user, one whose ExecStartPre= failed,
+one dumping core, one killed by SIGKILL and one running into its start timeout.
+"""
+
+import signal
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, '..')
+
+import lib.systemd as systemd
+
+UNITS = [
+    'mnt-x.mount',
+    't-exit.service',
+    't-limit.service',
+    't-noexec.service',
+    't-notify.service',
+    't-nouser.service',
+    't-pre.service',
+    't-segv.service',
+    't-signal.service',
+    't-timeout.service',
+]
+
+SHOW = """Result=exit-code
+
+Result=exit-code
+ExecMainCode=1
+ExecMainStatus=3
+
+Result=exit-code
+ExecMainCode=1
+ExecMainStatus=1
+
+Result=exit-code
+ExecMainCode=1
+ExecMainStatus=203
+
+Result=timeout
+ExecMainCode=2
+ExecMainStatus=15
+
+Result=exit-code
+ExecMainCode=1
+ExecMainStatus=217
+
+Result=exit-code
+ExecMainCode=0
+ExecMainStatus=0
+
+Result=core-dump
+ExecMainCode=3
+ExecMainStatus=11
+
+Result=signal
+ExecMainCode=2
+ExecMainStatus=9
+
+Result=timeout
+ExecMainCode=2
+ExecMainStatus=15
+"""
+
+JOURNAL = 'starting\nError: config file /etc/foo.conf not found\n'
+
+# The signal numbers come from a Linux host. Python names a signal after the platform
+# it runs on, and Windows knows neither SIGKILL nor most of the others.
+POSIX_SIGNALS = unittest.skipUnless(
+    hasattr(signal, 'SIGKILL'), 'the platform has no POSIX signals'
+)
+
+
+class TestFailureReason(unittest.TestCase):
+    @POSIX_SIGNALS
+    def test_container_units(self):
+        self.assertEqual(
+            systemd.failure_reasons(UNITS, SHOW),
+            {
+                'mnt-x.mount': 'exited with an error',
+                't-exit.service': 'exited with status 3',
+                't-limit.service': 'exited with status 1',
+                't-noexec.service': 'exited with status 203/EXEC',
+                't-notify.service': 'timed out',
+                't-nouser.service': 'exited with status 217/USER',
+                't-pre.service': 'exited with an error',
+                't-segv.service': 'dumped core on SIGSEGV',
+                't-signal.service': 'killed by SIGKILL',
+                't-timeout.service': 'timed out',
+            },
+        )
+
+    def test_success_and_not_found_have_no_reason(self):
+        # a unit that is not found reports Result=success
+        self.assertEqual(systemd.failure_reason({'Result': 'success'}), '')
+        self.assertEqual(systemd.failure_reason({}), '')
+
+    def test_lsb_status_has_no_name(self):
+        props = {'Result': 'exit-code', 'ExecMainCode': '1', 'ExecMainStatus': '3'}
+        self.assertEqual(systemd.failure_reason(props), 'exited with status 3')
+
+    def test_unknown_result_is_shown_as_is(self):
+        self.assertEqual(
+            systemd.failure_reason({'Result': 'frobnicate'}),
+            "failed with result 'frobnicate'",
+        )
+
+    def test_unknown_signal(self):
+        props = {'Result': 'signal', 'ExecMainCode': '2', 'ExecMainStatus': '99'}
+        self.assertEqual(systemd.failure_reason(props), 'killed by signal 99')
+
+    def test_garbage(self):
+        self.assertEqual(systemd.failure_reason(None), '')
+        self.assertEqual(systemd.failure_reason({'Result': 1}), '')
+        props = {'Result': 'exit-code', 'ExecMainCode': 'x', 'ExecMainStatus': None}
+        self.assertEqual(systemd.failure_reason(props), 'exited with an error')
+
+    def test_every_result_has_a_reason(self):
+        for result in systemd.RESULT_REASONS:
+            self.assertTrue(systemd.failure_reason({'Result': result}))
+
+    def test_block_count_must_match(self):
+        self.assertEqual(systemd.failure_reasons(['a.service', 'b.service'], SHOW), {})
+        self.assertEqual(systemd.failure_reasons(['a.service'], ''), {})
+
+    def test_units_must_be_a_list(self):
+        self.assertEqual(systemd.failure_reasons('a', 'Result=timeout\n'), {})
+        self.assertEqual(systemd.failure_reasons(None, SHOW), {})
+
+
+class TestGetFailureReasons(unittest.TestCase):
+    def test_one_call_for_all_units_after_double_dash(self):
+        with mock.patch.object(
+            systemd.shell, 'shell_exec', return_value=(True, (SHOW, '', 0))
+        ) as shell_exec:
+            reasons = systemd.get_failure_reasons(UNITS)
+        self.assertEqual(reasons['t-exit.service'], 'exited with status 3')
+        self.assertEqual(
+            shell_exec.call_args,
+            mock.call(
+                [
+                    'systemctl',
+                    'show',
+                    '--property=Result,ExecMainCode,ExecMainStatus',
+                    '--',
+                    *UNITS,
+                ]
+            ),
+        )
+
+    def test_timeout_is_passed_on(self):
+        with mock.patch.object(
+            systemd.shell, 'shell_exec', return_value=(True, (SHOW, '', 0))
+        ) as shell_exec:
+            systemd.get_failure_reasons(UNITS, timeout=3)
+        self.assertEqual(shell_exec.call_args[1], {'timeout': 3})
+
+    def test_wrong_types_no_call(self):
+        with mock.patch.object(systemd.shell, 'shell_exec') as shell_exec:
+            # a string would otherwise be one unit per character
+            self.assertEqual(systemd.get_failure_reasons('a.service'), {})
+            self.assertEqual(systemd.get_failure_reasons(None), {})
+            self.assertEqual(systemd.get_failure_reasons(['a'], timeout='3'), {})
+            self.assertEqual(systemd.get_failure_reasons(['a'], timeout=True), {})
+        shell_exec.assert_not_called()
+
+    def test_errors_give_no_reasons(self):
+        for value in [(False, 'Timeout after 3 seconds.'), (True, ('', 'x', 1))]:
+            with mock.patch.object(systemd.shell, 'shell_exec', return_value=value):
+                self.assertEqual(systemd.get_failure_reasons(['a.service']), {})
+
+    def test_no_units_no_call(self):
+        with mock.patch.object(systemd.shell, 'shell_exec') as shell_exec:
+            self.assertEqual(systemd.get_failure_reasons([]), {})
+            self.assertEqual(systemd.get_failure_reasons([None, '']), {})
+        shell_exec.assert_not_called()
+
+
+class TestGetLogLines(unittest.TestCase):
+    def test_lines_per_unit(self):
+        answers = [(True, (JOURNAL, '', 0)), (True, ('', '', 0))]
+        with mock.patch.object(
+            systemd.shell, 'shell_exec', side_effect=answers
+        ) as shell_exec:
+            logs = systemd.get_log_lines(['t-exit.service', 't-limit.service'])
+        self.assertEqual(
+            logs,
+            {
+                't-exit.service': [
+                    'starting',
+                    'Error: config file /etc/foo.conf not found',
+                ]
+            },
+        )
+        self.assertIn(
+            '_SYSTEMD_UNIT=t-exit.service', shell_exec.call_args_list[0][0][0]
+        )
+
+    def test_no_access_stops_reading(self):
+        # "No journal files were opened due to insufficient permissions", exit 1
+        with mock.patch.object(
+            systemd.shell, 'shell_exec', return_value=(True, ('', '', 1))
+        ) as shell_exec:
+            self.assertEqual(systemd.get_log_lines(UNITS), {})
+        self.assertEqual(shell_exec.call_count, 1)
+
+    def test_timeout_stops_reading(self):
+        with mock.patch.object(systemd.shell, 'shell_exec') as shell_exec:
+            self.assertEqual(systemd.get_log_lines(UNITS, timeout=0), {})
+        shell_exec.assert_not_called()
+
+    def test_failed_call_stops_reading(self):
+        with mock.patch.object(
+            systemd.shell,
+            'shell_exec',
+            return_value=(False, 'Timeout after 5 seconds.'),
+        ) as shell_exec:
+            self.assertEqual(systemd.get_log_lines(UNITS), {})
+        self.assertEqual(shell_exec.call_count, 1)
+
+    def test_lines_and_line_length_are_passed_on(self):
+        with mock.patch.object(
+            systemd.shell, 'shell_exec', return_value=(True, ('x' * 50 + '\n', '', 0))
+        ) as shell_exec:
+            logs = systemd.get_log_lines(['a.service'], lines=1, line_length=10)
+        self.assertIn('--lines=1', shell_exec.call_args[0][0])
+        self.assertEqual(len(logs['a.service'][0]), 10)
+
+    def test_wrong_types_no_call(self):
+        with mock.patch.object(systemd.shell, 'shell_exec') as shell_exec:
+            self.assertEqual(systemd.get_log_lines('a.service'), {})
+            self.assertEqual(systemd.get_log_lines(['a'], lines='3'), {})
+            self.assertEqual(systemd.get_log_lines(['a'], line_length=None), {})
+            self.assertEqual(systemd.get_log_lines(['a'], timeout=None), {})
+            self.assertEqual(systemd.get_log_lines([None, '', 1]), {})
+        shell_exec.assert_not_called()
+
+
+class TestJournalctlCommand(unittest.TestCase):
+    def test_units(self):
+        self.assertEqual(
+            systemd.journalctl_command(['a.service', 'b.service']),
+            'journalctl --boot=0 --unit=a.service --unit=b.service',
+        )
+
+    def test_escaped_name_is_quoted(self):
+        self.assertEqual(
+            systemd.journalctl_command(['dev-disk-by\\x2duuid-0a1b2c3d.swap']),
+            "journalctl --boot=0 '--unit=dev-disk-by\\x2duuid-0a1b2c3d.swap'",
+        )
+
+    def test_wrong_types(self):
+        self.assertEqual(systemd.journalctl_command('a.service'), 'journalctl --boot=0')
+        self.assertEqual(
+            systemd.journalctl_command([None, 'a.service']),
+            'journalctl --boot=0 --unit=a.service',
+        )
+
+    def test_hostile_name_stays_one_argument(self):
+        self.assertEqual(
+            systemd.journalctl_command(['a.service; rm -rf /']),
+            "journalctl --boot=0 '--unit=a.service; rm -rf /'",
+        )
+
+
+class TestLogLines(unittest.TestCase):
+    def test_last_lines_without_empty_ones(self):
+        self.assertEqual(
+            systemd.log_lines('one\n\ntwo\nthree\nfour\n'), ['two', 'three', 'four']
+        )
+
+    def test_long_line_is_shortened(self):
+        (line,) = systemd.log_lines('x' * 500, line_length=20)
+        self.assertEqual(len(line), 20)
+
+    def test_lines(self):
+        self.assertEqual(systemd.log_lines('a\nb\nc\n', lines=1), ['c'])
+        self.assertEqual(systemd.log_lines('a\nb\n', lines=5), ['a', 'b'])
+
+    def test_garbage(self):
+        self.assertEqual(systemd.log_lines(None), [])
+        self.assertEqual(systemd.log_lines('a', lines=0), [])
+        self.assertEqual(systemd.log_lines('a', lines=-1), [])
+        self.assertEqual(systemd.log_lines('a', lines='3'), [])
+        self.assertEqual(systemd.log_lines('a', line_length=None), [])
+
+
+class TestParseShow(unittest.TestCase):
+    def test_blocks(self):
+        self.assertEqual(
+            systemd.parse_show('Result=success\n\nResult=timeout\nX=a=b\n'),
+            [{'Result': 'success'}, {'Result': 'timeout', 'X': 'a=b'}],
+        )
+
+    def test_empty(self):
+        self.assertEqual(systemd.parse_show(''), [])
+        self.assertEqual(systemd.parse_show(None), [])
+
+
+if __name__ == '__main__':
+    unittest.main()

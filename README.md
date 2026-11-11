@@ -106,6 +106,7 @@ These libraries are built with a clear set of priorities:
 | **restic.py** | Builds the repository and password arguments for the `restic` backup client so a privileged caller cannot make it read an arbitrary file or run an external program. | `password_file_arg()`, `repo_args()` |
 | **rhelappstreams.py** | Bundled life cycle of the RHEL Application Streams, generated weekly from the data Red Hat publishes in [digital-roadmap-backend](https://github.com/RedHatInsights/digital-roadmap-backend). | -- |
 | **shell.py** | Runs external commands from an argv list without a shell, guards option-style CLI values, and locates executables in `PATH`. | `safe_cli_value()`, `shell_exec()`, `which()` |
+| **systemd.py** | Why a systemd unit failed, from the properties `systemctl show` gives without privileges, and the last lines the unit wrote to the journal. | `failure_reason()`, `get_failure_reasons()`, `get_log_lines()`, `journalctl_command()` |
 | **user.py** | Local Unix accounts: UID/GID names, the system/regular account boundary, interactive shells and the state of the shadow password. | `get_gid_name()`, `get_interactive_shells()`, `get_shadow_password()`, `get_uid_min()`, `get_uid_name()`, `password_state()` |
 
 

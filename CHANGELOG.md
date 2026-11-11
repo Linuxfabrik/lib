@@ -13,6 +13,7 @@ tbd
 ### Added
 
 * icinga.py: `director_*()` functions that read the Icinga Director configuration through `icingacli`, resolve the per-host overrides of service variables, tell which variables reach a check command and compare the Director with a basket
+* systemd.py: why a unit failed (`failure_reason()`, `get_failure_reasons()`), the last lines it wrote to the journal (`get_log_lines()`) and the command that shows the rest (`journalctl_command()`)
 
 
 ### Changed
