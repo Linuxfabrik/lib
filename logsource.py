@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102402'
+__version__ = '2026111601'
 
 import collections
 import datetime
@@ -258,6 +258,226 @@ def describe(source, size=None, size_threshold=None):
         if predecessor_stat is not None:
             described += f' (size: {human.bytes2human(predecessor_stat.st_size)})'
     return described
+
+
+def describe_groups(
+    groups,
+    limit=5,
+    detail_label=None,
+    detail_suffix='s',
+    last=False,
+    unnamed='(none)',
+):
+    """
+    Render what `group_lines()` returned as one short text per group, for a listing.
+
+    Two shapes, because a listing answers one of two questions. Grouped by what the lines
+    say, the count comes first and the message after it (`47x Connection closed by ...`),
+    so the column of counts reads like a ranking. Grouped by who caused them, the source
+    comes first and what varied between its lines after it (`198.51.100.7: 36x, 23
+    accounts (admin, oracle, ...)`), which is what tells a scanner working through a name
+    list from one account being mistyped. `detail_label` picks the second shape.
+
+    Parameters
+    ----------
+    groups : list of dict
+        What `group_lines()` returned.
+    limit : int, optional
+        How many groups to render, and how many details per group. What is left out is
+        counted rather than dropped silently. Defaults to `5`.
+    detail_label : str, optional
+        The noun for one detail (`account`), which switches to the per-source shape.
+        Defaults to `None`, the per-message shape.
+    detail_suffix : str, optional
+        The plural suffix of `detail_label`, for nouns like `address`. Defaults to `'s'`.
+    last : bool, optional
+        Append when the newest line of each group was written. Worth it where the
+        groups span hours or days, so the moment can be looked up elsewhere; noise
+        where they all fall into the last few minutes. Defaults to `False`.
+    unnamed : str, optional
+        What to render for the group of lines that named no source. Defaults to
+        `'(none)'`.
+
+    Returns
+    -------
+    list of str
+        One text per group, most frequent first, followed by `... and N more` where
+        groups were left out. An empty list for no groups, or for an argument of the
+        wrong type.
+
+    Examples
+    --------
+    >>> describe_groups(
+    ...     [{'count': 47, 'details': [], 'group': 'Timeout', 'last': None}]
+    ... )
+    ['47x Timeout']
+
+    >>> describe_groups(
+    ...     [
+    ...         {
+    ...             'count': 36,
+    ...             'details': ['admin', 'oracle'],
+    ...             'group': '198.51.100.7',
+    ...             'last': None,
+    ...         }
+    ...     ],
+    ...     detail_label='account',
+    ... )
+    ['198.51.100.7: 36x, 2 accounts (admin, oracle)']
+    """
+    if not isinstance(groups, list) or not isinstance(limit, int) or limit < 1:
+        return []
+    described = []
+    for group in groups[:limit]:
+        if not isinstance(group, dict) or not isinstance(group.get('count'), int):
+            continue
+        name = group.get('group')
+        if name is None:
+            name = unnamed
+        details = group.get('details') or []
+        if detail_label is None:
+            text = f'{group["count"]}x {name}'
+        else:
+            text = f'{name}: {group["count"]}x'
+            if details:
+                shown = ', '.join(str(item) for item in details[:limit])
+                if len(details) > limit:
+                    shown += f' and {len(details) - limit} more'
+                text += (
+                    f', {len(details)}'
+                    f' {txt.pluralize(detail_label, len(details), detail_suffix)}'
+                    f' ({shown})'
+                )
+        if last and group.get('last') is not None:
+            text += f' (last: {group["last"]:%Y-%m-%d %H:%M:%S})'
+        described.append(text)
+    if len(groups) > limit:
+        described.append(f'... and {len(groups) - limit} more')
+    return described
+
+
+def group_lines(lines, since=None, parse_line=None, group=None, detail=None):
+    """
+    Group log lines by what they say, or by who caused them, most frequent first.
+
+    A count says how much happened, not what. The lines behind it do, but listed one by one
+    they differ in a process id, a port or a time, and a burst of a few hundred buries the
+    two or three things that actually happened. Grouping them puts each of those on one line
+    with its count.
+
+    Parameters
+    ----------
+    lines : iterable of str
+        The log lines to group.
+    since : datetime.datetime, optional
+        Only group the lines written at or after this moment, naive and in local time, the
+        way `count_within()` counts them, so a listing and a count over the same window
+        agree. Lines without a timestamp are left out then. Defaults to `None`, which
+        groups every line.
+    parse_line : callable, optional
+        Handed to `timestamp()`.
+    group : callable, optional
+        Takes a line and returns what it is grouped under: the message with everything that
+        differs between occurrences masked, or the source that caused it. None groups the
+        line with the others that named nothing. Defaults to `strip_syslog_prefix()`, which
+        is enough where an application repeats itself word for word.
+    detail : callable, optional
+        Takes a line and returns what varies within a group and is worth naming, such as the
+        account a login attempt tried, or None where the line names nothing. Defaults to
+        `None`, which collects no details.
+
+    Returns
+    -------
+    list of dict
+          - `count` (**int**): How many lines the group holds.
+          - `details` (**list**): The distinct details, the most frequent first.
+          - `group` (`str | None`): What the lines were grouped under.
+          - `last` (`datetime.datetime | None`): When the newest line of the group was
+            written, None where no line carries a timestamp.
+          - `line` (**str**): The newest line of the group, as it was read.
+
+        The most frequent group comes first, the more recent one on a tie, the one read
+        first on a tie of both. Lines that are not strings are skipped, and an empty
+        list comes back where `since` is no datetime or `group` or `detail` cannot be
+        called.
+
+    Examples
+    --------
+    >>> group_lines(
+    ...     [
+    ...         'Aug 29 11:15:53 host sshd[1]: Timeout',
+    ...         'Aug 29 11:15:54 host sshd[2]: Timeout',
+    ...     ]
+    ... )[0]['count']
+    2
+    """
+    if group is None:
+        group = strip_syslog_prefix
+    if (
+        not callable(group)
+        or (detail is not None and not callable(detail))
+        or (since is not None and not isinstance(since, datetime.datetime))
+    ):
+        return []
+    buckets = {}
+    for line in lines or []:
+        if not isinstance(line, str):
+            continue
+        logged_at = timestamp(line, parse_line)
+        if since is not None and (logged_at is None or logged_at < since):
+            continue
+        name = group(line)
+        bucket = buckets.setdefault(
+            name,
+            {
+                'count': 0,
+                'details': collections.Counter(),
+                'group': name,
+                'last': None,
+                'line': line,
+            },
+        )
+        bucket['count'] += 1
+        if detail is not None:
+            value = detail(line)
+            if value is not None:
+                bucket['details'][value] += 1
+        # The newest dated line stands for the group; without any date, the one
+        # read last. A `parse_line` may return aware values, which are compared
+        # naive, see `sort_by_time()`.
+        if logged_at is not None:
+            if bucket['last'] is None or logged_at.replace(tzinfo=None) >= bucket[
+                'last'
+            ].replace(tzinfo=None):
+                bucket['last'] = logged_at
+                bucket['line'] = line
+        elif bucket['last'] is None:
+            bucket['line'] = line
+    result = []
+    for bucket in buckets.values():
+        bucket['details'] = [
+            value
+            for value, _ in sorted(
+                bucket['details'].items(), key=lambda item: (-item[1], str(item[0]))
+            )
+        ]
+        result.append(bucket)
+    # The most frequent first, the more recent one on a tie, and on a tie of both
+    # in the order the groups first appeared: the lines of a stack trace an
+    # application wrote within one second stay in the order it wrote them. Two
+    # stable sorts, last key first; the moments are compared naive, see
+    # `sort_by_time()`.
+    result.sort(
+        key=lambda item: (
+            item['last'] is not None,
+            item['last'].replace(tzinfo=None)
+            if item['last']
+            else datetime.datetime.min,
+        ),
+        reverse=True,
+    )
+    result.sort(key=lambda item: item['count'], reverse=True)
+    return result
 
 
 def parse(source):

@@ -113,6 +113,219 @@ class TestDescribe(unittest.TestCase):
         self.assertEqual(described, '`/var/log/secure` + `/nonexistent/secure-1`')
 
 
+def _group(**overrides):
+    """One group the way `group_lines()` returns it, fresh for every test."""
+    return {'count': 47, 'details': [], 'group': 'Timeout', 'last': None, **overrides}
+
+
+class TestDescribeGroups(unittest.TestCase):
+    def test_a_message_group_leads_with_its_count(self):
+        self.assertEqual(lib.logsource.describe_groups([_group()]), ['47x Timeout'])
+
+    def test_a_source_group_leads_with_the_source_and_names_its_details(self):
+        group = {
+            'count': 36,
+            'details': ['admin', 'oracle'],
+            'group': '198.51.100.7',
+            'last': None,
+        }
+        self.assertEqual(
+            lib.logsource.describe_groups([group], detail_label='account'),
+            ['198.51.100.7: 36x, 2 accounts (admin, oracle)'],
+        )
+
+    def test_a_source_group_without_details_names_only_the_count(self):
+        group = _group(group='198.51.100.7')
+        self.assertEqual(
+            lib.logsource.describe_groups([group], detail_label='account'),
+            ['198.51.100.7: 47x'],
+        )
+
+    def test_the_details_beyond_the_limit_are_counted(self):
+        group = _group(details=['a', 'b', 'c'], group='198.51.100.7')
+        self.assertEqual(
+            lib.logsource.describe_groups([group], limit=2, detail_label='name'),
+            ['198.51.100.7: 47x, 3 names (a, b and 1 more)'],
+        )
+
+    def test_the_groups_beyond_the_limit_are_counted(self):
+        groups = [_group(group=str(index)) for index in range(4)]
+        self.assertEqual(
+            lib.logsource.describe_groups(groups, limit=2),
+            ['47x 0', '47x 1', '... and 2 more'],
+        )
+
+    def test_the_plural_suffix_is_taken_as_given(self):
+        group = _group(details=['a', 'b'], group='x')
+        self.assertEqual(
+            lib.logsource.describe_groups(
+                [group], detail_label='address', detail_suffix='es'
+            ),
+            ['x: 47x, 2 addresses (a, b)'],
+        )
+
+    def test_the_last_moment_is_named_on_request(self):
+        group = _group(last=datetime.datetime(2026, 11, 16, 11, 4, 14))
+        self.assertEqual(
+            lib.logsource.describe_groups([group], last=True),
+            ['47x Timeout (last: 2026-11-16 11:04:14)'],
+        )
+        self.assertEqual(lib.logsource.describe_groups([group]), ['47x Timeout'])
+
+    def test_an_undated_group_names_no_moment(self):
+        self.assertEqual(
+            lib.logsource.describe_groups([_group()], last=True), ['47x Timeout']
+        )
+
+    def test_the_group_without_a_source_is_named_as_such(self):
+        group = _group(group=None)
+        self.assertEqual(
+            lib.logsource.describe_groups([group], detail_label='account'),
+            ['(none): 47x'],
+        )
+        self.assertEqual(
+            lib.logsource.describe_groups(
+                [group], detail_label='account', unnamed='unknown'
+            ),
+            ['unknown: 47x'],
+        )
+
+    def test_no_groups_render_nothing(self):
+        self.assertEqual(lib.logsource.describe_groups([]), [])
+
+    def test_wrong_types_render_nothing(self):
+        self.assertEqual(lib.logsource.describe_groups(None), [])
+        self.assertEqual(lib.logsource.describe_groups('47x Timeout'), [])
+        self.assertEqual(lib.logsource.describe_groups([_group()], limit=0), [])
+        self.assertEqual(lib.logsource.describe_groups([_group()], limit='5'), [])
+        self.assertEqual(lib.logsource.describe_groups(['x', {'count': '1'}]), [])
+
+
+class TestGroupLines(unittest.TestCase):
+    LINES = (
+        'Nov 16 11:00:01 host sshd[1]: Invalid user admin from 198.51.100.7',
+        'Nov 16 11:00:02 host sshd[2]: Invalid user oracle from 198.51.100.7',
+        'Nov 16 11:00:03 host sshd[3]: Invalid user admin from 198.51.100.7',
+        'Nov 16 11:00:04 host sshd[4]: Invalid user admin from 203.0.113.5',
+    )
+
+    @staticmethod
+    def source(line):
+        return line.rsplit(' ', 1)[-1]
+
+    @staticmethod
+    def account(line):
+        return line.split('user ', 1)[1].split()[0]
+
+    def test_identical_messages_are_grouped_without_their_prefix(self):
+        groups = lib.logsource.group_lines(
+            [
+                'Nov 16 11:00:01 host sshd[1]: Timeout',
+                'Nov 16 11:00:02 host sshd[2]: Timeout',
+                'Nov 16 11:00:03 host sshd[3]: Refused',
+            ]
+        )
+        self.assertEqual(
+            [(item['group'], item['count']) for item in groups],
+            [('Timeout', 2), ('Refused', 1)],
+        )
+
+    def test_lines_are_grouped_by_source_with_their_details(self):
+        groups = lib.logsource.group_lines(
+            self.LINES, group=self.source, detail=self.account
+        )
+        self.assertEqual(groups[0]['group'], '198.51.100.7')
+        self.assertEqual(groups[0]['count'], 3)
+        # the most frequent detail first
+        self.assertEqual(groups[0]['details'], ['admin', 'oracle'])
+        self.assertEqual(groups[1]['group'], '203.0.113.5')
+
+    def test_the_newest_line_stands_for_the_group(self):
+        groups = lib.logsource.group_lines(self.LINES, group=self.source)
+        self.assertEqual(groups[0]['line'], self.LINES[2])
+        self.assertEqual(groups[0]['last'].second, 3)
+
+    def test_the_newest_line_wins_whatever_the_reading_order(self):
+        groups = lib.logsource.group_lines(
+            list(reversed(self.LINES)), group=self.source
+        )
+        self.assertEqual(groups[0]['line'], self.LINES[2])
+
+    def test_a_tie_goes_to_the_more_recent_group(self):
+        groups = lib.logsource.group_lines(self.LINES[2:], group=self.source)
+        self.assertEqual(
+            [item['group'] for item in groups], ['203.0.113.5', '198.51.100.7']
+        )
+
+    def test_a_tie_of_count_and_moment_keeps_the_reading_order(self):
+        # the lines of a stack trace written within one second
+        lines = [
+            'Nov 16 11:00:01 host app[1]: Stack trace:',
+            'Nov 16 11:00:01 host app[1]: #0 {main}',
+            'Nov 16 11:00:01 host app[1]: thrown in /srv/fatal.php on line 3',
+        ]
+        self.assertEqual(
+            [item['group'] for item in lib.logsource.group_lines(lines)],
+            ['Stack trace:', '#0 {main}', 'thrown in /srv/fatal.php on line 3'],
+        )
+
+    def test_since_keeps_the_window_and_drops_the_undated(self):
+        lines = [*self.LINES, 'Invalid user root from 198.51.100.7']
+        since = lib.logsource.timestamp(self.LINES[2])
+        groups = lib.logsource.group_lines(lines, since=since, group=self.source)
+        self.assertEqual(
+            [(item['group'], item['count']) for item in groups],
+            [('203.0.113.5', 1), ('198.51.100.7', 1)],
+        )
+
+    def test_undated_lines_are_grouped_without_since(self):
+        groups = lib.logsource.group_lines(['Timeout', 'Timeout'])
+        self.assertEqual(groups[0]['count'], 2)
+        self.assertIsNone(groups[0]['last'])
+        self.assertEqual(groups[0]['line'], 'Timeout')
+
+    def test_lines_naming_no_source_are_grouped_together(self):
+        groups = lib.logsource.group_lines(
+            ['Timeout', 'Refused'], group=lambda line: None
+        )
+        self.assertEqual(len(groups), 1)
+        self.assertIsNone(groups[0]['group'])
+        self.assertEqual(groups[0]['count'], 2)
+
+    def test_details_of_none_are_not_collected(self):
+        groups = lib.logsource.group_lines(['Timeout'], detail=lambda line: None)
+        self.assertEqual(groups[0]['details'], [])
+
+    def test_a_parse_line_is_used_for_the_moment(self):
+        moment = datetime.datetime(2026, 11, 16, 11, 0, 0)
+        groups = lib.logsource.group_lines(['Timeout'], parse_line=lambda line: moment)
+        self.assertEqual(groups[0]['last'], moment)
+
+    def test_aware_and_naive_moments_do_not_break_the_grouping(self):
+        aware = datetime.datetime(2026, 11, 16, 12, 0, tzinfo=datetime.timezone.utc)
+        naive = datetime.datetime(2026, 11, 16, 11, 0)
+        moments = iter([naive, aware])
+        groups = lib.logsource.group_lines(
+            ['a', 'b'],
+            parse_line=lambda line: next(moments),
+            group=lambda line: 'x',
+        )
+        self.assertEqual(groups[0]['line'], 'b')
+
+    def test_empty_input(self):
+        self.assertEqual(lib.logsource.group_lines([]), [])
+        self.assertEqual(lib.logsource.group_lines(None), [])
+
+    def test_lines_that_are_no_strings_are_skipped(self):
+        groups = lib.logsource.group_lines(['Timeout', None, 42, b'Timeout'])
+        self.assertEqual(groups[0]['count'], 1)
+
+    def test_wrong_types_group_nothing(self):
+        self.assertEqual(lib.logsource.group_lines(self.LINES, group='x'), [])
+        self.assertEqual(lib.logsource.group_lines(self.LINES, detail='x'), [])
+        self.assertEqual(lib.logsource.group_lines(self.LINES, since='today'), [])
+
+
 class TestParse(unittest.TestCase):
     def test_file(self):
         self.assertEqual(
