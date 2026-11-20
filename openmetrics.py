@@ -18,14 +18,21 @@ prometheus/prometheus). The `prometheus_client` Python package is a secondary, i
 reference only, consulted where it shows what real exporters send and called out where it differs
 from those two. The result is stricter than most hand-written parsers about escaping and looser
 than the OpenMetrics specification about whitespace.
+
+`fetch()` asks an endpoint for such a payload and reads it in the dialect the answer names.
+`get_samples()`, `get_sum()` and `get_value()` pick metrics out of the result. A counter only
+ever grows, so a consumer reporting it turns two readings into a rate, for example with
+`db_sqlite.per_second_deltas()`.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026071710'
+__version__ = '2026112001'
 
 
 import math
 import re
+
+from . import txt, url
 
 DIALECT_OPENMETRICS = 'openmetrics'
 DIALECT_PROMETHEUS = 'prometheus'
@@ -50,6 +57,97 @@ TYPES = frozenset(
         TYPE_UNKNOWN,
     )
 )
+
+
+# What `fetch()` asks for. The Prometheus text format comes first: every instrumented program
+# serves it, while OpenMetrics is optional and a payload of it costs a `_created` sample per
+# counter. OpenMetrics is still accepted for an endpoint that serves nothing else.
+_ACCEPT = (
+    'text/plain;version=0.0.4;q=1.0,'
+    'application/openmetrics-text;version=1.0.0;q=0.5,'
+    '*/*;q=0.1'
+)
+
+
+def _dialect_from_content_type(content_type):
+    """Map the media type an endpoint answered with to a dialect, or to `None` for one that
+    names neither format, which leaves the decision to the autodetection of `parse()`."""
+    media_type = (content_type or '').split(';', 1)[0].strip().lower()
+    if media_type == 'application/openmetrics-text':
+        return DIALECT_OPENMETRICS
+    if media_type == 'text/plain':
+        return DIALECT_PROMETHEUS
+    return None
+
+
+def fetch(
+    uri,
+    insecure=False,
+    no_proxy=False,
+    proxy=None,
+    timeout=8,
+    header=None,
+    cacert=None,
+    max_bytes=url.DEFAULT_MAX_BYTES,
+):
+    """
+    Fetch a `/metrics` endpoint and read its payload into a list of samples.
+
+    Asks for the Prometheus text format and accepts OpenMetrics, then reads the answer in the
+    dialect its `Content-Type` names, so that a timestamp is never off by a factor of 1000 (see
+    `parse()`). An answer with any other media type is read with the autodetection of `parse()`.
+
+    Parameters
+    ----------
+    uri : str
+        The URL of the endpoint, for example `http://localhost:4000/metrics`.
+    insecure, no_proxy, proxy, timeout, cacert, max_bytes
+        See `url.fetch()`.
+    header : dict, optional
+        Further request headers, for example an `Authorization` header. An `Accept` header
+        given here replaces the one this function sends. Defaults to `None`.
+
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the endpoint answered and its payload could be read,
+            otherwise False.
+          - tuple[1] (**list | str**): the samples as `parse()` returns them, or an error
+            message string.
+
+    Examples
+    --------
+    >>> success, samples = fetch('http://localhost:4000/metrics', timeout=3)
+    """
+    if header is not None and not isinstance(header, dict):
+        return False, 'header must be a dict'
+    request_header = {'Accept': _ACCEPT}
+    if header:
+        request_header.update(header)
+    success, result = url.fetch(
+        uri,
+        cacert=cacert,
+        extended=True,
+        header=request_header,
+        insecure=insecure,
+        max_bytes=max_bytes,
+        no_proxy=no_proxy,
+        proxy=proxy,
+        timeout=timeout,
+    )
+    if not success:
+        return False, result
+    dialect = _dialect_from_content_type(
+        result.get('response_header', {}).get('content-type')
+    )
+    success, samples = parse(result.get('response', ''), dialect=dialect)
+    if not success:
+        return (
+            False,
+            f'Unreadable metrics payload from {txt.sanitize_sensitive_data(uri)}:'
+            f' {samples}',
+        )
+    return True, samples
 
 
 def _match_labels(labels, wanted):
@@ -102,6 +200,54 @@ def get_samples(samples, name, labels=None):
         for sample in samples
         if sample['name'] == name and _match_labels(sample['labels'], labels)
     ]
+
+
+def get_sum(samples, name, labels=None, default=None):
+    """
+    Add up the values of all samples of one metric that carry the given labels.
+
+    Many counters are split by label, for instance by client and query type, so the total
+    an endpoint has counted is the sum over every label combination it reported.
+
+    Parameters
+    ----------
+    samples : list
+        The samples as returned by `parse()`.
+    name : str
+        The metric name to select, matched exactly.
+    labels : dict, optional
+        Labels the samples have to carry, as a subset. Defaults to `None`, matching any.
+    default : any type, optional
+        What to return if nothing matches. Defaults to `None`.
+
+    Returns
+    -------
+    float | any type
+        The sum of the values of every matching sample, otherwise `default`.
+
+    Notes
+    -----
+    - A metric without any matching sample returns `default`, not 0. A label-split counter
+      typically has no sample at all until the first event, so pass `default=0` where that is
+      the meaning.
+    - A `NaN` among the values makes the sum `NaN`.
+
+    Examples
+    --------
+    >>> get_sum(samples, 'blocky_query_total')
+    1234.0
+    >>> get_sum(
+    ...     samples,
+    ...     'blocky_response_total',
+    ...     labels={'response_type': 'BLOCKED'},
+    ...     default=0,
+    ... )
+    56.0
+    """
+    matches = get_samples(samples, name, labels=labels)
+    if not matches:
+        return default
+    return math.fsum(sample['value'] for sample in matches)
 
 
 def get_value(samples, name, labels=None, default=None):

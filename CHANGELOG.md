@@ -13,6 +13,7 @@ tbd
 
 * icinga.py: `director_*()` functions that read the Icinga Director configuration through `icingacli`, resolve the per-host overrides of service variables, tell which variables reach a check command and compare the Director with a basket
 * logsource.py: `group_lines()` groups log lines by what they say or by who caused them, `describe_groups()` renders the groups for a listing
+* openmetrics.py: `fetch()` reads a `/metrics` endpoint in the format it answers with, `get_sum()` adds up a metric across its labels
 * systemd.py: why a unit failed (`failure_reason()`, `get_failure_reasons()`), the last lines it wrote to the journal (`get_log_lines()`) and the command that shows the rest (`journalctl_command()`)
 
 

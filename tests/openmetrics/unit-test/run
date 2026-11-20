@@ -10,8 +10,8 @@
 
 """Unit tests for lib.openmetrics.
 
-The module is a pure parser, so the tests need neither a host nor a network and
-nothing is mocked. The payloads reproduce cases from the OpenMetrics
+The parser needs neither a host nor a network, so only `fetch()` is tested
+against a mocked `url.fetch()`. The payloads reproduce cases from the OpenMetrics
 specification and its conformance suite, from the error tables of the two
 reference parsers (model/textparse in prometheus/prometheus and the
 prometheus_client Python package), and from a live Nextcloud instance, which
@@ -22,6 +22,7 @@ for.
 import math
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, '..')
 
@@ -963,6 +964,177 @@ class TestGetValue(unittest.TestCase):
                 self.samples, 'nextcloud_app_enabled', labels={'app_id': 'mail'}
             )
         )
+
+
+# blocky v0.36.0, trimmed: a label-split counter, a gauge and a histogram.
+BLOCKY_PAYLOAD = """\
+# HELP blocky_blocking_enabled Blocking status
+# TYPE blocky_blocking_enabled gauge
+blocky_blocking_enabled 1
+# HELP blocky_query_total Number of total queries
+# TYPE blocky_query_total counter
+blocky_query_total{client="192.0.2.10",type="A"} 20
+blocky_query_total{client="192.0.2.10",type="AAAA"} 12
+blocky_query_total{client="192.0.2.11",type="A"} 3
+# HELP blocky_request_duration_seconds Request duration distribution
+# TYPE blocky_request_duration_seconds histogram
+blocky_request_duration_seconds_bucket{response_type="BLOCKED",le="+Inf"} 1
+blocky_request_duration_seconds_sum{response_type="BLOCKED"} 7.73e-05
+blocky_request_duration_seconds_count{response_type="BLOCKED"} 1
+"""
+
+
+class TestGetSum(unittest.TestCase):
+    def setUp(self):
+        success, self.samples = openmetrics.parse(BLOCKY_PAYLOAD)
+        self.assertTrue(success)
+
+    def test_sums_every_label_combination(self):
+        self.assertEqual(openmetrics.get_sum(self.samples, 'blocky_query_total'), 35.0)
+
+    def test_sums_a_label_subset(self):
+        self.assertEqual(
+            openmetrics.get_sum(
+                self.samples, 'blocky_query_total', labels={'client': '192.0.2.10'}
+            ),
+            32.0,
+        )
+
+    def test_single_sample_is_its_own_sum(self):
+        self.assertEqual(
+            openmetrics.get_sum(self.samples, 'blocky_blocking_enabled'), 1.0
+        )
+
+    def test_no_match_returns_default(self):
+        self.assertIsNone(openmetrics.get_sum(self.samples, 'nope'))
+        self.assertEqual(openmetrics.get_sum(self.samples, 'nope', default=0), 0)
+        self.assertEqual(
+            openmetrics.get_sum(
+                self.samples, 'blocky_query_total', labels={'type': 'MX'}, default=0
+            ),
+            0,
+        )
+
+    def test_nan_makes_the_sum_nan(self):
+        success, samples = openmetrics.parse('a{x="1"} 1\na{x="2"} NaN\n')
+        self.assertTrue(success)
+        self.assertTrue(math.isnan(openmetrics.get_sum(samples, 'a')))
+
+    def test_empty_samples_return_default(self):
+        self.assertEqual(openmetrics.get_sum([], 'a', default=-1), -1)
+
+
+class TestFetch(unittest.TestCase):
+    def _fetch(self, body, content_type, success=True, header=None):
+        answer = {
+            'response': body,
+            'response_header': {'content-type': content_type},
+            'status_code': 200,
+        }
+        if not success:
+            answer = 'Connection refused.'
+        with mock.patch.object(
+            openmetrics.url, 'fetch', return_value=(success, answer)
+        ) as fetch:
+            result = openmetrics.fetch(
+                'http://localhost:4000/metrics', header=header, timeout=3
+            )
+        return result, fetch
+
+    def test_reads_prometheus_payload(self):
+        (success, samples), _ = self._fetch(
+            BLOCKY_PAYLOAD, 'text/plain; version=0.0.4; charset=utf-8'
+        )
+        self.assertTrue(success)
+        self.assertEqual(openmetrics.get_sum(samples, 'blocky_query_total'), 35.0)
+
+    def test_sends_accept_header_and_forwards_parameters(self):
+        _, fetch = self._fetch(BLOCKY_PAYLOAD, 'text/plain')
+        kwargs = fetch.call_args.kwargs
+        self.assertTrue(kwargs['extended'])
+        self.assertEqual(kwargs['timeout'], 3)
+        self.assertTrue(kwargs['header']['Accept'].startswith('text/plain'))
+
+    def test_forwards_every_transport_parameter(self):
+        answer = {'response': BLOCKY_PAYLOAD, 'response_header': {}}
+        with mock.patch.object(
+            openmetrics.url, 'fetch', return_value=(True, answer)
+        ) as fetch:
+            openmetrics.fetch(
+                'https://localhost:4000/metrics',
+                cacert='/etc/pki/tls/certs/ca-bundle.crt',
+                insecure=True,
+                max_bytes=1024,
+                no_proxy=True,
+                proxy='http://proxy.example.com:3128',
+                timeout=3,
+            )
+        kwargs = fetch.call_args.kwargs
+        self.assertEqual(kwargs['cacert'], '/etc/pki/tls/certs/ca-bundle.crt')
+        self.assertTrue(kwargs['insecure'])
+        self.assertEqual(kwargs['max_bytes'], 1024)
+        self.assertTrue(kwargs['no_proxy'])
+        self.assertEqual(kwargs['proxy'], 'http://proxy.example.com:3128')
+        self.assertEqual(kwargs['timeout'], 3)
+
+    def test_header_that_is_no_dict_is_rejected(self):
+        with mock.patch.object(openmetrics.url, 'fetch') as fetch:
+            success, result = openmetrics.fetch(
+                'http://localhost:4000/metrics', header='Accept: text/plain'
+            )
+        self.assertFalse(success)
+        self.assertIn('dict', result)
+        fetch.assert_not_called()
+
+    def test_unreadable_payload_does_not_name_the_password(self):
+        answer = {'response': '<html>', 'response_header': {}}
+        with mock.patch.object(openmetrics.url, 'fetch', return_value=(True, answer)):
+            success, result = openmetrics.fetch(
+                'http://monitoring:linuxfabrik@localhost:4000/metrics'
+            )
+        self.assertFalse(success)
+        self.assertNotIn('linuxfabrik', result)
+
+    def test_caller_header_is_kept_and_may_replace_accept(self):
+        _, fetch = self._fetch(
+            BLOCKY_PAYLOAD,
+            'text/plain',
+            header={'Accept': 'text/plain', 'Authorization': 'Bearer linuxfabrik'},
+        )
+        header = fetch.call_args.kwargs['header']
+        self.assertEqual(header['Accept'], 'text/plain')
+        self.assertEqual(header['Authorization'], 'Bearer linuxfabrik')
+
+    def test_openmetrics_content_type_selects_openmetrics(self):
+        # a Prometheus payload served as OpenMetrics lacks the # EOF marker
+        (success, result), _ = self._fetch(
+            BLOCKY_PAYLOAD, 'application/openmetrics-text; version=1.0.0'
+        )
+        self.assertFalse(success)
+        self.assertIn('# EOF', result)
+
+    def test_openmetrics_payload(self):
+        (success, samples), _ = self._fetch(
+            OM_PAYLOAD, 'application/openmetrics-text; version=1.0.0; charset=utf-8'
+        )
+        self.assertTrue(success)
+        self.assertEqual(openmetrics.get_sum(samples, 'rpc_requests_total'), 37.0)
+
+    def test_unknown_content_type_autodetects(self):
+        (success, _samples), _ = self._fetch(OM_PAYLOAD, 'application/octet-stream')
+        self.assertTrue(success)
+        (success, _samples), _ = self._fetch(BLOCKY_PAYLOAD, '')
+        self.assertTrue(success)
+
+    def test_fetch_error_is_passed_through(self):
+        (success, result), _ = self._fetch('ignored', 'text/plain', success=False)
+        self.assertFalse(success)
+        self.assertEqual(result, 'Connection refused.')
+
+    def test_unreadable_payload_names_the_endpoint(self):
+        (success, result), _ = self._fetch('<html>nope</html>', 'text/html')
+        self.assertFalse(success)
+        self.assertIn('http://localhost:4000/metrics', result)
 
 
 if __name__ == '__main__':
