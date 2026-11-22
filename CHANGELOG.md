@@ -7,8 +7,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-tbd
-
 ### Added
 
 * icinga.py: `director_*()` functions that read the Icinga Director configuration through `icingacli`, resolve the per-host overrides of service variables, tell which variables reach a check command and compare the Director with a basket
