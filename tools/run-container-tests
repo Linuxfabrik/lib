@@ -50,7 +50,7 @@ import uuid
 import _common
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026112201'
 
 # Kept in step with `lib.lftest.RUN_ID_ENV` / `RUN_ID_LABEL`; the tools are
 # standalone scripts and do not import the library.
