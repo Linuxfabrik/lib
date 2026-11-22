@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026111601'
+__version__ = '2026112001'
 
 import collections
 import datetime
@@ -354,6 +354,120 @@ def describe_groups(
     if len(groups) > limit:
         described.append(f'... and {len(groups) - limit} more')
     return described
+
+
+def describe_sources(sources, sizes=None, size_threshold=None, max_per_directory=4):
+    """
+    Name the sources a run read, one entry per source, folding a crowded directory.
+
+    A reverse proxy serving forty sites reads forty error logs from one directory,
+    and naming every one of them turns the end of a report into a wall of paths that
+    says no more than how many there were. Up to `max_per_directory` files of one
+    directory are named one by one, the way `describe()` names them. More than that
+    become a single entry for the directory: how many files, how many of them held
+    no line at all, how many rotated predecessors were read along, and their size
+    together. The lines that raised the state name the file they come from
+    themselves, so nothing an administrator acts on is lost in the fold. Journal
+    units and containers are always named one by one. The entries keep the order
+    in which the sources were read; a folded directory sits where its first file was.
+
+    Parameters
+    ----------
+    sources : list of dict
+        The `sources` a `read_many()` result carries, each holding at least a `label`,
+        a `lines` and a `rotated` list.
+    sizes : dict, optional
+        The size of each live source in bytes, keyed by its `label`, where the caller
+        has it. Defaults to `None`, which names no size.
+    size_threshold : int, optional
+        Passed on to `describe()` for the files named one by one. Defaults to `None`.
+    max_per_directory : int, optional
+        How many files of one directory are still named one by one. Defaults to `4`.
+
+    Returns
+    -------
+    tuple
+          - tuple[0] (**bool**): True if the arguments could be described, otherwise
+            False.
+          - tuple[1] (**list | str**): One text per entry, with every path in
+            backticks, or the error message.
+
+    Examples
+    --------
+    >>> describe_sources([{'label': '/var/log/secure', 'lines': ['x'], 'rotated': []}])
+    (True, ['`/var/log/secure`'])
+    """
+    # Rejected rather than repaired: a source dropped from the listing makes it
+    # disagree with the count the caller prints above it.
+    if not isinstance(sources, list):
+        return False, 'The sources to describe are not a list.'
+    if (
+        not isinstance(max_per_directory, int)
+        or isinstance(max_per_directory, bool)
+        or max_per_directory < 1
+    ):
+        return (
+            False,
+            'The number of files named per directory is not a positive number.',
+        )
+    if sizes is None:
+        sizes = {}
+    if not isinstance(sizes, dict) or any(
+        not isinstance(size, int) or isinstance(size, bool) for size in sizes.values()
+    ):
+        return False, 'The sizes of the sources are not a mapping of byte counts.'
+    for source in sources:
+        if not isinstance(source, dict) or not isinstance(source.get('label'), str):
+            return False, 'A source to describe carries no label.'
+        if not isinstance(source.get('rotated') or [], list):
+            return (
+                False,
+                f'The rotated predecessors of {source["label"]} are not a list.',
+            )
+    directories = collections.OrderedDict()
+    for source in sources:
+        success, parsed = parse(source.get('label'))
+        if success and parsed[0] == KIND_FILE:
+            directory = os.path.dirname(parsed[2]) or '.'
+            directories.setdefault(directory, []).append(source)
+
+    described = []
+    folded = set()
+    for source in sources:
+        success, parsed = parse(source.get('label'))
+        directory = None
+        if success and parsed[0] == KIND_FILE:
+            directory = os.path.dirname(parsed[2]) or '.'
+        members = directories.get(directory, [])
+        if directory is None or len(members) <= max_per_directory:
+            described.append(
+                describe(
+                    source,
+                    sizes.get(source.get('label')),
+                    size_threshold=size_threshold,
+                )
+            )
+            continue
+        if directory in folded:
+            continue
+        folded.add(directory)
+        silent = sum(1 for member in members if not member.get('lines'))
+        rotated = sum(len(member.get('rotated') or []) for member in members)
+        known = [
+            sizes[member['label']] for member in members if member['label'] in sizes
+        ]
+        parts = [f'{len(members)} files']
+        if silent:
+            parts.append(f'{silent} of them without a line')
+        if rotated:
+            parts.append(
+                f'{rotated} rotated {txt.pluralize("predecessor", rotated)} read along'
+            )
+        text = f'`{os.path.join(directory, "")}`: ' + ', '.join(parts)
+        if known:
+            text += f' (size: {human.bytes2human(sum(known))})'
+        described.append(text)
+    return True, described
 
 
 def group_lines(lines, since=None, parse_line=None, group=None, detail=None):

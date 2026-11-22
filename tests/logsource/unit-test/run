@@ -201,6 +201,143 @@ class TestDescribeGroups(unittest.TestCase):
         self.assertEqual(lib.logsource.describe_groups(['x', {'count': '1'}]), [])
 
 
+#: How the fold names /var/log/httpd, with the separator of the platform.
+HTTPD_DIR = os.path.join('/var/log/httpd', '')
+
+
+def _source(label, lines=('x',), rotated=()):
+    """One source the way `read_many()` returns it."""
+    return {'label': label, 'lines': list(lines), 'rotated': list(rotated)}
+
+
+class TestDescribeSources(unittest.TestCase):
+    def _described(self, *args, **kwargs):
+        """The entries of a call that has to succeed."""
+        success, described = lib.logsource.describe_sources(*args, **kwargs)
+        self.assertTrue(success, described)
+        return described
+
+    def test_a_few_files_of_one_directory_are_named_one_by_one(self):
+        sources = [_source(f'/var/log/httpd/site{i}-error.log') for i in range(4)]
+        self.assertEqual(
+            self._described(sources),
+            [f'`/var/log/httpd/site{i}-error.log`' for i in range(4)],
+        )
+
+    def test_a_crowded_directory_becomes_one_entry(self):
+        sources = [
+            _source('/var/log/httpd/a-error.log', rotated=['/nonexistent/a-1']),
+            _source('/var/log/httpd/b-error.log', lines=()),
+            _source('/var/log/httpd/c-error.log', lines=()),
+            _source('/var/log/httpd/d-error.log'),
+            _source('/var/log/httpd/e-error.log'),
+        ]
+        sizes = {source['label']: 1024 for source in sources}
+        self.assertEqual(
+            self._described(sources, sizes),
+            [
+                f'`{HTTPD_DIR}`: 5 files, 2 of them without a line, 1 rotated'
+                ' predecessor read along (size: 5.0KiB)'
+            ],
+        )
+
+    def test_the_fold_says_only_what_applies(self):
+        sources = [_source(f'/var/log/httpd/site{i}-error.log') for i in range(5)]
+        self.assertEqual(
+            self._described(sources),
+            [f'`{HTTPD_DIR}`: 5 files'],
+        )
+
+    def test_units_and_containers_are_never_folded(self):
+        sources = [_source(f'/var/log/httpd/site{i}-error.log') for i in range(5)] + [
+            _source('systemd:httpd.service'),
+            _source('podman:web'),
+        ]
+        self.assertEqual(
+            self._described(sources),
+            [f'`{HTTPD_DIR}`: 5 files', '`systemd:httpd.service`', '`podman:web`'],
+        )
+
+    def test_the_fold_sits_where_its_first_file_was_read(self):
+        sources = [
+            _source('systemd:httpd.service'),
+            _source('/var/log/messages'),
+        ] + [_source(f'/var/log/httpd/site{i}-error.log') for i in range(5)]
+        self.assertEqual(
+            self._described(sources, {'/var/log/messages': 2048}),
+            [
+                '`systemd:httpd.service`',
+                '`/var/log/messages` (size: 2.0KiB)',
+                f'`{HTTPD_DIR}`: 5 files',
+            ],
+        )
+
+    def test_the_limit_can_be_lowered(self):
+        sources = [_source('/var/log/a.log'), _source('/var/log/b.log')]
+        self.assertEqual(
+            self._described(sources, max_per_directory=1),
+            [f'`{os.path.join("/var/log", "")}`: 2 files'],
+        )
+
+    def test_the_size_threshold_reaches_the_files_named_one_by_one(self):
+        self.assertEqual(
+            self._described(
+                [_source('/var/log/mysqld.log')],
+                {'/var/log/mysqld.log': 2048},
+                size_threshold=4096,
+            ),
+            ['`/var/log/mysqld.log` (size: 2.0KiB < 4.0KiB)'],
+        )
+
+    def test_nothing_read_is_nothing_named(self):
+        self.assertEqual(self._described([]), [])
+
+    def test_the_fold_does_not_compare_against_the_threshold(self):
+        sources = [_source(f'/var/log/httpd/site{i}-error.log') for i in range(5)]
+        sizes = {source['label']: 1024 for source in sources}
+        self.assertEqual(
+            self._described(sources, sizes, size_threshold=4096),
+            [f'`{HTTPD_DIR}`: 5 files (size: 5.0KiB)'],
+        )
+
+    def _assert_rejected(self, *args, **kwargs):
+        success, message = lib.logsource.describe_sources(*args, **kwargs)
+        self.assertFalse(success)
+        self.assertIsInstance(message, str)
+
+    def test_sources_that_are_no_list_are_rejected(self):
+        self._assert_rejected(None)
+        self._assert_rejected('/var/log/secure')
+        self._assert_rejected({'label': '/var/log/secure'})
+
+    def test_an_entry_without_a_label_is_rejected_rather_than_left_out(self):
+        # A source dropped from the listing would disagree with the count the
+        # caller prints above it.
+        for entry in (None, {'lines': ['x']}, {'label': 42}):
+            self._assert_rejected([entry, _source('/var/log/secure')])
+
+    def test_rotated_predecessors_that_are_no_list_are_rejected(self):
+        self._assert_rejected([{'label': '/var/log/secure', 'rotated': 'secure-1'}])
+
+    def test_sizes_that_are_no_mapping_of_byte_counts_are_rejected(self):
+        sources = [_source('/var/log/secure')]
+        self._assert_rejected(sources, sizes=['1024'])
+        self._assert_rejected(sources, {'/var/log/secure': '1024'})
+        self._assert_rejected(sources, {'/var/log/secure': None})
+        self._assert_rejected(sources, {'/var/log/secure': True})
+
+    def test_a_limit_that_is_no_positive_number_is_rejected(self):
+        sources = [_source('/var/log/secure')]
+        for limit in ('4', 0, -1, True, None, 4.0):
+            self._assert_rejected(sources, max_per_directory=limit)
+
+    def test_no_sizes_at_all_names_none(self):
+        self.assertEqual(
+            self._described([_source('/var/log/secure')], None),
+            ['`/var/log/secure`'],
+        )
+
+
 class TestGroupLines(unittest.TestCase):
     LINES = (
         'Nov 16 11:00:01 host sshd[1]: Invalid user admin from 198.51.100.7',
