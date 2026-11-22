@@ -15,13 +15,14 @@ import json
 import os
 import re
 import shlex
+import shutil
 import sys
 import tempfile
 
 from . import base, disk, shell
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026112201'
 
 
 def attach_each(test_class, items, action, id_func=str):
@@ -494,6 +495,7 @@ def run_container(
     wait_log_timeout=120,
     network=None,
     network_alias=None,
+    volumes=None,
 ):
     """Start a testcontainers-python managed container and yield it.
 
@@ -539,6 +541,14 @@ def run_container(
     network_alias : str, optional
         Hostname this container is
         reachable under on `network` (e.g. `'db'`).
+    volumes : list of tuple, optional
+        `(host_path, container_path)` pairs to mount read-only, for a service
+        that reads its configuration only from a file (e.g.
+        `[('fixtures/config.yml', '/app/config.yml')]`). A relative host path
+        is taken from the current directory. Each file or directory is copied
+        into a temporary directory first and the copy is mounted, so SELinux
+        relabels the copy and never the working tree (a relabelled tree locks
+        out the next container).
 
     Yields
     ------
@@ -593,11 +603,23 @@ def run_container(
                 timedelta(seconds=wait_log_timeout)
             )
         )
-    c.start()
+    mount_dir = tempfile.mkdtemp(prefix='lftest-') if volumes else None
     try:
-        yield c
+        for index, (host_path, container_path) in enumerate(volumes or []):
+            copy = os.path.join(mount_dir, str(index))
+            if os.path.isdir(host_path):
+                shutil.copytree(host_path, copy)
+            else:
+                shutil.copy(host_path, copy)
+            c.with_volume_mapping(copy, container_path, 'ro,Z')
+        c.start()
+        try:
+            yield c
+        finally:
+            c.stop()
     finally:
-        c.stop()
+        if mount_dir:
+            shutil.rmtree(mount_dir, ignore_errors=True)
 
 
 def _is_mariadb_image(image_ref):
@@ -672,9 +694,9 @@ def _run_mysql_compatible_resolved(image_ref, command, seed):
     with run_container(
         image_ref,
         env={
-            'MYSQL_ROOT_PASSWORD': 'test',
+            'MYSQL_ROOT_PASSWORD': 'test',  # nosec B105 - throwaway test container
             'MYSQL_USER': 'test',
-            'MYSQL_PASSWORD': 'test',
+            'MYSQL_PASSWORD': 'test',  # nosec B105 - throwaway test container
             'MYSQL_DATABASE': 'test',
         },
         ports=[3306],

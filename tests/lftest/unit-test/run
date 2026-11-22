@@ -234,6 +234,60 @@ class TestPrepareContainerEnv(unittest.TestCase):
             )
 
 
+class TestRunContainerVolumes(unittest.TestCase):
+    """`volumes` reaches testcontainers as read-only mounts with absolute paths."""
+
+    def _run(self, mapping=None, **kwargs):
+        try:
+            import testcontainers.core.container  # noqa: F401
+        except ImportError:
+            self.skipTest('testcontainers is not installed')
+        with (
+            mock.patch.object(lftest, 'prepare_container_env'),
+            mock.patch.object(lftest, 'require_container_runtime'),
+            mock.patch('testcontainers.core.container.DockerContainer') as container,
+        ):
+            if mapping:
+                container.return_value.with_volume_mapping.side_effect = mapping
+            with lftest.run_container('example.com/image:1', **kwargs):
+                pass
+        return container.return_value
+
+    def test_a_copy_is_mounted_and_removed_afterwards(self):
+        workdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, workdir)
+        config = os.path.join(workdir, 'config.yml')
+        tree = os.path.join(workdir, 'lists')
+        os.mkdir(tree)
+        with open(config, 'w') as f:
+            f.write('ports: {}\n')
+        with open(os.path.join(tree, 'ads.txt'), 'w') as f:
+            f.write('ads.example.com\n')
+        seen = []
+
+        def remember(host, container, mode):
+            # the copy only exists while the container runs, so look now
+            seen.append((host, container, mode, os.path.exists(host)))
+
+        instance = self._run(
+            volumes=[(config, '/app/config.yml'), (tree, '/app/lists')],
+            mapping=remember,
+        )
+        self.assertEqual(len(seen), 2)
+        for (host, _, mode, existed), source in zip(seen, (config, tree)):
+            self.assertNotEqual(host, source)  # never the working tree itself
+            self.assertEqual(mode, 'ro,Z')
+            self.assertTrue(existed)
+            self.assertFalse(os.path.exists(host))
+        self.assertEqual([item[1] for item in seen], ['/app/config.yml', '/app/lists'])
+        instance.start.assert_called_once_with()
+        instance.stop.assert_called_once_with()
+
+    def test_no_volumes_mounts_nothing(self):
+        instance = self._run()
+        instance.with_volume_mapping.assert_not_called()
+
+
 class TestInTestProcess(unittest.TestCase):
     """What tells a test process apart from a monitoring plugin."""
 
