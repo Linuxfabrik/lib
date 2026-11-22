@@ -34,7 +34,7 @@ own finding and a line that turns up again after an acknowledgement is reported 
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026092101'
+__version__ = '2026112201'
 
 import datetime
 import hashlib
