@@ -19,7 +19,8 @@ Usage:
     tools/run-tox-tests -e py39    # run a single environment
 """
 
-import subprocess
+# Maintainer tool: runs commands of this repository with a fixed argv, no shell.
+import subprocess  # nosec B404
 import sys
 
 import _common
@@ -31,7 +32,7 @@ __version__ = '2026060201'
 def main():
     argv = ['tox', '-c', str(_common.REPO_ROOT / 'tox.ini'), *sys.argv[1:]]
     try:
-        result = subprocess.run(argv, cwd=_common.REPO_ROOT, check=False)
+        result = subprocess.run(argv, cwd=_common.REPO_ROOT, check=False)  # nosec B603
     except FileNotFoundError:
         _common.die('tox is not installed (pip install tox).')
     return result.returncode
