@@ -15,7 +15,9 @@ permissions: read-all
 
 jobs:
   update:
-    runs-on: 'ubuntu-latest'
+    # Pinned rather than ubuntu-latest: setup-python has no Python 3.9 for
+    # Ubuntu 26.04, which ubuntu-latest points to since 2026-11-17.
+    runs-on: 'ubuntu-24.04'
     steps:
       # A pull request opened with `GITHUB_TOKEN` never triggers workflows, so
       # the required checks would never report and it would stay blocked.
