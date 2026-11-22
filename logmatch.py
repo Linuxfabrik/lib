@@ -44,6 +44,9 @@ import uuid
 from . import db_sqlite, icinga, time, txt
 
 DEFAULT_RETENTION = 30  # days
+# SQLite cannot bind a table name, so the queries below interpolate it, marked
+# `# nosec B608`. It is one of these constants or a name the calling plugin passes in
+# its code, never input.
 DEFAULT_TABLE = 'findings'
 
 _DEFINITION = """
@@ -83,7 +86,7 @@ def _write(conn, findings, table, acknowledged=False):
         item = finding.get('key') or uuid.uuid4().hex
         success, existing = db_sqlite.select(
             conn,
-            f'SELECT * FROM {table} WHERE key = :key',
+            f'SELECT * FROM {table} WHERE key = :key',  # nosec B608
             {'key': item},
             fetchone=True,
         )
@@ -225,7 +228,7 @@ def get_position(conn, source):
     """
     success, row = db_sqlite.select(
         conn,
-        f'SELECT position FROM {POSITION_TABLE} WHERE source = :source',
+        f'SELECT position FROM {POSITION_TABLE} WHERE source = :source',  # nosec B608
         {'source': source},
         fetchone=True,
     )
@@ -339,7 +342,7 @@ def pending(conn, max_age=None, table=DEFAULT_TABLE):
     >>> findings = lib.base.coe(lib.logmatch.pending(conn, max_age=args.ALARM_DURATION))
     >>> state = lib.base.get_worst(*[item['state'] for item in findings])
     """
-    sql = f'SELECT * FROM {table} WHERE acked_at IS NULL'
+    sql = f'SELECT * FROM {table} WHERE acked_at IS NULL'  # nosec B608
     data = {}
     if max_age is not None:
         sql += ' AND first_seen > :cutoff'
@@ -377,7 +380,7 @@ def prune(conn, retention=DEFAULT_RETENTION, table=DEFAULT_TABLE):
     cutoff = _timestamp(datetime.timedelta(days=retention))
     success, result = db_sqlite.delete(
         conn,
-        f'DELETE FROM {table} WHERE last_seen <= :cutoff',
+        f'DELETE FROM {table} WHERE last_seen <= :cutoff',  # nosec B608
         {'cutoff': cutoff},
     )
     if not success:
@@ -595,7 +598,7 @@ def suppressed(conn, table=DEFAULT_TABLE):
     """
     success, rows = db_sqlite.select(
         conn,
-        f'SELECT key FROM {table} WHERE acked_at IS NOT NULL',
+        f'SELECT key FROM {table} WHERE acked_at IS NOT NULL',  # nosec B608
         fetchone=False,
     )
     if not success:

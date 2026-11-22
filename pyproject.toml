@@ -91,6 +91,11 @@ quote-style = 'single'
 # in lib for graceful degradation - cleanup errors must not crash callers.
 # B311 (pseudo-random): lib uses `random` for non-cryptographic purposes only.
 skips = ['B110', 'B112', 'B311']
+# The suites under tests/ feed the credential and API code fake passwords, tokens and
+# `/tmp` paths and run helper commands, by design. Every such line would need a
+# `# nosec`, so bandit skips the directory. `tests/` matches as a substring; `tests`
+# alone would also skip tools/run-*-tests.
+exclude_dirs = ['tests/']
 
 [tool.bandit.assert_used]
 # A test suite may assert with the bare statement, so B101 does not apply under

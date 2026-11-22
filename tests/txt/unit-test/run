@@ -515,12 +515,16 @@ class TestSanitizeSensitiveData(unittest.TestCase):
     # basic-auth password) in the clear.
     def test_redacts_url_password_longer_than_the_bound(self):
         secret = 'S' * 300
-        redacted = txt.sanitize_sensitive_data(f'URL error for http://user:{secret}@host/')
+        redacted = txt.sanitize_sensitive_data(
+            f'URL error for http://user:{secret}@host/'
+        )
         self.assertNotIn(secret[:20], redacted)
         self.assertIn('http://user:******@host/', redacted)
 
     def test_redacts_url_password_with_a_blank(self):
-        redacted = txt.sanitize_sensitive_data('for https://user:lf fabrik@host.example/')
+        redacted = txt.sanitize_sensitive_data(
+            'for https://user:lf fabrik@host.example/'
+        )
         self.assertNotIn('fabrik', redacted)
         self.assertIn('https://user:******@host.example/', redacted)
 
