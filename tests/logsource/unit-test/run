@@ -610,6 +610,31 @@ class TestFindUnits(unittest.TestCase):
             ['php8.2-fpm.service', 'php8.4-fpm.service'],
         )
 
+    def test_no_candidates(self):
+        self.unit_file('/lib/systemd/system', 'ssh.service')
+        self.assertEqual(lib.logsource.find_units((), self.root), [])
+
+    def test_a_generator_of_candidates(self):
+        self.unit_file('/lib/systemd/system', 'ssh.service')
+        self.assertEqual(
+            lib.logsource.find_units(
+                (name for name in ('sshd.service', 'ssh.service')), self.root
+            ),
+            ['ssh.service'],
+        )
+
+    def test_a_string_instead_of_candidates_is_refused(self):
+        self.unit_file('/lib/systemd/system', 'ssh.service')
+        with self.assertRaises(TypeError):
+            lib.logsource.find_units('ssh.service', self.root)
+
+    def test_a_candidate_with_a_path_is_refused(self):
+        # even where systemd does not run the host, so the mistake shows everywhere
+        shutil.rmtree(os.path.join(self.root, 'run'))
+        for candidate in ('../../../etc/passwd', 'system/ssh.service', None, 42):
+            with self.subTest(candidate=candidate), self.assertRaises(ValueError):
+                lib.logsource.find_units(('ssh.service', candidate), self.root)
+
     def test_an_instance_is_found_by_its_template(self):
         self.unit_file('/lib/systemd/system', 'postfix@.service')
         self.assertEqual(

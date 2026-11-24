@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026112401'
+__version__ = '2026112402'
 
 import collections
 import datetime
@@ -515,6 +515,13 @@ def find_units(candidates, root=''):
         a host with another init system has no journal to read
         ([monitoring-plugins#1544](https://github.com/Linuxfabrik/monitoring-plugins/issues/1544)).
 
+    Raises
+    ------
+    TypeError
+        If `candidates` is a string instead of an iterable of names.
+    ValueError
+        If a candidate is not a string or holds a path separator.
+
     Examples
     --------
     >>> find_units(
@@ -522,6 +529,14 @@ def find_units(candidates, root=''):
     ... )  # doctest: +SKIP
     ['mariadb.service']
     """
+    if isinstance(candidates, str):
+        # a bare string would be searched character by character and find nothing
+        raise TypeError('candidates must be an iterable of unit names, not a string')
+    candidates = tuple(candidates)
+    for candidate in candidates:
+        # a unit name never holds a path, so nothing leads out of the unit directories
+        if not isinstance(candidate, str) or '/' in candidate or os.sep in candidate:
+            raise ValueError(f'not a unit name: {candidate!r}')
     if not systemd_booted(root):
         return []
     found = []
