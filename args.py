@@ -19,7 +19,7 @@ import textwrap
 from . import base, human, txt
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102401'
+__version__ = '2026112401'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -648,6 +648,109 @@ def number_unit_method(arg, unit='%', method='USED'):
         match.group('number'),
         (match.group('unit') or unit).upper(),
         (match.group('method') or method).upper(),
+    )
+
+
+def number_unit_method_limits(threshold, total):
+    """
+    Put a `number_unit_method()` threshold where a graph of the used share or the used
+    amount can draw it.
+
+    A percentage threshold becomes a line on the used share, an absolute one a line on
+    the used amount. `USED` puts the line at the number, `FREE` at the point where the
+    free part reaches it. A `FREE` threshold larger than `total` would put the line
+    below zero, where no graph can draw it; it is pinned to zero, which is where it
+    alerts anyway: at every amount used.
+
+    Parameters
+    ----------
+    threshold : tuple
+        `(number, unit, method)` as `number_unit_method()` returns it.
+    total : int or float
+        The size of what is measured, in bytes.
+
+    Returns
+    -------
+    tuple (float or None, int or None)
+        `(percent_limit, used_limit)`, the line on the used share in percent and the
+        line on the used amount in bytes. The one the threshold does not apply to is
+        None.
+
+    Examples
+    --------
+    >>> number_unit_method_limits(('90', '%', 'USED'), 1000)
+    (90.0, None)
+
+    >>> number_unit_method_limits(('1', 'K', 'FREE'), 4096)
+    (None, 3072)
+    """
+    number, unit, method = threshold
+    if unit == '%':
+        limit = float(number) if method == 'USED' else 100.0 - float(number)
+        return max(limit, 0.0), None
+    limit_bytes = human.human2bytes(f'{number}{unit}')
+    used_limit = limit_bytes if method == 'USED' else total - limit_bytes
+    return None, max(used_limit, 0)
+
+
+def _number_unit_method_operands(threshold, used, free, percent):
+    """Map a `number_unit_method()` threshold onto the `(value, limit, operator)`
+    arguments of `base.get_state()`. `USED` compares the used part and alerts at
+    "number or more", `FREE` compares the free part and alerts at "number or less"; a
+    `%` unit compares percentages, any other unit bytes."""
+    number, unit, method = threshold
+    if unit == '%':
+        value = percent if method == 'USED' else 100.0 - percent
+        limit = number
+    else:
+        value = used if method == 'USED' else free
+        limit = human.human2bytes(f'{number}{unit}')
+    return value, limit, 'ge' if method == 'USED' else 'le'
+
+
+def number_unit_method_state(warn, crit, used, free, percent):
+    """
+    Return the state of a store, a filesystem or anything else with a size, against
+    two `number_unit_method()` thresholds.
+
+    Parameters
+    ----------
+    warn, crit : tuple
+        `(number, unit, method)` as `number_unit_method()` returns them.
+    used : int or float
+        Bytes in use.
+    free : int or float
+        Bytes free. Passed on its own rather than derived from `used`, because a
+        filesystem keeps blocks in reserve that are neither, and `free` is what is left
+        to write to.
+    percent : int or float
+        The used share in percent, as the caller reports it, so the state agrees with
+        the figure printed next to it.
+
+    Returns
+    -------
+    int
+        `STATE_OK`, `STATE_WARN` or `STATE_CRIT`, the worse of the two thresholds.
+        `STATE_UNKNOWN` for a threshold whose number is empty, which is what
+        `number_unit_method()` returns for one that does not parse.
+
+    Examples
+    --------
+    >>> number_unit_method_state(('80', '%', 'USED'), ('90', '%', 'USED'), 850, 150, 85)
+    1  # STATE_WARN
+
+    >>> number_unit_method_state(('2', 'K', 'FREE'), ('1', 'K', 'FREE'), 3500, 596, 85)
+    2  # STATE_CRIT
+    """
+    warn_value, warn_limit, warn_operator = _number_unit_method_operands(
+        warn, used, free, percent
+    )
+    crit_value, crit_limit, crit_operator = _number_unit_method_operands(
+        crit, used, free, percent
+    )
+    return base.get_worst(
+        base.get_state(warn_value, warn_limit, None, warn_operator),
+        base.get_state(crit_value, None, crit_limit, crit_operator),
     )
 
 

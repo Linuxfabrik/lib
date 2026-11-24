@@ -24,6 +24,7 @@ from unittest import mock
 sys.path.insert(0, '..')
 
 import lib.args as args
+from lib.globals import STATE_CRIT, STATE_OK, STATE_UNKNOWN, STATE_WARN
 
 
 class TestCsv(unittest.TestCase):
@@ -202,6 +203,72 @@ class TestNumberUnitMethod(unittest.TestCase):
             args.number_unit_method('80', unit='GiB', method='FREE'),
             ('80', 'GIB', 'FREE'),
         )
+
+
+class TestNumberUnitMethodLimits(unittest.TestCase):
+    def test_percent_used_is_a_line_on_the_share(self):
+        self.assertEqual(
+            args.number_unit_method_limits(('90', '%', 'USED'), 1000), (90.0, None)
+        )
+
+    def test_percent_free_is_mirrored_onto_the_share(self):
+        self.assertEqual(
+            args.number_unit_method_limits(('10', '%', 'FREE'), 1000), (90.0, None)
+        )
+
+    def test_bytes_used_is_a_line_on_the_amount(self):
+        self.assertEqual(
+            args.number_unit_method_limits(('1', 'K', 'USED'), 4096), (None, 1024)
+        )
+
+    def test_bytes_free_is_measured_from_the_total(self):
+        self.assertEqual(
+            args.number_unit_method_limits(('1', 'K', 'FREE'), 4096), (None, 3072)
+        )
+
+    def test_free_larger_than_the_total_is_pinned_to_zero(self):
+        self.assertEqual(
+            args.number_unit_method_limits(('5', 'G', 'FREE'), 1024), (None, 0)
+        )
+        self.assertEqual(
+            args.number_unit_method_limits(('150', '%', 'FREE'), 1024), (0.0, None)
+        )
+
+
+class TestNumberUnitMethodState(unittest.TestCase):
+    # 1 GiB in total, 850 MiB used, 150 MiB free, 83.0% used
+    USAGE = (850 * 1024**2, 150 * 1024**2, 83.0)
+
+    def state(self, warn, crit):
+        return args.number_unit_method_state(
+            args.number_unit_method(warn), args.number_unit_method(crit), *self.USAGE
+        )
+
+    def test_percent_used(self):
+        self.assertEqual(self.state('90', '95'), STATE_OK)
+        self.assertEqual(self.state('80', '95'), STATE_WARN)
+        self.assertEqual(self.state('80', '83'), STATE_CRIT)
+
+    def test_percent_free(self):
+        self.assertEqual(self.state('10%FREE', '5%FREE'), STATE_OK)
+        self.assertEqual(self.state('17%FREE', '5%FREE'), STATE_WARN)
+        self.assertEqual(self.state('20%FREE', '18%FREE'), STATE_CRIT)
+
+    def test_bytes_used(self):
+        self.assertEqual(self.state('900MUSED', '1G'), STATE_OK)
+        self.assertEqual(self.state('850MUSED', '1G'), STATE_WARN)
+        self.assertEqual(self.state('800M', '850M'), STATE_CRIT)
+
+    def test_bytes_free(self):
+        self.assertEqual(self.state('100MFREE', '50MFREE'), STATE_OK)
+        self.assertEqual(self.state('150MFREE', '50MFREE'), STATE_WARN)
+        self.assertEqual(self.state('200MFREE', '1GFREE'), STATE_CRIT)
+
+    def test_methods_and_units_mix(self):
+        self.assertEqual(self.state('200MFREE', '95'), STATE_WARN)
+
+    def test_a_threshold_that_did_not_parse_is_unknown(self):
+        self.assertEqual(self.state('abc', '95'), STATE_UNKNOWN)
 
 
 class TestHelp(unittest.TestCase):
