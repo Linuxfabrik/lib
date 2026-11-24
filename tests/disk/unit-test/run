@@ -1957,5 +1957,174 @@ class TestFifoDoesNotBlock(unittest.TestCase):
         )
 
 
+class TestMountTables(unittest.TestCase):
+    """parse_fstab(), parse_mountinfo(), normalize_mount_point() and
+    resolve_mount_point()."""
+
+    def test_normalize_mount_point(self):
+        self.assertEqual(disk.normalize_mount_point('/mnt/data/'), '/mnt/data')
+        self.assertEqual(disk.normalize_mount_point('/mnt/data//'), '/mnt/data')
+        self.assertEqual(disk.normalize_mount_point('/mnt/data'), '/mnt/data')
+        self.assertEqual(disk.normalize_mount_point('/'), '/')
+        self.assertEqual(disk.normalize_mount_point('//'), '/')
+        self.assertEqual(disk.normalize_mount_point('none'), 'none')
+
+    def test_normalize_mount_point_rejects_non_strings(self):
+        for value in ('', None, 42, b'/mnt', ['/mnt']):
+            self.assertEqual(disk.normalize_mount_point(value), '')
+
+    def test_parse_fstab_skips_comments_blanks_and_short_lines(self):
+        table = (
+            '# /etc/fstab\n'
+            '\n'
+            '   \n'
+            '  # indented comment\n'
+            'UUID=1 /\n'
+            'UUID=2 / xfs defaults 0 0\n'
+            '\tUUID=3\t/boot\text4\tdefaults,nodev\t1\t2\t\n'
+        )
+        self.assertEqual(
+            disk.parse_fstab(table),
+            [
+                {
+                    'device': 'UUID=2',
+                    'fstype': 'xfs',
+                    'mount_point': '/',
+                    'options': ['defaults'],
+                },
+                {
+                    'device': 'UUID=3',
+                    'fstype': 'ext4',
+                    'mount_point': '/boot',
+                    'options': ['defaults', 'nodev'],
+                },
+            ],
+        )
+
+    def test_parse_fstab_without_options_gets_defaults(self):
+        entry = disk.parse_fstab('/dev/sdb1 /srv xfs\n')[0]
+        self.assertEqual(entry['options'], ['defaults'])
+
+    def test_parse_fstab_unescapes_device_and_mount_point(self):
+        entry = disk.parse_fstab(
+            'LABEL=my\\040disk /srv/a\\040b\\011c\\134d xfs defaults 0 0'
+        )[0]
+        self.assertEqual(entry['device'], 'LABEL=my disk')
+        self.assertEqual(entry['mount_point'], '/srv/a b\tc\\d')
+
+    def test_parse_fstab_leaves_incomplete_escapes_alone(self):
+        # only a backslash followed by three octal digits is an escape
+        entry = disk.parse_fstab('x /srv/a\\04\\8 xfs')[0]
+        self.assertEqual(entry['mount_point'], '/srv/a\\04\\8')
+
+    def test_parse_fstab_interprets_nothing(self):
+        # swap and placeholder entries are the caller's business
+        entries = disk.parse_fstab('/dev/sda2 none swap sw 0 0\n')
+        self.assertEqual(entries[0]['mount_point'], 'none')
+        self.assertEqual(entries[0]['fstype'], 'swap')
+
+    def test_parse_fstab_reads_proc_mounts(self):
+        entries = disk.parse_fstab(
+            '/dev/mapper/rl-root / xfs rw,seclabel,relatime 0 0\n'
+            'tmpfs /run/my\\040dir tmpfs rw 0 0\n'
+        )
+        self.assertEqual(
+            [entry['mount_point'] for entry in entries], ['/', '/run/my dir']
+        )
+
+    def test_parse_fstab_rejects_non_strings(self):
+        for value in (None, 42, b'/dev/sda1 / xfs', ['/dev/sda1 / xfs']):
+            self.assertEqual(disk.parse_fstab(value), [])
+        self.assertEqual(disk.parse_fstab(''), [])
+
+    def test_parse_mountinfo(self):
+        table = (
+            '22 1 253:0 / / rw,relatime shared:1 - xfs /dev/mapper/rl-root rw,attr2\n'
+            '36 35 98:0 /mnt1 /mnt/my\\040data rw,noatime master:1 shared:2 - ext3 '
+            '/dev/my\\040disk rw,errors=continue\n'
+            '40 22 0:40 / /srv/nooptional rw - nfs4 server:/export rw\n'
+        )
+        self.assertEqual(
+            disk.parse_mountinfo(table),
+            [
+                {
+                    'fstype': 'xfs',
+                    'mount_point': '/',
+                    'options': ['rw', 'relatime'],
+                    'root': '/',
+                    'source': '/dev/mapper/rl-root',
+                },
+                {
+                    'fstype': 'ext3',
+                    'mount_point': '/mnt/my data',
+                    'options': ['rw', 'noatime'],
+                    'root': '/mnt1',
+                    'source': '/dev/my disk',
+                },
+                {
+                    'fstype': 'nfs4',
+                    'mount_point': '/srv/nooptional',
+                    'options': ['rw'],
+                    'root': '/',
+                    'source': 'server:/export',
+                },
+            ],
+        )
+
+    def test_parse_mountinfo_tolerates_malformed_lines(self):
+        table = (
+            '\n'
+            '1 2 3:4 /\n'
+            '1 2 3:4 / /short\n'
+            '1 2 3:4 / /no-separator rw shared:1\n'
+            '1 2 3:4 / /separator-at-end rw -\n'
+        )
+        mounts = disk.parse_mountinfo(table)
+        self.assertEqual(
+            [mount['mount_point'] for mount in mounts],
+            ['/short', '/no-separator', '/separator-at-end'],
+        )
+        self.assertEqual(mounts[0]['options'], [])
+        for mount in mounts:
+            self.assertEqual((mount['fstype'], mount['source']), ('', ''))
+
+    def test_parse_mountinfo_keeps_a_literal_deleted_suffix(self):
+        # The kernel has not rendered a mount point with " (deleted)" since Linux
+        # 2.6.36; should a table carry one anyway, it stays part of the path.
+        line = '1 2 3:4 / /srv/a\\040(deleted) rw - tmpfs t rw'
+        mount = disk.parse_mountinfo(line)[0]
+        self.assertEqual(mount['mount_point'], '/srv/a (deleted)')
+
+    def test_parse_mountinfo_rejects_non_strings(self):
+        for value in (None, 42, b'1 2 3:4 / / rw - xfs x rw'):
+            self.assertEqual(disk.parse_mountinfo(value), [])
+
+    @unittest.skipIf(os.name != 'posix', 'needs POSIX symlinks')
+    def test_resolve_mount_point_below_a_root(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        os.makedirs(os.path.join(tmp, 'data', 'real'))
+        os.symlink('/data/real', os.path.join(tmp, 'data', 'abs'))
+        os.symlink('real', os.path.join(tmp, 'data', 'rel'))
+        os.symlink('../' * 20 + 'etc', os.path.join(tmp, 'outside'))
+        # an absolute symlink inside the tree points out of it, unresolved
+        self.assertEqual(disk.resolve_mount_point('/data/abs', root=tmp), '/data/abs')
+        self.assertEqual(disk.resolve_mount_point('/data/rel/', root=tmp), '/data/real')
+        self.assertEqual(disk.resolve_mount_point('/', root=tmp), '/')
+        self.assertEqual(disk.resolve_mount_point('/outside', root=tmp), '/outside')
+        self.assertEqual(disk.resolve_mount_point('/missing/x', root=tmp), '/missing/x')
+
+    @unittest.skipIf(os.name != 'posix', 'needs POSIX symlinks')
+    def test_resolve_mount_point_on_the_host(self):
+        tmp = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp)
+        os.makedirs(os.path.join(tmp, 'real'))
+        os.symlink(os.path.join(tmp, 'real'), os.path.join(tmp, 'link'))
+        self.assertEqual(
+            disk.resolve_mount_point(os.path.join(tmp, 'link') + '/'),
+            os.path.join(tmp, 'real'),
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

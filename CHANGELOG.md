@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+* disk.py: `normalize_mount_point()`, `parse_fstab()`, `parse_mountinfo()` and `resolve_mount_point()` read and compare mount tables
 * icinga.py: `director_*()` functions that read the Icinga Director configuration through `icingacli`, resolve the per-host overrides of service variables, tell which variables reach a check command and compare the Director with a basket
 * logsource.py: `find_units()` finds the systemd units of a service by their unit files, `group_lines()` groups log lines by what they say or by who caused them, `describe_groups()` renders the groups for a listing, `describe_sources()` sums up a directory with many log files in one line
 * lvm.py: `get_logical_volumes()` returns `raid_sync_action` and `sync_percent`

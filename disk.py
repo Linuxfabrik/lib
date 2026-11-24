@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026102501'
+__version__ = '2026112401'
 
 import csv
 import errno
@@ -218,10 +218,19 @@ def file_exists(path, allow_empty=False):
     return os.path.getsize(path) > 0
 
 
-# /proc/mounts escapes a space, tab, newline, backslash and `#` in the device and the
-# mount point as a backslash and three octal digits (fs/proc_namespace.c, mangle(), and
-# show_vfsmnt(); Linux 7.3).
+# The kernel escapes a space, tab, newline and backslash in a mount point, and also `#`
+# in a mount source, as a backslash and three octal digits (fs/proc_namespace.c,
+# mangle(), show_vfsmnt() and show_mountinfo(); Linux 7.3). fstab(5) uses the same
+# notation. Verified on Rocky 9 with util-linux 2.37.4 and systemd 252: a mount point
+# holding a space, a tab or a backslash reads "\040", "\011" and "\134" in fstab and
+# in mountinfo alike.
 _MOUNT_ESCAPE = re.compile(r'\\([0-7]{3})')
+
+
+def _unescape_mount_field(field):
+    """Return a field of a mount table with its octal escapes turned back into the
+    characters they stand for."""
+    return _MOUNT_ESCAPE.sub(lambda m: chr(int(m.group(1), 8)), field)
 
 
 def _get_block_mounts():
@@ -238,10 +247,7 @@ def _get_block_mounts():
         parts = line.split()
         if len(parts) < 2 or not parts[0].startswith('/dev/'):
             continue
-        device, mount_point = (
-            _MOUNT_ESCAPE.sub(lambda m: chr(int(m.group(1), 8)), part)
-            for part in parts[:2]
-        )
+        device, mount_point = (_unescape_mount_field(part) for part in parts[:2])
         mounts.append((device, mount_point, parts[1]))
     return mounts
 
@@ -1393,6 +1399,41 @@ def mkdir(path, mode=0o755, exist_ok=True):
         return False, f'Unknown error creating {path}: {e}'
 
 
+def normalize_mount_point(mount_point):
+    """
+    Return a mount point the way the kernel spells it, without a trailing slash.
+
+    The kernel reports `/mnt/data` whether fstab says `/mnt/data` or `/mnt/data/`, so
+    two spellings of the same mount point only compare equal once both are
+    normalized. `/` itself has nothing to strip.
+
+    Parameters
+    ----------
+    mount_point : str
+        The mount point to normalize.
+
+    Returns
+    -------
+    str
+        The mount point without trailing slashes, `/` for a path made of slashes
+        only, and `''` for anything that is not a non-empty string.
+
+    Examples
+    --------
+    >>> normalize_mount_point('/mnt/data/')
+    '/mnt/data'
+
+    >>> normalize_mount_point('/')
+    '/'
+    """
+    if not isinstance(mount_point, str) or not mount_point:
+        return ''
+    stripped = mount_point.rstrip('/')
+    if not stripped and mount_point.startswith('/'):
+        return '/'
+    return stripped
+
+
 def _resolve_components(path, may_step_up=None):
     """Resolve `path` the way the kernel walks it on an open, one component at a time.
 
@@ -1616,6 +1657,120 @@ def open_file(filename, binary=False, allowed_roots=None, nofollow=False, newlin
         return False, f'Unknown error opening or reading {filename}: {e}'
 
 
+def parse_fstab(content):
+    """
+    Return the entries of a mount table in fstab(5) format, such as `/etc/fstab` or
+    `/proc/mounts`, in the order the table lists them.
+
+    The device and the mount point have their octal escapes (`\\040` for a space)
+    turned back into the characters they stand for, so they compare and print the way
+    an administrator wrote them. Blank lines and comments are skipped, and so is a
+    line with fewer than three fields, because without device, mount point and type
+    it describes no mount. The fourth field is optional in practice: an entry without
+    it gets the options `defaults`, as mount(8) does. Nothing else is interpreted,
+    neither a swap entry nor a placeholder such as `none` in the mount point field.
+
+    Parameters
+    ----------
+    content : str
+        The content of the table.
+
+    Returns
+    -------
+    list of dict
+        One dict per entry, with the keys `device` (str), `fstype` (str),
+        `mount_point` (str) and `options` (list of str). An empty list for anything
+        that is not a string.
+
+    Examples
+    --------
+    >>> table = 'UUID=1234 /srv/my\\\\040data xfs defaults,noatime 0 0\\n'
+    >>> entry = parse_fstab(table)[0]
+    >>> entry['mount_point'], entry['options']
+    ('/srv/my data', ['defaults', 'noatime'])
+    """
+    if not isinstance(content, str):
+        return []
+    entries = []
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        fields = line.split()
+        if len(fields) < 3:
+            continue
+        entries.append(
+            {
+                'device': _unescape_mount_field(fields[0]),
+                'fstype': fields[2],
+                'mount_point': _unescape_mount_field(fields[1]),
+                'options': fields[3].split(',') if len(fields) > 3 else ['defaults'],
+            }
+        )
+    return entries
+
+
+def parse_mountinfo(content):
+    """
+    Return the mounts of a `/proc/<pid>/mountinfo` table, in the order the kernel
+    lists them.
+
+    The format is described in proc_pid_mountinfo(5): mount ID, parent ID,
+    major:minor, root, mount point, mount options, any number of optional fields, a
+    single `-`, filesystem type, mount source and superblock options. The root, the
+    mount point and the source have their octal escapes turned back into the
+    characters they stand for. A line with fewer than five fields is skipped. A line
+    without the `-` separator still yields its mount point, with the fields after the
+    separator left empty.
+
+    The mount point never carries a ` (deleted)` suffix: the kernel renders it with
+    `__d_path()`, which has not appended one since Linux 2.6.36 (commit ffd1f4ed5bdd),
+    and a mount whose mount point is removed from another mount namespace is detached
+    rather than kept. Verified on Linux 7.2 with Rocky 9 userspace.
+
+    Parameters
+    ----------
+    content : str
+        The content of the table.
+
+    Returns
+    -------
+    list of dict
+        One dict per mount, with the keys `fstype` (str), `mount_point` (str),
+        `options` (list of str), `root` (str) and `source` (str). An empty list for
+        anything that is not a string.
+
+    Examples
+    --------
+    >>> line = '36 35 98:0 / /mnt/data rw,noatime master:1 - ext3 /dev/sda1 rw\\n'
+    >>> mount = parse_mountinfo(line)[0]
+    >>> mount['mount_point'], mount['fstype'], mount['source']
+    ('/mnt/data', 'ext3', '/dev/sda1')
+    """
+    if not isinstance(content, str):
+        return []
+    mounts = []
+    for line in content.splitlines():
+        fields = line.split()
+        if len(fields) < 5:
+            continue
+        fstype, source = '', ''
+        if '-' in fields[6:]:
+            tail = fields[fields.index('-', 6) + 1 :]
+            fstype = tail[0] if tail else ''
+            source = _unescape_mount_field(tail[1]) if len(tail) > 1 else ''
+        mounts.append(
+            {
+                'fstype': fstype,
+                'mount_point': _unescape_mount_field(fields[4]),
+                'options': fields[5].split(',') if len(fields) > 5 else [],
+                'root': _unescape_mount_field(fields[3]),
+                'source': source,
+            }
+        )
+    return mounts
+
+
 def read_csv(
     filename,
     delimiter=',',
@@ -1837,6 +1992,53 @@ def read_file(
         return False, f'I/O error "{e.strerror}" while opening or reading {filename}'
     except Exception as e:
         return False, f'Unknown error opening or reading {filename}: {e}'
+
+
+def resolve_mount_point(mount_point, root='/'):
+    """
+    Return a mount point with its symlinks resolved, the way the kernel reports it.
+
+    mount(8) resolves its target before mounting, so a mount table may name a path
+    that leads through a symlink while the kernel reports the directory the symlink
+    points to. Verified against util-linux 2.37.4 on Rocky 9: bind-mounting onto a
+    symlink puts the symlink's target into mountinfo, never the symlink itself.
+
+    With a `root` other than `/`, the mount point is resolved below it (see
+    `under_root()`) and returned relative to it again, so a directory tree standing
+    in for the host's filesystem resolves the same way. A path whose symlinks lead
+    out of `root` is returned unresolved, because outside the tree it would be
+    resolved against the real filesystem.
+
+    Resolving touches the filesystem and can block on one that has stopped
+    answering, so a caller that cares calls it only where needed, or under a
+    deadline.
+
+    Parameters
+    ----------
+    mount_point : str
+        The mount point to resolve.
+    root : str, optional
+        The directory the mount point is resolved below. Defaults to `/`.
+
+    Returns
+    -------
+    str
+        The resolved and normalized mount point (see `normalize_mount_point()`).
+
+    Examples
+    --------
+    >>> resolve_mount_point('/srv/link')  # doctest: +SKIP (/srv/link -> /data)
+    '/data'
+    """
+    resolved = os.path.realpath(under_root(root, mount_point))
+    if root in ('', '/'):
+        return normalize_mount_point(resolved)
+    prefix = os.path.realpath(root)
+    if resolved == prefix:
+        return '/'
+    if resolved.startswith(prefix + os.sep):
+        return normalize_mount_point(resolved[len(prefix) :])
+    return normalize_mount_point(mount_point)
 
 
 # ACL formats that can grant write access beyond the mode bits but are not evaluated
