@@ -2191,6 +2191,71 @@ class TestCoveredWindow(unittest.TestCase):
         self.assertLessEqual(first, last)
 
 
+class TestSinceLast(unittest.TestCase):
+    """Dropping what was logged before the last start."""
+
+    def test_a_failure_before_the_last_start_is_dropped(self):
+        lines = ['Aug 28 10:00:00 h sshd[1]: Cannot bind any address.']
+        markers = ['Aug 28 10:05:00 h sshd[2]: Server listening on 0.0.0.0 port 22.']
+        self.assertEqual(lib.logsource.since_last(lines, markers), [])
+
+    def test_a_failure_of_the_last_start_is_kept(self):
+        # Logged a moment before the start it belongs to, and within the margin.
+        lines = [
+            'Aug 28 10:00:00 h sshd[1]: old',
+            'Aug 28 10:04:59 h sshd[2]: Bind to port 22 on :: failed.',
+            'Aug 28 10:06:00 h sshd[2]: later',
+        ]
+        markers = ['Aug 28 10:05:00 h sshd[2]: Server listening on 0.0.0.0 port 22.']
+        self.assertEqual(lib.logsource.since_last(lines, markers, margin=5), lines[1:])
+        self.assertEqual(lib.logsource.since_last(lines, markers), lines[2:])
+
+    def test_the_last_of_several_markers_counts(self):
+        lines = ['Aug 28 10:10:00 h x[1]: between']
+        markers = [
+            'Aug 28 10:20:00 h x[1]: start',
+            'Aug 28 10:00:00 h x[1]: start',
+        ]
+        self.assertEqual(lib.logsource.since_last(lines, markers), [])
+
+    def test_without_a_dated_marker_everything_is_kept(self):
+        lines = ['Aug 28 10:00:00 h x[1]: a', 'b']
+        self.assertEqual(lib.logsource.since_last(lines, []), lines)
+        self.assertEqual(lib.logsource.since_last(lines, ['no time']), lines)
+
+    def test_an_undated_line_is_kept(self):
+        lines = ['no time at all']
+        markers = ['Aug 28 10:00:00 h x[1]: start']
+        self.assertEqual(lib.logsource.since_last(lines, markers), lines)
+
+    def test_empty_input_and_a_generator(self):
+        self.assertEqual(
+            lib.logsource.since_last([], ['Aug 28 10:00:00 h x[1]: s']), []
+        )
+        lines = (line for line in ['Aug 28 10:30:00 h x[1]: a'])
+        self.assertEqual(
+            lib.logsource.since_last(lines, ['Aug 28 10:00:00 h x[1]: s']),
+            ['Aug 28 10:30:00 h x[1]: a'],
+        )
+
+    def test_an_offset_next_to_a_value_without_one(self):
+        lines = ['2026-08-29T17:31:13+0200 h x[1]: aware']
+        markers = ['Aug 27 17:19:52 h x[1]: naive']
+        self.assertEqual(lib.logsource.since_last(lines, markers), lines)
+
+    def test_parse_line_is_used(self):
+        early = datetime.datetime(2026, 8, 28, 10, 0)
+        late = datetime.datetime(2026, 8, 28, 11, 0)
+        self.assertEqual(
+            lib.logsource.since_last(
+                ['line'],
+                ['marker'],
+                parse_line=lambda text: early if text == 'line' else late,
+            ),
+            [],
+        )
+
+
 class TestSortByTime(unittest.TestCase):
     """Putting what several logs hold back into the order it was written in."""
 

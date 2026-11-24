@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026112402'
+__version__ = '2026112403'
 
 import collections
 import datetime
@@ -1751,6 +1751,67 @@ def read_many(
         'sources': read_sources,
         'truncated': any(item['truncated'] for item in read_sources),
     }
+
+
+def since_last(lines, markers, parse_line=None, margin=0):
+    """
+    Keep the lines written since the last of a set of markers.
+
+    Some of what a service logs is about one start of it: a configuration it rejected, an
+    address it could not take, a key it could not load. A later start that does not log the
+    same thing again has fixed it, but a consumer reading a window of the log keeps finding the
+    old line until it rotates out, which on a quiet host is weeks of an alert about something
+    long repaired. This drops what was logged before the last start, so such a line counts for
+    exactly as long as it describes the process that is running.
+
+    Parameters
+    ----------
+    lines : iterable of str
+        The lines to filter.
+    markers : iterable of str
+        The lines that mark a start (or a reload, or whatever ends the validity of what came
+        before), in any order.
+    parse_line : callable, optional
+        Handed to `timestamp()` for a format it cannot read on its own.
+    margin : int, optional
+        Seconds before the last marker that still count as part of it. A service commonly
+        reports what it rejects a moment before it says it is up, and two logs read side by
+        side may carry slightly different times for the same moment. Default: 0
+
+    Returns
+    -------
+    list of str
+        The lines written at or after the last marker less `margin`, in their original order.
+        Without a dated marker, all of them.
+
+    Notes
+    -----
+    - A line without a time is kept, because dropping it would silence something nobody can
+      date, which is the worse mistake.
+
+    Examples
+    --------
+    >>> since_last(
+    ...     ['Aug 28 10:00:00 h sshd[1]: Cannot bind any address.'],
+    ...     ['Aug 28 10:05:00 h sshd[2]: Server listening on 0.0.0.0 port 22.'],
+    ... )
+    []
+    """
+    starts = []
+    for line in markers:
+        moment = timestamp(line, parse_line)
+        if moment is not None:
+            starts.append(moment.replace(tzinfo=None))
+    lines = list(lines)
+    if not starts:
+        return lines
+    cutoff = max(starts) - datetime.timedelta(seconds=margin)
+    kept = []
+    for line in lines:
+        moment = timestamp(line, parse_line)
+        if moment is None or moment.replace(tzinfo=None) >= cutoff:
+            kept.append(line)
+    return kept
 
 
 # The timestamp a transport puts in front of what the application wrote:
