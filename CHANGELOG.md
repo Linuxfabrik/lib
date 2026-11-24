@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Highlights:** `logsource.py` groups log lines by what they say, `openmetrics.py` reads Prometheus `/metrics` endpoints, `icinga.py` reads the Icinga Director configuration, and `shell_exec()` gives a command that runs into its timeout two seconds to end.
+
 ### Added
 
 * icinga.py: `director_*()` functions that read the Icinga Director configuration through `icingacli`, resolve the per-host overrides of service variables, tell which variables reach a check command and compare the Director with a basket
