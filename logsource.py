@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026112001'
+__version__ = '2026112401'
 
 import collections
 import datetime
@@ -468,6 +468,80 @@ def describe_sources(sources, sizes=None, size_threshold=None, max_per_directory
             text += f' (size: {human.bytes2human(sum(known))})'
         described.append(text)
     return True, described
+
+
+# The directories systemd reads the unit files of the packages and of the
+# administrator from (`systemd.unit(5)`, "System Unit Search Path"); `/lib` is still
+# where Debian 11 and Ubuntu 20.04 ship them. The runtime and generator directories
+# are left out, nothing a package installs lives there.
+_UNIT_DIRECTORIES = (
+    '/etc/systemd/system',
+    '/usr/lib/systemd/system',
+    '/lib/systemd/system',
+)
+
+
+def find_units(candidates, root=''):
+    """
+    Return the systemd units among `candidates` this host has a unit file for.
+
+    A consumer that reads the journal of a service has to know which name the service
+    runs under, and the distributions differ (`httpd.service` and `apache2.service`,
+    `sshd.service` and `ssh.service`). Only the fixed directories systemd reads unit
+    files from are looked at, and only for names the caller fixed, so nothing a log or a
+    configuration file holds can point a privileged consumer at another unit.
+
+    A unit is returned once, also where the administrator overrides its file in
+    `/etc/systemd/system`, and a unit file two names point at is one unit: the MariaDB
+    package ships `mysqld.service` and `mysql.service` as symlinks to `mariadb.service`,
+    and reading that journal three times would count every line three times. A
+    candidate may be a glob (`php*-fpm.service`), which yields every unit it matches, or
+    an instance (`postfix@-.service`), which has no unit file of its own and is looked
+    up by the one of its template (`postfix@.service`).
+
+    Parameters
+    ----------
+    candidates : iterable of str
+        The unit names to look for, in the order they are preferred.
+    root : str, optional
+        Prefix for the paths, for the unit tests of a consumer that stand in a directory
+        tree for the host. Defaults to the host itself.
+
+    Returns
+    -------
+    list of str
+        The units found, in the order of `candidates`, or an empty list where systemd
+        does not run the host: a unit file says only that a package shipped one, and
+        a host with another init system has no journal to read
+        ([monitoring-plugins#1544](https://github.com/Linuxfabrik/monitoring-plugins/issues/1544)).
+
+    Examples
+    --------
+    >>> find_units(
+    ...     ('mariadb.service', 'mysqld.service', 'mysql.service')
+    ... )  # doctest: +SKIP
+    ['mariadb.service']
+    """
+    if not systemd_booted(root):
+        return []
+    found = []
+    seen = set()
+    for candidate in candidates:
+        instance = '@' in candidate and '*' not in candidate
+        # `postfix@-.service` -> `postfix@.service`
+        unit_file = re.sub(r'@[^.]+\.', '@.', candidate) if instance else candidate
+        for directory in _UNIT_DIRECTORIES:
+            for filename in disk.glob(f'{root}{directory}/{unit_file}'):
+                if not disk.file_exists(filename, allow_empty=True):
+                    continue
+                identity = os.path.realpath(filename)
+                unit = candidate if instance else os.path.basename(filename)
+                # an alias, or an override in /etc of a unit file a package ships
+                if identity in seen or unit in found:
+                    continue
+                seen.add(identity)
+                found.append(unit)
+    return found
 
 
 def group_lines(lines, since=None, parse_line=None, group=None, detail=None):
