@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 * disk.py: `normalize_mount_point()`, `parse_fstab()`, `parse_mountinfo()` and `resolve_mount_point()` read and compare mount tables
 * icinga.py: `director_*()` functions that read the Icinga Director configuration through `icingacli`, resolve the per-host overrides of service variables, tell which variables reach a check command and compare the Director with a basket
-* logsource.py: `find_units()` finds the systemd units of a service by their unit files, `group_lines()` groups log lines by what they say or by who caused them, `describe_groups()` renders the groups for a listing, `describe_sources()` sums up a directory with many log files in one line, `since_last()` keeps only the lines written since the last of a set of markers
+* logsource.py: `find_units()` finds the systemd units of a service by their unit files, `group_lines()` groups log lines by what they say or by who caused them, `describe_groups()` renders the groups for a listing, `describe_sources()` sums up a directory with many log files in one line, `since_last()` keeps only the lines written since the last of a set of markers, `covered_since()` tells when a capped read starts too late
 * lvm.py: `get_logical_volumes()` returns `raid_sync_action` and `sync_percent`
 * openmetrics.py: `fetch()` reads a `/metrics` endpoint in the format it answers with, `get_sum()` adds up a metric across its labels
 * systemd.py: why a unit failed (`failure_reason()`, `get_failure_reasons()`), the last lines it wrote to the journal (`get_log_lines()`) and the command that shows the rest (`journalctl_command()`)

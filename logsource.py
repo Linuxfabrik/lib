@@ -26,7 +26,7 @@ deduplicates where it says so.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026112403'
+__version__ = '2026112404'
 
 import collections
 import datetime
@@ -149,6 +149,67 @@ def count_within(lines, since, parse_line=None, key=None):
         'total': total,
         'undated': undated,
     }
+
+
+def covered_since(sources, since, parse_line=None):
+    """
+    Return where a capped read starts to cover a window, if it starts too late.
+
+    A consumer that reads only the most recent lines of a log and counts what arrived since a
+    moment has a blind spot: where the log grows faster than the cap reaches back, the oldest
+    line read is younger than that moment, and every count over the window is lower than what
+    really arrived. A burst fast enough to matter then stays below any threshold and reads like
+    a quiet log. This tells the consumer so, which is the difference between a partial count and
+    one presented as a whole.
+
+    Only a source whose read was cut counts. One that was read in full and simply starts after
+    `since` - a log that was rotated a minute ago, a service that started recently - holds
+    everything there is, and its counts are complete.
+
+    Parameters
+    ----------
+    sources : iterable of dict
+        What `read()` returned per source, as `read_many()` lists it in `sources`. Each needs
+        `lines` and `truncated`.
+    since : datetime.datetime
+        The start of the window the consumer counts over, naive and in local time.
+    parse_line : callable, optional
+        Handed to `timestamp()` for a format it cannot read on its own.
+
+    Returns
+    -------
+    datetime.datetime | None
+        The moment from which every source is covered: the latest of the oldest dated lines of
+        the cut sources that start after `since`. None where every source reaches back to
+        `since`, was read in full, or carries no time at all.
+
+    Notes
+    -----
+    - `truncated` is also set when a line was shortened rather than dropped. A source whose only
+      cut is a shortened line and that starts after `since` is therefore reported as well;
+      that takes a line beyond `MAX_LINE_BYTES` in a log younger than the window.
+
+    Examples
+    --------
+    >>> covered_since(result['sources'], datetime.now() - timedelta(minutes=10))
+    datetime.datetime(2026, 11, 24, 10, 56, 12)
+    """
+    if since.tzinfo is not None:
+        since = since.replace(tzinfo=None)
+    latest = None
+    for source in sources:
+        if not source.get('truncated'):
+            continue
+        for line in source.get('lines', []):
+            moment = timestamp(line, parse_line)
+            if moment is None:
+                continue
+            # Compared naive, the way `covered_window()` does where offsets differ.
+            moment = moment.replace(tzinfo=None)
+            if moment > since and (latest is None or moment > latest):
+                latest = moment
+            break
+    return latest
 
 
 def covered_window(line_groups, parse_line=None):

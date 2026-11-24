@@ -2191,6 +2191,91 @@ class TestCoveredWindow(unittest.TestCase):
         self.assertLessEqual(first, last)
 
 
+class TestCoveredSince(unittest.TestCase):
+    """Where a capped read starts too late for the window a consumer counts over."""
+
+    @staticmethod
+    def stamp(minutes_ago):
+        moment = datetime.datetime.now() - datetime.timedelta(minutes=minutes_ago)
+        return moment.strftime('%Y-%m-%dT%H:%M:%S')
+
+    def since(self):
+        return datetime.datetime.now() - datetime.timedelta(minutes=10)
+
+    def test_a_cut_source_that_starts_inside_the_window(self):
+        source = {
+            'lines': [f'{self.stamp(4)} a', f'{self.stamp(1)} b'],
+            'truncated': True,
+        }
+        moment = lib.logsource.covered_since([source], self.since())
+        self.assertIsNotNone(moment)
+        self.assertAlmostEqual(
+            (datetime.datetime.now() - moment).total_seconds(), 240, delta=5
+        )
+
+    def test_a_cut_source_that_reaches_back_far_enough(self):
+        source = {
+            'lines': [f'{self.stamp(30)} a', f'{self.stamp(1)} b'],
+            'truncated': True,
+        }
+        self.assertIsNone(lib.logsource.covered_since([source], self.since()))
+
+    def test_a_young_log_read_in_full_is_complete(self):
+        # Rotated a minute ago: everything there is was read.
+        source = {'lines': [f'{self.stamp(1)} a'], 'truncated': False}
+        self.assertIsNone(lib.logsource.covered_since([source], self.since()))
+
+    def test_undated_lines_are_skipped_to_the_first_dated_one(self):
+        source = {
+            'lines': ['no time', f'{self.stamp(3)} a', f'{self.stamp(8)} out of order'],
+            'truncated': True,
+        }
+        moment = lib.logsource.covered_since([source], self.since())
+        self.assertAlmostEqual(
+            (datetime.datetime.now() - moment).total_seconds(), 180, delta=5
+        )
+
+    def test_a_source_without_any_time(self):
+        source = {'lines': ['no time', 'none either'], 'truncated': True}
+        self.assertIsNone(lib.logsource.covered_since([source], self.since()))
+
+    def test_no_sources_and_empty_lines(self):
+        self.assertIsNone(lib.logsource.covered_since([], self.since()))
+        self.assertIsNone(
+            lib.logsource.covered_since(
+                [{'lines': [], 'truncated': True}], self.since()
+            )
+        )
+
+    def test_the_latest_start_of_several_cut_sources_wins(self):
+        sources = [
+            {'lines': [f'{self.stamp(6)} a'], 'truncated': True},
+            {'lines': [f'{self.stamp(2)} b'], 'truncated': True},
+            {'lines': [f'{self.stamp(1)} c'], 'truncated': False},
+        ]
+        moment = lib.logsource.covered_since(sources, self.since())
+        self.assertAlmostEqual(
+            (datetime.datetime.now() - moment).total_seconds(), 120, delta=5
+        )
+
+    def test_an_aware_line_and_an_aware_since(self):
+        # The transport offset is converted to local time by timestamp(), and an
+        # aware `since` must not take the comparison down.
+        since = self.since().astimezone()
+        source = {'lines': [f'{self.stamp(5)}+0000 x'], 'truncated': True}
+        lib.logsource.covered_since([source], since)
+
+    def test_parse_line_is_used(self):
+        moment = datetime.datetime.now() - datetime.timedelta(minutes=2)
+        source = {'lines': ['own format'], 'truncated': True}
+        self.assertEqual(
+            lib.logsource.covered_since(
+                [source], self.since(), parse_line=lambda _: moment
+            ),
+            moment,
+        )
+
+
 class TestSinceLast(unittest.TestCase):
     """Dropping what was logged before the last start."""
 
