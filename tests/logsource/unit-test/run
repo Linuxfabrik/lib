@@ -541,6 +541,85 @@ class TestSystemdBooted(unittest.TestCase):
             self.assertTrue(lib.logsource.systemd_booted(tmp))
 
 
+class TestFindUnits(unittest.TestCase):
+    """The units of a service are found by their unit files, once per unit."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.root, 'run', 'systemd', 'system'))
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def unit_file(self, directory, name, target=None):
+        path = os.path.join(self.root, directory.lstrip('/'), name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if target:
+            os.symlink(target, path)
+        else:
+            with open(path, 'w', encoding='utf-8') as handle:
+                handle.write('[Service]\n')
+
+    def test_the_names_the_host_has_in_the_order_given(self):
+        self.unit_file('/usr/lib/systemd/system', 'apache2.service')
+        self.unit_file('/etc/systemd/system', 'httpd.service')
+        self.assertEqual(
+            lib.logsource.find_units(('httpd.service', 'apache2.service'), self.root),
+            ['httpd.service', 'apache2.service'],
+        )
+
+    def test_no_unit_file(self):
+        self.assertEqual(lib.logsource.find_units(('sshd.service',), self.root), [])
+
+    def test_no_journal_without_systemd(self):
+        # Devuan with OpenRC: the packages ship `.service` files, /run/systemd is absent
+        shutil.rmtree(os.path.join(self.root, 'run'))
+        self.unit_file('/lib/systemd/system', 'ssh.service')
+        self.assertEqual(lib.logsource.find_units(('ssh.service',), self.root), [])
+
+    @unittest.skipIf(os.name == 'nt', 'symlinks need privileges on Windows')
+    def test_aliases_of_one_unit_file_count_once(self):
+        # the MariaDB package ships `mysqld.service` and `mysql.service` as symlinks
+        self.unit_file('/usr/lib/systemd/system', 'mariadb.service')
+        for alias in ('mysqld.service', 'mysql.service'):
+            self.unit_file('/usr/lib/systemd/system', alias, 'mariadb.service')
+        self.assertEqual(
+            lib.logsource.find_units(
+                ('mariadb.service', 'mysqld.service', 'mysql.service'), self.root
+            ),
+            ['mariadb.service'],
+        )
+
+    def test_an_override_in_etc_is_the_same_unit(self):
+        # a full copy in /etc beside the packaged file: two files, one unit
+        self.unit_file('/usr/lib/systemd/system', 'sshd.service')
+        self.unit_file('/etc/systemd/system', 'sshd.service')
+        self.assertEqual(
+            lib.logsource.find_units(('sshd.service',), self.root), ['sshd.service']
+        )
+
+    def test_a_glob_yields_every_unit_it_matches(self):
+        self.unit_file('/lib/systemd/system', 'php8.2-fpm.service')
+        self.unit_file('/lib/systemd/system', 'php8.4-fpm.service')
+        self.assertEqual(
+            sorted(
+                lib.logsource.find_units(
+                    ('php-fpm.service', 'php*-fpm.service'), self.root
+                )
+            ),
+            ['php8.2-fpm.service', 'php8.4-fpm.service'],
+        )
+
+    def test_an_instance_is_found_by_its_template(self):
+        self.unit_file('/lib/systemd/system', 'postfix@.service')
+        self.assertEqual(
+            lib.logsource.find_units(
+                ('postfix.service', 'postfix@-.service'), self.root
+            ),
+            ['postfix@-.service'],
+        )
+
+
 class TestReadFile(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
