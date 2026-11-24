@@ -28,6 +28,16 @@ The report is read one row per logical volume. A segment-level field such as
 physical volumes would be counted twice; `lv_layout` carries the same information
 per volume and is used in its place.
 
+`sync_percent` is the share of a RAID or mirror volume that is in sync, and only
+there: for a cache it is the share of dirty blocks, and for raid0 and every other
+volume it is empty. `raid_sync_action` says what the kernel is doing on a RAID
+volume (`idle`, `frozen`, `resync`, `recover`, `reshape`, `check`, `repair`, from
+`sync_str()` in the kernel's `drivers/md/dm-raid.c`), and it decides how to read
+the percentage: a scrub (`check`, `repair`) counts from 0 again on a volume that is
+fully in sync, while `recover` is a leg being rebuilt that holds no full copy yet.
+Both fields exist since lvm2 2.02.99. Measured on Rocky 10 (lvm2 2.03.28, kernel
+6.12).
+
 `health()` puts a value of `lv_health_status` into words. That field is the whole
 truth for a thin pool, a cache and a volume with a missing physical volume, and
 covers none of what happens to a classic snapshot: a snapshot the kernel threw away
@@ -53,7 +63,7 @@ from . import shell, time
 from .globals import STATE_UNKNOWN, STATE_WARN
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026112401'
 
 # The fields read per logical volume, sorted, and every one of them a volume-level
 # field so the report stays at one row per volume.
@@ -76,6 +86,8 @@ LV_FIELDS = (
     'metadata_percent',
     'origin',
     'pool_lv',
+    'raid_sync_action',
+    'sync_percent',
     'vg_name',
 )
 

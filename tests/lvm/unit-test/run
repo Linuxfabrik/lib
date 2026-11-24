@@ -332,6 +332,17 @@ class TestCommands(unittest.TestCase):
         options = lvm.LVS_COMMAND[lvm.LVS_COMMAND.index('--options') + 1]
         self.assertEqual(options.split(','), list(lvm.LV_FIELDS))
 
+    def test_the_sync_state_of_a_raid_volume_is_requested(self):
+        # `lv_health_status` stays empty while a RAID leg is being rebuilt, so the sync
+        # action and the percentage are the only way to see the volume is not
+        # redundant yet.
+        self.assertIn('raid_sync_action', lvm.LV_FIELDS)
+        self.assertIn('sync_percent', lvm.LV_FIELDS)
+
+    def test_the_fields_are_sorted(self):
+        self.assertEqual(list(lvm.LV_FIELDS), sorted(lvm.LV_FIELDS))
+        self.assertEqual(list(lvm.VG_FIELDS), sorted(lvm.VG_FIELDS))
+
     def test_sizes_are_asked_for_in_bytes(self):
         self.assertIn('--nosuffix', lvm.LVS_COMMAND)
         self.assertIn('--nosuffix', lvm.VGS_COMMAND)
