@@ -1179,6 +1179,44 @@ class TestRmDb(unittest.TestCase):
             conn.execute('SELECT 1')
 
 
+class TestDeltas(unittest.TestCase):
+    """deltas(): None until two samples, then the increase since the previous run."""
+
+    def setUp(self):
+        # Same isolation as TestPerSecondDeltas: deltas() resolves the temp dir via
+        # tempfile.gettempdir().
+        self.tmp = tempfile.mkdtemp(prefix='lftest-deltas-')
+        self.saved_tempdir = tempfile.tempdir
+        tempfile.tempdir = self.tmp
+
+    def tearDown(self):
+        tempfile.tempdir = self.saved_tempdir
+
+    def test_first_run_returns_none(self):
+        self.assertIsNone(db.deltas('lftest-deltas.db', '/mnt/a', {'retrans': 5}))
+
+    def test_second_run_returns_the_increase(self):
+        db.deltas('lftest-deltas-inc.db', '/mnt/a', {'ops': 100, 'retrans': 5})
+        moved = db.deltas('lftest-deltas-inc.db', '/mnt/a', {'ops': 152, 'retrans': 12})
+        self.assertEqual(moved, {'ops': 52, 'retrans': 7})
+
+    def test_two_runs_in_the_same_second_still_count(self):
+        # A rate needs time between the samples, an increase does not.
+        saved_now = db.time.now
+        db.time.now = lambda: 1000
+        try:
+            db.deltas('lftest-deltas-same.db', '/mnt/a', {'retrans': 5})
+            moved = db.deltas('lftest-deltas-same.db', '/mnt/a', {'retrans': 6})
+        finally:
+            db.time.now = saved_now
+        self.assertEqual(moved, {'retrans': 1})
+
+    def test_counter_reset_returns_none(self):
+        # A remount starts the counters at zero again.
+        db.deltas('lftest-deltas-reset.db', '/mnt/a', {'retrans': 5})
+        self.assertIsNone(db.deltas('lftest-deltas-reset.db', '/mnt/a', {'retrans': 0}))
+
+
 class TestPerSecondDeltas(unittest.TestCase):
     """per_second_deltas(): None until two samples, then per-second rates."""
 

@@ -32,7 +32,7 @@ This is one typical use case of this library (taken from `disk-io`):
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026101201'
+__version__ = '2026112501'
 
 import csv
 import functools
@@ -1263,6 +1263,166 @@ def delete(conn, sql, data=None, delete_db_on_operational_error=True):
         return False, f'Query failed: {sql}, Error: {e}, Data: {data}'
 
 
+def _counter_deltas(filename, name, counters):
+    """Store `counters` as the newest sample of `name` in the cache `filename` and
+    return how far each moved since the sample before, as `(deltas, seconds)`.
+
+    The engine of `deltas()` and `per_second_deltas()`, which document the cache. None
+    until there are two samples, after a counter went backwards and on any SQLite
+    error. `seconds` is the time between the two samples and may be zero, for two runs
+    within the same second.
+    """
+    ok, conn = connect(filename=filename)
+    if not ok:
+        return None
+
+    # Map every caller-supplied counter name to the column name actually used in the table, so the
+    # CREATE and the INSERT below agree. Sanitizing only the CREATE would build a column `rxbytes`
+    # for a counter named `rx-bytes` and then insert into `rx-bytes`, which fails on every run and
+    # leaves the helper returning None forever.
+    columns = {col: __filter_str(col) for col in counters}
+
+    # Quote the column names the same way `insert()` does. A counter name that survives
+    # __filter_str() can still be an SQL keyword, and an unquoted `drop INT NOT NULL`
+    # fails the CREATE, after which the helper returns None on every run - which reads
+    # like a missing baseline rather than like a broken cache table.
+    col_defs = ['name TEXT NOT NULL', 'timestamp INT NOT NULL']
+    col_defs.extend(
+        f'{__quote_ident(column)} INT NOT NULL' for column in columns.values()
+    )
+    definition = ', '.join(col_defs)
+
+    ok, _ = create_table(conn, definition, drop_table_first=False)
+    if not ok:
+        close(conn)
+        return None
+    create_index(conn, 'name')
+
+    row = {'name': name, 'timestamp': time.now()}
+    for col, column in columns.items():
+        row[column] = counters[col]
+    # Pass `delete_db_on_operational_error=False` so a schema mismatch leaves
+    # the connection open. We then drop+recreate the table ourselves below;
+    # the default `True` would `rm_db(conn)` (close + delete) and break the
+    # subsequent drop_table() with "Cannot operate on a closed database".
+    ok, _ = insert(conn, row, delete_db_on_operational_error=False)
+    if not ok:
+        # Schema mismatch from a previous release (different counter
+        # columns or NOT NULL constraints). Rebuild the table from the
+        # current schema; we lose the previous baseline but auto-recover on
+        # the next run. `delete_db_on_operational_error=False` throughout,
+        # for the same reason as the insert above: removing the database
+        # closes the connection and every following step would fail with
+        # "Cannot operate on a closed database".
+        drop_table(conn, delete_db_on_operational_error=False)
+        ok, _ = create_table(
+            conn,
+            definition,
+            drop_table_first=False,
+            delete_db_on_operational_error=False,
+        )
+        if not ok:
+            close(conn)
+            return None
+        create_index(conn, 'name')
+        ok, _ = insert(conn, row, delete_db_on_operational_error=False)
+        if not ok:
+            close(conn)
+            return None
+
+    # Not `cut()`: that keeps the newest rows of the whole table. Two callers sharing one cache
+    # file under different names would leave each other with a single row, and a delta needs
+    # two. Prune per name instead. The `rowid DESC` tie-break keeps the pair deterministic when
+    # two samples share a timestamp, which `cut()` got from ordering by `rowid` alone.
+    delete(
+        conn,
+        """
+        DELETE FROM perfdata
+        WHERE name = :name
+          AND rowid NOT IN (
+            SELECT rowid FROM perfdata
+            WHERE name = :name
+            ORDER BY timestamp DESC, rowid DESC
+            LIMIT 2
+          );
+        """,
+        {'name': name},
+    )
+    commit(conn)
+
+    ok, rows = select(
+        conn,
+        """
+        SELECT *
+        FROM perfdata
+        WHERE name = :name
+        ORDER BY timestamp DESC, rowid DESC
+        """,
+        {'name': name},
+    )
+    close(conn)
+    if not ok or len(rows) < 2:
+        return None
+
+    # Keyed by the caller's counter names, not by the sanitized column names, so the caller reads
+    # the result back with the keys it passed in.
+    deltas = {}
+    for col, column in columns.items():
+        delta = rows[0][column] - rows[1][column]
+        if delta < 0:
+            # counter reset (server restart, FLUSH STATUS)
+            return None
+        deltas[col] = delta
+    return deltas, rows[0]['timestamp'] - rows[1]['timestamp']
+
+
+def deltas(filename, name, counters):
+    """
+    Persist cumulative counters in a local SQLite cache and return how far each of
+    them moved since the previous run.
+
+    The sibling of `per_second_deltas()`, for a counter whose increase is the finding
+    itself, a retransmission or an error, and reads as "3 since the last check" rather
+    than as a rate. Same cache, same rules: the table schema follows the keys of
+    `counters`, two samples are kept per `name`, and a counter that went backwards
+    counts as a reset.
+
+    Parameters
+    ----------
+    filename : str
+        SQLite cache filename under `$TEMP`. Pick a per-consumer name so caches do not
+        collide, and never share one file between `deltas()` and
+        `per_second_deltas()` callers with different counters.
+    name : str
+        Sample identifier stored in the `name` column, e.g. the mount point.
+    counters : dict[str, int]
+        Mapping from counter name to cumulative counter value. Characters outside
+        `[a-zA-Z0-9_]` are stripped for the database column.
+
+    Returns
+    -------
+    dict[str, int]
+        `{counter_name: increase}` on success.
+    None
+        fewer than 2 samples recorded yet, counter reset detected (delta < 0), or any
+        SQLite operation failed.
+
+    Examples
+    --------
+    >>> moved = lib.db_sqlite.deltas(
+    ...     'linuxfabrik-monitoring-plugins-nfs-mounts.db',
+    ...     '/mnt/data',
+    ...     {'ops': 2286, 'retrans': 7},
+    ... )
+    >>> moved  # on a later run
+    {'ops': 52, 'retrans': 7}
+    """
+    result = _counter_deltas(filename, name, counters)
+    if result is None:
+        return None
+    return result[0]
+
+
 def drop_table(conn, table='perfdata', delete_db_on_operational_error=True):
     """
     Drop a table from the SQLite database.
@@ -2019,112 +2179,13 @@ def per_second_deltas(filename, name, counters):
     ...         _min=0,
     ...     )
     """
-    ok, conn = connect(filename=filename)
-    if not ok:
+    result = _counter_deltas(filename, name, counters)
+    if result is None:
         return None
-
-    # Map every caller-supplied counter name to the column name actually used in the table, so the
-    # CREATE and the INSERT below agree. Sanitizing only the CREATE would build a column `rxbytes`
-    # for a counter named `rx-bytes` and then insert into `rx-bytes`, which fails on every run and
-    # leaves the helper returning None forever.
-    columns = {col: __filter_str(col) for col in counters}
-
-    # Quote the column names the same way `insert()` does. A counter name that survives
-    # __filter_str() can still be an SQL keyword, and an unquoted `drop INT NOT NULL`
-    # fails the CREATE, after which the helper returns None on every run - which reads
-    # like a missing baseline rather than like a broken cache table.
-    col_defs = ['name TEXT NOT NULL', 'timestamp INT NOT NULL']
-    col_defs.extend(
-        f'{__quote_ident(column)} INT NOT NULL' for column in columns.values()
-    )
-    definition = ', '.join(col_defs)
-
-    ok, _ = create_table(conn, definition, drop_table_first=False)
-    if not ok:
-        close(conn)
+    deltas, seconds = result
+    if seconds <= 0:
         return None
-    create_index(conn, 'name')
-
-    row = {'name': name, 'timestamp': time.now()}
-    for col, column in columns.items():
-        row[column] = counters[col]
-    # Pass `delete_db_on_operational_error=False` so a schema mismatch leaves
-    # the connection open. We then drop+recreate the table ourselves below;
-    # the default `True` would `rm_db(conn)` (close + delete) and break the
-    # subsequent drop_table() with "Cannot operate on a closed database".
-    ok, _ = insert(conn, row, delete_db_on_operational_error=False)
-    if not ok:
-        # Schema mismatch from a previous release (different counter
-        # columns or NOT NULL constraints). Rebuild the table from the
-        # current schema; we lose the previous baseline but auto-recover on
-        # the next run. `delete_db_on_operational_error=False` throughout,
-        # for the same reason as the insert above: removing the database
-        # closes the connection and every following step would fail with
-        # "Cannot operate on a closed database".
-        drop_table(conn, delete_db_on_operational_error=False)
-        ok, _ = create_table(
-            conn,
-            definition,
-            drop_table_first=False,
-            delete_db_on_operational_error=False,
-        )
-        if not ok:
-            close(conn)
-            return None
-        create_index(conn, 'name')
-        ok, _ = insert(conn, row, delete_db_on_operational_error=False)
-        if not ok:
-            close(conn)
-            return None
-
-    # Not `cut()`: that keeps the newest rows of the whole table. Two callers sharing one cache
-    # file under different names would leave each other with a single row, and a delta needs
-    # two. Prune per name instead. The `rowid DESC` tie-break keeps the pair deterministic when
-    # two samples share a timestamp, which `cut()` got from ordering by `rowid` alone.
-    delete(
-        conn,
-        """
-        DELETE FROM perfdata
-        WHERE name = :name
-          AND rowid NOT IN (
-            SELECT rowid FROM perfdata
-            WHERE name = :name
-            ORDER BY timestamp DESC, rowid DESC
-            LIMIT 2
-          );
-        """,
-        {'name': name},
-    )
-    commit(conn)
-
-    ok, rows = select(
-        conn,
-        """
-        SELECT *
-        FROM perfdata
-        WHERE name = :name
-        ORDER BY timestamp DESC, rowid DESC
-        """,
-        {'name': name},
-    )
-    close(conn)
-    if not ok or len(rows) < 2:
-        return None
-
-    timestamp_diff = rows[0]['timestamp'] - rows[1]['timestamp']
-    if timestamp_diff <= 0:
-        return None
-
-    # Keyed by the caller's counter names, not by the sanitized column names, so the caller reads
-    # the result back with the keys it passed in.
-    rates = {}
-    for col, column in columns.items():
-        delta = rows[0][column] - rows[1][column]
-        if delta < 0:
-            # counter reset (server restart, FLUSH STATUS)
-            return None
-        rates[col] = delta / timestamp_diff
-    return rates
+    return {col: delta / seconds for col, delta in deltas.items()}
 
 
 def regexp(expr, item):

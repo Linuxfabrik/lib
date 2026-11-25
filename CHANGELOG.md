@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 * args.py: `number_unit_method_limits()` and `number_unit_method_state()` evaluate a `<number>[unit][method]` threshold such as `100GFREE`, an unset one never alerts
+* db_sqlite.py: `deltas()` returns how far cumulative counters moved since the previous run
 * disk.py: `normalize_mount_point()`, `parse_fstab()`, `parse_mountinfo()`, `parse_mountstats()` and `resolve_mount_point()` read and compare mount tables and the RPC counters of NFS mounts
 * icinga.py: `director_*()` functions that read the Icinga Director configuration through `icingacli`, resolve the per-host overrides of service variables, tell which variables reach a check command and compare the Director with a basket
 * logsource.py: `find_units()` finds the systemd units of a service by their unit files, `group_lines()` groups log lines by what they say or by who caused them, `describe_groups()` renders the groups for a listing, `describe_sources()` sums up a directory with many log files in one line, `since_last()` keeps only the lines written since the last of a set of markers, `covered_since()` tells when a capped read starts too late
