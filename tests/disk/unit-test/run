@@ -1958,8 +1958,61 @@ class TestFifoDoesNotBlock(unittest.TestCase):
 
 
 class TestMountTables(unittest.TestCase):
-    """parse_fstab(), parse_mountinfo(), normalize_mount_point() and
-    resolve_mount_point()."""
+    """parse_fstab(), parse_mountinfo(), parse_mountstats(), normalize_mount_point()
+    and resolve_mount_point()."""
+
+    # Taken from /proc/self/mountstats of a Rocky 10 client (kernel 6.12) after a 30 s
+    # outage of the server, shortened to the lines that matter and with the addresses
+    # replaced. The `xprt:` line also has a colon and must not count as an operation.
+    MOUNTSTATS = (
+        'device proc mounted on /proc with fstype proc\n'
+        'device 192.0.2.10:/srv/nfs mounted on /mnt/v4 with fstype nfs4 statvers=1.1\n'
+        '\topts:\trw,vers=4.2,hard,proto=tcp,timeo=600,retrans=2\n'
+        '\tage:\t649\n'
+        '\tRPC iostats version: 1.1  p/v: 100003/4 (nfs)\n'
+        '\txprt:\ttcp 0 0 6 0 50 2530 2527 0 23216 0 31 3034 15007\n'
+        '\tper-op statistics\n'
+        '\t        NULL: 1 1 0 44 24 0 0 0 0\n'
+        '\t        READ: 600 600 0 122400 314635200 14 179 217 0\n'
+        '\t        OPEN: 401 402 0 108148 165576 10 1393 1418 0\n'
+        'device 192.0.2.10:/srv/nfs mounted on /mnt/my\\040v3 with fstype nfs '
+        'statvers=1.1\n'
+        '\tper-op statistics\n'
+        '\t      CREATE: 389 396 3 69580 101140 3 31018 31033 0\n'
+        '\t     COMMIT: 12 12 0\n'
+        'device tmpfs mounted on /tmp with fstype tmpfs\n'
+    )
+
+    def test_parse_mountstats_reads_the_rpc_counters(self):
+        mounts = disk.parse_mountstats(self.MOUNTSTATS)
+        self.assertEqual(
+            [mount['mount_point'] for mount in mounts], ['/mnt/v4', '/mnt/my v3']
+        )
+        self.assertEqual(mounts[0]['device'], '192.0.2.10:/srv/nfs')
+        self.assertEqual(mounts[0]['fstype'], 'nfs4')
+        self.assertEqual(sorted(mounts[0]['operations']), ['NULL', 'OPEN', 'READ'])
+        self.assertEqual(
+            mounts[0]['operations']['OPEN'], {'ntrans': 402, 'ops': 401, 'timeouts': 0}
+        )
+        self.assertEqual(
+            mounts[1]['operations'],
+            {
+                'COMMIT': {'ntrans': 12, 'ops': 12, 'timeouts': 0},
+                'CREATE': {'ntrans': 396, 'ops': 389, 'timeouts': 3},
+            },
+        )
+
+    def test_parse_mountstats_skips_what_it_cannot_read(self):
+        for value in (None, 42, b'device'):
+            self.assertEqual(disk.parse_mountstats(value), [])
+        # An operation line without three numbers is not an operation.
+        table = (
+            'device 192.0.2.10:/a mounted on /a with fstype nfs\n'
+            '\tper-op statistics\n'
+            '\t        READ: 1 x 0\n'
+            '\t       WRITE: 1 1\n'
+        )
+        self.assertEqual(disk.parse_mountstats(table)[0]['operations'], {})
 
     def test_normalize_mount_point(self):
         self.assertEqual(disk.normalize_mount_point('/mnt/data/'), '/mnt/data')

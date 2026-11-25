@@ -13,7 +13,7 @@ partitions, grepping a file, etc.
 """
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026112401'
+__version__ = '2026112501'
 
 import csv
 import errno
@@ -1768,6 +1768,93 @@ def parse_mountinfo(content):
                 'source': source,
             }
         )
+    return mounts
+
+
+_MOUNTSTATS_DEVICE = re.compile(r'^device (\S+) mounted on (\S+) with fstype (\S+)')
+
+
+def parse_mountstats(content):
+    """
+    Return the RPC counters of every mount in a `/proc/<pid>/mountstats` table that
+    keeps them, which are the NFS mounts.
+
+    The kernel opens each mount with `device <source> mounted on <mount point> with
+    fstype <type>` (`show_vfsstat()` in fs/proc_namespace.c), escaping the mount point
+    the way `/proc/<pid>/mounts` does. An NFS mount follows with a `per-op statistics`
+    block, one line per RPC operation: its name, a colon and the counters
+    `_print_rpc_iostats()` in net/sunrpc/stats.c writes, starting with `ops` (RPCs
+    completed), `ntrans` (transmissions, retransmissions included) and `timeouts`
+    (major timeouts). They count from the moment the mount was made. Only these three
+    are read, because they lead the line on every kernel; the columns after them grew
+    over time. Verified against Linux 7.2.
+
+    Reading the table never waits on a server: the kernel renders it from its own
+    structures, also while the server is unreachable.
+
+    Parameters
+    ----------
+    content : str
+        The content of the table.
+
+    Returns
+    -------
+    list of dict
+        One dict per mount with a `per-op statistics` block, in the order the kernel
+        lists them, with the keys `device` (str), `fstype` (str), `mount_point` (str)
+        and `operations`, a dict mapping each operation name to a dict of `ntrans`,
+        `ops` and `timeouts` (int). An empty list for anything that is not a string.
+
+    Examples
+    --------
+    >>> table = (
+    ...     'device 192.0.2.10:/data mounted on /mnt/data with fstype nfs4 statvers=1.1\\n'
+    ...     '\\tper-op statistics\\n'
+    ...     '\\t        READ: 120 123 0 15360 491520 4 96 104 0\\n'
+    ... )
+    >>> parse_mountstats(table)[0]['operations']['READ']
+    {'ntrans': 123, 'ops': 120, 'timeouts': 0}
+    """
+    if not isinstance(content, str):
+        return []
+    mounts = []
+    # The mount whose header was read last, and whether its operation lines follow.
+    mount = None
+    in_operations = False
+    for line in content.splitlines():
+        match = _MOUNTSTATS_DEVICE.match(line)
+        if match:
+            device, mount_point, fstype = match.groups()
+            mount = {
+                'device': _unescape_mount_field(device),
+                'fstype': fstype,
+                'mount_point': _unescape_mount_field(mount_point),
+                'operations': {},
+            }
+            in_operations = False
+            continue
+        if mount is None:
+            continue
+        stripped = line.strip()
+        if stripped == 'per-op statistics':
+            mounts.append(mount)
+            in_operations = True
+            continue
+        if not in_operations:
+            continue
+        name, separator, counters = stripped.partition(':')
+        values = counters.split()
+        if not separator or len(values) < 3:
+            continue
+        try:
+            ops, ntrans, timeouts = (int(value) for value in values[:3])
+        except ValueError:
+            continue
+        mount['operations'][name.strip()] = {
+            'ntrans': ntrans,
+            'ops': ops,
+            'timeouts': timeouts,
+        }
     return mounts
 
 
