@@ -19,7 +19,7 @@ import textwrap
 from . import base, human, txt
 
 __author__ = 'Linuxfabrik GmbH, Zurich/Switzerland'
-__version__ = '2026112401'
+__version__ = '2026112501'
 
 # Base URL of the rendered online documentation.
 DOCS_BASE_URL = 'https://linuxfabrik.github.io/monitoring-plugins'
@@ -664,8 +664,9 @@ def number_unit_method_limits(threshold, total):
 
     Parameters
     ----------
-    threshold : tuple
-        `(number, unit, method)` as `number_unit_method()` returns it.
+    threshold : tuple or None
+        `(number, unit, method)` as `number_unit_method()` returns it. None for a
+        threshold that is not set.
     total : int or float
         The size of what is measured, in bytes.
 
@@ -674,7 +675,7 @@ def number_unit_method_limits(threshold, total):
     tuple (float or None, int or None)
         `(percent_limit, used_limit)`, the line on the used share in percent and the
         line on the used amount in bytes. The one the threshold does not apply to is
-        None.
+        None, and both are for a threshold that is not set.
 
     Examples
     --------
@@ -684,6 +685,8 @@ def number_unit_method_limits(threshold, total):
     >>> number_unit_method_limits(('1', 'K', 'FREE'), 4096)
     (None, 3072)
     """
+    if threshold is None:
+        return None, None
     number, unit, method = threshold
     if unit == '%':
         limit = float(number) if method == 'USED' else 100.0 - float(number)
@@ -697,7 +700,10 @@ def _number_unit_method_operands(threshold, used, free, percent):
     """Map a `number_unit_method()` threshold onto the `(value, limit, operator)`
     arguments of `base.get_state()`. `USED` compares the used part and alerts at
     "number or more", `FREE` compares the free part and alerts at "number or less"; a
-    `%` unit compares percentages, any other unit bytes."""
+    `%` unit compares percentages, any other unit bytes. A threshold that is not set
+    yields no limit, which `base.get_state()` never alerts on."""
+    if threshold is None:
+        return percent, None, 'ge'
     number, unit, method = threshold
     if unit == '%':
         value = percent if method == 'USED' else 100.0 - percent
@@ -715,8 +721,9 @@ def number_unit_method_state(warn, crit, used, free, percent):
 
     Parameters
     ----------
-    warn, crit : tuple
-        `(number, unit, method)` as `number_unit_method()` returns them.
+    warn, crit : tuple or None
+        `(number, unit, method)` as `number_unit_method()` returns them. None for a
+        threshold that is not set, which never alerts.
     used : int or float
         Bytes in use.
     free : int or float

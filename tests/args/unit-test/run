@@ -234,6 +234,9 @@ class TestNumberUnitMethodLimits(unittest.TestCase):
             args.number_unit_method_limits(('150', '%', 'FREE'), 1024), (0.0, None)
         )
 
+    def test_unset_threshold_draws_no_line(self):
+        self.assertEqual(args.number_unit_method_limits(None, 1024), (None, None))
+
 
 class TestNumberUnitMethodState(unittest.TestCase):
     # 1 GiB in total, 850 MiB used, 150 MiB free, 83.0% used
@@ -269,6 +272,24 @@ class TestNumberUnitMethodState(unittest.TestCase):
 
     def test_a_threshold_that_did_not_parse_is_unknown(self):
         self.assertEqual(self.state('abc', '95'), STATE_UNKNOWN)
+
+    def test_unset_threshold_never_alerts(self):
+        used, free, percent = self.USAGE
+        self.assertEqual(
+            args.number_unit_method_state(None, None, used, free, percent), STATE_OK
+        )
+        self.assertEqual(
+            args.number_unit_method_state(
+                args.number_unit_method('80'), None, used, free, percent
+            ),
+            STATE_WARN,
+        )
+        self.assertEqual(
+            args.number_unit_method_state(
+                None, args.number_unit_method('83'), used, free, percent
+            ),
+            STATE_CRIT,
+        )
 
 
 class TestHelp(unittest.TestCase):
